@@ -26,7 +26,7 @@ afterEach(() => {
 const mount = (onClose = () => undefined) =>
   act(() => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress"), task("TASK-2", "In Progress"), task("TASK-3", "Ready")]} roles={roles} task="TASK-1" onClose={onClose} />));
 const button = (label: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
-const fleet = () => [...host.querySelectorAll('nav[aria-label="Tasks"] button')].map((b) => b.getAttribute("aria-label"));
+const fleet = () => [...host.querySelectorAll('nav[aria-label="In Progress tasks"] button')].map((b) => b.getAttribute("aria-label"));
 
 describe("SunsDrillIn", () => {
   it("repaints the scene in a new theme's colours when the theme changes, with no remount", () => {
@@ -40,16 +40,22 @@ describe("SunsDrillIn", () => {
     expect(dots()).not.toContain(packTokens("starpulse").waits);
   });
 
-  it("lists the In Progress tasks in its Tasks panel and shows the drilled one", () => {
+  it("lists the In Progress tasks in its Tasks strip and shows the drilled one", () => {
     mount();
     expect(fleet().map((a) => a?.split(" ")[0])).toEqual(["TASK-1", "TASK-2"]);
     expect(host.textContent).toContain("Board › In Progress");
     expect(host.textContent).toContain("2 tasks · showing TASK-1");
   });
 
-  it("counts the board's tasks and DAGs in its Views panel", () => {
-    act(() => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress")]} roles={roles} task="TASK-1" dags={103} onClose={() => undefined} />));
-    expect(host.textContent).toMatch(/Kanban1DAGs103/);
+  it("draws inside the app shell: no copy of the Navigator, search or Recent, no fixed overlay and no scaled stage", () => {
+    mount();
+    const region = host.querySelector<HTMLElement>("#sd")!;
+
+    expect(region).not.toBeNull();
+    expect(region.style.position).not.toBe("fixed");
+    expect(host.innerHTML).not.toMatch(/scale\(/);
+    for (const copy of ["STARPULSE", "search…", "VIEWS", "RECENT"]) expect(host.textContent).not.toContain(copy);
+    expect(host.querySelector('nav[aria-label="Tasks"], section[aria-label="Recent"]')).toBeNull();
   });
 
   it("draws the drilled task before the board's tasks have arrived", () => {
@@ -74,9 +80,9 @@ describe("SunsDrillIn", () => {
     expect(host.querySelector('[aria-label="Details"]')).toBeNull();
   });
 
-  it("picks another task from the Tasks panel", () => {
+  it("picks another task from the Tasks strip", () => {
     mount();
-    act(() => host.querySelector<HTMLButtonElement>('nav[aria-label="Tasks"] button[aria-label^="TASK-2"]')!.click());
+    act(() => host.querySelector<HTMLButtonElement>('nav[aria-label="In Progress tasks"] button[aria-label^="TASK-2"]')!.click());
     expect(host.textContent).toContain("showing TASK-2");
   });
 
@@ -88,15 +94,10 @@ describe("SunsDrillIn", () => {
 
   it("paints its surfaces and text from the theme's tokens, so a theme change repaints it with no reload", () => {
     mount();
-    const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!;
-    const frame = dialog.firstElementChild as HTMLElement;
-    const brand = [...host.querySelectorAll<HTMLElement>("nav div")].find((d) => d.textContent === "STARPULSE")!;
-    const live = host.querySelector<HTMLElement>("nav span[style*='border-radius: 50%']")!;
+    const stage = host.querySelector<HTMLElement>(".sd-stage")!.firstElementChild as HTMLElement;
 
-    expect(dialog.style.background).toBe("var(--bg0)");
-    expect([frame.style.background, frame.style.color]).toEqual(["var(--bg0)", "var(--ink)"]);
-    expect(brand.style.color).toBe("var(--ink-hi)");
-    expect(live.style.background).toBe("var(--ok)");
+    expect(stage.style.background).toContain("var(--bg0)");
+    expect(stage.style.color).toBe("var(--ink)");
   });
 
   it("draws nothing yellow", () => {

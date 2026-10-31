@@ -196,17 +196,34 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #nav .leaderboard .lb-grp { display: flex; align-items: baseline; margin: 8px 0 1px; font-size: calc(10.5px * var(--fs)); color: var(--muted); white-space: nowrap; }
 #nav .leaderboard .lb-grp .n { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
 /* z-index 3 puts the task modal, which is fixed inside #kb, over the navigator and rail as well */
-:is(#kb, #dg) { position: fixed; z-index: 3; top: 0; bottom: 0; left: calc(var(--nav) + 20px); right: calc(var(--rail) + 20px); display: flex; flex-direction: column;
+:is(#kb, #dg, #sd) { position: fixed; z-index: 3; top: 0; bottom: 0; left: calc(var(--nav) + 20px); right: calc(var(--rail) + 20px); display: flex; flex-direction: column;
   font-size: calc(12px * var(--fs)); }
-@media (prefers-reduced-motion: reduce) { :is(#kb, #dg) { transition: none; } }
-:is(#kb, #dg) header { display: flex; align-items: center; gap: 14px; height: 64px; flex: none; }
-:is(#kb, #dg) header .title { font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
-:is(#kb, #dg) header .count { font-size: calc(11px * var(--fs)); color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { :is(#kb, #dg, #sd) { transition: none; } }
+:is(#kb, #dg, #sd) header { display: flex; align-items: center; gap: 14px; height: 64px; flex: none; }
+:is(#kb, #dg, #sd) header .title { font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
+:is(#kb, #dg, #sd) header .count { font-size: calc(11px * var(--fs)); color: var(--muted); }
+/* The In Progress drill-in is a region of the shell like #kb: the same frame and header, between the Navigator and Rail, opaque over the canvas. The board inside scrolls only when the region is under its minimum. */
+#sd { left: var(--nav); right: var(--rail); padding: 0 20px; box-sizing: border-box; background: var(--bg0); }
+#sd header .crumb { all: unset; cursor: pointer; font-size: calc(11px * var(--fs)); color: var(--slate); }
+#sd header .crumb:hover, #sd header .crumb:focus-visible { color: var(--ink-hi); }
+/* the drill-in's header is its own breadcrumb: the Star Map's, which the shell toggles imperatively, would overprint it */
+body:has(#sd) #crumb { visibility: hidden; }
+/* a narrow region wraps the header onto a second row rather than clip or overprint it */
+#sd header { height: auto; min-height: 64px; flex-wrap: wrap; row-gap: 4px; padding-block: 8px; box-sizing: border-box; }
+#sd header .title, #sd header .count { white-space: nowrap; }
+#sd header .sep { color: var(--faint); font-size: calc(11px * var(--fs)); }
+#sd header .fleet { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-left: auto; justify-content: flex-end; }
+#sd .fchip { cursor: pointer; background: none; font-family: inherit; }
+#sd .fchip b { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: calc(11px * var(--fs)); }
+#sd .fchip span { color: var(--muted); }
+#sd .sd-body { position: relative; flex: 1; min-height: 0; overflow: auto; }
+#sd .sd-stage { position: relative; overflow: hidden; }
+#sd .sd-details { position: absolute; top: 0; right: 0; bottom: 0; width: min(320px, 100%); box-sizing: border-box; padding: 20px 18px; background: var(--glass); border-left: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); overflow: auto; z-index: 6; font-size: calc(12px * var(--fs)); }
 :is(#kb, #dg) .filters { position: relative; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-height: 34px; flex: none; margin-bottom: 12px; }
-:is(#kb, #dg) .fchip { user-select: none; padding: 5px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--slate); display: flex; gap: 6px; align-items: center; white-space: nowrap; }
-:is(#kb, #dg) .fchip:hover { border-color: color-mix(in srgb, var(--slate) 40%, transparent); }
-:is(#kb, #dg) .fchip b { font-weight: 400; color: var(--ink); }
-:is(#kb, #dg) .fchip.set { border-color: color-mix(in srgb, var(--agent) 60%, transparent); background: color-mix(in srgb, var(--agent) 10%, transparent); }
+:is(#kb, #dg, #sd) .fchip { user-select: none; padding: 5px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--slate); display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+:is(#kb, #dg, #sd) .fchip:hover { border-color: color-mix(in srgb, var(--slate) 40%, transparent); }
+:is(#kb, #dg, #sd) .fchip b { font-weight: 400; color: var(--ink); }
+:is(#kb, #dg, #sd) .fchip.set { border-color: color-mix(in srgb, var(--agent) 60%, transparent); background: color-mix(in srgb, var(--agent) 10%, transparent); }
 :is(#kb, #dg) .shown { margin-left: auto; flex: none; white-space: nowrap; font-size: calc(11px * var(--fs)); color: var(--muted); }
 :is(#kb, #nav, #dg) .menu.sug { width: 100%; min-width: 0; }
 :is(#kb, #dg) .clear { all: unset; padding: 5px 4px; font-size: calc(11.5px * var(--fs)); color: var(--agent-text); }

@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import type { MachineEvent } from "../../api/types.gen";
 import { tint } from "./tint";
-import { HAIR, jobAt, LENSES, LN, PANE_R, PN, replay, rows, setNowMinutes, statusOf, STEPS, STYLE, template, TIER, type Job, type Scene, type View } from "./sunsEngine";
+import { HAIR, jobAt, LENSES, LN, PANE_R, PN, replay, rows, setLayout, setNowMinutes, statusOf, STEPS, STYLE, template, TIER, type Job, type Scene, type View } from "./sunsEngine";
 
 export type { Job, View };
 
@@ -92,16 +92,74 @@ const TIP = `position:absolute;pointer-events:none;max-width:210px;padding:6px 9
 const blank = (self: Scene["self"]): Scene => ({ P: { lane: [], guide: [], grp: [] }, L: [], S: [], B: [], T: [], K: [], H: [], Q: [], V: [], tips: {}, dets: {}, self, open: self.state.open, pick: self.state.pick });
 const joined = (P: Scene["P"]) => ({ lane: P.lane.join(" "), guide: P.guide.join(" "), grp: P.grp.join(" ") });
 
+/** The pane the board is drawn in, in px. The mockup's was 939 × 900. */
+export interface Size {
+  w: number;
+  h: number;
+}
+export const MOCKUP: Size = { w: 939, h: 900 };
+/** The y the rows' scroller starts at, and the height below it the replay bar keeps. */
+export const ROWS_TOP = HAIR + 1, ROWS_BELOW = 70;
+const GUTTER = 470, COLUMNS = 1100;
+
+/** The mockup's x as laid out in a pane `dw` wider than the mockup's: the entry gutter keeps its place, the phase columns stretch, the exit edge stays at the right. */
+const xMap = (dw: number) => (x: number) => (x <= GUTTER ? x : x <= COLUMNS ? GUTTER + ((x - GUTTER) * (COLUMNS - GUTTER + dw)) / (COLUMNS - GUTTER) : x + dw);
+const round = (n: number) => Math.round(n * 100) / 100;
+const px = (style: string, key: string) => {
+  const m = new RegExp(`(?:^|;)${key}:(-?[\\d.]+)px`).exec(style);
+  return m ? Number(m[1]) : undefined;
+};
+
+/** A piece's style with its anchor moved: text anchors at its align edge, any other piece at its centre. */
+function moved(style: string, f: (x: number) => number): string {
+  const left = px(style, "left");
+  if (left === undefined) return style;
+  const w = px(style, "width") ?? 0, align = /text-align:(left|center|right)/.exec(style)?.[1];
+  const at = align === "left" ? 0 : align === "right" ? w : w / 2;
+  return style.replace(/(^|;)left:-?[\d.]+px/, `$1left:${round(f(left + at) - at)}px`);
+}
+/** A hit area's style with both edges moved, so one that spans the pane keeps spanning it. */
+function stretched(style: string, f: (x: number) => number): string {
+  const left = px(style, "left"), w = px(style, "width");
+  if (left === undefined || w === undefined) return moved(style, f);
+  const l = f(left);
+  return style.replace(/(^|;)left:-?[\d.]+px/, `$1left:${round(l)}px`).replace(/(^|;)width:-?[\d.]+px/, `$1width:${round(f(left + w) - l)}px`);
+}
+const mapPath = (d: string, f: (x: number) => number) => d.replace(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g, (_, x: string, y: string) => `${round(f(Number(x)))},${y}`);
+
+/** Lays a scene the engine drew at the mockup's width out in a wider or narrower pane. */
+function spread(g: Scene, f: (x: number) => number) {
+  for (const list of [g.S, g.B, g.T, g.K, g.Q]) for (const b of list) b.style = moved(b.style, f);
+  for (const list of [g.H, g.V]) for (const b of list) b.style = stretched(b.style, f);
+  for (const l of g.L) l.d = mapPath(l.d, f);
+  for (const k of ["lane", "guide", "grp"] as const) g.P[k] = g.P[k].map((d) => mapPath(d, f));
+  for (const t of Object.values(g.tips)) t.x = f(t.x);
+}
+/** Adds what `more` drew after the scene `g` already holds. */
+function append(g: Scene, more: Scene) {
+  for (const k of ["S", "B", "T", "K", "H", "Q", "V", "L"] as const) (g[k] as unknown[]).push(...more[k]);
+  for (const k of ["lane", "guide", "grp"] as const) g.P[k].push(...more.P[k]);
+  Object.assign(g.tips, more.tips);
+  Object.assign(g.dets, more.dets);
+}
+
 /** One pass of the engine over the selected task as it was `view.at` minutes back: the fixed board, the scrolling rows, and what hover and click opened. */
-export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>) => void, nowSec: number) {
+export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>) => void, nowSec: number, size: Size = MOCKUP) {
   const d = new Date(nowSec * 1000);
   setNowMinutes(d.getHours() * 60 + d.getMinutes());
   const self = { state: view, setState: setView };
   const j0 = jobs.find((x) => x.id === view.sel) ?? jobs[0], job = jobAt(j0, view.at);
+  const dw = size.w - MOCKUP.w, f = xMap(dw), right = PANE_R + dw;
+  setLayout(size.w, size.h);
   const main = blank(self);
   template(main, STYLE, jobs, job);
-  replay(main, j0, view.at, view.replaying);
+  spread(main, f);
+  // the replay bar is laid out by the engine from the pane's size, so it is drawn after the board is spread
+  const bar = blank(self);
+  replay(bar, j0, view.at, view.replaying);
+  append(main, bar);
   const rowScene = blank(self), rowsH = rows(rowScene, STYLE, job) + 56;
+  spread(rowScene, f);
 
   const tipOf = (G: Scene, maxX: number) => {
     const t = view.hover ? G.tips[view.hover] : undefined;
@@ -113,5 +171,5 @@ export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>)
     pick: () => setView({ sel: x.id, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false }),
     bar: `flex-basis:100%;height:2px;margin-top:5px;border-radius:1px;background:linear-gradient(90deg,${TIER[x.tier]} ${Math.round(30 + ((x.mins * 7) % 60))}%,${tint("slate", 12)} 0)`,
   }));
-  return { job, main, rows: rowScene, rowsH, rowsTop: -(HAIR + 1), paths: joined(main.P), rpaths: joined(rowScene.P), tip: tipOf(main, PANE_R), rtip: tipOf(rowScene, 1186), det, fleet };
+  return { job, main, rows: rowScene, rowsH, rowsTop: -ROWS_TOP, rowsViewH: size.h - ROWS_TOP - ROWS_BELOW, paths: joined(main.P), rpaths: joined(rowScene.P), tip: tipOf(main, right), rtip: tipOf(rowScene, right + 6), det, fleet };
 }

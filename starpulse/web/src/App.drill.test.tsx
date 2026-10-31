@@ -58,7 +58,7 @@ describe("the In Progress sun", () => {
     expect(vetoes(lane("In Progress"))).toBe(true);
     await act(async () => void (await import("./features/level/SunsDrillIn")));
 
-    expect(host.querySelector(`${drillIn} nav[aria-label="Tasks"] button`)?.getAttribute("aria-label")).toMatch(/^TASK-2 /);
+    expect(host.querySelector(`${drillIn} nav[aria-label="In Progress tasks"] button`)?.getAttribute("aria-label")).toMatch(/^TASK-2 /);
     expect(location.search).toContain("drill=TASK-2");
   });
 
