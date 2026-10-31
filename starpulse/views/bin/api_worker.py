@@ -44,6 +44,7 @@ from starpulse.scheduler.adapters.exposition import autopilot_exposition
 from starpulse.sessions.session_start import starter
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
+from starpulse.views.adapters.outbound.gc_pauses import install as collect_on_a_timer
 from starpulse.views.adapters.outbound.take_over import command_take_over
 from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
@@ -213,6 +214,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         autopilot_metrics=lambda: autopilot_exposition(log),
     )
     app = page_app(feed, host.static, store, window, board, services)
+    collect_on_a_timer(stop)
     try:
         httpd = PageServer(
             app,

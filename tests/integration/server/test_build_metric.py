@@ -53,3 +53,13 @@ def test_metrics_times_the_snapshot_builds(tmp_path: Path) -> None:
     total = next(line for line in lines if line.startswith("starpulse_snapshot_build_seconds_sum "))
     assert int(count.split()[1]) >= 1
     assert float(total.split()[1]) > 0
+
+
+def test_metrics_reports_the_garbage_collection_pauses(tmp_path: Path) -> None:
+    with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES)) as server:
+        lines = _metrics(server)
+
+    assert "starpulse_gc_collections_total 0" in lines or any(
+        line.startswith("starpulse_gc_collections_total ") for line in lines
+    )
+    assert any(line.startswith("starpulse_gc_pause_seconds_max ") for line in lines)
