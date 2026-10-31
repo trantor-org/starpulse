@@ -271,7 +271,7 @@ runs on itself, and each check after the merge goes in one of two buckets:
   implementing task.
 
 A check that waits on a deploy (the merge landed, the live release has not applied it) parks once,
-`--until release_contains:<merge sha>`: met when `/srv/trantor/current` checks out a commit
+`--until release_contains:<merge sha>`: met when the live release checkout holds a commit
 descending from that sha, so it wakes on the deploy and never re-parks to re-check. Do not park
 `--until-task` or re-park on a timer for it.
 
