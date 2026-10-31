@@ -1,11 +1,12 @@
 """Admission: whether a Ready task fits the capacity left, and in what order the tasks that fit go.
 
-A task's demand is priced by what a task of its tier and size has drawn. A `kind-decide` task is admitted last: it fits
-only the room left after every other task that fits, and ranks after them all, so it never takes a slot mitigation or bug
-work needs. Its session frames the choice and parks for the operator. The tasks that fit rank two ways. The enforced
+A task's demand is priced by what a task of its tier and size has drawn. A `kind-decide` task no open task waits on is
+admitted last: it fits only the room left after every other task that fits, and ranks after them all, so it never takes a
+slot mitigation or bug work needs. One that frees another task ranks and is priced like any task that does. Its session frames the choice and parks for the operator. The tasks that fit rank two ways. The enforced
 order puts first the tasks labelled `regression`, then a bug another open task waits on,
-then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `leverage`, then
-the rest, a `kind-decide` task after them all, and within each the most open tasks waiting on it directly, then the deepest critical path, the heaviest Priority weight and
+then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks an open task waits on
+directly (a `kind-decide` one included), then the tasks labelled `leverage`, then the rest, a `kind-decide` task nothing
+waits on after them all, and within each the most open tasks waiting on it directly, then the deepest critical path, the heaviest Priority weight and
 the id. The shadow order is `value / dominant share` (Dominant Resource
 Fairness), where value is that weight times depth times the chance of the goal. The shadow order is only logged beside the enforced one until a calibration
 report earns it the enforced place (`shadow=False`).
@@ -92,6 +93,11 @@ def needs_operator(task: Mapping[str, Any]) -> bool:
     return "kind-decide" in task["labels"]
 
 
+def _held_back(task: Mapping[str, Any], dependents: int) -> bool:
+    """Whether `task` is a decision that frees no other task, so it goes last and takes only the room others leave."""
+    return needs_operator(task) and dependents == 0
+
+
 def _dependents(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
     """How many open tasks wait on each task directly."""
     counts: dict[str, int] = {}
@@ -102,15 +108,17 @@ def _dependents(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
 
 
 def _enforced_key(task: Mapping[str, Any], dependents: int, decision: Decision) -> tuple[Any, ...]:
-    """Where `task` goes in the enforced order: every `kind-decide` task last, else regressions, blocking bugs, bugs,
-    leverage, then dependents, depth, weight and id."""
+    """Where `task` goes in the enforced order: a `kind-decide` task no open task waits on last, else regressions,
+    blocking bugs, bugs, tasks an open task waits on (a `kind-decide` one included), leverage, then dependents, depth,
+    weight and id."""
     bug = task.get("type") == "bug" or not BUG_LABELS.isdisjoint(task["labels"])
     leverage = "leverage" in task["labels"]
     return (
-        needs_operator(task),
+        _held_back(task, dependents),
         REGRESSION not in task["labels"],
         not (bug and dependents > 0),
         not bug,
+        dependents == 0,
         not leverage,
         -dependents,
         -decision.depth,
@@ -202,14 +210,18 @@ def decide(
     decisions, values, keys = [], {}, {}
     reserved = dict.fromkeys(DIMENSIONS, 0.0)
     workable = [task for task in tasks if task["state"] == lane and task["workable"]]
-    for task in sorted(workable, key=needs_operator):  # the decisions last, after the room the others take is known
+
+    def held(task: Mapping[str, Any]) -> bool:
+        return _held_back(task, dependents.get(task["id"], 0))
+
+    for task in sorted(workable, key=held):  # the decisions last, after the room the others take is known
         need = demand(task, policy, ledger)
-        room = {name: headroom[name] - (reserved[name] if needs_operator(task) else 0) for name in DIMENSIONS}
+        room = {name: headroom[name] - (reserved[name] if held(task) else 0) for name in DIMENSIONS}
         if tier_of(task) not in policy.tier_weights:
             blocked_by: str | None = NO_PROFILE
         else:
             blocked_by = next((name for name in DIMENSIONS if need[name] > room[name]), None)
-        if blocked_by is None and not needs_operator(task):
+        if blocked_by is None and not held(task):
             reserved = {name: reserved[name] + need[name] for name in DIMENSIONS}
         score = _score(predictor, task)
         p_goal = chances.get(task["id"], lane_p_goal)

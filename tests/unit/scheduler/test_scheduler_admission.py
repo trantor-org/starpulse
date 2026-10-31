@@ -278,7 +278,7 @@ def test_a_bug_another_task_waits_on_goes_ahead_of_every_other_task(ledger: Ledg
         _task("DEEP-2", deps=("DEEP",), state="waiting"),
     ]
 
-    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["Z-BLOCKING", "A-BUG", "LEVER", "DEEP"]
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["Z-BLOCKING", "A-BUG", "DEEP", "LEVER"]
 
 
 @pytest.mark.parametrize("marks", [{"type": "bug"}, {"labels": ["size-8", "board-state"]}, {"labels": ["regression"]}])
@@ -288,17 +288,6 @@ def test_a_bug_by_type_or_by_its_board_state_or_regression_label_goes_ahead_of_a
     tasks = [_task("DEEP"), _task("AFTER", deps=("DEEP",), state="waiting"), _task("BUG", **marks)]
 
     assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["BUG", "DEEP"]
-
-
-def test_a_leverage_label_goes_after_the_bugs_and_ahead_of_a_task_with_dependents(ledger: Ledger) -> None:
-    tasks = [
-        _task("DEEP"),
-        _task("AFTER", deps=("DEEP",), state="waiting"),
-        _task("LEVER", labels=["size-8", "leverage"]),
-        _task("BUG", type="bug"),
-    ]
-
-    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["BUG", "LEVER", "DEEP"]
 
 
 def test_more_direct_open_dependents_outrank_a_deeper_chain(ledger: Ledger) -> None:
@@ -329,10 +318,20 @@ def test_with_equal_dependents_the_deeper_chain_goes_first_then_the_heavier_weig
     assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["LONG", "SHALLOW", "HEAVY", "A-LEAF", "B-LEAF"]
 
 
-def test_a_kind_decide_task_is_admitted_and_ranks_after_every_other_task(ledger: Ledger) -> None:
+def test_a_task_with_an_open_dependent_goes_after_the_bugs_and_ahead_of_leverage(ledger: Ledger) -> None:
+    tasks = [
+        _task("DEEP"),
+        _task("AFTER", deps=("DEEP",), state="waiting"),
+        _task("LEVER", labels=["size-8", "leverage"]),
+        _task("BUG", type="bug"),
+    ]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["BUG", "DEEP", "LEVER"]
+
+
+def test_a_kind_decide_task_nothing_waits_on_is_admitted_and_ranks_after_every_other_task(ledger: Ledger) -> None:
     tasks = [
         _task("ASK", labels=["size-1", "kind-decide", "regression"], type="bug", impact="high", urgency="high"),
-        *(_task(f"W{n}", deps=("ASK",), state="waiting") for n in range(3)),
         _task("PLAIN"),
         _task("FIX", type="bug"),
         _task("MITIGATE", labels=["size-1", "regression"]),
@@ -342,6 +341,34 @@ def test_a_kind_decide_task_is_admitted_and_ranks_after_every_other_task(ledger:
 
     assert _by_rank(decisions, "enforced_rank") == ["MITIGATE", "FIX", "PLAIN", "ASK"]
     assert all(d.admitted for d in decisions)
+
+
+def test_a_kind_decide_task_with_an_open_dependent_ranks_in_the_unblocks_tier(ledger: Ledger) -> None:
+    tasks = [
+        _task("ASK", labels=["size-1", "kind-decide"]),
+        _task("W", deps=("ASK",), state="waiting"),
+        _task("LEVER", labels=["size-8", "leverage"]),
+        _task("PLAIN"),
+        _task("FIX", type="bug"),
+    ]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["FIX", "ASK", "LEVER", "PLAIN"]
+
+
+def test_a_kind_decide_task_with_an_open_dependent_is_priced_against_the_room_the_others_leave_too(
+    ledger: Ledger,
+) -> None:
+    tasks = [
+        _task("ASK", labels=["size-1", "kind-decide"]),
+        _task("W", deps=("ASK",), state="waiting"),
+        _task("A", type="bug"),
+        _task("B", type="bug"),
+    ]
+
+    decisions = {d.task: d for d in decide(tasks, "ready", _readings(), POLICY, {}, ledger)}
+
+    assert (decisions["A"].admitted, decisions["B"].admitted) == (True, True)
+    assert decisions["ASK"].admitted is True  # a held-back ASK is refused here for sessions
 
 
 def test_a_kind_decide_task_is_admitted_only_with_room_left_after_the_other_tasks_that_fit(ledger: Ledger) -> None:
