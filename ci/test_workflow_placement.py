@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import time
 import tomllib
 from pathlib import Path
 
@@ -283,3 +284,29 @@ def test_the_build_job_builds_in_a_scratch_checkout_so_it_never_empties_the_clon
     body = RUN.read_text().split("cmd_build() {")[1].split("\n}\n")[0]
     assert "git worktree add --detach" in body
     assert body.index("git worktree add") < body.index("pnpm --dir starpulse/web run build")
+
+
+def run_select(tmp_path, *, delay: float) -> subprocess.CompletedProcess:
+    """`ci/run.sh select` over an empty diff, with a `uv` that prints one line per script after `delay` seconds."""
+    stub = tmp_path / "uv"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f"sleep {delay}\n"
+        'case "$*" in *select_tests*) echo PYTEST_TARGETS=ci/a.py;; *reach*) echo web=true;; esac\n'
+    )
+    stub.chmod(0o755)
+    return subprocess.run(
+        [str(RUN), "select"],
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin", "BASE": "HEAD"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_select_prints_the_selection_then_the_reach_lines_while_running_both_at_once(tmp_path):
+    started = time.monotonic()
+    result = run_select(tmp_path, delay=1.0)
+    elapsed = time.monotonic() - started
+    assert result.stdout == "PYTEST_TARGETS=ci/a.py\nweb=true\n"
+    assert elapsed < 1.8, "the two scripts ran one after the other"
