@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
@@ -14,9 +14,15 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.runs.cloudevents import CloudEventsIngest
-    from starpulse.views.application.queries.answers import Answers
     from starpulse.scheduler.adapters.remote import Remote
     from starpulse.scheduler.adapters.runtime import Runtime
+
+
+class KeptAnswers(Protocol):
+    """The answers of the telemetry analytics kept past a restart (`Answers`)."""
+
+    def answer(self, key: str, compute: Callable[[], tuple[bytes, int]]) -> tuple[bytes, int]: ...
+
 
 #: The default of `slow_read_seconds`.
 SLOW_READ_S = 1.0
@@ -43,7 +49,7 @@ class Services:
     search: SearchIndex | None = None
     analytics: Analytics | None = None
     #: Keeps the telemetry analytics' answers past a restart so a read never waits on a fold; None folds per request.
-    answers: Answers | None = None
+    answers: KeptAnswers | None = None
     pull_refresh: PullRefresh | None = None
     #: Sends the take-over Update to a task's workflow: False when the task has none.
     take_over: Callable[[str], bool] | None = None
