@@ -3,6 +3,7 @@
 import gc
 import gzip
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -404,6 +405,31 @@ def test_run_keeps_polling_after_a_failed_poll_and_after_a_failing_handler(
     tail.run(handle, stop)
 
     assert seen == [1, 2]
+
+
+def test_run_logs_one_traceback_per_exception_type_and_counts_the_rest(
+    log: EventLog, caplog: pytest.LogCaptureFixture
+) -> None:
+    for n in range(5):
+        log.publish("a", {"n": str(n)})
+    log.publish("a", {"n": "key"})
+    stop = threading.Event()
+
+    def handle(entry) -> None:
+        if entry.fields["n"] == "key":
+            stop.set()
+            raise KeyError("other bug")
+        raise ValueError("poison")
+
+    with caplog.at_level(logging.WARNING, logger="starpulse.event_log.event_log"):
+        Tail.replay(log, "a", interval=0.01).run(handle, stop)
+
+    tracebacks = [r for r in caplog.records if r.exc_info]
+    assert [r.exc_info[0] for r in tracebacks] == [ValueError, KeyError]
+    summaries = [r.getMessage() for r in caplog.records if not r.exc_info]
+    assert len(summaries) == 1
+    assert "4 more" in summaries[0]
+    assert "ValueError" in summaries[0]
 
 
 def test_last_is_the_newest_cursor_of_one_stream_and_none_when_it_has_no_rows(log: EventLog) -> None:
