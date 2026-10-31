@@ -65,6 +65,7 @@ _BOARD_REPO = "trantor-org/trantor"
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
 CRITERIA_ERRORS_METRIC = "starpulse_task_actor_criteria_errors"
 PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
+DONE_HELD = "Held from Done:"
 #: The facts read from a task's evaluated Start Criteria.
 _CRITERIA_FACTS = ("criteria_met", "criteria_unmet")
 LATENCY_METRIC = "starpulse_task_actor_latency_seconds"
@@ -709,12 +710,14 @@ class TaskActor:
                 return None
             if record["state"] == "MERGED" and not record["mergedAt"]:
                 return None  # merged on an event's word alone: the next read of GitHub settles it
+            link = f"PR #{record['number']}" if record["repo"] == _BOARD_REPO else url
             if record["state"] == "MERGED" and not landed(self._store, record):
-                return None  # merged into an integration branch not yet on main: the work is not delivered
+                # merged into an integration branch not yet on main: the work is not delivered
+                self._note_hold(agent, (f"{link} merged into {record['baseRefName']}, not main",), DONE_HELD)
+                return None
             part = f"{record['repo']}#{record['number']} {record['state'].lower()}"
             if record["mergeSha"]:
                 part += f" as {record['mergeSha']}"
-            link = f"PR #{record['number']}" if record["repo"] == _BOARD_REPO else url
             parts.append(f"{part} ({link})")
         if not parts:
             return None
@@ -816,15 +819,15 @@ class TaskActor:
             logger.warning("task actor: cannot read the holds of %s: %s", name, error)
             return (f"the board's holds cannot be read: {error}",)
 
-    def _note_hold(self, agent: dict[str, Any], reasons: tuple[str, ...]) -> None:
-        """Comment the hold's reasons on the task, once until they or its lane change."""
+    def _note_hold(self, agent: dict[str, Any], reasons: tuple[str, ...], prefix: str = HELD) -> None:
+        """Comment the hold's reasons on the task under `prefix`, once until they or its lane change."""
         name, sent = agent["id"], (agent["state"], "hold", reasons)
         if self._tried.get(name) == sent:
             return
         self._tried[name] = sent
         logger.info("task actor: %s is held: %s", name, "; ".join(reasons))
         try:
-            written = self._edit(name, {}, f"{HELD} {'; '.join(reasons)}.", actor=ACTOR)
+            written = self._edit(name, {}, f"{prefix} {'; '.join(reasons)}.", actor=ACTOR)
         except Exception as error:
             written = Written(False, str(error))
         if not written.ok:
