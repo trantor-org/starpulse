@@ -59,6 +59,20 @@ include = ["starpulse*"]
 [tool.setuptools.package-data]
 starpulse = ["static/**/*", "schemas/*.json", "machines/*.yaml", "skills/**/*", "event_log/migrations/*.py", "event_log/migrations/versions/*.py"]
 
+# A consumer installs this package from its directory, non-editable, at one version. uv rebuilds such an install only
+# when a cache key changes and defaults to pyproject.toml alone, so a bump to a newer source left an installed copy
+# without the fields the new source adds (a stale `CreateRequest` rejected `duplicateSearch`). The keys mirror what
+# the wheel ships.
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "starpulse/**/*.py" },
+    { file = "starpulse/static/**/*" },
+    { file = "starpulse/schemas/*.json" },
+    { file = "starpulse/machines/*.yaml" },
+    { file = "starpulse/skills/**/*" },
+]
+
 # The tiers the package is organized in (docs: StarPulse Is Layered Around Its Event Log): a module imports from its own
 # tier or one below, never above.
 [tool.importlinter]
