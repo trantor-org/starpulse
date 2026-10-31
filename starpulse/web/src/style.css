@@ -218,7 +218,7 @@ body:has(#sd) #crumb { visibility: hidden; }
 #sd .fchip span { color: var(--muted); }
 #sd .sd-body { position: relative; flex: 1; min-height: 0; overflow: auto; }
 #sd .sd-stage { position: relative; overflow: hidden; }
-#sd .sd-details { position: absolute; top: 0; right: 0; bottom: 0; width: min(320px, 100%); box-sizing: border-box; padding: 20px 18px; background: var(--glass); border-left: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); overflow: auto; z-index: 6; font-size: calc(12px * var(--fs)); }
+#sd .sd-details { position: absolute; top: 0; right: 0; bottom: 0; width: min(320px, 100%); box-sizing: border-box; padding: 20px 18px; background: var(--glass); border-left: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); z-index: 6; font-size: calc(12px * var(--fs)); }
 :is(#kb, #dg) .filters { position: relative; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-height: 34px; flex: none; margin-bottom: 12px; }
 :is(#kb, #dg, #sd) .fchip { user-select: none; padding: 5px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--slate); display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 :is(#kb, #dg, #sd) .fchip:hover { border-color: color-mix(in srgb, var(--slate) 40%, transparent); }
@@ -1039,7 +1039,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 
 /* Every scrolling box on the page, in one place: it scrolls only vertically, never sideways, and wears the Kanban
    columns' thin, quiet scrollbar. A box that needs to scroll joins this list rather than setting its own overflow. */
-#nav .matches, #nav .outline, #nav .leaderboard, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #proposals, #admin {
+#nav .matches, #nav .outline, #nav .leaderboard, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #proposals, #admin, #sd .sd-details {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 /* a machine a third party moves (machine.source) is drawn like a local one, in blue instead of purple */
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
