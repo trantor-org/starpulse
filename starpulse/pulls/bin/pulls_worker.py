@@ -48,11 +48,15 @@ class Delivery:
         pulls: PullStore,
         pins: GitHub,
         start_delivery: Callable[..., tuple[Any, Any]],
+        *,
+        resume: bool = False,
     ) -> None:
         self._config = config
         self._built = (board, feed, log, pulls, pins)
         self._start_delivery = start_delivery
         self._stop = threading.Event()
+        #: Whether the replay resumes after the cursor the replays before kept (`follow_events`).
+        self._resume = resume
 
     def start(self) -> None:
         """Start the loops of the running config, each ending when `stop` is called. Raises `ValueError` as
@@ -76,7 +80,9 @@ class Delivery:
         if sync:
             follow_refreshes(log, sync.request, stop)
             projection = RecordProjection(pulls, feed, sync.project)
-            follow_events(log, feed, {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}, stop)
+            handlers = {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}
+            follow_events(log, feed, handlers, stop, resume=self._resume)
+            self._resume = True  # a reload resumes after this replay's cursor
         if actor:
             keep_metrics(log, actor.exposition, stop)
 
@@ -140,7 +146,9 @@ def main(
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     store = PullStore(log.engine)
     announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
-    delivery = Delivery(config, board, feed, log, store, pins, start_delivery)
+    # a store that holds records was built by the replays before; a new or wiped one rebuilds from the whole retention.
+    # Read before any loop writes a record.
+    delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=bool(store.repos()))
     try:
         delivery.start()
     except ValueError as exc:

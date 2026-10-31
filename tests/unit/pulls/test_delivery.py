@@ -191,6 +191,37 @@ def test_an_entry_appended_after_the_start_is_handed_over_before_the_replay_of_t
     assert replayed.wait(WAIT_S * 2)
 
 
+def _follow_until_kept(log: EventLog, resume: bool) -> list:
+    """Follow `machine:events` as one worker run does, until its replay has kept the cursor at the log's head."""
+    seen: list = []
+    stop = threading.Event()
+    delivery.follow_events(log, Feed(), {"machine:events": lambda entry: seen.append(entry.fields["n"])}, stop, resume=resume)
+    deadline = time.monotonic() + WAIT_S
+    while (log.state(delivery.CURSOR)[1] or {}).get("machine:events") != log.head():
+        assert time.monotonic() < deadline, "the replay never kept its cursor at the head"
+        time.sleep(0.01)
+    stop.set()
+    return seen
+
+
+def test_a_restart_on_a_populated_store_reads_only_the_entries_appended_since_the_last_handled(log: EventLog) -> None:
+    for number in range(3):
+        log.publish("machine:events", {"n": number})
+    assert _follow_until_kept(log, resume=True) == [0, 1, 2]
+    for number in range(3, 5):
+        log.publish("machine:events", {"n": number})
+
+    assert _follow_until_kept(log, resume=True) == [3, 4]
+
+
+def test_a_new_or_wiped_store_rebuilds_from_the_whole_retained_stream(log: EventLog) -> None:
+    for number in range(3):
+        log.publish("machine:events", {"n": number})
+    _follow_until_kept(log, resume=True)
+
+    assert _follow_until_kept(log, resume=False) == [0, 1, 2]
+
+
 def test_the_workers_metrics_are_served_from_the_log(log: EventLog) -> None:
     delivery.publish_metrics(log, "starpulse_task_actor_refusals_total 2\n")
 
