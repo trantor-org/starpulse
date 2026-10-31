@@ -24,6 +24,7 @@ import re
 import subprocess
 import sys
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from functools import cache
@@ -162,17 +163,41 @@ def _module_name(path: str) -> str:
     return parts[-1] if parts[0] == "ci" else ".".join(parts)
 
 
-def _imports(module: str, path: Path) -> frozenset[str]:
-    """Every module name the file imports, with its parent packages, which importing it runs."""
-    return _imports_of(module, path.name == "__init__.py", path.read_text())
+#: What `_import_nodes` steps over, in source order, so an `import` inside a string or comment is not read as a statement: a
+#: string, a comment, an import statement written on one logical line, and any other `import` word.
+_SCAN = re.compile(
+    r"""
+    (?P<skip>"{3}(?:[^"\\]++|\\[\s\S]|"(?!""))*+"{3}|\'{3}(?:[^\'\\]++|\\[\s\S]|\'(?!\'\'))*+\'{3}
+        |"(?:[^"\\\n]++|\\[\s\S])*+"|\'(?:[^\'\\\n]++|\\[\s\S])*+\'|\#[^\n]*)
+    |(?P<stmt>^[ \t]*(?:import[ \t]+[^\n#;\\]++(?!\\)|from[ \t]+[.\w]+[ \t]+import[ \t]*(?:\([^)]*\)|[^\n#;\\(]++(?!\\))))
+    |(?P<stray>\bimport\b)
+    """,
+    re.VERBOSE | re.MULTILINE,
+)
+
+
+def _import_nodes(text: str) -> Iterable[ast.AST]:
+    """The import statements of the source. Parsing the whole file costs far more than a scan that skips strings and
+    comments, so only the statements are parsed; a source with an `import` the scan does not delimit (after a `;` or
+    `:`, over a continuation line, a comment inside the parentheses) is parsed whole and walked."""
+    statements = []
+    for found in _SCAN.finditer(text):
+        if found["stray"]:
+            return ast.walk(ast.parse(text))
+        if found["stmt"]:
+            statements.append(found["stmt"].strip())
+    try:
+        return ast.parse("\n".join(statements)).body
+    except SyntaxError:
+        return ast.walk(ast.parse(text))
 
 
 @cache
 def _imports_of(module: str, is_package: bool, text: str) -> frozenset[str]:
-    """`_imports` keyed on the source, so a process that selects again parses each file once."""
+    """`_imports` keyed on the source, so a process that selects again reads each file once."""
     package = module if is_package else module.rpartition(".")[0]
     names: set[str] = {module}
-    for node in ast.walk(ast.parse(text)):
+    for node in _import_nodes(text):
         if isinstance(node, ast.Import):
             names |= {alias.name for alias in node.names}
         elif isinstance(node, ast.ImportFrom):
@@ -331,12 +356,16 @@ def select(
     module_of = {str(path.relative_to(root)): name for name, path in modules.items()}
     path_of = {name: path for path, name in module_of.items()}
     tests = {name for name, path in modules.items() if path.name.startswith("test_")}
-    imports = {name: _imports(name, path) & modules.keys() for name, path in modules.items()}
+    texts = {name: path.read_text() for name, path in modules.items()}
+    words = {name: frozenset(re.findall(r"\w+", text)) for name, text in texts.items()}  # `\bword\b` is a member
+    imports = {
+        name: _imports_of(name, path.name == "__init__.py", texts[name]) & modules.keys()
+        for name, path in modules.items()
+    }
     for conftest in (path for path in modules.values() if path.name == "conftest.py"):
         always, fixtures = _conftest_uses(conftest)
         for test in (t for t in tests if modules[t].is_relative_to(conftest.parent)):
-            text = modules[test].read_text()
-            requested = (uses for fixture, uses in fixtures.items() if re.search(rf"\b{fixture}\b", text))
+            requested = (uses for fixture, uses in fixtures.items() if fixture in words[test])
             imports[test] |= always.union(*requested) & modules.keys()
     adapters = {
         name: name.rpartition(".")[2]
@@ -347,8 +376,7 @@ def select(
     @cache
     def names(module: str) -> frozenset[str]:
         """The adapters whose name `module` holds as a word, read once however many tests reach it."""
-        text = modules[module].read_text()
-        return frozenset(a for a, word in adapters.items() if re.search(rf"\b{word}\b", text))
+        return frozenset(a for a, word in adapters.items() if word in words[module])
 
     def reaches(name: str) -> set[str]:
         """Modules `name` imports transitively, plus each adapter a loader it reaches would load by a name it holds.

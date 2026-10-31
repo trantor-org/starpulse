@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import io
 import re
 import subprocess
@@ -10,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 from coverage_map import publish
-from select_tests import FULL, READERS, Selection, main, select
+from select_tests import FULL, READERS, Selection, _imports_of, main, select
 
 CI = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
 ROOT = Path(__file__).resolve().parents[1]
@@ -519,3 +520,63 @@ def test_a_selection_without_a_coverage_map_reports_an_empty_sha(monkeypatch, ca
     printed = _printed(monkeypatch, capsys, repo, f"{LEAF}\n")
 
     assert printed["COVERAGE_MAP_SHA"] == ""
+
+
+def _walked_imports(module: str, is_package: bool, text: str) -> frozenset[str]:
+    """The modules `text` imports, read by parsing the whole file and walking every node: what `_imports_of` must equal."""
+    package = module if is_package else module.rpartition(".")[0]
+    names: set[str] = {module}
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.Import):
+            names |= {alias.name for alias in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:
+                parts = package.split(".")[: len(package.split(".")) - node.level + 1]
+                base = ".".join(parts + ([node.module] if node.module else []))
+            names |= {base} | {f"{base}.{alias.name}" for alias in node.names}
+    return frozenset(".".join(name.split(".")[:i]) for name in names for i in range(1, name.count(".") + 2))
+
+
+IMPORT_FORMS = {
+    "plain": "import a\nimport b.c as d, e\n",
+    "from": "from a import b\nfrom a.b import c as d, e\nfrom a import *\n",
+    "relative": "from . import a\nfrom .. import b\nfrom .c import d\nfrom ...e.f import g\n",
+    "parenthesised": "from a import (\n    b,  # one\n    c,\n)\nfrom d import (e)\n",
+    "comment_with_paren": "from a import (\n    b,  # (see c)\n    d,\n)\n",
+    "nested": "def f():\n    import a\n    if x:\n        from b import c\ntry:\n    import d\nexcept ImportError:\n    import e\n",
+    "type_checking": "if TYPE_CHECKING:\n    from a import B\n",
+    "in_string": '"""\nimport hidden\nfrom hidden import x\n"""\nX = "import hidden"\nY = \'\'\'\n    import hidden2\n\'\'\'\nimport shown\n',
+    "in_comment": "# import hidden\nx = 1  # from hidden import y\nimport shown\n",
+    "quote_in_comment": "# don't\nimport shown\nx = 'it\\'s'\nimport also_shown\n",
+    "fstring": 'x = f"{y!r} import hidden"\nimport shown\n',
+    "semicolon": "x = 1; import a\nimport b; import c\n",
+    "one_line_block": "if x: import a\ntry: from b import c\nexcept E: import d\n",
+    "continuation": "import a, \\\n    b\nfrom c import d, \\\n    e\n",
+    "dunder_import": "x = __import__('hidden')\nimport importlib\n",
+    "no_import": "x = 1\n",
+    "raise_from": "raise X from err\nyield_ = 1\n",
+}
+
+
+@pytest.mark.parametrize("is_package", [False, True])
+@pytest.mark.parametrize("source", IMPORT_FORMS.values(), ids=IMPORT_FORMS.keys())
+def test_the_scan_finds_the_modules_a_full_parse_finds(source: str, is_package: bool) -> None:
+    assert _imports_of("starpulse.pkg.mod", is_package, source) == _walked_imports(
+        "starpulse.pkg.mod", is_package, source
+    )
+
+
+def test_the_scan_finds_the_modules_a_full_parse_finds_in_every_source_file_of_the_checkout() -> None:
+    sources = [*(ROOT / "starpulse").rglob("*.py"), *(ROOT / "ci").glob("*.py"), *(ROOT / "tests").rglob("*.py")]
+    sources = [path for path in sources if "node_modules" not in path.parts]
+
+    wrong = [
+        str(path.relative_to(ROOT))
+        for path in sources
+        if _imports_of("m.n", path.name == "__init__.py", path.read_text())
+        != _walked_imports("m.n", path.name == "__init__.py", path.read_text())
+    ]
+
+    assert sources
+    assert wrong == []
