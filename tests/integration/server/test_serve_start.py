@@ -18,8 +18,9 @@ _NOT_YET = ("sqlalchemy", "alembic", "starpulse.runtime.assembly")
 # `slow_read` timing both `/api/pulls` and `/api/task` share is one more (TASK-10060).
 # reads' shared Starlette helpers are one more module (TASK-9318), the trace analytics responses split out of
 # `responses.py` are one more (TASK-10365), the board scan reads a claim through the claims model: one more
-# (TASK-10392), and the kept analytics answers the api worker builds are one more (TASK-10429).
-_STARPULSE_MODULES = 194
+# (TASK-10392), the kept analytics answers the api worker builds are one more (TASK-10429), and the `gc_pauses`
+# adapter loads on the first-child path, one more (TASK-10381).
+_STARPULSE_MODULES = 195
 
 _FIRST_CHILD = """
 import json, sys
