@@ -16,7 +16,7 @@ from starlette.responses import Response
 
 from starpulse.contracts.api.dto.requests import StartRequest
 from starpulse.views.adapters.inbound.api.answering import answer, on_loop, on_worker, query, reading, seams
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Arrival, ReadRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, no_writer, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task

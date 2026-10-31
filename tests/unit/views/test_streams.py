@@ -19,7 +19,7 @@ from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.views.adapters.inbound import asgi_app
 from starpulse.views.adapters.inbound.api import metrics
 from starpulse.views.adapters.inbound.api.answering import PLACE
-from starpulse.views.adapters.inbound.api.neutral import Stream, StreamRoute
+from starpulse.views.adapters.inbound.api.table import Stream, StreamRoute
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.api.streams import Events, streaming
 from starpulse.views.adapters.inbound.asgi_app import PageApp

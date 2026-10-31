@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
 from starpulse.views.adapters.inbound.api.answering import PLACE, answer, query, reading
-from starpulse.views.adapters.inbound.api.neutral import Stream
+from starpulse.views.adapters.inbound.api.table import Stream
 from starpulse.views.adapters.inbound.column_stream import ColumnViews, Interest
 from starpulse.views.application.queries.responses import _error
 from starpulse.views.model.encoding import encode, event

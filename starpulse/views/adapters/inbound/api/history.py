@@ -12,7 +12,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.views.adapters.inbound.api.answering import answer, client, query, reading, seams
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, whole
 from starpulse.views.application.commands.settings import history_window
 from starpulse.views.application.queries.responses import history_response

@@ -7,7 +7,7 @@ from urllib.parse import unquote
 
 from starlette.routing import compile_path
 from starpulse.views.adapters.inbound.api import metrics
-from starpulse.views.adapters.inbound.api.neutral import ReadRoute, StreamRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ReadRoute, StreamRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 
 

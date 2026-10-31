@@ -13,7 +13,7 @@ from starlette.responses import Response
 
 from starpulse.contracts.analytics import Analytics
 from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, Endpoint, ReadRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, Endpoint, ReadRoute
 from starpulse.views.application.queries.responses import (
     cells_response,
     cost_to_go_response,

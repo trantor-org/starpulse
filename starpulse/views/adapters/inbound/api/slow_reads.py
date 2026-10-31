@@ -8,7 +8,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from starpulse.views.adapters.inbound.api.neutral import Arrival
+from starpulse.views.adapters.inbound.api.table import Arrival
 
 logger = logging.getLogger(__name__)
 

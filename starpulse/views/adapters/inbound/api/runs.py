@@ -13,7 +13,7 @@ from starlette.responses import Response
 
 from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse.views.adapters.inbound.api.answering import client
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, pushed, writing
 from starpulse.views.application.commands.runs import rerun_dag, run_dag
 

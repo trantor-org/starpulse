@@ -7,7 +7,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute
 from starpulse.views.adapters.outbound.process_metrics import process_gauges
 
 

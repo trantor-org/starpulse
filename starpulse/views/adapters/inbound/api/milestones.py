@@ -12,7 +12,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, whole_body
 from starpulse.views.application.commands.milestones import (
     archive_milestone,

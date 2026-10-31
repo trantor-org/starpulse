@@ -9,7 +9,7 @@ import pytest
 from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.views.adapters.inbound import asgi_app
 from starpulse.views.adapters.inbound.api.answering import answer, reading
-from starpulse.views.adapters.inbound.api.neutral import ReadRoute, StreamRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ReadRoute, StreamRoute, WriteRoute
 from starpulse.views.adapters.inbound.asgi_app import PageApp
 
 from tests.unit.views.asgi import Answer, call

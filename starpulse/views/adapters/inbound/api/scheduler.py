@@ -12,7 +12,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.views.adapters.inbound.api.answering import answer, client, reading, seams
-from starpulse.views.adapters.inbound.api.neutral import ApiRoute, ReadRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, whole
 from starpulse.views.application.commands.settings import scheduler as scheduler_command
 from starpulse.views.model.encoding import encode
