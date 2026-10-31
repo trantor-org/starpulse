@@ -163,6 +163,34 @@ def test_each_followed_stream_hands_its_entries_to_its_own_handler_from_the_firs
     assert seen == {"machine:events": [{"task": "TASK-1"}], "ci:jobs": [{"job": "lint"}]}
 
 
+def test_an_entry_appended_after_the_start_is_handed_over_before_the_replay_of_the_retained_log_ends(
+    log: EventLog, stop: threading.Event
+) -> None:
+    retained = 200
+    for number in range(retained):
+        log.publish("machine:events", {"n": number})
+    replaying, fresh, replayed = threading.Event(), threading.Event(), threading.Event()
+    finished_replay_first: list[bool] = []
+
+    def handle(entry) -> None:
+        if entry.fields.get("fresh"):
+            finished_replay_first.append(replayed.is_set())
+            fresh.set()
+            return
+        replaying.set()
+        time.sleep(0.01)  # a replayed entry costs a Board lookup and a store read
+        if entry.fields["n"] == retained - 1:
+            replayed.set()
+
+    delivery.follow_events(log, Feed(), {"machine:events": handle}, stop)
+    assert replaying.wait(WAIT_S)
+    log.publish("machine:events", {"fresh": True})
+
+    assert fresh.wait(WAIT_S)
+    assert finished_replay_first == [False]
+    assert replayed.wait(WAIT_S * 2)
+
+
 def test_the_workers_metrics_are_served_from_the_log(log: EventLog) -> None:
     delivery.publish_metrics(log, "starpulse_task_actor_refusals_total 2\n")
 
