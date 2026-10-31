@@ -37,6 +37,7 @@ starpulse analytics steps --hours 24             # one row per model request: sk
 starpulse analytics transitions --hours 168      # per kind x size x skill: steps, wasted-step rate, agent seconds, peak context
 starpulse analytics cells --hours 720            # per kind x size: median steps per clean completion on a latest-fifth holdout
 starpulse analytics scores --repo o/r --hours 166  # per kind x size x profile: mean task score, with GitHub commits-after-ready and time-to-merge
+starpulse analytics verdict --kind execute --size 3 --profile sonnet-low  # win, lose or continue for that trial cell against its busiest profile
 starpulse analytics graph --hours 168            # per transition: each activity edge with its run count, judgement cuts marked
 starpulse analytics stages --hours 168           # sub-stages of the stretches no skill governs, and their stability from the week before
 starpulse analytics diff --hours 168             # per transition: the reference run against the slowest clean run
@@ -112,6 +113,7 @@ lists exactly the verbs there are.
 | `analytics transitions` | `--hours` | `now`, `window_s` and `transitions`, each `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`, below; refusals as `analytics steps` |
 | `analytics cells` | `--hours` | `now`, `window_s` and `cells`, each `{kind, size, n, completions, clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, below; refusals as `analytics steps` |
 | `analytics scores` | `--hours`, `--repo` (required) | `now`, `window_s`, `scores`, each `{kind, size, profile, n, score, off_arm}`, and `verdicts`, each `{kind, size, baseline, profile, n, baseline_n, verdict, p_non_inferior, p_worse}`; exit 3 when GitHub is unreachable, refusals as `analytics steps` |
+| `analytics verdict` | `--kind`, `--size`, `--profile` (all required), `--hours`, `--repo` (required unless the config sets `default_repo`) | the `analytics scores` `verdicts` row of that trial cell, `{kind, size, baseline, profile, n, baseline_n, verdict, p_non_inferior, p_worse}`, with `verdict` `win`, `lose` or `continue`; exit 4 when the cell has no trial profile in the window, otherwise as `analytics scores` |
 | `analytics graph` | `--hours` | `now`, `window_s` and `graph`, each edge `{kind, size, skill, source, target, runs, count, share, cut}`, below; refusals as `analytics steps` |
 | `analytics stages` | `--hours` | `now`, `window_s` and `stages`, each `{kind, size, stage, runs, median_activities, previous_runs, previous_median_activities, stability}`, below; the history must hold twice the window, else refusals as `analytics steps` |
 | `analytics diff` | `--hours` | `now`, `window_s` and `diff`, each `{kind, size, skill, runs, conformant, reference, slow, slow_only, reference_only}`, below; refusals as `analytics steps` |

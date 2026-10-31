@@ -49,12 +49,13 @@ def auth(base: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {base.token}"} if isinstance(base, Server) and base.token else {}
 
 
-def get(base: str, path: str) -> tuple[int, Any]:
-    """The status and JSON body the server at `base` answers `path` with; None for a body that is no JSON."""
+def get(base: str, path: str, timeout: float = 10.0) -> tuple[int, Any]:
+    """The status and JSON body the server at `base` answers `path` with; None for a body that is no JSON. `timeout`
+    is the seconds the server may take to answer."""
     try:
         with urllib.request.urlopen(
             urllib.request.Request(f"{base}{path}", headers=auth(base)),
-            timeout=10.0,  # seconds the server may take to answer one read
+            timeout=timeout,
         ) as resp:
             return resp.status, json.load(resp)
     except urllib.error.HTTPError as exc:
