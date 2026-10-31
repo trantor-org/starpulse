@@ -15,6 +15,7 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
 from starpulse.runtime.adapter_kit import serve, url
+from starpulse.views.application.queries.answers import Answers
 from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.machines import MACHINES, ROLES
@@ -38,12 +39,16 @@ def _get(server: PageServer, route: str, query: str = "") -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
-@pytest.fixture
-def server(tmp_path: Path) -> Iterator[PageServer]:
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+def _published(telemetry: TelemetryLog) -> TelemetryLog:
     for name in ("claude_code/otlp.ndjson", "codex/otlp.ndjson"):
         for line in (FIXTURES / name).read_text().splitlines():
             telemetry.publish(signals(json.loads(line)))
+    return telemetry
+
+
+@pytest.fixture
+def server(tmp_path: Path) -> Iterator[PageServer]:
+    telemetry = _published(TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")))
     with serve(
         tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW
     ) as server:
@@ -108,3 +113,21 @@ def test_cost_to_go_is_empty_inside_the_history_and_refused_past_it(server: Page
 
     assert inside == (200, {"now": NOW, "window_s": 1.06 * 3600, "cost_to_go": []})
     assert (past[0], "longer than the history" in past[1]["error"]) == (400, True)
+
+
+def test_a_restarted_instance_answers_a_report_from_the_saved_answer_before_it_reads_any_telemetry(
+    tmp_path: Path,
+) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    telemetry = _published(TelemetryLog(log))
+    first = Answers(log.checkpoints)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
+    with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: NOW, answers=first) as server:
+        before = _get(server, "cells", "?hours=1.06")
+    first.join()
+
+    with serve(tmp_path, feed, clock=lambda: NOW, answers=Answers(log.checkpoints)) as restarted:
+        after = _get(restarted, "cells", "?hours=1.06")
+        other = _get(restarted, "cells", "?hours=2")
+
+    assert (before, after, other[0]) == ((200, {"now": NOW, "window_s": 3816.0, "cells": []}),) * 2 + (501,)

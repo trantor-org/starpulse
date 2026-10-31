@@ -14,6 +14,7 @@ from starlette.responses import Response
 from starpulse.contracts.analytics import Analytics
 from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Endpoint, ReadRoute
+from starpulse.views.ports.services import Services
 from starpulse.views.application.queries.responses import (
     cells_response,
     cost_to_go_response,
@@ -30,6 +31,13 @@ from starpulse.views.application.queries.trace_responses import missed_loads_res
 _Respond = Callable[..., tuple[bytes, int]]
 
 
+def _kept(request: Request, services: Services, compute: Callable[[], tuple[bytes, int]]) -> tuple[bytes, int]:
+    """`compute`'s answer, or the kept answer to this query when the deployment keeps them (`Answers`)."""
+    if services.answers is None:
+        return compute()
+    return services.answers.answer(f"{request.url.path}?{sorted(request.query_params.multi_items())}", compute)
+
+
 @reading
 def health(request: Request) -> Response:
     api = seams(request)
@@ -41,8 +49,14 @@ def _sessions(respond: _Respond) -> Endpoint:
     def endpoint(request: Request) -> Response:
         api = seams(request)
         services = api.services
+        asked = query(request)
         return answer(
-            request, *respond(services.telemetry, query(request), api.feed.keys, api.clock(), services.analytics)
+            request,
+            *_kept(
+                request,
+                services,
+                lambda: respond(services.telemetry, asked, api.feed.keys, api.clock(), services.analytics),
+            ),
         )
 
     return endpoint
@@ -54,9 +68,14 @@ def _titled(respond: _Respond) -> Endpoint:
         api = seams(request)
         services = api.services
         feed = api.feed
+        asked = query(request)
         return answer(
             request,
-            *respond(services.telemetry, query(request), feed.keys, feed.titled, api.clock(), services.analytics),
+            *_kept(
+                request,
+                services,
+                lambda: respond(services.telemetry, asked, feed.keys, feed.titled, api.clock(), services.analytics),
+            ),
         )
 
     return endpoint
@@ -68,15 +87,15 @@ def _ranked(respond: _Respond) -> Endpoint:
         api = seams(request)
         services = api.services
         feed = api.feed
+        asked = query(request)
         return answer(
             request,
-            *respond(
-                services.telemetry,
-                query(request),
-                feed.keys,
-                feed.titled,
-                services.analytics or Analytics(),
-                api.clock(),
+            *_kept(
+                request,
+                services,
+                lambda: respond(
+                    services.telemetry, asked, feed.keys, feed.titled, services.analytics or Analytics(), api.clock()
+                ),
             ),
         )
 

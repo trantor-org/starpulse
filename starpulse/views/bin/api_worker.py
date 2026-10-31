@@ -47,6 +47,7 @@ from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.outbound.gc_pauses import install as collect_on_a_timer
 from starpulse.views.adapters.outbound.take_over import command_take_over
 from starpulse.views.bin.blocks import ApiConfig
+from starpulse.views.application.queries.answers import Answers
 from starpulse.views.ports.services import Services
 
 
@@ -205,6 +206,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         telemetry=telemetry_log(config.telemetry_loki_url, log),
         search=search,
         analytics=config.analytics,
+        answers=Answers(log.checkpoints),
         pull_refresh=pull_refresh,
         take_over=command_take_over(config.take_over_command) if config.take_over_command else None,
         slow_read_s=config.slow_read_seconds,
