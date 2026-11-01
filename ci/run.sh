@@ -36,7 +36,7 @@ cmd_select() {
 # names each test's outcome. TEST_COST_REPORT set is the nightly or a dispatch: it adds the nightly-marked tests
 # and, as `1`, the coverage data that ci/coverage_map.py combines.
 cmd_python_tests() {
-  uv sync --locked
+  uv sync --locked --no-install-project
   local sizing=""
   if [ -d /sys/fs/cgroup/tests.slice ]; then
     sizing=--slice

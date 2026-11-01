@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import http.server
 import ssl
+import subprocess
 import sys
 import threading
 import types
@@ -12,6 +13,12 @@ import types
 import fresh_serve
 import pytest
 from fresh_serve import check, live_children, worker_contexts
+
+# sp-ci syncs with `--no-install-project`, so a fresh interpreter there cannot import `starpulse`; ci.yml proves it installed.
+NOT_INSTALLED = pytest.mark.skipif(
+    subprocess.run([sys.executable, "-I", "-c", "import starpulse"], capture_output=True).returncode != 0,
+    reason="a fresh interpreter in this venv cannot import the project",
+)
 
 # A serve (pid 100) whose zygote (pid 200) forks the workers: their ps rows carry the zygote's argv, so the supervisor's
 # log is the only record of which pid runs which context. `api` is a plain subprocess of serve.
@@ -89,6 +96,7 @@ def test_check_reports_a_page_that_is_not_200(table, log, page):
         Page.status = 200
 
 
+@NOT_INSTALLED
 def test_worker_contexts_are_the_ones_the_default_config_supervises(tmp_path):
     assert worker_contexts(sys.executable, str(tmp_path)) == {
         "api",

@@ -17,6 +17,12 @@ import pytest
 import select_tests
 from clean_machine import Placed, cloudevent, logged, migrate, publish_grpc, redis_answering, smoke, wait_for_page
 
+# sp-ci syncs with `--no-install-project`, so a fresh interpreter there cannot import `starpulse`; ci.yml proves it installed.
+NOT_INSTALLED = pytest.mark.skipif(
+    subprocess.run([sys.executable, "-I", "-c", "import starpulse"], capture_output=True).returncode != 0,
+    reason="a fresh interpreter in this venv cannot import the project",
+)
+
 
 @pytest.fixture
 def listener():
@@ -48,6 +54,7 @@ def test_the_proof_fails_before_serving_when_a_redis_port_answers(listener, monk
     assert problem == f"a Redis port answers on [{listener}]: the proof needs a machine without one"
 
 
+@NOT_INSTALLED
 def test_publish_grpc_names_the_status_of_a_call_that_reached_no_server():
     assert publish_grpc(sys.executable, closed_port(), "BUILT", "r1") == "UNAVAILABLE"
 
