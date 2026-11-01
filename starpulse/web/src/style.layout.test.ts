@@ -107,6 +107,11 @@ describe("the Admin view's Autopilot card", () => {
     expect(rule("#admin .ap .dm .r")).toContain("flex-wrap: wrap");
   });
 
+  it("lines its meters up whatever their level: the Admin saved message's .ok margin does not push a meter under its level 'ok' down", () => {
+    expect(rule("#admin .ok")).toContain("margin-top: 8px");
+    expect(rule("#admin .ap .dm")).toContain("margin-top: 0");
+  });
+
   it("stacks a setting's name over its control once the card is too narrow for both at the current text size, so its buttons never squeeze their labels onto two lines", () => {
     expect(rule("#admin .ap .row")).toContain("display: flex; flex-wrap: wrap");
     expect(rule("#admin .ap .row > :first-child")).toContain("flex: 2 1 calc(150px * var(--fs))");

@@ -1048,6 +1048,8 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 /* two meters to a row while each fits its label and value; one to a row past that, so no width or text size scrolls the card sideways */
 #admin .ap .dims { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(calc(100px * var(--fs)), calc(50% - 9px))), 1fr)); gap: 8px 18px; transition: opacity .2s; }
 #admin .ap.off :is(.dims, .inflight) { opacity: .45; }
+/* a meter's level class "ok" would otherwise take the saved message's #admin .ok margin and sit 8px under its neighbours */
+#admin .ap .dm { margin-top: 0; }
 #admin .ap .dm .r { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); white-space: nowrap; }
 #admin .ap .dm .r b { font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 #admin .ap .dm.near .r b { color: var(--run); } #admin .ap .dm.over .r b, #admin .ap .dm.over .r span { color: var(--fail); }
