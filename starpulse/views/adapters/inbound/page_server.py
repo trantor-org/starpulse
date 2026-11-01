@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 #: stock 5 drops the rest's SYNs and each waits out a 1 s retransmit before its first byte.
 BACKLOG = 128
 
+#: The backlog a socket handed in keeps: `starpulse.socket`'s `Backlog=1024`. Hypercorn calls `listen` with its config's
+#: backlog on every socket it serves, so a handed socket gets this number, not `BACKLOG`, or the unit's queue shrinks to 128.
+INHERITED_BACKLOG = 1024
+
 #: Seconds a client may keep using the `h3` alternative the `alt-svc` header offers before it asks again.
 ALT_SVC_MAX_AGE_S = 3600
 
@@ -69,7 +73,7 @@ def _survive_cancelled_streams() -> None:
 class PageServer:
     """Serves `app` on its own thread until `stop`.
 
-    Given `listening`, it serves on that socket as passed, its backlog untouched, and binds nothing; given
+    Given `listening`, it serves on that socket with backlog `INHERITED_BACKLOG`, and binds nothing; given
     `tls` (a certificate and its key), it serves TLS on it and HTTP/3 on a UDP socket bound to the same address.
     `stopping`, when set, is called once as the server stops
     and before its streams end, so a page learns the server is restarting before it loses the stream.
@@ -99,7 +103,7 @@ class PageServer:
         self.server_address = self.socket.getsockname()
         self.server_port: int = self.server_address[1]
         self._config = Config()
-        self._config.backlog = BACKLOG
+        self._config.backlog = BACKLOG if listening is None else INHERITED_BACKLOG
         self._config.graceful_timeout = drain_s
         self._config.accesslog = None
         self._config.errorlog = logging.getLogger("hypercorn.error")
