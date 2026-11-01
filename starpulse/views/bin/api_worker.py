@@ -233,6 +233,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         host.announce_ready(os.environ)
         host.serve_until_stopped(httpd, feed)
     finally:
+        stop.set()
         scheduler_stop.set()
         lane_stop.set()
         log.close()

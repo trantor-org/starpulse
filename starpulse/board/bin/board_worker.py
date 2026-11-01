@@ -178,5 +178,7 @@ def main(
             config, path, base, log, stop, load=load, assemble=assemble, history_store=history_store, follow=follow
         )
     except ValueError as exc:
+        stop.set()  # `worker_board` may have started its read model follower before the start refused
         parser.exit(1, f"{exc}\n")
     hold(stop, reload_config)
+    stop.set()  # a hold that returns ends the process; a test's no-op hold leaves the loops to stop here
