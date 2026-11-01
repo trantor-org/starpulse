@@ -109,6 +109,28 @@ def test_readers_of_one_missing_answer_share_one_fold(engine: Engine, clock: Clo
     assert (results, len(runs)) == ([(b"one", 200)] * 4, 1)
 
 
+def test_a_reader_whose_read_missed_the_row_a_fold_just_saved_does_not_fold_again(
+    engine: Engine, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runs: list[int] = []
+
+    def compute() -> tuple[bytes, int]:
+        runs.append(1)
+        return b"one", 200
+
+    answers = Answers(engine, clock=clock)
+    answers.answer("cells", "q", compute)
+    read, reads = answers._read, []
+
+    def read_once_stale(key: tuple[str, str]) -> object:
+        reads.append(1)
+        return None if len(reads) == 1 else read(key)  # the first read predates the save
+
+    monkeypatch.setattr(answers, "_read", read_once_stale)
+
+    assert (answers.answer("cells", "q", compute), len(runs)) == ((b"one", 200), 1)
+
+
 def test_a_refusal_is_returned_but_never_kept(engine: Engine, clock: Clock) -> None:
     runs: list[int] = []
 
