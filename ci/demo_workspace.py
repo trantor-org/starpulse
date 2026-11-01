@@ -1,8 +1,8 @@
 """The UI preview's synthetic workspace, the Board adapter `ci/preview.toml` names as `ci.demo_workspace`.
 
 It draws what a working team's StarPulse draws, from the machine files in `ci/workspace`: an eight-lane Board whose In
-Progress opens the in-progress machine (its build, deliver and review-fix phases, and under deliver's open pull request a
-review triage), and the lifecycle machines of the other skills an agent session runs. It places no task:
+Progress opens the in-progress machine (its build, qa, deliver and review-fix phases, and under deliver's open pull
+request a review triage), and the lifecycle machines of the other skills an agent session runs. It places no task:
 `starpulse.cli.demo` seeds the tasks, sessions and runs at a real workspace's scale onto this structure, so nothing a
 real tracker holds is behind the public demo.
 """
@@ -29,6 +29,7 @@ TIERS = [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["
 SUBFLOWS = [
     ("board", "in_progress", "in-progress", ""),
     ("in-progress", "build", "build", "the task is being built"),
+    ("in-progress", "qa", "qa", "the change is in review by the lenses"),
     ("in-progress", "deliver", "deliver", "the change is being delivered"),
     ("in-progress", "review_fix", "review_fix", "the PR is in review"),
     ("deliver", "pr_opened", "review-triage", "a PR is open"),

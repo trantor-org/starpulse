@@ -7,7 +7,7 @@ const named = [...new Set([...engine.matchAll(/animation:([a-z-]+) /g)].map((m) 
 
 describe("the drill-in's animations", () => {
   it("names the engine's breathing suns, marching flows, pulsing nodes and twinkling stars", () => {
-    expect(named.sort()).toEqual(["sd-breathe", "sd-march", "sd-pulse", "sd-twinkle"]);
+    expect(named.sort()).toEqual(["sd-breathe", "sd-march", "sd-orbit", "sd-pulse", "sd-twinkle"]);
   });
 
   it("defines a keyframe for each, so each one plays", () => {

@@ -203,7 +203,7 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 :is(#kb, #dg, #sd) header .title { font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
 :is(#kb, #dg, #sd) header .count { font-size: calc(11px * var(--fs)); color: var(--muted); }
 /* The In Progress drill-in is a region of the shell like #kb: the same frame and header, between the Navigator and Rail, opaque over the canvas. The board inside scrolls only when the region is under its minimum. */
-#sd { left: var(--nav); right: var(--rail); padding: 0 20px; box-sizing: border-box; background: var(--bg0); }
+#sd { left: var(--nav); right: var(--rail); padding: 0; box-sizing: border-box; background: radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(--bg0) 70%); }
 #sd header .crumb { all: unset; cursor: pointer; font-size: calc(11px * var(--fs)); color: var(--slate); }
 #sd header .crumb:hover, #sd header .crumb:focus-visible { color: var(--ink-hi); }
 /* the drill-in's header is its own breadcrumb: the Star Map's, which the shell toggles imperatively, would overprint it */
@@ -213,12 +213,13 @@ body:has(#sd) #crumb { visibility: hidden; }
 @keyframes sd-twinkle { 0%, 100% { opacity: .25; } 50% { opacity: .75; } }
 @keyframes sd-march { to { stroke-dashoffset: -14; } }
 @keyframes sd-breathe { 0%, 100% { opacity: .75; transform: scale(1); } 50% { opacity: 1; transform: scale(1.12); } }
+@keyframes sd-orbit { to { transform: rotate(calc(var(--a) + 360deg)) translateX(var(--orb)); } }
 @media (prefers-reduced-motion: reduce) { #sd :is(span, path) { animation: none !important; } }
 /* while the drill-in is open the Navigator lists its In Progress tasks, the shown one marked */
 #nav .drill-tasks .lb-row.on { background: color-mix(in srgb, var(--agent) 12%, transparent); }
 #nav .drill-tasks .lb-row > i { grid-column: 1 / -1; display: block; }
 /* a narrow region wraps the header onto a second row rather than clip or overprint it */
-#sd header { height: auto; min-height: 64px; flex-wrap: wrap; row-gap: 4px; padding-block: 8px; box-sizing: border-box; }
+#sd header { height: auto; min-height: 64px; flex-wrap: wrap; row-gap: 4px; padding-block: 8px; padding-inline: 20px; box-sizing: border-box; }
 #sd header .title, #sd header .count { white-space: nowrap; }
 #sd header .sep { color: var(--faint); font-size: calc(11px * var(--fs)); }
 #sd header .fleet { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-left: auto; justify-content: flex-end; }

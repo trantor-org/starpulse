@@ -80,7 +80,7 @@ def test_the_preview_board_reopens_done_to_every_open_lane_and_still_draws_done_
     assert {s["id"]: s.get("final", False) for s in board["states"]}["done"] is True
 
 
-def test_in_progress_opens_the_in_progress_machine_and_its_three_phases() -> None:
+def test_in_progress_opens_the_in_progress_machine_and_its_four_phases() -> None:
     machines = _machines()
 
     assert machines["board"]["submachines"][0] == {
@@ -92,10 +92,20 @@ def test_in_progress_opens_the_in_progress_machine_and_its_three_phases() -> Non
     }
     assert [(link["state"], link["machine"]) for link in machines["in-progress"]["submachines"]] == [
         ("build", "build"),
+        ("qa", "qa"),
         ("deliver", "deliver"),
         ("review_fix", "review_fix"),
     ]
-    assert len(set(machines) - {"board", "in-progress", "build", "deliver", "review_fix"}) >= 3
+    assert len(set(machines) - {"board", "in-progress", "build", "qa", "deliver", "review_fix"}) >= 3
+
+
+def test_a_built_task_passes_the_five_qa_lenses_in_turn_before_it_delivers() -> None:
+    machines = _machines()
+    moves = {(t["event"], t["source"], t["target"]) for t in machines["in-progress"]["transitions"]}
+    lenses = [(t["source"], t["target"]) for t in machines["qa"]["transitions"] if t["event"] == "LENS_PASSED"]
+
+    assert {("BUILD_DONE", "build", "qa"), ("QA_PASSED", "qa", "deliver"), ("CHANGES_FIXED", "qa", "build")} <= moves
+    assert lenses == [("security", "ux"), ("ux", "ui"), ("ui", "code"), ("code", "simplify"), ("simplify", "passed")]
 
 
 def test_the_preview_lays_out_five_domains_of_at_least_thirty_workflows() -> None:

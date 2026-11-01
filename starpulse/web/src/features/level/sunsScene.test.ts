@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { MachineEvent } from "../../api/types.gen";
 import { applyPack, applyTheme, packTokens } from "../../tests/themeFixtures";
 import { jobAt, statusOf, TIER } from "./sunsEngine";
-import { css, jobOf, sceneOf, type View } from "./sunsScene";
+import { css, jobOf, sceneOf, stepOut, type View } from "./sunsScene";
 
 const NOW = 1_800_000_000;
 const ev = (ago: number, machine: string, from: string, to: string, event = "E"): MachineEvent => ({ at: NOW - ago * 60, machine, event, from, to });
@@ -156,5 +156,55 @@ describe("sunsScene", () => {
       expect(tall.rowsH).toBeCloseTo(1300 - 70, 0);
       expect(-tall.rowsTop + tall.rowsViewH).toBe(1300 - 70);
     });
+  });
+});
+
+describe("stepping out of the drill-in", () => {
+  it("unwinds the innermost open level first: a detail, then a replay or scrub, then opened groups, then picked variants, and at the top hands the step to the Board", () => {
+    const top = view("TASK-1");
+    const all: View = { ...top, det: "lens:ux", at: 30, replaying: true, open: { build: true }, pick: { lens: "ux" } };
+
+    expect(stepOut(all)).toEqual({ det: null });
+    expect(stepOut({ ...all, det: null })).toEqual({ at: null, replaying: false });
+    expect(stepOut({ ...all, det: null, at: null, replaying: false })).toEqual({ open: {} });
+    expect(stepOut({ ...top, open: { build: false }, pick: { lens: "ux" } })).toEqual({ pick: {} });
+    expect(stepOut(top)).toBeNull();
+  });
+});
+
+describe("the tasks at work", () => {
+  const orbiters = (s: ReturnType<typeof sceneOf>) => s.main.S.filter((x) => x.style.includes("sd-orbit"));
+  const centre = (style: string) => {
+    const n = (k: string) => Number(new RegExp(`(?:^|;)${k}:(-?[\\d.]+)px`).exec(style)![1]);
+    return `${Math.round(n("left") + n("width") / 2)},${Math.round(n("top") + n("height") / 2)}`;
+  };
+
+  it("draws every working task as a dot orbiting the phase it is in, a task in QA on each lens still reviewing it, so several tasks in several phases all move at once", () => {
+    const jobs = [
+      jobOf("B1", "b1", "@agent-deep-high", [], NOW),
+      jobOf("B2", "b2", undefined, [], NOW),
+      jobOf("D1", "d1", undefined, [ev(5, "in-progress", "build", "deliver")], NOW),
+      jobOf("R1", "r1", undefined, [ev(5, "in-progress", "deliver", "review_fix")], NOW),
+      jobOf("Q1", "q1", undefined, [lens(9, "LENS_PASSED", "security", "ux")], NOW),
+    ];
+    const s = sceneOf(jobs, view("B1"), () => {}, NOW);
+    const dots = orbiters(s);
+    const suns = new Map<string, number>();
+    for (const d of dots) suns.set(centre(d.style), (suns.get(centre(d.style)) ?? 0) + 1);
+    const perSun = [...suns.values()].sort();
+
+    // build holds two, deliver and review fix one each, and the QA task rides the four lenses that have not passed it yet
+    expect(perSun).toEqual([1, 1, 1, 1, 1, 1, 2]);
+    // the picked task's dot is the larger one
+    const sizes = dots.map((d) => Number(/width:([\d.]+)px/.exec(d.style)![1]));
+    expect(sizes.filter((w) => w === Math.max(...sizes))).toHaveLength(1);
+  });
+
+  it("starts each dot at its own angle and keeps it there when motion is reduced, so two tasks on one sun never stack", () => {
+    const s = sceneOf([jobOf("B1", "b1", undefined, [], NOW), jobOf("B2", "b2", undefined, [], NOW)], view("B1"), () => {}, NOW);
+    const angles = orbiters(s).map((d) => /--a:(-?[\d.]+)deg/.exec(d.style)![1]);
+
+    expect(new Set(angles).size).toBe(2);
+    orbiters(s).forEach((d) => expect(d.style).toMatch(/transform:rotate\(var\(--a\)\) translateX\(var\(--orb\)\)/));
   });
 });

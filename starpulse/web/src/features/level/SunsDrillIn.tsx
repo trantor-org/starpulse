@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { createHistory } from "../../api/history";
 import type { MachineEvent, Roles } from "../../api/types.gen";
 import { ANIM_UNTIL, spanOf, starfield, type Line, type Scene } from "./sunsEngine";
-import { css, jobOf, MOCKUP, sceneOf, type View } from "./sunsScene";
+import { css, jobOf, MOCKUP, sceneOf, stepOut, type View } from "./sunsScene";
 import { tint } from "./tint";
 
 /** What the Tasks strip needs of a board card; a Kanban card has these and more. */
@@ -88,7 +88,8 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
   const [view, setViewState] = useState<View>({ sel: task, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false });
   const setView = useCallback((patch: Partial<View>) => setViewState((v) => ({ ...v, ...patch })), []);
   const [now, setNow] = useState(clock), [, redraw] = useState(0);
-  const history = useMemo(() => createHistory({ onChange: () => redraw((n) => n + 1) }), []);
+  // each task's moves are read again on the 15 s tick, so a phase a task enters reaches the scene, and its comet flies, without a reload
+  const history = useMemo(() => createHistory({ onChange: () => redraw((n) => n + 1), ttl: 15 }), []);
   const [body, room] = useSize<HTMLDivElement>();
   // the stage fills the room the shell leaves; before it is measured it is the mockup's own size
   const stageW = room.w ? Math.max(MIN_W, room.w) : MOCKUP.w, stageH = room.h ? Math.max(MIN_H, room.h) : MOCKUP.h - TOP;
@@ -115,6 +116,11 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
     window.addEventListener("sp:theme", repaint);
     return () => window.removeEventListener("sp:theme", repaint);
   }, []);
+  const back = useCallback(() => {
+    const out = stepOut(live.current.view);
+    if (out) setView(out);
+    else onClose();
+  }, [onClose, setView]);
   useEffect(() => {
     // the replay steps back through the selected task's span in 240 ticks; the move animation redraws at 20 fps only while a comet flies
     const step = setInterval(() => {
@@ -124,17 +130,23 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
       setView(at < 0.5 ? { at: null, replaying: false } : { at });
     }, 120);
     const anim = setInterval(() => ANIM_UNTIL > Date.now() && redraw((n) => n + 1), 50);
-    const tick = setInterval(() => setNow(clock()), 60_000);
-    const key = (e: KeyboardEvent) => e.key === "Escape" && (live.current.view.det ? setView({ det: null }) : onClose());
-    addEventListener("keydown", key);
+    const tick = setInterval(() => setNow(clock()), 15_000);
+    // Escape and Backspace step out one level, as right-click does, before the Star Map underneath sees them; a text field keeps its keys
+    const key = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && e.target.matches("input, textarea, select, [contenteditable]");
+      if (typing || (e.key !== "Escape" && e.key !== "Backspace")) return;
+      e.stopPropagation();
+      back();
+    };
+    addEventListener("keydown", key, true);
     return () => {
       [step, anim, tick].forEach(clearInterval);
-      removeEventListener("keydown", key);
+      removeEventListener("keydown", key, true);
     };
-  }, [clock, onClose, setView]);
+  }, [back, clock, setView]);
 
   return (
-    <section id="sd" role="dialog" aria-label="In Progress drill-in" className="suns-drill">
+    <section id="sd" role="dialog" aria-label="In Progress drill-in" className="suns-drill" onContextMenu={(e) => { e.preventDefault(); back(); }}>
       <header>
         <button type="button" className="crumb" onClick={onClose} aria-label="Back to the Board">Board</button>
         {" "}<span className="sep">›</span>{" "}
@@ -166,7 +178,7 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
       )}
       <div ref={body} className="sd-body">
         <div className="sd-stage" style={{ width: stageW, height: stageH }}>
-          <div style={{ position: "absolute", left: -ORIGIN, top: -TOP, width: W, height: H, background: "radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(--bg0) 70%)", color: "var(--ink)", fontSize: "calc(14px * var(--fs))" }}>
+          <div style={{ position: "absolute", left: -ORIGIN, top: -TOP, width: W, height: H, color: "var(--ink)", fontSize: "calc(14px * var(--fs))" }}>
             {stars.map((st, i) => <span key={i} style={css(st.style)} />)}
             <svg width={W} height={H} style={SVG} aria-hidden="true">
               <path d={s.paths.lane} fill="none" style={LANE} strokeWidth={1} />

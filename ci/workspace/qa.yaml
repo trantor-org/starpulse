@@ -1,0 +1,19 @@
+# The qa phase: the built change reviewed by five lenses in turn, each passing it to the next or sending it back to build.
+name: Qa
+states:
+  security: {initial: true}
+  ux: {role: resting}
+  ui: {role: resting}
+  code: {role: resting}
+  simplify: {role: resting}
+  passed: {final: true}
+  changed: {final: true}
+events:
+  LENS_PASSED:
+    - {from: security, to: ux}
+    - {from: ux, to: ui}
+    - {from: ui, to: code}
+    - {from: code, to: simplify}
+    - {from: simplify, to: passed}
+  LENS_CHANGED:
+    - {from: [security, ux, ui, code, simplify], to: changed}

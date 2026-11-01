@@ -79,7 +79,6 @@ export function App() {
   // the Star Map is desktop-only: a phone width shows the Kanban in its place, and widening the page returns to what was chosen
   const phone = usePhone();
   const view = shownView(chosen, phone);
-  const activeView = useRef(view);
   const pendingView = useRef(0);
   const commitView = useCallback((next: ViewName, url: string) => {
     cancelAnimationFrame(pendingView.current);
@@ -113,7 +112,6 @@ export function App() {
   const choose = useCallback((target: ViewName) => {
     const v = shownView(target, onPhone());
     const url = `${location.pathname}${viewSearch(location.search, v, admin.get().view)}`;
-    activeView.current = v;
     cancelAnimationFrame(pendingView.current);
     if (!reveal(v)) {
       history.replaceState(null, "", url);
@@ -162,13 +160,13 @@ export function App() {
   }, [held, store, admin, openDrill]);
   // declared after the renderer's effect, so the first run already reaches it
   useEffect(() => {
-    activeView.current = view;
     reveal(view, true);
     renderer.current?.show(view === "constellation");
   }, [view, reveal]);
 
-  // a level from the navigator's search or the breadcrumb opens on the Star Map, refitted when it is already the one shown
+  // a level from the navigator's search, the breadcrumb or the Star Map view opens on the Star Map, out of the drill-in, refitted when it is already the one shown
   const open = (p: Path) => {
+    if (drill) closeDrill();
     choose("constellation");
     if (pathKey(p) === pathKey(hud.path)) renderer.current?.fitView();
     else renderer.current?.go(p);
@@ -177,7 +175,7 @@ export function App() {
   return (
     <>
       {!held && <canvas ref={canvas} id="c" />}
-      <Navigator shell={shell} hud={hud} view={view} phone={phone} activeView={activeView} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
+      <Navigator shell={shell} hud={hud} view={view} phone={phone} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
       {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && hud.capabilities?.create && (
@@ -249,10 +247,10 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
     watch.observe(el);
     return () => watch.disconnect();
   }, []);
-  const { view, activeView, choose, open } = props;
+  const { view, choose, open } = props;
   const tab = (v: ViewName, label: string, glyph: ReactNode, off = false) => (
     <button className={view === v ? "on" : undefined} aria-current={view === v ? "page" : undefined} title={off ? `${label} is desktop-only` : label} disabled={off}
-      onClick={() => (v === "constellation" && activeView.current === v ? open(BOARD) : choose(v))}>{glyph}<span>{label}</span></button>
+      onClick={() => (v === "constellation" ? open(BOARD) : choose(v))}>{glyph}<span>{label}</span></button>
   );
   return (
     <>
@@ -274,8 +272,8 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
   );
 }
 
-function NavigatorBody({ hud, view, phone, activeView, slot, dgSlot, outlineSlot, drillSlot, choose, open, spot, selectTask }: {
-  hud: HudState; view: ViewName; phone: boolean; activeView: { current: ViewName }; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
+function NavigatorBody({ hud, view, phone, slot, dgSlot, outlineSlot, drillSlot, choose, open, spot, selectTask }: {
+  hud: HudState; view: ViewName; phone: boolean; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
   /** While the drill-in is open, the section its In Progress task list draws in, in place of the view's own lower sections. */
   drillSlot?: ((el: HTMLElement | null) => void) | null;
@@ -327,7 +325,7 @@ function NavigatorBody({ hud, view, phone, activeView, slot, dgSlot, outlineSlot
       </section>
       <section className="views">
         <h3>Views</h3>
-        <button className={`node${view === "constellation" ? " on here" : ""}`} title={phone ? "Star Map is desktop-only" : "Star Map"} disabled={phone} onClick={() => (activeView.current === "constellation" ? open(BOARD) : choose("constellation"))}>
+        <button className={`node${view === "constellation" ? " on here" : ""}`} title={phone ? "Star Map is desktop-only" : "Star Map"} disabled={phone} onClick={() => open(BOARD)}>
           <i className="g orbit">
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
               <circle cx="12" cy="12" r="5" fill="currentColor" />
