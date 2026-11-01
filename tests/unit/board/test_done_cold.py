@@ -113,3 +113,22 @@ def test_done_cold_a_done_task_from_before_local_midnight_is_cold_though_under_2
     feed.put(_task("PROJ-2", at=midnight + 60))
 
     assert (_ids(feed), feed.snapshot()["cold_done"]) == (["PROJ-2"], ["PROJ-1"])
+
+
+def test_done_cold_a_cold_done_task_stays_in_titled_with_its_labels_until_it_reloads_or_leaves() -> None:
+    feed = _live()
+    labels = ("kind-execute", "size-3")
+
+    feed.put(_task("PROJ-1", at=NOW - DAY_S - 60, labels=labels, milestone="m-1", profile="@agent"))
+
+    assert feed.titled()["PROJ-1"] == {
+        "title": "Title PROJ-1",
+        "labels": list(labels),
+        "milestone": "m-1",
+        "profile": "@agent",
+    }
+    feed.put(_task("PROJ-1", lane="todo", at=NOW, labels=labels))
+    assert feed.titled()["PROJ-1"]["labels"] == list(labels)
+    feed.put(_task("PROJ-2", at=NOW - DAY_S - 60, labels=labels))
+    feed.retract("PROJ-2")
+    assert "PROJ-2" not in feed.titled()

@@ -191,6 +191,14 @@ class RecordsMixin:
                 agent["entered"] = self._entered(task, before)
                 agent["workable"], agent["workable_since"] = self._workable(agent)
                 agent = self._expiring(cooled(agent, self._clock, self._roles.done))
+            self._cold_titled.pop(task.id, None)
+            if agent and is_cold(agent):
+                self._cold_titled[task.id] = {
+                    "title": task.title,
+                    "labels": list(task.labels),
+                    "milestone": task.milestone or None,
+                    "profile": task.profile or None,
+                }
             if before == agent and self._settled.get(task.id) == settled:
                 return None  # an hourly reconcile republishes every task; only a change reaches the page
             settling = (
@@ -225,6 +233,7 @@ class RecordsMixin:
         with self._lock:
             self._assignees.pop(task_id, None)
             self._cited.pop(task_id, None)
+            self._cold_titled.pop(task_id, None)
             gone = self._open.pop(task_id, None)
             if gone is None and self._settled.pop(task_id, None) is None:
                 return
