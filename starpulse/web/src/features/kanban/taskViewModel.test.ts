@@ -305,30 +305,44 @@ describe("taskBody", () => {
 });
 
 describe("a task's CI history", () => {
-  const step = (event: string, state: string, at: number) => ({ event, state, at });
-  const pull = (number: number) => ({ number, url: `http://pr/${number}`, checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false });
+  const url = (n: number) => `https://github.com/o/r/pull/${n}`;
+  const step = (n: number | null, kind: string, event: string, state: string, at: number) =>
+    ({ event, state, at, ...(n === null ? {} : { id: `ci:${url(n)}:${kind}` }) });
+  const pull = (number: number) => ({ number, repo: "o/r", url: url(number), checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false });
   // PR 12: pushed, failed, re-run, passed, conflicted, rebased, passed, merged. PR 15 opens after it and is failing after two pushes.
   const trail = [
-    step("PR_OPENED", "opened", 1), step("PUSHED", "running", 2), step("CHECKS_FAILED", "failing", 3), step("RERUN", "running", 4),
-    step("CHECKS_PASSED", "passing", 5), step("CONFLICTED", "conflicting", 6), step("REBASED", "running", 7), step("CHECKS_PASSED", "passing", 8),
-    step("MERGED", "merged", 9),
-    step("PR_OPENED", "opened", 10), step("PUSHED", "running", 11), step("CHECKS_FAILED", "failing", 12), step("PUSHED", "running", 13), step("CHECKS_FAILED", "failing", 14),
+    step(12, "opened", "PR_OPENED", "opened", 1), step(12, "push:a", "PUSHED", "running", 2), step(12, "checks:a", "CHECKS_FAILED", "failing", 3), step(12, "rerun", "RERUN", "running", 4),
+    step(12, "checks:b", "CHECKS_PASSED", "passing", 5), step(12, "conflict", "CONFLICTED", "conflicting", 6), step(12, "rebase", "REBASED", "running", 7), step(12, "checks:c", "CHECKS_PASSED", "passing", 8),
+    step(12, "merged", "MERGED", "merged", 9),
+    step(15, "opened", "PR_OPENED", "opened", 10), step(15, "push:a", "PUSHED", "running", 11), step(15, "checks:a", "CHECKS_FAILED", "failing", 12), step(15, "push:b", "PUSHED", "running", 13), step(15, "checks:b", "CHECKS_FAILED", "failing", 14),
   ];
   const task = (over: Partial<KanbanTask>) => ({ prs: [pull(15), pull(12)], machines: [{ machine: "ci", state: "failing", at: 14, source: "GitHub", trail }], ...over }) as KanbanTask;
 
   it("counts each pull request's runs, re-runs, rebases and conflicts and names the state its trail left it in, then sums the task", () => {
     expect(ciHistory(task({}))).toEqual({
       pulls: [
-        { number: 12, url: "http://pr/12", runs: 1, reruns: 1, rebases: 1, conflicts: 1, state: "merged" },
-        { number: 15, url: "http://pr/15", runs: 2, reruns: 0, rebases: 0, conflicts: 0, state: "failing" },
+        { number: 12, url: url(12), runs: 1, reruns: 1, rebases: 1, conflicts: 1, state: "merged" },
+        { number: 15, url: url(15), runs: 2, reruns: 0, rebases: 0, conflicts: 0, state: "failing" },
       ],
       total: { runs: 3, reruns: 1, rebases: 1, conflicts: 1 },
     });
   });
 
-  it("has no history for a task outside the ci machine, and counts a trail that begins mid pull request as one", () => {
+  it("attributes a step to the pull request its id names, so a repeated PR_OPENED opens no second pull request", () => {
+    const doubled = [trail[0], trail[1], trail[0], trail[1]];
+    expect(ciHistory(task({ prs: [pull(12)], machines: [{ machine: "ci", state: "running", at: 2, trail: doubled }] }))?.pulls)
+      .toEqual([{ number: 12, url: url(12), runs: 2, reruns: 0, rebases: 0, conflicts: 0, state: "running" }]);
+  });
+
+  it("keeps a pull request absent from the task's list from shifting another's counts, and links it by the url its id holds", () => {
+    const history = ciHistory(task({ prs: [pull(15)] }));
+    expect(history?.pulls.map((p) => [p.number, p.url, p.runs])).toEqual([[12, url(12), 1], [15, url(15), 2]]);
+  });
+
+  it("has no history for a task outside the ci machine, and counts a step without an id on the pull request before it", () => {
     expect(ciHistory(task({ machines: [{ machine: "in-progress", state: "pr_opened", at: 1, trail }] }))).toBeNull();
-    expect(ciHistory(task({ prs: [], machines: [{ machine: "ci", state: "running", at: 3, trail: trail.slice(1, 3) }] }))?.pulls)
+    const bare = [step(null, "", "PUSHED", "running", 2), step(null, "", "CHECKS_FAILED", "failing", 3)];
+    expect(ciHistory(task({ prs: [], machines: [{ machine: "ci", state: "running", at: 3, trail: bare }] }))?.pulls)
       .toEqual([{ number: null, url: null, runs: 1, reruns: 0, rebases: 0, conflicts: 0, state: "failing" }]);
   });
 });

@@ -35,7 +35,8 @@ class Placer:
     def __init__(self, drawn: Mapping[str, dict], keys: TaskKeys | None = None) -> None:
         self._keys = keys
         self._tables = tables(drawn)
-        self._trail = {name: TRAIL_SOURCED if machine.get("source") else TRAIL for name, machine in drawn.items()}
+        self._sourced = {name: bool(machine.get("source")) for name, machine in drawn.items()}
+        self._trail = {name: TRAIL_SOURCED if sourced else TRAIL for name, sourced in self._sourced.items()}
 
     def place(self, before: dict | None, event: MachineEvent) -> tuple[str, str, dict] | None:
         """The (machine, task, agent) the event leaves, or None when it places nothing."""
@@ -48,6 +49,8 @@ class Placer:
         if state is None:
             return None
         step = {"state": state, "event": event.event, "at": event.time} | ({"data": event.data} if event.data else {})
+        if self._sourced[flow]:
+            step["id"] = event.event_id  # a third party's step names its subject (a CI step, the pull request) for readers
         trail = [*(before["trail"] if before else []), step]
         agent = {
             "id": task,

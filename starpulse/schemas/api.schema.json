@@ -8540,6 +8540,17 @@
         "event": {
           "type": "string"
         },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "state": {
           "type": "string"
         }
