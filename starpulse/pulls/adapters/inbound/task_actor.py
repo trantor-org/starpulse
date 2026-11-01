@@ -829,6 +829,15 @@ class TaskActor:
             "Close it as superseded, or redeliver it?"
         )
 
+    def _pr_closed_unmerged_complete(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The closed pull requests when `_pr_closed_unmerged` holds and every criterion and Definition of Done item is
+        checked: the work was done without a merge (a no-op), so nothing is left to ask the operator."""
+        closed = self._pr_closed_unmerged(agent)
+        ticks = _dod_ticks(agent) + tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
+        if not closed or not ticks or not all(ticks):
+            return None
+        return closed[0], f"Every pull request it cites closed unmerged and every criterion is checked: {closed[0]}."
+
     def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """`_merged` for a task with no Verify plan."""
         return self._merged(agent, planned=False)
@@ -1045,6 +1054,7 @@ class TaskActor:
         "pr_terminal": _pr_terminal,
         "pr_merged": _pr_merged,
         "pr_closed_unmerged": _pr_closed_unmerged,
+        "pr_closed_unmerged_complete": _pr_closed_unmerged_complete,
         "pr_merged_planned": _pr_merged_planned,
         "pr_merged_unfinished": _pr_merged_unfinished,
         "pr_ready": _pr_ready,
