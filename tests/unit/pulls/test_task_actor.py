@@ -263,8 +263,8 @@ def test_a_red_check_demotes_a_review_task_to_needs_attention_with_the_failure_a
     assert until(lambda: board.moved() == [("TASK-1", "needs_attention")])
     _, changes, comment, actor = board.writes[0]
     assert actor == ACTOR
-    assert comment == f"Pull request checks failed: acme/trantor#1 at {HEAD}."
-    assert changes["description"].endswith(f"## Needs attention\n\n{comment} {ATTENTION_QUESTION}")
+    assert comment == f"Pull request checks failed: acme/trantor#1 at {HEAD}. {ATTENTION_QUESTION}"
+    assert changes["description"].endswith(f"## Needs attention\n\n{comment}")
 
 
 @pytest.mark.parametrize(
