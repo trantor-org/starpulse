@@ -84,9 +84,12 @@ def database_url(tmp_path: Path) -> str:
 
 def stop_upstream_backlogs(timeout: float = 5.0) -> None:
     """Stop every running upstream Backlog adapter thread and wait for each to end."""
-    for backlog, thread in list(upstream_backlog._live.items()):
+    for backlog in list(upstream_backlog._live):
         backlog.stop()
-        thread.join(timeout)
+    # A thread pops itself from `_live` before it exits, so join by name, not through `_live`.
+    for thread in threading.enumerate():
+        if thread.name == "upstream-backlog":
+            thread.join(timeout)
 
 
 _OPENERS = ("starpulse.event_log.event_log", "starpulse.flow_metrics.adapters.outbound.history", "starpulse.pulls.adapters.outbound.pulls")
