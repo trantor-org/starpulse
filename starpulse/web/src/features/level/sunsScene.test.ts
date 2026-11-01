@@ -144,7 +144,17 @@ describe("sunsScene", () => {
       const tall = at(1200, 1300), short = at(1200, 900);
 
       expect(top(tall, "Play replay") - top(short, "Play replay")).toBe(400);
-      expect(tall.rowsViewH - short.rowsViewH).toBe(400);
+      expect(-tall.rowsTop + tall.rowsViewH - (-short.rowsTop + short.rowsViewH)).toBe(400);
+    });
+
+    it("stretches the board down a container taller than its content, so the graph and the rows reach the replay bar with no empty band", () => {
+      const tall = at(1200, 1300), short = at(1200, 900);
+      const labelTop = (s: ReturnType<typeof sceneOf>, text: string) => Number(/top:(-?[\d.]+)px/.exec(s.main.T.find((t) => t.text === text)!.style)![1]);
+
+      expect(labelTop(tall, "Deliver")).toBeGreaterThan(labelTop(short, "Deliver") + 40);
+      expect(-tall.rowsTop).toBeGreaterThan(-short.rowsTop + 40);
+      expect(tall.rowsH).toBeCloseTo(1300 - 70, 0);
+      expect(-tall.rowsTop + tall.rowsViewH).toBe(1300 - 70);
     });
   });
 });

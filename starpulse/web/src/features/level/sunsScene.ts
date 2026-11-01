@@ -101,6 +101,8 @@ export const MOCKUP: Size = { w: 939, h: 900 };
 /** The y the rows' scroller starts at, and the height below it the replay bar keeps. */
 export const ROWS_TOP = HAIR + 1, ROWS_BELOW = 70;
 const GUTTER = 470, COLUMNS = 1100;
+/** The header's height, above which nothing stretches, and the most the board stretches down: past it a short board leaves the pane's foot empty. */
+const HEAD = 48, STRETCH = 2.5;
 
 /** The mockup's x as laid out in a pane `dw` wider than the mockup's: the entry gutter keeps its place, the phase columns stretch, the exit edge stays at the right. */
 const xMap = (dw: number) => (x: number) => (x <= GUTTER ? x : x <= COLUMNS ? GUTTER + ((x - GUTTER) * (COLUMNS - GUTTER + dw)) / (COLUMNS - GUTTER) : x + dw);
@@ -110,30 +112,44 @@ const px = (style: string, key: string) => {
   return m ? Number(m[1]) : undefined;
 };
 
-/** A piece's style with its anchor moved: text anchors at its align edge, any other piece at its centre. */
-function moved(style: string, f: (x: number) => number): string {
-  const left = px(style, "left");
-  if (left === undefined) return style;
-  const w = px(style, "width") ?? 0, align = /text-align:(left|center|right)/.exec(style)?.[1];
-  const at = align === "left" ? 0 : align === "right" ? w : w / 2;
-  return style.replace(/(^|;)left:-?[\d.]+px/, `$1left:${round(f(left + at) - at)}px`);
+type Map = (n: number) => number;
+/** The board's y below the header stretched by `k`: the header keeps its place, the graph and the rows spread down a taller pane. Text keeps its size. */
+const yMap = (k: number): Map => (y) => (y <= HEAD ? y : HEAD + (y - HEAD) * k);
+const set = (style: string, key: string, v: number) => style.replace(new RegExp(`(^|;)${key}:-?[\\d.]+px`), `$1${key}:${round(v)}px`);
+
+/** A piece's style with its anchor moved: across, text anchors at its align edge and any other piece at its centre; down, a piece with a height at its centre. */
+function moved(style: string, f: Map, fy: Map): string {
+  const left = px(style, "left"), top = px(style, "top");
+  if (left !== undefined) {
+    const w = px(style, "width") ?? 0, align = /text-align:(left|center|right)/.exec(style)?.[1];
+    const at = align === "left" ? 0 : align === "right" ? w : w / 2;
+    style = set(style, "left", f(left + at) - at);
+  }
+  if (top !== undefined) {
+    const at = (px(style, "height") ?? 0) / 2;
+    style = set(style, "top", fy(top + at) - at);
+  }
+  return style;
 }
 /** A hit area's style with both edges moved, so one that spans the pane keeps spanning it. */
-function stretched(style: string, f: (x: number) => number): string {
-  const left = px(style, "left"), w = px(style, "width");
-  if (left === undefined || w === undefined) return moved(style, f);
-  const l = f(left);
-  return style.replace(/(^|;)left:-?[\d.]+px/, `$1left:${round(l)}px`).replace(/(^|;)width:-?[\d.]+px/, `$1width:${round(f(left + w) - l)}px`);
+function stretched(style: string, f: Map, fy: Map): string {
+  const left = px(style, "left"), w = px(style, "width"), top = px(style, "top"), h = px(style, "height");
+  if (left === undefined || w === undefined || top === undefined || h === undefined) return moved(style, f, fy);
+  const l = f(left), t = fy(top);
+  return set(set(set(set(style, "left", l), "width", f(left + w) - l), "top", t), "height", fy(top + h) - t);
 }
-const mapPath = (d: string, f: (x: number) => number) => d.replace(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g, (_, x: string, y: string) => `${round(f(Number(x)))},${y}`);
+const mapPath = (d: string, f: Map, fy: Map) => d.replace(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g, (_, x: string, y: string) => `${round(f(Number(x)))},${round(fy(Number(y)))}`);
 
-/** Lays a scene the engine drew at the mockup's width out in a wider or narrower pane. */
-function spread(g: Scene, f: (x: number) => number) {
-  for (const list of [g.S, g.B, g.T, g.K, g.Q]) for (const b of list) b.style = moved(b.style, f);
-  for (const list of [g.H, g.V]) for (const b of list) b.style = stretched(b.style, f);
-  for (const l of g.L) l.d = mapPath(l.d, f);
-  for (const k of ["lane", "guide", "grp"] as const) g.P[k] = g.P[k].map((d) => mapPath(d, f));
-  for (const t of Object.values(g.tips)) t.x = f(t.x);
+/** Lays a scene the engine drew at the mockup's size out in a pane of another width, stretched down by `fy`. */
+function spread(g: Scene, f: Map, fy: Map) {
+  for (const list of [g.S, g.B, g.T, g.K, g.Q]) for (const b of list) b.style = moved(b.style, f, fy);
+  for (const list of [g.H, g.V]) for (const b of list) b.style = stretched(b.style, f, fy);
+  for (const l of g.L) l.d = mapPath(l.d, f, fy);
+  for (const k of ["lane", "guide", "grp"] as const) g.P[k] = g.P[k].map((d) => mapPath(d, f, fy));
+  for (const t of Object.values(g.tips)) {
+    t.x = f(t.x);
+    t.y = fy(t.y);
+  }
 }
 /** Adds what `more` drew after the scene `g` already holds. */
 function append(g: Scene, more: Scene) {
@@ -153,13 +169,16 @@ export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>)
   setLayout(size.w, size.h);
   const main = blank(self);
   template(main, STYLE, jobs, job);
-  spread(main, f);
+  const rowScene = blank(self), drawnH = rows(rowScene, STYLE, job) + 56;
+  // the graph and the rows stretch down together until the rows' foot meets the replay bar
+  const foot = size.h - ROWS_BELOW, fy = yMap(Math.min(STRETCH, Math.max(1, (foot - HEAD) / (drawnH - HEAD))));
+  spread(main, f, fy);
+  spread(rowScene, f, fy);
   // the replay bar is laid out by the engine from the pane's size, so it is drawn after the board is spread
   const bar = blank(self);
   replay(bar, j0, view.at, view.replaying);
   append(main, bar);
-  const rowScene = blank(self), rowsH = rows(rowScene, STYLE, job) + 56;
-  spread(rowScene, f);
+  const rowsTop = fy(ROWS_TOP), rowsH = fy(drawnH);
 
   const tipOf = (G: Scene, maxX: number) => {
     const t = view.hover ? G.tips[view.hover] : undefined;
@@ -171,5 +190,5 @@ export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>)
     pick: () => setView({ sel: x.id, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false }),
     bar: `flex-basis:100%;height:2px;margin-top:5px;border-radius:1px;background:linear-gradient(90deg,${TIER[x.tier]} ${Math.round(30 + ((x.mins * 7) % 60))}%,${tint("slate", 12)} 0)`,
   }));
-  return { job, main, rows: rowScene, rowsH, rowsTop: -ROWS_TOP, rowsViewH: size.h - ROWS_TOP - ROWS_BELOW, paths: joined(main.P), rpaths: joined(rowScene.P), tip: tipOf(main, right), rtip: tipOf(rowScene, right + 6), det, fleet };
+  return { job, main, rows: rowScene, rowsH, rowsTop: -rowsTop, rowsViewH: foot - rowsTop, paths: joined(main.P), rpaths: joined(rowScene.P), tip: tipOf(main, right), rtip: tipOf(rowScene, right + 6), det, fleet };
 }
