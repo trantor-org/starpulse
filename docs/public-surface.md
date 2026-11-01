@@ -74,7 +74,7 @@ internal and can change in any release.
 - A machine state's optional `role` key: `resting`, `waiting_on_fact`, `waiting_on_person` or `proposed`; a state flagged
   `initial` or `final` has that role already. A `proposed` state is entered only from the initial state and left only
   to a final state or the state waiting on `criteria_unmet`; the kanban draws no column for it, admission never takes
-  its tasks, and a trajectory starts at promotion. `Compiled.roles` maps every state id to its role (`None` when it declares none) and
+  its tasks, and a trajectory starts at promotion. The page's Proposals view (`?view=proposals`) lists them instead: title, why, the filing session and the Duplicate Resolution, with **Promote** (a `PROMOTE` move to the Ready role, after setting the chosen profile) and **Drop** (a `DROP` move to the final role) on each row. `Compiled.roles` maps every state id to its role (`None` when it declares none) and
   `role_of(compiled, state)` answers it, raising `KeyError` for a state the machine lacks. StarPulse code reads roles,
   never a deployment's state names. The snapshot serves it as the `role` of each `Machine.states` entry in
   `api.schema.json` (`null` when none), and the Kanban draws it on each column header. A state the machine's `rests`

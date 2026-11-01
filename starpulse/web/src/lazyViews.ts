@@ -5,11 +5,13 @@ import { lazy } from "react";
 
 const load = {
   kanban: () => import("./features/kanban/Kanban"),
+  proposals: () => import("./features/proposals/Proposals"),
   dags: () => import("./features/dags/Dags"),
   admin: () => import("./AdminPage"),
 };
 
 export const Kanban = lazy(async () => ({ default: (await load.kanban()).Kanban }));
+export const Proposals = lazy(async () => ({ default: (await load.proposals()).Proposals }));
 export const Dags = lazy(async () => ({ default: (await load.dags()).Dags }));
 export const AdminPage = lazy(async () => ({ default: (await load.admin()).AdminPage }));
 

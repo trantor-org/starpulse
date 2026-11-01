@@ -125,6 +125,7 @@ def test_a_task_file_reads_as_every_field_the_task_view_draws(tmp_path: Path, mo
         "finalSummary": "",
         "comments": [],
         "session": "",
+        "createdBy": "",
         "acceptanceCriteria": [
             {"n": 1, "text": "It draws", "checked": True},
             {"n": 2, "text": "It scrolls", "checked": False},
@@ -167,6 +168,7 @@ def test_a_task_file_with_only_front_matter_reads_with_empty_fields(
         "finalSummary": "",
         "comments": [],
         "session": "",
+        "createdBy": "",
         "acceptanceCriteria": [],
         "definitionOfDone": [],
     }
@@ -246,3 +248,12 @@ def test_the_task_endpoint_answers_200_with_the_record_on_a_native_board(
     assert body["task"] == "task-5"
     assert body["record"]["priority"] == "high"
     assert [item["text"] for item in body["record"]["acceptanceCriteria"]] == ["It draws", "It scrolls"]
+
+
+def test_a_proposed_task_names_the_session_that_filed_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    built, _ = _serving(tmp_path, monkeypatch)
+    filed = FILE.replace("priority: high\n", "priority: high\ncreated_by: claude:c4d52088\n")
+    (tmp_path / ".starpulse" / "board" / "tasks" / "task-5 - Draw.md").write_text(filed)
+    assert built.read is not None
+
+    assert (built.read("task-5") or {})["createdBy"] == "claude:c4d52088"

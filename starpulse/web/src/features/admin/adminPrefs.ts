@@ -10,7 +10,7 @@ export const SCALE = { min: 85, max: 150, step: 5, def: 100, ticks: [85, 100, 11
 
 export type Density = "comfortable" | "compact";
 /** The views a bare address can open. */
-export type OpensOn = Exclude<ViewName, "admin">;
+export type OpensOn = Exclude<ViewName, "admin" | "proposals">;
 
 export interface AdminPrefs {
   /** The font size in percent of the design size. */
