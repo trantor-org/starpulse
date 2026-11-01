@@ -29,6 +29,7 @@ import threading
 import time
 import uuid
 import weakref
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -408,6 +409,8 @@ class Tail:
         self.cursor = after
         self.interval = interval
         self.batch = batch
+        self._traced: set[type[Exception]] = set()  # exception types whose traceback `run` has logged
+        self._suppressed: Counter[type[Exception]] = Counter()  # repeats since the last summary
 
     @classmethod
     def replay(cls, log: EventLog, stream: str, **kwargs: Any) -> Tail:
@@ -458,6 +461,27 @@ class Tail:
             for entry in batch:
                 handle(entry)
 
+    def _note_failure(self, exc: Exception, entry: Entry) -> None:
+        """Log the first failure of each exception type with its traceback; count the repeats for the batch summary,
+        so a replay of thousands of bad entries writes one traceback, not thousands."""
+        kind = type(exc)
+        if kind in self._traced:
+            self._suppressed[kind] += 1
+            return
+        self._traced.add(kind)
+        logger.error("Tail %s: handler failed on entry %s", self.stream, entry.id, exc_info=exc)
+
+    def _summarize_failures(self) -> None:
+        """Log one line per exception type for the repeats counted since the last summary, then reset the counts."""
+        for kind, count in self._suppressed.items():
+            logger.warning(
+                "Tail %s: %d more handler failures of %s since the last summary; traceback logged once",
+                self.stream,
+                count,
+                kind.__name__,
+            )
+        self._suppressed.clear()
+
     def run(
         self,
         handle: Callable[[Entry], None],
@@ -468,7 +492,8 @@ class Tail:
         (`EventLog.wait_for_append`), so `interval` bounds the wait rather than setting it.
 
         A poll that fails (the database went away) is retried after the interval. A handler that raises is logged
-        and the loop goes on with the next entry, so one bad event never stops a reader. A handler that raises one of
+        and the loop goes on with the next entry, so one bad event never stops a reader. Only the first failure of
+        each exception type logs a traceback; the repeats are counted in a summary line after each batch. A handler that raises one of
         `transient` (its sink is down, the entry is not bad) is not skipped: the cursor goes back before that entry
         and the poll after the interval reads it again.
         """
@@ -489,8 +514,9 @@ class Tail:
                     self.cursor = entry.id - 1
                     retry = True
                     break
-                except Exception:  # a reader's bug must not stop the reader
-                    logger.exception("Tail %s: handler failed on entry %s", self.stream, entry.id)
+                except Exception as exc:  # a reader's bug must not stop the reader
+                    self._note_failure(exc, entry)
+            self._summarize_failures()
             if retry:
                 stop.wait(self.interval)
             elif len(entries) < self.batch:
