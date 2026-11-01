@@ -1,12 +1,14 @@
 """The lifecycle verbs of a native board: `POST /api/claim`, `POST /api/park` and `POST /api/review` over its writers."""
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 from starpulse.board import criteria
+from starpulse.board.adapters import claim_ttl
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
@@ -52,6 +54,7 @@ def _lifecycle(
     base: Path, monkeypatch: pytest.MonkeyPatch, tasks: dict[str, tuple[str, dict[str, object]]], rules: list = ()
 ) -> tuple[BoardFeed, Board]:
     """A native board with the lifecycle lanes and `rules`, holding `tasks` as (status, fields) by id."""
+    monkeypatch.setattr(claim_ttl, "start", lambda *_args, **_kwargs: None)  # its own tests: test_claim_ttl.py
     monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
     (base / "board.yaml").write_text(MACHINE)
     native_root(base).mkdir(parents=True)
@@ -86,6 +89,13 @@ def _park(feed: BoardFeed, built: Board, **body: object) -> tuple[int, dict[str,
 
 def _review(feed: BoardFeed, built: Board, **body: object) -> tuple[int, dict[str, Any]]:
     return review_task(LAN, json.dumps(body).encode(), feed, built.read, built.edit)
+
+
+def test_the_lifecycle_board_leaves_no_claim_ttl_thread_running(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    before = set(threading.enumerate())
+    _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
+    started = set(threading.enumerate()) - before
+    assert "claim-ttl" not in {thread.name for thread in started}
 
 
 def test_a_claim_moves_the_task_in_progress_and_records_the_session_as_its_assignee(
