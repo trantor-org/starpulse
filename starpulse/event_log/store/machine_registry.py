@@ -29,6 +29,10 @@ TASK_MACHINE = "board"
 _STATE_FIELD = {"TaskCreated": "state", "TaskImported": "state", "Transitioned": "to"}
 
 
+class StrandedTasks(MachineDefinitionError):
+    """A definition that drops a State live Tasks hold, with no `migrations` mapping for it."""
+
+
 @dataclass(frozen=True)
 class LiveTask:
     """A Task the change must carry across: its id, State as the Task holds it (a State id or a Backlog display name,
@@ -48,7 +52,7 @@ class MachineRegistry:
 
     def activate(self, document: Mapping[str, Any], live: Sequence[LiveTask]) -> str:
         """Make `document` the active version of its machine and return its hash; a document that is already active
-        changes nothing. Raises `MachineDefinitionError` naming the States and Tasks a missing mapping strands, and
+        changes nothing. Raises `StrandedTasks` naming the States and Tasks a missing mapping strands, and
         `StaleVersion` when a live Task moved since it was read; either leaves the active version as it was."""
         validate(document)
         name = document["name"]
@@ -145,4 +149,4 @@ def _check_mapping(
             stranded.setdefault(task.state, []).append(task.id)
     if stranded:
         held = "; ".join(f"{state} ({', '.join(ids)})" for state, ids in stranded.items())
-        raise MachineDefinitionError(f"{machine}: States dropped with live Tasks and no migrations mapping: {held}")
+        raise StrandedTasks(f"{machine}: States dropped with live Tasks and no migrations mapping: {held}")
