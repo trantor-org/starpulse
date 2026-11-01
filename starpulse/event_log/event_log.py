@@ -382,6 +382,10 @@ class EventLog:
             )
 
 
+#: The longest a running tail waits between polls while they keep failing, in seconds.
+MAX_POLL_BACKOFF = 60.0
+
+
 class Tail:
     """One reader's cursor over one stream of the log.
 
@@ -491,20 +495,28 @@ class Tail:
         """Poll until `stop` is set, passing each entry to `handle`. Between polls an idle tail waits for an append
         (`EventLog.wait_for_append`), so `interval` bounds the wait rather than setting it.
 
-        A poll that fails (the database went away) is retried after the interval. A handler that raises is logged
+        A poll that fails (the database went away) is retried after `interval`, then after twice that for each further
+        failure up to `MAX_POLL_BACKOFF`. The outage logs one warning, without a trace, and one line when a poll
+        succeeds again, so a missing table costs a few lines, not one per poll. A handler that raises is logged
         and the loop goes on with the next entry, so one bad event never stops a reader. Only the first failure of
         each exception type logs a traceback; the repeats are counted in a summary line after each batch. A handler that raises one of
         `transient` (its sink is down, the entry is not bad) is not skipped: the cursor goes back before that entry
         and the poll after the interval reads it again.
         """
+        delay = 0.0  # the wait after the last failed poll; 0 while polls succeed
         while not stop.is_set():
             seen = self.log.appends  # before the poll, so an append during it still ends the wait below
             try:
                 entries = self.poll()
             except Exception as exc:  # the database is unreachable or locked; the next poll retries
-                logger.warning("Tail %s: poll failed, retrying in %ss: %s", self.stream, self.interval, exc)
-                stop.wait(self.interval)
+                if not delay:
+                    logger.warning("Tail %s: poll failed, backing off until it succeeds: %s", self.stream, exc)
+                delay = min(delay * 2, max(self.interval, MAX_POLL_BACKOFF)) if delay else self.interval
+                stop.wait(delay)
                 continue
+            if delay:
+                logger.info("Tail %s: poll succeeded again", self.stream)
+                delay = 0.0
             retry = False
             for entry in entries:
                 try:

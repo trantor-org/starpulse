@@ -432,6 +432,49 @@ def test_run_logs_one_traceback_per_exception_type_and_counts_the_rest(
     assert "ValueError" in summaries[0]
 
 
+class _RecordingStop(threading.Event):
+    """A stop event whose waits return at once, recording each timeout, and that sets itself after `limit` waits."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__()
+        self.limit = limit
+        self.waits: list[float] = []
+
+    def wait(self, timeout: float | None = None) -> bool:
+        self.waits.append(timeout or 0.0)
+        if len(self.waits) >= self.limit:
+            self.set()
+        return self.is_set()
+
+
+def test_run_backs_off_while_polls_fail_and_warns_once_per_outage(
+    log: EventLog, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr("starpulse.event_log.event_log.MAX_POLL_BACKOFF", 0.08)
+    tail = Tail.replay(log, "a", interval=0.01)
+    outcomes = iter([*[RuntimeError("no such table starpulse_events")] * 6, [], *[RuntimeError("down again")] * 2])
+
+    def scripted_poll():
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(tail, "poll", scripted_poll)
+    monkeypatch.setattr(log, "wait_for_append", lambda seen, interval, stop: stop.wait(interval))
+    stop = _RecordingStop(limit=9)
+
+    with caplog.at_level("INFO", logger="starpulse.event_log.event_log"):
+        tail.run(lambda entry: None, stop)
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    recovered = [r for r in caplog.records if r.levelname == "INFO"]
+    assert stop.waits == [0.01, 0.02, 0.04, 0.08, 0.08, 0.08, 0.01, 0.01, 0.02]
+    assert len(warnings) == 2  # one per outage, not one per poll
+    assert len(recovered) == 1
+    assert all(r.exc_info is None for r in warnings)  # no SQLAlchemy trace on each poll
+
+
 def test_last_is_the_newest_cursor_of_one_stream_and_none_when_it_has_no_rows(log: EventLog) -> None:
     log.publish("a", {"n": "1"})
     newest = log.publish("a", {"n": "2"})
