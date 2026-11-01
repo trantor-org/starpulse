@@ -2,6 +2,7 @@
 
 import json
 import threading
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -42,8 +43,11 @@ def _post(server: ThreadingHTTPServer, payload: dict) -> int:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=5) as response:
-        return response.status
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status
+    except urllib.error.HTTPError as error:
+        return error.code
 
 
 def test_the_receiver_records_the_signals_of_both_harnesses_exports_in_the_telemetry_log(tmp_path: Path) -> None:
@@ -68,7 +72,7 @@ def test_the_receiver_records_the_signals_of_both_harnesses_exports_in_the_telem
     }
 
 
-def test_a_telemetry_consumer_that_raises_does_not_stop_the_export_being_ingested_and_answered() -> None:
+def test_a_telemetry_consumer_that_raises_does_not_stop_the_export_being_ingested_and_is_answered_5xx_for_retry() -> None:
     published: list[dict] = []
 
     def broken(payload: dict) -> None:
@@ -82,5 +86,5 @@ def test_a_telemetry_consumer_that_raises_does_not_stop_the_export_being_ingeste
         server.shutdown()
         server.server_close()
 
-    assert set(statuses) == {200}
+    assert set(statuses) == {503}
     assert published == replay()
