@@ -30,6 +30,8 @@ import traceback
 from collections.abc import Callable, Sequence
 from typing import IO, Any, NoReturn
 
+from setproctitle import setproctitle
+
 from starpulse.runtime.hold import LISTEN_FD_ENV, SUPERVISED_ENV, supervised_env, watch_supervisor
 from starpulse.runtime import launch
 from starpulse.runtime.supervisor import spawn_child
@@ -64,6 +66,11 @@ def _exit_code(value: object) -> int:
     return 1
 
 
+def worker_title(argv: list[str]) -> str:
+    """The process title `ps` shows a forked child: `starpulse worker <context>`, else the argument line as `serve` has it."""
+    return " ".join(["starpulse", *argv[:2]] if argv[:1] == ["worker"] else ["starpulse", *argv])
+
+
 def _child(
     control: socket.socket, run: Callable[[list[str]], Any], argv: list[str], env: dict[str, str]
 ) -> NoReturn:  # pragma: no mutate block — process boundary
@@ -71,6 +78,7 @@ def _child(
     control.close()
     os.environ.update(env)
     sys.argv = ["starpulse", *argv]
+    setproctitle(worker_title(argv))
     watch_supervisor()
     try:
         code = _exit_code(run(argv))

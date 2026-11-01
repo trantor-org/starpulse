@@ -93,6 +93,16 @@ def test_the_zygote_serves_a_fork_when_its_socket_is_past_the_select_limit(fds_p
         made.close()
 
 
+def test_a_forked_worker_child_is_named_by_its_context_in_ps(forker: Forker) -> None:
+    child = _terminable(forker([*PREFIX, "worker", "dagu", "--config", "x.toml"]))
+
+    args = subprocess.run(["ps", "-o", "args=", "-p", str(child.pid)], capture_output=True, text=True).stdout.strip()
+
+    assert args == "starpulse worker dagu"
+    child.terminate()
+    child.wait(10)
+
+
 def test_a_forked_child_is_not_a_child_of_serve_and_ends_when_it_is_terminated(forker: Forker) -> None:
     child = _terminable(forker([*PREFIX, "hold"]))
 
