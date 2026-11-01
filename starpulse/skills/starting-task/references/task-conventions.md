@@ -113,7 +113,7 @@ that breaks the rule; its refusal names the rule.
 
 A task's Description is a short brief in this template, which `starpulse task create` takes as
 `--description` and a board with a `readable` guard refuses to store otherwise. A project may
-print it, as trantor's `backlog-task create --template` does; the copy below is the one source.
+print it from its own template command; the copy below is the one source.
 
 ```markdown
 ## Outcome
