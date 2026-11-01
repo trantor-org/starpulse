@@ -189,6 +189,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         #: The pull request links every placed task cites, a settled one's included: its dependents read them for the
         #: pin bump that applies each (`cited`).
         self._cited: dict[str, list[str]] = {}
+        #: The `titled` entry of every cold done task, whose stub in `_open` holds no title or labels.
+        self._cold_titled: dict[str, dict] = {}
         self._dags: dict[str, list] = {}
         self._pools: dict[str, list] = {}
         #: Each instance's latest CPU reading (a `Cpu` as a dict); an instance that never reported one is absent.
