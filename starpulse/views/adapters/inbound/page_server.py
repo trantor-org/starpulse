@@ -141,6 +141,8 @@ class PageServer:
             self._sockets = Sockets([self.socket], [], [])
         else:
             self._quic = socket.socket(self.socket.family, socket.SOCK_DGRAM)
+            # A reload's replacement worker binds while the old one still holds the address.
+            self._quic.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             self._quic.bind(self.server_address)
             self._config.alt_svc_headers = [f'h3=":{self.server_port}"; ma={ALT_SVC_MAX_AGE_S}']
             _survive_cancelled_streams()

@@ -214,3 +214,18 @@ def test_an_idle_tls_server_stops_without_waiting_out_its_drain(tmp_path: Path, 
         stopping = time.monotonic()
 
     assert time.monotonic() - stopping < 4  # its drain is 8 s
+
+
+def test_a_replacement_server_binds_the_quic_address_the_old_one_still_holds(certificate: tuple[Path, Path]) -> None:
+    from starpulse.views.adapters.inbound.page_server import PageServer
+
+    old = PageServer(lambda *_: None, ("127.0.0.1", 0), tls=certificate)  # type: ignore[arg-type]
+    try:
+        replacement = PageServer(lambda *_: None, listening=old.socket.dup(), tls=certificate)  # type: ignore[arg-type]  # no Errno 98
+        replacement.socket.close()
+        assert replacement._quic is not None
+        replacement._quic.close()
+    finally:
+        old.socket.close()
+        assert old._quic is not None
+        old._quic.close()
