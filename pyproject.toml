@@ -349,6 +349,10 @@ markers = [
 # A test that never returns fails after this many seconds instead of holding the job: one spinning worker grows
 # by about 6.5 MB/s through log capture.
 timeout = 120
+# /tmp is a 1,048,576-inode tmpfs: each session prunes older basetemps down to the latest run's, kept only for a
+# failed test, so aborted or concurrent CI runs cannot fill it.
+tmp_path_retention_count = 1
+tmp_path_retention_policy = "failed"
 testpaths = ["tests", "ci"]
 # The UI preview script under `ci/` is imported by its module name.
 pythonpath = ["ci", "."]
