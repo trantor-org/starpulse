@@ -230,14 +230,34 @@ def test_json_that_is_not_an_object_is_acknowledged_with_nothing_mapped(served: 
     assert spy.seen == []
 
 
-def test_a_consumer_that_raises_still_acknowledges_the_export() -> None:
-    spy = Spy(fail=True)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), receiver(spy.ingest))
+def post_to(ingest: Any, on_export: Any = None) -> int:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), receiver(ingest, on_export))
     threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         status, _ = post(f"http://127.0.0.1:{server.server_port}", "/v1/logs", json.dumps(PAYLOAD).encode())
     finally:
         server.shutdown()
         server.server_close()
+    return status
 
-    assert status == 200
+
+def boom(*_: Any) -> None:
+    raise RuntimeError("consumer down")
+
+
+def test_a_failed_ingest_is_answered_5xx_so_the_exporter_retries() -> None:
+    assert post_to(Spy(fail=True).ingest) == 503
+
+
+def test_a_failed_on_export_is_answered_5xx_and_the_events_are_still_ingested() -> None:
+    spy = Spy()
+
+    assert post_to(spy.ingest, boom) == 503
+    assert spy.seen
+
+
+def test_an_export_both_consumers_take_is_answered_200() -> None:
+    spy = Spy()
+
+    assert post_to(spy.ingest, lambda payload: None) == 200
+    assert spy.seen
