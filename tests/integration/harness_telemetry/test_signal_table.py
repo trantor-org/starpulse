@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlalchemy import text
 
 from starpulse.event_log.event_log import EventLog, prune_forever
+from starpulse.event_log.tables import signals
 from starpulse.harness_telemetry.adapters.inbound.telemetry import KEEP_S, TelemetryLog
 from starpulse.harness_telemetry.adapters.outbound.loki import LokiSignals
 from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable
@@ -93,6 +94,8 @@ def test_the_hourly_prune_loop_runs_the_signal_pass(tmp_path: Path) -> None:
 def test_the_two_reads_a_view_makes_each_use_their_index(tmp_path: Path) -> None:
     log = opened(tmp_path)
     with log.engine.begin() as db:
+        for index in signals.indexes:  # seeded bare and indexed after: a bulk build, not 1M index insertions
+            index.drop(db)
         db.execute(
             text(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000000) "
@@ -100,6 +103,8 @@ def test_the_two_reads_a_view_makes_each_use_their_index(tmp_path: Path) -> None
                 "SELECT 'k' || i, 'h' || (i % 3), 's' || (i % 5000), i * 0.5, 'request', '{}' FROM n"
             )
         )
+        for index in signals.indexes:
+            index.create(db)
         db.execute(text("ANALYZE"))
         window = db.execute(text("EXPLAIN QUERY PLAN SELECT key FROM starpulse_signals WHERE time >= 400000.0")).all()
         session = db.execute(
