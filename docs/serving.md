@@ -305,6 +305,7 @@ type = "native"
 # parked = "my-parked {id}"  # runs after the task actor moves a task from the working lane to Waiting, to tell the session that holds it (see Task actor)
 # released = "my-released {id}"  # runs after the task actor moves a task from Waiting to Ready, so a session parked mid-work is resumed whether or not anything admits Ready tasks (see Task actor)
 # delivered = "my-delivered {id} {verdict}"  # runs once when a delivery run ends (its DELIVER_FINISHED event), with the run's verdict such as `green` or `red test`, so the session holding the task resumes on it (see Task actor)
+# sent_back = "my-sent-back {id}"  # runs after the task actor moves a task from Review back to the working lane (a pull request turned red), to wake the session that holds it (see Task actor)
 # closed = "my-closed {id}"  # runs after the task actor moves a task to Done, so the board can file what follows the close (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task keeps its State with no Assignee, free for any session to claim, and the sweep gives it back to the released session, as a `Claimed`, when that session acts again (an Event or machine event after the release) while no session holds it; the sweep reads the board feed, and a release is refused when the task file has since left that State or another session holds it
@@ -856,6 +857,11 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   or the lane changes (the actor remembers it in memory only, so a restart clears it).
 - `deps_done`: the task has dependencies, every one is Done, its description declares no Start Criteria, and, under
   `[release] settle = "pin-bump"`, every dependency's pin bump has merged (the rule in Release).
+- `pr_red`: an own cited pull request is open, not a draft, and conflicts with its base or has failing required checks. A Review state maps it to the
+  event that returns the task to the working lane; the `sent_back` command then runs, so the board can wake the holding session. A `mergeable` GitHub has not
+  yet computed is no conflict.
+- `pr_pending`: an own cited pull request is a draft or its checks are still running. A Review state maps it to the event that leaves the lane for the
+  person-waiting lane; the actor writes the reason into the lane's `## Needs attention` section.
 - `deps_done_with_pr`: `deps_done` holds and `pr_ready` holds (the task cites a ready or merged pull request). A state lists it before `deps_done` to
   return a task that has a delivery to another lane than the one a task without one returns to.
 - `deps_unresolved`: a dependency is not Done.
@@ -904,7 +910,7 @@ A move from the working lane (the first resting State the lifecycle does not end
 move from Waiting to Ready runs the board's `released` command the same way, so a board can resume the session that
 parked the task. A move whose last event is `DELIVER_FINISHED`, the machine event a delivery run publishes when it
 ends, runs the board's `delivered` command once per run, with `{id}` and `{verdict}` (the event's `verdict` and `step`,
-such as `red test`) replaced, so a board can resume the session that holds the task on the verdict. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
+such as `red test`) replaced, so a board can resume the session that holds the task on the verdict. A move from Review to the working lane runs `sent_back` the same way. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
 check that waits on time after the merge. A command that exits nonzero is logged; the move stands.
 
 A write the board refuses is logged and counted, and is not retried until the task's facts change; checking the last

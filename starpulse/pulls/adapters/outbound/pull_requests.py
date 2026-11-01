@@ -40,6 +40,25 @@ def pull_record(store: PullStore, url: str) -> dict[str, Any] | None:
     return records[0] if records else None
 
 
+def pull_verdict(record: dict[str, Any]) -> tuple[str, str] | None:
+    """`(draft | conflict | failure | pending, what is wrong)` for an open pull request that is not green, else None.
+
+    A conflict is read before the checks, as a person reads a PR page; `mergeable` unknown (GitHub has not computed
+    it) is no conflict."""
+    if record["state"] != "OPEN":
+        return None
+    if record["isDraft"]:
+        return "draft", "is a draft"
+    if record["mergeable"] == "CONFLICTING":
+        return "conflict", f"conflicts with {record['baseRefName']}: rebase on origin/{record['baseRefName']} and push"
+    if record["checks"] == "failing":
+        failing = [check["name"] for check in record["requiredChecks"] if check["result"] == "failing"]
+        return "failure", f"has failing checks: {', '.join(failing)}"
+    if record["checks"] != "pass":
+        return "pending", "has checks still running"
+    return None
+
+
 def delivers(store: PullStore, url: str, task_id: str) -> bool:
     """Whether the pull request at `url` can be `task_id`'s delivery: one whose branch or title names tasks and not this
     one is another task's, a reference only."""

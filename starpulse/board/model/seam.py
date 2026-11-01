@@ -287,6 +287,9 @@ class Board:
     """Tells whoever holds a task that its delivery run finished, given its id and the run's verdict (`green`, or
     `<red|blocked> <step>`), so the session resumes on the verdict without waiting on the run; a raise is logged. None
     tells no one."""
+    sent_back: Callable[[str], None] | None = None
+    """Tells whoever works a task that the task actor moved it from the review lane back to the working lane, given its id,
+    so it can wake the holder; a raise is logged and the move stands. None tells no one."""
     closed: Callable[[str], None] | None = None
     """Tells the board that the task actor moved a task to Done, given its id, so it can file what follows the close; a
     raise is logged and the close stands. None tells no one."""
