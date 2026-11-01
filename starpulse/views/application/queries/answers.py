@@ -76,6 +76,8 @@ class Answers:
         held = self._read(key)
         with self._lock:
             job = self._jobs.get(key)
+            if job is None and held is None:
+                held = self._read(key)  # a fold that ended since the read above has saved its row
             last = max(self._tried.get(key, 0.0), held.folded_at if held else 0.0)
             if job is None and (held is None or self._clock() - last >= self._fresh_s):
                 job = self._start(key, compute)
