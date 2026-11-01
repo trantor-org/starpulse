@@ -2,12 +2,11 @@
 
 import json
 import re
+from pathlib import Path
 
 import jsonschema
 import pytest
 from pydantic import BaseModel, ValidationError
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineTasks
 from starpulse.contracts import adapters as contracts
 from starpulse.contracts.adapters import (
     CONTRACTS,
@@ -25,8 +24,8 @@ from starpulse.contracts.adapters import (
 )
 from starpulse.contracts.api.registry import REQUESTS
 
-from tests.machines import MACHINES, ROLES
-from tests.unit.board.test_machine_tasks import _agents, _entry
+from tests.machine_feed import MachineFeed, agents
+from tests.machines import MACHINES
 
 PROJ = TaskKeys(key=re.compile(r"PROJ-\d+"), branch=re.compile(r"(?:refs/heads/)?feature/(PROJ-\d+)(?:-|$)"))
 NUMBERED = TaskKeys(key=re.compile(r"OPS-\d+"), branch=re.compile(r"agent/task-(\d+)(?:-|$)"), key_format="OPS-{}")
@@ -49,22 +48,20 @@ def test_a_branch_maps_to_its_task_key_through_the_scheme_format() -> None:
     assert [PROJ.for_branch(ref) for ref in ("main", "feature/other", "", None)] == [None] * 4
 
 
-def test_starpulse_places_a_task_whose_key_the_adapter_declared() -> None:
-    feed = BoardFeed(roles=ROLES, machines=MACHINES)
-    tasks = MachineTasks(feed, keys=PROJ)
+def test_starpulse_places_a_task_whose_key_the_adapter_declared(tmp_path: Path) -> None:
+    feed = MachineFeed(tmp_path / "events.sqlite", MACHINES, keys=PROJ)
 
-    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-123", at=100.0))
+    feed.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-123", time=100.0))
 
-    assert [(a["id"], a["state"]) for a in _agents(feed, "in-progress")] == [("PROJ-123", "worktree_ready")]
+    assert [(a["id"], a["state"]) for a in agents(feed.feed, "in-progress")] == [("PROJ-123", "worktree_ready")]
 
 
-def test_a_task_outside_the_declared_scheme_is_not_placed() -> None:
-    feed = BoardFeed(roles=ROLES, machines=MACHINES)
-    tasks = MachineTasks(feed, keys=NUMBERED)
+def test_a_task_outside_the_declared_scheme_is_not_placed(tmp_path: Path) -> None:
+    feed = MachineFeed(tmp_path / "events.sqlite", MACHINES, keys=NUMBERED)
 
-    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-123", at=100.0))
+    feed.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-123", time=100.0))
 
-    assert _agents(feed, "in-progress") == []
+    assert agents(feed.feed, "in-progress") == []
 
 
 @pytest.mark.parametrize("model", [BoardTask, MachineEvent, RunEvent, LaneEvent, Dag, Step, ActiveRun, RecentRun, Pool])
@@ -261,15 +258,14 @@ def test_a_pool_is_a_name_with_its_capacity_and_load() -> None:
         Pool.model_validate({"name": "deliver", "cap": 32, "running": -1, "queued": 0})
 
 
-def test_a_machine_event_an_adapter_wrote_places_its_task_or_run_without_a_stream_entry() -> None:
-    feed = BoardFeed(roles=ROLES, machines=MACHINES)
-    tasks = MachineTasks(feed, keys=PROJ)
+def test_a_machine_event_an_adapter_wrote_places_its_task_or_run_without_a_stream_entry(tmp_path: Path) -> None:
+    feed = MachineFeed(tmp_path / "events.sqlite", MACHINES, keys=PROJ)
 
-    tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-5", actor="hook", time=100.0))
-    tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", run="r1", time=101.0))
-    tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="OPS-5", time=102.0))
+    feed.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-5", actor="hook", time=100.0))
+    feed.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", run="r1", time=101.0))
+    feed.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="OPS-5", time=102.0))
 
-    assert [(a["id"], a["state"], a["active"]) for a in _agents(feed, "in-progress")] == [
+    assert [(a["id"], a["state"], a["active"]) for a in agents(feed.feed, "in-progress")] == [
         ("PROJ-5", "worktree_ready", 100.0),
         ("r1", "worktree_ready", 101.0),
     ]

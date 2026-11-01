@@ -77,7 +77,12 @@ def cooled(agent: dict, clock: Callable[[], float], done: str | None) -> dict:
     """The agent, or its cold stub when it entered the `done` state before local midnight by `clock`; the stub keeps
     its moves, so a reopen is still offered."""
     if agent["state"] == done and agent["entered"] < _midnight(clock()):
-        return {"id": agent["id"], "state": agent["state"], "entered": agent["entered"], "moves": agent.get("moves", {})}
+        return {
+            "id": agent["id"],
+            "state": agent["state"],
+            "entered": agent["entered"],
+            "moves": agent.get("moves", {}),
+        }
     return agent
 
 
@@ -130,13 +135,16 @@ def summary_agent(summary: Mapping[str, Any], workable: bool = False, moves: Map
     A workable Task is workable since it last changed: the read model keeps no finer date. Its profile is the one the
     fold keeps in `meta`, as a held Task's is its own.
     """
-    profile = (summary.get("meta") or {}).get("profile") or None
+    meta = summary.get("meta") or {}
+    profile = meta.get("profile") or None
     return {
         "id": summary["id"],
         "title": summary["title"],
         "state": lane_id(summary["state"]),
         "model": profile or "",
         "profile": profile,
+        "impact": meta.get("impact", ""),
+        "urgency": meta.get("urgency", ""),
         "assignee": summary["assignee"],
         "released": summary["released"],
         "labels": list(summary["labels"]),

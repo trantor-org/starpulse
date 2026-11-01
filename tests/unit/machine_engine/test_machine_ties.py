@@ -1,8 +1,12 @@
 """How a lifecycle machine is entered: its ties, where it nests, when it was last active and what is stuck in it."""
 
+from pathlib import Path
+
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.contracts.adapters import MachineEvent
 from starpulse.machine_engine.model.machine_ties import STUCK_S, derive, entries, page, rows
+
+from tests.machine_feed import MachineFeed
 
 NOW = 1_000_000.0
 HOUR = 3600.0
@@ -233,11 +237,12 @@ class TestActivity:
 
 
 class TestSnapshot:
-    def test_a_snapshot_carries_each_non_board_machines_derivation_and_leaves_the_board_alone(self) -> None:
-        machines = {f["name"]: f["machine"] for f in _flows()}
-        feed = BoardFeed(machines=machines)
-        feed.move("audit", _session("T1", [("scan", STUCK_S + 60)]) | {"title": "T1", "model": "", "steps": 1})
-        flows = {f["name"]: f for f in feed.snapshot()["flows"]}
+    def test_a_snapshot_carries_each_non_board_machines_derivation_and_leaves_the_board_alone(
+        self, tmp_path: Path
+    ) -> None:
+        feed = _feed(tmp_path, {f["name"]: f["machine"] for f in _flows()})
+        _move(feed, "audit", _session("T1", [("scan", STUCK_S + 60)]))
+        flows = {f["name"]: f for f in feed.feed.snapshot()["flows"]}
 
         assert "ties" not in flows["board"]
         assert flows["audit"]["parent"] == IP
@@ -364,26 +369,44 @@ class TestEntries:
         assert [(e["machine"], e["at"]) for e in _entries(sessions)] == [("review", NOW - 70_000), ("audit", NOW - 300)]
 
 
-def _full(session: dict) -> dict:
-    return session | {"title": session["task"], "model": "", "steps": len(session["trail"])}
+def _playable(machines: dict[str, dict]) -> dict[str, dict]:
+    """The machines with the transitions that place each trail step: an event leads along the chain of states, and the
+    initial state's own event keeps a task there."""
+    playable = {}
+    for name, machine in machines.items():
+        states = [s["id"] for s in machine["states"]]
+        transitions = [{"source": states[0], "target": states[0], "event": states[0].upper()}]
+        transitions += [{"source": a, "target": b, "event": b.upper()} for a, b in zip(states, states[1:])]
+        playable[name] = machine | {"transitions": transitions}
+    return playable
 
 
-def _crowded_feed(extra: int = 24) -> BoardFeed:
+def _feed(tmp_path: Path, machines: dict[str, dict]) -> MachineFeed:
+    return MachineFeed(tmp_path / "events.sqlite", _playable(machines))
+
+
+def _move(feed: MachineFeed, machine: str, session: dict) -> None:
+    """Append each trail step of `session` to `machine`, as a writer's machine events arrive."""
+    for step in session["trail"]:
+        feed.put(MachineEvent(machine=machine, event=step["event"], task=session["task"], time=step["at"]))
+
+
+def _crowded_feed(tmp_path: Path, extra: int = 24) -> MachineFeed:
     """The fixture machines plus `extra` more, `m00` the most and `m<extra-1>` the least recently active, each entered
     from the In Progress machine by a task of its own."""
     machines = {f["name"]: f["machine"] for f in _flows()}
     machines |= {f"m{i:02d}": _machine("a", "b") for i in range(extra)}
-    feed = BoardFeed(machines=machines)
+    feed = _feed(tmp_path, machines)
     for i in range(extra):
-        feed.move(f"m{i:02d}", _full(_session(f"X{i}", [("a", 600 + 10 * i)])))
+        _move(feed, f"m{i:02d}", _session(f"X{i}", [("a", 600 + 10 * i)]))
     return feed
 
 
 class TestFeedPages:
     def test_the_snapshot_carries_the_first_twenty_rows_of_the_in_progress_machine_and_whether_more_follow(
-        self,
+        self, tmp_path: Path
     ) -> None:
-        snapshot = _crowded_feed().snapshot()
+        snapshot = _crowded_feed(tmp_path).feed.snapshot()
 
         assert snapshot["machinePage"] == {
             "open": IP,
@@ -391,8 +414,10 @@ class TestFeedPages:
             "more": True,
         }
 
-    def test_the_machines_route_pages_by_open_machine_cursor_and_limit_with_no_overlap_or_gap(self) -> None:
-        feed = _crowded_feed()
+    def test_the_machines_route_pages_by_open_machine_cursor_and_limit_with_no_overlap_or_gap(
+        self, tmp_path: Path
+    ) -> None:
+        feed = _crowded_feed(tmp_path).feed
         seen: list[str] = []
         before = None
         for _ in range(10):
@@ -406,37 +431,39 @@ class TestFeedPages:
         assert rows_ == [f"m{i:02d}" for i in range(24)]
         assert len(seen) == len(set(seen)) == 24 + 3
 
-    def test_a_page_holds_each_machine_whole_with_its_derivation(self) -> None:
-        got = _crowded_feed().machine_rows(IP, None, 1)
+    def test_a_page_holds_each_machine_whole_with_its_derivation(self, tmp_path: Path) -> None:
+        got = _crowded_feed(tmp_path).feed.machine_rows(IP, None, 1)
 
         assert got["open"] == IP
         assert got["machines"][0]["agents"][0]["task"] == "X0"
         assert got["machines"][0]["parent"] == IP
         assert got["machines"][0]["machine"]["states"][0]["id"] == "a"
 
-    def test_a_level_below_a_row_pages_the_machines_entered_from_it(self) -> None:
-        feed = BoardFeed(machines={f["name"]: f["machine"] for f in _flows()})
-        feed.move(IP, _full(_session("T1", [("start", 5000)])))
-        feed.move("audit", _full(_session("T1", [("scan", 4000), ("report", 1000)])))
-        feed.move("fix", _full(_session("T1", [("diagnose", 800)])))
+    def test_a_level_below_a_row_pages_the_machines_entered_from_it(self, tmp_path: Path) -> None:
+        feed = _feed(tmp_path, {f["name"]: f["machine"] for f in _flows()})
+        _move(feed, IP, _session("T1", [("start", 5000)]))
+        _move(feed, "audit", _session("T1", [("scan", 4000), ("report", 1000)]))
+        _move(feed, "fix", _session("T1", [("diagnose", 800)]))
 
-        assert [m["name"] for m in feed.machine_rows("audit", None, 20)["machines"]] == ["fix"]
+        assert [m["name"] for m in feed.feed.machine_rows("audit", None, 20)["machines"]] == ["fix"]
 
-    def test_the_default_open_machine_is_the_in_progress_one_and_an_unknown_one_has_no_page(self) -> None:
-        feed = _crowded_feed(3)
+    def test_the_default_open_machine_is_the_in_progress_one_and_an_unknown_one_has_no_page(self, tmp_path: Path) -> None:
+        feed = _crowded_feed(tmp_path, 3).feed
 
         assert feed.machine_rows(None, None, 20)["open"] == IP
         assert feed.machine_rows("nope", None, 20) is None
 
 
 class TestFeedStrip:
-    def test_the_snapshot_lists_the_last_24_hours_of_machine_entries_with_the_row_each_lands_on(self) -> None:
-        feed = BoardFeed(machines={f["name"]: f["machine"] for f in _flows()})
-        feed.move(IP, _full(_session("T1", [("start", 5000)])))
-        feed.move("audit", _full(_session("T1", [("scan", 4000), ("report", 1000)])))
-        feed.move("fix", _full(_session("T1", [("diagnose", 800)])))
-        feed.move("review", _full(_session("T9", [("triage", 25 * HOUR)])))
-        strip = feed.snapshot()["machineStrip"]
+    def test_the_snapshot_lists_the_last_24_hours_of_machine_entries_with_the_row_each_lands_on(
+        self, tmp_path: Path
+    ) -> None:
+        feed = _feed(tmp_path, {f["name"]: f["machine"] for f in _flows()})
+        _move(feed, IP, _session("T1", [("start", 5000)]))
+        _move(feed, "audit", _session("T1", [("scan", 4000), ("report", 1000)]))
+        _move(feed, "fix", _session("T1", [("diagnose", 800)]))
+        _move(feed, "review", _session("T9", [("triage", 25 * HOUR)]))
+        strip = feed.feed.snapshot()["machineStrip"]
 
         assert [(e["machine"], e["row"], e["at"]) for e in strip["entries"]] == [
             ("audit", "audit", NOW - 4000),

@@ -40,7 +40,7 @@ def _drain(changes: queue.Queue) -> list[tuple[str, dict]]:
 
 
 def test_a_sample_publishes_an_scheduler_event_matching_status(tmp_path: Path) -> None:
-    feed = _feed()
+    feed = _feed(tmp_path).feed
     runtime = _runtime(tmp_path, feed)
     _, changes = feed.subscribe()
     _drain(changes)  # drop anything from subscribe's snapshot path
@@ -71,7 +71,7 @@ def test_a_put_publishes_an_scheduler_event_with_the_new_enabled(tmp_path: Path)
 
 
 def test_a_get_serves_the_status_the_last_push_computed_without_computing_again(tmp_path: Path) -> None:
-    runtime = _runtime(tmp_path, _feed())
+    runtime = _runtime(tmp_path, _feed(tmp_path).feed)
     runtime.sampler.sample()
     pushed = runtime.status()
     runtime.status = lambda: (_ for _ in ()).throw(AssertionError("a GET recomputed the status"))  # type: ignore[method-assign]

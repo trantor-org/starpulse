@@ -17,10 +17,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.board_feed import BoardFeed, follow
-from starpulse.board.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
-from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.flow_metrics.adapters.outbound.history import History
@@ -134,8 +132,6 @@ def start(
     """Start the sampler and the dispatch loop over `log` and return their reload; the threads are daemons that end with
     the process. Raises `ValueError` as `worker_board` does."""
     board, feed = worker_board(config, base, log, stop)
-    tasks = MachineTasks(feed, board.keys)
-    follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     scheduler = Scheduler(
         config,
         base,

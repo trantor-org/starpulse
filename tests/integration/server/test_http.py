@@ -11,10 +11,11 @@ from pathlib import Path
 
 import pytest
 from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineTasks
+from starpulse.board.machine_tasks import MachineDeltas
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.model.seam import Board, Written
-from starpulse.contracts.adapters import Move
+from starpulse.contracts.adapters import MachineEvent, Move
+from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.runtime import server as server_module
 from starpulse.runtime.adapter_kit import next_event as _next_event
 from starpulse.runtime.adapter_kit import serve as _serve
@@ -23,6 +24,7 @@ from starpulse.runtime.adapter_kit import url as _url
 from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.fake_board import bare_board
+from tests.machine_feed import MachineFeed
 from tests.machines import MACHINES, ROLES
 
 RUN_SAFE = frozenset({"dagu/whole-repo-gate"})
@@ -142,31 +144,25 @@ _DAG = {
 }
 
 
-def _machine_fields(task: str) -> dict:
-    return {"machine": "in-progress", "event": "WORKTREE_READY", "task": task, "time": str(time.time())}
-
-
 def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Path) -> None:
-    feed = BoardFeed(roles=ROLES, machines=MACHINES)
-    feed.put(task("PROJ-1", "To Do"))
+    machine = MachineFeed(tmp_path / "events.sqlite", MACHINES, roles=ROLES)
+    feed = machine.feed
+    deltas = MachineDeltas(feed, ReadModel(machine.log.engine))
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
             head = (resp.status, resp.headers["Content-Type"], resp.headers["Cache-Control"])
             first = _next_event(resp)
-            feed.put(task("PROJ-1", "In Progress"))
-            second = _next_event(resp)
             feed.set_dags("ci", [_DAG], None)
+            second = _next_event(resp)
+            machine.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-1", time=3.0))
+            deltas.publish_changes()
             third = _next_event(resp)
-            MachineTasks(feed).handle_entry("1-0", _machine_fields("PROJ-1"))
-            fourth = _next_event(resp)
 
     assert head == (200, "text/event-stream", "no-store")
     assert first[0] == "snapshot"
-    assert [(a["id"], a["state"]) for a in first[1]["flows"][0]["agents"]] == [("PROJ-1", "to_do")]
-    assert second[0] == "task"
-    assert (second[1]["id"], second[1]["agent"]["state"], second[1]["settled"]) == ("PROJ-1", "in_progress", None)
-    assert (third[0], [d["name"] for d in third[1]["dags"]]) == ("dags", ["ci/d"])
-    assert (fourth[0], fourth[1]["machine"], fourth[1]["id"], fourth[1]["agent"]["state"]) == (
+    assert first[1]["flows"][0]["agents"] == []
+    assert (second[0], [d["name"] for d in second[1]["dags"]]) == ("dags", ["ci/d"])
+    assert (third[0], third[1]["machine"], third[1]["id"], third[1]["agent"]["state"]) == (
         "move",
         "in-progress",
         "PROJ-1",

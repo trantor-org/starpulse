@@ -135,11 +135,9 @@ class ReadMethods:
             return named
 
     def machine_tasks(self, flow: str) -> list[dict]:
-        """Every task as `flow`'s machine last placed it within the window, as the snapshot draws it; none for a machine
-        the feed does not draw."""
-        with self._lock:
-            since = time.time() - self._window_s if self._window_s is not None else None
-            return [a for a in self._machines.get(flow, {}).values() if since is None or a["active"] >= since]
+        """Every task as `flow`'s machine last placed it within the window, as the snapshot draws it, read from
+        `starpulse_machine_tasks`; none for a machine the feed does not draw."""
+        return [] if self._read_model is None else self._read_model.machine_tasks(flow, self._window_since())
 
     @property
     def window_s(self) -> float | None:
@@ -147,23 +145,19 @@ class ReadMethods:
         with self._lock:
             return self._window_s
 
-    def forget(self, flow: str, task_id: str) -> None:
-        """Drop a task a machine placed, quietly: a snapshot already leaves out one past the window."""
+    def _window_since(self) -> float | None:
+        """The earliest time a machine's task still counts, or None for no limit."""
         with self._lock:
-            self._machines[flow].pop(task_id, None)
+            return time.time() - self._window_s if self._window_s is not None else None
 
     def machine_task(self, flow: str, task_id: str) -> dict | None:
         """The task as `flow`'s machine last placed it, or None when it has not been placed there."""
-        with self._lock:
-            return self._machines.get(flow, {}).get(task_id)
+        return None if self._read_model is None else self._read_model.machine_task(flow, task_id)
 
-    def move(self, flow: str, agent: dict, *, publish: bool = True) -> None:
-        """Place a task on a machine other than the Board and publish the move, unless `publish` is false: a replayed
-        step is history, which the snapshot the replay ends with carries (`publish("snapshot", snapshot())`)."""
+    def publish_move(self, flow: str, agent: dict) -> None:
+        """Publish one machine row the Board child folded as a `move` delta; the feed places nothing itself."""
         with self._lock:
-            self._machines[flow][agent["id"]] = agent
-            if publish:
-                self._publish("move", {"machine": flow, "id": agent["id"], "agent": self._modelled(agent)})
+            self._publish("move", {"machine": flow, "id": agent["id"], "agent": self._modelled(agent)})
 
     def _modelled(self, agent: dict) -> dict:
         """A machine's task with its Board task's assignee as its model when it carries none of its own."""

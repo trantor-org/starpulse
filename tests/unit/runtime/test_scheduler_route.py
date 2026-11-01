@@ -10,10 +10,8 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineTasks
 from starpulse.board.model.seam import Written
-from starpulse.contracts.adapters import BoardTask, MachineEvent
+from starpulse.contracts.adapters import BoardTask, MachineEvent, StartFailedError
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
@@ -24,25 +22,56 @@ from starpulse.scheduler.model.sampler import Crossing
 from starpulse.views.adapters.inbound.page_server import PageServer
 from starpulse.views.application.commands.settings import scheduler
 
+from tests.machine_feed import MachineFeed
 from tests.machines import MACHINES, ROLES
 
 HOST = {"cpu": 35.0, "memory": 60.0}
 
 
-def _feed() -> BoardFeed:
-    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
-    for task, lane, labels in (("T-1", "review", ["size-5"]), ("T-2", "review", []), ("T-3", "to_do", ["size-8"])):
-        feed.put(BoardTask(id=task, team="demo", title=task, lane=lane, labels=labels))
-    started = MachineEvent(machine="harness", event="SESSION_STARTED", task="T-3", time=time.time())
-    MachineTasks(feed).put(started)  # the path a harness adapter's event takes
-    return feed
+def _harness(tmp_path: Path) -> MachineFeed:
+    """The machines' log under `tmp_path`: the board and machine events a test appends, folded as the Board child does."""
+    return MachineFeed(tmp_path / "machines.sqlite", {**MACHINES, **SESSION_MACHINES}, roles=ROLES)
 
 
-def _runtime(tmp_path: Path, feed: BoardFeed | None = None, crossings: list[Crossing] | None = None) -> Runtime:
+def _seed(harness: MachineFeed, *tasks: BoardTask) -> None:
+    for task in tasks:
+        harness.put_task(
+            task.id,
+            {
+                "title": task.title,
+                "state": task.lane,
+                "labels": list(task.labels),
+                "dependencies": list(task.dependencies),
+                "assignee": task.assignee,
+            },
+            meta={"profile": task.profile, "impact": task.impact, "urgency": task.urgency},
+        )
+
+
+def _feed(tmp_path: Path) -> MachineFeed:
+    harness = _harness(tmp_path)
+    _seed(
+        harness,
+        *(
+            BoardTask(id=task, team="demo", title=task, lane=lane, labels=labels)
+            for task, lane, labels in (
+                ("T-1", "review", ["size-5"]),
+                ("T-2", "review", []),
+                ("T-3", "to_do", ["size-8"]),
+            )
+        ),
+    )
+    harness.put(
+        MachineEvent(machine="harness", event="SESSION_STARTED", task="T-3", time=time.time())
+    )  # a harness adapter's event
+    return harness
+
+
+def _runtime(tmp_path: Path, feed: MachineFeed | None = None, crossings: list[Crossing] | None = None) -> Runtime:
     return build(
         Scheduler(),
         EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
-        feed or _feed(),
+        (feed or _feed(tmp_path)).feed,
         probe=lambda: HOST,
         on_crossing=(crossings if crossings is not None else []).append,
         clock=lambda: 1000.0,
@@ -138,18 +167,18 @@ def test_an_instance_without_a_runtime_has_no_scheduler_route(tmp_path: Path) ->
 
 def _looping(tmp_path: Path, *more: BoardTask) -> Runtime:
     """A runtime with a dispatch loop over one Ready task, and `more`, and a quiet host, already sampled."""
-    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
-    feed.put(
+    harness = _harness(tmp_path)
+    _seed(
+        harness,
         BoardTask(
             id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], profile="@agent-standard-high"
-        )
+        ),
+        *more,
     )
-    for task in more:
-        feed.put(task)
     runtime = build(
         Scheduler(lane="ready"),
         EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
-        feed,
+        harness.feed,
         probe=lambda: {"cpu": 5.0, "memory": 5.0},
         clock=lambda: 1000.0,
         start=lambda task, **_: f"https://claude.ai/code/{task}",
@@ -180,6 +209,7 @@ def test_a_get_with_a_loop_lists_the_kind_decide_tasks_that_wait_on_the_operator
         id="T-5", team="demo", title="Pick one", lane="ready", labels=["kind-decide"], profile="@agent-standard-high"
     )
 
+    (tmp_path / "with").mkdir()
     body = scheduler("127.0.0.1", "GET", b"", _looping(tmp_path / "with", decision))[1]
 
     assert body["needsOperator"] == [{"task": "T-5", "title": "Pick one"}]
@@ -216,9 +246,7 @@ def test_a_get_counts_a_session_started_outside_the_loop_beside_the_one_the_loop
     )
     runtime = _looping(tmp_path, held)
     assert runtime.loop is not None
-    MachineTasks(runtime.loop._feed).put(
-        MachineEvent(machine="harness", event="SESSION_STARTED", task="T-9", time=1000.0)
-    )
+    _harness(tmp_path).put(MachineEvent(machine="harness", event="SESSION_STARTED", task="T-9", time=1000.0))
     runtime.set_enabled(True)
     assert runtime.loop.tick() == ["T-4"]
 
@@ -238,7 +266,7 @@ def test_a_session_idle_past_the_stale_bound_is_not_in_flight_but_a_stopped_one_
     ]
     runtime = _looping(tmp_path, *tasks)
     assert runtime.loop is not None
-    machine = MachineTasks(runtime.loop._feed)
+    machine = _harness(tmp_path)
     machine.put(MachineEvent(machine="harness", event="SESSION_STARTED", task="T-7", time=1000.0 - 3600))
     machine.put(MachineEvent(machine="harness", event="SESSION_STARTED", task="T-8", time=1000.0))
     machine.put(MachineEvent(machine="harness", event="SESSION_STOPPED", task="T-8", time=1000.0))
@@ -247,13 +275,12 @@ def test_a_session_idle_past_the_stale_bound_is_not_in_flight_but_a_stopped_one_
 
 
 def test_a_get_with_a_loop_names_a_harness_usage_pause(tmp_path: Path) -> None:
-    from starpulse.contracts.adapters import StartFailedError
-
-    feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
-    feed.put(
+    harness = _harness(tmp_path)
+    _seed(
+        harness,
         BoardTask(
             id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], profile="@agent-standard-high"
-        )
+        ),
     )
 
     def refuse(task: str, **_: object) -> str:
@@ -262,7 +289,7 @@ def test_a_get_with_a_loop_names_a_harness_usage_pause(tmp_path: Path) -> None:
     runtime = build(
         Scheduler(lane="ready"),
         EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
-        feed,
+        harness.feed,
         probe=lambda: {"cpu": 5.0, "memory": 5.0},
         clock=lambda: 1000.0,
         start=refuse,
@@ -392,10 +419,10 @@ def test_inside_quiet_hours_the_loop_admits_nothing_and_the_next_pick_waits_for_
 
 @pytest.fixture
 def server(tmp_path: Path) -> Iterator[PageServer]:
-    feed = _feed()
-    runtime = _runtime(tmp_path, feed)
+    harness = _feed(tmp_path)
+    runtime = _runtime(tmp_path, harness)
     runtime.sampler.sample()
-    with serve(tmp_path, feed, scheduler=runtime) as served:
+    with serve(tmp_path, harness.feed, scheduler=runtime) as served:
         yield served
 
 
@@ -514,9 +541,7 @@ def test_the_loops_next_pass_admits_against_the_override_with_no_restart(tmp_pat
     )
     runtime = _looping(tmp_path, held)
     assert runtime.loop is not None
-    MachineTasks(runtime.loop._feed).put(
-        MachineEvent(machine="harness", event="SESSION_STARTED", task="T-9", time=1000.0)
-    )
+    _harness(tmp_path).put(MachineEvent(machine="harness", event="SESSION_STARTED", task="T-9", time=1000.0))
     runtime.set_enabled(True)
 
     _put(runtime, {"sessionCap": 1})

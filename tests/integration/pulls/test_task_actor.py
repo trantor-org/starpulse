@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineTasks
+from starpulse.board.machine_tasks import MachineDeltas
 from starpulse.contracts.adapters import BoardTask, MachineEvent
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector
@@ -30,6 +30,7 @@ from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
 
+from tests.machine_feed import MachineFeed
 from tests.machines import MACHINES, ROLES, STATUSES
 from tests.task_actor_kit import (
     CHILD,
@@ -1135,16 +1136,25 @@ DELIVERING = {
 
 
 def test_a_finished_delivery_hands_its_task_and_verdict_to_the_delivered_hook_once(
-    store: PullStore, stop: threading.Event
+    store: PullStore, stop: threading.Event, tmp_path: Path
 ) -> None:
-    feed = BoardFeed(roles=ROLES, machines={"board": board_machine(STATUSES), **DELIVERING})
-    board = Board(feed, task("TASK-1", "In Progress"))
+    machine = MachineFeed(tmp_path / "events.sqlite", {"board": board_machine(STATUSES), **DELIVERING}, roles=ROLES)
+    created = NewEvent(
+        type="TaskCreated",
+        payload={"title": "Task 1", "description": "", "state": "In Progress", "labels": ["kind-execute"]},
+        actor="adin",
+        writer="operator",
+    )
+    EventStore(machine.log.engine).append("task", "TASK-1", 0, [created])
+    machine.fold()
+    board = Board(machine.feed)
+    deltas = MachineDeltas(machine.feed, ReadModel(machine.log.engine))
     delivered: list[tuple[str, str]] = []
     running(board, store, stop, delivered=lambda name, verdict: delivered.append((name, verdict)))
-    tasks = MachineTasks(feed)
 
     def post(event: str, data: dict | None = None) -> None:
-        tasks.put(MachineEvent(machine="deliver", event=event, task="TASK-1", time=time.time(), data=data))
+        machine.put(MachineEvent(machine="deliver", event=event, task="TASK-1", time=time.time(), data=data))
+        deltas.publish_changes()
 
     post("PR_OPENED")
     post("DELIVER_FINISHED", {"verdict": "red", "step": "test"})

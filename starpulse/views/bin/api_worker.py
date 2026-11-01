@@ -25,7 +25,6 @@ from typing import Any
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.adapters.lane_sweep import LaneSweep
 from starpulse.board.claim_refusals import CLAIMS_STREAM
-from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events, verdict_events
 from starpulse.event_log.conformance_monitor import Conformance
 from starpulse.harness_telemetry.adapters.inbound.telemetry import telemetry_log
@@ -102,7 +101,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.board.machine_tasks import MachineTasks  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.board.machine_tasks import MachineDeltas  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.verdicts import Verdicts  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -152,8 +151,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     feed.follow_read_model()
     feed.ready.set()
     host.follow_read_model(projector, feed, stop)
-    tasks = MachineTasks(feed, board.keys)
-    follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
+    MachineDeltas(feed, model).follow(stop)
     refusals = ClaimRefusals(feed)
     follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry)
     verdicts = Verdicts(feed)

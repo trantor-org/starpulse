@@ -45,6 +45,23 @@ tasks = Table(
     Index("ix_starpulse_tasks_archived_updated", "updated_at", sqlite_where=text("archived = 1")),
 )
 
+#: One row per (machine, task): the state the task holds on that lifecycle machine, the drawn agent as JSON and when the
+#: machine last placed it. `seq` is the `machine:events` position folded in, the cursor `/api/events` resumes from.
+#: One row per (machine, task): the state the task holds on that lifecycle machine, the drawn agent as JSON and when the
+#: machine last placed it. `seq` is the `machine:events` position folded in, the cursor `/api/events` resumes from.
+machine_tasks = Table(
+    "starpulse_machine_tasks",
+    metadata,
+    Column("machine", String, primary_key=True),
+    Column("task", String, primary_key=True),
+    Column("state", String, nullable=False),
+    Column("agent", JSON, nullable=False),
+    Column("active_at", Float, nullable=False),
+    Column("seq", Integer, nullable=False),
+    Index("ix_starpulse_machine_tasks_machine_active", "machine", "active_at"),
+    Index("ix_starpulse_machine_tasks_seq", "seq"),
+)
+
 #: One row per Acceptance Criterion or Definition of Done item, numbered from 1 within its kind.
 criteria = Table(
     "starpulse_task_criteria",
