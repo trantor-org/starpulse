@@ -13,7 +13,7 @@ was, so `git checkout -- file` or a trip back to `main` does not drop a session'
 branch or claim ties to a task is a row with `task` None, counted in session health and in no slice.
 
 A shell command's claim is read twice, so a change to `claims` reaches rows stored before it: the export is matched at
-ingest, which stores a `claim` signal, and `grouped` matches each stored shell command against the current patterns,
+ingest, which stores a `claim` signal, and `session_signals` matches each stored shell command against the current patterns,
 adding the claim a stored command names when the same tool result has no stored claim row (one claim per tool result).
 A `Skill` call's claim is ingest-only: its arguments are never stored, so a claim pattern added later reaches only the
 calls exported after it, and a stored command is matched as stored, after redaction.
@@ -34,7 +34,17 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import CODEX, Signal, claim_key, claimed, main_thread_source
 
-__all__ = ["attributed", "grouped", "session_health", "session_kind", "slice_health"]
+__all__ = [
+    "attributed",
+    "by_session",
+    "combine_health",
+    "fold_health",
+    "grouped",
+    "session_health",
+    "session_kind",
+    "session_signals",
+    "slice_health",
+]
 
 #: Tools whose successful result is a file written: the work on a task has begun.
 _EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
@@ -183,18 +193,30 @@ def _read_time_claims(ordered: list[Signal], claims: Sequence[re.Pattern[str]], 
     return with_claims
 
 
-def grouped(
-    found: Iterable[Signal], keys: TaskKeys | None = None, analytics: Analytics | None = None
-) -> list[list[Signal]]:
-    """The signals `found` as one list per harness session, each oldest first. With `keys` and `analytics`, a stored
-    shell command the current `claims` match is also a claim (see the module docstring)."""
+def by_session(found: Iterable[Signal]) -> list[list[Signal]]:
+    """The signals `found` as one list per harness session, in the order the sessions first appear."""
     sessions: dict[tuple[str, str], list[Signal]] = defaultdict(list)
     for s in found:
         sessions[s.harness, s.session].append(s)
-    ordered = [sorted(group, key=lambda s: s.time) for group in sessions.values()]
+    return list(sessions.values())
+
+
+def session_signals(
+    signals: list[Signal], keys: TaskKeys | None = None, analytics: Analytics | None = None
+) -> list[Signal]:
+    """The signals of one session, oldest first. With `keys` and `analytics`, a stored shell command the current
+    `claims` match is also a claim (see the module docstring)."""
+    ordered = sorted(signals, key=lambda s: s.time)
     if keys is None or analytics is None or not analytics.claims:
         return ordered
-    return [_read_time_claims(group, analytics.claims, keys) for group in ordered]
+    return _read_time_claims(ordered, analytics.claims, keys)
+
+
+def grouped(
+    found: Iterable[Signal], keys: TaskKeys | None = None, analytics: Analytics | None = None
+) -> list[list[Signal]]:
+    """The signals `found` as one list per harness session, each oldest first, as `session_signals` gives it."""
+    return [session_signals(group, keys, analytics) for group in by_session(found)]
 
 
 def attributed(ordered: list[Signal], keys: TaskKeys | None) -> Iterator[tuple[str | None, Signal]]:
@@ -327,15 +349,26 @@ def _remembered(ordered: list[Signal], keys: TaskKeys | None, analytics: Analyti
     return rows
 
 
-def session_health(
-    found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
+def fold_health(
+    signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
 ) -> list[dict[str, Any]]:
-    """One row per (session, task) of the sessions `found` holds, oldest first; see the module docstring.
+    """The fold of one session's `signals`: its rows, one per task it worked, as plain JSON data (see `session_rows`).
 
     A session whose signals are those it was last read with is not worked out again, so a read costs the sessions that
     changed since the last one, not every session of its window. The rows are shared between reads: do not mutate them."""
-    rows = [row for ordered in grouped(found, keys, analytics) for row in _remembered(ordered, keys, analytics)]
-    return sorted(rows, key=lambda r: (r["first_at"], r["harness"], r["session"]))
+    return _remembered(session_signals(signals, keys, analytics), keys, analytics)
+
+
+def combine_health(folds: Iterable[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """The rows of the sessions' `fold_health` results as one list, oldest first."""
+    return sorted((row for rows in folds for row in rows), key=lambda r: (r["first_at"], r["harness"], r["session"]))
+
+
+def session_health(
+    found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
+) -> list[dict[str, Any]]:
+    """One row per (session, task) of the sessions `found` holds, oldest first; see the module docstring."""
+    return combine_health(fold_health(group, keys, analytics) for group in by_session(found))
 
 
 def slice_health(sessions: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
