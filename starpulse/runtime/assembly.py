@@ -174,20 +174,21 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
     )
 
 
+def prune_event_log(log: EventLog, config: Config, base: Path, stop: threading.Event) -> None:
+    """The hourly prune of the event log, until `stop`: archives each row it deletes under `event_log_archive_dir`, and
+    drops the signals and signal folds older than `KEEP_S` seconds."""
+    prune_forever(
+        log,
+        retention_days=config.event_log_retention_days,
+        archive_dir=base / config.event_log_archive_dir,
+        stop=stop,
+        signal_keep=KEEP_S,
+    )
+
+
 def keep_event_log(log: EventLog, config: Config, base: Path, *, stop: threading.Event) -> threading.Thread:
     """Start the hourly prune of the event log, which archives each row it deletes under `event_log_archive_dir`, and
-    of the signal table, which keeps the last `KEEP_S` seconds of signals."""
-    thread = threading.Thread(
-        target=prune_forever,
-        args=(log,),
-        kwargs={
-            "retention_days": config.event_log_retention_days,
-            "archive_dir": base / config.event_log_archive_dir,
-            "stop": stop,
-            "signal_keep": KEEP_S,
-        },
-        name="event-log-prune",
-        daemon=True,
-    )
+    of the signal table and its folds, which keep the last `KEEP_S` seconds of signals."""
+    thread = threading.Thread(target=prune_event_log, args=(log, config, base, stop), name="event-log-prune", daemon=True)
     thread.start()
     return thread

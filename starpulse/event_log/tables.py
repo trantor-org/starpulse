@@ -236,3 +236,23 @@ signals = Table(
     Index("ix_starpulse_signals_time", "time"),
     Index("ix_starpulse_signals_session", "harness", "session", "time"),
 )
+
+#: One view's fold of one harness session, as plain JSON: the persisted result the analytics views combine. A session's
+#: rows are folded together, `folded_through` being the highest `starpulse_signals` rowid they read and `basis` the
+#: fingerprint of the fold code, task keys and analytics config they were folded under. `first_at` and `last_at` are the
+#: times of the session's first and last signal; the hourly prune deletes rows whose `last_at` is past the keep window.
+signal_folds = Table(
+    "starpulse_signal_folds",
+    metadata,
+    Column("view", String, nullable=False),
+    Column("harness", String, nullable=False),
+    Column("session", String, nullable=False),
+    Column("first_at", Float, nullable=False),
+    Column("last_at", Float, nullable=False),
+    Column("folded_through", Integer, nullable=False),
+    Column("basis", String, nullable=False),
+    Column("result", JSON, nullable=False),
+    PrimaryKeyConstraint("view", "harness", "session"),
+    Index("ix_starpulse_signal_folds_last_at", "last_at"),
+    Index("ix_starpulse_signal_folds_basis", "basis"),
+)

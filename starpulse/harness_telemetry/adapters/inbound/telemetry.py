@@ -374,7 +374,7 @@ _SHARED = frozenset(
 )
 
 
-def _signal(stored: dict[str, Any]) -> Signal:
+def stored_signal(stored: dict[str, Any]) -> Signal:
     """A signal as the event log stored it, whose tuples came back as lists."""
     kept = {k: v for k, v in stored.items() if k in _FIELDS}
     kept.setdefault("captured", kept.get("harness") == CLAUDE_CODE)  # rows stored before the mark was kept
@@ -398,7 +398,7 @@ def held(found: Iterable[Signal]) -> list[Signal]:
     first: dict[str, Signal] = {}
     for signal in found:
         first.setdefault(signal.key, signal)
-    return [_signal(asdict(signal)) for signal in first.values()]
+    return [stored_signal(asdict(signal)) for signal in first.values()]
 
 
 KEEP_S = 8 * 86400.0  # a day past the views' default 168 h window: the oldest held signal never lies inside it
@@ -447,7 +447,7 @@ class TelemetryLog:
         if self._loki is None:
             polled = []
             while entries := self._tail.poll():
-                polled += [_signal(entry.fields) for entry in entries]
+                polled += [stored_signal(entry.fields) for entry in entries]
                 if len(entries) < self._tail.batch:
                     break
             return polled
@@ -458,7 +458,7 @@ class TelemetryLog:
             for _, row in page:
                 if row.get("key") not in self._keys:
                     self._keys.add(row["key"])
-                    new.append(_signal(row))
+                    new.append(stored_signal(row))
         return new
 
     def read(self, since: float = 0.0) -> list[Signal]:

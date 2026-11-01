@@ -439,8 +439,9 @@ poll, and it holds 8 days of signals, a day past the 168 h default window. It pr
 
 `starpulse copy-signals [--days N] [--config starpulse.toml]` copies the last `N` days (default 8) of the signals in the
 Loki the config's `telemetry_loki_url` names into `starpulse_signals` in the history database, by signal time, skipping
-each key the table already holds, so a rerun inserts nothing. Nothing reads the table yet; the hourly prune of the event
-log deletes its rows older than 8 days. It prints one JSON line with `days` and `copied`, and exits 1 for a config with no
+each key the table already holds, so a rerun inserts nothing. No view serves from the table yet; `SignalFolds` folds it
+per session into `starpulse_signal_folds` from a rowid cursor in the settings, and the hourly prune of the event log
+deletes the rows of both tables older than 8 days. It prints one JSON line with `days` and `copied`, and exits 1 for a config with no
 `telemetry_loki_url` or a Loki it cannot reach. It is not an agent verb.
 
 ## Reloading a running serve
