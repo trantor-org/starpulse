@@ -12,7 +12,7 @@ import type { HudState } from "../../render/hud";
 import {
   CLOSED, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainOf, claimChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
   stacked as stacksState, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
-  type ClaimChip, type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
+  type ClaimChip, type KanbanTask, type Layout, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
 import { sessionNickname } from "./nickname";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
@@ -529,6 +529,10 @@ function ModalHost({ store, cards, draw }: { store: OpenTask; cards: KanbanTask[
 
 /** Pixels a press travels before it lifts the card instead of opening it. */
 const LIFT_PX = 5;
+/** What the board-only derivations hold until the board's own render: a direct link's modal draws first. */
+const NO_LAYOUT: Layout = { columns: [], cross: new Map(), open: 0, done: 0, shown: 0, total: 0, hidden: 0 };
+const NO_HOLDS: ReturnType<typeof holdCounts> = new Map();
+const NO_CARDS: KanbanTask[] = [];
 
 /**
  * The Kanban view. `spot` is the task a Recent line is hovered for: its card lights as a hovered card does and its column scrolls to it,
@@ -650,8 +654,9 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   // the filter ends with the last unheld task, so the next one to lapse does not arrive on a board already filtered
   if (unheldOnly && unheldCount === 0) setUnheldOnly(false);
   const lane = useMemo(() => (unheldOnly ? cards.filter((t) => t.lane !== roles.working || unheld(t, roles)) : cards), [cards, roles, unheldOnly]);
-  const view = useMemo(() => layout(lane, hud.names, roles, prefs, now), [lane, hud.names, roles, prefs, now]);
-  const holds = useMemo(() => holdCounts(cards, roles), [cards, roles]);
+  // the board-only derivations wait for the board's own render: a direct link's modal draws without them
+  const view = useMemo(() => (drawBoard ? layout(lane, hud.names, roles, prefs, now) : NO_LAYOUT), [drawBoard, lane, hud.names, roles, prefs, now]);
+  const holds = useMemo(() => (drawBoard ? holdCounts(cards, roles) : NO_HOLDS), [drawBoard, cards, roles]);
   const blockers = useMemo(() => holders(cards, roles, holds), [cards, roles, holds]);
   const [pointed, setHovered] = useState<string | null>(null);
   // a card the Recent rail points at draws as the hovered one, ringed even when it holds and waits on nothing, since no pointer is on it
@@ -681,7 +686,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   }, [toast]);
   const marksOf = (id: string): Marks => ({ saving: moved.pending[id]?.saving, refusal: moved.refused[id], claim: started.claiming[id], failed: started.failed[id] });
   const lanes = useMemo(() => columnsOf(hud.names, roles), [hud.names, roles]);
-  const drawn = useMemo(() => recent(cards, now, roles), [cards, now, roles]);
+  const drawn = useMemo(() => (drawBoard ? recent(cards, now, roles) : NO_CARDS), [drawBoard, cards, now, roles]);
   const suggestions = useMemo(() => labelSuggestions(drawn, prefs.query, lanes), [drawn, prefs.query, lanes]);
   const at = Math.min(pick, suggestions.length - 1);
   const assignees = useMemo(() => assigneeOptions(drawn, lanes), [drawn, lanes]);

@@ -616,7 +616,8 @@ export function TaskView(p: TaskViewProps) {
               const live = editing === "details";
               const { chips, ...fields } = detailFields(draft.labels);
               const labelFp = { ...fp("labels", "details"), bad: false };
-              const areas = [...new Set([...p.tasks.map((t) => detailFields(t.labels).area), fields.area])].filter(Boolean).sort();
+              // the Area choices scan every task on the board: read only once the field is editable, not on every draw of the modal
+              const areas = live ? [...new Set([...p.tasks.map((t) => detailFields(t.labels).area), fields.area])].filter(Boolean).sort() : [];
               const field = (name: LabelField, options: string[]) => (
                 <Select {...labelFp} label={name[0].toUpperCase() + name.slice(1)} value={fields[name]}
                   options={[["", "—"], ...options.map((v): [string, string] => [v, v])]} onChange={(value) => change("labels", setDetailField(draft.labels, name, value))} />
