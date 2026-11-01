@@ -622,6 +622,12 @@ def refuse_unassemblable(
 
 #: `machine_sync.REFUSED`, which this module cannot import without loading the database stack.
 _ADMISSION_REFUSED = 3
+#: `machine_sync.STRANDED`: the Board machine would strand live Tasks, so the active version stays.
+_ADMISSION_STRANDED = 4
+
+
+class StrandedAdmission(ValueError):
+    """The Board machine file strands live Tasks; the registry kept the active version."""
 
 
 def admit_definitions(args: argparse.Namespace) -> None:
@@ -632,10 +638,23 @@ def admit_definitions(args: argparse.Namespace) -> None:
     if args.config:
         command += ["--config", str(args.config)]
     ran = subprocess.run(command, capture_output=True, text=True, check=False)
+    if ran.returncode == _ADMISSION_STRANDED:
+        raise StrandedAdmission(ran.stderr.strip())
     if ran.returncode == _ADMISSION_REFUSED:
         raise ValueError(ran.stderr.strip())
     if ran.returncode:
         raise RuntimeError(f"machine definitions could not be registered:\n{ran.stderr.strip()}")
+
+
+def admit_at_start(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """`admit_definitions` for the start of `serve`: a Board machine that strands live Tasks is a warning naming them,
+    since the registry keeps the active version and the board still reads and serves; any other refusal exits."""
+    try:
+        admit_definitions(args)
+    except StrandedAdmission as exc:
+        logger.warning("board machine not activated, serving the active version: %s", exc)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
 
 
 def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.socket:
@@ -693,10 +712,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
         commands["api"] += ["--hours", str(args.hours)]
-    try:
-        admit_definitions(args)
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
+    admit_at_start(parser, args)
     # the preloaded process inherits the bound socket, so the Page API child forks from it like every other worker
     forker = Forker(
         [*DATABASE_STACK, *(ENTRIES[context] for context in commands)],

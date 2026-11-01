@@ -193,7 +193,9 @@ included), and one active hash per machine in `starpulse_machine_active`. Nothin
 `sync_definitions` (`starpulse/runtime/machine_sync.py`) activates the Board's `[board] machine` file against the
 live Tasks and each file in `.starpulse/machines/` (the owners' definitions directory). `serve` runs it at start, once the
 port is bound, in a child process (`python -m starpulse.runtime.machine_sync`, exit 3 on a refusal) so the
-server itself never loads the database stack; a refusal exits `serve` 1. It runs again before every reload (`starpulse reload`, `POST /reload`): a refused reload changes
+server itself never loads the database stack; a refusal exits `serve` 1. A Board machine that strands live Tasks
+(`StrandedTasks`, exit 4) is the exception at start: the other definition files are still synced, `serve` logs a
+warning naming the States and Task ids, and it starts on the version that stays active. It runs again before every reload (`starpulse reload`, `POST /reload`): a refused reload changes
 nothing and the running workers stay on the active version.
 
 ## Task read model
