@@ -42,7 +42,7 @@ from sqlalchemy.engine import Connection, make_url
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
-from starpulse.event_log.tables import events, gaps, settings, signals, worker_state
+from starpulse.event_log.tables import events, gaps, settings, signal_folds, signals, worker_state
 
 __all__ = ["Entry", "EventLog", "Tail"]
 
@@ -346,10 +346,12 @@ class EventLog:
             last = batch[-1].id
 
     def prune_signals(self, keep: float, now: float | None = None) -> int:
-        """Delete the `starpulse_signals` rows whose `time` is more than `keep` seconds old and return how many; raises
-        when the database does. A signal has no archive: Loki kept none either."""
+        """Delete the `starpulse_signals` rows whose `time` is more than `keep` seconds old, and the
+        `starpulse_signal_folds` rows whose `last_at` is, and return how many signals; raises when the database does. A
+        signal has no archive: Loki kept none either."""
         cutoff = (time.time() if now is None else now) - keep
         with self.engine.begin() as db:
+            db.execute(delete(signal_folds).where(signal_folds.c.last_at < cutoff))
             return db.execute(delete(signals).where(signals.c.time < cutoff)).rowcount
 
     def last(self, stream: str) -> int | None:
@@ -552,8 +554,8 @@ def prune_forever(
     signal_keep: float | None = None,
 ) -> None:
     """Prune the rows older than `retention_days` into `archive_dir` at start and then every `interval` seconds until
-    `stop` is set; the same pass deletes the `starpulse_signals` rows more than `signal_keep` seconds old when it is
-    given. A pass that fails is logged and the next one retries, so a database that was briefly away, or an
+    `stop` is set; the same pass deletes the `starpulse_signals` and `starpulse_signal_folds` rows more than `signal_keep`
+    seconds old when it is given. A pass that fails is logged and the next one retries, so a database that was briefly away, or an
     archive that could not be written, does not end the pruning."""
     while True:
         try:
