@@ -126,6 +126,15 @@ def test_serve_follows_the_projection_the_worker_keeps(tmp_path: Path, monkeypat
     assert len(Follower.started) == 1
 
 
+def test_serve_stops_the_threads_it_follows_with_once_it_returns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _serve(tmp_path, monkeypatch, CONTEXT)
+
+    [stop] = Follower.started
+    assert isinstance(stop, threading.Event) and stop.is_set()
+
+
 def test_a_refresh_is_queued_for_the_worker_when_serve_has_no_gh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

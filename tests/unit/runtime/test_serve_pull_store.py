@@ -1,9 +1,10 @@
 """`serve` keeps the pull request store unless its config turns it off."""
 
+import threading
 from pathlib import Path
 
 import pytest
-from starpulse.runtime import server, worker
+from starpulse.runtime import read_model_follow, server, worker
 
 from tests import fake_board
 
@@ -43,3 +44,35 @@ def test_serve_starts_the_pull_store_only_when_configured(
     worker.main(["pulls", "--config", str(config)])
 
     assert len(Sync.built) == int(kept)
+
+
+def test_a_worker_stops_what_it_started_once_its_hold_returns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(fake_board, "BUILT", [])
+    held: list[threading.Event] = []
+    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr(server.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(server, "PullSync", Sync)
+    config = tmp_path / "starpulse.toml"
+    config.write_text('[board]\ntype = "tests.fake_board"\nlanes = ["open", "shut"]\n')
+
+    worker.main(["pulls", "--config", str(config)])
+
+    [stop] = held
+    assert stop.is_set()
+
+
+def test_a_worker_whose_start_is_refused_stops_the_follower_it_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(fake_board, "BUILT", [])
+    stops: list[threading.Event] = []
+    monkeypatch.setattr(read_model_follow, "follow", lambda projector, feed, stop: stops.append(stop))
+    monkeypatch.setattr(server.shutil, "which", lambda name: f"/usr/bin/{name}")
+    config = tmp_path / "starpulse.toml"
+    config.write_text('[release]\n[board]\ntype = "tests.fake_board"\nlanes = ["open", "shut"]\n[board.actor]\n')
+
+    with pytest.raises(SystemExit):
+        worker.main(["pulls", "--config", str(config)])
+
+    [stop] = stops
+    assert stop.is_set()
