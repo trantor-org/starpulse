@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
-from starpulse.pulls.adapters.inbound.task_actor import LINT_REFUSED, REGATE
+from starpulse.pulls.adapters.inbound.task_actor import ACTOR, ATTENTION_QUESTION, LINT_REFUSED, REGATE
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import task
 
-from tests.task_actor_kit import GATED, PR_ONE, ROLES, Board, Criteria, pull, running, until
+from tests.task_actor_kit import GATED, PR_ONE, PR_TWO, ROLES, Board, Criteria, pull, running, until
 
 
 @pytest.fixture
@@ -53,6 +53,7 @@ def test_a_refused_write_is_counted_and_not_retried_until_the_tasks_facts_change
     assert _sample(actor.exposition(), "starpulse_task_actor_refusals_total") == 2
 
 
+HEAD = "0" * 12  # the first twelve digits of a stand-in pull request's head commit
 REFUSAL = "Waiting needs exactly one release gate"
 
 
@@ -249,3 +250,57 @@ def test_a_waiting_task_whose_return_to_review_is_refused_moves_to_ready_when_it
     board.put(task("TASK-9", "Done"))
 
     assert until(lambda: ("TASK-1", "ready") in board.moved())
+
+
+def test_a_red_check_demotes_a_review_task_to_needs_attention_with_the_failure_and_the_question(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(roles=ROLES), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN", checks="failing")])
+
+    running(board, store, stop)
+
+    assert until(lambda: board.moved() == [("TASK-1", "needs_attention")])
+    _, changes, comment, actor = board.writes[0]
+    assert actor == ACTOR
+    assert comment == f"Pull request checks failed: acme/trantor#1 at {HEAD}. {ATTENTION_QUESTION}"
+    assert changes["description"].endswith(f"## Needs attention\n\n{comment}")
+
+
+@pytest.mark.parametrize(
+    ("option", "said"),
+    [
+        ({"mergeable": "CONFLICTING"}, "Pull request conflicts with its base"),
+        ({"draft": True}, "Pull request is a draft"),
+    ],
+)
+def test_a_conflicting_or_draft_pull_request_sends_a_review_task_back_and_hands_it_to_the_returned_hook(
+    store: PullStore, stop: threading.Event, option: dict, said: str
+) -> None:
+    returned: list[str] = []
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    board.refusing["review"] = "Pull request is not green"  # the board's guard, which keeps it from bouncing back
+    store.save([pull(1, state="OPEN", **option)])
+
+    running(board, store, stop, returned=returned.append)
+
+    assert until(lambda: board.moved()[:1] == [("TASK-1", "in_progress")])
+    assert board.writes[0][2] == f"{said}: acme/trantor#1 at {HEAD}."
+    assert until(lambda: returned == ["TASK-1"])
+    assert board.tasks["TASK-1"].lane == "in_progress"
+
+
+def test_a_merged_pull_request_closes_a_review_task_whose_checks_failed_and_a_green_one_stays_in_review(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(roles=ROLES),
+        task("TASK-1", "Review", references=(PR_ONE,)),
+        task("TASK-2", "Review", references=(PR_TWO,)),
+    )
+    store.save([pull(1, state="MERGED", checks="failing"), pull(2, state="OPEN")])
+
+    running(board, store, stop)
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    assert not until(lambda: len(board.moved()) > 1, within=0.3)

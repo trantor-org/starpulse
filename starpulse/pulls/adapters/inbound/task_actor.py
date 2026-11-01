@@ -49,7 +49,7 @@ if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ACTOR", "LINT_REFUSED", "TaskActor", "moves_of"]
+__all__ = ["ACTOR", "ATTENTION_QUESTION", "LINT_REFUSED", "TaskActor", "moves_of"]
 
 #: The actor every write of the task actor names.
 ACTOR = "starpulse/task-actor"
@@ -59,6 +59,8 @@ LINT_REFUSED = "Release to Ready refused by the task lint, repair the record to 
 REGATE = "Start Criteria could not be evaluated for two passes, an agent re-gates the task:"
 #: The machine event a delivery run publishes when it ends, its verdict in the event's data.
 DELIVER_FINISHED = "DELIVER_FINISHED"
+#: The question that ends the `## Needs attention` reason of a task the actor moves there on a pull request fact.
+ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
 #: The pull request states that end a pull request.
 _TERMINAL = ("MERGED", "CLOSED")
 #: The repository the board renders a bare `PR #N` against; another repo's pull request links its own URL.
@@ -84,7 +86,7 @@ _DAY_S = 86_400.0
 LOCK_BACKOFF_S = (0.1, 0.4, 1.6)
 
 #: The facts whose event parks a task in Needs attention: the comment is also its `## Needs attention` reason, a question.
-_ASKS = ("overdue", "pr_closed_unmerged")
+_ASKS = ("overdue", "pr_closed_unmerged", "pr_failing")
 _SLE_DAYS, _GRACE_DAYS = 7, 2
 #: Start Criteria evaluated at once: each is a subprocess, so the pass is bounded rather than one thread per gated task.
 _EVALUATIONS = 8
@@ -202,6 +204,7 @@ class TaskActor:
         released: Callable[[str], None] | None = None,
         delivered: Callable[[str, str], None] | None = None,
         closed: Callable[[str], None] | None = None,
+        returned: Callable[[str], None] | None = None,
         fresh_s: float = criteria.CACHE_SECONDS,
         live: LiveBuild | None = None,
         advance: Callable[[str, str, str], None] | None = None,
@@ -241,6 +244,7 @@ class TaskActor:
         #: The step count of each task's last finished delivery handed to `delivered`, so one run's end is told once.
         self._told: dict[str, int] = {}
         self._closed = closed
+        self._returned = returned
         self._fresh_s = fresh_s
         #: The lanes that wait on a task's Start Criteria.
         self._gated_lanes = {lane for lane, facts in waits.items() if facts.keys() & set(_CRITERIA_FACTS)}
@@ -256,7 +260,7 @@ class TaskActor:
         self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...]]] = {}
         self._by_pr: dict[str, set[str]] = {}
         #: What each pull request last read as, so a refresh that changed nothing derives nothing.
-        self._pull_states: dict[str, tuple[str, str | None, bool, str]] = {}
+        self._pull_states: dict[str, tuple[str, str | None, bool, str, str, str]] = {}
         #: Per task sent back from Review to the working lane, the head of each pull request it cites at that moment: a
         #: ready pull request still on that head is the reviewed work, which `pr_ready` does not send to Review again.
         self._sent_back: dict[str, dict[str, str]] = {}
@@ -639,11 +643,18 @@ class TaskActor:
             return own
         return agent["prs"]
 
-    def _pull_state(self, url: str) -> tuple[str, str | None, bool, str]:
+    def _pull_state(self, url: str) -> tuple[str, str | None, bool, str, str, str]:
         record = self._record(url)
         if record is None:
-            return "", None, False, ""
-        return record["state"], record["mergeSha"], record["isDraft"], record["headRefOid"]
+            return "", None, False, "", "", ""
+        return (
+            record["state"],
+            record["mergeSha"],
+            record["isDraft"],
+            record["headRefOid"],
+            record["mergeable"],
+            record["checks"],
+        )
 
     def _heads(self, agent: dict[str, Any]) -> dict[str, str]:
         """The head of each own pull request of the task the store holds."""
@@ -689,6 +700,8 @@ class TaskActor:
                 self._notice(self._tell, name, "was parked but its holder was not told")
             if self._released and source == roles.waiting and target == roles.ready:
                 self._notice(self._released, name, "was released but its holder was not told")
+            if self._returned and target == roles.working:
+                self._notice(self._returned, name, "was sent back but its holder was not told")
             if self._closed and target == roles.done:
                 self._notice(self._closed, name, "was closed but the board was not told")
             return True
@@ -912,6 +925,36 @@ class TaskActor:
         proof = "; ".join(parts)
         return proof, f"Pull request ready: {proof}"
 
+    def _open_pulls(
+        self, agent: dict[str, Any], said: str, problem: Callable[[dict[str, Any]], bool]
+    ) -> tuple[str, str] | None:
+        """The open pull requests of the task's own delivery that `problem` holds of, with the comment `said` names them
+        in, else None. The head commit is in the evidence, so a push that fails or conflicts again is a new fact."""
+        parts = []
+        for url in self._own_prs(agent):
+            record = self._record(url)
+            if record is not None and record["state"] == "OPEN" and problem(record):
+                parts.append(f"{record['repo']}#{record['number']} at {record['headRefOid'][:12]}")
+        if not parts:
+            return None
+        proof = "; ".join(parts)
+        return proof, f"{said}: {proof}."
+
+    def _pr_failing(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The open pull requests whose required checks failed, with the question the task's reason ends in, else None."""
+        failing = self._open_pulls(agent, "Pull request checks failed", lambda record: record["checks"] == "failing")
+        return failing and (failing[0], f"{failing[1]} {ATTENTION_QUESTION}")
+
+    def _pr_draft(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The open pull requests that are drafts, else None."""
+        return self._open_pulls(agent, "Pull request is a draft", lambda record: record["isDraft"])
+
+    def _pr_conflicting(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The open pull requests that conflict with their base, else None."""
+        return self._open_pulls(
+            agent, "Pull request conflicts with its base", lambda record: record["mergeable"] == "CONFLICTING"
+        )
+
     def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The dependencies once every one is done and merged, an empty tuple when the task has none, and no Start
         Criteria gate it."""
@@ -1093,6 +1136,9 @@ class TaskActor:
         "pr_merged_planned": _pr_merged_planned,
         "pr_merged_unfinished": _pr_merged_unfinished,
         "pr_ready": _pr_ready,
+        "pr_failing": _pr_failing,
+        "pr_draft": _pr_draft,
+        "pr_conflicting": _pr_conflicting,
         "deps_done": _deps_done,
         "deps_done_with_pr": _deps_done_with_pr,
         "deps_unresolved": _deps_unresolved,
