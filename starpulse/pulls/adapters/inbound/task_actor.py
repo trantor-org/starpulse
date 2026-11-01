@@ -80,6 +80,9 @@ SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0
 _POLL_S = 0.5
 #: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
 _DAY_S = 86_400.0
+#: Seconds to wait before each retry of a write that found the board database locked.
+LOCK_BACKOFF_S = (0.1, 0.4, 1.6)
+
 #: The facts whose event parks a task in Needs attention: the comment is also its `## Needs attention` reason, a question.
 _ASKS = ("overdue", "pr_closed_unmerged")
 _SLE_DAYS, _GRACE_DAYS = 7, 2
@@ -676,6 +679,9 @@ class TaskActor:
                 self._notice(self._closed, name, "was closed but the board was not told")
             return True
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
+        if written.transient:  # not a refusal: the task stays in its lane and the next pass tries the move again
+            self._tried.pop(name, None)
+            return False
         if target == self._feed.roles.ready:
             if written.lint:
                 self._hold_for_repair(name, written.output)
@@ -754,13 +760,24 @@ class TaskActor:
 
     def _apply(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
         with self._feed.recording:  # the board's poll finds the lane recorded under the actor, not as external
-            try:
-                written = self._edit(name, changes, comment, actor=ACTOR)
-            except Exception as error:  # a board that raises refuses like one that answers no
-                written = Written(False, str(error))
+            written = self._edit_retrying(name, changes, comment)
             if written.ok and written.lane:
                 self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, "", ""))
         return written
+
+    def _edit_retrying(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
+        """The board's edit, retried with backoff while SQLite reports the database locked; a lock that outlasts the
+        retries is `transient`, a failure of the database and no refusal of the change."""
+        for delay in (*LOCK_BACKOFF_S, None):
+            try:
+                return self._edit(name, changes, comment, actor=ACTOR)
+            except Exception as error:  # a board that raises refuses like one that answers no
+                if "database is locked" not in str(error):
+                    return Written(False, str(error))
+                if delay is None:
+                    return Written(False, str(error), transient=True)
+                time.sleep(delay)
+        raise AssertionError("unreachable")
 
     def _landed(self, seconds: float) -> None:
         with self._metrics:
