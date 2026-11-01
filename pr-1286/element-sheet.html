@@ -188,23 +188,23 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #nav .kb-glyph { border: 0; border-radius: 0; fill: currentColor; }
 #nav .note { font-size: calc(10.5px * var(--fs)); line-height: 1.6; color: var(--faint); }
 
-#nav > section:is(.outline, .leaderboard) { flex: 1; min-height: 0; box-sizing: border-box; width: calc(var(--nav) - 24px); padding: 0 6px; margin: 0 -6px; }
+#nav > section:is(.outline, :is(.leaderboard, .drill-tasks)) { flex: 1; min-height: 0; box-sizing: border-box; width: calc(var(--nav) - 24px); padding: 0 6px; margin: 0 -6px; }
 
 #nav > section.outline { flex: .5 1 0; }
-#nav :is(.outline, .leaderboard) h3 { display: flex; align-items: baseline; white-space: nowrap; }
+#nav :is(.outline, :is(.leaderboard, .drill-tasks)) h3 { display: flex; align-items: baseline; white-space: nowrap; }
 #nav .outline .clear { all: unset; margin-left: auto; letter-spacing: .04em; text-transform: none; }
 #nav .outline .clear:hover, #nav .outline .clear:focus-visible { color: var(--ink); }
-#nav :is(.outline .ms, .leaderboard .lb-row) { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 1fr auto; column-gap: 10px; align-items: baseline; padding: 3px 6px; margin: 0 -6px; width: calc(100% + 12px);
+#nav :is(.outline .ms, :is(.leaderboard, .drill-tasks) .lb-row) { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 1fr auto; column-gap: 10px; align-items: baseline; padding: 3px 6px; margin: 0 -6px; width: calc(100% + 12px);
   border-radius: 4px; font-size: calc(12px * var(--fs)); line-height: 1.4; }
-#nav :is(.outline .ms, .leaderboard .lb-row):is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slate) 8%, transparent); }
+#nav :is(.outline .ms, :is(.leaderboard, .drill-tasks) .lb-row):is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slate) 8%, transparent); }
 #nav .outline .ms.on { background: color-mix(in srgb, var(--agent) 14%, transparent); }
-#nav :is(.outline, .leaderboard) .id { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: calc(11.5px * var(--fs)); color: var(--ink); white-space: nowrap; }
-#nav :is(.outline, .leaderboard) .w { font-size: calc(11px * var(--fs)); color: var(--muted); font-variant-numeric: tabular-nums; }
-#nav :is(.outline, .leaderboard) .bar { grid-column: 1 / -1; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--slate) 12%, transparent); overflow: hidden; margin-top: 3px; }
-#nav :is(.outline, .leaderboard) .bar > i { display: block; height: 100%; background: color-mix(in srgb, var(--agent) 70%, transparent); }
-#nav .leaderboard .sub { margin-left: auto; letter-spacing: .04em; text-transform: none; }
-#nav .leaderboard .lb-grp { display: flex; align-items: baseline; margin: 8px 0 1px; font-size: calc(10.5px * var(--fs)); color: var(--muted); white-space: nowrap; }
-#nav .leaderboard .lb-grp .n { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
+#nav :is(.outline, :is(.leaderboard, .drill-tasks)) .id { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: calc(11.5px * var(--fs)); color: var(--ink); white-space: nowrap; }
+#nav :is(.outline, :is(.leaderboard, .drill-tasks)) .w { font-size: calc(11px * var(--fs)); color: var(--muted); font-variant-numeric: tabular-nums; }
+#nav :is(.outline, :is(.leaderboard, .drill-tasks)) .bar { grid-column: 1 / -1; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--slate) 12%, transparent); overflow: hidden; margin-top: 3px; }
+#nav :is(.outline, :is(.leaderboard, .drill-tasks)) .bar > i { display: block; height: 100%; background: color-mix(in srgb, var(--agent) 70%, transparent); }
+#nav :is(.leaderboard, .drill-tasks) .sub { margin-left: auto; letter-spacing: .04em; text-transform: none; }
+#nav :is(.leaderboard, .drill-tasks) .lb-grp { display: flex; align-items: baseline; margin: 8px 0 1px; font-size: calc(10.5px * var(--fs)); color: var(--muted); white-space: nowrap; }
+#nav :is(.leaderboard, .drill-tasks) .lb-grp .n { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
 
 :is(#kb, #dg, #sd) { position: fixed; z-index: 3; top: 0; bottom: 0; left: calc(var(--nav) + 20px); right: calc(var(--rail) + 20px); display: flex; flex-direction: column;
   font-size: calc(12px * var(--fs)); }
@@ -218,6 +218,15 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #sd header .crumb:hover, #sd header .crumb:focus-visible { color: var(--ink-hi); }
 
 body:has(#sd) #crumb { visibility: hidden; }
+
+@keyframes sd-pulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes sd-twinkle { 0%, 100% { opacity: .25; } 50% { opacity: .75; } }
+@keyframes sd-march { to { stroke-dashoffset: -14; } }
+@keyframes sd-breathe { 0%, 100% { opacity: .75; transform: scale(1); } 50% { opacity: 1; transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { #sd :is(span, path) { animation: none !important; } }
+
+#nav .drill-tasks .lb-row.on { background: color-mix(in srgb, var(--agent) 12%, transparent); }
+#nav .drill-tasks .lb-row > i { grid-column: 1 / -1; display: block; }
 
 #sd header { height: auto; min-height: 64px; flex-wrap: wrap; row-gap: 4px; padding-block: 8px; box-sizing: border-box; }
 #sd header .title, #sd header .count { white-space: nowrap; }
@@ -1014,7 +1023,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #legend svg { vertical-align: middle; }
 
 
-#nav .matches, #nav .outline, #nav .leaderboard, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #admin, #sd .sd-details {
+#nav .matches, #nav .outline, #nav .leaderboard, #nav .drill-tasks, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #admin, #sd .sd-details {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
