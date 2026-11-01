@@ -220,3 +220,19 @@ analytics_answers = Table(
     Column("folded_at", Float, nullable=False),
     Index("ix_starpulse_answers_folded_at", "folded_at"),
 )
+
+#: The harness-telemetry signals, one row per signal key: an insert of a present key changes nothing, and `rowid` (the
+#: table's implicit one) orders the rows as they landed. `fields` is the signal's stored fields as JSON; the columns
+#: beside it are the ones a read filters or orders by. The hourly prune deletes rows whose `time` is past the keep window.
+signals = Table(
+    "starpulse_signals",
+    metadata,
+    Column("key", String, primary_key=True),
+    Column("harness", String, nullable=False),
+    Column("session", String, nullable=False),
+    Column("time", Float, nullable=False),
+    Column("kind", String, nullable=False),
+    Column("fields", JSON, nullable=False),
+    Index("ix_starpulse_signals_time", "time"),
+    Index("ix_starpulse_signals_session", "harness", "session", "time"),
+)

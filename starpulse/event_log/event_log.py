@@ -42,7 +42,7 @@ from sqlalchemy.engine import Connection, make_url
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
-from starpulse.event_log.tables import events, gaps, settings, worker_state
+from starpulse.event_log.tables import events, gaps, settings, signals, worker_state
 
 __all__ = ["Entry", "EventLog", "Tail"]
 
@@ -345,6 +345,13 @@ class EventLog:
             pruned += len(batch)
             last = batch[-1].id
 
+    def prune_signals(self, keep: float, now: float | None = None) -> int:
+        """Delete the `starpulse_signals` rows whose `time` is more than `keep` seconds old and return how many; raises
+        when the database does. A signal has no archive: Loki kept none either."""
+        cutoff = (time.time() if now is None else now) - keep
+        with self.engine.begin() as db:
+            return db.execute(delete(signals).where(signals.c.time < cutoff)).rowcount
+
     def last(self, stream: str) -> int | None:
         """The cursor of `stream`'s newest row, or None when it has none; raises when the database does."""
         with self.engine.connect() as db:
@@ -536,10 +543,17 @@ class Tail:
 
 
 def prune_forever(
-    log: EventLog, *, retention_days: int, archive_dir: Path, stop: threading.Event, interval: float = 3600
+    log: EventLog,
+    *,
+    retention_days: int,
+    archive_dir: Path,
+    stop: threading.Event,
+    interval: float = 3600,
+    signal_keep: float | None = None,
 ) -> None:
     """Prune the rows older than `retention_days` into `archive_dir` at start and then every `interval` seconds until
-    `stop` is set. A pass that fails is logged and the next one retries, so a database that was briefly away, or an
+    `stop` is set; the same pass deletes the `starpulse_signals` rows more than `signal_keep` seconds old when it is
+    given. A pass that fails is logged and the next one retries, so a database that was briefly away, or an
     archive that could not be written, does not end the pruning."""
     while True:
         try:
@@ -547,6 +561,11 @@ def prune_forever(
                 logger.info("EventLog: pruned %d rows older than %d days", pruned, retention_days)
         except Exception:  # the database is unreachable or locked; the next pass retries
             logger.exception("EventLog: prune failed; retrying in %ss", interval)
+        try:
+            if signal_keep is not None and (pruned := log.prune_signals(signal_keep)):
+                logger.info("EventLog: pruned %d signals older than %d s", pruned, signal_keep)
+        except Exception:  # the next pass retries
+            logger.exception("EventLog: signal prune failed; retrying in %ss", interval)
         if stop.wait(interval):
             return
 
