@@ -14,6 +14,7 @@ from sqlalchemy import (
     Float,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     PrimaryKeyConstraint,
     String,
@@ -205,4 +206,17 @@ task_verdicts = Table(
     Column("reason", String, nullable=False),
     Column("occurred_at", Float, nullable=False),
     Index("ix_starpulse_task_verdicts_task", "task", "occurred_at"),
+)
+
+#: The telemetry analytics' answers, one row per view and query: a read answers from its row, and a restart serves the
+#: rows saved before any fold (`views/application/queries/answers.py`).
+analytics_answers = Table(
+    "starpulse_answers",
+    metadata,
+    Column("view", String, primary_key=True),
+    Column("query", String, primary_key=True),
+    Column("body", LargeBinary, nullable=False),
+    Column("status", Integer, nullable=False),
+    Column("folded_at", Float, nullable=False),
+    Index("ix_starpulse_answers_folded_at", "folded_at"),
 )

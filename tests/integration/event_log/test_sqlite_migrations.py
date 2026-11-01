@@ -45,7 +45,7 @@ def _indexes(engine: Engine, table: str) -> set[str]:
 
 
 def test_the_chain_has_one_head() -> None:
-    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0037"]
+    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0038"]
 
 
 def test_a_fresh_store_is_built_by_the_chain_and_matches_the_declared_schema(tmp_path: Path) -> None:
@@ -128,3 +128,24 @@ def test_the_event_log_and_the_history_store_opening_one_file_at_once_both_open_
             opened.result()
 
     assert _versions(create_engine(url)) == [_head()]
+
+
+def test_the_answers_revision_creates_the_answers_table_and_drops_only_the_stale_checkpoints(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'answers.sqlite'}")
+    stale = ("analytics-answers", "backlog:projection:tasks", "native:tasks", "board:replica@tasks")
+    with engine.begin() as db:
+        config = alembic_config(db)
+        command.upgrade(config, "0037")
+        for name in (*stale, "machine:events"):
+            db.execute(
+                text(
+                    "INSERT INTO starpulse_checkpoints (name, position, schema_version, saved_at) "
+                    "VALUES (:name, 1, 0, 1.0)"
+                ),
+                {"name": name},
+            )
+        command.upgrade(config, "0038")
+        names = list(db.execute(text("SELECT name FROM starpulse_checkpoints")).scalars())
+        tables = set(inspect(db).get_table_names())
+
+    assert (names, "starpulse_answers" in tables) == (["machine:events"], True)

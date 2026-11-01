@@ -21,7 +21,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
 class KeptAnswers(Protocol):
     """The answers of the telemetry analytics kept past a restart (`Answers`)."""
 
-    def answer(self, key: str, compute: Callable[[], tuple[bytes, int]]) -> tuple[bytes, int]: ...
+    def answer(self, view: str, query: str, compute: Callable[[], tuple[bytes, int]]) -> tuple[bytes, int]: ...
 
 
 #: The default of `slow_read_seconds`.
