@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from starpulse.runs import ingest
-from starpulse.runs.config import Producer
+from starpulse.runs.adapters.inbound import ingest
+from starpulse.runs.model.config import Producer
 
 TOKENS = {"cron": "s3cret-cron", "dagu": "s3cret-dagu"}
 

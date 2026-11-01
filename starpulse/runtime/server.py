@@ -218,15 +218,15 @@ from starpulse.pulls.adapters.inbound.unblock import UNBLOCK_S, Unblocker
 from starpulse.pulls.adapters.outbound.pull_requests import PullRequests
 from starpulse.pulls.adapters.outbound.pull_store import PullSync
 from starpulse.pulls.model.pins import GitHub, LiveBuild, running_commit
-from starpulse.runs import opt_in
-from starpulse.runs import projection as runs_projection
-from starpulse.runs.cloudevents import CloudEventsIngest
-from starpulse.runs.config import RunsInstance
-from starpulse.runs.ingest import tokens as ingest_tokens
+from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
+from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
+from starpulse.runs.application.queries import projection as runs_projection
+from starpulse.runs.model import opt_in
+from starpulse.runs.model.config import RunsInstance
+from starpulse.runtime import launch
 from starpulse.runtime.closure import ENTRIES, Reader
 from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
 from starpulse.runtime.control import control_file
-from starpulse.runtime import launch
 from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, adopted_from_env, announce_ready
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 from starpulse.runtime.zygote import Forker
@@ -562,7 +562,7 @@ class Prepared(NamedTuple):
     run_safe: list[str]
     producer_tokens: dict[str, str]
     opt_in_workers: list[str]
-    """The `[[runs]]` instances an adapter's own worker runs (`starpulse.runs.opt_in`): `serve` runs none of them itself."""
+    """The `[[runs]]` instances an adapter's own worker runs (`starpulse.runs.model.opt_in`): `serve` runs none of them itself."""
 
 
 def export_github_token(config: Config) -> None:

@@ -7,9 +7,9 @@ import math
 from collections.abc import Iterable, Mapping
 from typing import Any, get_args
 
-from starpulse.runs.config import Producer
-from starpulse.runs import run_events
 from starpulse.contracts.adapters import RunStatus
+from starpulse.runs.model import run_events
+from starpulse.runs.model.config import Producer
 
 #: The largest event body accepted: a run event is a few hundred bytes, so this only stops a sender filling memory.
 MAX_BODY = 64 * 1024

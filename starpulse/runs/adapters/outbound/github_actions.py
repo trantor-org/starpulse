@@ -20,11 +20,11 @@ from urllib.parse import quote
 
 import yaml
 
-from starpulse.runs import run_events
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
 from starpulse.github import GitHubError, Transport, connect, get, repo_of
+from starpulse.runs.model import run_events
 
 #: Each status a run, job or step reports before it completes, and the status it becomes.
 #: A run held for a runner, an approval or a protection rule is `queued`; the label itself stays in `raw`.
@@ -374,7 +374,7 @@ class GitHubRuns:
 #: Seconds between two readings of a followed repository; a workflow file added since the last one shows at the next.
 #: A reading of a repository where no run changed is two calls, so this is also GitHub's only cost while it is quiet.
 RECONCILE_INTERVAL = 60.0
-#: The worker that runs this adapter (`starpulse.runs.opt_in`): `serve` supervises it as a child.
+#: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
 WORKER = "github-actions"
 
 

@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, unquote, unquote_plus, urlparse
 
 from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS, BUILT_IN, module_name
 from starpulse.contracts.adapters import Dag
-from starpulse.runs import temporal
+from starpulse.runs.adapters.outbound import temporal
 from starpulse.runtime import worker
 
 BASE = "http://temporal.invalid:8233"
@@ -217,7 +217,7 @@ def test_the_poll_reports_the_listing() -> None:
 
 
 def test_the_adapter_is_a_built_in_opt_in_worker_with_no_start() -> None:
-    assert BUILT_IN["temporal"] == module_name("temporal") == "starpulse.runs.temporal"
+    assert BUILT_IN["temporal"] == module_name("temporal") == "starpulse.runs.adapters.outbound.temporal"
     assert "temporal" in ADAPTER_CONTEXTS and "temporal" in worker.OPT_IN
     assert temporal.WORKER == "temporal" and temporal.start(BASE) is None
 

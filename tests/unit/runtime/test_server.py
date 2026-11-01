@@ -19,7 +19,7 @@ from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import events
 from starpulse.harness_telemetry.model.harnesses import Harness, Harnesses, Tier, load_harnesses
-from starpulse.runs.config import RunsInstance
+from starpulse.runs.model.config import RunsInstance
 from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.runtime.assembly import keep_event_log
 from starpulse.runtime.config import Config, load
@@ -652,7 +652,7 @@ def test_an_instance_is_read_by_the_adapter_module_its_type_names() -> None:
 
     module = _adapter(parser, RunsInstance("ci", "dagu", "http://ci.test"))
 
-    assert module.__name__ == "starpulse.runs.dagu"
+    assert module.__name__ == "starpulse.runs.adapters.outbound.dagu"
 
 
 def test_an_instance_type_that_is_not_a_runs_adapter_exits_naming_the_instance(

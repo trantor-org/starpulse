@@ -24,14 +24,14 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from starpulse.runtime.config import ConfigError, discover, load
 from starpulse.board.adapters.board_import import import_board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.store import EventStore
 from starpulse.event_log.tables import events
-from starpulse.runs.run_events import STREAM
-from starpulse.runs.run_streams import RunStreams
+from starpulse.runs.application.commands.run_streams import RunStreams
+from starpulse.runs.model.run_events import STREAM
 from starpulse.runtime.assembly import assemble, history_store
+from starpulse.runtime.config import ConfigError, discover, load
 
 __all__ = ["main"]
 

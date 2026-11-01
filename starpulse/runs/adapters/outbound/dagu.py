@@ -13,9 +13,9 @@ from __future__ import annotations
 import json
 import math
 import os
+import queue
 import re
 import shlex
-import queue
 import statistics
 import threading
 import time
@@ -28,14 +28,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, get_args
 
-from starpulse.runs import run_events
 from starpulse.contracts.adapters import LAST_OUTCOMES, RunsSink, RunStatus, StartFailedError
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.runs.model import run_events
 
 #: Seconds between two listings of a followed Dagu instance.
 RECONCILE_INTERVAL = 30.0
-#: The worker that runs this adapter (`starpulse.runs.opt_in`): `serve` supervises it as a child.
+#: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
 WORKER = "dagu"
 
 #: Each status label Dagu reports (plus `skipped` for a step) and the status it becomes.
@@ -469,7 +469,9 @@ def domains(base_url: str) -> dict[str, tuple[str, ...]]:
 
 def _rerun_of(labels: list[str]) -> dict | None:
     """The rerun safety the DAG's `labels` declare, or None when they declare none (a `rerun-step` alone declares none)."""
-    declared = {name: value for name, sep, value in (label.partition("=") for label in labels) if sep and name in RERUN_LABELS}
+    declared = {
+        name: value for name, sep, value in (label.partition("=") for label in labels) if sep and name in RERUN_LABELS
+    }
     key, repeats = declared.get("rerun-key"), declared.get("rerun-repeats")
     if not (key or repeats or declared.get("rerun") == "safe"):
         return None
@@ -510,7 +512,7 @@ class CpuSampler:
         for unit in (path for pattern in self._units for path in self._root.glob(pattern)):
             try:
                 used[unit.name] = int((unit / "cpu.stat").read_text().split()[1])
-            except (OSError, ValueError, IndexError):  # the unit ended while it was read
+            except OSError, ValueError, IndexError:  # the unit ended while it was read
                 continue
         return used
 
@@ -757,7 +759,16 @@ def _begun(recent: list[dict], run: _Run) -> list[dict]:
     """`recent` holding the run a start entry reports, with no parameters when Dagu has not listed it yet."""
     if any(entry["runId"] == run.run_id for entry in recent):
         return recent
-    begun = {"runId": run.run_id, "task": _task_of(run.run_id), "url": "", "status": "running", "startedAt": _iso(run.at), "finishedAt": "", "params": {}, "steps": {}}
+    begun = {
+        "runId": run.run_id,
+        "task": _task_of(run.run_id),
+        "url": "",
+        "status": "running",
+        "startedAt": _iso(run.at),
+        "finishedAt": "",
+        "params": {},
+        "steps": {},
+    }
     return [begun, *recent]
 
 
@@ -839,7 +850,9 @@ class DaguRuns:
     def _apply(self, fields: dict) -> None:
         run = _decode(fields)
         producer = fields.get("instance")
-        foreign = producer and producer != self._instance  # an ingested entry is its producer's, applied only by that instance
+        foreign = (
+            producer and producer != self._instance
+        )  # an ingested entry is its producer's, applied only by that instance
         if run is None or foreign or run.at < self._listed_at:
             return
         dag = self._dags.get(run.dag)
@@ -879,12 +892,16 @@ class DaguRuns:
         return move(self, dag, run, others, tied, known)
 
 
-def _step_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool) -> tuple[dict, None] | None:
+def _step_move(
+    reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool
+) -> tuple[dict, None] | None:
     moved = _stepped(dag, run) or (dag if tied and known else None)
     return None if moved is None else (moved, None)
 
 
-def _begin_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool) -> tuple[dict, list | None]:
+def _begin_move(
+    reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool
+) -> tuple[dict, list | None]:
     fresh = None
     if tied and (listed := reader._listed(run.dag)):
         fresh = listed.get("recent")
@@ -906,7 +923,9 @@ def _begin_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool
     return moved, fresh
 
 
-def _finish_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool) -> tuple[dict, list | None]:
+def _finish_move(
+    reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool
+) -> tuple[dict, list | None]:
     # Dagu is still inside the run's exit handler, so only its steps are final: read them now.
     listed = reader._listed(run.dag)
     fresh = listed.get("recent") if listed else None
@@ -918,7 +937,9 @@ def _finish_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: boo
     return moved, fresh
 
 
-def _other_move(reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool) -> tuple[dict, None] | None:
+def _other_move(
+    reader: DaguRuns, dag: dict, run: _Run, others: list, tied: bool, known: bool
+) -> tuple[dict, None] | None:
     if len(others) < len(dag.get("active", [])):
         return {**dag, "active": others}, None  # the end of a run no longer the one drawn, still listed as active
     if tied and known:
@@ -952,7 +973,7 @@ def _refresh_stats_forever(url: str, stats: dict, stop: threading.Event) -> None
     while True:
         try:
             refresh_stats(url, stats, tried=tried)
-        except (OSError, ValueError, KeyError, TypeError):  # Dagu unreachable or answering something else
+        except OSError, ValueError, KeyError, TypeError:  # Dagu unreachable or answering something else
             pass
         if stop.wait(RECONCILE_INTERVAL):
             return
@@ -988,7 +1009,14 @@ def follow(
     finished: dict = {}
     graphs: dict = {}
     stats: dict = {}
-    reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs, stats=stats), lambda: pools(url), cpu=CpuSampler(), tied=tied, instance=getattr(runs, "instance", None))
+    reader = DaguRuns(
+        runs,
+        lambda only=None: dags(url, only, tied(), finished, graphs, stats=stats),
+        lambda: pools(url),
+        cpu=CpuSampler(),
+        tied=tied,
+        instance=getattr(runs, "instance", None),
+    )
 
     def read() -> None:
         tail = Tail.live(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed
@@ -997,4 +1025,6 @@ def follow(
 
     threading.Thread(target=read, name="dagu-runs", daemon=True).start()
     threading.Thread(target=_reconcile_forever, args=(reader, stop), name="dagu-runs-reconcile", daemon=True).start()
-    threading.Thread(target=_refresh_stats_forever, args=(url, stats, stop), name="dagu-runs-stats", daemon=True).start()
+    threading.Thread(
+        target=_refresh_stats_forever, args=(url, stats, stop), name="dagu-runs-stats", daemon=True
+    ).start()

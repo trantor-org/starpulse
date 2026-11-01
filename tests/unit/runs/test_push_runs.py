@@ -12,8 +12,8 @@ from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.contracts.adapters import Dag
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.runs import run_events
-from starpulse.runs.push_runs import PUSHED_INSTANCE, PushedRunsSnapshot, PushRuns
+from starpulse.runs.application.queries.push_runs import PUSHED_INSTANCE, PushedRunsSnapshot, PushRuns
+from starpulse.runs.model import run_events
 
 START = 1_700_000_000.0
 

@@ -37,9 +37,9 @@ from starpulse.pulls.adapters.inbound.delivery import (
 )
 from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
 from starpulse.pulls.adapters.outbound.pull_store import PullSync
-from starpulse.runs import opt_in
-from starpulse.runs import projection as runs_projection
-from starpulse.runs.cloudevents import CloudEventsIngest
+from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
+from starpulse.runs.application.queries import projection as runs_projection
+from starpulse.runs.model import opt_in
 from starpulse.scheduler.adapters.exposition import autopilot_exposition
 from starpulse.sessions.session_start import starter
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app

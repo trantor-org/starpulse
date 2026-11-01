@@ -28,11 +28,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from starpulse.runs import opt_in
-from starpulse.runtime.config import Config, MemoryLimit, runs_adapter
-from starpulse.runtime.closure import SELF, Reading, ReloadError
-from starpulse.runtime.control import Control
+from starpulse.runs.model import opt_in
 from starpulse.runtime import launch
+from starpulse.runtime.closure import SELF, Reading, ReloadError
+from starpulse.runtime.config import Config, MemoryLimit, runs_adapter
+from starpulse.runtime.control import Control
 from starpulse.runtime.hold import ADOPT_ENV, LISTEN_FD_ENV, READY_FD_ENV, STATIC_ENV, Adopted, supervised_env
 from starpulse.runtime.memory import memory_reader
 

@@ -28,7 +28,7 @@ TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow")
 
 #: Seconds between two listings of the server.
 POLL_INTERVAL = 15.0
-#: The worker that runs this adapter (`starpulse.runs.opt_in`): `serve` supervises it as a child.
+#: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
 WORKER = "temporal"
 
 #: How many closed runs, failed and of any status, each listing asks for; the server answers newest first.

@@ -34,12 +34,12 @@ from starlette.staticfiles import StaticFiles
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
 from starpulse.harness_telemetry.model.harnesses import Harnesses
-from starpulse.runs.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
-from starpulse.runs.cloudevents_grpc import cloudevents_grpc
+from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
+from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.api import metrics
 from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, target
-from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
+from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
 from starpulse.views.adapters.inbound.compression import Gzip
 from starpulse.views.adapters.inbound.gate_request import GateRequest
 from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
