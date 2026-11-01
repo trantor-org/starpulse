@@ -19,7 +19,7 @@ export const recent = (tasks: KanbanTask[], now: number, roles: Roles): KanbanTa
 /** The lanes drawn as columns: the machine's lifecycle States in order when it names a ready State (trantor's lifecycle), else the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses); none before the lanes are known. */
 export const columnsOf = (names: Record<string, string>, roles: Roles): string[] => {
   const states = new Set(Object.values(lifecycleStates(roles)).filter((s): s is string => !!s));
-  return roles.ready ? [...states] : Object.keys(names);
+  return roles.ready ? [...states] : Object.keys(names).filter((s) => s !== roles.proposed);
 };
 
 export interface KanbanTask {

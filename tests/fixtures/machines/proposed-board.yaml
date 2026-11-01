@@ -1,0 +1,21 @@
+# A board with a Proposed State: entered at create, left only by PROMOTE to the ready State or DROP to the final one.
+name: proposed-board
+states:
+  new: {initial: true}
+  proposed: {role: proposed}
+  ready: {role: waiting_on_fact, waits: {criteria_unmet: CRITERIA_UNMET}}
+  waiting: {role: waiting_on_fact, waits: {criteria_met: CRITERIA_MET}}
+  in_progress: {role: resting}
+  done: {role: resting}
+  archived: {final: true}
+events:
+  CREATE_PROPOSED: [{from: new, to: proposed}]
+  CREATE_READY: [{from: new, to: ready}]
+  PROMOTE: [{from: proposed, to: ready}]
+  DROP: [{from: proposed, to: archived}]
+  CRITERIA_UNMET: [{from: ready, to: waiting}]
+  CRITERIA_MET: [{from: waiting, to: ready}]
+  START: [{from: ready, to: in_progress}]
+  FINISH: [{from: in_progress, to: done}]
+  ARCHIVE: [{from: [ready, waiting, in_progress, done], to: archived}]
+rests: [done]

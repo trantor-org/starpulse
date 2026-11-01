@@ -34,6 +34,12 @@ describe("the columns", () => {
     expect(assigneeOptions([task("TASK-1", "to_do")], columnsOf(native, {}))).toEqual([{ value: "", count: 1 }]);
   });
 
+  it("never include the proposed State, which waits off the board until it is promoted", () => {
+    const names = { proposed: "Proposed", to_do: "To Do", done: "Done" };
+
+    expect(columnsOf(names, { proposed: "proposed" })).toEqual(["to_do", "done"]);
+  });
+
   it("order a column's cards by when each entered the column, newest first, then by id, newest first", () => {
     const v = view([task("PROJ-1", "ready", "", 0, 10), task("PROJ-2", "ready", "", 0, 30), task("PROJ-9", "ready", "", 0, 20), task("PROJ-10", "ready", "", 0, 20)]);
 
