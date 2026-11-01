@@ -89,7 +89,7 @@ export function jobOf(id: string, title: string, assignee: string | undefined, e
 
 const TIP = `position:absolute;pointer-events:none;max-width:210px;padding:6px 9px;border-radius:5px;background:${tint("bg1", 96)};border:1px solid ${tint("slate", 28)};box-shadow:0 4px 16px ${tint("shadow", 50)};font-size:.72em;line-height:1.45;color:var(--ink);z-index:5`;
 
-const blank = (self: Scene["self"]): Scene => ({ P: { lane: [], guide: [], grp: [] }, L: [], S: [], B: [], T: [], K: [], H: [], Q: [], V: [], tips: {}, dets: {}, self, open: self.state.open, pick: self.state.pick });
+const blank = (self: Scene["self"]): Scene => ({ P: { lane: [], guide: [], grp: [] }, L: [], S: [], D: [], B: [], T: [], K: [], H: [], Q: [], V: [], tips: {}, dets: {}, self, open: self.state.open, pick: self.state.pick });
 const joined = (P: Scene["P"]) => ({ lane: P.lane.join(" "), guide: P.guide.join(" "), grp: P.grp.join(" ") });
 
 /** The pane the board is drawn in, in px. The mockup's was 939 × 900. */
@@ -151,7 +151,7 @@ const mapPath = (d: string, f: Map, fy: Map) => d.replace(/(-?\d+(?:\.\d+)?),(-?
 
 /** Lays a scene the engine drew at the mockup's size out in a pane of another width, stretched down by `fy`. */
 function spread(g: Scene, f: Map, fy: Map) {
-  for (const list of [g.S, g.B, g.T, g.K, g.Q]) for (const b of list) b.style = moved(b.style, f, fy);
+  for (const list of [g.S, g.D, g.B, g.T, g.K, g.Q]) for (const b of list) b.style = moved(b.style, f, fy);
   for (const list of [g.H, g.V]) for (const b of list) b.style = stretched(b.style, f, fy);
   for (const l of g.L) l.d = mapPath(l.d, f, fy);
   for (const k of ["lane", "guide", "grp"] as const) g.P[k] = g.P[k].map((d) => mapPath(d, f, fy));
@@ -162,7 +162,7 @@ function spread(g: Scene, f: Map, fy: Map) {
 }
 /** Adds what `more` drew after the scene `g` already holds. */
 function append(g: Scene, more: Scene) {
-  for (const k of ["S", "B", "T", "K", "H", "Q", "V", "L"] as const) (g[k] as unknown[]).push(...more[k]);
+  for (const k of ["S", "D", "B", "T", "K", "H", "Q", "V", "L"] as const) (g[k] as unknown[]).push(...more[k]);
   for (const k of ["lane", "guide", "grp"] as const) g.P[k].push(...more.P[k]);
   Object.assign(g.tips, more.tips);
   Object.assign(g.dets, more.dets);

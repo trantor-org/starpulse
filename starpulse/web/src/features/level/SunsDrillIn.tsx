@@ -36,9 +36,15 @@ const MIN_W = 800, MIN_H = 600;
 const LANE = { stroke: tint("slate", 16) }, GUIDE = { stroke: tint("slate", 10) }, GROUP = { stroke: tint("released", 38) };
 const SVG = { position: "absolute", left: 0, top: 0, pointerEvents: "none" } as const;
 
+/** Each piece with its key: its place among those that stay, so a comet's pieces coming and going restart no other piece's animation. */
+function keyed<T extends { fx?: boolean }>(list: T[], tag: string) {
+  let kept = 0;
+  return list.map((x, i) => [x, x.fx ? `${tag}fx${i}` : `${tag}${kept++}`] as const);
+}
+
 function Lines({ lines, w, h }: { lines: Line[]; w: number; h: number }) {
-  return lines.map((l, i) => (
-    <svg key={i} width={w} height={h} style={SVG} aria-hidden="true">
+  return keyed(lines, "l").map(([l, key]) => (
+    <svg key={key} width={w} height={h} style={SVG} aria-hidden="true">
       <path d={l.d} fill="none" stroke={l.c} strokeWidth={l.w} strokeDasharray={l.dash} strokeLinecap={l.cap as "round"} strokeLinejoin="round" opacity={l.op} style={css(l.st)} />
     </svg>
   ));
@@ -48,7 +54,9 @@ function Lines({ lines, w, h }: { lines: Line[]; w: number; h: number }) {
 function Pieces({ g }: { g: Scene }) {
   return (
     <>
-      {g.S.map((s, i) => <span key={`s${i}`} style={css(s.style)} />)}
+      {keyed(g.S, "s").map(([s, key]) => <span key={key} style={css(s.style)} />)}
+      {/* sorted by key, so a dot flying to its next sun keeps its element and React never moves it, which would cancel the flight */}
+      {g.D.toSorted((a, b) => a.key.localeCompare(b.key)).map((d) => <span key={d.key} style={css(d.style)} />)}
       {g.B.map((b, i) => <span key={`b${i}`} style={css(b.style)} />)}
       {g.T.map((t, i) => <span key={`t${i}`} style={css(t.style)}>{t.text}<span style={{ display: "block", fontSize: ".86em", color: t.subColor }}>{t.sub}</span></span>)}
       {g.K.map((k, i) => <span key={`k${i}`} style={css(k.style)}>{k.text}</span>)}
@@ -88,8 +96,8 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
   const [view, setViewState] = useState<View>({ sel: task, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false });
   const setView = useCallback((patch: Partial<View>) => setViewState((v) => ({ ...v, ...patch })), []);
   const [now, setNow] = useState(clock), [, redraw] = useState(0);
-  // each task's moves are read again on the 15 s tick, so a phase a task enters reaches the scene, and its comet flies, without a reload
-  const history = useMemo(() => createHistory({ onChange: () => redraw((n) => n + 1), ttl: 15 }), []);
+  // each task's moves are read again on the 5 s tick, so a phase a task enters reaches the scene, and its comet flies, without a reload
+  const history = useMemo(() => createHistory({ onChange: () => redraw((n) => n + 1), ttl: 5 }), []);
   const [body, room] = useSize<HTMLDivElement>();
   // the stage fills the room the shell leaves; before it is measured it is the mockup's own size
   const stageW = room.w ? Math.max(MIN_W, room.w) : MOCKUP.w, stageH = room.h ? Math.max(MIN_H, room.h) : MOCKUP.h - TOP;
@@ -130,7 +138,7 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
       setView(at < 0.5 ? { at: null, replaying: false } : { at });
     }, 120);
     const anim = setInterval(() => ANIM_UNTIL > Date.now() && redraw((n) => n + 1), 50);
-    const tick = setInterval(() => setNow(clock()), 15_000);
+    const tick = setInterval(() => setNow(clock()), 5_000);
     // Escape and Backspace step out one level, as right-click does, before the Star Map underneath sees them; a text field keeps its keys
     const key = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && e.target.matches("input, textarea, select, [contenteditable]");

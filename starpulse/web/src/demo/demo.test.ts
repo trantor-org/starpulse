@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DemoServer, ROUTES, demoLive, stepRuns, type DemoFixture } from "./demo";
+import { DemoServer, ROUTES, demoLive, demoStep, stepRuns, type DemoFixture } from "./demo";
 import { PAGE } from "../features/level/ledgerScroll";
 import { fetchHarnesses, postStart } from "../features/kanban/start";
 import type { FlowSnapshot, LedgerRow, Machine, RawTask, RunStatus, Snapshot } from "../api";
@@ -776,5 +776,139 @@ describe("a demo page asked for many machines", () => {
     const first = (await (await demoServer()!.fetch("/api/machines?open=in-progress&limit=20")).json()) as { machines: unknown[]; more: boolean };
     expect(first.machines).toHaveLength(20);
     expect(first.more).toBe(true);
+  });
+});
+
+describe("the demo's working tasks", () => {
+  const finals = (m: Machine, ...ids: string[]): Machine => ({ ...m, states: m.states.map((s) => ({ ...s, final: ids.includes(s.id) })) });
+  const BUILD = machine("start", [["start", "red", "RED"], ["red", "green", "GREEN"], ["green", "red", "RED"], ["green", "done", "DONE"]], "done");
+  const QA = finals(machine("sec", [["sec", "ui", "PASS"], ["ui", "passed", "PASS"], ["sec", "changed", "CHANGE"], ["ui", "changed", "CHANGE"]]), "passed", "changed");
+  const SHIP = machine("start", [["start", "pushed", "PUSH"], ["pushed", "shipped", "SHIP"]], "shipped");
+  const WORK: Machine = {
+    ...finals(machine("build", [["build", "qa", "BUILT"], ["qa", "ship", "PASSED"], ["ship", "recorded", "SHIPPED"], ["qa", "build", "FIXED"], ["build", "parked", "PARK"], ["qa", "parked", "PARK"], ["ship", "parked", "PARK"]]), "recorded", "parked"),
+    submachines: [{ state: "build", machine: "build" }, { state: "qa", machine: "qa" }, { state: "ship", machine: "ship" }].map((s) => ({ ...s, exits: {}, parent: "work", when: "" })),
+  };
+  const worked = (): Snapshot => ({
+    roles: { working: "in_progress" },
+    settled: {},
+    dags: [],
+    flows: [
+      { name: "board", machine: { ...BOARD, submachines: [{ state: "in_progress", machine: "work", exits: {}, parent: "board", when: "" }] }, agents: [card("T-1", "in_progress"), card("T-2", "in_progress"), card("T-3", "ready")] },
+      { name: "work", machine: WORK, agents: [] },
+      { name: "build", machine: BUILD, agents: [] },
+      { name: "qa", machine: QA, agents: [] },
+      { name: "ship", machine: SHIP, agents: [] },
+    ],
+  }) as unknown as Snapshot;
+  /** A repeatable stream of numbers in [0, 1). */
+  const seeded = (seed: number) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const flow = (s: Snapshot, name: string) => s.flows.find((f) => f.name === name)!;
+  const agent = (s: Snapshot, name: string, task: string) => flow(s, name).agents.find((a) => (a.task ?? a.id) === task);
+  /** Plays `steps` ticks with the board held still, calling `each` after every one. */
+  const play = (steps: number, each: (s: Snapshot) => void = () => {}, seed = 7) => {
+    const random = seeded(seed);
+    let s = worked();
+    for (let i = 0; i < steps; i++) {
+      s = demoStep(s, random);
+      flow(s, "board").agents = worked().flows[0].agents;
+      each(s);
+    }
+    return s;
+  };
+
+  it("moves every working task often, so a page open on one sees state change within seconds", () => {
+    const moves = new Map<string, number>(), last = new Map<string, string>();
+    play(200, (s) => {
+      for (const task of ["T-1", "T-2"]) {
+        const at = ["work", "build", "qa", "ship"].map((n) => agent(s, n, task)?.state).join();
+        if (last.get(task) !== at) moves.set(task, (moves.get(task) ?? 0) + 1);
+        last.set(task, at);
+      }
+    });
+
+    expect(moves.get("T-1")).toBeGreaterThan(20);
+    expect(moves.get("T-2")).toBeGreaterThan(20);
+  });
+
+  it("leaves a task that is not being worked out of the phases", () => {
+    const s = play(200);
+
+    for (const name of ["work", "build", "qa", "ship"]) expect(agent(s, name, "T-3")).toBeUndefined();
+  });
+
+  it("takes a task through a phase's machine to its end before the task leaves the phase, and through every phase in the machine's order", () => {
+    const seen = new Set<string>();
+    let before = worked();
+    play(600, (s) => {
+      for (const task of ["T-1", "T-2"]) {
+        const was = agent(before, "work", task)?.state, is = agent(s, "work", task)?.state;
+        if (was && is && was !== is) {
+          seen.add(`${was}>${is}`);
+          if (is !== "build" || was !== "ship") {
+            const left = agent(before, was, task)!;
+            const ended = flow(before, was).machine.states.filter((x) => x.final).map((x) => x.id);
+            expect(ended).toContain(left.state);
+          }
+        }
+      }
+      before = structuredClone(s);
+    });
+
+    expect(seen).toEqual(new Set(["build>qa", "qa>build", "qa>ship", "ship>build"]));
+  });
+
+  it("sends a task back to Build from a QA that found something, and on to the next phase from one that passed", () => {
+    let before = worked();
+    play(600, (s) => {
+      const was = agent(before, "work", "T-1")?.state, is = agent(s, "work", "T-1")?.state;
+      if (was === "qa" && is !== "qa") expect(agent(before, "qa", "T-1")!.state).toBe(is === "ship" ? "passed" : "changed");
+      before = structuredClone(s);
+    });
+  });
+
+  it("walks a phase afresh each time a task enters it, the phase's trail only that visit's", () => {
+    let before = worked(), entered = 0;
+    play(600, (s) => {
+      const was = agent(before, "work", "T-1")?.state, is = agent(s, "work", "T-1")?.state;
+      if (was && is && was !== is) {
+        entered++;
+        expect(agent(s, is, "T-1")).toMatchObject({ state: flow(s, is).machine.states.find((x) => x.initial)!.id, trail: [] });
+      }
+      before = structuredClone(s);
+    });
+
+    expect(entered).toBeGreaterThan(5);
+  });
+
+  it("starts a task's lap again in Build once it finishes the last phase, its trail starting over rather than growing or dropping", () => {
+    let longest = 0;
+    const s = play(2000, (x) => {
+      longest = Math.max(longest, agent(x, "work", "T-1")?.trail?.length ?? 0);
+      expect(agent(x, "work", "T-1")?.state ?? "build").not.toMatch(/recorded|parked/);
+    });
+
+    expect(longest).toBeGreaterThan(1);
+    expect(longest).toBeLessThan(200);
+    expect(agent(s, "work", "T-1")).toBeDefined();
+  });
+
+  it("gives the phases' moves to the history a drill-in reads, in the order they were taken", async () => {
+    const f = fixture();
+    const s = new DemoServer({ ...f, ...worked(), graphs: f.graphs, flows: worked().flows }, () => 40);
+    const random = seeded(3);
+    for (let i = 0; i < 30; i++) s.step(random);
+
+    const { events } = await (await s.fetch("/api/history?task=T-1&hours=24")).json();
+
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((e: { machine: string }) => ["work", "build", "qa", "ship"].includes(e.machine))).toBe(true);
+  });
+
+  it("leaves a snapshot with no phases walking as it did", () => {
+    const random = seeded(5);
+    let s: Snapshot = { roles: { working: "in_progress" }, settled: {}, dags: [], flows: [{ name: "delivery", machine: DELIVERY, agents: [] }] } as unknown as Snapshot;
+    for (let i = 0; i < 5; i++) s = demoStep(s, random);
+
+    expect(flow(s, "delivery").agents.length).toBeGreaterThan(0);
   });
 });
