@@ -178,7 +178,7 @@ export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>)
   setLayout(size.w, size.h);
   const main = blank(self);
   template(main, STYLE, jobs, job);
-  const rowScene = blank(self), drawnH = rows(rowScene, STYLE, job) + 56;
+  const rowScene = blank(self), drawnH = rows(rowScene, STYLE, job, main) + 56;
   // the graph and the rows stretch down with the pane, by its height alone: the viewed task never moves a sun or a dot
   const foot = size.h - ROWS_BELOW, k = Math.min(STRETCH, Math.max(1, (foot - HEAD) / (ROWS_END - HEAD))), fy = yMap(k), rowsTop = fy(ROWS_TOP);
   // the rows keep that pitch, closing up only as far as a long task needs to reach the bar without a scroll
