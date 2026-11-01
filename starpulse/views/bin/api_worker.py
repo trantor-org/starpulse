@@ -206,7 +206,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         telemetry=telemetry_log(config.telemetry_loki_url, log),
         search=search,
         analytics=config.analytics,
-        answers=Answers(log.checkpoints),
+        answers=Answers(log.engine),
         pull_refresh=pull_refresh,
         take_over=command_take_over(config.take_over_command) if config.take_over_command else None,
         slow_read_s=config.slow_read_seconds,

@@ -36,7 +36,9 @@ def _kept(request: Request, services: Services, compute: Callable[[], tuple[byte
     """`compute`'s answer, or the kept answer to this query when the deployment keeps them (`Answers`)."""
     if services.answers is None:
         return compute()
-    return services.answers.answer(f"{request.url.path}?{sorted(request.query_params.multi_items())}", compute)
+    return services.answers.answer(
+        request.url.path, str(sorted(request.query_params.multi_items())), compute
+    )
 
 
 @reading

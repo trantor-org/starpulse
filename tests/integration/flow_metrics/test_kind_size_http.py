@@ -120,13 +120,13 @@ def test_a_restarted_instance_answers_a_report_from_the_saved_answer_before_it_r
 ) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     telemetry = _published(TelemetryLog(log))
-    first = Answers(log.checkpoints)
+    first = Answers(log.engine)
     feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
     with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: NOW, answers=first) as server:
         before = _get(server, "cells", "?hours=1.06")
     first.join()
 
-    with serve(tmp_path, feed, clock=lambda: NOW, answers=Answers(log.checkpoints)) as restarted:
+    with serve(tmp_path, feed, clock=lambda: NOW, answers=Answers(log.engine)) as restarted:
         after = _get(restarted, "cells", "?hours=1.06")
         other = _get(restarted, "cells", "?hours=2")
 

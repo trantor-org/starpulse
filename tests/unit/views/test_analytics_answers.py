@@ -1,24 +1,14 @@
-"""`Answers`: the telemetry analytics answers kept past a restart, so a read never waits on the fold of the window."""
+"""`Answers`: the telemetry analytics answers kept in `starpulse_answers`, so a read never waits on the fold of the window."""
 
 import threading
-from typing import Any
+from collections.abc import Callable, Iterator
+from pathlib import Path
 
-from pydantic import BaseModel
+import pytest
+from sqlalchemy import Engine, create_engine, select
+
+from starpulse.event_log.tables import analytics_answers, metadata
 from starpulse.views.application.queries.answers import Answers
-
-
-class Store:
-    """The checkpoints the answers are saved in, as one dict."""
-
-    def __init__(self) -> None:
-        self.saved: dict[str, BaseModel] = {}
-
-    def load(self, name: str, model: type[BaseModel] | None = None) -> tuple[int | None, BaseModel | None]:
-        return (0, self.saved[name]) if name in self.saved else (None, None)
-
-    def save(self, name: str, position: int, model: BaseModel | None = None, **_: Any) -> None:
-        assert model is not None
-        self.saved[name] = model
 
 
 class Clock:
@@ -29,116 +19,147 @@ class Clock:
         return self.now
 
 
-class Compute:
-    """A fold that answers `body` and counts its runs."""
-
-    def __init__(self, body: bytes = b"one", status: int = 200) -> None:
-        self.body, self.status, self.runs = body, status, 0
-
-    def __call__(self) -> tuple[bytes, int]:
-        self.runs += 1
-        return self.body, self.status
+@pytest.fixture
+def clock() -> Clock:
+    return Clock()
 
 
-def _answers(store: Store, clock: Clock, kept: int = 8) -> Answers:
-    return Answers(store, fresh_s=300.0, kept=kept, clock=clock)
+@pytest.fixture
+def engine(tmp_path: Path) -> Iterator[Engine]:
+    engine = create_engine(f"sqlite:///{tmp_path / 'answers.sqlite'}")
+    metadata.create_all(engine, tables=[analytics_answers])
+    yield engine
+    engine.dispose()
 
 
-def test_a_read_with_no_answer_folds_once_and_a_fresh_read_reuses_it() -> None:
-    clock, compute = Clock(), Compute()
-    answers = _answers(Store(), clock)
-
-    first = answers.answer("cells?hours=168", compute)
-    clock.now += 299
-    second = answers.answer("cells?hours=168", compute)
-
-    assert (first, second, compute.runs) == ((b"one", 200), (b"one", 200), 1)
+def _saved(engine: Engine) -> list[tuple[str, str, bytes, int]]:
+    columns = (analytics_answers.c.view, analytics_answers.c.query, analytics_answers.c.body, analytics_answers.c.status)
+    with engine.connect() as db:
+        return [tuple(row) for row in db.execute(select(*columns).order_by(analytics_answers.c.query)).all()]
 
 
-def test_a_stale_read_answers_at_once_and_the_next_has_the_refolded_answer() -> None:
-    clock, compute, store = Clock(), Compute(), Store()
-    answers = _answers(store, clock)
-    answers.answer("cells", compute)
-    clock.now += 301
-    compute.body = b"two"
-
-    stale = answers.answer("cells", compute)
-    answers.join()
-    fresh = answers.answer("cells", compute)
-
-    assert (stale, fresh, compute.runs) == ((b"one", 200), (b"two", 200), 2)
-
-
-def test_a_restart_answers_from_the_saved_answer_before_any_fold() -> None:
-    store, clock = Store(), Clock()
-    _answers(store, clock).answer("cells", Compute(b"saved"))
-    clock.now += 3600
-    compute = Compute(b"new")
-
-    restarted = _answers(store, clock)
-    cold = restarted.answer("cells", compute)
-    restarted.join()
-
-    assert (cold, restarted.answer("cells", compute)) == ((b"saved", 200), (b"new", 200))
-
-
-def test_readers_of_one_missing_answer_share_one_fold() -> None:
-    release, started = threading.Event(), threading.Event()
+def _folds() -> tuple[list[int], Callable[[], tuple[bytes, int]]]:
     runs: list[int] = []
 
-    def slow() -> tuple[bytes, int]:
+    def compute() -> tuple[bytes, int]:
         runs.append(1)
-        started.set()
-        release.wait(5)
+        return f"fold {len(runs)}".encode(), 200
+
+    return runs, compute
+
+
+def test_a_read_with_no_answer_folds_once_and_a_fresh_read_reuses_it(engine: Engine, clock: Clock) -> None:
+    runs, compute = _folds()
+    answers = Answers(engine, clock=clock)
+
+    first = answers.answer("cells", "q", compute)
+    second = answers.answer("cells", "q", compute)
+
+    assert (first, second, len(runs)) == ((b"fold 1", 200), (b"fold 1", 200), 1)
+
+
+def test_a_stale_read_answers_at_once_and_the_next_has_the_refolded_answer(engine: Engine, clock: Clock) -> None:
+    runs, compute = _folds()
+    answers = Answers(engine, clock=clock)
+    answers.answer("cells", "q", compute)
+    clock.now += 301
+
+    stale = answers.answer("cells", "q", compute)
+    answers.join()
+    refolded = answers.answer("cells", "q", compute)
+
+    assert (stale, refolded, len(runs)) == ((b"fold 1", 200), (b"fold 2", 200), 2)
+
+
+def test_a_restart_serves_the_row_saved_before_any_fold_and_holds_no_body(engine: Engine, clock: Clock) -> None:
+    _, compute = _folds()
+    first = Answers(engine, clock=clock)
+    first.answer("cells", "q", compute)
+    first.join()
+    runs, restart_compute = _folds()
+
+    restarted = Answers(engine, clock=clock)
+    after = restarted.answer("cells", "q", restart_compute)
+
+    assert (after, len(runs), "_held" in vars(restarted)) == ((b"fold 1", 200), 0, False)
+
+
+def test_readers_of_one_missing_answer_share_one_fold(engine: Engine, clock: Clock) -> None:
+    entered, gate = threading.Event(), threading.Event()
+    runs: list[int] = []
+
+    def compute() -> tuple[bytes, int]:
+        runs.append(1)
+        entered.set()
+        gate.wait(5)
         return b"one", 200
 
-    answers = _answers(Store(), Clock())
+    answers = Answers(engine, clock=clock)
     results: list[tuple[bytes, int]] = []
-    readers = [threading.Thread(target=lambda: results.append(answers.answer("cells", slow))) for _ in range(3)]
-    readers[0].start()
-    started.wait(5)
-    for reader in readers[1:]:
+    readers = [
+        threading.Thread(target=lambda: results.append(answers.answer("cells", "q", compute))) for _ in range(4)
+    ]
+    for reader in readers:
         reader.start()
-    release.set()
+    entered.wait(5)
+    gate.set()
     for reader in readers:
         reader.join(5)
 
-    assert (results, len(runs)) == ([(b"one", 200)] * 3, 1)
+    assert (results, len(runs)) == ([(b"one", 200)] * 4, 1)
 
 
-def test_a_refusal_is_returned_but_never_kept() -> None:
-    clock, refused = Clock(), Compute(b"too long", 400)
-    answers = _answers(Store(), clock)
+def test_a_refusal_is_returned_but_never_kept(engine: Engine, clock: Clock) -> None:
+    runs: list[int] = []
 
-    first = answers.answer("cells", refused)
-    second = answers.answer("cells", refused)
+    def refuse() -> tuple[bytes, int]:
+        runs.append(1)
+        return b"bad window", 400
 
-    assert (first, second, refused.runs) == ((b"too long", 400), (b"too long", 400), 2)
+    answers = Answers(engine, clock=clock)
+    first = answers.answer("cells", "q", refuse)
+    second = answers.answer("cells", "q", refuse)
+
+    assert (first, second, len(runs), _saved(engine)) == ((b"bad window", 400),) * 2 + (2, [])
 
 
-def test_a_refold_that_fails_keeps_the_stale_answer_and_waits_a_period_to_try_again() -> None:
-    clock, compute = Clock(), Compute()
-    answers = _answers(Store(), clock)
-    answers.answer("cells", compute)
+def test_a_failed_refold_keeps_the_stale_answer_and_waits_a_period_before_the_next(engine: Engine, clock: Clock) -> None:
+    calls: list[int] = []
+
+    def compute() -> tuple[bytes, int]:
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("the window could not be read")
+        return f"fold {len(calls)}".encode(), 200
+
+    answers = Answers(engine, clock=clock)
+    first = answers.answer("cells", "q", compute)
     clock.now += 301
-    compute.body, compute.status = b"down", 503
-
-    first = answers.answer("cells", compute)
+    failed = answers.answer("cells", "q", compute)
     answers.join()
-    second = answers.answer("cells", compute)
+    clock.now += 1
+    waiting = answers.answer("cells", "q", compute)
+    waited = len(calls)
+    clock.now += 300
+    refolding = answers.answer("cells", "q", compute)
     answers.join()
 
-    assert (first, second, compute.runs) == ((b"one", 200), (b"one", 200), 2)
+    assert (first, failed, waiting, waited, refolding, len(calls)) == (
+        (b"fold 1", 200),
+        (b"fold 1", 200),
+        (b"fold 1", 200),
+        2,
+        (b"fold 1", 200),
+        3,
+    )
 
 
-def test_only_the_newest_answers_up_to_the_cap_are_kept() -> None:
-    clock, store = Clock(), Store()
-    answers = _answers(store, clock, kept=2)
-    for key in ("a", "b", "c"):
+def test_only_the_newest_kept_answers_are_saved(engine: Engine, clock: Clock) -> None:
+    _, compute = _folds()
+    answers = Answers(engine, clock=clock, kept=2)
+    for query in ("a", "b", "c"):
         clock.now += 1
-        answers.answer(key, Compute(key.encode()))
+        answers.answer("cells", query, compute)
+        answers.join()
 
-    restarted = _answers(store, clock)
-    compute = Compute(b"folded")
-
-    assert [restarted.answer(key, compute)[0] for key in ("b", "c", "a")] == [b"b", b"c", b"folded"]
+    assert [query for _, query, _, _ in _saved(engine)] == ["b", "c"]
