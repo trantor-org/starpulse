@@ -242,6 +242,8 @@ class Board:
     """Reads the retired tasks; None when the board keeps none."""
     import_retired: RetiredImporter | None = None
     """Keeps a task retired elsewhere among the retired tasks; None refuses every import."""
+    reconcile: Callable[[str], bool] | None = None
+    """Brings a task's History to its file and says whether it had to; None when the board keeps no History."""
     create: TaskCreator | None = None
     """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
     milestones: MilestoneLister | None = None

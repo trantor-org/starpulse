@@ -306,3 +306,18 @@ def test_an_archive_appends_the_dependency_it_removed_from_each_dependent(served
     assert built.archive("task-5", "superseded", actor="adin").ok
 
     assert replay(store.read("task", "task-6"))["dependencies"] == []
+
+
+def test_reconciling_a_task_whose_file_moved_without_events_appends_what_brings_the_history_to_the_file(
+    served, tmp_path: Path
+) -> None:
+    built, _, store, _ = served
+    assert built.edit("task-5", {"dependencies": ["task-9"]}, [], actor="adin").ok
+    path = tmp_path / ".starpulse" / "board" / "tasks" / "task-5 - Draw.md"
+    path.write_text(path.read_text().replace("task-9", "").replace("status: To Do", "status: Ready"))
+
+    assert built.reconcile("task-5") is True
+
+    held = replay(store.read("task", "task-5"))
+    assert (held["state"], held["dependencies"]) == ("Ready", [])
+    assert built.reconcile("task-5") is False

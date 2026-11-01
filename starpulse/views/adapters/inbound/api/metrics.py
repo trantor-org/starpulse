@@ -20,6 +20,7 @@ def prometheus(request: Request) -> Response:
         services.actor_metrics,
         services.lane_metrics,
         services.conformance_metrics,
+        services.lane_sweep_metrics,
         services.autopilot_metrics,
         api.snapshots.metrics,
         api.page_gauge,
