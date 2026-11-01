@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -179,6 +179,10 @@ def build(
     loop: Loop | None = None
 
     def crossed(crossing: Crossing) -> None:
+        if loop is not None and crossing.dimension == "sessions":
+            selected = loop.selected_harness()  # the count admission and the card use, not the all-harness total
+            row = loop.sessions_by_harness().get(selected, {"use": 0.0, "limit": policy.session_limit(selected)})
+            crossing = replace(crossing, use=row["use"], limit=row["limit"], full=row["use"] >= row["limit"])
         on_crossing(crossing)
         if loop is not None:
             loop.wake()
