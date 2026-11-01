@@ -449,4 +449,118 @@ describe("a phase machine row", () => {
     expect(flying.L.filter((l) => !l.fx).map((l) => l.d)).toEqual(landed.L.filter((l) => !l.fx).map((l) => l.d));
     expect(flying.S.filter((b) => !b.fx).map((b) => b.style)).toEqual(landed.S.filter((b) => !b.fx).map((b) => b.style));
   });
+
+  describe("a task sent from its state down to its row", () => {
+    const FLIGHT = 3000;
+    const walked = [ev(30, "build", "start", "worktree_ready")];
+    const inDeliver = [...walked, ev(5, "in-progress", "build", "deliver"), ev(5, "deliver", "start", "lint_green")];
+    const both = (id: string, events: Parameters<typeof jobOf>[3], others: ReturnType<typeof jobOf>[] = []) => sceneOf([jobOf(id, id, undefined, events, NOW), ...others], view(id), () => {}, NOW);
+    const fx = (l: { fx?: boolean; d: string }[]) => l.filter((x) => x.fx).map((x) => x.d);
+    const dropInMain = (x: number, y: number) => `M${x},${y} L${x},392 L392,392 Q384,392 384,400`;
+    const dropInRows = (g: { L: { fx?: boolean; d: string }[] }) => fx(g.L).filter((d) => /^M384(\.0)?,400(\.0)? L384/.test(d));
+    const taskDots = (g: { S: { fx?: boolean; style: string }[] }) => g.S.filter((b) => b.fx && /width:3px;height:3px/.test(b.style));
+
+    it("runs a task entering Deliver from the Deliver state down the stem, the hairline and the lane into the row, once its flight has landed", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000_000);
+      both("D1", walked);
+
+      vi.advanceTimersByTime(5000);
+      const leaving = both("D1", inDeliver);
+      expect(fx(leaving.main.L)).not.toContain(dropInMain(850, 248));
+      vi.advanceTimersByTime(FLIGHT + 500);
+      const dropping = both("D1", inDeliver);
+
+      expect(fx(dropping.main.L)).toContain(dropInMain(850, 248));
+      expect(dropInRows(dropping.rows)).toHaveLength(1);
+    });
+
+    it("rests the task's dot in the row only once the drop has landed", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000_000);
+      both("D2", walked);
+      vi.advanceTimersByTime(5000);
+      both("D2", inDeliver);
+
+      vi.advanceTimersByTime(FLIGHT + 500);
+      expect(taskDots(both("D2", inDeliver).rows)).toEqual([]);
+      vi.advanceTimersByTime(60_000);
+      const rested = both("D2", inDeliver);
+
+      expect(taskDots(rested.rows)).toHaveLength(1);
+      expect(dropInRows(rested.rows)).toEqual([]);
+      expect(fx(rested.main.L)).not.toContain(dropInMain(850, 248));
+    });
+
+    it("drops nothing on a fresh load or on switching to a task that moved while it was not viewed", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000_000);
+      const fresh = both("D3", inDeliver);
+      expect(fx(fresh.main.L).filter((d) => d.startsWith("M850,"))).toEqual([]);
+      expect(dropInRows(fresh.rows)).toEqual([]);
+
+      both("D4", walked);
+      vi.advanceTimersByTime(100);
+      both("D5", walked);
+      vi.advanceTimersByTime(5000);
+      const back = both("D4", inDeliver);
+
+      expect(dropInRows(back.rows)).toEqual([]);
+    });
+
+    it("drops a task reaching a lens from that lens's own sun", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000_000);
+      both("D6", walked);
+      vi.advanceTimersByTime(5000);
+      const reviewing = [...walked, lens(4, "LENS_PASSED", "security", "ux_dirty")];
+      both("D6", reviewing);
+      vi.advanceTimersByTime(FLIGHT + 500);
+      const s = both("D6", reviewing);
+
+      const starts = fx(s.main.L).filter((d) => d.endsWith("L392,392 Q384,392 384,400"));
+      expect(starts.length).toBeGreaterThan(0);
+      for (const d of starts) expect(d).toMatch(/^M650,(121|173|225|277|329) L650,392/);
+      expect(new Set(starts).size).toBe(starts.length);
+    });
+
+    it("draws the line a lens's task follows between the lens suns", () => {
+      const m = both("D7", walked).main.L.filter((l) => !l.fx).map((l) => l.d);
+
+      for (const [from, to] of [[121, 133], [173, 185], [225, 237], [277, 289]]) expect(m).toContain(`M650,${from} L650,${to}`);
+    });
+
+    it("drops nothing on reading an older round and coming back", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000_000);
+      const again = [...inDeliver, ev(4, "in-progress", "deliver", "build"), ev(3, "in-progress", "build", "deliver")];
+      const set = vi.fn();
+      const at = (over: Partial<View>) => sceneOf([jobOf("D8", "D8", undefined, again, NOW)], { ...view("D8"), ...over }, set, NOW);
+      at({}).rows.Q.find((b) => b.aria === "deliver round 1")!.pick();
+      vi.advanceTimersByTime(1000);
+      at(set.mock.calls[0][0]);
+      vi.advanceTimersByTime(1000);
+      at({});
+      vi.advanceTimersByTime(FLIGHT + 500);
+
+      expect(dropInRows(at({}).rows)).toEqual([]);
+    });
+  });
+
+  it("draws a state the task has not reached in a ring that reads on the background, at least 3:1", () => {
+    const tokens = packTokens("starpulse");
+    const lum = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const over = (hex: string, a: number, bg: string) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * a + parseInt(bg.slice(i, i + 2), 16) * (1 - a)).toString(16).padStart(2, "0")).join("");
+    const contrast = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    applyPack("starpulse");
+    const rings = sceneOf([jobOf("N10", "n", undefined, story, NOW)], view("N10"), () => {}, NOW).rows.S
+      .map((b) => /border:1px solid color-mix\(in srgb, (#[0-9a-f]{6}) (\d+)%, transparent\)/i.exec(b.style))
+      .filter((m) => m !== null);
+
+    expect(rings.length).toBeGreaterThan(0);
+    for (const m of rings) expect(contrast(over(m[1]!, Number(m[2]) / 100, tokens.bg0!), tokens.bg0!)).toBeGreaterThanOrEqual(3);
+  });
 });

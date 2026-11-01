@@ -135,7 +135,7 @@ export function statusOf(j: Job): { t: string; c: string };
 export function starfield(w: number, h: number, n: number): { style: string }[];
 export function template(g: Scene, style: typeof STYLE, jobs: Job[], j: Job): void;
 /** Draws the scrolling machine rows and answers their height. */
-export function rows(g: Scene, style: typeof STYLE, j: Job): number;
+export function rows(g: Scene, style: typeof STYLE, j: Job, top: Scene): number;
 export function hhmm(ago: number): string;
 export function spanOf(j: Job): number;
 export function jobAt(j: Job, ago: number | null): Job;
