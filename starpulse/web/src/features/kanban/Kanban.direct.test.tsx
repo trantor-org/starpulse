@@ -9,11 +9,15 @@ import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
 import { StartStore } from "./start";
 
-// the calls of the two mocks, in the order the renders made them: the modal's body and the board's cards
+// the calls of the mocks, in the order the renders made them: the modal's body, the board's layout and the board's cards
 const drawn: string[] = [];
 vi.mock("./start", async (actual) => {
   const start = await actual<typeof import("./start")>();
   return { ...start, startLane: vi.fn((...a: Parameters<typeof start.startLane>) => (drawn.push("card"), start.startLane(...a))) };
+});
+vi.mock("./kanbanModel", async (actual) => {
+  const model = await actual<typeof import("./kanbanModel")>();
+  return { ...model, layout: vi.fn((...a: Parameters<typeof model.layout>) => (drawn.push("layout"), model.layout(...a))) };
 });
 vi.mock("./TaskView", async (actual) => {
   const view = await actual<typeof import("./TaskView")>();
@@ -51,6 +55,11 @@ describe("a Kanban opened on a direct task link", () => {
     mount("?view=kanban&task=TASK-1");
     expect(drawn.indexOf("modal")).toBeGreaterThanOrEqual(0);
     expect(drawn.indexOf("card")).toBeGreaterThan(drawn.indexOf("modal"));
+  });
+
+  it("lays the board out only after the modal's first draw", () => {
+    mount("?view=kanban&task=TASK-1");
+    expect(drawn.indexOf("layout")).toBeGreaterThan(drawn.indexOf("modal"));
   });
 
   it("still draws the whole board behind the modal", () => {
