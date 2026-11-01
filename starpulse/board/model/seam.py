@@ -90,6 +90,8 @@ class Written(NamedTuple):
     at: float | None = None
     """When the write put the task there, in epoch seconds; set with `lane`."""
     lint: bool = False
+    transient: bool = False
+    """The write raised a locked-database error that outlasted its retries: no refusal of the change, so the task stays put."""
     """Whether a declared guard or the board's validate hook refused the write: a defect in the task record an editor of the record repairs."""
 
 

@@ -1,5 +1,6 @@
 """The task actor moves a task on the facts its lane waits on, as `starpulse/task-actor`, through the board's editor."""
 
+import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -20,6 +21,7 @@ from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 from starpulse.machine_engine.model.transitions import board_machine
+from starpulse.pulls.adapters.inbound import task_actor
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor
 from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
 from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -1233,3 +1235,42 @@ def test_a_new_expect_by_re_arms_the_deadline(store: PullStore, stop: threading.
 
     time.sleep(2.0)
     assert board.moved() == []
+
+
+def locked_once(board: Board, locks: int) -> None:
+    """Make the board's editor raise SQLite's locked-database error for its first `locks` calls."""
+    edit, left = board.edit, [locks]
+
+    def flaky(name: str, changes: Any, comment: Any, /, actor: str = "") -> Written:
+        if left[0] > 0:
+            left[0] -= 1
+            raise sqlite3.OperationalError("database is locked")
+        return edit(name, changes, comment, actor=actor)
+
+    board.edit = flaky  # type: ignore[method-assign]
+
+
+def test_a_move_that_finds_the_board_database_locked_once_retries_and_lands(
+    store: PullStore, stop: threading.Event, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(task_actor, "LOCK_BACKOFF_S", (0.0, 0.0))
+    board = Board(BoardFeed(), task("TASK-1", "Done"), task("TASK-3", "Waiting", dependencies=("TASK-1",)))
+    locked_once(board, 1)
+
+    running(board, store, stop)
+
+    assert until(lambda: board.moved() == [("TASK-3", "ready")])
+
+
+def test_a_move_that_stays_locked_leaves_the_task_in_its_lane_without_a_needs_attention_reason(
+    store: PullStore, stop: threading.Event, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(task_actor, "LOCK_BACKOFF_S", (0.0, 0.0))
+    board = Board(BoardFeed(), task("TASK-1", "Done"), task("TASK-3", "Waiting", dependencies=("TASK-1",)))
+    locked_once(board, 3)  # the first attempt and both retries
+
+    running(board, store, stop)
+
+    assert until(lambda: "database is locked" in caplog.text)  # logged
+    assert board.writes == []  # no Needs attention write
+    assert board.tasks["TASK-3"].lane == "waiting"
