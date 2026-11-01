@@ -146,8 +146,8 @@ def default_starters(
         )  # fmt: skip
 
     def runs(own: threading.Event) -> Callable[[], None]:
-        from starpulse.runs import opt_in
         from starpulse.runs.bin import runs_worker
+        from starpulse.runs.model import opt_in
 
         return runs_worker.start(
             config, path, base, log, own, load=load, adapters=opt_in.followed_by(adapters, None), worker_board=shared,
@@ -156,8 +156,8 @@ def default_starters(
 
     def adapter(name: str) -> Starter:
         def start(own: threading.Event) -> Callable[[], None]:
-            from starpulse.runs import opt_in
             from starpulse.runs.bin import adapter_worker
+            from starpulse.runs.model import opt_in
 
             return adapter_worker.start(
                 config, path, base, log, own, load=load, worker_board=shared,

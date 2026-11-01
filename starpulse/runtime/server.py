@@ -223,10 +223,10 @@ from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
 from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
 from starpulse.runs.model.config import RunsInstance
+from starpulse.runtime import launch
 from starpulse.runtime.closure import ENTRIES, Reader
 from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
 from starpulse.runtime.control import control_file
-from starpulse.runtime import launch
 from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, adopted_from_env, announce_ready
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 from starpulse.runtime.zygote import Forker
