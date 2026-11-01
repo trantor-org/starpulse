@@ -186,7 +186,8 @@ does not authorize execution.
   it. A `<claim>: <command>` criterion ends in the command, run as written, so write `! rg -q
   ...` or `test -z "$(...)"`, never trailing prose. Set them with repeated `--ac` on `starpulse
   task create` or `task edit`, and check each with `task edit --check-ac N` once its command has
-  passed.
+  passed. A criterion names a count or quality of data, never a duration or datetime; the shapes
+  are in Checks after the merge.
 - **Definition of Done** is the project checklist plus a few task-specific outcomes; it does not
   repeat runnable commands, and it never waits on time after the merge (Checks after the merge).
 - **Implementation Plan** is the ordered current route; revise it when discovery changes the
@@ -338,22 +339,32 @@ such as a render on a device, is proved before `Review` or run with the operator
 
 For example, a task that cuts a DAG's run time from 150 s to 33 s locally shows the cut in its
 pull request (a benchmark, a test), and "the merged commit's deploy applied" is its post-merge QA
-item. "p50 under 30 s over the 24 h after the merge" is a separate checkup task: `--type check`,
+item. "p50 under 30 s over at least 24 runs since the merge" is a separate checkup task: `--type check`,
 its criterion that sentence, and a Start Criterion on the value the check reads, the DAG's runs
 since the merge, such as `{id: runs-since-merge, kind: prom, expr: 'sum(increase(<the DAG's run
-counter>[24h]))', at_least: 24}`. It opens once that many runs exist, not when a date passes. A
+counter>[<range>]))', at_least: 24}`. It opens once that many runs exist, not when a date passes. A
 miss on that checkup files a fix task; it never reopens the implementing one.
 
-A check whose criterion names a time window (`24h`, `3 days`) takes a start criterion that observes
-data past the window end, never the merge alone: a `file_changed_since` or `pr_merged` start opens the
-check at the merge, hours before the window's data exists, and the session then idles `In Progress`
-or asks the operator to wait. Look for a series or table whose samples cover the window end (a
-metric's `updated_timestamp_seconds` gauge, a table's newest row) and gate on it, for example
-`{id: window-closed, kind: prom, expr: 'max(<exporter>_updated_timestamp_seconds)', at_least: <merge
-+ window epoch>}`. The task lint refuses a check whose Acceptance Criterion names an hour or day
-window while every Start Criterion is `file_changed_since` or `pr_merged`; a data kind beside the
-merge one clears it. A session on an unattended check never parks `--operator` for such a wait: it
-parks `--until` the data kind.
+A check criterion never names a duration or a datetime (`24h`, `3 days`, `after 10-31`): time
+is no evidence, and a gate that compares the clock to a deadline (`at_least: <epoch>`) is a poll
+that opens whether or not the data exists. A criterion names the data that decides it, as a count
+or a quality, and a fixed event (a release, a merge sha) only bounds which data counts.
+
+**Choosing criteria:**
+
+| Instead of | Write | Why |
+| --- | --- | --- |
+| "no repeat above 2 over 24h" | "at least 25 red or blocked records since release X, none with repeats above 2" | a count of events that can trigger the fault, so the verdict is as strong as the sample |
+| "p50 under 30 s over 7 days" | "p50 under 30 s over at least 500 runs since release X" | the sample size sets confidence, not the calendar |
+| "no failures for 3 days" | "no failure in the last N runs, N sized to the fault's trigger rate" | quiet days with no triggers prove nothing |
+| "metric recovers by Friday" | "metric under bound for N consecutive samples" | quality (consecutive samples) replaces a date |
+
+Run the query on the data that exists before filing or parking. A decided verdict (any
+counter-example, or a pass with a margin the remaining samples cannot reverse) closes the check
+now; only a shortfall of data waits, and it parks `--until` the count of those samples, for
+example `{id: enough-runs, kind: prom, expr: 'sum(increase(<run counter>[<range>]))',
+at_least: <N>}` where the range only covers the data's retention. A session on an unattended
+check never parks `--operator` for such a wait.
 
 A check's gate must not be the live effect it checks, or a missing effect reads as waiting
 forever. A live check drives the actor along its ordinary path and never supplies by hand the
