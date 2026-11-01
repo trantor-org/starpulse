@@ -41,6 +41,12 @@ def test_shorten_slice_reports_a_kernel_refusal_instead_of_raising(monkeypatch: 
     assert sched.shorten_slice(100_000) is False
 
 
+def test_shorten_slice_is_a_no_op_where_the_os_has_no_sched_getscheduler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """macOS has no `os.sched_getscheduler`; the fresh-serve CI worker crash-looped on it."""
+    monkeypatch.delattr(sched.os, "sched_getscheduler")
+    assert sched.shorten_slice(100_000) is False
+
+
 def test_the_api_worker_shortens_its_slice_before_it_builds_the_page(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(sched, "shorten_slice", lambda: calls.append("slice") or True)
