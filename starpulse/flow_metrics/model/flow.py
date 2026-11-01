@@ -25,8 +25,8 @@ from starpulse.contracts.analytics import Analytics, MachineStage, SkillMachine
 from starpulse.contracts.signals import CLAUDE_CODE, Signal
 from starpulse.flow_metrics.model.cells import MIN_N, cell_of
 from starpulse.flow_metrics.model.level import Level, Terminal
-from starpulse.flow_metrics.model.session_health import session_health, slice_health
-from starpulse.flow_metrics.model.steps import NO_SKILL, Owned, owned_steps
+from starpulse.flow_metrics.model.session_health import by_session, combine_health, fold_health, slice_health
+from starpulse.flow_metrics.model.steps import NO_SKILL, session_owned
 from starpulse.flow_metrics.model.trajectories import absorb
 
 __all__ = [
@@ -34,9 +34,14 @@ __all__ = [
     "END",
     "LONG_STRETCH",
     "START",
+    "combine_cost_to_go",
+    "combine_diff",
+    "combine_edges",
+    "combine_stages",
     "cost_to_go",
     "directly_follows",
     "fast_slow_diff",
+    "fold_runs",
     "sub_stages",
 ]
 
@@ -47,30 +52,69 @@ _STEPS = Level("skill", END, (Terminal(END, "goal"),))
 CUT_SHARE = 0.8
 
 
+class Call(NamedTuple):
+    """A tool call a step owns: when it began, whether it succeeded and the activities it performed."""
+
+    time: float
+    ok: bool
+    activities: list[str]
+
+
+class FlowStep(NamedTuple):
+    """One step of a run, from a `fold_runs` row."""
+
+    at: float
+    origin: str
+    activities: list[str]
+    calls: list[Call]
+
+
 class Run(NamedTuple):
     """One task's steps under one skill: every non-auxiliary step, and the activities the main thread made."""
 
     task: str
-    steps: list[Owned]
+    steps: list[FlowStep]
     activities: list[str]
 
 
+def fold_runs(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> list[dict[str, Any]]:
+    """The fold of one session's `signals`: a row per step that is not a compaction's own call or a Codex session's,
+    with its task, the skill in force, its activities and the tool calls it owns, as plain JSON data."""
+    return [
+        {
+            "task": o.step["task"],
+            "skill": o.step["skill"],
+            "harness": o.step["harness"],
+            "session": o.step["session"],
+            "at": o.step["at"],
+            "origin": o.step["origin"],
+            "activities": o.step["activities"],
+            "calls": [[c.time, c.ok, list(c.activities)] for c in o.calls if c.kind == "tool"],
+        }
+        for o in session_owned(signals, keys, analytics)
+        if o.step["captured"] and o.step["origin"] != "auxiliary"
+    ]
+
+
 def runs_by_transition(
-    owned: Iterable[Owned], tasks: Mapping[str, Mapping[str, Any]], stop: frozenset[str] = frozenset()
+    folds: Iterable[list[dict[str, Any]]], tasks: Mapping[str, Mapping[str, Any]], stop: frozenset[str] = frozenset()
 ) -> dict[tuple[str, int, str], list[Run]]:
-    """The runs of each (kind, size, skill) of the steps `owned`, by task. A step of a Codex session, of a task
-    without a kind and size label or of a compaction's own call is in none."""
-    grouped: dict[tuple[str, int, str], dict[str, list[Owned]]] = defaultdict(lambda: defaultdict(list))
-    for o in owned:
-        step = o.step
-        if step["captured"] and step["origin"] != "auxiliary" and (cell := cell_of(tasks, step["task"])) is not None:
-            grouped[*cell, step["skill"]][step["task"]].append(o)
+    """The runs of each (kind, size, skill) of the steps in the sessions' `fold_runs` results `folds`, by task, the
+    steps oldest first. A step of a task without a kind and size label is in none."""
+    rows = sorted((row for part in folds for row in part), key=lambda r: (r["at"], r["harness"], r["session"]))
+    grouped: dict[tuple[str, int, str], dict[str, list[FlowStep]]] = defaultdict(lambda: defaultdict(list))
+    for row in rows:
+        if (cell := cell_of(tasks, row["task"])) is not None:
+            calls = [Call(*call) for call in row["calls"]]
+            grouped[*cell, row["skill"]][row["task"]].append(
+                FlowStep(row["at"], row["origin"], row["activities"], calls)
+            )
     return {
         transition: [
             Run(
                 task,
                 steps,
-                [a for o in steps if o.step["origin"] == "main" for a in o.step["activities"] if a not in stop],
+                [a for step in steps if step.origin == "main" for a in step.activities if a not in stop],
             )
             for task, steps in sorted(by_task.items())
         ]
@@ -110,6 +154,30 @@ def _edges(runs: list[Run]) -> list[dict[str, Any]]:
     ]
 
 
+def combine_edges(
+    folds: Iterable[list[dict[str, Any]]], tasks: Mapping[str, Mapping[str, Any]], analytics: Analytics | None = None
+) -> list[dict[str, Any]]:
+    """One row per edge of each transition's graph, by kind, size, skill, source, then target, from the sessions'
+    `fold_runs` results; see the module docstring."""
+    stop = analytics.stop_activities if analytics else frozenset()
+    return [
+        {"kind": kind, "size": size, "skill": skill, **edge}
+        for (kind, size, skill), runs in runs_by_transition(folds, tasks, stop).items()
+        for edge in _edges(runs)
+    ]
+
+
+def _folded_runs(
+    found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None
+) -> tuple[list[list[dict[str, Any]]], list[dict[str, Any]]]:
+    """The `fold_runs` result of each session of `found`, and the session health rows of them all."""
+    groups = by_session(found)
+    return (
+        [fold_runs(group, keys, analytics) for group in groups],
+        combine_health(fold_health(group, keys, analytics) for group in groups),
+    )
+
+
 def directly_follows(
     found: Iterable[Signal],
     keys: TaskKeys | None,
@@ -118,12 +186,7 @@ def directly_follows(
 ) -> list[dict[str, Any]]:
     """One row per edge of each transition's graph, by kind, size, skill, source, then target; see the module
     docstring."""
-    stop = analytics.stop_activities if analytics else frozenset()
-    return [
-        {"kind": kind, "size": size, "skill": skill, **edge}
-        for (kind, size, skill), runs in runs_by_transition(owned_steps(found, keys, analytics), tasks, stop).items()
-        for edge in _edges(runs)
-    ]
+    return combine_edges((fold_runs(group, keys, analytics) for group in by_session(found)), tasks, analytics)
 
 
 #: A stretch no skill governs is mined for sub-stages from this many activities.
@@ -158,24 +221,24 @@ def _stages(runs: list[Run]) -> dict[str, tuple[int, float]]:
     return {opener: (len(tasks[opener]), median(found)) for opener, found in lengths.items()}
 
 
-def sub_stages(
-    found: Iterable[Signal],
-    keys: TaskKeys | None,
+def combine_stages(
+    folds: Iterable[list[dict[str, Any]]],
     tasks: Mapping[str, Mapping[str, Any]],
     analytics: Analytics | None = None,
     *,
     since: float = 0.0,
 ) -> list[dict[str, Any]]:
-    """One row per stage mined from the stretches no skill governs, by kind, size, then stage; see the module
-    docstring. The runs of steps from `since` on are this week's and the earlier ones the week before's."""
+    """One row per stage mined from the stretches no skill governs, by kind, size, then stage, from the sessions'
+    `fold_runs` results; see the module docstring. The runs of steps from `since` on are this week's and the earlier
+    ones the week before's."""
     stop = analytics.stop_activities if analytics else frozenset()
-    owned = owned_steps(found, keys, analytics)
+    ledger = [row for rows in folds for row in rows]
 
-    def week(part: list[Owned]) -> dict[tuple[str, int], dict[str, tuple[int, float]]]:
-        transitions = runs_by_transition(part, tasks, stop)
+    def week(part: list[dict[str, Any]]) -> dict[tuple[str, int], dict[str, tuple[int, float]]]:
+        transitions = runs_by_transition([part], tasks, stop)
         return {(kind, size): _stages(runs) for (kind, size, skill), runs in transitions.items() if skill == NO_SKILL}
 
-    weeks = [week([o for o in owned if o.step["at"] >= since]), week([o for o in owned if o.step["at"] < since])]
+    weeks = [week([r for r in ledger if r["at"] >= since]), week([r for r in ledger if r["at"] < since])]
     rows = []
     for cell in sorted(weeks[0].keys() | weeks[1].keys()):
         now, before = weeks[0].get(cell, {}), weeks[1].get(cell, {})
@@ -199,7 +262,21 @@ def sub_stages(
     return rows
 
 
-def _reaches(stage: MachineStage, call: Signal) -> bool:
+def sub_stages(
+    found: Iterable[Signal],
+    keys: TaskKeys | None,
+    tasks: Mapping[str, Mapping[str, Any]],
+    analytics: Analytics | None = None,
+    *,
+    since: float = 0.0,
+) -> list[dict[str, Any]]:
+    """One row per stage mined from the stretches no skill governs, by kind, size, then stage; see the module
+    docstring. The runs of steps from `since` on are this week's and the earlier ones the week before's."""
+    folds = (fold_runs(group, keys, analytics) for group in by_session(found))
+    return combine_stages(folds, tasks, analytics, since=since)
+
+
+def _reaches(stage: MachineStage, call: Call) -> bool:
     return (stage.ok is None or call.ok == stage.ok) and any(
         fnmatchcase(activity, glob) for activity in call.activities for glob in stage.activities
     )
@@ -210,7 +287,7 @@ def _conforms(run: Run, machine: SkillMachine | None) -> bool:
     if machine is None:
         return True
     reached = 0
-    for call in sorted((c for o in run.steps for c in o.calls if c.kind == "tool"), key=lambda c: c.time):
+    for call in sorted((c for step in run.steps for c in step.calls), key=lambda c: c.time):
         if reached < len(machine.stages) and _reaches(machine.stages[reached], call):
             reached += 1
     return reached == len(machine.stages)
@@ -220,28 +297,28 @@ def _counts(counter: Counter[str]) -> list[dict[str, Any]]:
     return [{"activity": a, "count": n} for a, n in sorted(counter.items(), key=lambda item: (-item[1], item[0]))]
 
 
-def _clean_tasks(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None) -> set[str]:
-    """The tasks that completed clean in Claude Code alone."""
+def _clean_tasks(sessions: list[dict[str, Any]]) -> set[str]:
+    """The tasks that completed clean in Claude Code alone, from the session health rows `sessions`."""
     return {
         s["task"]
-        for s in slice_health(session_health(signals, keys, analytics))
+        for s in slice_health(sessions)
         if s["clean"] and s["complete"] and set(s["harnesses"]) == {CLAUDE_CODE}
     }
 
 
-def fast_slow_diff(
-    found: Iterable[Signal],
-    keys: TaskKeys | None,
+def combine_diff(
+    folds: Iterable[list[dict[str, Any]]],
+    sessions: list[dict[str, Any]],
     tasks: Mapping[str, Mapping[str, Any]],
     analytics: Analytics | None = None,
 ) -> list[dict[str, Any]]:
-    """One row per skill's transition within a kind and size, by kind, size, then skill; see the module docstring."""
+    """One row per skill's transition within a kind and size, by kind, size, then skill, from the sessions' `fold_runs`
+    results and their health rows `sessions`; see the module docstring."""
     stop = analytics.stop_activities if analytics else frozenset()
     machines = {m.skill: m for m in analytics.skill_machines} if analytics else {}
-    signals = list(found)
-    clean = _clean_tasks(signals, keys, analytics)
+    clean = _clean_tasks(sessions)
     rows = []
-    for (kind, size, skill), runs in runs_by_transition(owned_steps(signals, keys, analytics), tasks, stop).items():
+    for (kind, size, skill), runs in runs_by_transition(folds, tasks, stop).items():
         group = [r for r in runs if r.task in clean]
         reference_bar = [r for r in group if _conforms(r, machines.get(skill))]
         if skill == NO_SKILL or len(group) < MIN_N:
@@ -265,27 +342,37 @@ def fast_slow_diff(
     return rows
 
 
+def fast_slow_diff(
+    found: Iterable[Signal],
+    keys: TaskKeys | None,
+    tasks: Mapping[str, Mapping[str, Any]],
+    analytics: Analytics | None = None,
+) -> list[dict[str, Any]]:
+    """One row per skill's transition within a kind and size, by kind, size, then skill; see the module docstring."""
+    return combine_diff(*_folded_runs(found, keys, analytics), tasks, analytics)
+
+
 def _stage_visits(run: Run, machine: SkillMachine) -> list[tuple[str, int]]:
     """The run's visits to the machine's states as (state, steps taken there), a self-loop collapsed. A step is in the
     stage its run had reached when it began, `START` before the first; a step's tool calls then advance the run one
     stage at a time, as `_conforms` reads them."""
     visits: list[tuple[str, int]] = []
     reached = 0
-    for owned in sorted(run.steps, key=lambda o: o.step["at"]):
+    for step in sorted(run.steps, key=lambda step: step.at):
         state = machine.stages[reached - 1].name if reached else START
         if visits and visits[-1][0] == state:
             visits[-1] = (state, visits[-1][1] + 1)
         else:
             visits.append((state, 1))
-        for call in sorted((c for c in owned.calls if c.kind == "tool"), key=lambda c: c.time):
+        for call in sorted(step.calls, key=lambda c: c.time):
             if reached < len(machine.stages) and _reaches(machine.stages[reached], call):
                 reached += 1
     return visits
 
 
-def cost_to_go(
-    found: Iterable[Signal],
-    keys: TaskKeys | None,
+def combine_cost_to_go(
+    folds: Iterable[list[dict[str, Any]]],
+    sessions: list[dict[str, Any]],
     tasks: Mapping[str, Mapping[str, Any]],
     analytics: Analytics | None = None,
 ) -> list[dict[str, Any]]:
@@ -297,13 +384,14 @@ def cost_to_go(
     cell, its stays counted in steps, a run's last step absorbing into `END`. A state no run reached has no row, and
     a cell's rows are served whatever their `n`: the gate that spends them holds a state seen leave under `MIN_N`
     times.
+
+    It is worked out from the sessions' `fold_runs` results and their health rows `sessions`.
     """
     stop = analytics.stop_activities if analytics else frozenset()
     machines = {m.skill: m for m in analytics.skill_machines} if analytics else {}
-    signals = list(found)
-    clean = _clean_tasks(signals, keys, analytics)
+    clean = _clean_tasks(sessions)
     rows = []
-    for (kind, size, skill), runs in runs_by_transition(owned_steps(signals, keys, analytics), tasks, stop).items():
+    for (kind, size, skill), runs in runs_by_transition(folds, tasks, stop).items():
         if (machine := machines.get(skill)) is None:
             continue
         counts: dict[str, Counter[str]] = defaultdict(Counter)
@@ -328,3 +416,13 @@ def cost_to_go(
             if state in chain
         ]
     return rows
+
+
+def cost_to_go(
+    found: Iterable[Signal],
+    keys: TaskKeys | None,
+    tasks: Mapping[str, Mapping[str, Any]],
+    analytics: Analytics | None = None,
+) -> list[dict[str, Any]]:
+    """One row per state of each skill machine within a kind and size; see `combine_cost_to_go`."""
+    return combine_cost_to_go(*_folded_runs(found, keys, analytics), tasks, analytics)

@@ -41,9 +41,10 @@ from typing import Any
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import CLAUDE_CODE, Signal
-from starpulse.flow_metrics.model.steps import owned_steps
+from starpulse.flow_metrics.model.session_health import by_session
+from starpulse.flow_metrics.model.steps import session_owned
 
-__all__ = ["MIN_N", "cell_of", "cell_report", "estimate_report", "transition_cost"]
+__all__ = ["MIN_N", "cell_of", "cell_report", "combine_cost", "estimate_report", "fold_cost", "transition_cost"]
 
 #: Clean completions a cell needs to report.
 MIN_N = 5
@@ -152,29 +153,20 @@ def _repeats(calls: Iterable[Signal]) -> set[str]:
     return repeated
 
 
-def transition_cost(
-    found: Iterable[Signal],
-    keys: TaskKeys | None,
-    tasks: Mapping[str, Mapping[str, Any]],
-    analytics: Analytics | None = None,
-) -> list[dict[str, Any]]:
-    """One row per (kind, size, skill) of the steps of `found`, by kind, size, then skill; see the module docstring."""
-    owned = [o for o in owned_steps(found, keys, analytics) if o.step["captured"] and o.step["origin"] != "auxiliary"]
-    by_session: dict[tuple[str, str], list[Signal]] = defaultdict(list)
+def fold_cost(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> list[dict[str, Any]]:
+    """The fold of one session's `signals`: one row per (task, skill) of its steps, as plain JSON data, with the
+    steps, the subagent's, the wasted ones, the seconds and the peak context `transition_cost` sums per cell."""
+    owned = [
+        o for o in session_owned(signals, keys, analytics) if o.step["captured"] and o.step["origin"] != "auxiliary"
+    ]
+    repeated = _repeats(c for o in owned for c in o.calls)
+    rows: dict[tuple[str | None, str], dict[str, Any]] = {}
     for o in owned:
-        by_session[o.step["harness"], o.step["session"]] += o.calls
-    repeated = set().union(*map(_repeats, by_session.values()))
-    cost: dict[tuple[str, int, str], dict[str, Any]] = {}
-    for o in owned:
-        if (cell := cell_of(tasks, o.step["task"])) is None:
-            continue
-        row = cost.setdefault(
-            (*cell, o.step["skill"]),
+        row = rows.setdefault(
+            (o.step["task"], o.step["skill"]),
             {
-                "kind": cell[0],
-                "size": cell[1],
+                "task": o.step["task"],
                 "skill": o.step["skill"],
-                "tasks": set(),
                 "steps": 0,
                 "side_steps": 0,
                 "wasted_steps": 0,
@@ -183,13 +175,50 @@ def transition_cost(
             },
         )
         tokens = o.step["tokens"]
-        row["tasks"].add(o.step["task"])
         row["steps"] += 1
         row["side_steps"] += o.step["origin"] == "side"
         row["wasted_steps"] += any((c.kind in {"tool", "decision"} and not c.ok) or c.key in repeated for c in o.calls)
         row["agent_s"] += o.seconds + sum(c.seconds for c in o.calls if c.kind == "tool")
         row["peak_context"] = max(row["peak_context"], tokens["input"] + tokens["cache_read"] + tokens["cache_write"])
+    return list(rows.values())
+
+
+def combine_cost(folds: Iterable[list[dict[str, Any]]], tasks: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """One row per (kind, size, skill) of the sessions' `fold_cost` results, by kind, size, then skill; see the module
+    docstring."""
+    cost: dict[tuple[str, int, str], dict[str, Any]] = {}
+    for part in (part for rows in folds for part in rows):
+        if (cell := cell_of(tasks, part["task"])) is None:
+            continue
+        row = cost.setdefault(
+            (*cell, part["skill"]),
+            {
+                "kind": cell[0],
+                "size": cell[1],
+                "skill": part["skill"],
+                "tasks": set(),
+                "steps": 0,
+                "side_steps": 0,
+                "wasted_steps": 0,
+                "agent_s": 0.0,
+                "peak_context": 0,
+            },
+        )
+        row["tasks"].add(part["task"])
+        for field in ("steps", "side_steps", "wasted_steps", "agent_s"):
+            row[field] += part[field]
+        row["peak_context"] = max(row["peak_context"], part["peak_context"])
     return [
         {**row, "tasks": len(row["tasks"]), "wasted_rate": row["wasted_steps"] / row["steps"]}
         for _, row in sorted(cost.items())
     ]
+
+
+def transition_cost(
+    found: Iterable[Signal],
+    keys: TaskKeys | None,
+    tasks: Mapping[str, Mapping[str, Any]],
+    analytics: Analytics | None = None,
+) -> list[dict[str, Any]]:
+    """One row per (kind, size, skill) of the steps of `found`, by kind, size, then skill; see the module docstring."""
+    return combine_cost((fold_cost(group, keys, analytics) for group in by_session(found)), tasks)
