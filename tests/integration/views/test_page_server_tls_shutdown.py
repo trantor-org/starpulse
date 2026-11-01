@@ -63,4 +63,5 @@ def test_a_request_on_a_connection_the_server_is_closing_logs_no_traceback(
             except OSError:
                 pass  # the server's close already reached this client
         server.join()
-    assert [(r.name, r.getMessage()) for r in caplog.records if r.exc_info] == []
+    own = ("hypercorn", "starpulse.views.adapters.inbound.page_server")  # not a thread an earlier test leaked
+    assert [(r.name, r.getMessage()) for r in caplog.records if r.exc_info and r.name.startswith(own)] == []
