@@ -1187,6 +1187,37 @@ def test_a_machines_tasks_leave_out_one_past_the_window_as_the_snapshot_does() -
     assert [t["id"] for t in feed.machine_tasks("in-progress")] == ["PROJ-2"]
 
 
+def test_the_snapshot_reads_until_the_machine_events_replay_has_placed_every_task() -> None:
+    feed = BoardFeed(roles=ROLES, machines=MACHINES)
+    tasks = MachineTasks(feed)
+    tasks.await_stream()
+    tasks.expect("2-0")
+    entry = {"machine": "in-progress", "event": "WORKTREE_READY", "task": "PROJ-1", "time": str(time.time())}
+    _, deltas = feed.subscribe()
+
+    tasks.handle_entry("1-0", entry)
+    assert feed.snapshot()["reading"] is True
+    tasks.handle_entry("2-0", {**entry, "task": "PROJ-2"})
+
+    drawn = feed.snapshot()
+    assert drawn["reading"] is False
+    assert {a["id"] for f in drawn["flows"] if f["name"] == "in-progress" for a in f["agents"]} == {"PROJ-1", "PROJ-2"}
+    assert [deltas.get_nowait()[1]["reading"] for _ in range(deltas.qsize())] == [False]
+
+
+def test_a_phase_flow_of_the_snapshot_lists_every_task_its_machine_holds() -> None:
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, window_s=3600)
+    tasks, now = MachineTasks(feed), time.time()
+    for task, at in (("PROJ-1", now), ("PROJ-2", now - 60), ("PROJ-3", now - 7200)):
+        tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task=task, time=at))
+
+    flows = {f["name"]: f for f in feed.snapshot()["flows"]}
+
+    held = {t["id"] for t in feed.machine_tasks("in-progress")}
+    assert held == {"PROJ-1", "PROJ-2"}
+    assert {a["id"] for a in flows["in-progress"]["agents"]} == held
+
+
 def test_every_task_open_or_settled_is_named_by_its_title_labels_milestone_and_profile() -> None:
     feed = BoardFeed(roles=ROLES)
     feed.put(BoardTask(id="PROJ-1", team="demo", title="open one", lane="ready", labels=["a"]))
