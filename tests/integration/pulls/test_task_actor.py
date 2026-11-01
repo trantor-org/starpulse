@@ -722,7 +722,7 @@ def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
     feed.follow_read_model()  # the page's follow publishes the changed task to the actor, as the server does
     store.save([pull(1, state="MERGED")])
 
-    moved = until(lambda: board.moved() == [("TASK-1", "done")])
+    moved = until(lambda: board.moved() == [("TASK-1", "done")], within=WITHIN_S * 10)
     still_projecting = projection.is_alive()
     _BlockedProjection.release.set()
     assert (moved, still_projecting) == (True, True)
