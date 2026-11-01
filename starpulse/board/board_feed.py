@@ -219,6 +219,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         #: The pages with a Ledger open: the event each watches and the queue of that event's changed rows.
         self._watchers: list[tuple[str, queue.Queue]] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too
+        #: True from the machine events stream's start until its replay has placed every task.
+        self._machines_reading = False
         self._expected: int | None = None
         self._seen = 0
         self._saved = 0

@@ -174,6 +174,17 @@ class ReadMethods:
         with self._lock:
             self._awaiting = True
 
+    def await_machines(self) -> None:
+        """Say the machine events are being replayed, so the snapshot reads until `machines_read`: a page told it
+        draws nothing from the phase flows the replay has not filled."""
+        with self._lock:
+            self._machines_reading = True
+
+    def machines_read(self) -> None:
+        """Say the machine events replay has placed every task."""
+        with self._lock:
+            self._machines_reading = False
+
     def wait_replayed(self, timeout: float | None = None) -> bool:
         """Block until the stream has been read up to where it stood at the start, or `timeout` seconds pass, and say
         whether it has; at once for a feed that reads none."""

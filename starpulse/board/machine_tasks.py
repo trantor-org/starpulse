@@ -56,7 +56,8 @@ class MachineTasks:
         self._check_ready()
 
     def await_stream(self) -> None:
-        """Nothing to say before the stream is reached: an empty machine level is a correct one."""
+        """Say the snapshot is still being read until the replay ends: tasks not yet placed are no empty machines."""
+        self._feed.await_machines()
 
     def _check_ready(self) -> None:
         """Turn ready once the entry expected has been read, and hand every connected page the tasks the replay placed in
@@ -64,6 +65,7 @@ class MachineTasks:
         if self._expected is None or self._seen < self._expected or self.ready.is_set():
             return
         self.ready.set()
+        self._feed.machines_read()
         self._feed.publish("snapshot", self._feed.snapshot())
 
     def put(self, event: MachineEvent, *, publish: bool = True) -> None:
