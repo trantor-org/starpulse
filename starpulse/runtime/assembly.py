@@ -18,6 +18,7 @@ from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.harness_telemetry.adapters.inbound.telemetry import KEEP_S
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
@@ -174,7 +175,8 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
 
 
 def keep_event_log(log: EventLog, config: Config, base: Path, *, stop: threading.Event) -> threading.Thread:
-    """Start the hourly prune of the event log, which archives each row it deletes under `event_log_archive_dir`."""
+    """Start the hourly prune of the event log, which archives each row it deletes under `event_log_archive_dir`, and
+    of the signal table, which keeps the last `KEEP_S` seconds of signals."""
     thread = threading.Thread(
         target=prune_forever,
         args=(log,),
@@ -182,6 +184,7 @@ def keep_event_log(log: EventLog, config: Config, base: Path, *, stop: threading
             "retention_days": config.event_log_retention_days,
             "archive_dir": base / config.event_log_archive_dir,
             "stop": stop,
+            "signal_keep": KEEP_S,
         },
         name="event-log-prune",
         daemon=True,
