@@ -212,7 +212,7 @@ def test_each_decision_is_logged_with_its_p_goal_and_both_ranks(
     with caplog.at_level(logging.INFO, logger="starpulse.scheduler.model.admission"):
         _decide([_task("T-9")], ledger, {"ready": {"p_goal": 0.5}})
 
-    [line] = [r.getMessage() for r in caplog.records]
+    [line] = [r.getMessage() for r in caplog.records if r.name == "starpulse.scheduler.model.admission"]
     assert "T-9" in line and "p_goal=0.50" in line and "shadow_rank=1" in line and "enforced_rank=1" in line
 
 
@@ -402,7 +402,7 @@ def test_the_bug_and_leverage_rules_leave_the_shadow_order_as_it_was(ledger: Led
 
 
 def test_a_board_like_todays_starts_the_bugs_and_stories_and_no_decision_they_leave_no_room_for(ledger: Ledger) -> None:
-    """The Ready lane of 2026-10-28: two board-state bugs, stories four and two tasks wait on, and decisions to make."""
+    """A Ready lane of two board-state bugs, stories four and two tasks wait on, and decisions to make."""
 
     def waiting(on: str, count: int) -> list[dict[str, Any]]:
         return [_task(f"{on}-W{n}", deps=(on,), state="waiting") for n in range(count)]
