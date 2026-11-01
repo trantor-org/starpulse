@@ -47,6 +47,8 @@ from starpulse.runtime.adapter_kit import RunsAdapterKit
 from tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
 
 LISTING = "/api/v1/dags?perPage=200"
+#: The day the runs of these tests began: tomorrow, so a listing since the last day always reaches them.
+_D = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
 #: The listing is read at this time; an entry stamped before it is already in the listing.
 LISTED_AT = 100.0
 
@@ -78,28 +80,28 @@ LANE = {"queue_of": {"deliver": "deliver"}}
 LINTING = InFlight(
     "deliver",
     "r1",
-    started_at="2026-10-05T23:00:00Z",
+    started_at=f"{_D}T23:00:00Z",
     nodes=(
-        ("refuse", "succeeded", "2026-10-05T23:00:01Z"),
-        ("lint", "running", "2026-10-05T23:00:02Z"),
+        ("refuse", "succeeded", f"{_D}T23:00:01Z"),
+        ("lint", "running", f"{_D}T23:00:02Z"),
         ("wait_ci", "not_started", ""),
     ),
 )
 WAITING = InFlight(
     "deliver",
     "r2",
-    started_at="2026-10-05T23:04:00Z",
+    started_at=f"{_D}T23:04:00Z",
     nodes=(
-        ("refuse", "succeeded", "2026-10-05T23:04:01Z"),
-        ("lint", "succeeded", "2026-10-05T23:04:02Z"),
-        ("wait_ci", "running", "2026-10-05T23:04:30Z"),
+        ("refuse", "succeeded", f"{_D}T23:04:01Z"),
+        ("lint", "succeeded", f"{_D}T23:04:02Z"),
+        ("wait_ci", "running", f"{_D}T23:04:30Z"),
     ),
 )
 QUEUED = InFlight(
     "deliver",
     "r3",
     label="queued",
-    queued_at="2026-10-05T23:05:00Z",
+    queued_at=f"{_D}T23:05:00Z",
     nodes=(("refuse", "not_started", ""), ("lint", "not_started", ""), ("wait_ci", "not_started", "")),
 )
 
@@ -671,7 +673,7 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             "pool": "",
         },
     ]
-    assert set(timeouts) == {5, 60}  # a read, and the scan of a window of runs
+    assert set(timeouts) == {5}  # every read is one cheap listing: no DAG here has runs for a scan
 
 
 def test_dags_asks_for_step_detail_only_of_the_dags_it_is_told_to_keep(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1232,17 +1234,17 @@ def test_two_concurrent_runs_of_one_dag_are_two_active_records_with_their_own_st
         {
             "runId": "r1",
             "status": "running",
-            "startedAt": "2026-10-05T23:00:00Z",
+            "startedAt": f"{_D}T23:00:00Z",
             "step": "lint",
-            "stepStartedAt": "2026-10-05T23:00:02Z",
+            "stepStartedAt": f"{_D}T23:00:02Z",
             "steps": {"refuse": "succeeded", "lint": "running", "wait_ci": "not_started"},
         },
         {
             "runId": "r2",
             "status": "running",
-            "startedAt": "2026-10-05T23:04:00Z",
+            "startedAt": f"{_D}T23:04:00Z",
             "step": "wait_ci",
-            "stepStartedAt": "2026-10-05T23:04:30Z",
+            "stepStartedAt": f"{_D}T23:04:30Z",
             "steps": {"refuse": "succeeded", "lint": "succeeded", "wait_ci": "running"},
         },
     ]
@@ -1254,8 +1256,8 @@ def test_a_queued_run_follows_the_running_ones_and_starts_when_it_was_queued() -
     assert [
         (a["runId"], a["status"], a["startedAt"], a["step"], a["stepStartedAt"]) for a in listed.get("active", [])
     ] == [
-        ("r1", "running", "2026-10-05T23:00:00Z", "lint", "2026-10-05T23:00:02Z"),
-        ("r3", "queued", "2026-10-05T23:05:00Z", "", ""),
+        ("r1", "running", f"{_D}T23:00:00Z", "lint", f"{_D}T23:00:02Z"),
+        ("r3", "queued", f"{_D}T23:05:00Z", "", ""),
     ]
 
 
@@ -1263,9 +1265,9 @@ def test_a_run_between_steps_has_no_current_step() -> None:
     between = InFlight(
         "deliver",
         "r4",
-        started_at="2026-10-05T23:06:00Z",
+        started_at=f"{_D}T23:06:00Z",
         nodes=(
-            ("refuse", "succeeded", "2026-10-05T23:06:01Z"),
+            ("refuse", "succeeded", f"{_D}T23:06:01Z"),
             ("lint", "not_started", ""),
             ("wait_ci", "not_started", ""),
         ),
@@ -1276,7 +1278,7 @@ def test_a_run_between_steps_has_no_current_step() -> None:
 
 def test_a_run_of_another_dag_is_not_active_on_this_one() -> None:
     other = InFlight(
-        "other", "r9", started_at="2026-10-05T23:00:00Z", nodes=(("a", "running", "2026-10-05T23:00:01Z"),)
+        "other", "r9", started_at=f"{_D}T23:00:00Z", nodes=(("a", "running", f"{_D}T23:00:01Z"),)
     )
     queues = {"deliver": Queue(cap=8), "other": Queue(cap=8)}
     with dagu({**DELIVER, "other": ["a"]}, **LANE, queues=queues, in_flight=(LINTING, other)) as (base_url, _):
@@ -1516,8 +1518,8 @@ APPLY = {"apply": ["validate", "deploy"]}
 APPLIED = Past(
     "apply",
     "r1",
-    started_at="2026-10-05T23:00:00Z",
-    finished_at="2026-10-05T23:01:00Z",
+    started_at=f"{_D}T23:00:00Z",
+    finished_at=f"{_D}T23:01:00Z",
     params=f'REPOSITORY=trantor-org/trantor AFTER={"a" * 40} NOTE="two words"',
     nodes=(("validate", "succeeded"), ("deploy", "succeeded")),
 )
@@ -1525,8 +1527,8 @@ FAILED = Past(
     "apply",
     "r2",
     label="failed",
-    started_at="2026-10-05T23:10:00Z",
-    finished_at="2026-10-05T23:11:00Z",
+    started_at=f"{_D}T23:10:00Z",
+    finished_at=f"{_D}T23:11:00Z",
     nodes=(("validate", "succeeded"), ("deploy", "failed")),
 )
 
@@ -1546,8 +1548,8 @@ def test_a_tied_dag_carries_its_recent_runs_with_params_times_and_per_step_statu
         "task": None,
         "url": f"{base_url}/dag-runs/apply/r1",
         "status": "succeeded",
-        "startedAt": "2026-10-05T23:00:00Z",
-        "finishedAt": "2026-10-05T23:01:00Z",
+        "startedAt": f"{_D}T23:00:00Z",
+        "finishedAt": f"{_D}T23:01:00Z",
         "params": {"REPOSITORY": "trantor-org/trantor", "AFTER": "a" * 40, "NOTE": "two words"},
         "steps": {"validate": "succeeded", "deploy": "succeeded"},
     }
@@ -1564,14 +1566,66 @@ def test_a_dag_no_cue_ties_is_listed_with_no_recent_runs_and_costs_dagu_no_histo
 
 
 def test_recent_runs_are_read_across_every_page_dagu_returns() -> None:
-    history = tuple(Past("apply", f"r{i}", started_at=f"2026-10-05T23:{i:02d}:00Z") for i in range(5))
+    history = tuple(Past("apply", f"r{i}", started_at=f"{_D}T23:{i:02d}:00Z") for i in range(5))
     with dagu(APPLY, history=history, page=2) as (base_url, _):
         runs = recent(base_url, {"apply"})
 
     assert [r["runId"] for r in runs] == ["r0", "r1", "r2", "r3", "r4"]
 
 
-def test_recent_runs_are_asked_for_within_the_last_day_of_the_named_dag_only() -> None:
+def _ran_ago(count: int) -> tuple[Past, ...]:
+    """`count` runs of `apply` begun a minute apart in the last hour, newest first."""
+    now = datetime.now(UTC)
+    return tuple(
+        Past("apply", f"r{i}", started_at=(now - timedelta(minutes=i + 1)).isoformat(), finished_at=now.isoformat())
+        for i in range(count)
+    )
+
+
+def test_a_dags_recent_runs_come_from_its_newest_runs_when_those_reach_back_a_day_and_no_scan_is_made() -> None:
+    with dagu(APPLY, history=_ran_ago(3)) as (base_url, calls):
+        runs = recent(base_url, {"apply"})
+
+    assert [r["runId"] for r in runs] == ["r0", "r1", "r2"]
+    assert "/api/v1/dags/apply/dag-runs" in calls
+    assert not [c for c in calls if "dag-runs?name=" in c]
+
+
+def test_a_dags_newest_runs_that_all_fall_inside_the_day_leave_the_rest_to_a_paged_scan() -> None:
+    with dagu(APPLY, history=_ran_ago(35)) as (base_url, calls):
+        runs = recent(base_url, {"apply"})
+
+    assert [r["runId"] for r in runs] == [f"r{i}" for i in range(35)]
+    assert [c for c in calls if "dag-runs?name=apply" in c]
+
+
+def test_a_dag_whose_newest_runs_dagu_cannot_list_is_read_by_the_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    read = dagu_module._get
+
+    def get(url: str, *rest) -> dict:
+        if url.endswith("/dags/apply/dag-runs"):
+            raise OSError("500")
+        return read(url, *rest)
+
+    monkeypatch.setattr(dagu_module, "_get", get)
+    with dagu(APPLY, history=_ran_ago(2)) as (base_url, calls):
+        runs = recent(base_url, {"apply"})
+
+    assert [r["runId"] for r in runs] == ["r0", "r1"]
+    assert [c for c in calls if "dag-runs?name=apply" in c]
+
+
+def test_a_dags_newest_runs_that_reach_past_the_day_are_cut_to_it_without_a_scan() -> None:
+    old = Past("apply", "old", started_at="2026-01-01T00:00:00Z", finished_at="2026-01-01T00:01:00Z")
+    with dagu(APPLY, history=(*_ran_ago(2), old)) as (base_url, calls):
+        runs = recent(base_url, {"apply"})
+
+    assert [r["runId"] for r in runs] == ["r0", "r1"]
+    assert not [c for c in calls if "dag-runs?name=" in c]
+
+
+def test_recent_runs_are_asked_for_within_the_last_day_of_the_named_dag_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dagu_module, "_newest", lambda *_: None)
     with dagu(APPLY, history=(APPLIED,)) as (base_url, calls):
         recent(base_url, {"apply"})
 
@@ -1580,7 +1634,10 @@ def test_recent_runs_are_asked_for_within_the_last_day_of_the_named_dag_only() -
     assert int(listing.split("fromDate=")[1].split("&")[0]) > time.time() - 86400 - 60
 
 
-def test_a_second_read_of_recent_runs_lists_only_since_the_first_and_keeps_what_the_first_read() -> None:
+def test_a_second_read_of_recent_runs_lists_only_since_the_first_and_keeps_what_the_first_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dagu_module, "_newest", lambda *_: None)
     now = datetime.now(UTC)
 
     def ran(run_id: str, ago: timedelta) -> Past:
@@ -1599,7 +1656,7 @@ def test_a_second_read_of_recent_runs_lists_only_since_the_first_and_keeps_what_
 
 
 def test_a_finished_runs_steps_are_read_once_and_a_running_runs_every_time() -> None:
-    running = Past("apply", "r3", label="running", started_at="2026-10-05T23:20:00Z", nodes=(("validate", "running"),))
+    running = Past("apply", "r3", label="running", started_at=f"{_D}T23:20:00Z", nodes=(("validate", "running"),))
     cache: dict = {}
     with dagu(APPLY, history=(APPLIED, running)) as (base_url, calls):
         recent(base_url, {"apply"}, finished=cache)
@@ -1614,7 +1671,7 @@ def test_a_finished_runs_steps_are_read_once_and_a_running_runs_every_time() -> 
 
 
 def test_a_recent_runs_status_keeps_dagus_own_label_as_raw_when_it_differs() -> None:
-    waiting = Past("apply", "r4", label="waiting", started_at="2026-10-05T23:30:00Z", nodes=(("deploy", "waiting"),))
+    waiting = Past("apply", "r4", label="waiting", started_at=f"{_D}T23:30:00Z", nodes=(("deploy", "waiting"),))
     with dagu(APPLY, history=(waiting,)) as (base_url, _):
         (run,) = recent(base_url, {"apply"})
 
@@ -1622,7 +1679,7 @@ def test_a_recent_runs_status_keeps_dagus_own_label_as_raw_when_it_differs() -> 
 
 
 def test_a_run_dagu_records_no_steps_for_is_listed_with_none() -> None:
-    with dagu(APPLY, history=(Past("apply", "r9", started_at="2026-10-05T23:30:00Z"),)) as (base_url, _):
+    with dagu(APPLY, history=(Past("apply", "r9", started_at=f"{_D}T23:30:00Z"),)) as (base_url, _):
         (run,) = recent(base_url, {"apply"})
 
     assert run["steps"] == {}
@@ -1669,7 +1726,7 @@ def test_a_start_entry_adds_the_run_to_a_tied_dags_recent_runs_with_its_paramete
         sink, runs = follow_tied(base_url)
         history.insert(
             0,
-            Past("apply", "r5", label="running", started_at="2026-10-05T23:40:00Z", params=f"AFTER={'b' * 40}"),
+            Past("apply", "r5", label="running", started_at=f"{_D}T23:40:00Z", params=f"AFTER={'b' * 40}"),
         )
 
         runs.handle_entry(*run_entry("StepStarted", "apply", "r5", "running", at=101.0))
@@ -1689,7 +1746,7 @@ def test_a_start_entry_dagu_does_not_list_yet_still_shows_the_run_with_no_parame
 
 
 def test_a_step_entry_moves_that_step_of_the_run_in_the_tied_dags_recent_runs() -> None:
-    running = Past("apply", "r5", label="running", started_at="2026-10-05T23:40:00Z", nodes=(("validate", "running"),))
+    running = Past("apply", "r5", label="running", started_at=f"{_D}T23:40:00Z", nodes=(("validate", "running"),))
     with dagu(APPLY, history=(running,)) as (base_url, _):
         sink, runs = follow_tied(base_url)
 
@@ -1700,26 +1757,26 @@ def test_a_step_entry_moves_that_step_of_the_run_in_the_tied_dags_recent_runs() 
 
 
 def test_an_end_entry_closes_the_run_in_the_tied_dags_recent_runs() -> None:
-    history = [Past("apply", "r5", label="running", started_at="2026-10-05T23:40:00Z", nodes=(("deploy", "running"),))]
+    history = [Past("apply", "r5", label="running", started_at=f"{_D}T23:40:00Z", nodes=(("deploy", "running"),))]
     with dagu(APPLY, {}, {"statusLabel": "running", "dagRunId": "r5"}, history=history) as (base_url, _):
         sink, runs = follow_tied(base_url)
         history[0] = Past(
             "apply",
             "r5",
             label="failed",
-            started_at="2026-10-05T23:40:00Z",
-            finished_at="2026-10-05T23:41:00Z",
+            started_at=f"{_D}T23:40:00Z",
+            finished_at=f"{_D}T23:41:00Z",
             nodes=(("deploy", "failed"),),
         )
 
         runs.handle_entry(*run_entry("StepFinished", "apply", "r5", "failed", at=101.0))
 
     run = sink.recent()["r5"]
-    assert (run["status"], run["finishedAt"], run["steps"]) == ("failed", "2026-10-05T23:41:00Z", {"deploy": "failed"})
+    assert (run["status"], run["finishedAt"], run["steps"]) == ("failed", f"{_D}T23:41:00Z", {"deploy": "failed"})
 
 
 def test_the_end_of_a_run_no_longer_the_latest_closes_it_in_recent_runs_without_reading_dagu() -> None:
-    older = Past("apply", "r4", label="running", started_at="2026-10-05T22:00:00Z", nodes=(("deploy", "running"),))
+    older = Past("apply", "r4", label="running", started_at=f"{_D}T22:00:00Z", nodes=(("deploy", "running"),))
     with dagu(APPLY, {}, {"statusLabel": "succeeded", "dagRunId": "r5"}, history=(older,)) as (base_url, calls):
         sink, runs = follow_tied(base_url)
         calls.clear()
@@ -1904,7 +1961,7 @@ def test_step_cache_keeps_the_dags_a_partial_listing_leaves_out(monkeypatch: pyt
 
 def test_a_dag_run_task_run_is_attached_to_its_task_with_a_link_to_the_run() -> None:
     run = Past(
-        "apply", "dag-run-task-6166-1760000000", started_at="2026-10-05T23:00:00Z", nodes=(("validate", "failed"),)
+        "apply", "dag-run-task-6166-1760000000", started_at=f"{_D}T23:00:00Z", nodes=(("validate", "failed"),)
     )
     with dagu(APPLY, history=(run, APPLIED)) as (base_url, _):
         sink, _ = follow_tied(base_url)
@@ -1916,7 +1973,7 @@ def test_a_dag_run_task_run_is_attached_to_its_task_with_a_link_to_the_run() -> 
 
 
 def test_a_dag_no_board_event_ties_keeps_its_recent_runs_while_its_latest_run_names_a_task() -> None:
-    run = Past("apply", "dag-run-task-6166-1760000000", started_at="2026-10-05T23:00:00Z")
+    run = Past("apply", "dag-run-task-6166-1760000000", started_at=f"{_D}T23:00:00Z")
     latest = {"statusLabel": "succeeded", "dagRunId": "dag-run-task-6166-1760000000"}
     with dagu(APPLY, latest=latest, history=(run,)) as (base_url, _):
         sink, _ = follow_tied(base_url, tied=set())
@@ -2032,7 +2089,7 @@ def test_statistics_are_kept_until_their_ttl_passes_and_then_read_again() -> Non
             now[0] = at
             refresh_stats(base_url, stats, clock=lambda: now[0])
 
-    assert len([c for c in calls if "dag-runs?name=d" in c]) == 2
+    assert calls.count("/api/v1/dags/d/dag-runs") == 2
 
 
 def test_statistics_dagu_fails_to_give_are_not_asked_for_again_until_the_ttl_passes(monkeypatch) -> None:
@@ -2060,6 +2117,7 @@ def test_a_window_scan_is_given_longer_to_answer_than_a_single_read(monkeypatch)
         return _Raw(b'{"dagRuns": []}')
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(dagu_module, "_newest", lambda *_: None)
     recent_runs("http://dagu", "apply")
 
     (scan,) = [timeout for url, timeout in waited if "dag-runs?name=apply" in url]
