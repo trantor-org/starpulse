@@ -63,6 +63,8 @@ DELIVER_FINISHED = "DELIVER_FINISHED"
 ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
 #: The pull request states that end a pull request.
 _TERMINAL = ("MERGED", "CLOSED")
+#: The pull request check rollups that keep a task out of Review (`none` is a repository with no required check).
+_NOT_GREEN = ("pending", "failing")
 #: The repository the board renders a bare `PR #N` against; another repo's pull request links its own URL.
 _BOARD_REPO = "trantor-org/trantor"
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
@@ -909,7 +911,8 @@ class TaskActor:
     def _pr_ready(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The ready or merged pull requests when the task cites one that is, else None. A task sent back from Review
         stays put while its ready pull request keeps the head it was sent back on: a new head or a run of `review` is the
-        session's answer."""
+        session's answer. An open pull request is ready only once its required checks are not pending or failing; one
+        with no required check (`none`) is ready as soon as it is not a draft."""
         parts = []
         held = self._sent_back.get(agent["id"], {})
         for url in self._own_prs(agent):
@@ -918,7 +921,8 @@ class TaskActor:
                 continue
             merged = record["state"] == "MERGED" and record["mergedAt"]
             reviewed = held.get(url) == record["headRefOid"]
-            if merged or (record["state"] == "OPEN" and not record["isDraft"] and not reviewed):
+            green = record["checks"] not in _NOT_GREEN
+            if merged or (record["state"] == "OPEN" and not record["isDraft"] and green and not reviewed):
                 parts.append(f"{record['repo']}#{record['number']} {'merged' if merged else 'ready'}")
         if not parts:
             return None

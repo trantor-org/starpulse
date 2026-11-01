@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -23,6 +23,22 @@ def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
         column: Move.model_validate(raw).for_actor(AGENT).model_dump(include={"allowed", "reason", "skill"})
         for column, raw in agent["moves"].items()
     }
+
+
+#: What the board says of a pull request whose checks keep a task out of the review lane.
+_CHECKS_SAID = {"pending": "has checks still running", "failing": "has failing checks"}
+
+
+def _review_held(
+    moves: dict[str, dict[str, Any]], pulls: Iterable[dict[str, Any]], review: str | None
+) -> dict[str, dict[str, Any]]:
+    """`moves` with the review lane refused for every actor while a pull request the task cites has pending or failing
+    checks: the verdict the write-time hook gives (`board_validate._not_green`), which the move set alone cannot see."""
+    held = next((pull for pull in pulls if pull["checks"] in _CHECKS_SAID and not pull["merged"] and not pull["closed"]), None)
+    if held is None or review not in moves:
+        return moves
+    reason = f"PR {held['repo']}#{held['number']} {_CHECKS_SAID[held['checks']]}"
+    return {**moves, review: {**moves[review], "allowed": False, "reason": reason}}
 
 
 def roles_of(snapshot: dict[str, Any]) -> SimpleNamespace:
@@ -137,7 +153,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "pause_reason": agent.get("pause_reason", ""),
         "readable": agent.get("readable", ""),
         "prs": [pulls.get(url, {"url": url}) for url in agent["prs"]],
-        "moves": _agent_moves(agent),
+        "moves": _review_held(_agent_moves(agent), pulls.values(), roles_of(snapshot).review),
         "rating": snapshot.get("ratings", {}).get(agent["id"]),
         "released": agent.get("released"),
     }

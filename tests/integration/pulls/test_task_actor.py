@@ -387,6 +387,36 @@ def test_an_in_progress_task_citing_only_a_draft_or_closed_pull_request_stays(
     assert until(lambda: board.moved() == [("TASK-1", "review")])
 
 
+@pytest.mark.parametrize("checks", ["pending", "failing"])
+def test_an_in_progress_task_whose_ready_pr_checks_are_not_green_stays_until_they_pass(
+    store: PullStore, stop: threading.Event, checks: str
+) -> None:
+    """TASK-10659: a demoted task re-promoted on its non-draft PR while the head's checks were still running."""
+    board = Board(BoardFeed(), task("TASK-1", "In Progress", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN") | {"checks": checks}])
+    actor = running(board, store, stop)
+
+    actor.pulls_changed()
+
+    assert board.moved() == []
+
+    store.save([pull(1, state="OPEN")])  # the head's checks pass
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "review")])
+
+
+def test_an_in_progress_task_whose_ready_pr_has_no_required_checks_moves_to_review(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "In Progress", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN") | {"checks": "none"}])
+
+    running(board, store, stop)
+
+    assert until(lambda: board.moved() == [("TASK-1", "review")])
+
+
 def test_a_review_task_sent_back_to_in_progress_stays_while_its_pull_request_keeps_the_head_it_was_sent_back_on(
     store: PullStore, stop: threading.Event
 ) -> None:
