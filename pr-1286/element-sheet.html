@@ -223,8 +223,7 @@ body:has(#sd) #crumb { visibility: hidden; }
 @keyframes sd-twinkle { 0%, 100% { opacity: .25; } 50% { opacity: .75; } }
 @keyframes sd-march { to { stroke-dashoffset: -14; } }
 @keyframes sd-breathe { 0%, 100% { opacity: .75; transform: scale(1); } 50% { opacity: 1; transform: scale(1.12); } }
-@keyframes sd-orbit { to { transform: rotate(calc(var(--a) + 360deg)) translateX(var(--orb)); } }
-@media (prefers-reduced-motion: reduce) { #sd :is(span, path) { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { #sd :is(span, path) { animation: none !important; transition: none !important; } }
 
 #nav .drill-tasks .lb-row.on { background: color-mix(in srgb, var(--agent) 12%, transparent); }
 #nav .drill-tasks .lb-row > i { grid-column: 1 / -1; display: block; }
