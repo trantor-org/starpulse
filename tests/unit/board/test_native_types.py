@@ -72,3 +72,25 @@ def test_any_type_lands_when_no_list_is_declared(tmp_path: Path, name: str) -> N
 
     assert built.edit("task-1", {"type": name}, "").ok
     assert f"type: {name}\n" in path.read_text()
+
+
+def test_a_task_record_holds_assignee_empty_when_the_key_is_absent(tmp_path: Path) -> None:
+    _, built = typed(tmp_path, None)
+    assert built.read is not None
+
+    record = built.read("task-1")
+
+    assert record is not None and record["assignee"] == ""
+
+
+def test_an_edit_sets_the_assignee_on_an_in_progress_task_and_an_empty_value_clears_it(tmp_path: Path) -> None:
+    path, built = typed(tmp_path, None)
+    assert built.edit is not None and built.read is not None
+
+    assert built.edit("task-1", {"assignee": "s-1"}, "").ok
+    assert "assignee: s-1\n" in path.read_text()
+    assert (built.read("task-1") or {})["assignee"] == "s-1"
+
+    assert built.edit("task-1", {"assignee": ""}, "").ok
+    assert "assignee:" not in path.read_text()
+    assert (built.read("task-1") or {})["assignee"] == ""
