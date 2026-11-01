@@ -175,3 +175,19 @@ def test_a_shell_tool_signal_reads_back_marked_when_its_stored_command_writes_a_
     telemetry.publish(stored)
 
     assert {s.key: s.shell_write for s in telemetry.read()} == {"w": True, "r": False, "e": False}
+
+
+def test_a_read_with_nothing_new_looks_at_each_held_signal_once_to_apply_its_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live: 1.1M held signals were re-pruned (newest, floor, rebuild) on every analytics request, ~20% of the
+    server's busy samples; the hold only changes when a poll brings signals."""
+    telemetry = TelemetryLog(log_at(tmp_path))
+    telemetry.publish([signal(i, 100.0 + i) for i in range(50)])
+    telemetry.read()
+    looked = []
+    monkeypatch.setattr(Signal, "time", property(lambda self: looked.append(1) or self.__dict__["time"]), raising=False)
+
+    telemetry.read(120.0)
+
+    assert len(looked) <= 50

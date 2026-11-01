@@ -438,8 +438,9 @@ class TelemetryLog:
     def read(self, since: float = 0.0) -> list[Signal]:
         """The held signals from `since` on; raises when the store cannot be read."""
         with self._lock:
-            self._held += self._poll()
-            if self._held:
+            polled = self._poll()
+            if polled:  # the hold only changes when a poll brings signals: no rescan of it per request
+                self._held += polled
                 floor = max(s.time for s in self._held) - self._keep
                 self._held = [s for s in self._held if s.time >= floor]
                 self._keys.intersection_update(s.key for s in self._held)
