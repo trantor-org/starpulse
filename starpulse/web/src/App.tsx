@@ -197,7 +197,7 @@ export function App() {
       </Kept>
       <Kept name="jobs" on={view === "jobs"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
       <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
-      <Rail shown={shell} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
+      <Rail shown={shell} legend={!drill} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "jobs" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
           setLine(l?.key ?? null);
@@ -387,7 +387,7 @@ export function Rail({ shown = true, ...body }: { shown?: boolean } & Parameters
   return <aside id="rail">{shown && <RailBody {...body} />}</aside>;
 }
 
-function RailBody({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
+function RailBody({ hud, view, legend = true, ...feed }: { hud: HudState; view: ViewName; legend?: boolean } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
   // the lines hold still under the pointer, so a run starting mid-aim doesn't push the next line under the click
   const [held, setHeld] = useState<FeedLine[] | null>(null);
   // the feed is a fixed box: it keeps only the newest lines it shows whole, and grows no scrollbar
@@ -409,7 +409,7 @@ function RailBody({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Om
           <FeedLines lines={(held ?? hud.feed).slice(0, fit)} {...feed} />
         </div>
       </section>
-      <section id="legend">
+      {legend && <section id="legend">
         <h3>Legend</h3>
         {view === "jobs" ? <DagLegend /> : view === "kanban" ? (
           <>
@@ -425,7 +425,7 @@ function RailBody({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Om
             <span><i style={{ background: "color-mix(in oklch, var(--agent) 85%, var(--fail))" }} />lifecycle machine</span><span className="mapleg"><i />mapped machine</span><span><i style={{ background: "var(--run)", boxShadow: "0 0 6px var(--run)" }} />activity now</span>
           </>
         )}
-      </section>
+      </section>}
     </>
   );
 }

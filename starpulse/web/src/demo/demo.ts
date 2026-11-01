@@ -337,7 +337,7 @@ export class DemoServer {
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card, snap.roles ?? {}, clock(), failingEvaluator)]));
     const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
     this.day = ledger;
-    this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? this.ledgerFields() : {}), capabilities: { edit: true, archive: true, create: true } });
+    this.snapshot = this.verdicts({ ...snap, now: clock(), ...(ledger.length ? this.ledgerFields() : {}), capabilities: { edit: true, archive: true, create: true } });
   }
 
   subscribe(fn: (s: Snapshot) => void): () => void {
@@ -627,13 +627,13 @@ export class DemoServer {
       const from = fresh.has(a.id) ? null : was.get(a.id) ?? null;
       if (from !== a.state) (this.lanes[a.id] ??= []).push({ at, from, to: a.state });
     }
-    this.snapshot = this.verdicts(next);
+    this.snapshot = this.verdicts({ ...next, now: at });
     for (const fn of this.listeners) fn(this.snapshot);
   }
 
   private verdicts(snap: Snapshot): Snapshot {
     const flows = snap.flows.map((f) =>
-      f.name !== "board" ? f : { ...f, agents: f.agents.map((a): RawTask => ({ ...a, moves: Object.fromEntries(columns(f.machine, a.state).map((c) => [c, ALLOWED])) })) },
+      f.name !== "board" ? f : { ...f, agents: f.agents.map((a): RawTask => ({ ...a, profile: a.profile ?? a.model, moves: Object.fromEntries(columns(f.machine, a.state).map((c) => [c, ALLOWED])) })) },
     );
     return { ...snap, flows };
   }

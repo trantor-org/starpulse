@@ -32,6 +32,10 @@ export interface Job {
   lenses: Record<string, Lens>;
   plan: Record<string, string>;
   trail: Visit[];
+  /** Its history has not landed yet, so where it is is not known: drawn nowhere, and the landing is no move. */
+  settling?: boolean;
+  /** The in-progress state it left by, when it left: parked, needs_attention, review_recorded or finalized. */
+  exit?: string;
 }
 
 export interface View {
@@ -118,9 +122,11 @@ export const LN: Record<string, string>;
 export const PN: Record<string, string>;
 export const STEPS: Record<string, string[]>;
 export const TIER: Record<Job["tier"], string>;
+export const TASKC: Record<"deep" | "standard", string>;
 export const STYLE: { note?: string } & Record<string, unknown>;
 export const PANE_R: number;
 export const HAIR: number;
+export const ROWS_END: number;
 /** Sizes the pane the replay bar is drawn in: its width (939 in the mockup) and height (900). The board is drawn at the mockup's size. */
 export function setLayout(w: number, h: number): void;
 /** Epoch ms until which a move is still animating. */

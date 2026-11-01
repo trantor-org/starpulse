@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import type { MachineEvent } from "../../api/types.gen";
 import { tint } from "./tint";
-import { HAIR, jobAt, LENSES, LN, PANE_R, PN, replay, rows, setLayout, setNowMinutes, statusOf, STEPS, STYLE, template, TIER, type Job, type Scene, type View } from "./sunsEngine";
+import { HAIR, jobAt, LENSES, LN, PANE_R, PN, replay, ROWS_END, rows, setLayout, setNowMinutes, statusOf, STEPS, STYLE, template, TIER, type Job, type Scene, type View } from "./sunsEngine";
 
 export type { Job, View };
 
@@ -49,7 +49,7 @@ const lensOf = (state: string) => state.replace(/_dirty$/, "");
  * transition puts it in that phase. Each return to Build starts a round, and the step is the current phase
  * machine's state. With no events the task is at Build's first step, round 1.
  */
-export function jobOf(id: string, title: string, assignee: string | undefined, events: MachineEvent[], nowSec: number): Job {
+export function jobOf(id: string, title: string, profile: string | undefined, events: MachineEvent[], nowSec: number): Job {
   const visits: Visit[] = [], state: Record<string, string> = {};
   const enter = (phase: string, at: number) => {
     const last = visits.at(-1);
@@ -81,9 +81,9 @@ export function jobOf(id: string, title: string, assignee: string | undefined, e
   const pending = (l: string) => ({ state: "pending", step: l === cur.reviewing ? 1 : 0 });
   const lenses = cur.phase !== "qa" ? {} : Object.fromEntries(LENSES.map((l) => [l, cur.lenses[l] ? { state: cur.lenses[l], step: 3 } : pending(l)]));
   return {
-    id, title, tier: (assignee?.match(TIER_OF)?.[1] as Job["tier"] | undefined) ?? "standard", spec: "—",
+    id, title, tier: (profile?.match(TIER_OF)?.[1] as Job["tier"] | undefined) ?? "standard", spec: "—",
     phase: cur.phase, step: Math.max(0, steps?.indexOf(state[cur.phase]) ?? 0), round: cur.round, limit: 3, attended: false,
-    mins: trail.at(-1)!.mins, lenses, plan: {}, trail,
+    mins: trail.at(-1)!.mins, lenses, plan: {}, trail, exit: cur.phase === "parked" || cur.phase === "done" ? state["in-progress"] : undefined,
   };
 }
 
@@ -179,15 +179,17 @@ export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>)
   const main = blank(self);
   template(main, STYLE, jobs, job);
   const rowScene = blank(self), drawnH = rows(rowScene, STYLE, job) + 56;
-  // the graph and the rows stretch down together until the rows' foot meets the replay bar
-  const foot = size.h - ROWS_BELOW, fy = yMap(Math.min(STRETCH, Math.max(1, (foot - HEAD) / (drawnH - HEAD))));
+  // the graph and the rows stretch down with the pane, by its height alone: the viewed task never moves a sun or a dot
+  const foot = size.h - ROWS_BELOW, k = Math.min(STRETCH, Math.max(1, (foot - HEAD) / (ROWS_END - HEAD))), fy = yMap(k), rowsTop = fy(ROWS_TOP);
+  // the rows keep that pitch, closing up only as far as a long task needs to reach the bar without a scroll
+  const rowsK = Math.max(1, Math.min(k, (foot - rowsTop) / (drawnH - ROWS_TOP))), fr = (y: number) => (y <= ROWS_TOP ? fy(y) : rowsTop + (y - ROWS_TOP) * rowsK);
   spread(main, f, fy);
-  spread(rowScene, f, fy);
+  spread(rowScene, f, fr);
   // the replay bar is laid out by the engine from the pane's size, so it is drawn after the board is spread
   const bar = blank(self);
   replay(bar, j0, view.at, view.replaying);
   append(main, bar);
-  const rowsTop = fy(ROWS_TOP), rowsH = fy(drawnH);
+  const rowsH = Math.max(fr(drawnH), foot);
 
   const tipOf = (G: Scene, maxX: number) => {
     const t = view.hover ? G.tips[view.hover] : undefined;
@@ -195,7 +197,7 @@ export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>)
   };
   const det = view.det ? (main.dets[view.det] ?? rowScene.dets[view.det]) : undefined;
   const fleet = jobs.map((x) => ({
-    id: x.id, on: x.id === job.id, aria: `${x.id} ${x.title}, ${statusOf(x).t}`, where:x.phase === "qa" ? "qa" : (PN[x.phase] ?? x.phase).toLowerCase(),
+    id: x.id, on: x.id === job.id, aria: `${x.id} ${x.title}, ${statusOf(x).t}`, where: x.settling ? "" : x.phase === "qa" ? "qa" : (PN[x.phase] ?? x.phase).toLowerCase(),
     pick: () => setView({ sel: x.id, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false }),
     bar: `flex-basis:100%;height:2px;margin-top:5px;border-radius:1px;background:linear-gradient(90deg,${TIER[x.tier]} ${Math.round(30 + ((x.mins * 7) % 60))}%,${tint("slate", 12)} 0)`,
   }));

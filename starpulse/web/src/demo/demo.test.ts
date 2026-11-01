@@ -419,6 +419,17 @@ describe("the demo server", () => {
     }
   });
 
+  it("reads the time as the server's snapshot does, so the header's clock runs", () => {
+    let at = 500;
+    const s = new DemoServer(fixture(), () => at);
+    expect(s.snapshot.now).toBe(500);
+
+    at = 560;
+    s.step();
+
+    expect(s.snapshot.now).toBe(560);
+  });
+
   it("keeps its Board full: a card the walk settles stays settled now, and new work created now takes its place in the first lane", () => {
     const f = fixture();
     f.flows[0].machine = { ...BOARD, mainLine: ["new", "ready", "in_progress", "review", "done"] };

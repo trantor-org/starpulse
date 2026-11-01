@@ -3,7 +3,7 @@
 // the region's measured size: no scaling, so its text keeps the size of every other view's.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { createHistory } from "../../api/history";
+import { createHistory, type History } from "../../api/history";
 import type { MachineEvent, Roles } from "../../api/types.gen";
 import { ANIM_UNTIL, spanOf, starfield, type Line, type Scene } from "./sunsEngine";
 import { css, jobOf, MOCKUP, sceneOf, stepOut, type View } from "./sunsScene";
@@ -14,7 +14,8 @@ export interface DrillTask {
   id: string;
   title: string;
   lane: string;
-  assignee?: string;
+  /** The agent profile it is routed to (`@agent-standard-high`), which names its tier. */
+  profile?: string;
 }
 
 interface Props {
@@ -55,8 +56,7 @@ function Pieces({ g }: { g: Scene }) {
   return (
     <>
       {keyed(g.S, "s").map(([s, key]) => <span key={key} style={css(s.style)} />)}
-      {/* sorted by key, so a dot flying to its next sun keeps its element and React never moves it, which would cancel the flight */}
-      {g.D.toSorted((a, b) => a.key.localeCompare(b.key)).map((d) => <span key={d.key} style={css(d.style)} />)}
+      {g.D.map((d) => <span key={d.key} style={css(d.style)} />)}
       {g.B.map((b, i) => <span key={`b${i}`} style={css(b.style)} />)}
       {g.T.map((t, i) => <span key={`t${i}`} style={css(t.style)}>{t.text}<span style={{ display: "block", fontSize: ".86em", color: t.subColor }}>{t.sub}</span></span>)}
       {g.K.map((k, i) => <span key={`k${i}`} style={css(k.style)}>{k.text}</span>)}
@@ -92,12 +92,24 @@ function useSize<T extends HTMLElement>() {
   return [ref, size] as const;
 }
 
-export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.now() / 1000, navSlot }: Props) {
+const wallClock = () => Date.now() / 1000;
+
+/** Each task's moves as last read: a failed read keeps them, so an outage flies no task back to Build. */
+function movesOf(history: History) {
+  const known = new Map<string, MachineEvent[]>();
+  return (id: string) => {
+    const e = history.replay(id);
+    if (Array.isArray(e)) known.set(id, e);
+    return { events: known.get(id) ?? [], settling: e === "loading" };
+  };
+}
+
+export function SunsDrillIn({ tasks, roles, task, onClose, clock = wallClock, navSlot }: Props) {
   const [view, setViewState] = useState<View>({ sel: task, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false });
   const setView = useCallback((patch: Partial<View>) => setViewState((v) => ({ ...v, ...patch })), []);
   const [now, setNow] = useState(clock), [, redraw] = useState(0);
   // each task's moves are read again on the 5 s tick, so a phase a task enters reaches the scene, and its comet flies, without a reload
-  const history = useMemo(() => createHistory({ onChange: () => redraw((n) => n + 1), ttl: 5 }), []);
+  const moves = useMemo(() => movesOf(createHistory({ onChange: () => redraw((n) => n + 1), ttl: 5 })), []);
   const [body, room] = useSize<HTMLDivElement>();
   // the stage fills the room the shell leaves; before it is measured it is the mockup's own size
   const stageW = room.w ? Math.max(MIN_W, room.w) : MOCKUP.w, stageH = room.h ? Math.max(MIN_H, room.h) : MOCKUP.h - TOP;
@@ -107,11 +119,10 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
   // the drilled task stands in by its id alone until the board's tasks arrive
   const working = tasks.filter((t) => t.lane === roles.working || t.id === task);
   const listed = working.some((t) => t.id === task) ? working : [{ id: task, title: "", lane: roles.working } as DrillTask, ...working];
-  const events = new Map(listed.map((t): [string, MachineEvent[]] => {
-    const e = history.replay(t.id);
-    return [t.id, Array.isArray(e) ? e : []];
-  }));
-  const jobs = listed.map((t) => jobOf(t.id, t.title, t.assignee, events.get(t.id)!, now));
+  const jobs = listed.map((t) => {
+    const { events, settling } = moves(t.id);
+    return { ...jobOf(t.id, t.title, t.profile, events, now), settling };
+  });
   const s = sceneOf(jobs, view, setView, now, size);
 
   const live = useRef({ view, job: s.job });
@@ -138,7 +149,14 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
       setView(at < 0.5 ? { at: null, replaying: false } : { at });
     }, 120);
     const anim = setInterval(() => ANIM_UNTIL > Date.now() && redraw((n) => n + 1), 50);
+    return () => [step, anim].forEach(clearInterval);
+  }, [setView]);
+  // apart from the effect above and the keys below, so a parent's new onClose never restarts the 5 s clock before it fires
+  useEffect(() => {
     const tick = setInterval(() => setNow(clock()), 5_000);
+    return () => clearInterval(tick);
+  }, [clock]);
+  useEffect(() => {
     // Escape and Backspace step out one level, as right-click does, before the Star Map underneath sees them; a text field keeps its keys
     const key = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && e.target.matches("input, textarea, select, [contenteditable]");
@@ -147,11 +165,8 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
       back();
     };
     addEventListener("keydown", key, true);
-    return () => {
-      [step, anim, tick].forEach(clearInterval);
-      removeEventListener("keydown", key, true);
-    };
-  }, [back, clock, setView]);
+    return () => removeEventListener("keydown", key, true);
+  }, [back]);
 
   return (
     <section id="sd" role="dialog" aria-label="In Progress drill-in" className="suns-drill" onContextMenu={(e) => { e.preventDefault(); back(); }}>
