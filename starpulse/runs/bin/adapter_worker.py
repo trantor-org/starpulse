@@ -15,13 +15,34 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from starpulse.runs.bin.blocks import RunsConfig
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.runs import opt_in
+from starpulse.runs.bin.blocks import RunsConfig
 from starpulse.runs.bin.runs_worker import reload
 from starpulse.runs.projection import Publisher
+
+
+def start(
+    config: RunsConfig,
+    path: Path | None,
+    base: Path,
+    log: EventLog,
+    stop: threading.Event,
+    *,
+    load: Callable[[Path | None], RunsConfig],
+    adapters: Any,
+    worker_board: Callable[..., tuple[object, Any]],
+) -> Callable[[], None]:
+    """Follow each `(instance, adapter)` of `adapters` over `log` and beat for it until `stop` is set, and return the
+    reload. Raises `ValueError` as `worker_board` does."""
+    _, feed = worker_board(config, base, log, stop)
+    publisher = Publisher(log)
+    for instance, adapter in adapters:
+        adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
+        opt_in.keep_beating(log, instance.name, stop)
+    return lambda: reload(path, config, load)
 
 
 def main(
@@ -47,11 +68,7 @@ def main(
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        _, feed = worker_board(config, base, log, stop)
+        reload_config = start(config, path, base, log, stop, load=load, adapters=adapters, worker_board=worker_board)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    publisher = Publisher(log)
-    for instance, adapter in adapters:
-        adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
-        opt_in.keep_beating(log, instance.name, stop)
-    hold(stop, lambda: reload(path, config, load))
+    hold(stop, reload_config)

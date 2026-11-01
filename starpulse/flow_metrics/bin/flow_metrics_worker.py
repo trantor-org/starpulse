@@ -45,6 +45,28 @@ def reload(path: Path, config: FlowMetricsConfig, load: Callable[[Path | None], 
         logger.info("reload: no History setting changed")
 
 
+def start(
+    config: FlowMetricsConfig,
+    path: Path | None,
+    base: Path,
+    log: EventLog,
+    stop: threading.Event,
+    *,
+    load: Callable[[Path | None], FlowMetricsConfig],
+    assemble: Callable[..., tuple[object, Feed]],
+    history_store: Callable[[FlowMetricsConfig, Path, Mapping[str, dict]], HistoryStore],
+    keep_event_log: Callable[..., object],
+) -> Callable[[], None]:
+    """Start the History recorders and the event log prune over `log`, each ending when `stop` is set, and return their
+    reload. Raises `ValueError` as `assemble` does."""
+    _, feed = assemble(config, base, None, [])
+    store = history_store(config, base, feed.machines)
+    keep_event_log(log, config, base, stop=stop)
+    threading.Thread(target=record_machine_events, args=(store, log, stop), name="machine-history", daemon=True).start()
+    threading.Thread(target=record_verdicts, args=(store, log, stop), name="verdict-history", daemon=True).start()
+    return lambda: reload(path, config, load)
+
+
 def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
@@ -64,14 +86,20 @@ def main(
     except (OSError, ValueError) as exc:
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
+    log = EventLog(database_url(config.database_url, base))
+    stop = threading.Event()
     try:
-        _, feed = assemble(config, base, None, [])
+        reload_config = start(
+            config,
+            path,
+            base,
+            log,
+            stop,
+            load=load,
+            assemble=assemble,
+            history_store=history_store,
+            keep_event_log=keep_event_log,
+        )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    log = EventLog(database_url(config.database_url, base))
-    store = history_store(config, base, feed.machines)
-    stop = threading.Event()
-    keep_event_log(log, config, base, stop=stop)
-    threading.Thread(target=record_machine_events, args=(store, log, stop), name="machine-history", daemon=True).start()
-    threading.Thread(target=record_verdicts, args=(store, log, stop), name="verdict-history", daemon=True).start()
-    hold(stop, lambda: reload(path, config, load))
+    hold(stop, reload_config)

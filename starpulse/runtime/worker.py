@@ -5,7 +5,8 @@ dependents); `scheduler` is the Scheduler context, run by `starpulse.scheduler.b
 Runs context, run by `starpulse.runs.bin.runs_worker`; `dagu`, `github-actions`, `systemd` and `temporal` are the run Adapters, each supervised by `serve` for the `[[runs]]` instances that name it, run by
 `starpulse.runs.bin.adapter_worker`; `flow-metrics` is the Flow Metrics context, run by
 `starpulse.flow_metrics.bin.flow_metrics_worker`; `search` is the Search context's embedding catch-up, run by
-`starpulse.board.bin.search_worker`; `board` is the Board context's writer (the Start Criteria dating), run by `starpulse.board.bin.board_worker`.
+`starpulse.board.bin.search_worker`; `board` is the Board context's writer (the Start Criteria dating), run by `starpulse.board.bin.board_worker`;
+`contexts` runs every one of those but `api` as threads of this one process (`starpulse.runtime.contexts`).
 
 `pulls` is run by `starpulse.pulls.bin.pulls_worker`. This module is the composition root of the workers: it builds the
 collaborators a worker needs (`runtime.assembly`, `runtime.hold`, `runtime.server`) and hands them to its `main`, as no
@@ -17,6 +18,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import threading
 from pathlib import Path
 
 from starpulse.runtime.server import listen_options
@@ -25,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 #: The run Adapters that run as their own workers (`starpulse.runs.bin.adapter_worker`): `serve` supervises one for each that a `[[runs]]` instance names.
 OPT_IN = ("dagu", "github-actions", "systemd", "temporal")
-CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", *OPT_IN)
+CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", *OPT_IN, "contexts")
 
 
 def worker_parser() -> argparse.ArgumentParser:
@@ -89,6 +91,16 @@ def main(argv: list[str] | None = None) -> None:
     # each context's bin reads its section of the root config, which only the runtime loads (spec doc-966, D6)
     loader = {"discover": discover, "load": load}
 
+    if args.context == "contexts":
+        from starpulse.runtime.contexts import contexts_of, run_contexts
+
+        path = discover(args.config)
+        try:
+            config = load(path)
+            base = args.config.parent if args.config else Path.cwd()
+            return run_contexts(config, path, contexts_of(config), threading.Event(), base=base)
+        except (OSError, ValueError) as exc:
+            parser.exit(1, f"{path}: {exc}\n")
     if args.context == "scheduler":
         from starpulse.runtime.server import _cached, trajectories_response
         from starpulse.scheduler.bin import scheduler_worker
