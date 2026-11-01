@@ -475,6 +475,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "type": str(frontmatter.get("type") or ""),
         "status": str(frontmatter.get("status") or ""),
         "profile": _profile_of(frontmatter),
+        "assignee": str(frontmatter.get("assignee") or ""),
         "priority": str(frontmatter.get("priority") or ""),
         "impact": str(frontmatter.get("impact") or ""),
         "urgency": str(frontmatter.get("urgency") or ""),
