@@ -93,6 +93,15 @@ const blank = (self: Scene["self"]): Scene => ({ P: { lane: [], guide: [], grp: 
 const joined = (P: Scene["P"]) => ({ lane: P.lane.join(" "), guide: P.guide.join(" "), grp: P.grp.join(" ") });
 
 /** The pane the board is drawn in, in px. The mockup's was 939 × 900. */
+/** The view one level out, as the Star Map's right-click steps out: a detail closes first, then a replay or scrub returns to live, then opened groups fold, then picked variants clear; null at the top, where the step leaves for the Board. */
+export function stepOut(v: View): Partial<View> | null {
+  if (v.det) return { det: null };
+  if (v.at != null || v.replaying) return { at: null, replaying: false };
+  if (Object.values(v.open).some(Boolean)) return { open: {} };
+  if (Object.keys(v.pick).length) return { pick: {} };
+  return null;
+}
+
 export interface Size {
   w: number;
   h: number;

@@ -40,6 +40,23 @@ describe("SunsDrillIn", () => {
     expect(dots()).not.toContain(packTokens("starpulse").waits);
   });
 
+  it("reads each task's moves again every 15 seconds while it is open, so a phase a task enters is drawn without a reload", async () => {
+    vi.useFakeTimers();
+    try {
+      mount();
+      const reads = () => vi.mocked(fetch).mock.calls.filter(([u]) => String(u).includes("task=TASK-2")).length;
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      const first = reads();
+      expect(first).toBeGreaterThan(0);
+
+      await act(async () => void (await vi.advanceTimersByTimeAsync(15_000)));
+
+      expect(reads()).toBeGreaterThan(first);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("lists the In Progress tasks in its Tasks strip and shows the drilled one", () => {
     mount();
     expect(fleet().map((a) => a?.split(" ")[0])).toEqual(["TASK-1", "TASK-2"]);
@@ -112,7 +129,8 @@ describe("SunsDrillIn", () => {
     mount();
     const stage = host.querySelector<HTMLElement>(".sd-stage")!.firstElementChild as HTMLElement;
 
-    expect(stage.style.background).toContain("var(--bg0)");
+    // the sky is the section's own, from the stylesheet's theme tokens, so the stage paints none over it
+    expect(stage.style.background).toBe("");
     expect(stage.style.color).toBe("var(--ink)");
   });
 
@@ -127,5 +145,47 @@ describe("SunsDrillIn", () => {
     act(() => button("Back to the Board").click());
     act(() => void window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("steps out one level per right-click, Escape or Backspace, as the Star Map does, and closes to the Board from the top", () => {
+    const close = vi.fn();
+    mount(close);
+    const sd = host.querySelector<HTMLElement>("#sd")!;
+    const rightClick = () => {
+      const e = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+      act(() => void sd.dispatchEvent(e));
+      return e;
+    };
+
+    act(() => button("Play replay").click());
+    expect(rightClick().defaultPrevented).toBe(true);
+    expect(button("Play replay")).not.toBeNull();
+    expect(host.querySelector('[aria-label="Back to live"]')).toBeNull();
+    expect(close).not.toHaveBeenCalled();
+
+    rightClick();
+    expect(close).toHaveBeenCalledTimes(1);
+
+    // the Star Map under the drill-in keeps its own Escape and Backspace, so the key it takes reaches no one else
+    const starMap = vi.fn();
+    addEventListener("keydown", starMap);
+    const press = (key: string) => act(() => void document.body.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+    act(() => button("Play replay").click());
+    press("Backspace");
+    expect(host.querySelector('[aria-label="Back to live"]')).toBeNull();
+    expect(close).toHaveBeenCalledTimes(1);
+    press("Escape");
+    expect(close).toHaveBeenCalledTimes(2);
+    removeEventListener("keydown", starMap);
+    expect(starMap).not.toHaveBeenCalled();
+  });
+
+  it("leaves Backspace to a text field that has focus", () => {
+    const close = vi.fn();
+    mount(close);
+    const field = document.body.appendChild(document.createElement("input"));
+    act(() => void field.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true })));
+    field.remove();
+    expect(close).not.toHaveBeenCalled();
   });
 });

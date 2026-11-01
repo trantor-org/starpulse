@@ -118,6 +118,10 @@ const NO_SEPS=true;
 const HEX='clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)';
 function fR(s,o){if(s&&s.mini) return s.q?3:4.2;return o.big?10:(s.q?5:7);}
 function glowOf(g,x,y,R,col,k,a){span(g,'left:'+(x-R*k)+'px;top:'+(y-R*k)+'px;width:'+(R*2*k)+'px;height:'+(R*2*k)+'px;border-radius:50%;background:radial-gradient(circle closest-side,'+hexA(col,a)+',transparent)');}
+/* The tasks at work: each a dot in its tier colour orbiting the sun of the phase it is in, a lap in 12 s, spread evenly round the sun so
+   two never stack (and still apart when motion is reduced); the picked task's dot is the larger. */
+function orbit(g,list,x,y,R,sel){list.forEach(function(t,i){var me=t.id===sel,r=me?4.6:3.4,col=TASKC[t.tier]||C.ink;
+ disc(g,x,y,r,'--a:'+(i*360/list.length-90).toFixed(1)+'deg;--orb:'+(R+10)+'px;transform:rotate(var(--a)) translateX(var(--orb));background:'+hexA(col,.95)+';box-shadow:0 0 '+(r*2)+'px '+hexA(col,.7)+';animation:sd-orbit 12s linear infinite');});}
 function disc(g,x,y,r,st){span(g,'left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;box-sizing:border-box;'+st);}
 /* Sun: a reached state is a star with a white-hot core and a corona; an unreached one is a faint, unlit disc; a final state's corona
    is ringed. */
@@ -205,9 +209,9 @@ const STYLE={M:{base:24,step:8,back:'below',skip:'above',lab:24},MINI:{base:12,s
    arrowHead(g,EX,o[0],MUTE);name(g,o[1],EX-14,o[0]-18,{align:'right',size:'.74em',col:hexA(C.ink2,.8)});
    hv(g,'exit:'+o[1],EX-124,o[0]-18,128,24,{t:'To '+o[1],lines:[o[3]],x:EX-210,y:o[0]+8},{title:'To '+o[1],sub:'board event '+o[2],rows:[{k:'leaves from',v:o[4]},{k:'when',v:o[3]}]});});
   /* states: names only; counts, lists and the lenses' story wait for hover and click */
-  ['build','deliver','review_fix'].forEach(function(k){var cur=j.phase===k;hexPad(g,X[k],Y,10,KC.phase,true,{glow:cur});name(g,PN[k],X[k],Y+16,{align:'center',size:'.86em',col:hexA(C.ink2,.8)});
+  ['build','deliver','review_fix'].forEach(function(k){var cur=j.phase===k;hexPad(g,X[k],Y,10,KC.phase,true,{glow:cur});orbit(g,at[k]||[],X[k],Y,10,j.id);name(g,PN[k],X[k],Y+16,{align:'center',size:'.86em',col:hexA(C.ink2,.8)});
    hv(g,'st:'+k,X[k]-34,Y-14,68,48,{t:PN[k],lines:[n(k)+' task'+(n(k)===1?'':'s')+' here now','phase machine · '+(MD[k].nodes.length)+' states']},tasksIn(k,PN[k],'phase machine'));});
-  LENSES.forEach(function(l){var s=lensState(j,l),col=s&&s.state?VC[s.state]:KC.sub;hexPad(g,650,LYT[l],8,col,true,{glow:s&&s.live});
+  LENSES.forEach(function(l){var s=lensState(j,l),col=s&&s.state?VC[s.state]:KC.sub;hexPad(g,650,LYT[l],8,col,true,{glow:s&&s.live});orbit(g,at[l]||[],650,LYT[l],8,j.id);
    name(g,LN[l],650,LYT[l]-27,{align:'center',size:'.74em',col:hexA(C.sbHi,.8)});
    hv(g,'st:lens:'+l,620,LYT[l]-28,60,40,{t:LN[l]+' lens',lines:[n(l)+' task'+(n(l)===1?'':'s')+' reviewing','runs alongside the other four']},tasksIn(l,LN[l]+' lens','lens sub-machine'));});
   [[470,Y+34,KC.phase],[650,LYT.simplify+12,KC.sub],[850,Y+34,KC.phase],[975,Y+34,KC.phase]].forEach(function(t){flow(g,'M'+t[0]+','+t[1]+' L'+t[0]+','+(HAIR-3),t[2],.5);

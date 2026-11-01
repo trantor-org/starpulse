@@ -14,6 +14,14 @@ describe("the page's fixed layout", () => {
     expect(rule("#c")).toContain("height: 100%");
   });
 
+  it("paints the In Progress drill-in's sky edge to edge between the navigator and the rail, with no inset band around the stage", () => {
+    expect(rule("#sd")).toContain("left: var(--nav)");
+    expect(rule("#sd")).toContain("right: var(--rail)");
+    expect(rule("#sd")).toMatch(/padding: 0;/);
+    expect(rule("#sd")).toContain("radial-gradient(");
+    expect(rule("#sd header")).toContain("padding-inline: 20px");
+  });
+
   it("collapses the navigator and rail under a phone-width viewport, so the canvas keeps a positive width", () => {
     const at = css.indexOf("@media (max-width: 900px) {");
     expect(at).toBeGreaterThan(-1);
