@@ -13,6 +13,7 @@ class TrailStep(_Api):
     state: str
     event: str
     at: float
+    id: str | None = None  # a third-party machine's step: the entry's event_id, which names the subject it moved
 
 
 class TaskCriterion(_Api):

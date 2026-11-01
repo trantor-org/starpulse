@@ -740,6 +740,7 @@ export interface HeldNext {
 export interface TrailStep {
   at: number;
   event: string;
+  id?: string | null;
   state: string;
   [k: string]: unknown;
 }

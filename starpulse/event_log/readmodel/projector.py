@@ -114,14 +114,20 @@ class Projector:
                 self._checkpoints.save(MACHINE_CHECKPOINT, batch[-1].id, conn=db)
 
     def _place(self, db: Connection, batch: Sequence[Entry]) -> None:
-        """Place each machine event on its task, the batch's later events seeing the earlier ones, then save each row once."""
+        """Place each machine event on its task, the batch's later events seeing the earlier ones, then save each row once.
+
+        A row remembers the entry it last folded (`seq`): an entry at or before it was folded already, so a stream read
+        again (a second reader, a checkpoint reset) leaves each trail step once.
+        """
         touched: dict[tuple[str, str], tuple[dict, int]] = {}
         for entry in batch:
             event = event_of(entry.fields)
             if event is None:
                 continue
             key = (event.machine, event.task or event.run or "")
-            before = touched[key][0] if key in touched else self._load_machine(db, *key)
+            before, seq = touched[key] if key in touched else self._load_machine(db, *key)
+            if entry.id <= seq:
+                continue
             placed = self._placer.place(before, event)
             if placed is not None:
                 flow, task, agent = placed
@@ -140,11 +146,14 @@ class Projector:
             db.execute(upsert.on_conflict_do_update(index_elements=["machine", "task"], set_=set_))
 
     @staticmethod
-    def _load_machine(db: Connection, machine: str, task: str) -> dict | None:
-        """The agent a machine last placed the task as, or None when it has no row for it."""
-        return db.execute(
-            select(machine_tasks.c.agent).where(machine_tasks.c.machine == machine, machine_tasks.c.task == task)
-        ).scalar()
+    def _load_machine(db: Connection, machine: str, task: str) -> tuple[dict | None, int]:
+        """The agent a machine last placed the task as and the entry that placed it, or (None, 0) when it has no row."""
+        row = db.execute(
+            select(machine_tasks.c.agent, machine_tasks.c.seq).where(
+                machine_tasks.c.machine == machine, machine_tasks.c.task == task
+            )
+        ).first()
+        return (row.agent, row.seq) if row else (None, 0)
 
     def _fold(self, db, batch: list[StoredEvent]) -> None:
         touched: dict[str, tuple[dict | None, int]] = {}

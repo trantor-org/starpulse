@@ -11,7 +11,7 @@ import { Inline, Md } from "./Markdown";
 import { sessionNickname } from "./nickname";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
-  LABEL_FIELDS, LABEL_RULE, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem,
+  LABEL_FIELDS, LABEL_RULE, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem, unlistedPulls,
   type ActivityEvent, type CiPull, type DepRow, type DocLink, type Item, type LabelField, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskViewModel";
 
@@ -175,12 +175,15 @@ function CiLine({ c }: { c: CiPull }) {
   return <div className="ci"><span className="cnt"><CiCounts c={c} /></span></div>;
 }
 
+/** `owner/repo#N` for a pull request url, or the url itself when it is not shaped as one. */
+const pullName = (url: string) => /([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url)?.slice(1).join("#") ?? url;
+
 /** The task's pull requests, each with its CI line, under the task's CI totals when it has two or more; a CI entry no pull request matches is its own row. */
 function PullRows({ task }: { task: KanbanTask }) {
   const history = ciHistory(task);
   const mapped = task.machines.find((m) => m.machine === "ci")?.source;
   const ciOf = new Map((history?.pulls ?? []).map((c) => [c.number, c]));
-  const unmatched = (history?.pulls ?? []).filter((c) => !task.prs.some((p) => p.number === c.number));
+  const unmatched = unlistedPulls(task, history);
   if (!task.prs.length && !unmatched.length) return <span className="none">None yet</span>;
   return (
     <>
@@ -188,7 +191,7 @@ function PullRows({ task }: { task: KanbanTask }) {
       <Box>
         <div className="prs">
           {task.prs.map((p) => <PullRow key={`${p.repo}#${p.number}`} p={p} ci={ciOf.get(p.number)} mapped={mapped} />)}
-          {unmatched.map((c, i) => <div key={i} className="pull"><span className="k">pull request</span><CiState c={c} mapped={mapped} /><CiLine c={c} /></div>)}
+          {unmatched.map((c, i) => <div key={i} className="pull">{c.url ? <a href={c.url} target="_blank" rel="noopener">{pullName(c.url)} ↗</a> : <span className="k">pull request</span>}<CiState c={c} mapped={mapped} /><CiLine c={c} /></div>)}
         </div>
       </Box>
     </>
@@ -592,7 +595,7 @@ export function TaskView(p: TaskViewProps) {
                 {p.task.runs.map((r) => <div key={`${r.url} ${r.startedAt}`} className="pull"><a href={r.url} target="_blank" rel="noopener">{runStart(r.startedAt)} ↗</a><span className="k">{r.status}</span></div>)}
               </RailSection>
             )}
-            <RailSection name="Pull requests" count={p.task.prs.length}><PullRows task={p.task} /></RailSection>
+            <RailSection name="Pull requests" count={p.task.prs.length + unlistedPulls(p.task, ciHistory(p.task)).length}><PullRows task={p.task} /></RailSection>
             {deps.dependsOn.length + deps.holds.length > 0 && <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
               <div className="deps">
                 {deps.dependsOn.length > 0 && <>

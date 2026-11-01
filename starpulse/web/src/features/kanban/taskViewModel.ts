@@ -525,30 +525,40 @@ export interface CiPull { number: number | null; url: string | null; runs: numbe
 export interface CiHistory { pulls: CiPull[]; total: Pick<CiPull, "runs" | "reruns" | "rebases" | "conflicts"> }
 
 const CI_COUNTED = { PUSHED: "runs", RERUN: "reruns", REBASED: "rebases", CONFLICTED: "conflicts" } as const;
+/** A CI step's id is `ci:<pull url>:<kind>[:sha]`: the pull request it moved, as its url and number. */
+const CI_PULL = /^ci:(.+\/pull\/(\d+))(?::|$)/;
 
 /**
- * The CI history of a task from its `ci` machine's trail, or null when it is in no such machine. The trail carries no pull request
- * number: a pull request is the run of steps from one PR_OPENED to the next, and the server opens a task's pull requests oldest
- * first, so the n-th run belongs to the n-th pull request by number.
+ * The CI history of a task from its `ci` machine's trail, or null when it is in no such machine. Each step names the pull request it
+ * moved in its id, so a step counts on that pull request alone: a closed one the task no longer lists gets a row of its own (linked by
+ * the url its id holds) and shifts no other's counts. A step with no id counts on the latest pull request, or on the task's newest.
  */
 export function ciHistory(task: KanbanTask): CiHistory | null {
   const trail = task.machines.find((m) => m.machine === "ci")?.trail;
   if (!trail) return null;
-  const prs = [...task.prs].sort((a, b) => a.number - b.number);
+  const newest = [...task.prs].sort((a, b) => b.number - a.number)[0];
   const pulls: CiPull[] = [];
-  trail.forEach((step, i) => {
-    if (!pulls.length || (step.event === "PR_OPENED" && i > 0)) {
-      const pr = prs[pulls.length];
-      pulls.push({ number: pr?.number ?? null, url: pr?.url ?? null, runs: 0, reruns: 0, rebases: 0, conflicts: 0, state: step.state });
-    }
-    const pull = pulls[pulls.length - 1];
+  const pullOf = (number: number | null, url: string | null) => {
+    let pull = pulls.find((p) => p.number === number);
+    if (!pull) pulls.push((pull = { number, url, runs: 0, reruns: 0, rebases: 0, conflicts: 0, state: "" }));
+    return pull;
+  };
+  for (const step of trail) {
+    const named = CI_PULL.exec(step.id ?? "");
+    const number = named ? Number(named[2]) : null;
+    const listed = task.prs.find((p) => p.number === number);
+    const pull = named ? pullOf(number, listed?.url ?? named[1]) : (pulls.at(-1) ?? pullOf(newest?.number ?? null, newest?.url ?? null));
     const counted = CI_COUNTED[step.event as keyof typeof CI_COUNTED];
     if (counted) pull[counted]++;
     pull.state = step.state;
-  });
+  }
   const sum = (key: keyof CiHistory["total"]) => pulls.reduce((n, p) => n + p[key], 0);
   return { pulls, total: { runs: sum("runs"), reruns: sum("reruns"), rebases: sum("rebases"), conflicts: sum("conflicts") } };
 }
+
+/** The pull requests the CI trail names that the task's list does not (a closed one): the panel draws each as a row of its own. */
+export const unlistedPulls = (task: KanbanTask, history: CiHistory | null): CiPull[] =>
+  (history?.pulls ?? []).filter((c) => !task.prs.some((p) => p.number === c.number));
 
 /** What the Session section draws for a task: the claiming session's link and id, and the line the in-progress machine gives it. */
 export interface SessionView { url: string; line: string; id: string }

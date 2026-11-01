@@ -406,7 +406,7 @@ describe("the description's start_criteria block", () => {
 });
 
 describe("the task view's Pull requests section carries each pull request's CI history", () => {
-  const step = (event: string, state: string, at: number) => ({ event, state, at });
+  const step = (event: string, state: string, at: number, number = at < 10 ? 12 : 15) => ({ event, state, at, id: `ci:https://github.com/o/r/pull/${number}:${at}` });
   const pull = (number: number) => ({ number, repo: "o/r", url: `http://pr/${number}`, checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false });
   const trail = [
     step("PR_OPENED", "opened", 1), step("PUSHED", "running", 2), step("CHECKS_FAILED", "failing", 3), step("RERUN", "running", 4), step("CHECKS_PASSED", "passing", 5),
@@ -447,6 +447,25 @@ describe("the task view's Pull requests section carries each pull request's CI h
     expect(rowOf(draw({ task: { ...task, ...one } }), "o/r#12")).toContain("merged");
   });
 
+  it("draws one linked row for a pull request whose PR_OPENED the trail repeats, with the log's counts and no unlinked row", () => {
+    const repeated = [trail[0], trail[1], trail[0], trail[1], trail[2], trail[6]];
+    const html = draw({ task: { ...task, prs: [pull(12)], machines: [{ ...ci()[0], trail: repeated }] } });
+
+    expect(section(html).split('<div class="pull">').length).toBe(2);
+    expect(section(html)).not.toContain("pull request</span>");
+    expect(rowOf(html, "o/r#12")).toMatch(/2 runs[\s\S]*0 re-runs[\s\S]*1 rebase/);
+  });
+
+  it("draws a pull request the task no longer lists as its own linked row and counts it in the header, leaving the others' counts alone", () => {
+    const html = draw({ task: { ...task, prs: [pull(15)], machines: ci() } });
+
+    expect(section(html)).toContain('<span class="n">2</span>');
+    expect(section(html)).not.toContain("pull request</span>");
+    expect(rowOf(html, "o/r#12")).toContain('href="https://github.com/o/r/pull/12"');
+    expect(rowOf(html, "o/r#12")).toMatch(/merged[\s\S]*1 run[\s\S]*1 re-run[\s\S]*1 rebase[\s\S]*1 conflict/);
+    expect(rowOf(html, "o/r#15")).toMatch(/failing[\s\S]*1 run[\s\S]*0 re-runs/);
+  });
+
   it("draws the CI state on the pull request's own line, its counts on the line below", () => {
     const merged = rowOf(draw({ task: { ...task, ...two } }), "o/r#12");
 
@@ -455,7 +474,7 @@ describe("the task view's Pull requests section carries each pull request's CI h
   });
 
   it("colours the CI state as the checks dots do, and every other phase blue", () => {
-    const at = (state: string) => rowOf(draw({ task: { ...task, prs: [pull(15)], machines: [{ ...ci()[0], state, trail: [step("PR_OPENED", state, 1)] }] } }), "o/r#15");
+    const at = (state: string) => rowOf(draw({ task: { ...task, prs: [pull(15)], machines: [{ ...ci()[0], state, trail: [step("PR_OPENED", state, 1, 15)] }] } }), "o/r#15");
 
     expect(at("merged")).toContain('class="chk merged"');
     expect(at("failing")).toContain('class="chk fail"');
@@ -472,11 +491,12 @@ describe("the task view's Pull requests section carries each pull request's CI h
     expect(section(draw({ task: { ...task, prs: two.prs, machines: ci(null) } }))).not.toContain("mapped from");
   });
 
-  it("draws a CI entry that matches no pull request as its own row", () => {
+  it("draws a CI entry that matches no listed pull request as its own row, linked by the url its id holds", () => {
     const html = section(draw({ task: { ...task, prs: [], machines: ci() } }));
 
     expect(html).not.toContain("None yet");
-    expect(html).toMatch(/pull request[\s\S]*1 run/);
+    expect(html).toContain('<a href="https://github.com/o/r/pull/15" target="_blank" rel="noopener">o/r#15 ↗</a>');
+    expect(html).toMatch(/o\/r#15[\s\S]*1 run/);
   });
 
   it("says None yet with no pull request and no CI, and draws a pull request alone when no CI is recorded", () => {
