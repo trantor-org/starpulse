@@ -31,18 +31,18 @@ The four task writes and the flags each takes; `--help` adds only `--server`, `-
 
 ```bash
 starpulse task create "<title>" --priority medium --type story --label kind-execute --label size-3 \
-  --description "<text>" --ac "<criterion>" --dod "<item>" [--milestone m-<N>] \
+  --description "<text>" --ac "<criterion>" [--milestone m-<N>] \
   [--dependency PROJ-<N>] [--reference <url>] [--documentation doc-<N>] [--profile <profile>] [--status <lane>]
 starpulse task edit PROJ-45 [--plan "<text>"] [--append-notes "<line>"] [--comment "<text>"] \
   [--ac "<criterion>"] [--reword-ac "2:<wording>"] [--remove-ac 3] [--check-ac 1] \
-  [--dod "<item>"] [--check-dod 2] [--modified-file <path>] [--final-summary "<text>"]
+  [--modified-file <path>] [--final-summary "<text>"]
 starpulse task checkpoint-ac PROJ-45 2 "<command>: <result>"
 starpulse task review PROJ-45 --ref <pr-url> --summary "<outcome>" --comment "<evidence>"
 ```
 
 - A repeatable flag repeats once per value: `--label a --label b`, `--check-ac 1 --check-ac 2`.
 - On `edit`, `--label`, `--dependency`, `--reference`, `--documentation` and `--modified-file`
-  replace the whole list; `--ac`, `--dod` and `--append-notes` add; `--description`, `--plan`,
+  replace the whole list; `--ac` and `--append-notes` add; `--description`, `--plan`,
   `--notes` and `--final-summary` replace their section.
 - `checkpoint-ac` takes no flags: the criterion's number, then one quoted evidence string.
 
@@ -188,8 +188,8 @@ does not authorize execution.
   task create` or `task edit`, and check each with `task edit --check-ac N` once its command has
   passed. A criterion names a count or quality of data, never a duration or datetime; the shapes
   are in Checks after the merge.
-- **Definition of Done** is the project checklist plus a few task-specific outcomes; it does not
-  repeat runnable commands, and it never waits on time after the merge (Checks after the merge).
+- **Acceptance Criteria are the only checklist.** A task carries no Definition of Done; a
+  criterion never waits on time after the merge (Checks after the merge).
 - **Implementation Plan** is the ordered current route; revise it when discovery changes the
   route.
 - **Implementation Notes** holds settled design decisions, rejected options and non-obvious
@@ -309,8 +309,8 @@ until every dependency is `Done`.
 
 ## Checks after the merge
 
-A check after the merge never blocks the task that did the work. Its Acceptance Criteria and
-Definition of Done are what the pull request shows before the merge, plus the initial QA the task
+A check after the merge never blocks the task that did the work. Its Acceptance Criteria
+are what the pull request shows before the merge, plus the initial QA the task
 runs on itself, and each check after the merge goes in one of two buckets:
 
 - **On merge.** A check the merge itself answers (the deploy applied, a pin moved, the merged
@@ -325,7 +325,7 @@ runs on itself, and each check after the merge goes in one of two buckets:
   `--until '<criterion>'` on an observable: the value the check reads, a run, or a lane move
   (Validation, below). Never a clock: a gate that compares the time against a deadline is a
   poll, and it opens whether or not the evidence exists. No window shortens this: a check due
-  within 24 hours of the merge is a checkup task too, never a Definition of Done item on the
+  within 24 hours of the merge is a checkup task too, never a criterion on the
   implementing task.
 
 A check that waits on a deploy (the merge landed, the live release has not applied it) parks once,

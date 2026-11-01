@@ -42,7 +42,7 @@ Done when `starpulse task show PROJ-45` lists your session as the holder.
 
 ## 3. Record the route
 
-1. Set an ordered plan and the task's Definition of Done with `starpulse task edit PROJ-45 --plan ... --dod ...`.
+1. Set an ordered plan with `starpulse task edit PROJ-45 --plan ...`.
 2. Record durable decisions and rejected options with `--append-notes`, and decide whether the work needs an
    architecture decision record.
 3. Keep a working doc that says where the work stands, so a fresh session resumes from it: file it with
@@ -50,7 +50,7 @@ Done when `starpulse task show PROJ-45` lists your session as the holder.
    --documentation`. Give it four headings: Current state, Decisions, Open questions, Next step. Next step names
    the command a fresh session runs first. Update it at each decision, criterion and dead end.
 
-Done when the task has a plan, a Definition of Done and a linked working doc.
+Done when the task has a plan and a linked working doc.
 
 ## 4. Make the worktree
 
