@@ -18,6 +18,7 @@ from starpulse.contracts.api.dto.requests import (
     ParkRequest,
     ReviewRequest,
 )
+from starpulse.machine_engine.model.transitions import lane_id
 from starpulse.views.application.commands.guard import (
     EDIT_LOCK,
     Who,
@@ -56,7 +57,8 @@ def _lifecycle_edit(
     """Move `task` to `column` in one `edit` of the fields `plan` draws from its current record, as `who`.
 
     The board's rules judge the record the edit makes, so a refusal returns their reason and skill with nothing written;
-    a `plan` that refuses raises `_RefusalError`.
+    a `plan` that refuses raises `_RefusalError`. An edit the board accepts that leaves the task out of `column` is a 409
+    naming the lane it is in, so no caller reports a move that did not happen.
     """
     with EDIT_LOCK:
         if (current := read(task)) is None:
@@ -66,6 +68,11 @@ def _lifecycle_edit(
         except _RefusalError as refusal:
             return refusal.answer
         written = record_written(feed, task, who, lambda: edit(task, changes, comment, actor=who.actor))
+        if written.ok and (after := read(task)) is not None and lane_id(str(after.get("status") or "")) != column:
+            return 409, {
+                "error": f"{task} is still {after.get('status')}: the board accepted the write to {changes['status']} "
+                "but did not move it"
+            }
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task, "to": column}

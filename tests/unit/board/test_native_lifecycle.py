@@ -12,7 +12,7 @@ from starpulse.board.adapters import claim_ttl
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
-from starpulse.board.model.seam import Board
+from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
 from starpulse.views.application.commands.lifecycle import park_task, review_task
 from starpulse.views.application.commands.moves import claim_task
@@ -91,7 +91,9 @@ def _review(feed: BoardFeed, built: Board, **body: object) -> tuple[int, dict[st
     return review_task(LAN, json.dumps(body).encode(), feed, built.read, built.edit)
 
 
-def test_the_lifecycle_board_leaves_no_claim_ttl_thread_running(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_lifecycle_board_leaves_no_claim_ttl_thread_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     before = set(threading.enumerate())
     _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
     started = set(threading.enumerate()) - before
@@ -458,6 +460,22 @@ def test_a_review_moves_the_task_with_its_pull_request_and_summary_as_evidence(
     record = built.read("task-1") or {}
     assert "status: Review\n" in _text(tmp_path, "task-1")
     assert (record["references"], record["finalSummary"]) == ([PULL], "Shipped it.")
+
+
+def test_a_review_the_board_accepts_but_leaves_the_task_in_its_lane_is_refused_naming_that_lane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _in_progress(tmp_path, monkeypatch)
+
+    def accepts_without_moving(*_args: object, **_kwargs: object) -> Written:
+        return Written(True)
+
+    status, body = review_task(
+        LAN, json.dumps({"task": "task-1", "summary": "Shipped it."}).encode(), feed, built.read, accepts_without_moving
+    )
+
+    assert status == 409
+    assert body == {"error": "task-1 is still In Progress: the board accepted the write to Review but did not move it"}
 
 
 def test_a_review_keeps_the_references_the_task_has_and_adds_each_once(
