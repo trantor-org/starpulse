@@ -163,7 +163,7 @@ def receiver(
     """A request handler that parses each logs export and hands its events to `ingest`, one call per POST.
 
     `on_export`, when given, is called with the decoded export itself, for a consumer that reads more than `ingest`'s
-    events; one that raises is logged and the export is still answered and ingested. `metrics`, when given, is the
+    events; one that raises is logged and the export is still ingested, then answered 503 so the exporter retries. `metrics`, when given, is the
     content type and renderer of the exposition `GET /metrics` answers."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -203,16 +203,19 @@ def receiver(
             except OSError, ValueError:
                 self._reply(400)
                 return
+            failed = False
             if on_export is not None and isinstance(payload, dict):
                 try:
                     on_export(payload)
                 except Exception:
+                    failed = True
                     log.exception("export consumer failed on an export of %d events", len(events))
             try:
                 ingest(events)
             except Exception:
+                failed = True
                 log.exception("consumer failed on a batch of %d events", len(events))
-            self._reply(200)
+            self._reply(503 if failed else 200)
 
         def log_message(self, format: str, *args: Any) -> None:
             log.debug(format, *args)
