@@ -53,6 +53,13 @@ def _parent(pid: int) -> int:
     return int(subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True, text=True).stdout)
 
 
+@pytest.fixture(autouse=True)
+def preloaded_answers_however_loaded_the_host_is(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A starved host can keep the preloaded process past `_ANSWER_S`, and the `Forker` then starts the child with
+    `subprocess` (`starpulse hold`, which never catches `SIGTERM` in time): these tests judge forks, not that timeout."""
+    monkeypatch.setattr(zygote, "_ANSWER_S", 3600.0)
+
+
 @pytest.fixture
 def forker() -> Iterator[Forker]:
     made = Forker([], entry=ENTRY)
