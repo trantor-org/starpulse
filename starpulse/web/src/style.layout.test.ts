@@ -97,10 +97,25 @@ describe("the Jobs view at rest", () => {
 });
 
 describe("the Admin view's Autopilot card", () => {
-  it("wraps the next pick's reason under a long title and sets its meters two to a row, so a larger text size grows the card instead of clipping it", () => {
+  it("wraps the next pick's reason under a long title, so a larger text size grows the card instead of clipping it", () => {
     expect(rule("#admin .ap .nx")).toContain("flex-wrap: wrap");
-    expect(rule("#admin .ap .dims")).toContain("repeat(2, minmax(0, 1fr))");
     expect(css).not.toContain("#kb .ap");
+  });
+
+  it("sets its meters at most two to a row and one to a row once a meter's text outgrows half the column, so no phone, tablet or text size scrolls the card sideways", () => {
+    expect(rule("#admin .ap .dims")).toContain("repeat(auto-fit, minmax(min(100%, max(calc(100px * var(--fs)), calc(50% - 9px))), 1fr))");
+    expect(rule("#admin .ap .dm .r")).toContain("flex-wrap: wrap");
+  });
+
+  it("lines its meters up whatever their level: the Admin saved message's .ok margin does not push a meter under its level 'ok' down", () => {
+    expect(rule("#admin .ok")).toContain("margin-top: 8px");
+    expect(rule("#admin .ap .dm")).toContain("margin-top: 0");
+  });
+
+  it("stacks a setting's name over its control once the card is too narrow for both at the current text size, so its buttons never squeeze their labels onto two lines", () => {
+    expect(rule("#admin .ap .row")).toContain("display: flex; flex-wrap: wrap");
+    expect(rule("#admin .ap .row > :first-child")).toContain("flex: 2 1 calc(150px * var(--fs))");
+    expect(rule("#admin .ap .row > :last-child")).toContain("flex: 3 1 calc(220px * var(--fs))");
   });
 
   it("dims the meters and the count in flight while paused", () => {
