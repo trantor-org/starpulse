@@ -837,6 +837,8 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `pr_closed_unmerged`: `pr_terminal` holds and no cited pull request merged. A state that waits on it, with the event
   moving to Needs attention, parks the task there with the closed pull requests and a question to the operator as the
   `## Needs attention` reason, as `overdue` does.
+- `pr_closed_unmerged_complete`: `pr_closed_unmerged` holds and every acceptance criterion and Definition of Done item is
+  checked, so a no-op task has nothing to ask. A state that waits on it may declare an event that closes the task.
 - `pr_merged_planned`: `pr_merged` without the plan condition, and the record carries a non-empty Verify plan. A state
   lists it before `pr_merged` to route a merge by plan, as in `waits: {pr_merged_planned: MERGED_VERIFY, pr_merged:
   MERGED}`: a planned task takes `MERGED_VERIFY`, an unplanned one `MERGED`. A read of the record that raises holds
