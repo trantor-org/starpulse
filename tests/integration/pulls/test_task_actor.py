@@ -798,6 +798,27 @@ def test_a_review_task_whose_pr_is_merged_with_no_merge_time_stays_open(
     assert not until(lambda: board.moved() != [], within=0.3)
 
 
+def test_a_review_task_whose_pr_merged_before_a_restart_moves_to_done_after_it_unless_it_carries_a_verify_plan(
+    store: PullStore, stop: threading.Event
+) -> None:
+    """The merge is in the store before the actor starts, as after a restart: the startup pass derives every Review task.
+    A planned task stays in Review under the board's waits (its post-merge QA closes it), which is how a task sat
+    there after its PR merged just before a restart, with no log line."""
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Review", references=(PR_ONE,)),
+        task("TASK-2", "Review", references=(PR_TWO,)),
+    )
+    plans = {"TASK-1": [], "TASK-2": ["4: code-graph callers run_contexts lists worker.py"]}
+    waits = {**WAITS, "review": {"pr_merged": "MERGED", "deps_unresolved": "WAIT_ON_DEPS_LATE"}}
+    store.save([pull(1, state="MERGED"), pull(2, state="MERGED")])
+
+    running(board, store, stop, waits, read=lambda name: {"verifyPlan": plans[name]})
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    assert not until(lambda: len(board.moved()) > 1, within=0.3)  # the planned task is left to its post-merge QA
+
+
 #: The lanes that park on an open dependency, and the return a task with a delivery takes: Review rather than Ready.
 PARKING_WAITS = {
     **WAITS,
