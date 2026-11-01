@@ -186,7 +186,8 @@ def test_a_read_with_nothing_new_looks_at_each_held_signal_once_to_apply_its_win
     telemetry.publish([signal(i, 100.0 + i) for i in range(50)])
     telemetry.read()
     looked = []
-    monkeypatch.setattr(Signal, "time", property(lambda self: looked.append(1) or self.__dict__["time"]), raising=False)
+    slot = Signal.time  # a slotted field: the class holds its member descriptor
+    monkeypatch.setattr(Signal, "time", property(lambda self: looked.append(1) or slot.__get__(self)))
 
     telemetry.read(120.0)
 
