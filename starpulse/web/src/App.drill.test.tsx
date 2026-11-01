@@ -29,8 +29,11 @@ const vetoes = (p: Path) => {
   act(() => void (answer = held.veto!(p)));
   return answer;
 };
-const board = (cards: KanbanTask[]) =>
+/** Hands the page a board and runs the frame that marks it drawn, so the Navigator draws its body. */
+const board = (cards: KanbanTask[]) => {
   act(() => held.store!.set({ tree: { states: ["Ready", "In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards }));
+  act(() => frames.splice(0).forEach((f) => f(0)));
+};
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -58,8 +61,21 @@ describe("the In Progress sun", () => {
     expect(vetoes(lane("In Progress"))).toBe(true);
     await act(async () => void (await import("./features/level/SunsDrillIn")));
 
-    expect(host.querySelector(`${drillIn} nav[aria-label="In Progress tasks"] button`)?.getAttribute("aria-label")).toMatch(/^TASK-2 /);
+    expect(host.querySelector(`#nav nav[aria-label="In Progress tasks"] button`)?.getAttribute("aria-label")).toMatch(/^TASK-2 /);
     expect(location.search).toContain("drill=TASK-2");
+  });
+
+  it("makes the Navigator the In Progress task list while the drill-in is open, in place of the Leaderboard, and gives it back on close", async () => {
+    board([card("TASK-2", "In Progress"), card("TASK-3", "In Progress")]);
+    vetoes(lane("In Progress"));
+    await act(async () => void (await import("./features/level/SunsDrillIn")));
+
+    expect([...host.querySelectorAll('#nav nav[aria-label="In Progress tasks"] button')].map((b) => b.getAttribute("aria-label")?.split(" ")[0])).toEqual(["TASK-2", "TASK-3"]);
+    expect(host.querySelector("#nav .leaderboard")).toBeNull();
+
+    act(() => host.querySelector<HTMLButtonElement>('button[aria-label="Back to the Board"]')!.click());
+    expect(host.querySelector(drillIn)).toBeNull();
+    expect(host.querySelector("#nav .leaderboard")).not.toBeNull();
   });
 
   it("vetoes only the In Progress level: other lanes and the machines under it open as before", () => {

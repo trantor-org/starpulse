@@ -2,6 +2,7 @@
 // last 24 hours (TASK-8664's /api/history). A region of the app shell opened by `?drill=TASK-N`, between the real Navigator and Rail, laid out from
 // the region's measured size: no scaling, so its text keeps the size of every other view's.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createHistory } from "../../api/history";
 import type { MachineEvent, Roles } from "../../api/types.gen";
 import { ANIM_UNTIL, spanOf, starfield, type Line, type Scene } from "./sunsEngine";
@@ -24,6 +25,8 @@ interface Props {
   onClose: () => void;
   /** Epoch seconds; replaced in tests. */
   clock?: () => number;
+  /** The Navigator's section the In Progress task list draws in, as the mockup's left panel did; without one the list is chips in the header. */
+  navSlot?: HTMLElement | null;
 }
 
 /** The mockup's content starts at this x (the mockup's navigation was left of it) and its board at this y below the header, so the stage is offset by both. */
@@ -81,7 +84,7 @@ function useSize<T extends HTMLElement>() {
   return [ref, size] as const;
 }
 
-export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.now() / 1000 }: Props) {
+export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.now() / 1000, navSlot }: Props) {
   const [view, setViewState] = useState<View>({ sel: task, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false });
   const setView = useCallback((patch: Partial<View>) => setViewState((v) => ({ ...v, ...patch })), []);
   const [now, setNow] = useState(clock), [, redraw] = useState(0);
@@ -137,14 +140,30 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
         {" "}<span className="sep">›</span>{" "}
         <span className="title">In Progress</span>
         <span className="count">{jobs.length} tasks · showing {s.job.id}</span>
-        <nav aria-label="In Progress tasks" className="fleet">
-          {s.fleet.map((f) => (
-            <button key={f.id} type="button" className={f.on ? "fchip set" : "fchip"} aria-label={f.aria} aria-current={f.on} onClick={f.pick}>
-              <b>{f.id}</b><span>{f.where}</span>
-            </button>
-          ))}
-        </nav>
+        {!navSlot && (
+          <nav aria-label="In Progress tasks" className="fleet">
+            {s.fleet.map((f) => (
+              <button key={f.id} type="button" className={f.on ? "fchip set" : "fchip"} aria-label={f.aria} aria-current={f.on} onClick={f.pick}>
+                <b>{f.id}</b><span>{f.where}</span>
+              </button>
+            ))}
+          </nav>
+        )}
       </header>
+      {navSlot && createPortal(
+        <>
+          <h3>Tasks</h3>
+          <div className="lb-grp"><span>In Progress</span><span className="n">{jobs.length}</span></div>
+          <nav aria-label="In Progress tasks">
+            {s.fleet.map((f) => (
+              <button key={f.id} type="button" className={f.on ? "lb-row on" : "lb-row"} aria-label={f.aria} aria-current={f.on} onClick={f.pick}>
+                <span className="id">{f.id}</span><span className="w">{f.where}</span><i style={css(f.bar)} />
+              </button>
+            ))}
+          </nav>
+        </>,
+        navSlot,
+      )}
       <div ref={body} className="sd-body">
         <div className="sd-stage" style={{ width: stageW, height: stageH }}>
           <div style={{ position: "absolute", left: -ORIGIN, top: -TOP, width: W, height: H, background: "radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(--bg0) 70%)", color: "var(--ink)", fontSize: "calc(14px * var(--fs))" }}>
@@ -156,7 +175,7 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = () => Date.no
             </svg>
             <Lines lines={s.main.L} w={W} h={H} />
             <Pieces g={s.main} />
-            <div style={{ position: "absolute", left: ORIGIN, top: 393, width: stageW, height: s.rowsViewH, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "thin", scrollbarColor: `${tint("slate", 25)} transparent` }}>
+            <div style={{ position: "absolute", left: ORIGIN, top: -s.rowsTop, width: stageW, height: s.rowsViewH, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "thin", scrollbarColor: `${tint("slate", 25)} transparent` }}>
               <div style={{ position: "relative", left: -ORIGIN, top: s.rowsTop, width: W, height: s.rowsH, marginBottom: s.rowsTop }}>
                 <svg width={W} height={s.rowsH} style={SVG} aria-hidden="true">
                   <path d={s.rpaths.lane} fill="none" style={LANE} strokeWidth={1} />

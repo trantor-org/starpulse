@@ -42,7 +42,7 @@ function fleetOf(self,jobs){return jobs.map(function(j){var on=self.state.sel===
   rowStyle:'display:flex;flex-direction:column;gap:3px;width:100%;padding:9px 20px;border:none;border-left:2px solid '+(on?C.agent:'transparent')+';background:'+(on?hexA(C.slate,.06):'transparent')+';color:inherit'};});}
 function rnd(seedv){var x=seedv;return function(){x=(x*9301+49297)%233280;return x/233280;};}
 function starfield(w,h,n){var r=rnd(7),out=[];for(var i=0;i<n;i++){var a=r(),b=r(),c=r();
- out.push({style:'position:absolute;left:'+(a*w).toFixed(1)+'px;top:'+(b*h).toFixed(1)+'px;width:'+(c>.9?2:1)+'px;height:'+(c>.9?2:1)+'px;border-radius:50%;background:var(--ink-2);opacity:'+(.12+c*.4).toFixed(2)+(c>.85?';animation:twinkle '+(3+c*4).toFixed(1)+'s ease-in-out infinite':'')});}return out;}
+ out.push({style:'position:absolute;left:'+(a*w).toFixed(1)+'px;top:'+(b*h).toFixed(1)+'px;width:'+(c>.9?2:1)+'px;height:'+(c>.9?2:1)+'px;border-radius:50%;background:var(--ink-2);opacity:'+(.12+c*.4).toFixed(2)+(c>.85?';animation:sd-twinkle '+(3+c*4).toFixed(1)+'s ease-in-out infinite':'')});}return out;}
 const LSTEPS=['reviewing'];
 const DSTEPS=['queued','running','succeeded'];
 function pt(x,y){return x.toFixed(1)+','+y.toFixed(1);}
@@ -55,7 +55,7 @@ function dagOf(j){if(j.phase==='deliver'&&j.step>=4) return j.step===4?{fill:2,l
  return (seen(j,'review_fix')||j.phase==='done')?{fill:3,live:false}:null;}
 function station(out,x,y,col,filled,r){r=r||3;
  out.push({style:'position:absolute;left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;box-sizing:border-box;'+(filled?'background:'+col+';box-shadow:0 0 6px '+col:'border:1.2px solid '+col+';opacity:.6')});}
-function pulsar(out,x,y){out.push({style:'position:absolute;left:'+(x-11)+'px;top:'+(y-11)+'px;width:22px;height:22px;border-radius:50%;border:1.5px solid '+hexA(C.ink,.9)+';box-sizing:border-box;animation:pulse 1.8s ease-out infinite'});}
+function pulsar(out,x,y){out.push({style:'position:absolute;left:'+(x-11)+'px;top:'+(y-11)+'px;width:22px;height:22px;border-radius:50%;border:1.5px solid '+hexA(C.ink,.9)+';box-sizing:border-box;animation:sd-pulse 1.8s ease-out infinite'});}
 function jobDot(out,x,y,col,r){r=r||7;out.push({style:'position:absolute;left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;background:radial-gradient(circle at 40% 35%,'+C.ink+','+col+' 55%,'+hexA(C.bg0,.3)+');box-shadow:0 0 16px 3px '+col+';transition:left .9s ease,top .9s ease'});}
 function text(out,t,sub,x,y,col,o){o=o||{};
  out.push({text:t,sub:sub||'',subColor:o.subColor||C.slate,style:'position:absolute;left:'+(o.align==='right'?x-220:(o.align==='center'?x-110:x))+'px;top:'+y+'px;width:220px;text-align:'+(o.align||'left')+';font-size:'+(o.size||'.72em')+';font-weight:300;letter-spacing:'+(o.ls||'.02em')+';color:'+col+';white-space:nowrap'});}
@@ -87,7 +87,7 @@ function sunParts(core,jobs,j){
  var G=SR+5*SR;
  core.push({style:'position:absolute;left:'+(CX-G)+'px;top:'+(CY-G)+'px;width:'+(2*G)+'px;height:'+(2*G)+'px;border-radius:50%;background:radial-gradient(circle closest-side,'+hexA(C.slate,.55)+' 0%,'+hexA(C.slate,.2)+' 25%,'+hexA(C.slate,0)+' 100%)'});
  [SR+9].forEach(function(r){core.push({style:'position:absolute;left:'+(CX-r)+'px;top:'+(CY-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;border:1px solid '+hexA(C.slate,.16)+';box-sizing:border-box'});});
- core.push({style:'position:absolute;left:'+(CX-SR)+'px;top:'+(CY-SR)+'px;width:'+(2*SR)+'px;height:'+(2*SR)+'px;border-radius:50%;background:radial-gradient(circle,'+C.agentHi+' 0%,'+hexA(C.slate,.95)+' 50%,'+hexA(C.slate,.6)+' 100%);animation:breathe 3.2s ease-in-out infinite'});
+ core.push({style:'position:absolute;left:'+(CX-SR)+'px;top:'+(CY-SR)+'px;width:'+(2*SR)+'px;height:'+(2*SR)+'px;border-radius:50%;background:radial-gradient(circle,'+C.agentHi+' 0%,'+hexA(C.slate,.95)+' 50%,'+hexA(C.slate,.6)+' 100%);animation:sd-breathe 3.2s ease-in-out infinite'});
  var others=jobs.filter(function(x){return x.id!==j.id&&x.phase!=='parked';});
  others.forEach(function(o,i){var a=(i/others.length)*2*Math.PI+.3,r=SR+9;core.push({style:'position:absolute;left:'+(CX+r*Math.cos(a)-2.5)+'px;top:'+(CY+r*Math.sin(a)-2.5)+'px;width:5px;height:5px;border-radius:50%;background:'+TIER[o.tier]+';box-shadow:0 0 5px '+TIER[o.tier]});});}
 /* A phase ray: a spoke from the rim, its stations along it, its name beside the first station. */
@@ -123,7 +123,7 @@ function disc(g,x,y,r,st){span(g,'left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)
    is ringed. */
 function hexPad(g,x,y,R,col,fill,o){o=o||{};if(fill) glowOf(g,x,y,R,col,o.glow?3.4:2.2,o.glow?.55:.32);
  if(o.fin) disc(g,x,y,R+4,'border:1px dashed '+hexA(col,o.dim?.3:.6));
- if(fill) disc(g,x,y,R,'background:radial-gradient(circle,'+C.ink+' 0%,'+hexA(col,1)+' 58%,'+hexA(col,.85)+' 100%);box-shadow:0 0 '+(R*.8)+'px '+hexA(col,.7)+(o.glow?';animation:breathe 2.4s ease-in-out infinite':''));
+ if(fill) disc(g,x,y,R,'background:radial-gradient(circle,'+C.ink+' 0%,'+hexA(col,1)+' 58%,'+hexA(col,.85)+' 100%);box-shadow:0 0 '+(R*.8)+'px '+hexA(col,.7)+(o.glow?';animation:sd-breathe 2.4s ease-in-out infinite':''));
  else disc(g,x,y,R*.85,'background:'+hexA(col,o.dim?.12:.2)+';border:1px solid '+hexA(col,o.dim?.35:.6));}
 /* Rounded: a run that changes level is one smooth S-curve, level at both ends, instead of an octilinear dogleg. */
 function trace(a,b,ta,tb,mode){if(Math.abs(a.y-b.y)<.5) return octi(a,b,ta,tb,mode);var dir=b.x>a.x?1:-1,sx=a.x+dir*ta,ex=b.x-dir*tb,k=(ex-sx)*.55;
@@ -150,7 +150,7 @@ function moveOf(j,o,state){var now=Date.now(),k=j.id+'|'+o.key,sig=j.phase+':'+j
  if(!m||m.sig!==sig){var t=-1e9;if(!fresh&&!still) t=m&&m.phase===j.phase&&m.round===j.round?now:now-TRAVEL;MOVES[k]=m={sig:sig,phase:j.phase,round:j.round,t:t};}
  if(m.t+TRAVEL+PULSE>now) ANIM_UNTIL=Math.max(ANIM_UNTIL,m.t+TRAVEL+PULSE);return now-m.t;}
 /* A flow line as StarPulse draws one: thin, dashed, streaming toward its target. */
-function flow(g,d,col,a){line(g,d,hexA(col,a||.6),1.3,{dash:'2 5',st:'animation:march 1.4s linear infinite'});}
+function flow(g,d,col,a){line(g,d,hexA(col,a||.6),1.3,{dash:'2 5',st:'animation:sd-march 1.4s linear infinite'});}
 function arrowHead(g,x,y,col){line(g,'M'+(x-5)+','+(y-3.5)+' L'+x+','+y+' L'+(x-5)+','+(y+3.5),col,1.3,{cap:'round',sharp:true});}
 const STYLE={M:{base:24,step:8,back:'below',skip:'above',lab:24},MINI:{base:12,step:6,lane:.8,minH:60,pad:16},
  state:function(g,s,o){var R=fR(s,o),col=s.q?s.c:KC[o.kind];if(o.dot) return;
@@ -214,8 +214,8 @@ const STYLE={M:{base:24,step:8,back:'below',skip:'above',lab:24},MINI:{base:12,s
    span(g,'left:'+(t[0]-2.5)+'px;top:'+(HAIR-2.5)+'px;width:5px;height:5px;border-radius:50%;background:'+t[2]);});
   /* the stems run left along the hairline, through the dots, to the routing lane, then turn down it; where the lens run shares the
      phase run, their dashes alternate */
-  line(g,'M975,'+HAIR+' L392,'+HAIR+' Q384,'+HAIR+' 384,'+(HAIR+8),hexA(KC.phase,.5),1.3,{dash:'2 5',st:'animation:march 1.4s linear infinite'});
-  line(g,'M650,'+HAIR+' L392,'+HAIR+' Q384,'+HAIR+' 384,'+(HAIR+8),hexA(KC.sub,.6),1.3,{dash:'2 5',st:'animation:march 1.4s linear infinite;animation-delay:-.35s'});
+  line(g,'M975,'+HAIR+' L392,'+HAIR+' Q384,'+HAIR+' 384,'+(HAIR+8),hexA(KC.phase,.5),1.3,{dash:'2 5',st:'animation:sd-march 1.4s linear infinite'});
+  line(g,'M650,'+HAIR+' L392,'+HAIR+' Q384,'+HAIR+' 384,'+(HAIR+8),hexA(KC.sub,.6),1.3,{dash:'2 5',st:'animation:sd-march 1.4s linear infinite;animation-delay:-.35s'});
   g.P.lane.push('M262,'+HAIR+' L'+PANE_R+','+HAIR);}};
 const ROUND_R=60;
 /* Round 10: Z1's layout (the In Progress template over one row per machine the pinned task ran, newest first) with the drawing handed to
@@ -347,7 +347,7 @@ function rows(g,S,j){var Y=HAIR+4,stop=false,open=g.open||{},pick=g.pick||{},qa=
    /* every stem reaches the routing lane along the hairline (the template draws that run, through the stems' dots); here it runs down
       the lane beside the round pills, then into the row */
    /* phase and lens stems share one track; a lens stem's dashes sit in the phase stem's gaps */
-   line(g,'M'+lx+','+(HAIR+8)+' L'+lx+','+f.y+' L'+(f.x-(isOpen?11:6))+','+f.y,hexA(KC[d.kind],isOpen?.55:.3),1.3,{dash:'2 5',st:'animation:march 1.4s linear infinite'+(d.kind==='phase'?'':';animation-delay:-.35s')});}
+   line(g,'M'+lx+','+(HAIR+8)+' L'+lx+','+f.y+' L'+(f.x-(isOpen?11:6))+','+f.y,hexA(KC[d.kind],isOpen?.55:.3),1.3,{dash:'2 5',st:'animation:sd-march 1.4s linear infinite'+(d.kind==='phase'?'':';animation-delay:-.35s')});}
   drawRow(g,S,d,G,{path:path,trace:lit?path:path.slice(-1),labels:isOpen&&o.labels!==false,now:live,live:true,job:j,key:k});
   var ty=isOpen?y-16:Y+h/2-17,info=o.info?o.info(e):'';name(g,label,272,ty,{col:hexA(col,isOpen?1:.8),size:'.82em'});
   var hasPills=ents.length>1||o.pillsAlways,cy=hasPills?ty+9:ty;if(hasPills) pills(k,ents,sel,ty+18,o.vc);

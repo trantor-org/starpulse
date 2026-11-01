@@ -47,6 +47,22 @@ describe("SunsDrillIn", () => {
     expect(host.textContent).toContain("2 tasks · showing TASK-1");
   });
 
+  it("lists the In Progress tasks in the Navigator's slot when the shell gives it one, each with its phase and progress bar, and none in its header", () => {
+    const slot = document.body.appendChild(document.createElement("section"));
+    act(() => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress"), task("TASK-2", "In Progress")]} roles={roles} task="TASK-2" onClose={() => undefined} navSlot={slot} />));
+
+    const rows = [...slot.querySelectorAll<HTMLButtonElement>('nav[aria-label="In Progress tasks"] button')];
+    expect(rows.map((b) => b.getAttribute("aria-label")?.split(" ")[0])).toEqual(["TASK-1", "TASK-2"]);
+    expect(slot.textContent).toMatch(/Tasks.*In Progress\s*2/);
+    expect(rows[1].getAttribute("aria-current")).toBe("true");
+    expect(rows.every((b) => b.querySelector("i[style*='linear-gradient']"))).toBe(true);
+    expect(host.querySelector("#sd header nav")).toBeNull();
+
+    act(() => rows[0].click());
+    expect(host.textContent).toContain("showing TASK-1");
+    slot.remove();
+  });
+
   it("draws inside the app shell: no copy of the Navigator, search or Recent, no fixed overlay and no scaled stage", () => {
     mount();
     const region = host.querySelector<HTMLElement>("#sd")!;
