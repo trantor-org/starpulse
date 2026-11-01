@@ -787,21 +787,18 @@ class HistoryStore:
             tasks = sorted({*moved, *live})
             # by task, then time, then the order they were recorded in: the task index hands them over in that order
             query = select(i.entered_at, i.source, i.task, i.lane).order_by(i.task, i.entered_at, i.id)
-            rows = [
-                row
-                for start in range(0, len(tasks), _TASKS_PER_QUERY)
-                for row in db.execute(query.where(i.task.in_(tasks[start : start + _TASKS_PER_QUERY]))).all()
-            ]
+            steps: dict[tuple[str, str], list[tuple[float, str]]] = {}
+            for start in range(0, len(tasks), _TASKS_PER_QUERY):
+                # folded as each chunk arrives: a window's rows are never all held at once beside their paths
+                for at, who, task, lane in db.execute(query.where(i.task.in_(tasks[start : start + _TASKS_PER_QUERY]))):
+                    if (state := states.get(lane)) is not None:
+                        key = (who, task)
+                        if (path := steps.get(key)) is None:
+                            path = steps[key] = []
+                        path.append((at, state))
             seen = db.execute(
                 select(n.source, func.min(n.first_at)).where(n.lane.in_(list(states))).group_by(n.source)
             ).all()
-        steps: dict[tuple[str, str], list[tuple[float, str]]] = {}
-        for at, who, task, lane in rows:
-            if (state := states.get(lane)) is not None:
-                key = (who, task)
-                if (path := steps.get(key)) is None:
-                    path = steps[key] = []
-                path.append((at, state))
         runs = [Run(who, task, tuple(path)) for (who, task), path in steps.items()]
         return RunWindow(runs, min((first for _, first in seen), default=None), sorted(who for who, _ in seen))
 

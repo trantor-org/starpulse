@@ -116,6 +116,42 @@ class Scheduler:
         self.start()
 
 
+def start(
+    config: SchedulerConfig,
+    path: Path | None,
+    base: Path,
+    log: EventLog,
+    stop: threading.Event,
+    *,
+    load: Callable[[Path | None], SchedulerConfig],
+    worker_board: Callable[..., tuple[Board, BoardFeed]],
+    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], History],
+    trajectories_response: Callable[..., tuple[bytes, int]],
+    cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
+    starter: Callable[..., Any],
+    delivered: Callable[[EventLog, Mapping[str, Any]], bool],
+) -> Callable[[], None]:
+    """Start the sampler and the dispatch loop over `log` and return their reload; the threads are daemons that end with
+    the process. Raises `ValueError` as `worker_board` does."""
+    board, feed = worker_board(config, base, log, stop)
+    tasks = MachineTasks(feed, board.keys)
+    follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
+    scheduler = Scheduler(
+        config,
+        base,
+        board,
+        feed,
+        log,
+        history_store(config, base, feed.machines),
+        trajectories_response=trajectories_response,
+        cached=cached,
+        starter=starter,
+        delivered=delivered,
+    )
+    scheduler.start()
+    return lambda: scheduler.reload(path, load)
+
+
 def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
@@ -141,23 +177,20 @@ def main(
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        board, feed = worker_board(config, base, log, stop)
+        reload_config = start(
+            config,
+            path,
+            base,
+            log,
+            stop,
+            load=load,
+            worker_board=worker_board,
+            history_store=history_store,
+            trajectories_response=trajectories_response,
+            cached=cached,
+            starter=starter,
+            delivered=delivered,
+        )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    tasks = MachineTasks(feed, board.keys)
-    follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
-    scheduler = Scheduler(
-        config,
-        base,
-        board,
-        feed,
-        log,
-        history_store(config, base, feed.machines),
-        trajectories_response=trajectories_response,
-        cached=cached,
-        starter=starter,
-        delivered=delivered,
-    )
-    scheduler.start()
-    hold(stop, lambda: scheduler.reload(path, load))
-    scheduler.stop()
+    hold(stop, reload_config)

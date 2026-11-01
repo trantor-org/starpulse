@@ -119,6 +119,38 @@ def follow_criteria_events(
     return thread
 
 
+def start(
+    config: BoardConfig,
+    path: Path | None,
+    base: Path,
+    log: EventLog,
+    stop: threading.Event,
+    *,
+    load: Callable[[Path | None], BoardConfig],
+    assemble: Callable[..., tuple[Board, BoardFeed]],
+    history_store: Callable[[BoardConfig, Path, Mapping[str, dict]], WriterStore],
+    follow: Callable[..., object],
+    ready: Callable[[Board, BoardFeed], None] | None = None,
+) -> Callable[[], None]:
+    """Start the Board writer's threads over `log`, each ending when `stop` is set, and return its reload. The read
+    model's fold starts last; `ready` is then told the board and feed it folds, which another context in the process
+    may share. Raises `ValueError` as `assemble` does."""
+    model = ReadModel(log.engine, declared_fields(config.board))
+    board, feed = assemble(config, base, None, [], model)
+    store = history_store(config, base, feed.machines)
+    feed.ready.set()
+    start_writers(feed, store, board.evaluate, stop, live=False, log=log)
+    follow_criteria_events(feed, board.evaluate, log, stop)
+    if board.attach is not None:
+        board.attach(log)  # the sweep's releases append the History events the read model folds
+    if board.sweep is not None:
+        board.sweep(feed, log, store.save_claim_expiries)
+    follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
+    if ready is not None:
+        ready(board, feed)
+    return lambda: reload(path, config, load)
+
+
 def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
@@ -140,19 +172,11 @@ def main(
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
     log = EventLog(database_url(config.database_url, base))
-    model = ReadModel(log.engine, declared_fields(config.board))
+    stop = threading.Event()
     try:
-        board, feed = assemble(config, base, None, [], model)
+        reload_config = start(
+            config, path, base, log, stop, load=load, assemble=assemble, history_store=history_store, follow=follow
+        )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    store = history_store(config, base, feed.machines)
-    stop = threading.Event()
-    feed.ready.set()
-    start_writers(feed, store, board.evaluate, stop, live=False, log=log)
-    follow_criteria_events(feed, board.evaluate, log, stop)
-    if board.attach is not None:
-        board.attach(log)  # the sweep's releases append the History events the read model folds
-    if board.sweep is not None:
-        board.sweep(feed, log, store.save_claim_expiries)
-    follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
-    hold(stop, lambda: reload(path, config, load))
+    hold(stop, reload_config)

@@ -43,6 +43,34 @@ def reload(path: Path, config: RunsConfig, load: Callable[[Path | None], RunsCon
         logger.info("reload: no Runs setting changed")
 
 
+def start(
+    config: RunsConfig,
+    path: Path | None,
+    base: Path,
+    log: EventLog,
+    stop: threading.Event,
+    *,
+    load: Callable[[Path | None], RunsConfig],
+    adapters: Any,
+    worker_board: Callable[..., tuple[object, Any]],
+    history_store: Callable[[RunsConfig, Path, Mapping[str, dict]], Any],
+) -> Callable[[], None]:
+    """Start the loops of the Runs context over `log`, each ending when `stop` is set, and return their reload.
+    `adapters` are the `(instance, adapter)` pairs this context follows. Raises `ValueError` as `worker_board` does."""
+    _, feed = worker_board(config, base, log, stop)
+    store = history_store(config, base, feed.machines)
+    publisher = Publisher(log)
+    for instance, adapter in adapters:
+        adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
+    # The learned step graphs persist only in StarPulse's own store.
+    pushed = PushRuns(publisher.runs(PUSHED_INSTANCE, feed.runs(PUSHED_INSTANCE)), store)
+    follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop)
+    # Every entry path's run entries also land in the event store, one stream per run.
+    streams = RunStreams(EventStore(log.engine))
+    threading.Thread(target=record_run_streams, args=(streams, log, stop), name="run-streams", daemon=True).start()
+    return lambda: reload(path, config, load)
+
+
 def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
@@ -67,17 +95,17 @@ def main(
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        _, feed = worker_board(config, base, log, stop)
+        reload_config = start(
+            config,
+            path,
+            base,
+            log,
+            stop,
+            load=load,
+            adapters=adapters,
+            worker_board=worker_board,
+            history_store=history_store,
+        )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    store = history_store(config, base, feed.machines)
-    publisher = Publisher(log)
-    for instance, adapter in adapters:
-        adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
-    # The learned step graphs persist only in StarPulse's own store.
-    pushed = PushRuns(publisher.runs(PUSHED_INSTANCE, feed.runs(PUSHED_INSTANCE)), store)
-    follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop)
-    # Every entry path's run entries also land in the event store, one stream per run.
-    streams = RunStreams(EventStore(log.engine))
-    threading.Thread(target=record_run_streams, args=(streams, log, stop), daemon=True).start()
-    hold(stop, lambda: reload(path, config, load))
+    hold(stop, reload_config)

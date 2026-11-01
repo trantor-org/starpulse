@@ -115,6 +115,34 @@ class Delivery:
             self.start()
 
 
+def start(
+    config: PullsConfig,
+    path: Path | None,
+    base: Path,
+    log: EventLog,
+    stop: threading.Event,
+    *,
+    load: Callable[[Path | None], PullsConfig],
+    worker_board: Callable[..., tuple[Board, BoardFeed]],
+    history_store: Callable[[PullsConfig, Path, Mapping[str, dict]], Any],
+    start_delivery: Callable[..., tuple[Any, Any]],
+) -> Callable[[], None]:
+    """Start the Delivery loops over `log`, each ending when `stop` is set, and return their reload. Raises
+    `ValueError` as `worker_board` and `start_delivery` do."""
+    board, feed = worker_board(config, base, log, stop)
+    # the task actor records the lane of each write it makes under its own name; the placements of the Board are `serve`'s
+    feed.record_lanes(history_store(config, base, feed.machines), log, live=False)
+    Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
+    pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
+    store = PullStore(log.engine)
+    announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
+    # a store that holds records was built by the replays before; a new or wiped one rebuilds from the whole retention.
+    # Read before any loop writes a record.
+    delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=bool(store.repos()))
+    delivery.start()
+    return lambda: delivery.reload(path, load)
+
+
 def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
@@ -137,20 +165,17 @@ def main(
     log = EventLog(database_url(config.database_url, base))
     stop = threading.Event()
     try:
-        board, feed = worker_board(config, base, log, stop)
+        reload_config = start(
+            config,
+            path,
+            base,
+            log,
+            stop,
+            load=load,
+            worker_board=worker_board,
+            history_store=history_store,
+            start_delivery=start_delivery,
+        )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    # the task actor records the lane of each write it makes under its own name; the placements of the Board are `serve`'s
-    feed.record_lanes(history_store(config, base, feed.machines), log, live=False)
-    Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
-    pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
-    store = PullStore(log.engine)
-    announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
-    # a store that holds records was built by the replays before; a new or wiped one rebuilds from the whole retention.
-    # Read before any loop writes a record.
-    delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=bool(store.repos()))
-    try:
-        delivery.start()
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
-    hold(stop, lambda: delivery.reload(path, load))
+    hold(stop, reload_config)

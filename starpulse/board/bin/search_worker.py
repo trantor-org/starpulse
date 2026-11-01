@@ -39,6 +39,27 @@ def reload(path: Path, config: BoardConfig, load: Callable[[Path | None], BoardC
         logger.info("reload: no Search setting changed")
 
 
+def start(
+    config: BoardConfig,
+    path: Path | None,
+    base: Path,
+    log: EventLog | None,
+    stop: threading.Event,
+    *,
+    load: Callable[[Path | None], BoardConfig],
+) -> Callable[[], None]:
+    """Start the embedding catch-up over `log` until `stop` is set, and return its reload. With no `embeddings_url`
+    nothing starts and `log` may be None. Raises `ValueError` when the database keeps no search index."""
+    if not config.search.embeddings_url or log is None:
+        logger.info("no [search] embeddings_url; the search worker has nothing to embed")
+    else:
+        index = SearchIndex.open(log.engine, config.search)
+        if index is None:
+            raise ValueError(f"{path}: the database keeps no search index (SQLite with FTS5 is required)")
+        threading.Thread(target=index.keep_embedding, args=(stop,), name="search-embeddings", daemon=True).start()
+    return lambda: reload(path, config, load)
+
+
 def main(
     argv: list[str] | None,
     parser: argparse.ArgumentParser,
@@ -56,11 +77,9 @@ def main(
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
     stop = threading.Event()
-    if not config.search.embeddings_url:
-        logger.info("no [search] embeddings_url; the search worker has nothing to embed")
-    else:
-        index = SearchIndex.open(EventLog(database_url(config.database_url, base)).engine, config.search)
-        if index is None:
-            parser.exit(1, f"{path}: the database keeps no search index (SQLite with FTS5 is required)\n")
-        threading.Thread(target=index.keep_embedding, args=(stop,), name="search-embeddings", daemon=True).start()
-    hold(stop, lambda: reload(path, config, load))
+    log = EventLog(database_url(config.database_url, base)) if config.search.embeddings_url else None
+    try:
+        reload_config = start(config, path, base, log, stop, load=load)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
+    hold(stop, reload_config)
