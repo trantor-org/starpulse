@@ -16,3 +16,12 @@ def test_threads_changed_is_a_ci_written_event() -> None:
     assert writers_of(compiled.machine())["THREADS_CHANGED"] == (
         Writer(actor="reviewer", trigger=".github/workflows/review-threads.yml"),
     )
+
+
+def test_a_closed_pull_request_reopens_to_open() -> None:
+    machine = load_machine(BUNDLED).machine()
+
+    for event in ("PR_OPENED", "PR_CLOSED", "PR_REOPENED"):
+        machine.send(event)
+
+    assert [state.id for state in machine.configuration] == ["open"]

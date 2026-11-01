@@ -13,7 +13,8 @@ validated and its check's result on a record the store already holds. The same j
 
 A task's events cannot say which of two open pull requests they are about, so one that closes a pull request is
 applied only when the task cites a single open one, unless its `repository` and `pr` fields name the pull request it
-closed: it then applies to that one alone, and to none once the store holds it closed. A record a manual refresh
+closed: it then applies to that one alone, and to none once the store holds it closed. A reopen
+(`PR_REOPENED`) is the reverse: it applies to a closed record, never a merged one, by the same naming. A record a manual refresh
 (`POST /api/pulls/refresh`) reads from GitHub carries what the events cannot: head branch, base, body, merge commit and
 changed files.
 """
@@ -39,6 +40,7 @@ TASK_MACHINES = ("deliver", "in-progress")  # `in-progress` keeps replayed histo
 JOB_RESULTS = {"succeeded": "pass", "failed": "failing"}  # a canceled or unknown job says nothing of its check
 JOB_EVENTS = {"JOB_SUCCEEDED": "succeeded", "JOB_FAILED": "failed"}  # a `ci-job` event as the result `ci:jobs` names
 CLOSING = {(GITHUB_MACHINE, "PR_MERGED"), (GITHUB_MACHINE, "PR_CLOSED")}
+REOPENING = (GITHUB_MACHINE, "PR_REOPENED")
 
 Record = dict[str, Any]
 
@@ -102,6 +104,7 @@ def _threads(_record: Record, fields: Mapping[str, Any], _at: float) -> Record:
 #: What each event causes in the record, by (machine, event); a push leaves the head to the next `ci:jobs` entry.
 _DELTAS: dict[tuple[str, str], Callable[[Record, Mapping[str, Any], float], Record]] = {
     (GITHUB_MACHINE, "PR_OPENED"): lambda *_: {"state": "OPEN"},
+    REOPENING: lambda *_: {"state": "OPEN"},
     (GITHUB_MACHINE, "CHECKS_PASSED"): lambda *_: {"checks": "pass"},
     (GITHUB_MACHINE, "CHECKS_FAILED"): lambda *_: {"checks": "failing"},
     (GITHUB_MACHINE, "CONFLICTED"): lambda *_: {"mergeable": "CONFLICTING"},
@@ -155,7 +158,7 @@ class RecordProjection:
         except KeyError, TypeError, ValueError:
             return
         saved = []
-        for repo, number in self._targets(key, name in CLOSING, fields):
+        for repo, number in self._targets(key, name, fields):
             found = self._store.find(repo=repo, number=number, detailed=True)
             record = found[0] if found else _opened(repo, number, self._body(key), at)
             if found and at < record["fetchedAt"]:
@@ -168,21 +171,23 @@ class RecordProjection:
             if self._changed:
                 self._changed()
 
-    def _targets(self, key: str, closing: bool, fields: Mapping[str, Any]) -> list[tuple[str, int]]:
-        """The task's pull requests an event applies to: those still open, and for a close the one it names, at the top
-        level or under `data`; a close naming none applies only to a lone open one."""
+    def _targets(self, key: str, name: tuple[str, str], fields: Mapping[str, Any]) -> list[tuple[str, int]]:
+        """The task's pull requests an event applies to: those still open, for a reopen those closed unmerged, and for a
+        close or a reopen the one it names, at the top level or under `data`; one naming none applies only to a lone
+        candidate."""
         pulls = self._cited(key)
         stored = {pull: self._store.find(repo=pull[0], number=pull[1]) for pull in pulls}
-        opened = [pull for pull in pulls if not stored[pull] or stored[pull][0]["state"] == "OPEN"]
-        if not closing:
-            return opened
+        wanted = "CLOSED" if name == REOPENING else "OPEN"
+        candidates = [pull for pull in pulls if not stored[pull] or stored[pull][0]["state"] == wanted]
+        if name not in CLOSING | {REOPENING}:
+            return candidates
         data = fields.get("data")
         naming = data if isinstance(data, Mapping) and "pr" in data else fields
         number = str(naming.get("pr", ""))
         if number.isdigit():
             named = (str(naming.get("repository")), int(number))
-            return [named] if named in opened else []
-        return opened if len(opened) == 1 else []
+            return [named] if named in candidates else []
+        return candidates if len(candidates) == 1 else []
 
     def handle_job(self, entry: Entry) -> None:
         """Apply one `ci:jobs` entry to the record of the pull request it ran for; one for a pull request the store does

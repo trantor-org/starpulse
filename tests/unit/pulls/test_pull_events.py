@@ -216,6 +216,58 @@ def test_a_close_whose_data_names_the_cited_open_pull_request_closes_it() -> Non
     assert _record(store)["state"] == "CLOSED"
 
 
+def test_a_reopen_naming_a_closed_pull_request_reopens_it() -> None:
+    projection, store, _ = _projection()
+    projection.handle(_entry(*OPEN, at=T0))
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 1, repository="acme/widgets", pr="7"))
+
+    projection.handle(_entry("github-pull-request", "PR_REOPENED", at=T0 + 2, repository="acme/widgets", pr="7"))
+
+    assert _record(store)["state"] == "OPEN"
+
+
+def test_a_reopen_without_a_name_reopens_the_lone_closed_pull_request() -> None:
+    projection, store, _ = _projection()
+    projection.handle(_entry(*OPEN, at=T0))
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 1))
+
+    projection.handle(_entry("github-pull-request", "PR_REOPENED", at=T0 + 2))
+
+    assert _record(store)["state"] == "OPEN"
+
+
+def test_a_reopen_names_one_of_two_closed_pull_requests() -> None:
+    other = "https://github.com/acme/skills/pull/2"
+    projection, store, _ = _projection(references=[URL, other])
+    projection.handle(_entry(*OPEN, at=T0))
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 1, repository="acme/widgets", pr="7"))
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 1, repository="acme/skills", pr="2"))
+
+    projection.handle(_entry("github-pull-request", "PR_REOPENED", at=T0 + 2, repository="acme/skills", pr="2"))
+
+    assert {(r["repo"], r["state"]) for r in store.find()} == {("acme/widgets", "CLOSED"), ("acme/skills", "OPEN")}
+
+
+def test_a_reopen_never_brings_back_a_merged_pull_request() -> None:
+    projection, store, _ = _projection()
+    projection.handle(_entry(*OPEN, at=T0))
+    projection.handle(_entry("github-pull-request", "PR_MERGED", at=T0 + 1))
+
+    projection.handle(_entry("github-pull-request", "PR_REOPENED", at=T0 + 2, repository="acme/widgets", pr="7"))
+
+    assert _record(store)["state"] == "MERGED"
+
+
+def test_a_reopen_older_than_the_close_leaves_it_closed() -> None:
+    projection, store, _ = _projection()
+    projection.handle(_entry(*OPEN, at=T0))
+    projection.handle(_entry("github-pull-request", "PR_CLOSED", at=T0 + 2))
+
+    projection.handle(_entry("github-pull-request", "PR_REOPENED", at=T0 + 1, repository="acme/widgets", pr="7"))
+
+    assert _record(store)["state"] == "CLOSED"
+
+
 def test_a_ready_event_reaches_every_pull_request_of_the_task() -> None:
     other = "https://github.com/acme/skills/pull/2"
     projection, store, _ = _projection(references=[URL, other])
