@@ -624,7 +624,9 @@ time as the row's `updated_at` (a row the store already holds wins), then rename
 `[scheduler.session_limits]`, else `limits.sessions`.
 `sessionCap` names that cap as `{"harness", "limit", "source", "configLimit"}`: `source` is `admin` for an override or
 `starpulse.toml`, and `configLimit` is what the config sets.
-`sessionsByHarness` names every harness's in-flight count against its own cap. A credit or usage pause for one
+`sessionsByHarness` names every harness's in-flight count against its own cap. A started session counts while its task
+is In Progress or it has shown an event inside half an hour of its start; one at a prompt that never claimed its task
+frees its slot. A credit or usage pause for one
 harness lands in `pauses` and blocks admission for that harness only.
 `sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
 

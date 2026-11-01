@@ -176,14 +176,26 @@ class Loop:
         return {name: {"use": use.get(name, 0.0), "limit": self._policy.session_limit(name)} for name in sorted(names)}
 
     def _sessions_used(self) -> dict[str, float]:
-        """Sessions per harness: the loop's runs, and each task held In Progress outside them, counted on the default
-        harness because the harness machine does not say which harness opened it."""
+        """Sessions per harness: the loop's runs that are at work, and each task held In Progress outside them, counted on
+        the default harness because the harness machine does not say which harness opened it."""
         use: dict[str, float] = {}
-        for run in list(self._running.values()):
-            use[run.harness] = use.get(run.harness, 0.0) + 1
+        now = self._clock()
+        agents = self._open_agents()
+        for task, run in list(self._running.items()):
+            if self._at_work(task, run, agents, now):
+                use[run.harness] = use.get(run.harness, 0.0) + 1
         if outside := len(self._held_outside()):
             use[DEFAULT_HARNESS] = use.get(DEFAULT_HARNESS, 0.0) + outside
         return use
+
+    def _at_work(self, task: str, run: _Run, agents: Mapping[str, Mapping[str, Any]], now: float) -> bool:
+        """Whether a run's session holds a slot: its task is held In Progress, or its start or last harness event is inside
+        `STALE_S`. A session at a prompt that never claimed its task is a resident process doing no work."""
+        agent = agents.get(task)
+        if agent is not None and agent["state"] == self._feed.roles.working:
+            return True
+        seen = self._feed.machine_task(HARNESS.name, task)
+        return now - max(run.started_at, seen["active"] if seen else 0.0) <= STALE_S
 
     def _held_outside(self) -> set[str]:
         """The In Progress tasks `_running` does not hold that a session holds, idle on a wake or mid-turn: an idle session

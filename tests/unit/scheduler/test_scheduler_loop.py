@@ -15,6 +15,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.scheduler.adapters.loop import IDLE_RETURNED, SETTLE_REFUSED, START_BACKOFF, START_HALT, Loop
 from starpulse.scheduler.model.config import Scheduler
+from starpulse.scheduler.model.inputs import STALE_S
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.model.quiet_hours import QuietHours
@@ -1095,3 +1096,17 @@ def test_a_held_verify_session_is_not_admitted_twice_and_is_admitted_again_once_
 
     assert rig.loop.tick() == ["T-1"]
     assert [prompt[1] for prompt in rig.prompts] == ["Verify", "Verify"]
+
+
+def test_a_started_session_with_no_held_task_and_no_recent_activity_frees_its_slot(tmp_path: Path) -> None:
+    """A session sitting at a prompt, its task never claimed, is a resident process doing no work: it holds no slot."""
+    rig = Rig(tmp_path, limits={"sessions": 1}, idle_minutes=24 * 60)
+    rig.put("T-1")
+    rig.put("T-2")
+    assert rig.loop.tick() == ["T-1"]
+    assert rig.loop.sessions_by_harness()["claude"]["use"] == 1.0  # starting: the grace window holds the slot
+
+    rig.after(STALE_S / 60 + 1)  # no event since; T-1 is still Ready, never In Progress
+
+    assert rig.loop.sessions_by_harness()["claude"]["use"] == 0.0
+    assert rig.loop.tick() == ["T-2"]
