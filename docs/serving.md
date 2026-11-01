@@ -851,6 +851,9 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `pr_ready`: the task cites a pull request and any cited one is merged (with a merge time) or open and not a draft.
   The edit's comment names the ready and merged pull requests as the evidence. A state may declare
   `waits: {pr_ready: REVIEW}` to move its tasks to Review once a pull request is ready.
+  A task moved from `review` to its working lane holds, for each pull request it cites, the head it was moved on: an open
+  pull request still on that head is the reviewed work, so the fact does not hold for it until a push changes the head
+  or the lane changes (the actor remembers it in memory only, so a restart clears it).
 - `deps_done`: the task has dependencies, every one is Done, its description declares no Start Criteria, and, under
   `[release] settle = "pin-bump"`, every dependency's pin bump has merged (the rule in Release).
 - `deps_done_with_pr`: `deps_done` holds and `pr_ready` holds (the task cites a ready or merged pull request). A state lists it before `deps_done` to
