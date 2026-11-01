@@ -384,6 +384,26 @@ def test_an_in_progress_task_citing_only_a_draft_or_closed_pull_request_stays(
     assert until(lambda: board.moved() == [("TASK-1", "review")])
 
 
+def test_a_review_task_sent_back_to_in_progress_stays_while_its_pull_request_keeps_the_head_it_was_sent_back_on(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop)
+    seen = actor.derivations["TASK-1"]
+
+    board.put(task("TASK-1", "In Progress", references=(PR_ONE,)))  # the operator's drag
+    assert until(lambda: actor.derivations["TASK-1"] > seen)
+    actor.pulls_changed()
+
+    assert board.moved() == []
+
+    store.save([pull(1, state="OPEN") | {"headRefOid": "a" * 40}])  # the session pushes its rework
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "review")])
+
+
 def test_a_waiting_task_moves_to_ready_when_its_last_dependency_enters_done(
     store: PullStore, stop: threading.Event
 ) -> None:

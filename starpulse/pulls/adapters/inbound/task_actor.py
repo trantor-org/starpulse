@@ -253,7 +253,10 @@ class TaskActor:
         self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...]]] = {}
         self._by_pr: dict[str, set[str]] = {}
         #: What each pull request last read as, so a refresh that changed nothing derives nothing.
-        self._pull_states: dict[str, tuple[str, str | None, bool]] = {}
+        self._pull_states: dict[str, tuple[str, str | None, bool, str]] = {}
+        #: Per task sent back from Review to the working lane, the head of each pull request it cites at that moment: a
+        #: ready pull request still on that head is the reviewed work, which `pr_ready` does not send to Review again.
+        self._sent_back: dict[str, dict[str, str]] = {}
         #: Tasks whose dependencies are done but wait for a pin bump, and the store revision last read for them.
         self._pin_held: set[str] = set()
         self._store_rev = store.rev
@@ -532,6 +535,9 @@ class TaskActor:
                 touched |= self._held
             if before is None or before[0] != now[0]:
                 self._tried.pop(name, None)
+                self._sent_back.pop(name, None)
+                if before and before[0] == "review" and now[0] == self._feed.roles.working:
+                    self._sent_back[name] = self._heads(agent)
             if before is None or (before[0], before[3]) != (now[0], now[3]):
                 touched |= self._dependents(name)
             self._derive_all(touched, observed)
@@ -584,6 +590,7 @@ class TaskActor:
         for url in self._seen.pop(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
+        self._sent_back.pop(name, None)
         self._ticks.pop(name, None)
         self._lint_held.pop(name, None)
         self._due.pop(name, None)
@@ -629,9 +636,16 @@ class TaskActor:
             return own
         return agent["prs"]
 
-    def _pull_state(self, url: str) -> tuple[str, str | None, bool]:
+    def _pull_state(self, url: str) -> tuple[str, str | None, bool, str]:
         record = self._record(url)
-        return (record["state"], record["mergeSha"], record["isDraft"]) if record else ("", None, False)
+        if record is None:
+            return "", None, False, ""
+        return record["state"], record["mergeSha"], record["isDraft"], record["headRefOid"]
+
+    def _heads(self, agent: dict[str, Any]) -> dict[str, str]:
+        """The head of each own pull request of the task the store holds."""
+        records = {url: self._record(url) for url in self._own_prs(agent)}
+        return {url: record["headRefOid"] for url, record in records.items() if record}
 
     def _derive_all(self, names: Any, observed: float) -> None:
         for name in sorted(names):
@@ -863,14 +877,18 @@ class TaskActor:
         return (proof, left), f"{comment} Unfinished: {'; '.join(left)}."
 
     def _pr_ready(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The ready or merged pull requests when the task cites one that is, else None."""
+        """The ready or merged pull requests when the task cites one that is, else None. A task sent back from Review
+        stays put while its ready pull request keeps the head it was sent back on: a new head or a run of `review` is the
+        session's answer."""
         parts = []
+        held = self._sent_back.get(agent["id"], {})
         for url in self._own_prs(agent):
             record = self._record(url)
             if record is None:
                 continue
             merged = record["state"] == "MERGED" and record["mergedAt"]
-            if merged or (record["state"] == "OPEN" and not record["isDraft"]):
+            reviewed = held.get(url) == record["headRefOid"]
+            if merged or (record["state"] == "OPEN" and not record["isDraft"] and not reviewed):
                 parts.append(f"{record['repo']}#{record['number']} {'merged' if merged else 'ready'}")
         if not parts:
             return None
