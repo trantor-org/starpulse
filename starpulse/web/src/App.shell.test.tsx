@@ -63,8 +63,12 @@ describe("the page's first tree", () => {
     act(() => held.store!.set({ tree: { states: ["In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards: [{ id: "TASK-1", title: "T", lane: "In Progress", dependencies: [] } as unknown as KanbanTask] }));
     await act(async () => void (await import("./features/level/SunsDrillIn")));
     expect(host.querySelector('[aria-label="In Progress drill-in"] nav[aria-label="In Progress tasks"] button')?.getAttribute("aria-label")).toMatch(/^TASK-1 T, /);
+    frame();
+    expect(mounted("#rail #feed, #rail section")).toBe(true);
+    expect(mounted("#rail #legend")).toBe(false); // the mock's rule: no legends on this board
     act(() => host.querySelector<HTMLButtonElement>('[aria-label="Back to the Board"]')!.click());
     expect(mounted('[aria-label="In Progress drill-in"]')).toBe(false);
+    expect(mounted("#rail #legend")).toBe(true);
     expect(location.search).not.toContain("drill");
   });
 

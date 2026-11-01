@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MachineEvent } from "../../api/types.gen";
 import { applyPack, applyTheme, packTokens } from "../../tests/themeFixtures";
-import { jobAt, statusOf, TIER } from "./sunsEngine";
+import { jobAt, statusOf, TASKC, TIER } from "./sunsEngine";
 import { css, jobOf, sceneOf, stepOut, type View } from "./sunsScene";
 
 const NOW = 1_800_000_000;
@@ -195,9 +195,8 @@ describe("the tasks at work", () => {
 
     // build holds two, deliver and review fix one each, and the QA task rides the four lenses that have not passed it yet
     expect(perSun).toEqual([1, 1, 1, 1, 1, 1, 2]);
-    // the picked task's dot is the larger one
-    const sizes = dots.map((d) => Number(/width:([\d.]+)px/.exec(d.style)![1]));
-    expect(sizes.filter((w) => w === Math.max(...sizes))).toHaveLength(1);
+    // every task is one size, the viewed one included
+    expect(new Set(dots.map((d) => /width:([\d.]+)px/.exec(d.style)![1])).size).toBe(1);
   });
 
   it("keeps each dot still at its own place round the sun, so two tasks on one sun never stack and only a real move stirs one", () => {
@@ -222,21 +221,147 @@ describe("the tasks at work", () => {
     }
   });
 
-  it("flies a task's dot to the phase it enters: the dot keeps its key and eases to the new sun", () => {
-    const dot = (events: Parameters<typeof jobOf>[3]) => orbiters(sceneOf([jobOf("F1", "f1", undefined, events, NOW)], view("F1"), () => {}, NOW))[0];
-    const inBuild = dot([]), inDeliver = dot([ev(5, "in-progress", "build", "deliver")]);
-
-    expect(inDeliver.key).toBe(inBuild.key);
-    expect(centre(inDeliver.style)).not.toBe(centre(inBuild.style));
-    expect(inDeliver.style).toMatch(/transition:left [^;]*top [^;]*transform /);
-  });
-
   it("keeps the key of a QA task's dot on a lens when an earlier lens passes it, so the other dots stay put", () => {
     const keyed = (events: Parameters<typeof jobOf>[3]) => new Map(orbiters(sceneOf([jobOf("Q2", "q2", undefined, events, NOW)], view("Q2"), () => {}, NOW)).map((d) => [d.key, centre(d.style)]));
     const before = keyed([lens(9, "LENS_PASSED", "security", "ux")]), after = keyed([lens(9, "LENS_PASSED", "security", "ux"), lens(10, "LENS_PASSED", "ux", "ui")]);
 
     expect(after.size).toBe(before.size - 1);
     for (const [key, at] of after) expect(before.get(key)).toBe(at);
+  });
+});
+
+describe("a task moving along the lines", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const start = () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000_000);
+  };
+  const draw = (jobs: ReturnType<typeof jobOf>[], sel = jobs[0].id, size?: { w: number; h: number }) => sceneOf(jobs, view(sel), () => {}, NOW, size);
+  const inBuild = (id: string) => jobOf(id, id, undefined, [], NOW);
+  const moved = (id: string, ...events: Parameters<typeof jobOf>[3]) => jobOf(id, id, undefined, events, NOW);
+  const toDeliver = ev(5, "in-progress", "build", "deliver");
+  const comet = (s: ReturnType<typeof sceneOf>) => s.main.L.filter((l) => l.fx);
+  const keys = (s: ReturnType<typeof sceneOf>) => s.main.D.map((d) => d.key);
+  /** The first and last x of a path. */
+  const reach = (d: string) => {
+    const xs = [...d.matchAll(/(-?[\d.]+),-?[\d.]+/g)].map((m) => Number(m[1]));
+    return [xs[0], xs.at(-1)!];
+  };
+
+  it("draws a lens row as the mock's: a straight line, forking to PASS and CHANGES only in its last stretch", () => {
+    start();
+    const s = draw([moved("L1", ...story)]);
+    const rowY = (label: string) => Number(s.rows.T.find((t) => t.text === label)!.style.match(/top:(-?[\d.]+)px/)![1]);
+    const span = Math.max(...s.rows.L.flatMap((l) => reach(l.d)));
+    const bends = s.rows.L.filter((l) => /C/.test(l.d) && reach(l.d)[0] > span * 0.5);
+    const straight = s.rows.L.filter((l) => !/C/.test(l.d) && reach(l.d)[1] - reach(l.d)[0] > span * 0.1);
+
+    expect(rowY("Security lens")).toBeGreaterThan(0);
+    expect(bends.length).toBeGreaterThan(0);
+    for (const fork of bends) expect(reach(fork.d)[1] - reach(fork.d)[0]).toBeLessThan(span * 0.2);
+    expect(Math.max(...straight.map((l) => reach(l.d)[1]))).toBeGreaterThan(span * 0.75);
+  });
+
+  it("leaves the board where it is when the viewed task changes: no dot moves, resizes or flies, and no label shifts", () => {
+    start();
+    const tall = { w: 1200, h: 1300 };
+    const few = inBuild("V1"), many = moved("V2", ...story);
+    const first = draw([few, many], "V1", tall);
+    vi.advanceTimersByTime(100);
+    const second = draw([few, many], "V2", tall);
+    const label = (s: ReturnType<typeof sceneOf>, text: string) => s.main.T.find((t) => t.text === text)!.style;
+
+    expect(second.main.D).toEqual(first.main.D);
+    expect(comet(second)).toEqual([]);
+    expect(label(second, "Deliver")).toBe(label(first, "Deliver"));
+  });
+
+  it("gives a dot no transition, so nothing eases across the board", () => {
+    start();
+    draw([inBuild("T1")]).main.D.forEach((d) => expect(d.style).not.toContain("transition"));
+  });
+
+  it("runs a comet along the flow lines when a task changes phase, viewed or not, however long since the last draw, then rests it on the new sun", () => {
+    start();
+    const viewed = inBuild("M0");
+    draw([viewed, inBuild("M1")]);
+    vi.advanceTimersByTime(60_000);
+
+    const flying = draw([viewed, moved("M1", toDeliver)]);
+    vi.advanceTimersByTime(1000);
+    const mid = draw([viewed, moved("M1", toDeliver)]);
+    vi.advanceTimersByTime(60_000);
+    const landed = draw([viewed, moved("M1", toDeliver)]);
+
+    expect(comet(flying).length).toBeGreaterThan(1);
+    expect(reach(comet(flying)[0].d)).toEqual([483, 837]);
+    expect(keys(mid)).not.toContain("orb:M1:deliver");
+    expect(comet(landed)).toEqual([]);
+    expect(keys(landed)).toContain("orb:M1:deliver");
+  });
+
+  it("pulses one ring where the comet lands, in the task's own colour and never amber", () => {
+    start();
+    draw([inBuild("M2")]);
+    vi.advanceTimersByTime(60_000);
+    draw([moved("M2", toDeliver)]);
+    vi.advanceTimersByTime(3100);
+    const rings = draw([moved("M2", toDeliver)]).main.S.filter((x) => x.fx && x.style.includes("border:"));
+
+    expect(rings).toHaveLength(1);
+    expect(rings[0].style).toContain(TASKC.standard);
+    expect(rings[0].style).not.toContain("#fbbf24");
+  });
+
+  it("sends a task into QA down the fork to every lens, and a passed lens's dot along its line to the join", () => {
+    start();
+    const pass = lens(9, "LENS_PASSED", "security", "ux");
+    draw([inBuild("M3")]);
+    vi.advanceTimersByTime(60_000);
+    const fanned = draw([moved("M3", pass)]);
+    vi.advanceTimersByTime(60_000);
+    const settled = draw([moved("M3", pass)]);
+    vi.advanceTimersByTime(60_000);
+    const passing = draw([moved("M3", pass, lens(8, "LENS_PASSED", "ux", "ui"))]);
+
+    // four lenses pending: four heated edges, each a run from Build out to a lens
+    expect(comet(fanned).filter((l) => l.w === 2.4).map((l) => reach(l.d))).toEqual(Array(4).fill([483, 638]));
+    expect(comet(settled)).toEqual([]);
+    expect(reach(comet(passing).filter((l) => l.w === 2.4)[0].d)).toEqual([662, 752]);
+  });
+
+  it("runs a task that leaves to its exit line and rests it at that line's end", () => {
+    start();
+    const review = ev(4, "in-progress", "review_fix", "review_recorded"), inFix = ev(5, "in-progress", "deliver", "review_fix");
+    draw([moved("M4", inFix)]);
+    vi.advanceTimersByTime(60_000);
+    const leaving = draw([moved("M4", inFix, review)]);
+    vi.advanceTimersByTime(60_000);
+
+    expect(reach(comet(leaving)[0].d)).toEqual([988, 1176]);
+    expect(keys(draw([moved("M4", inFix, review)]))).toContain("orb:M4:review_recorded");
+  });
+
+  it("draws no dot and flies nothing while a task's history loads, then rests it on its real sun", () => {
+    start();
+    const loading = { ...inBuild("M5"), settling: true }, real = moved("M5", toDeliver);
+
+    expect(keys(draw([loading]))).toEqual([]);
+    vi.advanceTimersByTime(100);
+    const arrived = draw([real]);
+
+    expect(comet(arrived)).toEqual([]);
+    expect(keys(arrived)).toEqual(["orb:M5:deliver"]);
+  });
+
+  it("keeps a task's seat on its sun when another task leaves it", () => {
+    start();
+    const before = draw([inBuild("S1"), inBuild("S2")]).main.D.find((d) => d.key === "orb:S2:build")!;
+    vi.advanceTimersByTime(100);
+    const after = draw([moved("S1", toDeliver), inBuild("S2")]).main.D.find((d) => d.key === "orb:S2:build")!;
+
+    expect(after.style).toBe(before.style);
   });
 });
 
@@ -295,6 +420,17 @@ describe("a phase machine row", () => {
     vi.advanceTimersByTime(60_000);
 
     expect(drawn("R2", []).S.map((x) => x.style)).toEqual(first);
+  });
+
+  it("flies a row's comet however long the page sat since its last draw", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000_000);
+    const walked = [ev(5, "build", "start", "worktree_ready")], moved = [...walked, ev(4, "build", "worktree_ready", "red_proven")];
+    drawn("C3", walked);
+
+    vi.advanceTimersByTime(5000);
+
+    expect(drawn("C3", moved).L.some((l) => l.fx)).toBe(true);
   });
 
   it("marks a comet's pieces apart, so one coming and going shifts no piece that stays", () => {

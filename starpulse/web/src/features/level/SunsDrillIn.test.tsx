@@ -7,7 +7,7 @@ import { applyPack, packTokens } from "../../tests/themeFixtures";
 import { SunsDrillIn, type DrillTask } from "./SunsDrillIn";
 
 const roles = { working: "In Progress" } as Roles;
-const task = (id: string, lane: string) => ({ id, title: `Title ${id}`, lane, assignee: "@agent-standard-high" }) as DrillTask;
+const task = (id: string, lane: string) => ({ id, title: `Title ${id}`, lane, profile: "@agent-standard-high" }) as DrillTask;
 let host: HTMLDivElement, root: Root;
 
 beforeEach(() => {
@@ -52,6 +52,29 @@ describe("SunsDrillIn", () => {
       await act(async () => void (await vi.advanceTimersByTimeAsync(5_000)));
 
       expect(reads()).toBeGreaterThan(first);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps its clock running while the shell re-renders it, so a task's time and bar stay current", async () => {
+    vi.useFakeTimers();
+    try {
+      const entered = Date.now() / 1000;
+      vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify({ events: [{ machine: "in-progress", event: "CLAIM", from: "start", to: "build", at: entered }] }), { status: 200 }));
+      const slot = document.createElement("div");
+      // the shell passes a new onClose on every render, and a new hud arrives far more often than the 5 s clock
+      const draw = () => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress")]} roles={roles} task="TASK-1" onClose={() => undefined} navSlot={slot} />);
+      act(draw);
+      const bar = () => slot.querySelector<HTMLElement>("nav button i")!.getAttribute("style");
+      await act(async () => void (await vi.advanceTimersByTimeAsync(1_000)));
+      const start = bar();
+
+      for (let s = 0; s < 60; s++) await act(async () => { draw(); await vi.advanceTimersByTimeAsync(1_000); });
+
+      // a minute in the phase moves the bar on 7 points, by the mock's formula
+      expect(start).toContain(" 30%");
+      expect(bar()).toContain(" 37%");
     } finally {
       vi.useRealTimers();
     }
