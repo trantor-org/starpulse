@@ -108,7 +108,9 @@ def test_reading_every_board_task_again_and_again_holds_the_heap_under_its_budge
                 assert built.read(f"task-{number}") is not None
         held = grown()
 
-    assert held < 6, f"{held:.1f} MB of {TASKS} task files stay held after {PASSES} passes"
+    # The kept records (256 of ~14 KB) settle near 3.6 MB; a loaded CI worker's other threads have pushed the traced
+    # heap to 6.3. A cache keeping all 700 records holds ~9.8 MB, so 8 still fails it.
+    assert held < 8, f"{held:.1f} MB of {TASKS} task files stay held after {PASSES} passes"
 
 
 def test_reading_every_cited_pull_request_again_and_again_holds_the_heap_under_its_budget(tmp_path: Path) -> None:
