@@ -2,6 +2,7 @@
 pass is the board's alert (the `starpulse_board_lane_mismatch` gauge and an error line)."""
 
 import logging
+import threading
 
 import pytest
 from starpulse.board.adapters.lane_sweep import LaneSweep, mismatches
@@ -62,3 +63,14 @@ def test_a_mismatch_the_reconcile_cleared_raises_no_alert() -> None:
 
     assert "starpulse_board_lane_mismatch{" not in sweep.exposition()
     assert sweep.exposition().endswith("\n")
+
+
+def test_the_sweep_thread_ends_when_its_stop_event_is_set() -> None:
+    stopped = threading.Event()
+    LaneSweep(_Feed({}), _Board({})).start(stopped)
+    thread = next(live for live in threading.enumerate() if live.name == "lane-sweep")
+
+    stopped.set()
+    thread.join(5)
+
+    assert not thread.is_alive()

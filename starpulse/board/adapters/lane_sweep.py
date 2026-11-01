@@ -31,8 +31,6 @@ INTERVAL = 60.0
 class _Feed(Protocol):
     def open_tasks(self) -> list[dict]: ...
 
-    def spawn(self, target: Callable[[threading.Event], None], name: str) -> None: ...
-
 
 def mismatches(
     agents: Iterable[Mapping[str, Any]], read: Callable[[str], Mapping[str, Any] | None]
@@ -80,14 +78,14 @@ class LaneSweep:
             )
         return f"# HELP {METRIC} {HELP}\n# TYPE {METRIC} gauge\n{series}"
 
-    def start(self) -> None:
-        """Sweep on a daemon thread every `INTERVAL` seconds until the feed stops."""
+    def start(self, stopped: threading.Event) -> None:
+        """Sweep on a daemon thread every `INTERVAL` seconds until `stopped` is set."""
 
-        def run(stopped: threading.Event) -> None:
+        def run() -> None:
             while not stopped.wait(INTERVAL):
                 try:
                     self.sweep()
                 except Exception as exc:  # the history or a file is unreadable; the next pass tries again
                     logger.warning("StarPulse: the lane sweep failed: %s", exc)
 
-        self._feed.spawn(run, "lane-sweep")
+        threading.Thread(target=run, name="lane-sweep", daemon=True).start()

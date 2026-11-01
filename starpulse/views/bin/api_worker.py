@@ -47,8 +47,8 @@ from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, 
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.outbound.gc_pauses import install as collect_on_a_timer
 from starpulse.views.adapters.outbound.take_over import command_take_over
-from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.application.queries.answers import Answers
+from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
 
 
@@ -174,7 +174,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     conformance.follow(log, stop)
     # a task whose file lane differs from the board's is reconciled, and exported if it stays so
     lane_sweep = LaneSweep(feed, board)
-    lane_sweep.start()
+    lane_stop = threading.Event()
+    lane_sweep.start(lane_stop)
     # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks; an opt-in
     # worker's instance also shows the page whether that worker is beating
@@ -235,5 +236,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         host.serve_until_stopped(httpd, feed)
     finally:
         scheduler_stop.set()
+        lane_stop.set()
         log.close()
         store.engine.dispose()
