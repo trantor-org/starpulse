@@ -151,7 +151,7 @@ def step_board(url: str) -> str | None:
             task = card.get_attribute("data-id")
             if not task:
                 return "board: first card has no data-id"
-            card.click()
+            card.locator(".id").click()  # the id label, never the centre: a Waiting card's cross-milestone badge can cover it and opens its blocker
             dialog = page.get_by_role("dialog")
             dialog.wait_for(timeout=BROWSER_MS)
             label = dialog.get_attribute("aria-label") or ""
