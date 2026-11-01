@@ -39,6 +39,8 @@ def _syscall(attr: _SchedAttr) -> int:  # pragma: no mutate block — kernel bou
 
 def shorten_slice(slice_ns: int = SERVE_SLICE_NS) -> bool:
     """Give the calling thread, and the threads it starts, a `slice_ns` slice; False when the kernel refuses."""
+    if not hasattr(os, "sched_getscheduler"):  # absent on macOS: the policy reads as unavailable
+        return False
     attr = _SchedAttr(
         size=ctypes.sizeof(_SchedAttr),
         sched_policy=os.sched_getscheduler(0),

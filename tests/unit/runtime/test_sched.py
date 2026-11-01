@@ -3,6 +3,7 @@ microseconds, not a hog's whole slice: the Page API's p95 at host load 100+ was 
 
 from __future__ import annotations
 
+import os
 import threading
 from collections.abc import Callable
 
@@ -38,6 +39,13 @@ def test_shorten_slice_sets_the_calling_thread_and_the_threads_it_starts() -> No
 
 def test_shorten_slice_reports_a_kernel_refusal_instead_of_raising(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sched, "_syscall", lambda *args: -1)
+    assert sched.shorten_slice(100_000) is False
+
+
+def test_shorten_slice_reads_as_unavailable_where_the_os_module_lacks_sched_getscheduler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delattr(os, "sched_getscheduler")
     assert sched.shorten_slice(100_000) is False
 
 
