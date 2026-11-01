@@ -123,7 +123,7 @@ class Runtime:
             self._push_status()
 
     def wire_status(self, publish: Callable[[str, dict[str, Any]], None]) -> None:
-        """Push `status()` as an `scheduler` feed event after each sample, switch change and loop tick."""
+        """Push `status()` as an `scheduler` feed event after each sample, switch change and loop tick, a raising one included."""
 
         def push() -> None:
             self._served = self.status()
@@ -141,9 +141,10 @@ class Runtime:
             tick = self.loop.tick
 
             def ticked(*args: Any, **kwargs: Any) -> list[str]:
-                started = tick(*args, **kwargs)
-                push()
-                return started
+                try:
+                    return tick(*args, **kwargs)
+                finally:  # a tick that raised still saw the board change that woke it
+                    push()
 
             self.loop.tick = ticked  # type: ignore[method-assign]
 
