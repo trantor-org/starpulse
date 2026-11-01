@@ -93,8 +93,10 @@ def _recent_settled(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _milestone_done(settled: dict[str, Any]) -> dict[str, int]:
-    return dict(Counter(e["milestone"] for e in settled.values() if e["milestone"] and e["state"] == "completed"))
+def _milestone_done(data: dict[str, Any]) -> dict[str, int]:
+    """Each milestone's completed count: its settled Tasks plus the Done ones a read-model feed counted off the board."""
+    settled = Counter(e["milestone"] for e in data["settled"].values() if e["milestone"] and e["state"] == "completed")
+    return dict(settled + Counter(data.get("milestone_done", {})))
 
 
 def _drawn_pulls(pulls: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
@@ -118,7 +120,7 @@ def slim_snapshot(data: Any) -> Any:
     each milestone's completed count. A verb or a held stream reads the whole of `data`, never this."""
     flows = data["flows"]
     board = flows[0] if flows and flows[0]["name"] == "board" else None
-    drawn = {**data, "milestone_done": _milestone_done(data["settled"]), "settled": _recent_settled(data)}
+    drawn = {**data, "milestone_done": _milestone_done(data), "settled": _recent_settled(data)}
     drawn.pop("cold_done", None)
     if data.get("pulls"):
         drawn["pulls"] = _drawn_pulls(data["pulls"])

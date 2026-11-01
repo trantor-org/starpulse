@@ -3,6 +3,7 @@ with the status, headers and body the page reads."""
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 from pathlib import Path
@@ -19,7 +20,7 @@ from starpulse.runtime.adapter_kit import task
 from starpulse.views.adapters.inbound.api import metrics
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.asgi_app import PageApp
-from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.application.queries.responses import cited_pulls
 from starpulse.views.ports.services import Services
 
@@ -34,7 +35,7 @@ def routes(tmp_path: Path) -> Api:
     return Api(
         feed=feed,
         history=HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", feed.machines),
-        snapshots=SnapshotCache(feed),
+        snapshots=Snapshots(feed),
         window=HistoryWindow(feed, 6, log),
         board=bare_board(),
         services=Services(slow_read_s=0.0),
@@ -43,7 +44,7 @@ def routes(tmp_path: Path) -> Api:
 
 @pytest.fixture
 def client(routes: Api, tmp_path: Path) -> TestClient:
-    app = PageApp(api_routes(routes), metrics.routes, routes.snapshots, tmp_path, (), seams=routes)
+    app = PageApp(api_routes(routes), metrics.routes, tmp_path, (), seams=routes)
     return TestClient(app, client=("127.0.0.1", 50000))  # a LAN client, as the window and the writes admit
 
 
@@ -134,8 +135,9 @@ def test_a_query_reaches_the_route(routes: Api, client: TestClient) -> None:
     held = client.get("/api/snapshot", headers=identity)
     full = client.get("/api/snapshot", params={"view": "full"}, headers=identity)
 
-    assert held.content == routes.snapshots.read().encoded.body  # the snapshot as the cache holds it
-    assert full.content != held.content  # `view=full` encodes the whole snapshot afresh
+    built = routes.snapshots.build()[1].body  # the snapshot as a request encodes it
+    assert json.loads(held.content)["flows"] == json.loads(built)["flows"]
+    assert full.content != held.content  # `view=full` encodes the whole snapshot
 
 
 def test_a_head_of_a_read_route_answers_its_headers_without_a_body(client: TestClient) -> None:
@@ -203,12 +205,12 @@ def _task_client(tmp_path: Path, board: object, services: Services) -> TestClien
     api = Api(
         feed=feed,
         history=history,
-        snapshots=SnapshotCache(feed),
+        snapshots=Snapshots(feed),
         window=HistoryWindow(feed, 6, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")),
         board=board,
         services=services,
     )
-    app = PageApp(api_routes(api), metrics.routes, api.snapshots, tmp_path, (), seams=api)
+    app = PageApp(api_routes(api), metrics.routes, tmp_path, (), seams=api)
     return TestClient(app, client=("127.0.0.1", 50000))
 
 

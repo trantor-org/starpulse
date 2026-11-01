@@ -11,7 +11,7 @@ import { ago } from "../../shared/clock";
 import type { HudState } from "../../render/hud";
 import {
   CLOSED, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainOf, claimChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
-  stacked as stacksState, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
+  offBoardTask, stacked as stacksState, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
   type ClaimChip, type KanbanTask, type Layout, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
 import { sessionNickname } from "./nickname";
@@ -513,15 +513,26 @@ class OpenTask {
 }
 
 /**
- * The open task's modal, drawn by `draw`; a task with no card opens no modal. While none is open, the modal of the card the
+ * The open task's modal, drawn by `draw`; a Done task the snapshot leaves out opens from its record, and any other with no card opens no modal. While none is open, the modal of the card the
  * pointer rests on is drawn hidden and inert, so its click only shows it. That draw is a transition: a click landing first
  * draws the modal itself, as it would with nothing ahead.
  */
-function ModalHost({ store, cards, draw }: { store: OpenTask; cards: KanbanTask[]; draw: (task: KanbanTask) => ReactNode }) {
+function ModalHost({ store, cards, roles, draw }: { store: OpenTask; cards: KanbanTask[]; roles: Roles; draw: (task: KanbanTask) => ReactNode }) {
   const id = useSyncExternalStore(store.subscribe, store.get);
   const [ahead, setAhead] = useState(store.ahead);
   useEffect(() => store.subscribe(() => startTransition(() => setAhead(store.ahead()))), [store]);
-  const task = cards.find((t) => t.id === (id ?? ahead));
+  const card = cards.find((t) => t.id === (id ?? ahead));
+  const [offBoard, setOffBoard] = useState<KanbanTask | null>(null);
+  const missing = id !== null && !card ? id : null;
+  useEffect(() => {
+    if (missing === null) return;
+    let current = true;
+    void fetchRecord(missing).then((record) => {
+      if (current) setOffBoard(record && offBoardTask(missing, record, roles));
+    });
+    return () => { current = false; };
+  }, [missing, roles]);
+  const task = card ?? (offBoard && offBoard.id === missing ? offBoard : undefined);
   // the same element while the task and `draw` hold, so the click that shows the modal drawn ahead changes `inert` and leaves its tree undrawn
   const modal = useMemo(() => task && draw(task), [task, draw]);
   return task ? <div className="mh" inert={id === null}>{modal}</div> : null;
@@ -581,7 +592,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const [bounced, setBounced] = useState<string | null>(null);
   const [edited, setEdited] = useState<Record<string, { record: TaskRecord; source: KanbanTask[] }>>({});
   // an archived card leaves its column at once; the next snapshot agrees
-  const [archiving, setArchiving] = useState<string | null>(null);
+  const [archiveTask, setArchiving] = useState<KanbanTask | null>(null);
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
   const [toast, setToast] = useState<{ text: string; sub: string } | null>(null);
   const moved = useSyncExternalStore(moves.subscribe, moves.get);
@@ -678,7 +689,6 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     opened.current = opening;
     if (opening) openTask.set(opening.id);
   }, [opening, openTask]);
-  const archiveTask = archiving ? cards.find((t) => t.id === archiving) : undefined;
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 4200);
@@ -942,11 +952,11 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           start={() => answer("1")} manual={() => answer("2")} cancel={() => answer("Escape")} />
       )}
       {active && (
-        <ModalHost store={openTask} cards={cards} draw={(task) => {
+        <ModalHost store={openTask} cards={cards} roles={roles} draw={(task) => {
           const taskStack = stackOf(view, task.id);
           return <Modal key={task.id} task={task} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} roles={roles} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
           profiles={profilesOf(started.harnesses)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
-          hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task.id)} constellation={() => constellation(task.lane)}
+          hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task)} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to, roles)) return void moves.drop(task, to); starts.ask(task, "modal", roles); setOpen(null); }}
           start={() => { starts.ask(task, "modal", roles); setOpen(null); }}
           dismiss={() => moves.dismiss(task.id)} dismissStart={() => starts.dismiss(task.id)}

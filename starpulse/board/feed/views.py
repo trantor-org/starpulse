@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import queue
 import time
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.ledger import (
@@ -26,6 +27,11 @@ from starpulse.board.feed.shared import (
 )
 
 
+def local_midnight(now: float) -> float:
+    """The start of the local day `now` falls in, as a Unix time: a Done Task changed since it is still live."""
+    return datetime.fromtimestamp(now).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
 class ViewMethods:
     def cold_page(self, before: float | None, limit: int) -> tuple[list[dict], bool]:
         """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
@@ -45,25 +51,28 @@ class ViewMethods:
         return [agent for agent in self._open.values() if not is_cold(agent)]
 
     def _read_model_hot(self) -> list[dict]:
-        """The live Tasks of the read model as agents, queried again only after the read model changed."""
-        position = self._read_model.position()  # type: ignore[union-attr]
-        if self._hot_cache is None or self._hot_cache[0] != position:
-            summaries = self._read_model.snapshot()  # type: ignore[union-attr]
-            ready = {
-                task_id
-                for state in {summary["state"] for summary in summaries}
-                for task_id in self._read_model.ready(state, self._roles.done)  # type: ignore[union-attr]
-            }
-            self._hot_cache = (
-                position,
-                [
-                    summary_agent(summary, summary["id"] in ready, self._read_model_moves(summary))
-                    | read_model_detail(summary, self._roles.attention)
-                    for summary in summaries
-                ],
+        """The live Tasks of the read model as agents, queried on each request: nothing of the Board is held between them."""
+        summaries = self._read_model.snapshot(self._roles.done, local_midnight(self._clock()))  # type: ignore[union-attr]
+        ready = {
+            task_id
+            for state in {summary["state"] for summary in summaries}
+            for task_id in self._read_model.ready(state, self._roles.done)  # type: ignore[union-attr]
+        }
+        return [
+            self._expiring(
+                summary_agent(summary, summary["id"] in ready, self._read_model_moves(summary))
+                | read_model_detail(summary, self._roles.attention)
             )
-            self._hot_ids = frozenset(agent["id"] for agent in self._hot_cache[1])
-        return [self._expiring(agent) for agent in self._hot_cache[1]]
+            for summary in summaries
+        ]
+
+    def _done_fields(self) -> dict[str, Any]:
+        """The snapshot's account of Done Tasks off the board; the caller holds the lock."""
+        if self._read_model is None:
+            cold = sorted(t for t, a in self._open.items() if is_cold(a))
+            return {"settled": dict(self._settled), "cold_done": cold, "milestone_done": {}}
+        counts = self._read_model.milestone_done(self._roles.done, local_midnight(self._clock()))
+        return {"settled": {}, "cold_done": [], "milestone_done": counts}
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
         """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
@@ -229,8 +238,7 @@ class ViewMethods:
                 "claims": dict(self._claims),
                 "roles": self._roles.wire(),
                 "capabilities": dict(self._capabilities),
-                "settled": dict(self._settled),
-                "cold_done": [] if self._read_model else sorted(t for t, a in self._open.items() if is_cold(a)),
+                **self._done_fields(),
                 "ratings": {} if self._ratings is None else self._ratings.latest(),
                 "interactive": dict.fromkeys(self._interactive, True),
                 "error": self._error(),

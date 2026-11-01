@@ -72,4 +72,27 @@ describe("a Kanban opened on a direct task link", () => {
     expect(drawn).not.toContain("modal");
     expect(drawn.includes("card")).toBe(true);
   });
+
+  const record = { title: "An older task", status: "Done", profile: "", priority: "", labels: [], milestone: "m-1", dependencies: [], description: "", plan: "", notes: "", acceptanceCriteria: [], definitionOfDone: [] };
+  const answering = async (answer: object | null) => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ record: answer }) })));
+    mount("?view=kanban&task=TASK-9");
+    await act(async () => { await new Promise((done) => setTimeout(done)); });
+  };
+
+  it("opens a Done task the snapshot leaves out from its record, and draws it no card", async () => {
+    await answering(record);
+    expect(host.querySelector(".mh")?.textContent).toContain("An older task");
+    expect(host.querySelectorAll("#cols .card").length).toBe(3);
+  });
+
+  it("opens nothing for an id the board has no record of", async () => {
+    await answering(null);
+    expect(host.querySelector(".mh")).toBeNull();
+  });
+
+  it("opens nothing for a record off the board that is not Done", async () => {
+    await answering({ ...record, status: "Ready" });
+    expect(host.querySelector(".mh")).toBeNull();
+  });
 });

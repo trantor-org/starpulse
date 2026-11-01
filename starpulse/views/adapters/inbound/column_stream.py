@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from starpulse.board.model.view import board_columns
-from starpulse.views.adapters.inbound.snapshot_cache import Served
+from starpulse.views.adapters.inbound.snapshots import Served, Snapshots
 
 
 class ColumnViews:
@@ -25,6 +25,8 @@ class ColumnViews:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._served: Served | None = None
+        #: The snapshot last taken (`take`), which only the worker thread reads and replaces.
+        self._taken: Served | None = None
         self._inputs: tuple[Any, ...] | None = None
         self._columns: list[dict[str, Any]] = []
         #: One thread makes every view and frame: on a free-threaded interpreter a thread keeps the heap pages of what it
@@ -33,6 +35,17 @@ class ColumnViews:
         self._worker = ThreadPoolExecutor(1, thread_name_prefix="column-views")
         self._views: dict[tuple[str | None, tuple[str, ...]], tuple[list[dict[str, Any]], dict[str, Any]]] = {}
         self._frames: dict[tuple[str | None, tuple[str, ...]], tuple[dict[str, Any], str]] = {}
+
+    def take(self, snapshots: Snapshots) -> Served:
+        """The snapshot as of now, taken on the worker thread: the streams a change woke share the one taken at its
+        revision, so a change costs one read of the live set however many streams it wakes."""
+        return self._worker.submit(self._take, snapshots).result()
+
+    def _take(self, snapshots: Snapshots) -> Served:
+        taken = self._taken
+        if taken is None or taken.rev != snapshots.rev:
+            self._taken = taken = snapshots.take()
+        return taken
 
     def render(self, served: Served, assignee: str | None, states: Sequence[str]) -> tuple[dict[str, Any], str]:
         """The view of `assignee` and `states` in `served` with its JSON, made on the one worker thread."""

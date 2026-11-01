@@ -23,7 +23,7 @@ from starpulse.views.adapters.inbound.api.table import Stream, StreamRoute
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.api.streams import Events, streaming
 from starpulse.views.adapters.inbound.asgi_app import PageApp
-from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.ports.services import Services
 
 from tests.fake_board import bare_board
@@ -39,7 +39,7 @@ def streams(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Api:
     opened = Api(
         feed,
         HistoryStore("sqlite://", feed.machines),
-        SnapshotCache(feed),
+        Snapshots(feed),
         HistoryWindow(feed, 6, log),
         bare_board(),
         Services(),
@@ -50,7 +50,7 @@ def streams(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Api:
 
 
 def _app(streams: Api, tmp_path: Path) -> PageApp:
-    return PageApp(api_routes(streams), metrics.routes, streams.snapshots, tmp_path, (), seams=streams)
+    return PageApp(api_routes(streams), metrics.routes, tmp_path, (), seams=streams)
 
 
 @pytest.mark.parametrize("path", ["/api/doctor", "/api/ledger/anything", "/api/move", "/", "/nothing"])
@@ -121,7 +121,7 @@ def _frames(count: int | None = None) -> Generator[bytes]:
 
 
 def _held_app(tmp_path: Path, handler) -> PageApp:
-    return PageApp([StreamRoute("/held", streaming(handler))], [], None, tmp_path, ())  # type: ignore[arg-type]
+    return PageApp([StreamRoute("/held", streaming(handler))], [], tmp_path, ())  # type: ignore[arg-type]
 
 
 def _opened(request: Request, frames: Generator[bytes], released: list[str] | None = None) -> Response:

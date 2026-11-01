@@ -1,5 +1,5 @@
 """The Board's snapshot: the event stream that carries it and the held and lane streams that follow it, the body a
-`ref` snapshot event names, and the snapshot read itself.
+`ref` snapshot event names (once), and the snapshot read itself, taken and encoded per request.
 
 - `GET /api/events`, `/api/held`, `/api/lanes`: streams of the Board, a session's held tasks and its lanes.
 - `GET /api/events/body/{key}`: the snapshot body a `ref` event names.
@@ -35,8 +35,8 @@ def body(request: Request) -> Response:
 def snapshot(request: Request) -> Response:
     snapshots = seams(request).snapshots
     if query(request).get("view") == ["full"]:
-        return answer(request, encode("snapshot", full_snapshot(snapshots.read().snapshot)))
-    return answer(request, snapshots.read().encoded)
+        return answer(request, encode("snapshot", full_snapshot(snapshots.take().snapshot)))
+    return answer(request, snapshots.build()[1])
 
 
 def routes(api: Api) -> list[ApiRoute]:

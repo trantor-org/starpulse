@@ -2,6 +2,7 @@
 paged, and no Task is held in the feed."""
 
 import tempfile
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -158,12 +159,12 @@ def test_a_live_task_is_held_and_an_archived_one_is_not(engine: Engine) -> None:
 class _Counting(ReadModel):
     snapshots = 0
 
-    def snapshot(self, state: str | None = None) -> list:
+    def snapshot(self, done: str, since: float) -> list:
         type(self).snapshots += 1
-        return super().snapshot(state)
+        return super().snapshot(done, since)
 
 
-def test_the_board_is_queried_once_per_change_of_the_read_model(engine: Engine) -> None:
+def test_the_board_is_queried_for_each_snapshot_and_nothing_of_it_is_held(engine: Engine) -> None:
     _Counting.snapshots = 0
     _append(engine, 1, "Ready")
     Projector(engine, EventStore(engine)).catch_up()
@@ -171,13 +172,53 @@ def test_the_board_is_queried_once_per_change_of_the_read_model(engine: Engine) 
 
     _board(feed)
     _board(feed)
-    assert _Counting.snapshots == 1
+    assert _Counting.snapshots == 2
 
     _append(engine, 2, "Ready")
     Projector(engine, EventStore(engine)).catch_up()
 
     assert [agent["id"] for agent in _board(feed)["agents"]] == ["TASK-1", "TASK-2"]
-    assert _Counting.snapshots == 2
+    assert _Counting.snapshots == 3
+
+
+def _holds(value: object, task_id: str, seen: set[int]) -> bool:
+    """Whether `value`, or anything it reaches through containers and object attributes, names `task_id`."""
+    if id(value) in seen or isinstance(value, (int, float, bool, bytes, type(None))):
+        return False
+    seen.add(id(value))
+    if isinstance(value, str):
+        return task_id in value
+    if isinstance(value, dict):
+        return any(_holds(key, task_id, seen) or _holds(item, task_id, seen) for key, item in value.items())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_holds(item, task_id, seen) for item in value)
+    attributes = getattr(value, "__dict__", None)
+    return attributes is not None and type(value).__module__.startswith("starpulse.board") and _holds(
+        attributes, task_id, seen
+    )
+
+
+def test_a_task_done_before_local_midnight_is_off_the_board_held_nowhere_and_still_read_by_id(engine: Engine) -> None:
+    _append(engine, 1, "Ready")
+    _append(engine, 2, "Done")
+    Projector(engine, EventStore(engine)).catch_up()
+    tomorrow = time.time() + 86_400  # the feed's day starts after both Tasks last changed
+    feed = BoardFeed(read_model=ReadModel(engine), clock=lambda: tomorrow)
+
+    drawn = [agent["id"] for agent in _board(feed)["agents"]]
+
+    assert drawn == ["TASK-1"]
+    assert not _holds(vars(feed), "TASK-2", set())
+    assert feed.task("TASK-2")["state"] == "done"
+
+
+def test_a_read_model_feeds_snapshot_reads_none_of_the_writers_folds(engine: Engine) -> None:
+    _append(engine, 1, "Ready")
+    feed = _feed(engine)
+    for fold in ("_open", "_settled", "_assignees", "_cited"):
+        delattr(feed, fold)
+
+    assert [agent["id"] for agent in _board(feed)["agents"]] == ["TASK-1"]
 
 
 def test_a_task_is_done_when_the_read_model_has_it_in_the_done_state_archived_or_not(engine: Engine) -> None:
@@ -390,17 +431,11 @@ def test_a_read_model_task_in_needs_attention_serves_the_reason_its_description_
     assert (served["pause_reason"], listed["pause_reason"]) == (reason, reason)
 
 
-def test_a_live_task_is_resident_once_the_feed_has_drawn_the_board_and_an_archived_one_never_is(engine: Engine) -> None:
+def test_no_task_is_resident_in_a_read_model_feed_even_once_it_has_drawn_the_board(engine: Engine) -> None:
     _append(engine, 1, "Ready")
     _append(engine, 2, "Done", archived=True)
     feed = _feed(engine)
-    before = feed.is_resident("TASK-1")
 
     feed.snapshot()
 
-    assert (before, feed.is_resident("TASK-1"), feed.is_resident("TASK-2"), feed.is_resident("TASK-3")) == (
-        False,
-        True,
-        False,
-        False,
-    )
+    assert [feed.is_resident(task) for task in ("TASK-1", "TASK-2", "TASK-3")] == [False, False, False]

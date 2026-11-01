@@ -41,11 +41,15 @@ export interface TaskRecord {
   session?: string;
   /** The task's comments, oldest first. Read-only: a comment is posted through `postComment`, never an edit's changes. */
   comments?: TaskComment[];
+  /** The lane as the board names it (`Done`). Read-only: a task moves through its moves, never an edit. */
+  status?: string;
+  /** The links the task cites, its pull requests among them. Read-only: an edit never carries it. */
+  references?: string[];
 }
 
 export interface TaskComment { created: string; text: string; author?: string }
 
-export type TaskField = Exclude<keyof TaskRecord, "session" | "comments" | "documentation">;
+export type TaskField = Exclude<keyof TaskRecord, "session" | "comments" | "documentation" | "status" | "references">;
 export interface TaskDiff {
   fields: TaskField[];
   base: Partial<TaskRecord>;

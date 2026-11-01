@@ -22,11 +22,12 @@ class ReadModel:
         with self._engine.connect() as db:
             return rows.load(db, task_id)
 
-    def snapshot(self, state: str | None = None) -> list[dict[str, Any]]:
-        """The unarchived Tasks as summaries with their Acceptance Criteria, in id order."""
-        summaries = self._summaries(queries.snapshot(state))
+    def snapshot(self, done: str, since: float) -> list[dict[str, Any]]:
+        """The live Tasks (`queries.live`: unarchived, not done or changed since `since`) as summaries with their
+        Acceptance Criteria, in id order."""
+        summaries = self._summaries(queries.snapshot(done, since))
         by_task: dict[str, list[dict[str, Any]]] = {summary["id"]: [] for summary in summaries}
-        for item in self._summaries(queries.live_criteria()):
+        for item in self._summaries(queries.live_criteria(done, since)):
             by_task.get(item.pop("task_id"), []).append(item)
         return [summary | {"criteria": by_task[summary["id"]]} for summary in summaries]
 
@@ -40,6 +41,15 @@ class ReadModel:
         if field is None or not field.queried:
             raise KeyError(name)
         return self._ids(queries.with_field(field.column, value))
+
+    def held_states(self) -> set[str]:
+        """The states unarchived Tasks hold, Done ones of any age included."""
+        return set(self._ids(queries.held_states()))
+
+    def milestone_done(self, done: str, since: float) -> dict[str, int]:
+        """How many Done Tasks last changed before `since` each milestone holds, the ones `snapshot` leaves out."""
+        with self._engine.connect() as db:
+            return {milestone: count for milestone, count in db.execute(queries.milestone_done(done, since))}
 
     def ready(self, state: str, done: str) -> list[str]:
         """The ids of unarchived Tasks in `state` whose dependencies are all in `done`."""

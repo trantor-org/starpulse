@@ -43,6 +43,7 @@ tasks = Table(
     Index("ix_starpulse_tasks_live_milestone", "milestone", sqlite_where=text("archived = 0")),
     Index("ix_starpulse_tasks_live_assignee", "assignee", sqlite_where=text("archived = 0")),
     Index("ix_starpulse_tasks_archived_updated", "updated_at", sqlite_where=text("archived = 1")),
+    Index("ix_starpulse_tasks_live_set", "archived", "state", "updated_at", sqlite_where=text("archived = 0")),
 )
 
 #: One row per (machine, task): the state the task holds on that lifecycle machine, the drawn agent as JSON and when the

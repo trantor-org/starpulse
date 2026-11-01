@@ -4,6 +4,8 @@ import gzip
 import json
 import urllib.request
 import zlib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from http.client import HTTPResponse
 from pathlib import Path
 
@@ -109,21 +111,25 @@ def test_the_stream_is_plain_for_a_page_that_does_not_accept_gzip(tmp_path: Path
     assert first == b"event: snapshot\n"
 
 
-def _snapshot_ref(server: PageServer) -> str:
-    """The body route a page that asks for the snapshot by reference reads it from."""
+@contextmanager
+def _snapshot_ref(server: PageServer) -> Iterator[str]:
+    """The body route a page that asks for the snapshot by reference reads it from, held while its stream is open."""
     with urllib.request.urlopen(_url(server, "/api/events?snapshot=ref"), timeout=5) as resp:
-        frame = resp.readline() + resp.readline()
-    return frame.decode().partition("data: ref ")[2].strip()
+        frame = b""
+        while b"data: ref " not in frame:
+            frame += resp.readline()
+        yield frame.decode().partition("data: ref ")[2].strip()
 
 
 def test_the_snapshot_body_a_page_reads_by_reference_is_gzipped_for_a_page_that_accepts_gzip(tmp_path: Path) -> None:
     with _serve(tmp_path, _large_feed()) as server:
-        ref = _snapshot_ref(server)
-        encoding, compressed = _get(server, ref, GZIP)
-        plain_encoding, plain = _get(server, ref, {})
+        with _snapshot_ref(server) as ref:
+            encoding, compressed = _get(server, ref, GZIP)
+        with _snapshot_ref(server) as ref:
+            plain_encoding, plain = _get(server, ref, {})
 
     assert (encoding, plain_encoding) == ("gzip", None)
-    assert gzip.decompress(compressed) == plain
+    assert json.loads(gzip.decompress(compressed))["flows"] == json.loads(plain)["flows"]
     assert len(compressed) < len(plain) // 3
 
 
@@ -147,16 +153,3 @@ def test_a_hashed_asset_is_gzipped_and_kept_for_a_year(tmp_path: Path) -> None:
 def test_the_page_itself_is_not_kept(tmp_path: Path) -> None:
     with _serve(tmp_path) as server, urllib.request.urlopen(_url(server, "/")) as resp:
         assert resp.headers["Cache-Control"] is None
-
-
-def test_the_snapshot_is_gzipped_once_however_many_pages_read_it(tmp_path: Path, monkeypatch) -> None:
-    calls = []
-    real = gzip.compress
-    monkeypatch.setattr(gzip, "compress", lambda body, **k: calls.append(body) or real(body, **k))
-    with _serve(tmp_path, _large_feed()) as server:
-        ref = _snapshot_ref(server)
-        bodies = {_get(server, path, GZIP)[1] for path in ["/api/snapshot", ref] * 3}
-
-    assert len(bodies) == 1
-    # Counted by body: an earlier test's server leaves its snapshot-cache thread, which may gzip its own snapshot here.
-    assert calls.count(gzip.decompress(bodies.pop())) == 1

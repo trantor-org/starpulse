@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanbanModel";
-import { prReadState } from "./kanbanModel";
+import { offBoardTask, prReadState } from "./kanbanModel";
 import { merge, midnight } from "../../render/sky";
 import { LIFECYCLE_COLUMNS, LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { TaskRecord } from "./taskViewModel";
@@ -686,5 +686,27 @@ describe("prReadState", () => {
   it("gives a read pull request its state, check result and unread review count", () => {
     expect(prReadState(read({ checks: "failing", threads: 2 }))).toEqual({ read: true, state: "open", checks: "failing", unreviewed: 2 });
     expect(prReadState(read({ merged: true }))).toEqual({ read: true, state: "merged", checks: "pass", unreviewed: 0 });
+  });
+});
+
+describe("a Done task the snapshot leaves out", () => {
+  const record = { title: "An older task", status: "Done", profile: "@a", priority: "", labels: ["l"], milestone: "m-1", dependencies: ["TASK-1"], description: "d", plan: "", notes: "", acceptanceCriteria: [], definitionOfDone: [], references: ["https://github.com/o/r/pull/7", "https://example.com/doc"] };
+
+  it("is drawn from its record in the Done lane with no move to offer", () => {
+    const task = offBoardTask("TASK-9", record, LIFECYCLE_ROLES);
+    expect(task).toMatchObject({ id: "TASK-9", title: "An older task", lane: LIFECYCLE_ROLES.done, milestone: "m-1", labels: ["l"], dependencies: ["TASK-1"], moves: {} });
+  });
+
+  it("cites the pull requests among its references, and no other link", () => {
+    expect(offBoardTask("TASK-9", record, LIFECYCLE_ROLES)?.prs.map((p) => [p.repo, p.number, p.stale])).toEqual([["o/r", 7, true]]);
+  });
+
+  it("counts a task in the completed lane as Done", () => {
+    expect(offBoardTask("TASK-9", { ...record, status: "Completed" }, LIFECYCLE_ROLES)?.lane).toBe(LIFECYCLE_ROLES.done);
+  });
+
+  it("is nothing for a record that is not Done", () => {
+    expect(offBoardTask("TASK-9", { ...record, status: "In Progress" }, LIFECYCLE_ROLES)).toBeNull();
+    expect(offBoardTask("TASK-9", { ...record, status: undefined }, LIFECYCLE_ROLES)).toBeNull();
   });
 });

@@ -36,6 +36,15 @@ describe("the archive confirm", () => {
     expect(html).toContain("does not close it");
   });
 
+  it("does not call a pull request it has not read open", () => {
+    const html = draw(task("done", { prs: [{ ...pull, checks: "none", stale: true }] }));
+
+    expect(html).toContain("#12");
+    expect(html).toContain("has not been read, so it may be open");
+    expect(html).not.toContain("is open");
+    expect(html).toContain("does not close it");
+  });
+
   it("warns first about a live agent session, naming its machine and state", () => {
     const html = draw(task("in_progress", { live: { machine: "in-progress", state: "implementing", at: 100 } }));
 

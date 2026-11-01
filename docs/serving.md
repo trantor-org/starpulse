@@ -83,8 +83,14 @@ included; a `HEAD` of a read or a stream is the headers of its `GET` with no bod
 
 `GZipMiddleware` (subclassed as `Gzip`) compresses a body over 64 KB at level 6 for a client that accepts gzip, on a
 thread, and each event of a stream with a flush so a page decodes it as it arrives; `gzip;q=0` is a refusal. A
-snapshot body held for many pages (`Encoded`) carries its own gzip, level 1, and is sent as it is. A file of 64 KB or
-less is sent uncompressed.
+snapshot body (`Encoded`) carries its own gzip, level 1, made by the request that encodes it, and is sent as it is. A file
+of 64 KB or less is sent uncompressed.
+
+The snapshot is taken and encoded for each request that asks for it (`views.adapters.inbound.snapshots`); no process
+holds a Task, an encoded snapshot or its gzip between requests. A stream that sends its snapshot by reference
+(`ref /api/events/body/<key>`) holds that body for one fetch, released when the page reads it or the stream ends; a
+second fetch is `404`. The column streams (`/api/held`, `/api/lanes`) share one take per feed revision on the
+`ColumnViews` thread, so one change costs one live-set read however many streams it wakes.
 
 A stopping server first tells the feed it is restarting, ends every open stream, waits up to 8 s (`DRAIN_S`) for the
 requests it took and closes.
@@ -210,7 +216,9 @@ row in that transaction, in lane `archived` when the row is archived and not Don
   `seq`, the position of the last event folded into the row. `starpulse_task_criteria` holds one row per Criterion.
 - Partial indexes `WHERE archived = 0` (`ix_starpulse_tasks_live_{id,state,milestone,assignee}`) keep the live set small
   whatever the archive holds. `ix_starpulse_tasks_seq` serves the delta read.
-- `ReadModel(engine, declared)` is the query surface: `task(id)`, `snapshot(state=None)`, `with_field(name, value)`,
+- `ReadModel(engine, declared)` is the query surface: `task(id)`, `snapshot(done, since)` (the live set: unarchived Tasks
+  outside the done lanes, or in one and changed at or after `since`, local midnight; partial index
+  `ix_starpulse_tasks_live_set` on `(archived, state, updated_at)`, migration 0043), `held_states()`, `with_field(name, value)`,
   `ready(state, done)` (live Tasks in `state` whose every dependency is in `done`; a dependency with no row blocks) and
   `since(seq, limit)` (the delta: rows changed after a cursor, archived included). Each statement is a SQLAlchemy `Select`
   in `readmodel.queries`; its test asserts the plan uses an index and has no table scan.
@@ -219,8 +227,9 @@ row in that transaction, in lane `archived` when the row is archived and not Don
 - Only `readmodel` reads `readmodel.tables` (the `readmodel-table-private` import contract).
 
 `BoardFeed(read_model=ReadModel(engine))` serves the page from it: the reader switch, with no bridge between the two
-paths. The feed holds no Task; `_hot()` is one `snapshot()` per `position()`, `task`, `held` and `is_done` are single-row
-reads, `cold_page` pages `archived`, and the snapshot carries no archived Task (`cold_done` is empty). The Scheduler's
+paths. The feed holds no Task: each `snapshot()` queries the live set, so a Task Done before local midnight is off the
+Board and read only by id; `task`, `held` and `is_done` are single-row reads, `is_resident` is always false,
+`cold_page` pages `archived`, and the snapshot carries no archived Task (`cold_done` is empty). The Scheduler's
 `open_tasks` and the write guards go through the same reads. `follow_read_model()` publishes the Tasks changed since it last
 ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged. `serve`
 folds the History into the read tables every 0.5 s (`Projector.catch_up`, then `follow_read_model`), draws the board from them

@@ -25,7 +25,7 @@ export function ArchiveConfirm({ task, roles, lane, reason, busy, refused, onRea
         <div className="k">{task.title} · {lane}</div>
         <div>It leaves the board for the archive. Its file, comments and history are kept; nothing else about the task changes.</div>
         {pull && (
-          <div className="warn">⚠<span>Pull request <a href={pull.url} target="_blank" rel="noopener">#{pull.number}</a> is open (checks {pull.checks}). Archiving does not close it.
+          <div className="warn">⚠<span>Pull request <a href={pull.url} target="_blank" rel="noopener">#{pull.number}</a> {pull.stale ? "has not been read, so it may be open" : `is open (checks ${pull.checks})`}. Archiving does not close it.
             <span className="k3">Close or merge it on GitHub if it should not land.</span></span></div>
         )}
         {session && (

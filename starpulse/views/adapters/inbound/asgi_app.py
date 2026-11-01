@@ -42,7 +42,7 @@ from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
 from starpulse.views.adapters.inbound.compression import Gzip
 from starpulse.views.adapters.inbound.gate_request import GateRequest
-from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.model.encoding import encode, event
 from starpulse.views.ports.services import Services
 
@@ -278,14 +278,12 @@ class PageApp:
         self,
         api: list[ApiRoute],
         metrics: list[ApiRoute],
-        snapshots: SnapshotCache,
         static: Path,
         flows: Collection[str],
         gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
         seams: Api | None = None,
     ) -> None:
-        self._snapshots = snapshots
         self._grpc = grpc
         self._flows = flows
         self._files = _Build(directory=static, check_dir=False)
@@ -315,7 +313,6 @@ class PageApp:
         self._app = Starlette(routes=table, middleware=[Middleware(Gzip), admitted, *gated])
         self._app.state.api = seams  # what the read endpoints take their seams from
         self._app.state.workers = self._workers  # and the threads they run on
-        self._app.state.snapshots = snapshots  # a write waits on these
         self._app.state.pump = self.pump  # and a stream writes its frames through this
 
     @property
@@ -447,7 +444,7 @@ def page_app(
     gate: Callable[[GateRequest], bool] | None = None,
 ) -> PageApp:
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
-    snapshots = SnapshotCache(feed)
+    snapshots = Snapshots(feed)
 
     def build_frame() -> str | None:
         build = page_build(static)
@@ -465,4 +462,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), metrics.routes, snapshots, static, feed.machines.keys(), gate, grpc, api)
+    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api)
