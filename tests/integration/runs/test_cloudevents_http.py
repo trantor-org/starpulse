@@ -13,9 +13,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from starpulse.board.board_feed import BoardFeed, follow
-from starpulse.board.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.machine_tasks import MachineDeltas
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 from starpulse.machine_engine.model.transitions import board_machine
@@ -25,6 +26,8 @@ from starpulse.runs.ingest import MAX_BATCH_BODY
 from starpulse.runs.ingest import tokens as ingest_tokens
 from starpulse.runtime.adapter_kit import next_event, serve, url
 from starpulse.views.adapters.inbound.page_server import PageServer
+
+from tests.machine_feed import MachineFeed
 
 DELIVERY = """\
 name: delivery
@@ -84,21 +87,29 @@ class Stack:
         return [entry.fields for entry in Tail.replay(self.log, "machine:events").poll()]
 
 
-def _feed(tmp_path: Path) -> BoardFeed:
+def _feed(tmp_path: Path) -> MachineFeed:
     path = tmp_path / "delivery.yaml"
     path.write_text(DELIVERY)
-    return BoardFeed(
-        machines={"board": board_machine(("To Do", "Done")), "delivery": describe(load_machine(path).machine)}
+    return MachineFeed(
+        tmp_path / "events.sqlite",
+        {"board": board_machine(("To Do", "Done")), "delivery": describe(load_machine(path).machine)},
     )
 
 
 @pytest.fixture
 def stack(tmp_path: Path) -> Iterator[Stack]:
-    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    feed = _feed(tmp_path)
-    tasks = MachineTasks(feed)
+    machine = _feed(tmp_path)
+    log, feed = machine.log, machine.feed
     stop = threading.Event()
-    follow(tasks, log, "machine:events", tasks.handle_entry, stop=stop, interval=0.01)
+    deltas = MachineDeltas(feed, ReadModel(log.engine))
+
+    def fold() -> None:
+        while not stop.is_set():
+            machine.fold()
+            deltas.publish_changes()
+            stop.wait(0.01)
+
+    threading.Thread(target=fold, daemon=True).start()
     events = CloudEventsIngest({p.name: p for p in PRODUCERS}, ingest_tokens(PRODUCERS, TOKENS), log, feed.machines)
     with serve(tmp_path, feed, events=events) as server:
         yield Stack(server, log)
@@ -244,7 +255,7 @@ def test_data_within_the_cap_travels_with_the_entry(stack: Stack) -> None:
 
 def test_an_unreachable_database_answers_503(tmp_path: Path) -> None:
     down = EventLog("sqlite:////nonexistent-dir/events.sqlite")
-    feed = _feed(tmp_path)
+    feed = _feed(tmp_path).feed
     events = CloudEventsIngest({p.name: p for p in PRODUCERS}, ingest_tokens(PRODUCERS, TOKENS), down, feed.machines)
     with serve(tmp_path, feed, events=events) as server:
         status, _ = Stack(server, down).post(cloudevent())

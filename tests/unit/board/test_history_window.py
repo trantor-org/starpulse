@@ -9,13 +9,13 @@ from pathlib import Path
 import pytest
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineTasks
+from starpulse.contracts.adapters import MachineEvent
 from starpulse.event_log.event_log import EventLog
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.views.application.commands.settings import history_window
 
+from tests.machine_feed import MachineFeed
 from tests.machines import MACHINES
-from tests.unit.board.test_machine_tasks import _entry
 from tests.unit.runtime.test_server import _ip
 
 REFUSED = "history window must be between 1 and 72 hours; got {}"
@@ -25,9 +25,13 @@ def _log(tmp_path: Path) -> EventLog:
     return EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
 
 
-def _window(tmp_path: Path, hours: float = 6) -> tuple[BoardFeed, HistoryWindow]:
-    feed = BoardFeed(hours * 3600, machines=MACHINES)
-    return feed, HistoryWindow(feed, hours, _log(tmp_path))
+def _window(tmp_path: Path, hours: float = 6) -> tuple[MachineFeed, HistoryWindow]:
+    machine = MachineFeed(tmp_path / "events.sqlite", MACHINES, window_s=hours * 3600)
+    return machine, HistoryWindow(machine.feed, hours, _log(tmp_path))
+
+
+def _task(machine: MachineFeed, task: str, at: float) -> None:
+    machine.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task=task, time=at))
 
 
 def _drawn(feed: BoardFeed) -> list[str]:
@@ -46,36 +50,34 @@ def test_with_no_override_the_declared_hours_are_the_window(tmp_path: Path) -> N
 
 
 def test_a_valid_put_persists_and_changes_the_window_the_feed_draws_with(tmp_path: Path) -> None:
-    feed, window = _window(tmp_path, 6)
-    tasks = MachineTasks(feed)
+    machine, window = _window(tmp_path, 6)
     now = time.time()
-    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-1", at=now - 10 * 3600))
-    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-2", at=now - 60))
-    assert _drawn(feed) == ["PROJ-2"]
+    _task(machine, "PROJ-1", now - 10 * 3600)
+    _task(machine, "PROJ-2", now - 60)
+    assert _drawn(machine.feed) == ["PROJ-2"]
 
     status, body = _put(window, {"hours": 24})
 
     assert (status, body) == (200, {"hours": 24, "default": 6, "overridden": True})
-    assert _drawn(feed) == ["PROJ-1", "PROJ-2"]
+    assert _drawn(machine.feed) == ["PROJ-1", "PROJ-2"]
     assert _log(tmp_path).setting("history.hours") == 24
     assert not (tmp_path / "starpulse-settings.json").exists()
 
 
 def test_the_window_is_exactly_the_hours_set_counted_in_seconds(tmp_path: Path) -> None:
-    feed, window = _window(tmp_path, 6)
-    tasks = MachineTasks(feed)
+    machine, window = _window(tmp_path, 6)
     now = time.time()
-    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-1", at=now - 24 * 3600 - 10))
-    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-2", at=now - 24 * 3600 + 10))
+    _task(machine, "PROJ-1", now - 24 * 3600 - 10)
+    _task(machine, "PROJ-2", now - 24 * 3600 + 10)
 
     _put(window, {"hours": 24})
 
-    assert _drawn(feed) == ["PROJ-2"]
+    assert _drawn(machine.feed) == ["PROJ-2"]
 
 
 def test_a_window_change_reaches_a_page_that_is_already_connected(tmp_path: Path) -> None:
-    feed, window = _window(tmp_path, 6)
-    _, changes = feed.subscribe()
+    machine, window = _window(tmp_path, 6)
+    _, changes = machine.feed.subscribe()
 
     _put(window, {"hours": 24})
 
@@ -142,11 +144,10 @@ def test_the_override_survives_a_restart_and_reset_returns_to_the_declared_hours
 def test_a_restarted_feed_draws_with_the_override_not_the_declared_hours(tmp_path: Path) -> None:
     _, first = _window(tmp_path, 6)
     _put(first, {"hours": 24})
-    feed, _ = _window(tmp_path, 6)
-    now = time.time()
-    MachineTasks(feed).handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-1", at=now - 10 * 3600))
+    machine, _ = _window(tmp_path, 6)
+    _task(machine, "PROJ-1", time.time() - 10 * 3600)
 
-    assert _drawn(feed) == ["PROJ-1"]
+    assert _drawn(machine.feed) == ["PROJ-1"]
 
 
 def test_resetting_with_no_override_is_a_no_op(tmp_path: Path) -> None:
@@ -171,7 +172,7 @@ def test_a_source_outside_loopback_and_rfc_1918_is_refused_and_changes_nothing(
 
 
 def test_the_server_answers_get_put_and_delete_on_the_history_window_route(tmp_path: Path) -> None:
-    feed, window = _window(tmp_path, 6)
+    machine, window = _window(tmp_path, 6)
 
     def call(method: str, body: bytes | None = None) -> tuple[int, dict]:
         request = urllib.request.Request(
@@ -183,7 +184,7 @@ def test_the_server_answers_get_put_and_delete_on_the_history_window_route(tmp_p
         except urllib.error.HTTPError as err:
             return err.code, json.load(err)
 
-    with serve(tmp_path, feed=feed, window=window) as server:
+    with serve(tmp_path, feed=machine.feed, window=window) as server:
         assert call("GET") == (200, {"hours": 6, "default": 6, "overridden": False})
         assert call("PUT", b'{"hours": 24}') == (200, {"hours": 24, "default": 6, "overridden": True})
         assert call("PUT", b'{"hours": 200}') == (400, {"error": REFUSED.format(200.0)})
@@ -193,9 +194,9 @@ def test_the_server_answers_get_put_and_delete_on_the_history_window_route(tmp_p
 
 @pytest.mark.parametrize("method", ["PUT", "DELETE"])
 def test_a_put_or_delete_to_any_other_path_is_a_404_and_leaves_the_window(tmp_path: Path, method: str) -> None:
-    feed, window = _window(tmp_path, 6)
+    machine, window = _window(tmp_path, 6)
 
-    with serve(tmp_path, feed=feed, window=window) as server:
+    with serve(tmp_path, feed=machine.feed, window=window) as server:
         request = urllib.request.Request(url(server, "/api/move-it"), data=b'{"hours": 24}', method=method)
         with pytest.raises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(request)

@@ -1,0 +1,15 @@
+# The parent procedure a task's phases move through, with each phase a submachine of its own: the fixture the
+# phase-exit tests draw beside `in-progress`, whose states the phases name.
+name: PhaseProcedure
+states:
+  start: {initial: true}
+  build: {}
+  deliver: {}
+  review_fix: {}
+events:
+  BUILD:
+    - {from: [start, build, deliver, review_fix], to: build}
+  DELIVER:
+    - {from: [start, build, deliver, review_fix], to: deliver}
+  REVIEW_FIX:
+    - {from: [start, build, deliver, review_fix], to: review_fix}

@@ -68,15 +68,17 @@ class ViewMethods:
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
         """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
         since = now - self._window_s if self._window_s is not None else None
+        lanes = {} if self._read_model is None else self._read_model.machine_lanes(since)
         flows = [
             {"name": "board", "machine": self._drawn["board"], "agents": self._hot()},
             *(
                 {
                     "name": name,
                     "machine": self._drawn[name],
-                    "agents": [self._modelled(a) for a in agents.values() if since is None or a["active"] >= since],
+                    "agents": [self._modelled(a) for a in lanes.get(name, [])],
                 }
-                for name, agents in self._machines.items()
+                for name in self._drawn
+                if name != "board"
             ),
         ]
         return flows, derive(flows, now)

@@ -35,7 +35,6 @@ from pydantic import BaseModel
 
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineTasks
 from starpulse.board.model.seam import (
     Board,
     MoveWriter,
@@ -50,6 +49,7 @@ from starpulse.contracts.adapters import (
     TaskKeys,
 )
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.machine_fold import Placer
 from starpulse.flow_metrics.adapters.outbound.history import History, HistoryStore
 from starpulse.runtime.assembly import assemble as _assemble
 from starpulse.runtime.config import Config
@@ -195,13 +195,15 @@ class MachineEventsAdapterKit(_AdapterKit):
         assert [(e.machine, e.event) for e in self.records() if e.event not in drawn.get(e.machine, ())] == []
 
     def test_starpulse_places_every_task_an_event_moved(self) -> None:
-        feed = BoardFeed(machines=self.machines)
-        tasks = MachineTasks(feed, keys=self.keys, machines=self.machines)
+        placer = Placer(self.machines, self.keys)
         events = [e for e in self.records() if e.task]
+        agents: dict[tuple[str, str], dict] = {}
         for event in events:
-            tasks.put(event)
-        placed = {(f["name"], a["id"]) for f in feed.snapshot()["flows"] for a in f["agents"]}
-        assert {(e.machine, e.task) for e in events} == placed
+            placed = placer.place(agents.get((event.machine, event.task)), event)
+            if placed is not None:
+                flow, task, agent = placed
+                agents[flow, task] = agent
+        assert {(e.machine, e.task) for e in events} == set(agents)
 
 
 class RunsAdapterKit(_AdapterKit):

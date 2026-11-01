@@ -145,7 +145,7 @@ def start(
         board.attach(log)  # the sweep's releases append the History events the read model folds
     if board.sweep is not None:
         board.sweep(feed, log, store.save_claim_expiries)
-    follow(Projector(log.engine, EventStore(log.engine)), feed, stop)
+    follow(Projector(log.engine, EventStore(log.engine), log=log, drawn=feed.machines, keys=board.keys), feed, stop)
     if ready is not None:
         ready(board, feed)
     return lambda: reload(path, config, load)

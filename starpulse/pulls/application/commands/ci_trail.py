@@ -160,7 +160,7 @@ def steps(pull: PullHistory, *, seen_at: float, floor: float = 0.0) -> list[Step
 
 
 class CiTrail:
-    """Publishes each task's pull request steps to `machine:events`, once each, for `MachineTasks` to draw."""
+    """Publishes each task's pull request steps to `machine:events`, once each, for the Board child's projector to fold."""
 
     def __init__(self, log: EventLog, clock: Callable[[], float] = time.time) -> None:
         self._log = log

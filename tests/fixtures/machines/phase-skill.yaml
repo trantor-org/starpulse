@@ -1,0 +1,18 @@
+# A phase's skill machine, whose exit states the phase links to a parent event: the fixture the phase-exit tests draw
+# for `build`, `deliver` and `review_fix`.
+name: PhaseSkill
+states:
+  start: {initial: true}
+  red_proven: {}
+  docs_reconciled: {}
+  pr_ready: {}
+  review_recorded: {final: true}
+events:
+  RED_PROVEN:
+    - {from: [start, red_proven, docs_reconciled, pr_ready], to: red_proven}
+  DOCS_RECONCILED:
+    - {from: [start, red_proven, docs_reconciled, pr_ready], to: docs_reconciled}
+  PR_READY:
+    - {from: [start, red_proven, docs_reconciled, pr_ready], to: pr_ready}
+  REVIEW_RECORDED:
+    - {from: [start, red_proven, docs_reconciled, pr_ready], to: review_recorded}

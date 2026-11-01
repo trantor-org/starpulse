@@ -182,7 +182,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._building = threading.Lock()
         self._window_s = window_s
         self._open: dict[str, dict] = {}
-        self._machines: dict[str, dict[str, dict]] = {name: {} for name in self._drawn if name != "board"}
         self._settled: dict[str, dict] = {}
         #: Every placed task's assignee, a settled one's included, so a machine still drawing it keeps its colour.
         self._assignees: dict[str, str] = {}

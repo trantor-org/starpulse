@@ -8,11 +8,9 @@ from typing import Any
 
 import pytest
 from sqlalchemy.exc import OperationalError
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineTasks
 from starpulse.board.model import rules
 from starpulse.board.model.seam import Written
-from starpulse.contracts.adapters import BoardTask, MachineEvent, StartFailedError
+from starpulse.contracts.adapters import MachineEvent, StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.scheduler.adapters.loop import IDLE_RETURNED, SETTLE_REFUSED, START_BACKOFF, START_HALT, Loop
@@ -23,6 +21,7 @@ from starpulse.scheduler.model.quiet_hours import QuietHours
 from starpulse.scheduler.model.sampler import Sampler
 from starpulse.scheduler.model.toggle import Toggle
 
+from tests.machine_feed import MachineFeed
 from tests.machines import MACHINES, ROLES
 
 START = 10_000.0
@@ -46,8 +45,8 @@ class Rig:
     ) -> None:
         self.now = START
         self.host = {"cpu": 5.0, "memory": 5.0}
-        self.feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
-        self.harness = MachineTasks(self.feed)
+        self.harness = MachineFeed(tmp_path / "machines.sqlite", {**MACHINES, **SESSION_MACHINES}, roles=ROLES)
+        self.feed = self.harness.feed
         self.policy = Scheduler(lane="ready", limits={**Scheduler().limits, **(limits or {})}, **policy)
         self.sampler = Sampler(
             self.policy.limits,
@@ -122,7 +121,13 @@ class Rig:
         return Written(True, task)
 
     def _start(
-        self, task: str, *, harness: str = "claude", mode: str = "interactive", verb: str = "Start", profile: str | None = None
+        self,
+        task: str,
+        *,
+        harness: str = "claude",
+        mode: str = "interactive",
+        verb: str = "Start",
+        profile: str | None = None,
     ) -> str:
         _ = mode
         self.attempts.append(task)
@@ -155,19 +160,16 @@ class Rig:
         labels: tuple[str, ...] = (),
         assignee: str = "",
     ) -> None:
-        self.feed.put(
-            BoardTask(
-                id=task,
-                team="demo",
-                title=task,
-                lane=lane,
-                labels=[f"size-{size}", *labels],
-                profile=PROFILE,
-                assignee=assignee,
-                dependencies=deps,
-                impact=impact,
-                urgency=urgency,
-            )
+        self.harness.put_task(
+            task,
+            {
+                "title": task,
+                "state": lane,
+                "labels": [f"size-{size}", *labels],
+                "dependencies": list(deps),
+                "assignee": assignee,
+            },
+            meta={"profile": PROFILE, "impact": impact, "urgency": urgency},
         )
 
     def session(self, task: str, event: str = "SESSION_STARTED") -> None:
@@ -378,7 +380,9 @@ def test_a_runs_capacity_stays_taken_until_its_task_leaves_in_progress(tmp_path:
     assert rig.loop.tick() == ["T-2"]
 
 
-def test_a_run_frees_its_capacity_once_its_tasks_phase_is_parked_though_the_board_lane_is_in_progress(tmp_path: Path) -> None:
+def test_a_run_frees_its_capacity_once_its_tasks_phase_is_parked_though_the_board_lane_is_in_progress(
+    tmp_path: Path,
+) -> None:
     rig = Rig(tmp_path, limits={"cpu": 30})
     rig.put("T-1")
     rig.put("T-2")
@@ -389,7 +393,7 @@ def test_a_run_frees_its_capacity_once_its_tasks_phase_is_parked_though_the_boar
     rig.sampler.sample()
     assert rig.loop.tick() == []
 
-    rig.feed.move("in-progress", {"id": "T-1", "task": "T-1", "state": "parked", "active": rig.now}, publish=False)
+    rig.harness.put(MachineEvent(machine="in-progress", event="PARKED", task="T-1", time=rig.now))
     rig.host = {"cpu": 5.0, "memory": 5.0}
     rig.sampler.sample()
 
@@ -1077,7 +1081,9 @@ def test_a_task_in_the_verify_lane_starts_a_verify_session_on_the_configured_pro
     assert rig.prompts == [("T-1", "Verify", "@agent-standard-medium")]
 
 
-def test_a_held_verify_session_is_not_admitted_twice_and_is_admitted_again_once_its_hold_releases(tmp_path: Path) -> None:
+def test_a_held_verify_session_is_not_admitted_twice_and_is_admitted_again_once_its_hold_releases(
+    tmp_path: Path,
+) -> None:
     rig = Rig(tmp_path, verify_lane="verifying", verify_profile="@agent-standard-medium")
     rig.put("T-1", lane="verifying")
     rig.loop.tick()

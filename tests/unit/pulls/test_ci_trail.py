@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineTasks
 from starpulse.event_log import events
 from starpulse.event_log.event_log import Entry, EventLog, Tail
 from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES
@@ -18,6 +17,7 @@ from starpulse.runs.cloudevents import CloudEventsIngest
 from starpulse.runs.config import Producer
 from starpulse.runtime.adapter_kit import task
 
+from tests.machine_feed import MachineFeed
 from tests.machines import MACHINES
 
 TASK = "PROJ-7"
@@ -75,23 +75,21 @@ def _node(
 
 
 class _Trail:
-    """A `CiTrail` on a real event log, with the machine tasks that follow it, and the poll clock in minutes."""
+    """A `CiTrail` on a real event log, folded into the machine rows it writes, and the poll clock in minutes."""
 
     def __init__(self, tmp_path: Path) -> None:
-        self.log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+        self.machine = MachineFeed(tmp_path / "events.sqlite", {**MACHINES, **CI_MACHINES})
+        self.log = self.machine.log
+        self.feed = self.machine.feed
         self.minute = 0.0
         self.trail = CiTrail(self.log, clock=lambda: _epoch(self.minute))
-        self.feed = BoardFeed(None, machines={**MACHINES, **CI_MACHINES})
-        self.tasks = MachineTasks(self.feed)
-        self.tail = Tail.replay(self.log, events.STREAM)
 
     def poll(self, minute: float, **pulls: dict) -> None:
         """One poll at `minute`: the nodes by pull request URL, for the one task."""
         self.minute = minute
         urls = {"first": FIRST, "second": SECOND}
         self.trail.record({TASK: [parse(urls[name], node) for name, node in pulls.items()]})
-        for entry in self.tail.poll():
-            self.tasks.handle_entry(f"{entry.id}-0", entry.fields)
+        self.machine.fold()
 
     def agent(self) -> dict:
         agent = self.feed.machine_task("ci", TASK)

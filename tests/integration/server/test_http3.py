@@ -7,7 +7,6 @@ import json
 import socket
 import ssl
 import subprocess
-import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -23,10 +22,9 @@ from aioquic.h3.connection import H3_ALPN, H3Connection
 from aioquic.h3.events import DataReceived, H3Event, HeadersReceived
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import QuicEvent
-from starpulse.board.board_feed import BoardFeed, follow
-from starpulse.board.machine_tasks import MachineTasks
+from starpulse.board.board_feed import BoardFeed
 from starpulse.cli import doctor
-from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.event_log.event_log import Tail
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 from starpulse.machine_engine.model.transitions import board_machine
@@ -36,6 +34,7 @@ from starpulse.runtime.adapter_kit import serve
 
 from tests.integration.runs.test_cloudevents_http import DELIVERY, PRODUCERS, TOKENS, cloudevent
 from tests.integration.server.test_http2 import _h2_request
+from tests.machine_feed import MachineFeed
 from tests.machines import MACHINES, ROLES
 
 
@@ -158,23 +157,19 @@ def test_a_client_cancelling_requests_leaves_the_quic_socket_answering(
 
 
 def test_a_cloudevent_posted_over_http3_reaches_the_event_log(tmp_path: Path, certificate: tuple[Path, Path]) -> None:
-    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     (tmp_path / "delivery.yaml").write_text(DELIVERY)
-    feed = BoardFeed(
-        machines={
-            "board": board_machine(("To Do", "Done")),
-            "delivery": describe(load_machine(tmp_path / "delivery.yaml").machine),
-        }
-    )
-    tasks, stop = MachineTasks(feed), threading.Event()
-    follow(tasks, log, "machine:events", tasks.handle_entry, stop=stop, interval=0.01)
-    events = CloudEventsIngest({p.name: p for p in PRODUCERS}, ingest_tokens(PRODUCERS, TOKENS), log, feed.machines)
+    machines = {
+        "board": board_machine(("To Do", "Done")),
+        "delivery": describe(load_machine(tmp_path / "delivery.yaml").machine),
+    }
+    machine = MachineFeed(tmp_path / "events.sqlite", machines)
+    log, feed = machine.log, machine.feed
+    events = CloudEventsIngest({p.name: p for p in PRODUCERS}, ingest_tokens(PRODUCERS, TOKENS), log, machines)
     sent = {"content-type": SINGLE, "authorization": "Bearer builder-secret"}
     with serve(tmp_path, feed, events=events, tls=certificate) as server:
         answer = _h3(
             certificate, server.server_port, "POST", "/api/machine-events", sent, json.dumps(cloudevent()).encode()
         )
-    stop.set()
 
     assert (answer.status, json.loads(answer.body)) == (201, {"accepted": True})
     assert [entry.fields["event_id"] for entry in Tail.replay(log, "machine:events").poll()] == ["builder/e1"]

@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
+    from starpulse.contracts.adapters import TaskKeys
+
     from starpulse.event_log.event_log import EventLog
 
 __all__ = ["RETIRED_SUFFIX", "main", "maintain"]
@@ -50,11 +52,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"{path}: {exc}")
     base = path.parent if path else Path.cwd()
     try:
-        _, feed = assemble(config, base, None, [])
+        board, feed = assemble(config, base, None, [])
     except (OSError, ValueError) as exc:
         parser.error(f"the board does not assemble: {exc}")
     url = database_url(config.database_url, base)
-    maintain(url, feed.machines, config.event_log_retention_days, base=base, state_dir=config.scheduler.state_dir)
+    maintain(
+        url,
+        feed.machines,
+        config.event_log_retention_days,
+        base=base,
+        state_dir=config.scheduler.state_dir,
+        keys=board.keys,
+        fold=True,
+    )
     print(json.dumps({"store": make_url(url).render_as_string(hide_password=True)}))
     return 0
 
@@ -66,22 +76,31 @@ def maintain(
     *,
     base: Path | None = None,
     state_dir: str | None = None,
+    keys: TaskKeys | None = None,
+    fold: bool = False,
 ) -> None:
     """The work `HistoryStore` used to do on every open: the schema, then the summaries it needs.
 
     With a `base` (the config's directory) it also imports the operator files found there, and in `state_dir` under it.
+    With `fold` (the `starpulse migrate` run, the only writer besides the Board child) it folds the Task History and the
+    `machine:events` the store holds into the read model, placing machine tasks with `keys`.
     """
     from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.migrate import migrate  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.event_log.readmodel.projector import Projector  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.event_log.store import EventStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.flow_metrics.adapters.outbound.history import HistoryStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     engine = create_engine(url)
     try:
         migrate(engine)
+        log = EventLog(url, engine=engine)  # opened after the migration: an unmigrated store refuses its events
+        if fold:
+            Projector(engine, EventStore(engine), log=log, drawn=machines, keys=keys).catch_up()
         if base is not None:
-            import_files(EventLog(url, engine=engine), base, base / (state_dir or ""))
+            import_files(log, base, base / (state_dir or ""))
         HistoryStore(url, machines, engine, retention_days=retention_days).build_summaries()
     finally:
         engine.dispose()

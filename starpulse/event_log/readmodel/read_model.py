@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Engine, Select
+from sqlalchemy import Engine, Select, func, select
 
 from starpulse.event_log.readmodel import queries, rows
 from starpulse.event_log.readmodel.declared import Declared
 from starpulse.event_log.readmodel.fold import Row
+from starpulse.event_log.readmodel.tables import machine_tasks
 
 
 class ReadModel:
@@ -52,6 +53,48 @@ class ReadModel:
         """The stream position of the newest change; 0 when no Task has one."""
         with self._engine.connect() as db:
             return db.execute(queries.position()).scalar() or 0
+
+    def machine_tasks(self, machine: str, since: float | None = None) -> list[dict[str, Any]]:
+        """Each agent `machine` holds that it placed at or after `since` (None: every one), as the page draws it."""
+        return [agent for _, agent, _ in self._machine_rows(machine, since)]
+
+    def machine_task(self, machine: str, task: str) -> dict[str, Any] | None:
+        """The agent `machine` holds for `task`, or None when it places none."""
+        statement = select(machine_tasks.c.agent).where(machine_tasks.c.machine == machine, machine_tasks.c.task == task)
+        with self._engine.connect() as db:
+            return db.execute(statement).scalar()
+
+    def machine_lanes(self, since: float | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Every machine's agents placed at or after `since`, keyed by machine; a machine with none is absent."""
+        lanes: dict[str, list[dict[str, Any]]] = {}
+        for machine, agent, _ in self._machine_rows(None, since):
+            lanes.setdefault(machine, []).append(agent)
+        return lanes
+
+    def machine_changes(self, seq: int, limit: int = 1000) -> list[tuple[str, dict[str, Any], int]]:
+        """Each machine row folded after stream position `seq`, oldest first, as (machine, agent, seq)."""
+        statement = (
+            select(machine_tasks.c.machine, machine_tasks.c.agent, machine_tasks.c.seq)
+            .where(machine_tasks.c.seq > seq)
+            .order_by(machine_tasks.c.seq)
+            .limit(limit)
+        )
+        with self._engine.connect() as db:
+            return [tuple(row) for row in db.execute(statement).all()]
+
+    def machine_position(self) -> int:
+        """The stream position of the newest machine row; 0 when none has one."""
+        with self._engine.connect() as db:
+            return db.execute(select(func.max(machine_tasks.c.seq))).scalar() or 0
+
+    def _machine_rows(self, machine: str | None, since: float | None) -> list[tuple[str, dict[str, Any], int]]:
+        statement = select(machine_tasks.c.machine, machine_tasks.c.agent, machine_tasks.c.seq)
+        if machine is not None:
+            statement = statement.where(machine_tasks.c.machine == machine)
+        if since is not None:
+            statement = statement.where(machine_tasks.c.active_at >= since)
+        with self._engine.connect() as db:
+            return [tuple(row) for row in db.execute(statement).all()]
 
     def _summaries(self, statement: Select[Any]) -> list[dict[str, Any]]:
         with self._engine.connect() as db:

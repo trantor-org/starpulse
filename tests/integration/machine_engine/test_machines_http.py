@@ -1,5 +1,6 @@
 """GET /api/machines: the machines entered from an open machine a page at a time, newest activity first."""
 
+import itertools
 import json
 import urllib.error
 import urllib.request
@@ -7,9 +8,11 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.contracts.adapters import MachineEvent
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.views.adapters.inbound.page_server import PageServer
+
+from tests.machine_feed import MachineFeed
 
 NOW = 1_000_000.0
 IP = "delivery"
@@ -58,14 +61,32 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[PageServ
         **{f"m{i}": _machine("a", "b") for i in range(1, 6)},
         "inner": _machine("c", "d"),
     }
-    feed = BoardFeed(machines=machines)
-    feed.move(IP, _session("T0", "start", 5000))
+    machine = MachineFeed(tmp_path / "events.sqlite", _playable(machines))
+    _move(machine, IP, _session("T0", "start", 5000))
     for i, ago in enumerate((100, 200, 300, 400, 400), 1):
-        feed.move(f"m{i}", _session(f"X{i}", "a", ago))
-    feed.move("m1", _session("T0", "a", 150, "T0-m1"))
-    feed.move("inner", _session("T0", "c", 100, "T0-inner"))
-    with serve(tmp_path, feed) as server:
+        _move(machine, f"m{i}", _session(f"X{i}", "a", ago))
+    _move(machine, "m1", _session("T0", "a", 150, "T0-m1"))
+    _move(machine, "inner", _session("T0", "c", 100, "T0-inner"))
+    with serve(tmp_path, machine.feed) as server:
         yield server
+
+
+def _playable(machines: dict[str, dict]) -> dict[str, dict]:
+    """The machines with the transitions that place each trail step: an event leads along the chain of states, and the
+    initial state's own event keeps a task there."""
+    playable = {}
+    for name, machine in machines.items():
+        states = [s["id"] for s in machine["states"]]
+        transitions = [{"source": states[0], "target": states[0], "event": states[0].upper()}]
+        transitions += [{"source": a, "target": b, "event": b.upper()} for a, b in itertools.pairwise(states)]
+        playable[name] = machine | {"transitions": transitions}
+    return playable
+
+
+def _move(feed: MachineFeed, machine: str, session: dict) -> None:
+    """Append each trail step of `session` to `machine`, as a writer's machine events arrive."""
+    for step in session["trail"]:
+        feed.put(MachineEvent(machine=machine, event=step["event"], task=session["task"], time=step["at"]))
 
 
 def _walk(server: PageServer, limit: int, open_: str = IP) -> list[list[str]]:
