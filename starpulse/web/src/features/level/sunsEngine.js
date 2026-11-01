@@ -118,10 +118,11 @@ const NO_SEPS=true;
 const HEX='clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)';
 function fR(s,o){if(s&&s.mini) return s.q?3:4.2;return o.big?10:(s.q?5:7);}
 function glowOf(g,x,y,R,col,k,a){span(g,'left:'+(x-R*k)+'px;top:'+(y-R*k)+'px;width:'+(R*2*k)+'px;height:'+(R*2*k)+'px;border-radius:50%;background:radial-gradient(circle closest-side,'+hexA(col,a)+',transparent)');}
-/* The tasks at work: each a dot in its tier colour orbiting the sun of the phase it is in, a lap in 12 s, spread evenly round the sun so
-   two never stack (and still apart when motion is reduced); the picked task's dot is the larger. */
-function orbit(g,list,x,y,R,sel){list.forEach(function(t,i){var me=t.id===sel,r=me?4.6:3.4,col=TASKC[t.tier]||C.ink;
- disc(g,x,y,r,'--a:'+(i*360/list.length-90).toFixed(1)+'deg;--orb:'+(R+10)+'px;transform:rotate(var(--a)) translateX(var(--orb));background:'+hexA(col,.95)+';box-shadow:0 0 '+(r*2)+'px '+hexA(col,.7)+';animation:sd-orbit 12s linear infinite');});}
+/* The tasks at work: each a still dot in its tier colour beside the sun of the phase it is in, spread evenly round the sun, clear of the
+   sun's name in the wedge at `side` degrees, so two never stack and none sits on the name; only a real move stirs one, its dot easing to the next sun. Lens dots count from the last lens, so one passing moves no other.
+   The picked task's dot is the larger. */
+function orbit(g,list,x,y,R,sel,side){list.forEach(function(e,i){var t=e.job,me=t.id===sel,r=me?4.6:3.4,col=TASKC[t.tier]||C.ink,a=(side+60+(i+.5)*240/list.length)*Math.PI/180,o=R+10;
+ g.D.push({key:'orb:'+t.id+'#'+e.n,style:'position:absolute;left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;box-sizing:border-box;transform:translate('+(Math.cos(a)*o).toFixed(1)+'px,'+(Math.sin(a)*o).toFixed(1)+'px);background:'+hexA(col,.95)+';box-shadow:0 0 '+(r*2)+'px '+hexA(col,.7)+';transition:left .9s ease-out,top .9s ease-out,transform .9s ease-out'});});}
 function disc(g,x,y,r,st){span(g,'left:'+(x-r)+'px;top:'+(y-r)+'px;width:'+(2*r)+'px;height:'+(2*r)+'px;border-radius:50%;box-sizing:border-box;'+st);}
 /* Sun: a reached state is a star with a white-hot core and a corona; an unreached one is a faint, unlit disc; a final state's corona
    is ringed. */
@@ -133,7 +134,7 @@ function hexPad(g,x,y,R,col,fill,o){o=o||{};if(fill) glowOf(g,x,y,R,col,o.glow?3
 function trace(a,b,ta,tb,mode){if(Math.abs(a.y-b.y)<.5) return octi(a,b,ta,tb,mode);var dir=b.x>a.x?1:-1,sx=a.x+dir*ta,ex=b.x-dir*tb,k=(ex-sx)*.55;
  return {d:'M'+sx.toFixed(1)+','+a.y+' C'+(sx+k).toFixed(1)+','+a.y+' '+(ex-k).toFixed(1)+','+b.y+' '+ex.toFixed(1)+','+b.y,mid:{x:(sx+ex)/2,y:(a.y+b.y)/2}};}
 /* The task moves the way StarPulse moves one (orbitTasks in machineLedgerDraw.ts), scaled to the ledger's smaller states: at rest it is a
-   dot in its tier colour orbiting the state it is in, a lap in ~105 s; when it steps, a comet runs the flow line in 3 s (ease-out) with
+   still dot in its tier colour beside the state it is in; when it steps, a comet runs the flow line in 3 s (ease-out) with
    a fading tail and the edge heated under it, then one ring pulses where it lands. A move is a change in where a row's task sits since
    the last frame; a row seen for the first time, a newly picked task and a scrubbed replay only rest. */
 var MOVES={},ANIM_UNTIL=0;const TRAVEL=3000,PULSE=1800;
@@ -169,20 +170,20 @@ const STYLE={M:{base:24,step:8,back:'below',skip:'above',lab:24},MINI:{base:12,s
  edge:function(g,a,b,o){var c=trace(a,b,fR(a,{})+3,fR(b,{})+3);if(o.on) line(g,c.d,b.q?b.c:KC[o.kind],1.8,{cap:'butt'});else flow(g,c.d,b.q?b.c:KC[o.kind],.45);},
  loop:function(g,a,b,off,o){var R=fR(a,{}),dir=b.x>a.x?1:-1,y=a.y+off,s=off<0?-1:1;
   flow(g,'M'+a.x+','+(a.y+s*R)+' L'+a.x+','+(y-s*5)+' L'+(a.x+dir*5)+','+y+' L'+(b.x-dir*5)+','+y+' L'+b.x+','+(y-s*5)+' L'+b.x+','+(b.y+s*R),C.muted,.7);},
- task:function(g,cur,prev,j,o){var col=TASKC[j.tier]||C.ink,R=fR(cur,{}),k=cur.mini?.5:.7,age=moveOf(j,o,g.self.state),now=Date.now();
+ task:function(g,cur,prev,j,o){var col=TASKC[j.tier]||C.ink,R=fR(cur,{}),k=cur.mini?.5:.7,age=moveOf(j,o,g.self.state);
   if(age<TRAVEL){var d=roundPath(trace(prev,cur,fR(prev,{})+3,R+3).d,ROUND_R),at=sampler(d),u=easeO(age/TRAVEL),h=at(u);
    line(g,d,hexA(col,.22),cur.mini?1.8:2.4,{cap:'butt'});
    for(var i=0;i<14;i++){var a=at(u-.27*(14-i)/14),b=at(u-.27*(13-i)/14);line(g,'M'+a.x.toFixed(1)+','+a.y.toFixed(1)+' L'+b.x.toFixed(1)+','+b.y.toFixed(1),hexA(col,(i+1)/14*.6),(i+1)/14*2.6*k/.7,{sharp:true});}
    glowOf(g,h.x,h.y,14*k,col,1,.7);disc(g,h.x,h.y,6*k*.75,'background:'+hexA(col,.95)+';box-shadow:0 0 '+(6*k)+'px '+hexA(col,.8));return;}
   if(age<TRAVEL+PULSE){var p=(age-TRAVEL)/PULSE,r=(3+easeO(p)*18)*k/.7;disc(g,cur.x,cur.y,R+r,'border:'+(2*(1-p)+.4).toFixed(2)+'px solid '+hexA(col,Math.pow(1-p,2)*.85));}
-  var orb=R+5.5*k/.7,ang=now/1000*.06;disc(g,cur.x+Math.cos(ang)*orb,cur.y+Math.sin(ang)*orb,4*k*.75,'background:'+hexA(col,.9)+';box-shadow:0 0 '+(4*k)+'px '+hexA(col,.6));},
+  var orb=(R+5.5*k/.7)*.707;disc(g,cur.x+orb,cur.y-orb,4*k*.75,'background:'+hexA(col,.9)+';box-shadow:0 0 '+(4*k)+'px '+hexA(col,.6));},
  mark:function(g,x,y,col){hexPad(g,x,y,4,col,true);},
  crowd:function(){},
  template:function(g,jobs,j){var Y=TY,X={build:470,fork:548,join:752,deliver:850,review_fix:975},EX=1176,at={},BUS=66,MUTE=C.muted;
-  jobs.forEach(function(x){if(x.phase==='qa'){LENSES.forEach(function(l){if(x.lenses[l].state==='pending') (at[l]=at[l]||[]).push(x);});return;}(at[x.phase]=at[x.phase]||[]).push(x);});
+  jobs.forEach(function(x){if(x.phase==='qa'){var left=LENSES.filter(function(l){return x.lenses[l].state==='pending';});left.forEach(function(l,i){(at[l]=at[l]||[]).push({job:x,n:left.length-1-i});});return;}(at[x.phase]=at[x.phase]||[]).push({job:x,n:0});});
   function run(a,b,col,mode){var c=trace(a,b,a.r||0,b.r||0,mode);flow(g,c.d,col,.7);return c;}
   function n(k){return (at[k]||[]).length;}
-  function tasksIn(k,label,kind){return {title:label,sub:kind+' · '+n(k)+' task'+(n(k)===1?'':'s')+' here now',rows:(at[k]||[]).map(function(x){return {k:x.id,v:x.title,c:TIER[x.tier]};})};}
+  function tasksIn(k,label,kind){return {title:label,sub:kind+' · '+n(k)+' task'+(n(k)===1?'':'s')+' here now',rows:(at[k]||[]).map(function(e){var x=e.job;return {k:x.id,v:x.title,c:TIER[x.tier]};})};}
   /* in: one streaming line per board state that hands a task to In Progress */
   var ENT=[['Ready','CLAIM','an agent claims the task'],['Waiting','START_WAITING','what it waited on is done'],['Needs Attention','RESUME','a person resumes it'],['Review','SEND_BACK','review sends it back'],['New','CREATE_IN_PROGRESS','created straight into work'],['Done','REOPEN','a closed task is reopened']];
   /* entries come in from the pane's left edge and exits leave at its right edge, each named just above its line at that edge */
@@ -209,9 +210,9 @@ const STYLE={M:{base:24,step:8,back:'below',skip:'above',lab:24},MINI:{base:12,s
    arrowHead(g,EX,o[0],MUTE);name(g,o[1],EX-14,o[0]-18,{align:'right',size:'.74em',col:hexA(C.ink2,.8)});
    hv(g,'exit:'+o[1],EX-124,o[0]-18,128,24,{t:'To '+o[1],lines:[o[3]],x:EX-210,y:o[0]+8},{title:'To '+o[1],sub:'board event '+o[2],rows:[{k:'leaves from',v:o[4]},{k:'when',v:o[3]}]});});
   /* states: names only; counts, lists and the lenses' story wait for hover and click */
-  ['build','deliver','review_fix'].forEach(function(k){var cur=j.phase===k;hexPad(g,X[k],Y,10,KC.phase,true,{glow:cur});orbit(g,at[k]||[],X[k],Y,10,j.id);name(g,PN[k],X[k],Y+16,{align:'center',size:'.86em',col:hexA(C.ink2,.8)});
+  ['build','deliver','review_fix'].forEach(function(k){var cur=j.phase===k;hexPad(g,X[k],Y,10,KC.phase,true,{glow:cur});orbit(g,at[k]||[],X[k],Y,10,j.id,90);name(g,PN[k],X[k],Y+16,{align:'center',size:'.86em',col:hexA(C.ink2,.8)});
    hv(g,'st:'+k,X[k]-34,Y-14,68,48,{t:PN[k],lines:[n(k)+' task'+(n(k)===1?'':'s')+' here now','phase machine · '+(MD[k].nodes.length)+' states']},tasksIn(k,PN[k],'phase machine'));});
-  LENSES.forEach(function(l){var s=lensState(j,l),col=s&&s.state?VC[s.state]:KC.sub;hexPad(g,650,LYT[l],8,col,true,{glow:s&&s.live});orbit(g,at[l]||[],650,LYT[l],8,j.id);
+  LENSES.forEach(function(l){var s=lensState(j,l),col=s&&s.state?VC[s.state]:KC.sub;hexPad(g,650,LYT[l],8,col,true,{glow:s&&s.live});orbit(g,at[l]||[],650,LYT[l],8,j.id,-90);
    name(g,LN[l],650,LYT[l]-27,{align:'center',size:'.74em',col:hexA(C.sbHi,.8)});
    hv(g,'st:lens:'+l,620,LYT[l]-28,60,40,{t:LN[l]+' lens',lines:[n(l)+' task'+(n(l)===1?'':'s')+' reviewing','runs alongside the other four']},tasksIn(l,LN[l]+' lens','lens sub-machine'));});
   [[470,Y+34,KC.phase],[650,LYT.simplify+12,KC.sub],[850,Y+34,KC.phase],[975,Y+34,KC.phase]].forEach(function(t){flow(g,'M'+t[0]+','+t[1]+' L'+t[0]+','+(HAIR-3),t[2],.5);
@@ -307,7 +308,7 @@ function drawRow(g,S,d,G,o){var xy=G.xy,path=o.path||[],tp=Array.isArray(o.trace
  /* the highest loop that runs over each state, per side, so a label can clear it */
  function over(n,side){var c=xy[n].ci,m=0;G.E.forEach(function(x){if(x.side===side&&x.lo<=c&&c<=x.hi) m=Math.max(m,x.lv);});return m;}
  d.nodes.forEach(function(n,i){var s=xy[n];S.state(g,s,{upLv:over(n,'above'),downLv:over(n,'below'),M:G.M,legUp:!!(leg[n]&&leg[n].above),legDown:!!(leg[n]&&leg[n].below),kind:d.kind,on:!!on[n],cur:o.now&&n===path[path.length-1],init:i===0,label:o.labels!==false||s.q,name:s.q?n.toLowerCase():tc(n),above:s.l<0});});
- if(o.now&&path.length){var cur=xy[path[path.length-1]],prev=path.length>1?xy[path[path.length-2]]:{x:cur.x-60,y:cur.y};S.task(g,cur,prev,o.job,{live:o.live,key:o.key,node:path[path.length-1]});}}
+ if(o.now&&path.length){var cur=xy[path[path.length-1]],prev=path.length>1?xy[path[path.length-2]]:{x:cur.x-60,y:cur.y},l0=g.L.length,s0=g.S.length;S.task(g,cur,prev,o.job,{live:o.live,key:o.key,node:path[path.length-1]});g.L.slice(l0).concat(g.S.slice(s0)).forEach(function(p){p.fx=true;});}}
 function head(g,y,nm,col,s1,s2,s2c){name(g,nm,272,y-14,{col:col,size:'.88em'});if(s1) name(g,s1,272,y+4,{size:'.7em',col:hexA(C.slate,.62)});if(s2) name(g,s2,272,y+18,{size:'.7em',col:s2c||hexA(C.slate,.62)});}
 /* ---- the template ---- */
 const TY=214,LYT={security:110,ux:162,ui:214,code:266,simplify:318};
@@ -336,10 +337,13 @@ function rows(g,S,j){var Y=HAIR+4,stop=false,open=g.open||{},pick=g.pick||{},qa=
  function sep(x){g.P.lane.push('M'+(x||262)+','+Y+' L'+PANE_R+','+Y);}
  function toggle(k,v){return function(){var o=Object.assign({},g.self.state.open||{});o[k]=v;g.self.setState({open:o});};}
  function choose(k,v){return function(){var o=Object.assign({},g.self.state.pick||{});o[k]=v;g.self.setState({pick:o});};}
- /* rounds as pills: r1 r2 r3, the selected one lit; `vc` colours a lens round by its verdict */
- function pills(k,ents,sel,y,vc){ents.forEach(function(e,n){var on=n===sel,c=vc?vc(e):KC.phase;
-  g.Q.push({text:'r'+e.t.round+(e.now?' •':''),aria:k+' round '+e.t.round,pick:choose(k,n),style:'all:unset;cursor:pointer;position:absolute;left:'+(272+n*34)+'px;top:'+y+'px;height:14px;padding:0 6px;border-radius:7px;font-size:10px;line-height:13px;box-sizing:border-box;'+
-   'color:'+(on?C.bg0:hexA(c,.9))+';background:'+(on?c:'transparent')+';border:1px solid '+hexA(c,on?1:.45)});});}
+ /* rounds as pills: r1 r2 r3, the selected one lit; `vc` colours a lens round by its verdict. Three fit left of the rail, so with more the
+    first says how many older rounds are held back and steps to the one before; the selected round and the one after it follow. */
+ function pills(k,ents,sel,y,vc){var from=ents.length>3?Math.min(sel,ents.length-2):0,x=272;
+  function pill(text,aria,n,c,on){g.Q.push({text:text,aria:aria,pick:choose(k,n),style:'all:unset;cursor:pointer;position:absolute;left:'+x+'px;top:'+y+'px;height:14px;padding:0 6px;border-radius:7px;font-size:10px;line-height:13px;box-sizing:border-box;'+
+   'color:'+(on?C.bg0:hexA(c,.9))+';background:'+(on?c:'transparent')+';border:1px solid '+hexA(c,on?1:.45)});x+=34;}
+  if(from) pill('\u2039'+from,k+' '+from+' older rounds',from-1,KC.phase,false);
+  ents.slice(from,from+(from?2:3)).forEach(function(e,i){pill('r'+e.t.round+(e.now?' •':''),k+' round '+e.t.round,from+i,vc?vc(e):KC.phase,from+i===sel);});}
  /* one machine row: open (full graph, names) or folded (small graph); `paths(e)` says what a round walked */
  function row(k,label,col,d,ents,paths,o){if(stop||!ents.length) return;o=o||{};var sel=pick[k]!=null&&pick[k]<ents.length?pick[k]:ents.length-1,e=ents[sel],isOpen=typeof COMPACT_ALL!=='undefined'?false:open[k]!=null?open[k]:!!o.active;
   var MI=S.MINI||{base:7,step:3,lane:.3,minH:38,pad:8},path=paths(e),M=isOpen?S.M:{base:MI.base,step:MI.step,back:S.M.back,skip:S.M.skip,lab:6},G=geom(d,M,{labels:isOpen&&o.labels!==false,lane:isOpen?(o.lane||34):(o.lane||34)*MI.lane});

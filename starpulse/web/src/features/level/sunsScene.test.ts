@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MachineEvent } from "../../api/types.gen";
 import { applyPack, applyTheme, packTokens } from "../../tests/themeFixtures";
 import { jobAt, statusOf, TIER } from "./sunsEngine";
@@ -173,13 +173,13 @@ describe("stepping out of the drill-in", () => {
 });
 
 describe("the tasks at work", () => {
-  const orbiters = (s: ReturnType<typeof sceneOf>) => s.main.S.filter((x) => x.style.includes("sd-orbit"));
+  const orbiters = (s: ReturnType<typeof sceneOf>) => s.main.D;
   const centre = (style: string) => {
     const n = (k: string) => Number(new RegExp(`(?:^|;)${k}:(-?[\\d.]+)px`).exec(style)![1]);
     return `${Math.round(n("left") + n("width") / 2)},${Math.round(n("top") + n("height") / 2)}`;
   };
 
-  it("draws every working task as a dot orbiting the phase it is in, a task in QA on each lens still reviewing it, so several tasks in several phases all move at once", () => {
+  it("draws every working task as a dot beside the phase it is in, a task in QA on each lens still reviewing it, so several tasks in several phases all show at once", () => {
     const jobs = [
       jobOf("B1", "b1", "@agent-deep-high", [], NOW),
       jobOf("B2", "b2", undefined, [], NOW),
@@ -200,11 +200,117 @@ describe("the tasks at work", () => {
     expect(sizes.filter((w) => w === Math.max(...sizes))).toHaveLength(1);
   });
 
-  it("starts each dot at its own angle and keeps it there when motion is reduced, so two tasks on one sun never stack", () => {
+  it("keeps each dot still at its own place round the sun, so two tasks on one sun never stack and only a real move stirs one", () => {
     const s = sceneOf([jobOf("B1", "b1", undefined, [], NOW), jobOf("B2", "b2", undefined, [], NOW)], view("B1"), () => {}, NOW);
-    const angles = orbiters(s).map((d) => /--a:(-?[\d.]+)deg/.exec(d.style)![1]);
+    const places = orbiters(s).map((d) => /transform:translate\([^)]+\)/.exec(d.style)![0]);
 
-    expect(new Set(angles).size).toBe(2);
-    orbiters(s).forEach((d) => expect(d.style).toMatch(/transform:rotate\(var\(--a\)\) translateX\(var\(--orb\)\)/));
+    expect(new Set(places).size).toBe(2);
+    orbiters(s).forEach((d) => expect(d.style).not.toContain("animation"));
+  });
+
+  it("keeps a resting dot off the sun's name: below a phase's sun its name, above a lens's", () => {
+    const places = (jobs: ReturnType<typeof jobOf>[]) =>
+      orbiters(sceneOf(jobs, view(jobs[0].id), () => {}, NOW)).map((d) => /translate\(([-\d.]+)px,([-\d.]+)px\)/.exec(d.style)!.slice(1).map(Number));
+
+    for (const n of [1, 2, 3, 4, 5, 8]) {
+      const building = places(Array.from({ length: n }, (_, i) => jobOf(`B${i}`, "b", undefined, [], NOW)));
+      const reviewing = places(Array.from({ length: n }, (_, i) => jobOf(`Q${i}`, "q", undefined, [lens(9, "LENS_PASSED", "security", "ux"), lens(9, "LENS_PASSED", "ux", "ui"), lens(9, "LENS_PASSED", "ui", "code"), lens(9, "LENS_PASSED", "code", "simplify")], NOW)));
+
+      expect(Math.max(...building.map(([, dy]) => dy))).toBeLessThanOrEqual(10);
+      expect(Math.min(...reviewing.map(([, dy]) => dy))).toBeGreaterThanOrEqual(-9);
+      expect(new Set(building.map(String)).size).toBe(n);
+    }
+  });
+
+  it("flies a task's dot to the phase it enters: the dot keeps its key and eases to the new sun", () => {
+    const dot = (events: Parameters<typeof jobOf>[3]) => orbiters(sceneOf([jobOf("F1", "f1", undefined, events, NOW)], view("F1"), () => {}, NOW))[0];
+    const inBuild = dot([]), inDeliver = dot([ev(5, "in-progress", "build", "deliver")]);
+
+    expect(inDeliver.key).toBe(inBuild.key);
+    expect(centre(inDeliver.style)).not.toBe(centre(inBuild.style));
+    expect(inDeliver.style).toMatch(/transition:left [^;]*top [^;]*transform /);
+  });
+
+  it("keeps the key of a QA task's dot on a lens when an earlier lens passes it, so the other dots stay put", () => {
+    const keyed = (events: Parameters<typeof jobOf>[3]) => new Map(orbiters(sceneOf([jobOf("Q2", "q2", undefined, events, NOW)], view("Q2"), () => {}, NOW)).map((d) => [d.key, centre(d.style)]));
+    const before = keyed([lens(9, "LENS_PASSED", "security", "ux")]), after = keyed([lens(9, "LENS_PASSED", "security", "ux"), lens(10, "LENS_PASSED", "ux", "ui")]);
+
+    expect(after.size).toBe(before.size - 1);
+    for (const [key, at] of after) expect(before.get(key)).toBe(at);
+  });
+});
+
+describe("a phase machine row", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const drawn = (id: string, events: Parameters<typeof jobOf>[3]) => sceneOf([jobOf(id, id, undefined, events, NOW)], view(id), () => {}, NOW).rows;
+
+  describe("with more rounds than fit before the row", () => {
+    const events = [6, 5, 4, 3, 2].flatMap((r) => [ev(r * 10 + 5, "in-progress", "build", "deliver"), ev(r * 10, "in-progress", "deliver", "build")]);
+    const roundsIn = (v: View) => sceneOf([jobOf("P1", "p1", undefined, events, NOW)], v, () => {}, NOW).rows.Q;
+    const numbers = (q: ReturnType<typeof roundsIn>) => q.flatMap((b) => /^build round (\d+)$/.exec(b.aria)?.[1] ?? []).map(Number);
+
+    it("draws three pills at most, the newest round lit, and says how many older rounds it holds back", () => {
+      const q = roundsIn(view("P1")).filter((b) => b.aria.startsWith("build "));
+
+      expect(q).toHaveLength(3);
+      expect(numbers(q)).toEqual([5, 6]);
+      expect(q[0].text).toBe("\u2039" + "3");
+    });
+
+    it("reaches every older round from the held-back pill, one round per click, and comes back by its newer pill", () => {
+      const seen = new Set<number>();
+      let v = view("P1");
+      for (let i = 0; i < 6; i++) {
+        const q = roundsIn(v).filter((b) => b.aria.startsWith("build "));
+        numbers(q).forEach((n) => seen.add(n));
+        expect(q.length).toBeLessThanOrEqual(3);
+        const older = q.find((b) => b.aria.includes("older"));
+        if (!older) break;
+        const set = vi.fn();
+        sceneOf([jobOf("P1", "p1", undefined, events, NOW)], v, set, NOW).rows.Q.find((b) => b.aria === older.aria)!.pick();
+        v = { ...v, ...set.mock.calls[0][0] };
+      }
+
+      expect([...seen].sort()).toEqual([2, 3, 4, 5, 6]);
+      const set = vi.fn();
+      sceneOf([jobOf("P1", "p1", undefined, events, NOW)], v, set, NOW).rows.Q.find((b) => b.aria === "build round 3")!.pick();
+      expect(numbers(roundsIn({ ...v, ...set.mock.calls[0][0] }).filter((b) => b.aria.startsWith("build ")))).toContain(4);
+    });
+
+    it("draws every round when they fit", () => {
+      const three = [5, 4, 3].flatMap((r) => [ev(r * 10 + 5, "in-progress", "build", "deliver"), ev(r * 10, "in-progress", "deliver", "build")]);
+      const q = sceneOf([jobOf("P2", "p2", undefined, three, NOW)], view("P2"), () => {}, NOW).rows.Q.filter((b) => b.aria.startsWith("build "));
+
+      expect(numbers(q)).toEqual([2, 3, 4]);
+      expect(q).toHaveLength(3);
+    });
+  });
+
+  it("leaves the task's dot where it is from one draw to the next while the task rests", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000_000);
+    const first = drawn("R2", []).S.map((x) => x.style);
+
+    vi.advanceTimersByTime(60_000);
+
+    expect(drawn("R2", []).S.map((x) => x.style)).toEqual(first);
+  });
+
+  it("marks a comet's pieces apart, so one coming and going shifts no piece that stays", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000_000);
+    const walked = [ev(5, "build", "start", "worktree_ready")], moved = [...walked, ev(4, "build", "worktree_ready", "red_proven")];
+    drawn("C2", walked);
+
+    vi.advanceTimersByTime(100);
+    const flying = drawn("C2", moved);
+    vi.advanceTimersByTime(60_000);
+    const landed = drawn("C2", moved);
+
+    expect(flying.L.some((l) => l.fx)).toBe(true);
+    expect(landed.L.some((l) => l.fx)).toBe(false);
+    expect(flying.L.filter((l) => !l.fx).map((l) => l.d)).toEqual(landed.L.filter((l) => !l.fx).map((l) => l.d));
+    expect(flying.S.filter((b) => !b.fx).map((b) => b.style)).toEqual(landed.S.filter((b) => !b.fx).map((b) => b.style));
   });
 });

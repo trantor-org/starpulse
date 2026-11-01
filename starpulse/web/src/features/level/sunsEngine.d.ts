@@ -58,9 +58,12 @@ export interface Line {
   op: number;
   st: string;
   cap: string;
+  /** A task's mark: it comes and goes as the task moves, so it holds no other piece's place. */
+  fx?: boolean;
 }
 export interface Box {
   style: string;
+  fx?: boolean;
   text?: string;
   sub?: string;
   subColor?: string;
@@ -88,10 +91,15 @@ export interface Detail {
 }
 
 /** What one pass of the engine draws: paths, lines, glyphs, bodies, labels, badges, buttons, and the tips and details they open. */
+/** A task's dot on a sun: the key is the task's, so the dot eases to the next sun it sits on. */
+export interface Dot extends Box {
+  key: string;
+}
 export interface Scene {
   P: { lane: string[]; guide: string[]; grp: string[] };
   L: Line[];
   S: Box[];
+  D: Dot[];
   B: Box[];
   T: Box[];
   K: Box[];

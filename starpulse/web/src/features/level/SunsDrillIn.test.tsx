@@ -40,7 +40,7 @@ describe("SunsDrillIn", () => {
     expect(dots()).not.toContain(packTokens("starpulse").waits);
   });
 
-  it("reads each task's moves again every 15 seconds while it is open, so a phase a task enters is drawn without a reload", async () => {
+  it("reads each task's moves again every 5 seconds while it is open, so a phase a task enters is drawn without a reload", async () => {
     vi.useFakeTimers();
     try {
       mount();
@@ -49,7 +49,7 @@ describe("SunsDrillIn", () => {
       const first = reads();
       expect(first).toBeGreaterThan(0);
 
-      await act(async () => void (await vi.advanceTimersByTimeAsync(15_000)));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(5_000)));
 
       expect(reads()).toBeGreaterThan(first);
     } finally {
