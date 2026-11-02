@@ -127,6 +127,7 @@ from starpulse.cli.agent_keys import (
     MILESTONE_KEYS,
     MOVE_KEYS,
     PULL_KEYS,
+    RELEASE_KEYS,
     SCORE_KEYS,
     SNAPSHOT_KEYS,
     STAGE_KEYS,
@@ -856,6 +857,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     claim.add_argument("task", help="the task's key (`PROJ-45`)")
     agent_flags.writer_flags(claim)
+    release = leaf(
+        task_verbs,
+        "release",
+        "end a task's claim, whoever holds it: it keeps its lane and loses its assignee so the next claim adopts it; refused when no session holds it",
+        _in_tasks("task_release"),
+        RELEASE_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    release.add_argument("task", help="the task's key (`PROJ-45`)")
+    agent_flags.writer_flags(release)
     park = leaf(
         task_verbs,
         "park",

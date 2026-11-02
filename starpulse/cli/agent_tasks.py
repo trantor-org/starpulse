@@ -23,7 +23,7 @@ from starpulse.board.model.markdown import MarkdownRefusedError, imported, rende
 from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
 from starpulse.cli import agent_wire
-from starpulse.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS
+from starpulse.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS, RELEASE_KEYS
 
 #: What a task route's 404 says when the board has no such task, as opposed to a board that cannot read or write tasks.
 _TASK_MISSING = ("is not on the board", "has no record to read")
@@ -243,6 +243,7 @@ def _lifecycle(
             "task": args.task,
             "to": reply.get("to", ""),
             "assignee": reply.get("assignee", ""),
+            "releasedFrom": reply.get("releasedFrom", ""),
             "reason": "",
             "skill": "",
         }
@@ -252,6 +253,7 @@ def _lifecycle(
             "task": args.task,
             "to": "",
             "assignee": "",
+            "releasedFrom": "",
             "reason": message,
             "skill": reply.get("skill", ""),
         }
@@ -270,6 +272,11 @@ def _kept(output: dict[str, Any], keys: Sequence[str]) -> dict[str, Any]:
 def task_claim(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Claim the task for the session: it moves to In Progress with that session as assignee, refused when another holds it."""
     return _kept(_lifecycle(args, environ, "claim", {}), CLAIM_KEYS)
+
+
+def task_release(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """End the claim on the task whoever holds it: it keeps its lane and loses its assignee, refused when none holds it."""
+    return _kept(_lifecycle(args, environ, "release", {}), RELEASE_KEYS)
 
 
 def _criterion(text: str) -> dict[str, Any]:

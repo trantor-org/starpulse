@@ -66,6 +66,7 @@ _TABLE = [
     ("/api/retire", ("POST",)),
     ("/api/retired/import", ("POST",)),
     ("/api/claim", ("POST",)),
+    ("/api/release", ("POST",)),
     ("/api/park", ("POST",)),
     ("/api/review", ("POST",)),
     ("/api/complete", ("POST",)),

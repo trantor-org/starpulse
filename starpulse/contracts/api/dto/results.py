@@ -80,6 +80,12 @@ class Claimed(_Api):
     assignee: str
 
 
+class ClaimReleased(_Api):
+    task: str
+    to: str
+    releasedFrom: str
+
+
 class Parked(_Api):
     task: str
     to: str

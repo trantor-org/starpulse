@@ -21,7 +21,7 @@ from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, no_writer, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task
-from starpulse.views.application.commands.moves import claim_task, move_task, start_requested, start_task
+from starpulse.views.application.commands.moves import claim_task, move_task, release_task, start_requested, start_task
 from starpulse.views.application.commands.tasks import (
     archive_task,
     complete_task,
@@ -115,6 +115,7 @@ def routes(api: Api) -> list[ApiRoute]:
         "/retire": (lambda client, raw: retire_task(client, raw, board), "retire"),
         "/retired/import": (lambda client, raw: import_retired(client, raw, board), "retired_import"),
         "/claim": (lambda client, raw: claim_task(client, raw, feed, writer), "claim"),
+        "/release": (lambda client, raw: release_task(client, raw, feed, board.release), "release"),
         "/park": (lambda client, raw: park_task(client, raw, feed, read, edit), "park"),
         "/review": (lambda client, raw: review_task(client, raw, feed, read, edit), "review"),
         "/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
