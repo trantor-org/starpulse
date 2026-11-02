@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import Engine
 
 from starpulse.board.board_feed import BoardFeed
+from starpulse.board.machine_tasks import MachineDeltas
 from starpulse.board.model.seam import Board
 from starpulse.board.model.seam import load as load_board
 from starpulse.event_log.event_log import EventLog, prune_forever
@@ -141,13 +142,31 @@ def worker_board(config: Config, base: Path, log: EventLog, stop: threading.Even
     """The board and feed of a worker beside `serve`: the feed reads the read model the Board child folds, and the board
     is attached to `log`, so its writes append the History events that read model folds.
     Raises ValueError as `assemble` does."""
-    board, feed = assemble(config, base, None, [], ReadModel(log.engine, declared_fields(config.board)))
+    board, feed, _ = _read_model_board(config, base, log)
+    read_model_follow.follow(None, feed, stop)
+    return board, feed
+
+
+def scheduler_board(config: Config, base: Path, log: EventLog, stop: threading.Event) -> tuple[Board, BoardFeed]:
+    """The board and feed of the Scheduler: every question is answered from the read model and nothing is folded here.
+    Its change deltas are polled from the read model by `scheduler.adapters.changes`, which ends with `stop`.
+    Raises ValueError as `assemble` does."""
+    from starpulse.scheduler.adapters.changes import follow_changes
+
+    board, feed, model = _read_model_board(config, base, log)
+    follow_changes(feed, MachineDeltas(feed, model), stop)
+    return board, feed
+
+
+def _read_model_board(config: Config, base: Path, log: EventLog) -> tuple[Board, BoardFeed, ReadModel]:
+    """The assembled board and feed over the read model, attached to `log` and ready, with no follower started."""
+    model = ReadModel(log.engine, declared_fields(config.board))
+    board, feed = assemble(config, base, None, [], model)
     # The read model folds only History events, so this worker's writes (the task actor's moves) must append them.
     if board.attach is not None:
         board.attach(log)
     feed.ready.set()
-    read_model_follow.follow(None, feed, stop)
-    return board, feed
+    return board, feed, model
 
 
 def found_backlog(config: Config, base: Path) -> str | None:

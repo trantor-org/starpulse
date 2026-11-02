@@ -10,7 +10,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
-from starpulse.runtime.assembly import worker_board
+from starpulse.runtime.assembly import scheduler_board, worker_board
 from starpulse.runtime.config import load
 
 from tests.unit.board.test_native import write_task
@@ -50,3 +50,23 @@ def test_a_read_model_workers_board_write_lands_in_the_task_history_the_read_mod
     assert built.edit("task-1", {"status": "Done"}, "merged", actor=ACTOR).ok
 
     assert any(event.type == "Transitioned" for event in EventStore(log.engine).read(KIND, "task-1"))
+
+
+def test_the_scheduler_board_starts_no_read_model_follow_and_still_reads_the_tasks(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'events.sqlite'}"
+    log = EventLog(url)
+    events = EventStore(log.engine)
+    created = NewEvent(
+        type="TaskCreated", payload={"title": "Task", "state": "Review"}, actor="adin", writer="operator"
+    )
+    events.append("task", "TASK-1", 0, [created])
+    Projector(log.engine, events).catch_up()
+    stop = threading.Event()
+    followers_before = {t for t in threading.enumerate() if t.name == "read-model-follow"}
+
+    _, feed = scheduler_board(replace(load(None), database_url=url), tmp_path, log, stop)
+    followers_after = {t for t in threading.enumerate() if t.name == "read-model-follow"}
+    stop.set()
+
+    assert followers_after == followers_before
+    assert [agent["id"] for agent in feed.open_tasks()] == ["TASK-1"]
