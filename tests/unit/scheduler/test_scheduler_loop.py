@@ -16,6 +16,7 @@ from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.scheduler.adapters.loop import (
     GATE_TALLY_KEY,
     IDLE_RETURNED,
+    SESSIONS_FULL_BACKOFF_MAX,
     SETTLE_REFUSED,
     START_BACKOFF,
     START_HALT,
@@ -313,6 +314,36 @@ def test_a_task_that_cannot_start_is_skipped_and_the_next_still_starts(rig: Rig)
 
     assert started == ["T-2"]
     assert rig.settled == []  # a start that failed settles nothing and requeues nothing
+
+
+def test_a_full_session_limit_ends_the_pass_and_backs_off_the_whole_queue(rig: Rig) -> None:
+    rig.limit = "T-1 was not started: 48 of 48 task sessions are live. Nothing was stopped; start again once one ends."
+    for number in range(1, 6):
+        rig.put(f"T-{number}")
+
+    assert rig.loop.tick() == []
+    assert rig.attempts == ["T-1"]  # the refusal says every start fails: the queue is not walked
+
+    rig.now += START_BACKOFF / 2
+    rig.loop.tick()
+    assert rig.attempts == ["T-1"]  # still backing off
+
+    rig.now += START_BACKOFF
+    rig.loop.tick()
+    assert rig.attempts == ["T-1", "T-1"]  # the top task tries again: the refusal skipped no task
+
+    rig.now += START_BACKOFF * 1.5
+    rig.loop.tick()
+    assert rig.attempts == ["T-1", "T-1"]  # the second wait is longer than the first
+
+    rig.now += START_BACKOFF
+    rig.loop.tick()
+    assert rig.attempts == ["T-1", "T-1", "T-1"]
+    assert rig.loop.pauses() == []  # a full limit is no halt
+
+    rig.limit = None  # a session ended
+    rig.now += SESSIONS_FULL_BACKOFF_MAX
+    assert rig.loop.tick()[:1] == ["T-1"]  # the queue starts again
 
 
 def test_a_start_that_cannot_work_until_the_host_is_fixed_halts_admission_and_is_raised_once(
