@@ -127,7 +127,8 @@ const HANDLERS: Record<string, Handler> = {
           })
           .sort((a, b) => a.at - b.at),
       });
-    if (!machine) return json({ task, path: server.lanes[task] ?? [] });
+    // a task with a plan shows it as rewritten once, so the dialog draws the plan heading's `revised 1×` link
+    if (!machine) return json({ task, path: server.lanes[task] ?? [], plan_revisions: server.records[task]?.plan ? 1 : 0 });
     const f = server.snapshot.flows.find((x) => x.name === machine);
     if (!f) return json({ error: `no machine ${machine}` }, 404);
     const a = f.agents.find((x) => (x.task ?? x.id) === task);
@@ -244,7 +245,11 @@ export class DemoServer {
     const { history, ...snap } = structuredClone(fixture);
     // the fixture's times are kept as ages, so what settled an hour before the capture settled an hour before the page opened
     const age = clock() - snap.now;
-    for (const card of snap.flows.find((f) => f.name === "board")?.agents ?? []) if (card.created != null) card.created += age;
+    for (const card of snap.flows.find((f) => f.name === "board")?.agents ?? []) {
+      if (card.created != null) card.created += age;
+      // an unassigned task keeps its flat paragraph, which reads as the legacy format the board card flags
+      if (!card.model) card.readable = "the description has no Outcome section";
+    }
     for (const e of Object.values(snap.settled)) [e.at, e.created] = [e.at == null ? null : e.at + age, e.created == null ? null : e.created + age];
     for (const f of snap.flows) if (f.last != null) f.last += age;
     for (const e of snap.machineStrip?.entries ?? []) e.at += age;
@@ -579,6 +584,14 @@ const demoMilestone = (id: string) => ({
   id, title: "Demo milestone", specs: ["doc-1 — Demo spec"], description: "## Outcome\n\nThe public preview shows a milestone, its spec and its docs.\n\n## Spec\n\n- doc-1 — Demo spec",
 });
 
+const DEMO_BRIEF = [
+  "## Outcome\n\nThe public preview draws a task brief with lists, inline code and collapsible sections.",
+  "## Why This Matters\n\nA reader sees the outcome first and opens the rest only when needed.",
+  "## Scope\n\n- Draw `ordered` and `unordered` lists, nested one level\n- Link a file such as `starpulse/web/src/style.css`\n  - to the repository page\n- Keep **Outcome**, **Why** and **Scope** open",
+  "## Constraints\n\nOne pane, capped near 24rem, scrolling inside the dialog. Sticky headings stay in view.",
+  "## Implementation Plan\n\n1. Read the blocks\n2. Draw each `##` as a toggle row\n3. Store the open state per heading name",
+].join("\n\n");
+
 const DEMO_BODY = [
   "## Rollout",
   "| Stage | Hosts | Window |\n| --- | ---: | --- |\n| Canary | 1 | 10 min |\n| Fleet | 24 | 1 h |",
@@ -598,7 +611,7 @@ const demoRecord = (card: RawTask, roles: Roles, now: number, failing = false): 
     milestone: card.milestone ?? "",
     documentation: ["docs/specs/doc-1 - Demo spec.md", "docs/doc-2 - Demo notes.md"],
     dependencies: card.dependencies ?? [],
-    description: [card.description ?? "A synthetic task used by the public StarPulse preview.", DEMO_BODY, criteria && criteriaBlock(criteria)].filter(Boolean).join("\n\n"),
+    description: [card.description ?? "A synthetic task used by the public StarPulse preview.", card.model ? DEMO_BRIEF : "", DEMO_BODY, criteria && criteriaBlock(criteria)].filter(Boolean).join("\n\n"),
     ...(criteria && { start_criteria: criteria }),
     // an unassigned task has no plan yet, so the dialog offers `+ Add plan`
     plan: card.model ? "1. Inspect the task\n2. Make the smallest safe change\n3. Verify the result" : "",

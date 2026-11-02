@@ -330,8 +330,9 @@ describe("the demo server", () => {
     expect(await body(s.fetch("/api/history?task=DEMO-1"))).toEqual({
       task: "DEMO-1",
       path: [{ at: 10, from: null, to: "ready" }, { at: 20, from: "ready", to: "in_progress" }],
+      plan_revisions: 0,
     });
-    expect(await body(s.fetch("/api/history?task=DEMO-9"))).toEqual({ task: "DEMO-9", path: [] });
+    expect(await body(s.fetch("/api/history?task=DEMO-9"))).toEqual({ task: "DEMO-9", path: [], plan_revisions: 0 });
   });
 
   it("answers a machine path from the task's trail on that machine, with its step total", async () => {
@@ -776,5 +777,22 @@ describe("a demo page asked for many machines", () => {
     const first = (await (await demoServer()!.fetch("/api/machines?open=in-progress&limit=20")).json()) as { machines: unknown[]; more: boolean };
     expect(first.machines).toHaveLength(20);
     expect(first.more).toBe(true);
+  });
+});
+
+describe("the task dialog's description in the demo", () => {
+  const seeded = () => ({ ...fixture(), flows: [{ name: "board", machine: BOARD, agents: [{ ...card("DEMO-1", "ready"), model: "@agent-fast-low" }, card("DEMO-2", "new")] }] });
+
+  it("gives an assigned task a templated brief and a rewritten plan, and an unassigned one the legacy format", async () => {
+    const s = new DemoServer(seeded());
+    const record = async (id: string) => (await body(s.fetch('/api/task/' + id))).record as TaskRecord;
+
+    expect((await record("DEMO-1")).description).toMatch(/## Outcome[\s\S]*## Scope\n\n- /);
+    expect((await record("DEMO-2")).description).not.toContain("## Outcome");
+    expect((await body(s.fetch("/api/history?task=DEMO-1"))).plan_revisions).toBe(1);
+    expect((await body(s.fetch("/api/history?task=DEMO-2"))).plan_revisions).toBe(0);
+    const cards = s.snapshot.flows[0].agents;
+    expect(cards.find((a) => a.id === "DEMO-1")?.readable).toBeUndefined();
+    expect(cards.find((a) => a.id === "DEMO-2")?.readable).toBe("the description has no Outcome section");
   });
 });

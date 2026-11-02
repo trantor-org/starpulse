@@ -45,6 +45,8 @@ export interface KanbanTask {
   definitionOfDone?: { n: number; text: string; checked: boolean }[];
   /** The lifecycle machine that last placed the task, the state it left it in and when (epoch seconds). */
   live: { machine: string; state: string; at: number; source?: string | null } | null;
+  /** The first `readable` guard rule the description breaks, empty when it reads well: the card draws the legacy-format badge for a non-empty one, the dialog none. */
+  readable?: string;
   /** The pass/fail verdict on the task, drawn in the task view only; absent when it was never rated or the rating was cleared. */
   rating?: Rating;
   /** Ready again after waiting: its last Board move was out of Waiting, so a machine state from before it no longer describes the card. */
@@ -392,6 +394,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, claimExpiresAt: a.claim_expires_at ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       rating: sky.ratings?.[a.id],
+      ...(a.readable ? { readable: a.readable } : {}),
       ...(a.criteria ? { acceptanceCriteria: numbered(a.criteria) } : {}),
       ...(a.definition_of_done ? { definitionOfDone: numbered(a.definition_of_done) } : {}),
     };

@@ -27,10 +27,9 @@ describe("the task view in read mode", () => {
   it("draws the plan, notes and checks the record carries", () => {
     const html = draw();
 
-    expect(html).toContain("1. Write the test");
+    expect(html).toContain("<li>Write the test</li>");
     expect(html).toContain("Checked against the live config");
     expect(html).toContain("A Vitest test failed first");
-    expect(html).toContain("The completing-tasks skill was invoked");
     expect(html).toContain("1/2");
   });
 
@@ -148,7 +147,7 @@ describe("the task view's body", () => {
     const left = html.slice(html.indexOf('class="tvcol tvleft"'), html.indexOf('class="tvcol tvrail"'));
     const rail = html.slice(html.indexOf('class="tvcol tvrail"'));
 
-    for (const text of ["Description", "Acceptance criteria", "1/2", "Definition of done", "0/1", "Implementation plan", "1. Write the test", "Notes", "Checked against the live config"]) expect(left, text).toContain(text);
+    for (const text of ["Description", "Acceptance criteria", "1/2", "Implementation plan", "<li>Write the test</li>", "Notes", "Checked against the live config"]) expect(left, text).toContain(text);
     for (const text of ["Pull requests", "priority"]) expect(rail, text).toContain(text);
     expect(left).not.toContain("Pull requests");
   });
@@ -157,7 +156,7 @@ describe("the task view's body", () => {
     const html = draw({ record: { ...record, description: "First para\n\n## Background\n\nSecond para\n\n```yaml\nstart_criteria: []\n```" } });
 
     expect(html).toContain("<p>First para</p>");
-    expect(html).toContain("<h4>Background</h4>");
+    expect(html).toContain('<span class="ht">Background</span>');
     expect(html).toContain("<p>Second para</p>");
     expect(html).toContain("<pre>start_criteria: []</pre>");
   });
@@ -431,7 +430,7 @@ describe("the description's start_criteria block", () => {
   it("gives way to a pointer to the section when the record carries the criteria", () => {
     const { left } = html(draw({ record: { ...record, description: `Wait.\n\n## Start Criteria\n\n${yaml}`, start_criteria: criteria } }));
 
-    expect(left).toContain("<h4>Start Criteria</h4>");
+    expect(left).toContain('<span class="ht">Start Criteria</span>');
     expect(left).toContain("Start Criteria are drawn in the side panel, each with its result");
     expect(left).not.toContain("start_criteria:");
   });

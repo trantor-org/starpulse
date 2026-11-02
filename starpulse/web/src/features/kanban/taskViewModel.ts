@@ -279,6 +279,17 @@ export async function fetchRecord(id: string, fetcher: typeof apiFetch = apiFetc
   }
 }
 
+/** How many times the task's plan was rewritten after work began, as `GET /api/history` counts them; none when the read fails. */
+export async function fetchRevisions(id: string, fetcher: typeof apiFetch = apiFetch): Promise<number> {
+  try {
+    const response = await fetcher(`/api/history?task=${encodeURIComponent(id)}`);
+    const body: { plan_revisions?: number } | null = response.ok ? await response.json().catch(() => null) : null;
+    return body?.plan_revisions ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** A milestone as `GET /api/milestones/<id>` gives it, less its sections. */
 export interface MilestoneDoc { id: string; title: string; description: string; specs: string[] }
 
@@ -437,7 +448,11 @@ export const closesOnKey = (key: string, editing: boolean): boolean => key === "
 export type Block =
   | { kind: "p" | "h" | "moved"; text: string }
   | { kind: "pre"; lang: string; text: string }
-  | { kind: "table"; head: string[]; right: boolean[]; rows: string[][] };
+  | { kind: "table"; head: string[]; right: boolean[]; rows: string[][] }
+  | { kind: "list"; ordered: boolean; items: ListItem[] };
+
+/** One list item's text and, when indented lines follow it, the one nested list under it. */
+export interface ListItem { text: string; sub?: { ordered: boolean; items: string[] } }
 
 /** What the description's `start_criteria` block gives way to once the rail draws the criteria. */
 export const CRITERIA_POINTER = "Start Criteria are drawn in the side panel, each with its result →";
@@ -447,7 +462,40 @@ const DELIMITER = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 /** The cells of one table row, its outer pipes dropped. */
 const cells = (line: string): string[] => line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
 
-/** A task description's Markdown as the blocks the read view draws: paragraphs, `##` headings, fenced code and GFM tables; with `drawn`, the `start_criteria` block is a pointer to the rail. */
+/** A list item's line: its indent, its `-`, `*`, `+` or `1.` marker, and its text. */
+const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+const isOrdered = (marker: string): boolean => /\d/.test(marker);
+
+/** The list that starts at line `from`, and the last line it read: items one level deep nest under their item, deeper ones join that level, and an indented line continues the item above it. */
+function readList(lines: string[], from: number): { block: Block; end: number } {
+  const items: ListItem[] = [];
+  const ordered = isOrdered(ITEM.exec(lines[from])![2]);
+  let inSub = false;
+  let at = from;
+  for (; at < lines.length; at++) {
+    const line = lines[at].replace(/\t/g, "    ");
+    const item = ITEM.exec(line);
+    if (!line.trim()) {
+      if (!ITEM.test(lines[at + 1] ?? "")) break;
+    } else if (item) {
+      const [, indent, marker, text] = item;
+      const nested = indent.length >= 2 && items.length > 0;
+      if (!nested && isOrdered(marker) !== ordered) break;
+      const owner = items[items.length - 1];
+      if (nested) (owner.sub ??= { ordered: isOrdered(marker), items: [] }).items.push(text);
+      else items.push({ text });
+      inSub = nested;
+    } else if (/^\s/.test(line) && !line.trim().startsWith("```")) {
+      const owner = items[items.length - 1];
+      const more = line.trim();
+      if (inSub && owner.sub) owner.sub.items[owner.sub.items.length - 1] += ` ${more}`;
+      else owner.text += ` ${more}`;
+    } else break;
+  }
+  return { block: { kind: "list", ordered, items }, end: at - 1 };
+}
+
+/** A task description's Markdown as the blocks the read view draws: paragraphs, `##` headings, fenced code, GFM tables and lists; with `drawn`, the `start_criteria` block is a pointer to the rail. */
 export function markdown(text: string, drawn = false): Block[] {
   const blocks: Block[] = [];
   const lines = text.split("\n");
@@ -479,11 +527,59 @@ export function markdown(text: string, drawn = false): Block[] {
       for (at += 2; at < lines.length && /^\s*\|/.test(lines[at]); at++) rows.push(cells(lines[at]));
       at--;
       blocks.push({ kind: "table", head: cells(line), right, rows });
+    } else if (ITEM.test(line)) {
+      flush("p");
+      const list = readList(lines, at);
+      blocks.push(list.block);
+      at = list.end;
     } else if (line.trim()) para.push(line);
     else flush("p");
   }
   flush(fence ? "pre" : "p");
   return blocks;
+}
+
+/** A description's blocks under one `##` heading, or (with no `name`) the lead-in before the first. */
+export interface DescSection { name: string | null; blocks: Block[] }
+
+/** The repo-relative path an inline-code span names (a checkout-absolute path loses its checkout prefix), or null when the span is not a file path. */
+export function repoPath(code: string): string | null {
+  const path = code.replace(/^\/home\/[^/]+\/[^/]+\/(?:\.claude\/worktrees\/[^/]+\/)?/, "");
+  return /^\.?[\w@+-][\w.@+-]*(\/[\w.@+-]+)*\/[\w@+-][\w.@+-]*\.[A-Za-z0-9]+$/.test(path) && !path.includes("..") ? path : null;
+}
+
+/** The repository page (`https://host/owner/repo`) a task's first pull request lives in, or null when it has none. */
+export function repoBase(prs: { url: string }[]): string | null {
+  for (const pr of prs) {
+    const found = /^(https?:\/\/[^/]+\/[^/]+\/[^/]+)\/pull\/\d+/.exec(pr.url);
+    if (found) return found[1];
+  }
+  return null;
+}
+
+/** The blocks cut at each `##` heading, which the dialog draws as one collapsible section apiece. */
+export function sections(blocks: Block[]): DescSection[] {
+  const out: DescSection[] = [];
+  for (const block of blocks) {
+    if (block.kind === "h") out.push({ name: block.text, blocks: [] });
+    else if (out.length) out[out.length - 1].blocks.push(block);
+    else out.push({ name: null, blocks: [block] });
+  }
+  return out;
+}
+
+/** The sections that start open: the three that say what the task is for. */
+export const opensByDefault = (name: string): boolean => /^(Outcome|Why|Scope)\b/i.test(name);
+
+/** The one line a closed section shows beside its heading: its first block's text, without Markdown marks. */
+export function preview(blocks: Block[]): string {
+  const lines = blocks.map((b) => {
+    if (b.kind === "list") return b.items.map((i) => i.text).join(" · ");
+    if (b.kind === "table") return b.head.join(" · ");
+    return b.kind === "pre" ? "" : b.text;
+  });
+  const first = lines.find((line) => line.trim()) ?? "";
+  return first.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/`|\*\*/g, "").replace(/\s+/g, " ").trim();
 }
 
 /** The `## ` sections a task's creation writes as its own bookkeeping; the dialog does not draw them. */

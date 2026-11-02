@@ -46,7 +46,7 @@ beforeEach(() => {
   history.replaceState(null, "", "/");
   fetched = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    fetched.push(url);
+    if (!url.startsWith("/api/history")) fetched.push(url);
     return { ok: true, json: async () => ({ record }) };
   }));
   host = document.body.appendChild(document.createElement("div"));
@@ -229,7 +229,7 @@ describe("opening a task's modal", () => {
   it("draws a rested card's modal before its record lands, and fills it when the record lands after the click", async () => {
     let land: (v: unknown) => void = () => {};
     vi.stubGlobal("fetch", vi.fn((url: string) => {
-      fetched.push(url);
+      if (!url.startsWith("/api/history")) fetched.push(url);
       return new Promise((resolve) => { land = resolve; });
     }));
     hover(cardOf("TASK-1"));

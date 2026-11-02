@@ -13,11 +13,11 @@ const carried = {
 };
 
 describe("the task view while its record is read", () => {
-  it("draws the AC and DoD the snapshot entry carries before the record arrives", () => {
+  it("draws the AC the snapshot entry carries before the record arrives", () => {
     const html = draw({ record: undefined, task: carried });
 
     expect(html).toContain("A snapshot criterion");
-    expect(html).toContain("A snapshot DoD item");
+    expect(html).not.toContain("A snapshot DoD item");
     expect(html).toContain("1/1");
     expect(skeletons(html)).toEqual(["Implementation plan", "Notes"]);
   });
@@ -25,7 +25,7 @@ describe("the task view while its record is read", () => {
   it("draws a skeleton in AC, DoD, plan and notes while the record read is pending, never a dash", () => {
     const html = draw({ record: undefined });
 
-    expect(skeletons(html)).toEqual(["Acceptance criteria", "Definition of done", "Implementation plan", "Notes"]);
+    expect(skeletons(html)).toEqual(["Acceptance criteria", "Implementation plan", "Notes"]);
     expect(html).toContain('aria-busy="true"');
   });
 
