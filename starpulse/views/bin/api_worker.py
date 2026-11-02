@@ -41,7 +41,7 @@ from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
 from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
 from starpulse.scheduler.adapters.exposition import autopilot_exposition
-from starpulse.sessions.session_start import starter
+from starpulse.sessions.adapters.outbound.session_start import starter
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.outbound.gc_pauses import install as collect_on_a_timer

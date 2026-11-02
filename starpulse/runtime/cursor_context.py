@@ -2,7 +2,7 @@
 
 from starpulse.harness_telemetry.adapters.outbound.cursor_context import main as _main
 from starpulse.runtime.config import discover, load
-from starpulse.sessions.session_start import starter
+from starpulse.sessions.adapters.outbound.session_start import starter
 
 __all__ = ["main"]
 
