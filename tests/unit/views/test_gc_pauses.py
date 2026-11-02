@@ -5,13 +5,13 @@ threads, so an automatic collection mid-request stalls the whole worker for tens
 """
 
 import gc
+import os
 import threading
 import weakref
 from collections.abc import Iterator
 
 import pytest
-
-from starpulse.views.adapters.outbound.gc_pauses import GcPauses, install
+from starpulse.views.adapters.outbound.gc_pauses import COLLECT_EVERY_S, GcPauses, first_collection_delay_s, install
 
 
 @pytest.fixture
@@ -77,3 +77,28 @@ def test_each_collection_is_counted_and_its_pause_timed(pauses: GcPauses) -> Non
 
 def test_a_worker_that_never_collected_reports_zero(pauses: GcPauses) -> None:
     assert "starpulse_gc_collections_total 0" in pauses.exposition().splitlines()
+
+
+def test_each_worker_first_collection_is_offset_by_a_distinct_phase_within_the_interval() -> None:
+    pids = range(4000, 4012)
+
+    phases = [first_collection_delay_s(COLLECT_EVERY_S, pid) for pid in pids]
+
+    assert all(0.0 <= phase < COLLECT_EVERY_S for phase in phases)
+    assert len(set(phases)) == len(phases)
+    assert min(b - a for a, b in zip(sorted(phases), sorted(phases)[1:], strict=False)) > 1.0
+
+
+def test_the_timer_waits_its_phase_before_the_first_collection(pauses: GcPauses) -> None:
+    waits: list[float] = []
+
+    class _Stop(threading.Event):
+        def wait(self, timeout: float | None = None) -> bool:
+            waits.append(timeout or 0.0)
+            return len(waits) > 2
+
+    timer = install(_Stop(), interval_s=100.0, pauses=pauses)
+    timer.join(timeout=5)
+
+    assert waits[0] == first_collection_delay_s(100.0, os.getpid())
+    assert waits[1:] == [100.0, 100.0]
