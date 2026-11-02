@@ -1,4 +1,4 @@
-"""The autopilot's switch, run ledger and admission tally as Prometheus series on the server's `/metrics`.
+"""The autopilot's switch, run ledger, admission tally and per-gate tally as Prometheus series on the server's `/metrics`.
 
 Each is read from the store on every scrape, so a server that does not run the loop shows the same counts the loop
 wrote there.
@@ -10,15 +10,17 @@ from sqlalchemy import func, select
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import scheduler_runs
-from starpulse.scheduler.adapters.loop import TALLY_KEY
+from starpulse.scheduler.adapters.loop import GATE_TALLY_KEY, TALLY_KEY
+from starpulse.scheduler.model.admission import GATES
 from starpulse.scheduler.model.toggle import KEY as SWITCH_KEY
 
 
 def autopilot_exposition(log: EventLog) -> str:
-    """The four `starpulse_autopilot_*` series as exposition text."""
+    """The `starpulse_autopilot_*` series as exposition text."""
     with log.engine.connect() as db:
         runs = db.execute(select(func.count()).select_from(scheduler_runs)).scalar() or 0
     tally = log.state(TALLY_KEY)[1] or {}
+    gate_tally = log.state(GATE_TALLY_KEY)[1] or {}
     switched = log.setting_updated_at(SWITCH_KEY) or 0
     return "\n".join(
         [
@@ -35,6 +37,14 @@ def autopilot_exposition(log: EventLog) -> str:
             "# TYPE starpulse_autopilot_decisions_total counter",
             *(
                 f'starpulse_autopilot_decisions_total{{verdict="{verdict}"}} {tally.get(verdict, 0)}'
+                for verdict in ("admitted", "refused")
+            ),
+            "# HELP starpulse_autopilot_gate_decisions_total Tasks each admission gate passed (admitted) or bound on (refused).",
+            "# TYPE starpulse_autopilot_gate_decisions_total counter",
+            *(
+                f'starpulse_autopilot_gate_decisions_total{{gate="{gate}",verdict="{verdict}"}} '
+                f"{gate_tally.get(f'{gate}/{verdict}', 0)}"
+                for gate in GATES
                 for verdict in ("admitted", "refused")
             ),
             "",

@@ -13,10 +13,17 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import MachineEvent, StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
-from starpulse.scheduler.adapters.loop import IDLE_RETURNED, SETTLE_REFUSED, START_BACKOFF, START_HALT, Loop
+from starpulse.scheduler.adapters.loop import (
+    GATE_TALLY_KEY,
+    IDLE_RETURNED,
+    SETTLE_REFUSED,
+    START_BACKOFF,
+    START_HALT,
+    Loop,
+)
 from starpulse.scheduler.model.config import Scheduler
-from starpulse.scheduler.model.inputs import STALE_S
 from starpulse.scheduler.model.harness_setting import HarnessSetting
+from starpulse.scheduler.model.inputs import STALE_S
 from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.model.quiet_hours import QuietHours
 from starpulse.scheduler.model.sampler import Sampler
@@ -818,6 +825,21 @@ def test_a_ready_task_waiting_on_a_full_slot_starts_on_the_first_tick_after_the_
     rig.session("T-1", "SESSION_STOPPED")
 
     assert rig.loop.tick() == ["T-2"]  # one tick after the wake that freed the slot, none later
+
+
+def test_a_tick_tallies_each_gate_a_task_passed_and_the_one_that_refused_it(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"sessions": 1})
+    rig.put("T-1")
+    rig.put("T-2")
+    rig.loop.tick()  # T-1 starts and takes the one slot; T-2 is refused by the sessions gate
+    rig.session("T-1")
+
+    rig.loop.tick()
+
+    tally = rig.log.state(GATE_TALLY_KEY)[1]
+    assert tally["sessions/refused"] >= 1
+    assert tally["cpu/admitted"] >= 2  # both tasks passed the cpu gate on the first pass
+    assert "review/refused" not in tally
 
 
 def test_a_stopped_session_that_becomes_active_again_is_not_admitted_as_a_new_run(rig: Rig) -> None:

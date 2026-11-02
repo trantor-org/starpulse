@@ -36,7 +36,15 @@ from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.model.harness import HARNESS
-from starpulse.scheduler.model.admission import REGRESSION, Decision, decide, demand, needs_operator, tier_of
+from starpulse.scheduler.model.admission import (
+    REGRESSION,
+    Decision,
+    decide,
+    demand,
+    gate_verdicts,
+    needs_operator,
+    tier_of,
+)
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse.scheduler.model.harness_setting import HarnessSetting
@@ -65,6 +73,8 @@ START_BACKOFF_MAX = 30 * 60.0
 START_HALT = 60 * 60.0
 #: Admission verdicts counted so far, `{"admitted": n, "refused": n}`, kept in the worker state for `/metrics`.
 TALLY_KEY = "scheduler.decisions"
+#: The per-gate tally behind `starpulse_autopilot_gate_decisions_total`, keyed `<gate>/<verdict>`.
+GATE_TALLY_KEY = "scheduler.gate_decisions"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
 _HOST = ("cpu", "memory")
 
@@ -599,6 +609,10 @@ class Loop:
             tally = Counter(self._kept_state(TALLY_KEY) or {})
             tally.update(counts)
             self._keep_state(TALLY_KEY, dict(tally))
+            gates = Counter(f"{gate}/{verdict}" for decision in decisions for gate, verdict in gate_verdicts(decision))
+            gate_tally = Counter(self._kept_state(GATE_TALLY_KEY) or {})
+            gate_tally.update(gates)
+            self._keep_state(GATE_TALLY_KEY, dict(gate_tally))
 
     def next_pick(self) -> dict[str, Any] | None:
         """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.

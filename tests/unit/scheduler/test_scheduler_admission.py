@@ -11,6 +11,7 @@ from starpulse.scheduler.model.admission import (
     NO_PROFILE,
     decide,
     demand,
+    gate_verdicts,
     ranks_from_trajectories_body,
 )
 from starpulse.scheduler.model.config import DIMENSIONS, Scheduler
@@ -437,3 +438,21 @@ def test_send_back_repick_ranks_a_regression_ahead_of_a_bug_another_task_waits_o
     ]
 
     assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["FIX", "BLOCKING"]
+
+
+def test_an_admitted_task_passes_every_gate(ledger: Ledger) -> None:
+    [decision] = decide([_task()], "ready", _readings(), POLICY, {}, ledger)
+
+    assert gate_verdicts(decision) == [(gate, "admitted") for gate in ("profile", *DIMENSIONS)]
+
+
+def test_a_refused_task_passed_the_gates_before_the_one_that_bound_and_met_none_after(ledger: Ledger) -> None:
+    [decision] = decide([_task()], "ready", _readings(memory=70), POLICY, {}, ledger)
+
+    assert gate_verdicts(decision) == [("profile", "admitted"), ("cpu", "admitted"), ("memory", "refused")]
+
+
+def test_a_task_with_no_profile_is_refused_by_the_profile_gate_alone(ledger: Ledger) -> None:
+    [decision] = decide([_task(profile="")], "ready", _readings(), POLICY, {}, ledger)
+
+    assert gate_verdicts(decision) == [("profile", "refused")]
