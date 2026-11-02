@@ -71,13 +71,14 @@ export function App() {
   const [dgSlot, setDgSlot] = useState<HTMLElement | null>(null);
   // and its milestone outline draws in the outline slot below it, where Layers draw on the Star Map
   const [outlineSlot, setOutlineSlot] = useState<HTMLElement | null>(null);
+  // and the drill-in's In Progress task list draws in its own section there while it is open
+  const [drillSlot, setDrillSlot] = useState<HTMLElement | null>(null);
   const prefs = useSyncExternalStore(admin.subscribe, admin.get);
   // a bare address opens the view the Admin chose; one that names a view opens that
   const [chosen, setView] = useState<ViewName>(() => viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view));
   // the Star Map is desktop-only: a phone width shows the Kanban in its place, and widening the page returns to what was chosen
   const phone = usePhone();
   const view = shownView(chosen, phone);
-  const activeView = useRef(view);
   const pendingView = useRef(0);
   const commitView = useCallback((next: ViewName, url: string) => {
     cancelAnimationFrame(pendingView.current);
@@ -111,7 +112,6 @@ export function App() {
   const choose = useCallback((target: ViewName) => {
     const v = shownView(target, onPhone());
     const url = `${location.pathname}${viewSearch(location.search, v, admin.get().view)}`;
-    activeView.current = v;
     cancelAnimationFrame(pendingView.current);
     if (!reveal(v)) {
       history.replaceState(null, "", url);
@@ -160,13 +160,13 @@ export function App() {
   }, [held, store, admin, openDrill]);
   // declared after the renderer's effect, so the first run already reaches it
   useEffect(() => {
-    activeView.current = view;
     reveal(view, true);
     renderer.current?.show(view === "constellation");
   }, [view, reveal]);
 
-  // a level from the navigator's search or the breadcrumb opens on the Star Map, refitted when it is already the one shown
+  // a level from the navigator's search, the breadcrumb or the Star Map view opens on the Star Map, out of the drill-in, refitted when it is already the one shown
   const open = (p: Path) => {
+    if (drill) closeDrill();
     choose("constellation");
     if (pathKey(p) === pathKey(hud.path)) renderer.current?.fitView();
     else renderer.current?.go(p);
@@ -175,7 +175,7 @@ export function App() {
   return (
     <>
       {!held && <canvas ref={canvas} id="c" />}
-      <Navigator shell={shell} hud={hud} view={view} phone={phone} activeView={activeView} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} choose={choose} open={open}
+      <Navigator shell={shell} hud={hud} view={view} phone={phone} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
       {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && hud.capabilities?.create && (
@@ -197,7 +197,7 @@ export function App() {
       </Kept>
       <Kept name="jobs" on={view === "jobs"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
       <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
-      <Rail shown={shell} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
+      <Rail shown={shell} legend={!drill} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "jobs" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
           setLine(l?.key ?? null);
@@ -213,7 +213,7 @@ export function App() {
         }} />
       {!held && <div ref={tip} id="tip" />}
       {!held && <div ref={panel} id="panel" />}
-      {drill && <Suspense fallback={null}><SunsDrillIn tasks={hud.cards} roles={hud.roles} task={drill} dags={hud.dags.length} onClose={closeDrill} /></Suspense>}
+      {drill && <Suspense fallback={null}><SunsDrillIn tasks={hud.cards} roles={hud.roles} task={drill} onClose={closeDrill} navSlot={drillSlot} /></Suspense>}
     </>
   );
 }
@@ -247,10 +247,10 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
     watch.observe(el);
     return () => watch.disconnect();
   }, []);
-  const { view, activeView, choose, open } = props;
+  const { view, choose, open } = props;
   const tab = (v: ViewName, label: string, glyph: ReactNode, off = false) => (
     <button className={view === v ? "on" : undefined} aria-current={view === v ? "page" : undefined} title={off ? `${label} is desktop-only` : label} disabled={off}
-      onClick={() => (v === "constellation" && activeView.current === v ? open(BOARD) : choose(v))}>{glyph}<span>{label}</span></button>
+      onClick={() => (v === "constellation" ? open(BOARD) : choose(v))}>{glyph}<span>{label}</span></button>
   );
   return (
     <>
@@ -272,9 +272,11 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
   );
 }
 
-function NavigatorBody({ hud, view, phone, activeView, slot, dgSlot, outlineSlot, choose, open, spot, selectTask }: {
-  hud: HudState; view: ViewName; phone: boolean; activeView: { current: ViewName }; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
+function NavigatorBody({ hud, view, phone, slot, dgSlot, outlineSlot, drillSlot, choose, open, spot, selectTask }: {
+  hud: HudState; view: ViewName; phone: boolean; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
+  /** While the drill-in is open, the section its In Progress task list draws in, in place of the view's own lower sections. */
+  drillSlot?: ((el: HTMLElement | null) => void) | null;
 }) {
   const [{ query }, keep] = useFilters(STARMAP_PREFS_KEY, NO_STARMAP_FILTERS), setQuery = (v: string) => keep({ query: v });
   // the Leaderboard's ages move by the minute
@@ -323,7 +325,7 @@ function NavigatorBody({ hud, view, phone, activeView, slot, dgSlot, outlineSlot
       </section>
       <section className="views">
         <h3>Views</h3>
-        <button className={`node${view === "constellation" ? " on here" : ""}`} title={phone ? "Star Map is desktop-only" : "Star Map"} disabled={phone} onClick={() => (activeView.current === "constellation" ? open(BOARD) : choose("constellation"))}>
+        <button className={`node${view === "constellation" ? " on here" : ""}`} title={phone ? "Star Map is desktop-only" : "Star Map"} disabled={phone} onClick={() => open(BOARD)}>
           <i className="g orbit">
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
               <circle cx="12" cy="12" r="5" fill="currentColor" />
@@ -364,9 +366,10 @@ function NavigatorBody({ hud, view, phone, activeView, slot, dgSlot, outlineSlot
           </>}
         </section>
       )}
-      {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
-      {view === "jobs" && <><Queues pools={hud.pools} /><DagPressure data={hud.dagData} /></>}
-      {view === "constellation" && (body ? <section className="away matches">{body}</section> : <Leaderboard tasks={hud.cards} roles={hud.roles} now={now} open={selectTask} />)}
+      {drillSlot && <section className="away drill-tasks" ref={drillSlot} />}
+      {!drillSlot && view === "kanban" && <section className="away outline" ref={outlineSlot} />}
+      {!drillSlot && view === "jobs" && <><Queues pools={hud.pools} /><DagPressure data={hud.dagData} /></>}
+      {!drillSlot && view === "constellation" && (body ?<section className="away matches">{body}</section> : <Leaderboard tasks={hud.cards} roles={hud.roles} now={now} open={selectTask} />)}
       <section className="views admin-sec">
         <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>
           <svg className="g admin-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>
@@ -384,7 +387,7 @@ export function Rail({ shown = true, ...body }: { shown?: boolean } & Parameters
   return <aside id="rail">{shown && <RailBody {...body} />}</aside>;
 }
 
-function RailBody({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
+function RailBody({ hud, view, legend = true, ...feed }: { hud: HudState; view: ViewName; legend?: boolean } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
   // the lines hold still under the pointer, so a run starting mid-aim doesn't push the next line under the click
   const [held, setHeld] = useState<FeedLine[] | null>(null);
   // the feed is a fixed box: it keeps only the newest lines it shows whole, and grows no scrollbar
@@ -406,7 +409,7 @@ function RailBody({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Om
           <FeedLines lines={(held ?? hud.feed).slice(0, fit)} {...feed} />
         </div>
       </section>
-      <section id="legend">
+      {legend && <section id="legend">
         <h3>Legend</h3>
         {view === "jobs" ? <DagLegend /> : view === "kanban" ? (
           <>
@@ -422,7 +425,7 @@ function RailBody({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Om
             <span><i style={{ background: "color-mix(in oklch, var(--agent) 85%, var(--fail))" }} />lifecycle machine</span><span className="mapleg"><i />mapped machine</span><span><i style={{ background: "var(--run)", boxShadow: "0 0 6px var(--run)" }} />activity now</span>
           </>
         )}
-      </section>
+      </section>}
     </>
   );
 }

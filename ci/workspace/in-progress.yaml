@@ -1,9 +1,10 @@
-# What an agent session works through while its task is In Progress: build it, deliver it, then fix what review finds.
-# Each phase is its own machine (`build.yaml`, `deliver.yaml`, `review_fix.yaml`) that `ci/demo_workspace.py` links as a
+# What an agent session works through while its task is In Progress: build it, pass the qa lenses, deliver it, then fix
+# what review finds. Each phase is its own machine (`build.yaml`, `qa.yaml`, `deliver.yaml`, `review_fix.yaml`) that `ci/demo_workspace.py` links as a
 # submachine; its end state fires the move to the next phase here.
 name: InProgress
 states:
   build: {initial: true}
+  qa: {role: resting}
   deliver: {role: resting}
   review_fix: {role: resting}
   review_recorded: {final: true}
@@ -11,7 +12,11 @@ states:
   parked: {final: true}
 events:
   BUILD_DONE:
-    - {from: build, to: deliver}
+    - {from: build, to: qa}
+  QA_PASSED:
+    - {from: qa, to: deliver}
+  CHANGES_FIXED:
+    - {from: qa, to: build}
   DELIVER_DONE:
     - {from: deliver, to: review_fix}
   REDELIVER:
@@ -21,4 +26,4 @@ events:
   REVIEW_RECORDED:
     - {from: review_fix, to: review_recorded}
   PARKED:
-    - {from: [build, deliver, review_fix], to: parked}
+    - {from: [build, qa, deliver, review_fix], to: parked}
