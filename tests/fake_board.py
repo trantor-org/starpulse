@@ -52,7 +52,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         start=start,
         sweep=lambda feed, log, persist: SWEPT.append(feed),
         keys=TaskKeys(key=re.compile(r"FAKE-\d+"), branch=re.compile(r"(FAKE-\d+)")),
-        cues=lambda qualify: [{"event": "SHUT", "dag": "q/nightly", "state": lanes[-1]}],
+        cues=lambda qualify: [{"event": "SHUT", "dag": "q/nightly", "on": "each shut", "state": lanes[-1]}],
         **writers,
     )
 
