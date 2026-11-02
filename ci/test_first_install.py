@@ -172,7 +172,7 @@ def test_a_first_install_links_the_session_that_claims_a_task_to_it(tmp_path: Pa
             return any(row["session"] == SESSION and str(row["task"]).lower() == task.lower() for row in rows)
 
         _until(linked, "the session appearing on the Task")
-        assert f"**Assignee:** {SESSION}" in _get(f"{server}/api/task/{task}")["record"]["notes"]
+        assert _get(f"{server}/api/task/{task}")["record"]["session"] == SESSION
     finally:
         for process in (receiver, serve):
             process.terminate()

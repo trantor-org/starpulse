@@ -245,18 +245,20 @@ def test_an_agents_claim_records_its_session_as_the_assignee_and_an_operators_mo
     assert [(task.lane, task.assignee) for task in scanned(tmp_path)] == [("in_progress", "0d617371")]
     assert built.writer("task-1", "Done", "operator").ok
     assert [task.assignee for task in scanned(tmp_path)] == ["0d617371"]
-    assert "**Assignee:** 0d617371" in path.read_text()
+    assert yaml.safe_load(path.read_text().split("---")[1])["assignee"] == "0d617371"
+    assert "**Assignee:**" not in path.read_text()
     assert "**Holder:**" not in path.read_text()
 
 
-def test_a_session_that_claims_a_task_it_already_holds_leaves_one_assignee_line(tmp_path: Path) -> None:
+def test_a_session_that_claims_a_task_it_already_holds_leaves_one_assignee_field(tmp_path: Path) -> None:
     path, built = project(tmp_path, "To Do")
     assert built.writer is not None
 
     assert built.writer("task-1", "In Progress", "agent", "0d617371").ok
     assert built.writer("task-1", "In Progress", "agent", "0d617371").ok
 
-    assert path.read_text().count("**Assignee:** 0d617371") == 1
+    assert path.read_text().count("assignee: 0d617371") == 1
+    assert "**Assignee:**" not in path.read_text()
     assert built.writer("task-1", "In Progress", "agent", "e5f6a7b8").ok
     assert [task.assignee for task in scanned(tmp_path)] == ["e5f6a7b8"]
 

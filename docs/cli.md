@@ -130,7 +130,7 @@ lists exactly the verbs there are.
 
 `search` reads `GET /api/search?q=QUERY[&limit=N][&label=L]...[&finished_within_days=N]`: the words of `q` are each a quoted phrase and all must match, so
 punctuation (`PROJ-45`, `NEAR`, `title:`) is text and never query syntax. A task is searchable by its key, title,
-description, acceptance criteria and notes (its `**Assignee:**` claim marker, or the legacy `**Holder:**`, is not text), and a match in the title
+description, acceptance criteria and notes (a Backlog.md board's `**Assignee:**` claim marker is not text), and a match in the title
 ranks above one in the description, which ranks above one in a criterion or a note; words are matched by their
 stem (`rotation` finds `rotate`). `score` is higher for a better match, `lane` is the lane the task is in now (or
 `completed` or `archived` once it settled) and `snippet` is the text around the match. The index is a SQLite FTS5
@@ -238,8 +238,7 @@ task `create`, `edit`, `assign`, `archive` and `checkpoint` verbs send the same 
 `writer(task, status, actor, session)`; one that names none calls it with three, so a writer written before sessions
 keeps working. The writer records the session as the task's assignee when the move is a claim, `BoardTask.assignee`
 carries it back, and a `Written.advice` string rides in the move's answer (`advice` in the CLI document, empty when
-the writer has none). The native and Backlog.md adapters' writers record the assignee as a `**Assignee:** <session>` line in the
-task's notes (a `**Holder:**` line from before the rename is still read), in the same edit as the `In Progress` status, because the Backlog CLI drops a frontmatter key it
+the writer has none). The native adapter's writer records the assignee as the task's frontmatter `assignee` (a release removes it and writes `released_from`) and adds no line to its notes; the Backlog.md adapter's writer appends a `**Assignee:** <session>` line to the task's notes, in the same edit as the `In Progress` status, because the Backlog CLI drops a frontmatter key it
 does not know.
 
 `doctor` runs every check even when one fails, so one call names every fault. The checks: `config` (the config file
