@@ -247,6 +247,42 @@ def test_parking_on_a_task_that_cannot_be_waited_for_is_refused_and_writes_nothi
     assert _text(tmp_path, "task-1") == before
 
 
+def test_parking_on_an_archived_task_is_refused_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _in_progress(tmp_path, monkeypatch)
+    archived = native_root(tmp_path) / "archive" / "tasks"
+    archived.mkdir(parents=True)
+    next((native_root(tmp_path) / "tasks").glob("task-2 - *.md")).rename(archived / "task-2 - Title.md")
+    _scan(tmp_path, feed)
+    before = _text(tmp_path, "task-1")
+
+    status, body = _park(feed, built, task="task-1", untilTask=["task-2"])
+
+    assert status == 409 and "archived" in body["error"]
+    assert _text(tmp_path, "task-1") == before
+
+
+def test_parking_on_a_task_that_waits_back_on_the_parked_task_is_refused_as_a_cycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _lifecycle(
+        tmp_path,
+        monkeypatch,
+        {
+            "task-1": ("In Progress", {}),
+            "task-2": ("Ready", {"dependencies": "[task-3]"}),
+            "task-3": ("Ready", {"dependencies": "[task-1]"}),
+        },
+    )
+    before = _text(tmp_path, "task-1")
+
+    status, body = _park(feed, built, task="task-1", untilTask=["task-2"])
+
+    assert status == 409 and "task-1 -> task-2 -> task-3 -> task-1" in body["error"]
+    assert _text(tmp_path, "task-1") == before
+
+
 def _owner(base: Path, *marks: str) -> None:
     """Gives `task-2` one acceptance criterion per mark (`x` checked, a space open)."""
     items = "".join(f"- [{mark}] #{n} Criterion {n}\n" for n, mark in enumerate(marks, 1))
