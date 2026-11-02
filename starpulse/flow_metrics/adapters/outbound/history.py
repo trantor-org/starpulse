@@ -49,7 +49,7 @@ from starpulse.event_log.event_log import EventLog, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
-from starpulse.event_log.store.tables import stream_events
+from starpulse.event_log.store import EventStore
 from starpulse.event_log.tables import gaps as _gaps
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
@@ -820,10 +820,7 @@ class HistoryStore:
 
     def plan_revisions(self, task: str) -> int:
         """How many `PlanRevised` Events the task's History holds: plans rewritten after work began."""
-        c = stream_events.c
-        where = (c.subject_kind == "task", c.subject_id == task, c.type == "PlanRevised")
-        with self.engine.connect() as db:
-            return db.execute(select(func.count()).select_from(stream_events).where(*where)).scalar_one()
+        return sum(1 for event in EventStore(self.engine).read("task", task) if event.type == "PlanRevised")
 
     def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]:
         """The events of the task, or of the run with that id, on `flow` as `{at, event, state}` in order, and their count."""
