@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from starlette.routing import BaseRoute, Mount, Route
@@ -135,3 +136,10 @@ def test_every_api_route_is_one_mount_of_resource_modules(tmp_path: Path) -> Non
     modules = {child.endpoint.__module__ for child in mounts[0].routes if isinstance(child, Route)}
     assert modules
     assert all(module.startswith("starpulse.views.adapters.inbound.api.") for module in modules)
+
+
+def test_end_streams_stops_the_snapshot_warmer(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    assert not app._warm_stop.is_set()
+    asyncio.run(app.end_streams())
+    assert app._warm_stop.is_set()

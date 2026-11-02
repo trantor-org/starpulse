@@ -65,12 +65,6 @@ class Snapshots:
         """The snapshot as of now, unencoded."""
         return Served(*self._feed.snapshot_at())
 
-    @property
-    def held_rev(self) -> int | None:
-        """The feed revision of the warm snapshot, None before the first build."""
-        warm = self._warm
-        return None if warm is None else warm.served.rev
-
     def build(self) -> tuple[Served, Encoded]:
         """The snapshot with its body and gzip: the warm one while it is current, else one built now."""
         if self._refresh_s <= 0:
