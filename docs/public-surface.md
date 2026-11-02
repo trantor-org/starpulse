@@ -107,6 +107,7 @@ is public for the names listed here:
 - `starpulse.runs`: the runs instance a config file declares (`RunsInstance`).
 - `starpulse.sessions`: what an agent session did: the Activity each tool call performed (`activities`, labels with no arguments), and session and slice Health folded from Claude Code's and Codex's log exports (`session_health`, `slice_health`) as the DTOs `GET /api/analytics/sessions` serves.
 - `starpulse.runtime.adapter_kit`: the test kit an adapter author runs against their work, and the helpers that serve it.
+- `starpulse.runtime.ephemeral_board`: `ephemeral_board(seeds)`, which opens a task per `TaskSeed` on a scratch board and returns their records (the `starpulse task show` reply) with the `WriteInstance` that wrote them, so a project tests against a board without a harness of its own.
 - `starpulse.runtime.write_instance`: `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).
 - `starpulse.runtime.config`: loading the config file and the runs adapter a `type` names.
 - `starpulse.runtime.closure`: `CONFIG_OWNERS` (the processes that read each key) with `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).

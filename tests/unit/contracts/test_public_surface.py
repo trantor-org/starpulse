@@ -154,6 +154,7 @@ RUNTIME: dict[str, set[str]] = {
     },
     "starpulse.runtime.closure": {"CONFIG_OWNERS", "restarts_serve"},
     "starpulse.runtime.config": {"Config", "ConfigError", "load", "runs_adapter"},
+    "starpulse.runtime.ephemeral_board": {"EphemeralBoard", "EphemeralBoardError", "TaskSeed", "ephemeral_board"},
     "starpulse.runtime.write_instance": {"WriteInstance", "write_instance"},
 }
 
