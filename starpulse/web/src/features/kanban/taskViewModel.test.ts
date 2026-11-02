@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import description from "./fixtures/task-9251.md?raw";
 import type { KanbanTask } from "./kanbanModel";
-import { changedFields, ciHistory, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, editKey, fetchRecord, labelRuleError, markdown, menuKey, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
+import { changedFields, ciHistory, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, editKey, fetchRecord, labelRuleError, markdown, menuKey, repoBase, repoPath, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -300,6 +301,37 @@ describe("markdown", () => {
       { kind: "p", text: "after" },
     ]);
   });
+
+  it("reads bullet and numbered lists, keeping an indented continuation line with its item", () => {
+    expect(markdown("Intro\n- one\n* two\n\n1. first\n   more\n2) second")).toEqual([
+      { kind: "p", text: "Intro" },
+      { kind: "list", ordered: false, items: [{ text: "one" }, { text: "two" }] },
+      { kind: "list", ordered: true, items: [{ text: "first more" }, { text: "second" }] },
+    ]);
+  });
+
+  it("nests a list one level and flattens anything deeper into that level", () => {
+    expect(markdown("1. step\n   - a\n   - b\n     - deep\n2. next\n  1. sub")).toEqual([
+      { kind: "list", ordered: true, items: [
+        { text: "step", sub: { ordered: false, items: ["a", "b", "deep"] } },
+        { text: "next", sub: { ordered: true, items: ["sub"] } },
+      ] },
+    ]);
+  });
+
+  it("keeps one list across a blank line between its items, and ends it at other text", () => {
+    expect(markdown("- a\n\n- b\n\nafter")).toEqual([
+      { kind: "list", ordered: false, items: [{ text: "a" }, { text: "b" }] },
+      { kind: "p", text: "after" },
+    ]);
+  });
+
+  it("reads TASK-9251's description as lists under Scope and the plan", () => {
+    const blocks = markdown(description);
+    const lists = blocks.filter((b) => b.kind === "list");
+
+    expect(lists.map((b) => b.kind === "list" && [b.ordered, b.items.length])).toEqual([[false, 4], [true, 5]]);
+  });
 });
 
 describe("taskBody", () => {
@@ -427,5 +459,22 @@ describe("the doc reads", () => {
     expect(await fetchDoc("doc-1", reply(200, { doc: { id: "doc-1", body: "b" } }) as never)).toEqual({ id: "doc-1", body: "b" });
     expect(await fetchMilestone("m-1", reply(404, { error: "no" }) as never)).toBeNull();
     expect(await fetchDocs((async () => { throw new Error("offline"); }) as never)).toEqual([]);
+  });
+});
+
+describe("repo paths", () => {
+  it("reads a file path repo-relative, dropping a checkout prefix", () => {
+    expect(repoPath("starpulse/web/src/style.css")).toBe("starpulse/web/src/style.css");
+    expect(repoPath("/home/adinb/trantor/.claude/worktrees/task-1-x/starpulse/web/a.ts")).toBe("starpulse/web/a.ts");
+    expect(repoPath("/home/adinb/trantor/docs/a.md")).toBe("docs/a.md");
+  });
+
+  it("leaves commands, directories, URLs and parent paths as plain code", () => {
+    for (const text of ["make lint", "pulls/model/", "https://x.io/a.md", "../a/b.md", "README", "a b/c.md"]) expect(repoPath(text), text).toBeNull();
+  });
+
+  it("takes the repository page from the first pull request url that has one", () => {
+    expect(repoBase([{ url: "http://pr/12" }, { url: "https://github.com/trantor-org/starpulse/pull/1152" }])).toBe("https://github.com/trantor-org/starpulse");
+    expect(repoBase([])).toBeNull();
   });
 });

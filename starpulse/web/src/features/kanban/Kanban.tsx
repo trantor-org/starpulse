@@ -27,7 +27,7 @@ import { NewTaskAction } from "./NewTask";
 import { SearchClear } from "../../shared/SearchClear";
 import { useScrollRest } from "../../shared/scrollRest";
 import { TaskView } from "./TaskView";
-import { PRE_DRAW_REST_MS, READ_AHEAD_MS, RecordCache, fetchRecord, type TaskRecord } from "./taskViewModel";
+import { PRE_DRAW_REST_MS, READ_AHEAD_MS, RecordCache, fetchRecord, fetchRevisions, type TaskRecord } from "./taskViewModel";
 import type { Capabilities, Pull, Roles } from "../../api";
 
 /** A milestone's header: the key the snapshot carries, or the bucket for tasks with none. */
@@ -146,6 +146,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
       </div>
       {links && links.length > 0 && <div className={`uw${finished ? " dn" : ""}`}><span className="nw">{finished ? "✓ unblocked" : "⧗ waits on"}</span>{" "}{links.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>
+      {task.readable && <span className="legacy" title={task.readable}>legacy format</span>}
       {claim ? (
         <div className="mach sess">
           <span className="p" /><b>session</b><span className="s">· {claim.phase === "starting" ? "starting" : "waiting for claim"}</span>
@@ -333,6 +334,13 @@ function Modal({ task, tasks, records, stack, names, roles, marks, now, profiles
   // a read that fails is shown, with a retry, rather than leaving the modal busy for good
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [revisions, setRevisions] = useState(0);
+  useEffect(() => {
+    let current = true;
+    const read = record?.plan.trim() ? fetchRevisions(task.id) : Promise.resolve(0);
+    void read.then((n) => current && setRevisions(n));
+    return () => { current = false; };
+  }, [task.id, record]);
   useEffect(() => {
     let current = true;
     // the read ahead is awaited even once it has landed, since it may have landed after this render initialized `record`;
@@ -345,7 +353,7 @@ function Modal({ task, tasks, records, stack, names, roles, marks, now, profiles
     return () => { current = false; };
   }, [held, task.id, attempt]);
   return (
-      <TaskView task={task} tasks={tasks} record={record} stack={stack} lane={names[task.lane] ?? task.lane} names={names} roles={roles} now={now} open={open}
+      <TaskView task={task} tasks={tasks} record={record} revisions={revisions} stack={stack} lane={names[task.lane] ?? task.lane} names={names} roles={roles} now={now} open={open}
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
         startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}

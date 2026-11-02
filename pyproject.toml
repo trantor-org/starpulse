@@ -37,6 +37,7 @@ dev = [
     "httpx2>=2.16.0",
     "hypothesis>=6.170.8",
     "import-linter>=2.15",
+    "playwright>=1.63.0",
     "pytest>=9",
     "pytest-cov>=7.1.0",
     "pytest-memray>=1.11.0",

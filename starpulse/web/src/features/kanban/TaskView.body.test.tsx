@@ -34,18 +34,17 @@ describe("task dialog body", () => {
     const html = draw({ record: { ...record, description } });
 
     for (const gone of ["Duplicate Search", "none found", "ADR Needed", "Duplicate Resolution", "dupes resolved"]) expect(html, gone).not.toContain(gone);
-    expect(html).toContain("<h4>Background</h4>");
+    expect(html).toContain('<span class="ht">Background</span>');
     expect(html).toContain("Kept text.");
   });
 
-  it("body sections: hides an empty plan, draws Definition of done and drops the Assignee line from Notes", () => {
+  it("body sections: hides an empty plan, drops the Assignee line from Notes", () => {
     const blank = draw({ record: { ...record, plan: " \n " } });
     expect(blank).not.toContain("Implementation plan");
 
     const html = draw({ record: { ...record, notes: "**Assignee:** bfd2745a-fede-456b-ab79-895a15a03de2\nChecked against the live config" } });
     const left = leftOf(html);
-    expect(left).toContain("Definition of done");
-    expect(left).toContain("The completing-tasks skill was invoked");
+    expect(left).not.toContain("Definition of done");
     expect(left).toContain("Checked against the live config");
     expect(left).not.toContain("bfd2745a-fede-456b-ab79-895a15a03de2");
   });

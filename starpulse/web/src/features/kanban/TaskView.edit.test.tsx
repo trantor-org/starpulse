@@ -40,7 +40,7 @@ describe("editing one section at a time", () => {
   it("puts a ✎ Edit beside each section heading, the title and Details, and none when the board cannot edit", () => {
     const host = mount();
 
-    for (const name of ["description", "acceptance criteria", "definition of done", "implementation plan", "notes", "title", "details"]) expect(pen(host, name), name).toBeTruthy();
+    for (const name of ["description", "acceptance criteria", "implementation plan", "notes", "title", "details"]) expect(pen(host, name), name).toBeTruthy();
     expect(q(host, ".tvhead .editbtn")).toBeNull();
     const readOnly = mount({ capabilities: { edit: false, archive: false } });
     expect(q(readOnly, "button.pen")).toBeNull();
@@ -56,7 +56,7 @@ describe("editing one section at a time", () => {
     expect(editor?.readOnly).toBe(false);
     expect(q(host, ".sec.on")?.textContent).toContain("Ctrl+Enter saves · Esc cancels");
     expect([...host.querySelectorAll(".sec.on button")].map((b) => b.textContent)).toEqual(expect.arrayContaining(["Cancel", "Save"]));
-    expect(host.textContent).toContain("1. Write the test");
+    expect(host.textContent).toContain("Write the test");
     expect(pen(host, "description")).toBeNull();
     expect(pen(host, "notes")).toBeTruthy();
     expect(host.textContent).not.toContain("fields changed");
@@ -304,19 +304,6 @@ describe("editing one section at a time", () => {
     } finally {
       removeEventListener("keydown", redrawFirst);
     }
-  });
-
-  it("toggles a Definition of done checkbox straight to a write, with no editor", async () => {
-    const fetcher = stubWriter();
-    const host = mount();
-
-    const box = q<HTMLInputElement>(host, 'input[aria-label="Definition of done #1 done"]');
-    expect(box?.disabled).toBe(false);
-    await act(async () => { box!.click(); });
-
-    expect(open(host)).toHaveLength(0);
-    expect(Object.keys(wrote(fetcher).changes)).toEqual(["definitionOfDone"]);
-    expect(q(host, ".toast")?.textContent).toBe("✓ Saved definition of done");
   });
 
   it("opens an evidence field under a newly checked criterion and writes it on Ctrl+Enter, or nothing on Escape", async () => {

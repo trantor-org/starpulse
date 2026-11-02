@@ -7,11 +7,11 @@ import { ciTone, columnsOf, offBoardTask, prReadState, roleOf, type KanbanTask }
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import { DocReader, DocRows, useDocs } from "./DocReader";
-import { Inline, Md } from "./Markdown";
+import { Inline, Md, RepoBase } from "./Markdown";
 import { sessionNickname } from "./nickname";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
-  LABEL_FIELDS, LABEL_RULE, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem, unlistedPulls,
+  LABEL_FIELDS, LABEL_RULE, repoBase, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem, unlistedPulls,
   type ActivityEvent, type CiPull, type DepRow, type DocLink, type Item, type LabelField, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskViewModel";
 
@@ -29,6 +29,8 @@ export interface TaskViewProps {
   startNote: ReactNode;
   /** Why the full record is missing, once its read failed: the modal is no longer busy waiting for it. */
   readNote?: ReactNode;
+  /** How many times the plan was rewritten after work began, as the History counts them: the plan heading links to them in Activity. */
+  revisions?: number;
   /** The Waiting stack or Done chain the task sits in, listed in its own row. */
   stack?: ReactNode;
   capabilities?: Capabilities;
@@ -504,9 +506,9 @@ export function TaskView(p: TaskViewProps) {
     </div>
   );
   /** One editable section: its heading with the ✎, the body, and while it is the open one an outline and the bar. */
-  const sec = (section: Section, name: string, body: ReactNode, count?: string, rail = false) => (
+  const sec = (section: Section, name: string, body: ReactNode, count?: string, rail = false, after?: ReactNode) => (
     <section className={`sec${rail ? " rs" : ""}${editing === section ? " on" : ""}`}>
-      <div className="sh"><span className="t">{name}</span>{count && <span className="n">{count}</span>}{pen(section)}</div>
+      <div className="sh"><span className="t">{name}</span>{after}{count && <span className="n">{count}</span>}{pen(section)}</div>
       {body}
       {editing === section && bar}
     </section>
@@ -519,6 +521,10 @@ export function TaskView(p: TaskViewProps) {
   };
   // A section the record has yet to fill: a placeholder while it loads, nothing once the read failed.
   const loading = (name: string) => p.readNote ? null : <section className="sec skel" aria-label={name}><div className="sh"><span className="t">{name}</span></div><div className="bar" /><div className="bar short" /></section>;
+  // The plan heading's count of rewrites after work began, which scrolls to Activity where the reasons are.
+  const revised = !!p.revisions && (
+    <a className="rev" href="#activity" onClick={(e) => { e.preventDefault(); document.getElementById("activity")?.scrollIntoView({ block: "start" }); }}>{"revised " + p.revisions + "×"}</a>
+  );
   const prose = (section: "plan" | "notes", name: string) => {
     const shown = section === "notes" ? taskBody(draft).notes : draft.plan;
     // An empty plan has no section to show: only an entry point to write one.
@@ -531,12 +537,13 @@ export function TaskView(p: TaskViewProps) {
           {asksWhy && <input className={fieldClass("fv reason", true, false)} type="text" value={planReason} placeholder="Why is the plan changing? (required once work has begun)"
             aria-label="Reason for revising the plan" onChange={(e) => setPlanReason(e.currentTarget.value)} />}
         </>
-      : shown.trim() ? <Md text={shown} open={p.open} /> : <span className="none">—</span>);
+      : shown.trim() ? <Md text={shown} open={p.open} /> : <span className="none">—</span>, undefined, false, section === "plan" && revised);
   };
   const row = (name: string, value: ReactNode, className?: string) => <tr key={name} className={className}><td>{name}</td><td>{value}</td></tr>;
   const tab = (on: boolean, text: string) => <button role="tab" aria-selected={preview === on} className={preview === on ? "on" : ""} onClick={() => setPreview(on)}>{text}</button>;
 
   return (
+    <RepoBase.Provider value={repoBase(p.task.prs)}>
     <div id="kbm" onClick={(event) => onScrim(event.target, event.currentTarget) && p.close()}>
       <div className="modal tv" role="dialog" aria-label={`${p.task.id} ${base.title}`} aria-busy={!p.record && !p.readNote}>
         <div className="tvhead">
@@ -572,9 +579,8 @@ export function TaskView(p: TaskViewProps) {
             {sec("description", "Description", editing === "description" ? <>
               <div className="tabs" role="tablist">{tab(false, "Write")}{tab(true, "Preview")}<span className="k">Markdown</span></div>
               {preview ? <Md text={draft.description} className="md prev" drawn={criteria.length > 0} open={p.open} /> : <Txt {...fp("description")} value={draft.description} label="Description" long focus onChange={(value) => change("description", value)} />}
-            </> : <Md text={taskBody(draft).description} drawn={criteria.length > 0} open={p.open} />)}
+            </> : <Md text={taskBody(draft).description} drawn={criteria.length > 0} folds open={p.open} />)}
             {p.record || p.task.acceptanceCriteria ? checks("acceptanceCriteria", "Acceptance criteria") : loading("Acceptance criteria")}
-            {p.record || p.task.definitionOfDone ? checks("definitionOfDone", "Definition of done") : loading("Definition of done")}
             {p.record ? prose("plan", "Implementation plan") : loading("Implementation plan")}
             {p.record ? prose("notes", "Notes") : loading("Notes")}
             <section className="sec" id="activity">
@@ -673,5 +679,6 @@ export function TaskView(p: TaskViewProps) {
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </div>
+    </RepoBase.Provider>
   );
 }
