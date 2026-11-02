@@ -266,14 +266,14 @@ def _held_signals(
     The oldest signal the log holds is where its history begins: a window that starts before it is 400 with the
     history's length (`history_s`), never answered with its missing hours as empty, as `level_response` refuses one."""
     try:
-        held = telemetry.read()
+        start, held = telemetry.held_from(now - window * 3600)
     except Exception as exc:  # the event log's database is unreachable
         logger.warning("%s: telemetry unreadable: %s", label, exc)
         return _error("the telemetry log cannot be read"), 503
-    history = now - min((s.time for s in held), default=now)
+    history = now - (now if start is None else start)
     if window * 3600 > history:
         return encode(kind, {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
-    return [s for s in held if s.time >= now - window * 3600]
+    return held
 
 
 def sessions_response(
