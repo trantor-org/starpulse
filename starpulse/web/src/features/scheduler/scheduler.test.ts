@@ -215,6 +215,23 @@ describe("the Autopilot card's store", () => {
     expect(bare.get().current!.sessionCap).toBeNull();
   });
 
+  it("reads every blocking gate with its use and limit, and the start-limit count", async () => {
+    const blockedBy = [
+      { name: "cpu", use: 95, limit: 80 },
+      { name: "start-limit", use: 48, limit: 48, count: 3 },
+    ];
+    const store = new SchedulerStore(server({ body: { ...STATUS, blockedBy } }));
+    await store.load();
+    expect(store.get().current!.blockedBy).toEqual([
+      { name: "cpu", use: 95, limit: 80, count: null },
+      { name: "start-limit", use: 48, limit: 48, count: 3 },
+    ]);
+
+    const bare = new SchedulerStore(server({ body: { ...STATUS, blockedBy: undefined } }));
+    await bare.load();
+    expect(bare.get().current!.blockedBy).toEqual([]);
+  });
+
   it("sets the session cap by PUTting {sessionCap} and clears it with null", async () => {
     const fetcher = server();
     const store = new SchedulerStore(fetcher);

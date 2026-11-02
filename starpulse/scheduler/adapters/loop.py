@@ -52,7 +52,7 @@ from starpulse.scheduler.model.inputs import STALE_S, points
 from starpulse.scheduler.model.ledger import Ledger, RunRecord
 from starpulse.scheduler.model.quiet_hours import QuietHours
 from starpulse.scheduler.model.sampler import PERIOD, Reading, Sampler
-from starpulse.scheduler.model.start_failure import permanent, sessions_full
+from starpulse.scheduler.model.start_failure import permanent, session_counts, sessions_full
 from starpulse.scheduler.model.state import START_COOLDOWN, SchedulerState
 from starpulse.scheduler.model.toggle import Toggle
 from starpulse.scheduler.model.usage_limit import until as usage_until
@@ -78,6 +78,15 @@ START_HALT = 60 * 60.0
 TALLY_KEY = "scheduler.decisions"
 #: The per-gate tally behind `starpulse_autopilot_gate_decisions_total`, keyed `<gate>/<verdict>`.
 GATE_TALLY_KEY = "scheduler.gate_decisions"
+#: The short ring of gate readings and block reasons kept in the worker state, newest last.
+GATE_HISTORY_KEY = "scheduler.gate_history"
+GATE_HISTORY_MAX = 100
+#: How many of the newest rows `GET /api/scheduler` serves.
+GATE_HISTORY_SERVED = 20
+#: Seconds an unchanged block reason waits before the history keeps another row of readings.
+GATE_HISTORY_EVERY = 300.0
+#: The gate a full session-start service limit shows as, beside the capacity dimensions.
+START_LIMIT = "start-limit"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
 _HOST = ("cpu", "memory")
 
@@ -174,6 +183,7 @@ class Loop:
         self._paused: dict[str, dict[str, Any]] = self._load_pauses()
         self._skip_logged: str | None = None  # the last reason a tick logged for skipping admission
         self._full: tuple[int, float] = (0, 0.0)  # refusals while the session limit is full, and when to try again
+        self._full_counts: tuple[int, int] = (0, 0)  # the live count and limit the last refusal named
         self._failed: dict[str, tuple[int, float]] = {}  # a task whose start failed: its failures so far, when to retry
         self._events: queue.Queue | None = None
         self._sampled_at: float | None = None  # the sample of the last `scheduler` status the loop was offered
@@ -634,13 +644,16 @@ class Loop:
         agent = next(a for a in tasks if a["id"] == top.task)
         now = self._clock()
         pause = self._selected_paused(now)
-        waits = not top.admitted or self._quiet(now) or pause is not None
+        full = self._full[1] > now
+        waits = not top.admitted or self._quiet(now) or pause is not None or full
         if not top.admitted:
             reason = top.blocked_by
         elif self._quiet(now):
             reason = "quiet hours"
         elif pause is not None:
             reason = f"{pause} {self._paused[pause]['reason']}"
+        elif full:
+            reason = START_LIMIT
         else:
             reason = "goes next"
         return {
@@ -651,13 +664,53 @@ class Loop:
             "priority": top.priority,
         }
 
+    def blocks(self) -> list[dict[str, Any]]:
+        """Every gate holding admission back now, each with its use and limit: every dimension the top task overfits, and
+        `start-limit` with its refusal count while the session-start service's limit is full. Empty before the first sample."""
+        if not self._sampler.readings()[0]:
+            return self._block_rows([], (), self._clock())
+        readings = self._readings()
+        _, decisions = self._decide(readings, set(), log=False)
+        return self._block_rows(readings, decisions[0].overfit if decisions else (), self._clock())
+
+    def gate_history(self, limit: int = GATE_HISTORY_MAX) -> list[dict[str, Any]]:
+        """The last `limit` rows of gate readings and block reasons, oldest first, kept in the worker state."""
+        raw = self._kept_state(GATE_HISTORY_KEY)
+        rows = [row for row in raw if isinstance(row, dict)] if isinstance(raw, list) else []
+        return rows[-limit:]
+
+    def _block_rows(self, readings: list[Reading], overfit: tuple[str, ...], now: float) -> list[dict[str, Any]]:
+        by_name = {reading.name: reading for reading in readings}
+        rows: list[dict[str, Any]] = [
+            {"name": name, "use": by_name[name].use, "limit": by_name[name].limit} for name in overfit if name in by_name
+        ]
+        if self._full[1] > now:
+            use, limit = self._full_counts
+            rows.append({"name": START_LIMIT, "use": float(use), "limit": float(limit), "count": self._full[0]})
+        return rows
+
+    def _record(self, now: float, readings: list[Reading], decisions: list[Decision]) -> None:
+        """Keep a row of this pass's readings and block reasons when the reasons changed or `GATE_HISTORY_EVERY` passed."""
+        rows = self._block_rows(readings, decisions[0].overfit if decisions else (), now)
+        history = self.gate_history()
+        if history and now - history[-1]["at"] < GATE_HISTORY_EVERY:
+            if [row["name"] for row in history[-1]["blockedBy"]] == [row["name"] for row in rows]:
+                return
+        dimensions = [{"name": r.name, "use": r.use, "limit": r.limit} for r in readings]
+        history.append({"at": now, "dimensions": dimensions, "blockedBy": rows})
+        self._keep_state(GATE_HISTORY_KEY, history[-GATE_HISTORY_MAX:])
+
     def _admit(self, now: float) -> list[str]:
         started: list[str] = []
         if self._full[1] > now:  # the session limit is full: every start would be refused
+            readings = self._readings()
+            self._record(now, readings, self._decide(readings, set(), log=False)[1])
             return started
+        last: tuple[list[Reading], list[Decision]] | None = None
         skipped = {task for task, (_, retry_at) in self._failed.items() if retry_at > now}  # still backing off
         while readings := self._readings():
             tasks, decisions = self._decide(readings, skipped)
+            last = (readings, decisions)
             prompt: dict[str, Any] = {}
             if (picked := next((d for d in decisions if d.admitted), None)) is None and self._policy.verify_lane:
                 # the eligible lane has nothing admissible: a task awaiting verification takes the room, on the verify profile
@@ -675,7 +728,7 @@ class Loop:
                 self._note_limit(str(exc), now, harness)
                 self._note_halt(str(exc), now, harness)
                 if sessions_full(str(exc)):
-                    self._note_full(now)
+                    self._note_full(now, str(exc))
                     break
                 if self._selected_paused(now):
                     break
@@ -698,6 +751,8 @@ class Loop:
             started.append(picked.task)
             logger.info("StarPulse scheduler: started %s at %s", picked.task, session)
             self._note_claim(picked.task, session)
+        if last is not None:
+            self._record(now, *last)
         return started
 
     def _hold(self, task: str) -> None:
@@ -768,8 +823,9 @@ class Loop:
         self._save_pauses()
         logger.error("StarPulse scheduler: admission for %s halted for %d minutes: %s", harness, START_HALT // 60, text)
 
-    def _note_full(self, now: float) -> None:
+    def _note_full(self, now: float, text: str) -> None:
         refusals = self._full[0] + 1
+        self._full_counts = session_counts(text) or self._full_counts
         self._full = (refusals, now + min(START_BACKOFF * 2 ** (refusals - 1), SESSIONS_FULL_BACKOFF_MAX))
 
     def _back_off(self, task: str, now: float) -> None:

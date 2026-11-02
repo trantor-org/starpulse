@@ -1277,12 +1277,20 @@ export interface StripBucket {
 /**
  * Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.
  *
- * `inFlight`, `next`, `sessionsByHarness` and `needsOperator` are served only by a server that runs a dispatch loop; without one they
+ * `inFlight`, `next`, `sessionsByHarness`, `blockedBy`, `gateHistory` and `needsOperator` are served only by a server that runs a dispatch loop; without one they
  * are absent.
  */
 export interface SchedulerStatus {
+  /**
+   * Every gate holding admission back now, each with its use and limit; empty when none does.
+   */
+  blockedBy?: SchedulerBlock[];
   dimensions: SchedulerDimension[];
   enabled: boolean;
+  /**
+   * The latest kept rows of gate readings and block reasons, oldest first, kept by the scheduler itself.
+   */
+  gateHistory?: SchedulerGateRow[];
   /**
    * The harness the loop starts sessions on; defaults to claude.
    */
@@ -1321,12 +1329,38 @@ export interface SchedulerStatus {
   [k: string]: unknown;
 }
 /**
+ * One gate holding admission back: a capacity dimension the top task overfits, or `start-limit`, the session-start
+ * service refusing every start because its live-session limit is full.
+ */
+export interface SchedulerBlock {
+  /**
+   * For `start-limit`, the refusals since a start last landed.
+   */
+  count?: number | null;
+  limit: number;
+  name: "cpu" | "memory" | "sessions" | "review" | "start-limit";
+  use: number;
+  [k: string]: unknown;
+}
+/**
  * One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.
  */
 export interface SchedulerDimension {
   limit: number;
   name: "cpu" | "memory" | "sessions" | "review";
   use: number;
+  [k: string]: unknown;
+}
+/**
+ * One kept row of the gate history: every dimension's reading and every gate that held admission back at `at`.
+ */
+export interface SchedulerGateRow {
+  /**
+   * When the row was kept, in epoch seconds.
+   */
+  at: number;
+  blockedBy: SchedulerBlock[];
+  dimensions: SchedulerDimension[];
   [k: string]: unknown;
 }
 /**

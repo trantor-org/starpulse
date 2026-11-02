@@ -68,7 +68,8 @@ def demand(task: Mapping[str, Any], policy: Scheduler, ledger: Ledger) -> dict[s
 class Decision:
     """One eligible task's verdict.
 
-    It is `admitted` when its `demand` fits every dimension's headroom, else `blocked_by` the first dimension it overfits.
+    It is `admitted` when its `demand` fits every dimension's headroom, else `blocked_by` the first dimension it overfits;
+    `overfit` lists every one it overfits, in gate order, empty for a task refused `NO_PROFILE`.
     `depth` is the longest chain of open tasks waiting on it; `p_goal` the forecast chance of the goal for that task in
     the eligible lane, else the chain's chance from the lane; `predictor` the optional predictor's score; `priority` the Priority matrix cell the task ranked by (`<impact>/<urgency>`,
     or `default` for a task with neither) and `weight` that cell's Priority weight. The ranks number
@@ -86,6 +87,7 @@ class Decision:
     weight: float = 1.0
     shadow_rank: int | None = None
     enforced_rank: int | None = None
+    overfit: tuple[str, ...] = ()
 
 
 #: The gates a task meets in the order `decide` tries them, named as the `gate` label of the admission metric.
@@ -235,17 +237,19 @@ def decide(
     for task in sorted(workable, key=held):  # the decisions last, after the room the others take is known
         need = demand(task, policy, ledger)
         room = {name: headroom[name] - (reserved[name] if held(task) else 0) for name in DIMENSIONS}
+        overfit = tuple(name for name in DIMENSIONS if need[name] > room[name])
         if tier_of(task) not in policy.tier_weights:
             blocked_by: str | None = NO_PROFILE
+            overfit = ()
         else:
-            blocked_by = next((name for name in DIMENSIONS if need[name] > room[name]), None)
+            blocked_by = overfit[0] if overfit else None
         if blocked_by is None and not held(task):
             reserved = {name: reserved[name] + need[name] for name in DIMENSIONS}
         score = _score(predictor, task)
         p_goal = chances.get(task["id"], lane_p_goal)
         priority, weight = policy.priority_of(task)
         decision = Decision(
-            task["id"], blocked_by is None, blocked_by, need, depths[task["id"]], p_goal, score, priority, weight
+            task["id"], blocked_by is None, blocked_by, need, depths[task["id"]], p_goal, score, priority, weight, overfit=overfit
         )
         share = max(need[name] / limits[name] for name in DIMENSIONS)
         values[decision.task] = decision.weight * decision.depth * (p_goal if score is None else score) / share

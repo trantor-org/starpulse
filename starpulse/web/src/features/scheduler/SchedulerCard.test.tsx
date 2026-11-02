@@ -151,6 +151,18 @@ describe("the Admin view's Autopilot card", () => {
     expect(q(".nx .why")?.textContent).toBe("waits: quiet hours");
   });
 
+  it("lists every gate holding admission back, with the start-limit count", async () => {
+    await draw({ blockedBy: [{ name: "cpu", use: 95, limit: 80 }, { name: "start-limit", use: 48, limit: 48, count: 3 }] });
+
+    expect(q(".inflight.blocked")?.textContent).toBe("cpu 95/80 · start-limit 48/48 ×3");
+  });
+
+  it("draws no Blocked by row when no gate holds", async () => {
+    await draw({ blockedBy: [] });
+
+    expect(q(".inflight.blocked")).toBeNull();
+  });
+
   it("says nothing is eligible when the server names no pick", async () => {
     await draw({ next: null });
 

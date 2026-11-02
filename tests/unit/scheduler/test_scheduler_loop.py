@@ -1165,3 +1165,69 @@ def test_a_started_session_with_no_held_task_and_no_recent_activity_frees_its_sl
 
     assert rig.loop.sessions_by_harness()["claude"]["use"] == 0.0
     assert rig.loop.tick() == ["T-2"]
+
+
+def test_blocks_lists_every_dimension_the_top_task_overfits_with_its_use_and_limit(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"cpu": 10.0, "memory": 10.0})
+    rig.host = {"cpu": 95.0, "memory": 92.0}
+    rig.put("T-1")
+    rig.sampler.sample()
+
+    assert rig.loop.next_pick()["reason"] == "cpu"  # the strip's reason keeps the first gate
+    assert rig.loop.blocks() == [
+        {"name": "cpu", "use": 95.0, "limit": 10.0},
+        {"name": "memory", "use": 92.0, "limit": 10.0},
+    ]
+
+
+def test_a_full_start_service_limit_is_a_start_limit_block_with_a_count(rig: Rig) -> None:
+    rig.limit = "T-1 was not started: 48 of 48 task sessions are live. Nothing was stopped; start again once one ends."
+    rig.put("T-1")
+
+    rig.loop.tick()
+    assert rig.loop.blocks() == [{"name": "start-limit", "use": 48.0, "limit": 48.0, "count": 1}]
+    assert rig.loop.next_pick()["verdict"] == "waits"
+    assert rig.loop.next_pick()["reason"] == "start-limit"
+
+    rig.now += START_BACKOFF * 1.5
+    rig.loop.tick()
+    assert rig.loop.blocks() == [{"name": "start-limit", "use": 48.0, "limit": 48.0, "count": 2}]
+
+    rig.now += SESSIONS_FULL_BACKOFF_MAX * 2  # the back-off has passed: the refusal no longer holds the queue
+    assert rig.loop.blocks() == []
+
+
+def test_gate_history_keeps_readings_and_block_reasons_across_a_restart(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"cpu": 50.0})
+    rig.host = {"cpu": 95.0, "memory": 5.0}
+    rig.limit = "T-1 was not started: 48 of 48 task sessions are live. Nothing was stopped; start again once one ends."
+    rig.put("T-1")
+
+    rig.loop.tick()
+    rig.now += 60
+    rig.host = {"cpu": 5.0, "memory": 5.0}
+    rig.sampler.sample()
+    rig.loop.tick()
+
+    history = rig.restarted().gate_history()  # read from the store: no Prometheus behind it
+    assert [row["at"] for row in history] == [START, START + 60]
+    assert [b["name"] for b in history[0]["blockedBy"]] == ["cpu"]
+    assert history[0]["dimensions"][0] == {"name": "cpu", "use": 95.0, "limit": 50.0}
+    assert [b["name"] for b in history[1]["blockedBy"]] == ["start-limit"]
+
+
+def test_gate_history_is_short_and_skips_an_unchanged_reading(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"cpu": 50.0})
+    rig.host = {"cpu": 95.0, "memory": 5.0}
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.loop.tick()  # the same block: no new row
+    assert len(rig.loop.gate_history()) == 1
+
+    for number in range(150):
+        rig.now += 400
+        rig.host = {"cpu": 90.0 + number % 2, "memory": 5.0}
+        rig.sampler.sample()
+        rig.loop.tick()
+
+    assert len(rig.loop.gate_history()) == 100
