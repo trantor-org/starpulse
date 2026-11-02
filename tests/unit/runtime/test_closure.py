@@ -232,3 +232,36 @@ def test_extra_modules_are_imported_and_listed_by_the_same_probe(package: Path) 
     code = code_of("demo.unused", "demo", extra=("demo.used",))
 
     assert {file for file, _ in code} == {"demo/__init__.py", "demo/unused.py", "demo/used.py"}
+
+
+def _board_toml(tmp_path: Path) -> Path:
+    (tmp_path / "board.yaml").write_text("name: board\n")
+    return _toml(tmp_path, '[board]\ntype = "native"\nmachine = "board.yaml"\n')
+
+
+@pytest.mark.usefixtures("no_code")
+def test_a_changed_board_machine_file_is_a_restart_change_to_every_worker_that_builds_it(tmp_path: Path) -> None:
+    reader = Reader(_board_toml(tmp_path))
+    old = {name: reader(name) for name in WORKER_CONTEXTS}
+    (tmp_path / "board.yaml").write_text("name: board\nwaits: {}\n")
+
+    new = {name: reader(name) for name in WORKER_CONTEXTS}
+
+    assert all(new[n].restart != old[n].restart and new[n].live == old[n].live for n in old)
+
+
+@pytest.mark.usefixtures("no_code")
+def test_an_unchanged_board_machine_file_leaves_every_reading_equal(tmp_path: Path) -> None:
+    reader = Reader(_board_toml(tmp_path))
+    old = {name: reader(name) for name in WORKER_CONTEXTS}
+
+    assert {name: reader(name) for name in WORKER_CONTEXTS} == old
+
+
+@pytest.mark.usefixtures("no_code")
+def test_a_missing_board_machine_file_is_a_reload_error_naming_it(tmp_path: Path) -> None:
+    path = _board_toml(tmp_path)
+    (tmp_path / "board.yaml").unlink()
+
+    with pytest.raises(ReloadError, match="board.yaml"):
+        Reader(path)("contexts")
