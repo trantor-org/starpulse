@@ -60,6 +60,18 @@ branch.
 
 Done when `git -C <worktree> rev-parse --show-toplevel` prints the worktree.
 
+## Never end a turn In Progress
+
+In Progress means a live session is working the task now. Before a turn ends, move the task yourself to the lane
+its outcome names; the Stop hook and the loop are backstops, not the plan.
+
+| Outcome | Lane | Command |
+| --- | --- | --- |
+| Delivered, PR green | Review (Verifying once merged) | `starpulse task move PROJ-45 review` |
+| Waits on a task or a condition | Waiting | `starpulse task park PROJ-45 --until-task PROJ-46` or `--until '<criterion>'` |
+| Blocked on the operator | Needs attention | `starpulse task park PROJ-45 --operator '<reason ending with the question>'`; copy the ask into the reply |
+| Abandoned or let go | Ready | `starpulse task move PROJ-45 ready` |
+
 ## Keep the scope bounded
 
 - When the work cannot continue, park it with the one reason that holds: `starpulse task park PROJ-45` with
