@@ -696,6 +696,7 @@ const demoRecord = (card: RawTask, roles: Roles, now: number, failing = false): 
     milestone: card.milestone ?? "",
     documentation: ["docs/specs/doc-1 - Demo spec.md", "docs/doc-2 - Demo notes.md"],
     dependencies: card.dependencies ?? [],
+    follows: card.follows ?? "",
     description: [card.description ?? "A synthetic task used by the public StarPulse preview.", card.model ? DEMO_BRIEF : "", DEMO_BODY, criteria && criteriaBlock(criteria)].filter(Boolean).join("\n\n"),
     ...(criteria && { start_criteria: criteria }),
     // an unassigned task has no plan yet, so the dialog offers `+ Add plan`

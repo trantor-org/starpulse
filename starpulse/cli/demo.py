@@ -497,6 +497,7 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
         agents.append(
             {"id": ids[i], "state": state, "model": model, "assignee": model, "milestone": milestone, "labels": labels}
             | ({"dependencies": [ids[after]]} if after is not None else {})
+            | ({"follows": ids[1]} if i == 0 else {})  # one follow-up, so the task dialog draws its Follows group
             | ({"created": created} if created is not None else {})
             | ({"entered": entered[0]} if entered else {})
             | _workable(i, state, after, now)
@@ -576,6 +577,7 @@ def scrub(live: dict) -> dict:
                     "labels": [x for x in a.get("labels", []) if LABELS.match(x)],
                     "dependencies": [names[d] for d in a.get("dependencies", []) if d in names],
                     "description": _description(demo["title"], a["state"]),
+                    **({"follows": names[a["follows"]]} if a.get("follows") in names else {}),
                     **({"entered": a["entered"]} if "entered" in a else {}),
                     **({"workable_since": a["workable_since"]} if "workable_since" in a else {}),
                     **({"moves": a["moves"]} if "moves" in a else {}),
