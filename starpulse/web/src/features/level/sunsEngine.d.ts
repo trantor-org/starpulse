@@ -32,6 +32,10 @@ export interface Job {
   lenses: Record<string, Lens>;
   plan: Record<string, string>;
   trail: Visit[];
+  /** Its history has not landed yet, so where it is is not known: drawn nowhere, and the landing is no move. */
+  settling?: boolean;
+  /** The in-progress state it left by, when it left: parked, needs_attention, review_recorded or finalized. */
+  exit?: string;
 }
 
 export interface View {
@@ -58,9 +62,12 @@ export interface Line {
   op: number;
   st: string;
   cap: string;
+  /** A task's mark: it comes and goes as the task moves, so it holds no other piece's place. */
+  fx?: boolean;
 }
 export interface Box {
   style: string;
+  fx?: boolean;
   text?: string;
   sub?: string;
   subColor?: string;
@@ -88,10 +95,15 @@ export interface Detail {
 }
 
 /** What one pass of the engine draws: paths, lines, glyphs, bodies, labels, badges, buttons, and the tips and details they open. */
+/** A task's dot on a sun: the key is the task's, so the dot eases to the next sun it sits on. */
+export interface Dot extends Box {
+  key: string;
+}
 export interface Scene {
   P: { lane: string[]; guide: string[]; grp: string[] };
   L: Line[];
   S: Box[];
+  D: Dot[];
   B: Box[];
   T: Box[];
   K: Box[];
@@ -110,16 +122,20 @@ export const LN: Record<string, string>;
 export const PN: Record<string, string>;
 export const STEPS: Record<string, string[]>;
 export const TIER: Record<Job["tier"], string>;
+export const TASKC: Record<"deep" | "standard", string>;
 export const STYLE: { note?: string } & Record<string, unknown>;
 export const PANE_R: number;
 export const HAIR: number;
+export const ROWS_END: number;
+/** Sizes the pane the replay bar is drawn in: its width (939 in the mockup) and height (900). The board is drawn at the mockup's size. */
+export function setLayout(w: number, h: number): void;
 /** Epoch ms until which a move is still animating. */
 export const ANIM_UNTIL: number;
 export function statusOf(j: Job): { t: string; c: string };
 export function starfield(w: number, h: number, n: number): { style: string }[];
 export function template(g: Scene, style: typeof STYLE, jobs: Job[], j: Job): void;
 /** Draws the scrolling machine rows and answers their height. */
-export function rows(g: Scene, style: typeof STYLE, j: Job): number;
+export function rows(g: Scene, style: typeof STYLE, j: Job, top: Scene): number;
 export function hhmm(ago: number): string;
 export function spanOf(j: Job): number;
 export function jobAt(j: Job, ago: number | null): Job;

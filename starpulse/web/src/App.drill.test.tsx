@@ -9,12 +9,12 @@ import type { HudStore } from "./render/hud";
 import { BOARD, type Path } from "./render/levels";
 
 // the canvas renderer needs a browser's 2D context; this one hands the test the store the page reads and the veto the page installs
-const held = vi.hoisted(() => ({ store: undefined as HudStore | undefined, veto: null as null | ((p: Path) => boolean) }));
+const held = vi.hoisted(() => ({ store: undefined as HudStore | undefined, veto: null as null | ((p: Path) => boolean), calls: [] as [string, unknown[]][] }));
 vi.mock("./render/renderer", async (original) => ({
   ...(await original<typeof import("./render/renderer")>()),
   renderer: (_canvas: HTMLCanvasElement, store: HudStore) => {
     held.store = store;
-    return new Proxy({}, { get: (_, k) => (k === "intercept" ? (fn: typeof held.veto) => void (held.veto = fn) : () => undefined) });
+    return new Proxy({}, { get: (_, k) => (k === "intercept" ? (fn: typeof held.veto) => void (held.veto = fn) : (...a: unknown[]) => void held.calls.push([String(k), a])) });
   },
 }));
 vi.mock("./lazyViews", async (original) => ({ ...(await original<typeof import("./lazyViews")>()), prefetchViews: () => () => {} }));
@@ -29,13 +29,17 @@ const vetoes = (p: Path) => {
   act(() => void (answer = held.veto!(p)));
   return answer;
 };
-const board = (cards: KanbanTask[]) =>
+/** Hands the page a board and runs the frame that marks it drawn, so the Navigator draws its body. */
+const board = (cards: KanbanTask[]) => {
   act(() => held.store!.set({ tree: { states: ["Ready", "In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards }));
+  act(() => frames.splice(0).forEach((f) => f(0)));
+};
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   frames = [];
   held.veto = null;
+  held.calls = [];
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
   vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
   localStorage.clear();
@@ -58,8 +62,21 @@ describe("the In Progress sun", () => {
     expect(vetoes(lane("In Progress"))).toBe(true);
     await act(async () => void (await import("./features/level/SunsDrillIn")));
 
-    expect(host.querySelector(`${drillIn} nav[aria-label="Tasks"] button`)?.getAttribute("aria-label")).toMatch(/^TASK-2 /);
+    expect(host.querySelector(`#nav nav[aria-label="In Progress tasks"] button`)?.getAttribute("aria-label")).toMatch(/^TASK-2 /);
     expect(location.search).toContain("drill=TASK-2");
+  });
+
+  it("makes the Navigator the In Progress task list while the drill-in is open, in place of the Leaderboard, and gives it back on close", async () => {
+    board([card("TASK-2", "In Progress"), card("TASK-3", "In Progress")]);
+    vetoes(lane("In Progress"));
+    await act(async () => void (await import("./features/level/SunsDrillIn")));
+
+    expect([...host.querySelectorAll('#nav nav[aria-label="In Progress tasks"] button')].map((b) => b.getAttribute("aria-label")?.split(" ")[0])).toEqual(["TASK-2", "TASK-3"]);
+    expect(host.querySelector("#nav .leaderboard")).toBeNull();
+
+    act(() => host.querySelector<HTMLButtonElement>('button[aria-label="Back to the Board"]')!.click());
+    expect(host.querySelector(drillIn)).toBeNull();
+    expect(host.querySelector("#nav .leaderboard")).not.toBeNull();
   });
 
   it("vetoes only the In Progress level: other lanes and the machines under it open as before", () => {
@@ -76,5 +93,23 @@ describe("the In Progress sun", () => {
 
     expect(vetoes(lane("In Progress"))).toBe(false);
     expect(document.querySelector(drillIn)).toBeNull();
+  });
+
+  it("the Star Map in the side panel closes the drill-in and starts the Star Map at the Board's top level, from any view and depth", async () => {
+    board([card("TASK-2", "In Progress")]);
+    act(() => held.store!.set({ path: lane("Review") }));
+    vetoes(lane("In Progress"));
+    await act(async () => void (await import("./features/level/SunsDrillIn")));
+    const starMap = () => host.querySelector<HTMLButtonElement>('#nav .views button[title="Star Map"]')!;
+
+    act(() => starMap().click());
+    expect(host.querySelector(drillIn)).toBeNull();
+    expect(location.search).not.toContain("drill=");
+    expect(held.calls.filter(([k]) => k === "go").at(-1)?.[1][0]).toEqual(BOARD);
+
+    held.calls = [];
+    act(() => host.querySelector<HTMLButtonElement>('#nav .views button[title="Kanban"]')?.click());
+    act(() => starMap().click());
+    expect(held.calls.filter(([k]) => k === "go").at(-1)?.[1][0]).toEqual(BOARD);
   });
 });

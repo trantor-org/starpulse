@@ -8,7 +8,7 @@ import { padMachines, shapeBoard } from "./demoMachines";
 import { rankRows } from "../features/level/machineRows";
 import { columnsOf } from "../features/kanban/kanbanModel";
 import type { LaneStep } from "../features/level/trace";
-import type { LedgerRow, Machine, RawTask, Roles, Snapshot } from "../api";
+import type { FlowSnapshot, LedgerRow, Machine, RawTask, Roles, Snapshot } from "../api";
 import { criteriaBlock, demoCriteria } from "./demoCriteria";
 import type { TaskRecord } from "../features/kanban/taskViewModel";
 import { demoServer as installed, embedded, setDemoServer } from "./host";
@@ -27,10 +27,99 @@ export function demoLive(prev: Snapshot, next: Snapshot): Snapshot {
   return { ...prev, dags: next.dags, mergeStrip: next.mergeStrip, mergePins: next.mergePins };
 }
 
+/** How likely a working task is to take a move on a tick: on the demo's ~1.2 s tick each task moves every few seconds. */
+const PHASE_MOVE_P = 0.2;
+const initOf = (m: Machine) => m.states.find((s) => s.initial)?.id ?? m.states[0].id;
+
+function move(ag: RawTask, e: Machine["transitions"][number], now: number) {
+  ag.state = e.target;
+  ag.steps = (ag.steps ?? 0) + 1;
+  (ag.trail ??= []).push({ state: e.target, event: e.event, at: now });
+  ag.active = now;
+}
+
+function restart(ag: RawTask, m: Machine) {
+  ag.state = initOf(m);
+  ag.steps = 0;
+  ag.trail = [];
+}
+
+/** The task's agent on a flow, a new one at the flow's start when it has none yet. */
+function agentIn(f: FlowSnapshot, card: RawTask, now: number) {
+  const found = f.agents.find((a) => (a.task ?? a.id) === card.id);
+  if (found) return found;
+  const ag: RawTask = { id: card.id, task: card.id, title: card.title, model: card.model, state: initOf(f.machine), steps: 0, trail: [], active: now };
+  f.agents.push(ag);
+  return ag;
+}
+
+/** The nearest later move out of a state: a machine lists its states main line first, so that is the next step. */
+function nearestAhead(m: Machine, state: string) {
+  const rank = (id: string) => m.states.findIndex((s) => s.id === id);
+  const later = m.transitions.filter((e) => e.source === state && rank(e.target) > rank(state));
+  return later.toSorted((a, b) => rank(a.target) - rank(b.target))[0];
+}
+
+/** Mostly the next step along the machine, sometimes any other way out (a loop back, a failed lens). */
+function nextMove(m: Machine, state: string, random: () => number) {
+  const outs = m.transitions.filter((e) => e.source === state && e.target !== state);
+  const ahead = nearestAhead(m, state);
+  return ahead && random() < 0.85 ? ahead : outs[Math.floor(random() * outs.length)];
+}
+
+/**
+ * Plays each working task through the board's lifecycle: a move inside the phase it is in, and at that phase's
+ * end on to the next phase, or back when it ended on anything but its first final, so a page drilled into a
+ * task sees one story, not independent walks. Answers the flows it played, which `demoStep` then leaves alone.
+ */
+function walkPhases(snap: Snapshot, random: () => number) {
+  const flows = new Map(snap.flows.map((f) => [f.name, f]));
+  const board = flows.get("board");
+  const working = snap.roles?.working;
+  const lifecycle = board?.machine.submachines?.find((s) => s.state === working && !s.when);
+  const sub = lifecycle && flows.get(lifecycle.machine);
+  const phases = sub?.machine.submachines;
+  if (!board || !sub || !phases?.length) return new Set<string>();
+  const phaseFlow = (state: string) => flows.get(phases.find((p) => p.state === state)?.machine ?? "");
+  const rank = (id: string) => sub.machine.states.findIndex((s) => s.id === id);
+  const now = Date.now() / 1000;
+  for (const card of board.agents.filter((a) => a.state === working)) {
+    if (random() >= PHASE_MOVE_P) continue;
+    const at = agentIn(sub, card, now);
+    const flow = phaseFlow(at.state);
+    const ag = flow && agentIn(flow, card, now);
+    const ended = flow?.machine.states.filter((s) => s.final).map((s) => s.id) ?? [];
+    const inside = flow && ag && !ended.includes(ag.state) && nextMove(flow.machine, ag.state, random);
+    if (inside) {
+      move(ag, inside, now);
+      continue;
+    }
+    const back = sub.machine.transitions.find((e) => e.source === at.state && phaseFlow(e.target) && rank(e.target) < rank(at.state));
+    const ahead = nearestAhead(sub.machine, at.state);
+    const leave = ag?.state === ended[0] ? ahead : back ?? ahead;
+    const entered = leave && phaseFlow(leave.target);
+    if (leave && entered) {
+      move(at, leave, now);
+      restart(agentIn(entered, card, now), entered.machine);
+      continue;
+    }
+    // past the last phase: the task's lap starts again, so a page left open never runs out of moves
+    restart(at, sub.machine);
+    for (const p of phases) {
+      const f = flows.get(p.machine);
+      if (f) f.agents = f.agents.filter((a) => (a.task ?? a.id) !== card.id);
+    }
+    const first = phaseFlow(at.state);
+    if (first) agentIn(first, card, now);
+  }
+  return new Set([sub.name, ...phases.map((p) => p.machine)]);
+}
+
 export function demoStep(prev: Snapshot, random = Math.random): Snapshot {
   const snap = structuredClone(prev);
+  const played = walkPhases(snap, random);
   const f = snap.flows[Math.floor(random() * snap.flows.length)];
-  if (!f) return stepDags(snap, random);
+  if (!f || played.has(f.name)) return stepDags(snap, random);
   const trans = f.machine.transitions;
   const init = f.machine.states.find((s) => s.initial)?.id ?? f.machine.states[0].id;
   const finals = new Set(f.machine.states.filter((s) => s.final).map((s) => s.id));
@@ -55,11 +144,7 @@ export function demoStep(prev: Snapshot, random = Math.random): Snapshot {
     const ag = f.agents[Math.floor(random() * f.agents.length)];
     const outs = trans.filter((e) => e.source === ag.state);
     if (outs.length && !finals.has(ag.state)) {
-      const e = outs[Math.floor(random() * outs.length)];
-      ag.state = e.target;
-      ag.steps = (ag.steps ?? 0) + 1;
-      (ag.trail ??= []).push({ state: e.target, event: e.event, at: now });
-      ag.active = now;
+      move(ag, outs[Math.floor(random() * outs.length)], now);
     } else f.agents = f.agents.filter((a) => a !== ag);
   }
   return stepDags(snap, random);
@@ -252,7 +337,7 @@ export class DemoServer {
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card, snap.roles ?? {}, clock(), failingEvaluator)]));
     const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
     this.day = ledger;
-    this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? this.ledgerFields() : {}), capabilities: { edit: true, archive: true, create: true } });
+    this.snapshot = this.verdicts({ ...snap, now: clock(), ...(ledger.length ? this.ledgerFields() : {}), capabilities: { edit: true, archive: true, create: true } });
   }
 
   subscribe(fn: (s: Snapshot) => void): () => void {
@@ -542,13 +627,13 @@ export class DemoServer {
       const from = fresh.has(a.id) ? null : was.get(a.id) ?? null;
       if (from !== a.state) (this.lanes[a.id] ??= []).push({ at, from, to: a.state });
     }
-    this.snapshot = this.verdicts(next);
+    this.snapshot = this.verdicts({ ...next, now: at });
     for (const fn of this.listeners) fn(this.snapshot);
   }
 
   private verdicts(snap: Snapshot): Snapshot {
     const flows = snap.flows.map((f) =>
-      f.name !== "board" ? f : { ...f, agents: f.agents.map((a): RawTask => ({ ...a, moves: Object.fromEntries(columns(f.machine, a.state).map((c) => [c, ALLOWED])) })) },
+      f.name !== "board" ? f : { ...f, agents: f.agents.map((a): RawTask => ({ ...a, profile: a.profile ?? a.model, moves: Object.fromEntries(columns(f.machine, a.state).map((c) => [c, ALLOWED])) })) },
     );
     return { ...snap, flows };
   }
