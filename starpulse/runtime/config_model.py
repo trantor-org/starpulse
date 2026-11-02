@@ -11,23 +11,15 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS, ADAPTER_MEMORY_MB
 from starpulse.views.ports.services import SLOW_READ_S
 
 #: An environment variable's name: the setting holds the name, never the value.
 EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
 
-#: The memory limit, in megabytes, of each `starpulse worker` context when `worker_memory` does not name one.
-WORKER_MEMORY_MB = {
-    "pulls": (768, 1536),
-    "scheduler": (512, 1024),
-    "runs": (512, 1024),
-    "flow-metrics": (384, 768),
-    "search": (384, 768),
-    "board": (768, 1536),
-    **dict.fromkeys(ADAPTER_CONTEXTS, (256, 512)),
-    **ADAPTER_MEMORY_MB,
-}
+#: The (soft, hard) memory limit in megabytes of each child `serve` supervises when `worker_memory` does not name one: the
+#: Page API, whose telemetry window grows with the signals it holds, and the one `contexts` worker that runs every
+#: background context as a thread.
+WORKER_MEMORY_MB = {"api": (4096, 8192), "contexts": (1536, 3072)}
 
 
 class _Table(BaseModel):
@@ -72,8 +64,8 @@ class RunsInstanceFile(_Table):
     )
     url: str = Field(
         description=(
-            "What the adapter reads. A built-in adapter is an opt-in worker: you run `starpulse worker <adapter> "
-            "--config <this file>` (`serve` starts it as a child), and, with it down or not yet started, the page shows "
+            "What the adapter reads. A built-in adapter is an opt-in worker: `serve`'s `contexts` child runs it "
+            "as a thread, or you run `starpulse worker <adapter> --config <this file>`, and, with it down or not yet started, the page shows "
             "this instance with the error \"the <adapter> worker has not reported\" or \"last reported Ns ago\" (its "
             "beat is older than 60s)."
         ),
@@ -244,11 +236,12 @@ class ConfigFile(_Table):
             "when it was accepted. No other route is timed."
         ),
     )
-    worker_memory: dict[Literal["pulls", "scheduler", "runs", "flow-metrics", "search", "board"], MemoryFile] = Field(
+    worker_memory: dict[Literal["api", "contexts"], MemoryFile] = Field(
         default={},
         description=(
-            "The memory limits (proportional size on Linux, resident size on macOS) `serve` holds each worker child "
-            "to, in megabytes (see Worker processes), set as `[worker_memory.<context>]` with either key left out. "
+            "The memory limits (proportional size on Linux, resident size on macOS) `serve` holds its two worker "
+            "children to, in megabytes (see Worker processes), set as `[worker_memory.api]` and `[worker_memory.contexts]` "
+            "with either key left out. "
             "Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: "
             + ", ".join(f"`{context}` {soft}/{hard}" for context, (soft, hard) in WORKER_MEMORY_MB.items())
             + "."

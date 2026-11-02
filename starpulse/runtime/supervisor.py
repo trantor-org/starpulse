@@ -1,14 +1,15 @@
-"""`serve` as a supervisor: each context runs as a `starpulse worker <context>` child.
+"""`serve` as a supervisor of two `starpulse worker` children: `api` (the page) and `contexts` (every background context as a thread).
 
 A child is started by `spawn` (`starpulse.runtime.zygote.Forker`: a fork of one preloaded process, else
 `subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
 `serve`. Past its soft memory limit a child is replaced (the new one starts, then the old one stops); past its hard
-limit it is killed and restarted. Each run adapter a `[[runs]]` instance configures gets a child of its own, from
-`adapter_contexts`, and is limited like the rest.
+limit it is killed and restarted. The run adapters a `[[runs]]` instance configures are threads of `contexts`
+(`starpulse.runtime.contexts`), named by `adapter_contexts`.
 
 `starpulse reload` (`starpulse.runtime.control`) calls `Supervisor.reload`: it reads each child's code and config
 again from the installed files (`starpulse.runtime.closure`) and replaces only the children something changed
-for, as the ADR "StarPulse Supervises Its Own Context Workers" decides.
+for, as the ADR "StarPulse Supervises Its Own Context Workers" decides; `contexts` is replaced on the union of its
+contexts' closures and told to re-read the live config blocks of any one of them over `SIGHUP`.
 """
 
 from __future__ import annotations
@@ -40,8 +41,8 @@ logger = logging.getLogger(__name__)
 
 _HANGUP = getattr(signal, "SIGHUP", None)
 
-#: The `starpulse worker` contexts `serve` supervises, in start order; the adapter workers follow them (`adapter_contexts`).
-WORKER_CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board")
+#: The `starpulse worker` children `serve` supervises, in start order.
+WORKER_CONTEXTS = ("api", "contexts")
 
 _MB = 1024 * 1024
 
@@ -52,23 +53,12 @@ def adapter_contexts(config: Config) -> list[str]:
     return list(dict.fromkeys(worker for worker in workers if worker))
 
 
-def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[str]]:
-    """The command of each context `serve` supervises (`WORKER_CONTEXTS`), then of each adapter worker `config` names.
-
-    Search has work only with an `embeddings_url`, so a config without one gets no search child.
-    """
+def worker_commands(config_path: Path | None) -> dict[str, list[str]]:
+    """The command of each child `serve` supervises (`WORKER_CONTEXTS`): the Page API and the one `contexts` process,
+    which runs the contexts the config names (`starpulse.runtime.contexts.contexts_of`)."""
     tail = ["--config", str(config_path)] if config_path else []
-    contexts = [context for context in WORKER_CONTEXTS if context != "search" or config.search.embeddings_url]
     return {
-        context: [
-            launch.interpreter(),
-            "-m",
-            "starpulse",
-            "worker",
-            context,
-            *tail,
-        ]
-        for context in [*contexts, *adapter_contexts(config)]
+        context: [launch.interpreter(), "-m", "starpulse", "worker", context, *tail] for context in WORKER_CONTEXTS
     }
 
 
@@ -226,8 +216,11 @@ class Supervisor:
                 used // _MB,
                 limit.soft_mb,
             )
-            self._launch(name, child, now)
-            self._end([old])
+            if name in self._sockets:  # the Page API: the old one answers until the new one is about to serve
+                self._launch_beside(name, child, old)
+            else:
+                self._launch(name, child, now)
+                self._end([old])
 
     def start(self) -> None:
         """Start every child and keep them running on a background thread until `stop`."""

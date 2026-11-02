@@ -60,30 +60,21 @@ def _wait_for(check, timeout: float = 10.0):
     raise AssertionError("condition not reached")
 
 
-def test_every_context_gets_a_child_command_with_the_config_path_when_one_is_given() -> None:
-    every = worker_commands(load(None), None)
-    with_config = worker_commands(load(None), Path("/etc/starpulse.toml"))
+def test_each_child_command_carries_the_config_path_when_one_is_given() -> None:
+    every = worker_commands(None)
+    with_config = worker_commands(Path("/etc/starpulse.toml"))
 
-    assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
-    assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
-    assert every["flow-metrics"] == [sys.executable, "-m", "starpulse", "worker", "flow-metrics"]
-    assert set(every) == {"api", "pulls", "scheduler", "runs", "flow-metrics", "board"}
-    assert with_config["board"] == [
+    assert every["contexts"] == [sys.executable, "-m", "starpulse", "worker", "contexts"]
+    assert set(every) == {"api", "contexts"}
+    assert with_config["contexts"] == [
         sys.executable,
         "-m",
         "starpulse",
         "worker",
-        "board",
+        "contexts",
         "--config",
         "/etc/starpulse.toml",
     ]
-
-
-def test_the_search_child_runs_only_for_an_embeddings_url() -> None:
-    embedding = replace(load(None), search=Search("http://embeddings.test/v1/embeddings", "m"))
-
-    assert "search" in worker_commands(embedding, None)
-    assert "search" not in worker_commands(load(None), None)  # no endpoint, nothing to embed
 
 
 def test_a_child_that_exits_repeatedly_is_restarted_after_a_growing_delay() -> None:
@@ -287,7 +278,7 @@ def test_this_platform_reads_a_live_processs_resident_size() -> None:
 def test_the_api_child_command_names_the_config() -> None:
     config = Path("/etc/starpulse.toml")
 
-    assert worker_commands(load(None), config)["api"] == [
+    assert worker_commands(config)["api"] == [
         sys.executable,
         "-m",
         "starpulse",

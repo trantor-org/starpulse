@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS, module_name
+from starpulse.board.model.adapter_types import module_name
 from starpulse.runtime import launch
 from starpulse.runtime.config import Config, discover, load
 
@@ -31,22 +31,27 @@ SELF = "serve"
 #: The module every run adapter's opt-in worker starts from, which reads what the runs worker reads.
 _ADAPTER_ENTRY = "starpulse.runs.bin.adapter_worker"
 
+#: The modules `starpulse worker contexts` loads for its threads, which `starpulse.runtime.worker` imports only when the
+#: process runs: its closure is the union of theirs.
+CONTEXT_ENTRIES = (
+    "starpulse.runtime.contexts",
+    "starpulse.pulls.bin.pulls_worker",
+    "starpulse.scheduler.bin.scheduler_worker",
+    "starpulse.runs.bin.runs_worker",
+    "starpulse.flow_metrics.bin.flow_metrics_worker",
+    "starpulse.board.bin.search_worker",
+    "starpulse.board.bin.board_worker",
+    _ADAPTER_ENTRY,
+)
+
 #: The module each process starts from; its imports are what a change to the installed code can reach it through.
 ENTRIES = {
     SELF: "starpulse.runtime.server",
     "api": "starpulse.views.bin.api_worker",
-    "pulls": "starpulse.runtime.worker",
-    "scheduler": "starpulse.scheduler.bin.scheduler_worker",
-    "runs": "starpulse.runs.bin.runs_worker",
-    "flow-metrics": "starpulse.flow_metrics.bin.flow_metrics_worker",
-    "search": "starpulse.board.bin.search_worker",
-    "board": "starpulse.board.bin.board_worker",
-    **dict.fromkeys(ADAPTER_CONTEXTS, _ADAPTER_ENTRY),
+    "contexts": "starpulse.runtime.worker",
 }
 
 _CHILDREN = tuple(name for name in ENTRIES if name != SELF)
-#: The run adapters' opt-in workers, which read the runs config and the board as the runs worker does.
-_BOARD_READERS = ("pulls", "scheduler", "runs", "flow-metrics", "board", *ADAPTER_CONTEXTS)
 
 
 #: The keys `serve` alone reads: each child's memory limit, its refresh token and its take-over command,
@@ -67,7 +72,8 @@ _SERVE_KEYS = (
 
 
 def _owned_by(*contexts: str) -> tuple[str, ...]:
-    """`contexts` plus the Page API, which is built from the whole config and so is replaced on any config change."""
+    """The Page API, which is built from the whole config and so is replaced on any config change, then `contexts` when a
+    key is read by any of the background contexts it runs."""
     return ("api", *contexts)
 
 
@@ -82,20 +88,20 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "producers": _owned_by(),
     "project": _owned_by(),
     "database_url": _CHILDREN,
-    "board": _owned_by(*_BOARD_READERS),
-    "runs": _owned_by("runs", *ADAPTER_CONTEXTS),
-    "search": _owned_by("search"),
+    "board": _owned_by("contexts"),
+    "runs": _owned_by("contexts"),
+    "search": _owned_by("contexts"),
     "read_model": (SELF,),
-    "release": _owned_by("pulls"),
-    "repos": _owned_by("pulls"),
-    "pull_requests": _owned_by("pulls"),
-    "ci": _owned_by("pulls"),
-    "sequences": _owned_by("pulls"),
-    "scheduler": _owned_by("scheduler"),
-    "level": _owned_by("scheduler"),
-    "session_start_url": _owned_by("scheduler"),
-    "event_log_retention_days": _owned_by("flow-metrics"),
-    "event_log_archive_dir": _owned_by("flow-metrics"),
+    "release": _owned_by("contexts"),
+    "repos": _owned_by("contexts"),
+    "pull_requests": _owned_by("contexts"),
+    "ci": _owned_by("contexts"),
+    "sequences": _owned_by("contexts"),
+    "scheduler": _owned_by("contexts"),
+    "level": _owned_by("contexts"),
+    "session_start_url": _owned_by("contexts"),
+    "event_log_retention_days": _owned_by("contexts"),
+    "event_log_archive_dir": _owned_by("contexts"),
     **dict.fromkeys(_SERVE_KEYS, (SELF,)),
 }
 
@@ -103,17 +109,10 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
 def restarts_serve(old: Mapping[str, object], new: Mapping[str, object]) -> bool:
     """Whether a change from the `old` to the `new` raw `starpulse.toml` needs `serve` itself restarted.
 
-    True when a changed key is one only `serve` reads, one no owner is named for, or one that adds or drops a supervised child:
-    a search `embeddings_url`. Any other change is applied by replacing the children that own it."""
+    True when a changed key is one only `serve` reads or one no owner is named for. Any other change is applied by
+    replacing the children that own it: the set of children does not depend on the config."""
     changed = {key for key in old.keys() | new.keys() if old.get(key) != new.get(key)}
-    if any(SELF in CONFIG_OWNERS.get(key, (SELF,)) for key in changed):
-        return True
-    return bool(_embeddings_url(old)) != bool(_embeddings_url(new))
-
-
-def _embeddings_url(raw: Mapping[str, object]) -> object:
-    search = raw.get("search")
-    return search.get("embeddings_url") if isinstance(search, Mapping) else None
+    return any(SELF in CONFIG_OWNERS.get(key, (SELF,)) for key in changed)
 
 
 #: Imports each module in `argv[2:]` and prints the directory holding package `argv[1]`, then the file of each module of
@@ -216,18 +215,16 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
             return api_built_blocks(config), ()
         except OSError as exc:  # the certificate or key being renewed
             raise ReloadError(f"api: {exc}") from exc
-    if name == "pulls":
-        return pulls_fixed_blocks(config), pulls_delivery_blocks(config)
-    if name == "scheduler":
-        return scheduler_fixed_blocks(config), scheduler_live_blocks(config)
-    if name == "runs" or name in ADAPTER_CONTEXTS:
-        return runs_built_blocks(config), ()
-    if name == "flow-metrics":
-        return flow_metrics_built_blocks(config), ()
-    if name == "search":
-        return search_built_blocks(config), ()
-    if name == "board":
-        return board_built_blocks(config), ()
+    if name == "contexts":
+        restart = (
+            pulls_fixed_blocks(config),
+            scheduler_fixed_blocks(config),
+            runs_built_blocks(config),
+            flow_metrics_built_blocks(config),
+            search_built_blocks(config),
+            board_built_blocks(config),
+        )
+        return restart, (pulls_delivery_blocks(config), scheduler_live_blocks(config))
     return (), ()
 
 
@@ -256,5 +253,6 @@ class Reader:
     def __call__(self, name: str) -> Reading:
         config = self._config()
         # a worker's main takes the root config loader from `runtime` (spec doc-966, D6), so its entry imports none
-        code = code_of(ENTRIES[name], extra=("starpulse.runtime.config", adapter_module(config.board_type)))
+        extra = CONTEXT_ENTRIES if name == "contexts" else ()
+        code = code_of(ENTRIES[name], extra=("starpulse.runtime.config", adapter_module(config.board_type), *extra))
         return Reading(code, *_blocks(name, config))

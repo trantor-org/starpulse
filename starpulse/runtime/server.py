@@ -224,7 +224,7 @@ from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
 from starpulse.runs.model.config import RunsInstance
 from starpulse.runtime import launch
-from starpulse.runtime.closure import ENTRIES, Reader
+from starpulse.runtime.closure import CONTEXT_ENTRIES, ENTRIES, Reader
 from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
 from starpulse.runtime.control import control_file
 from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, adopted_from_env, announce_ready
@@ -708,7 +708,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     )  # the workers started below are handed what they hold, not what this process was
     adopted = adopted_from_env(os.environ)  # the Page API child the previous image started beside its own
     ready = prepare(parser, args, config)
-    commands = worker_commands(config, args.config)
+    commands = worker_commands(args.config)
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         os.environ[STATIC_ENV] = str(_STATIC)
         listening = listening or listen(parser, args)
@@ -716,7 +716,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     admit_at_start(parser, args)
     # the preloaded process inherits the bound socket, so the Page API child forks from it like every other worker
     forker = Forker(
-        [*DATABASE_STACK, *(ENTRIES[context] for context in commands)],
+        [*DATABASE_STACK, *(ENTRIES[context] for context in commands), *CONTEXT_ENTRIES],
         listening=listening if "api" in commands else None,
     )
     if commands:

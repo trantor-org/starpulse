@@ -360,7 +360,11 @@ def test_an_edit_to_the_configured_board_adapter_module_replaces_each_child_that
     config = tmp_path / "starpulse.toml"
     config.write_text('[board]\ntype = "demo.board"\n')
     running = Supervisor(
-        {name: [name] for name in NAMES}, spawn=Child, read=Reader(config), execute=lambda: None, poll=60.0
+        {name: [name] for name in ("api", "contexts")},
+        spawn=Child,
+        read=Reader(config),
+        execute=lambda: None,
+        poll=60.0,
     )
     running.start()
     try:
@@ -373,5 +377,5 @@ def test_an_edit_to_the_configured_board_adapter_module_replaces_each_child_that
     assert report == {
         "supervisor": "re-executed",
         "reads": "launcher",
-        "children": {"pulls": "replaced", "scheduler": "replaced"},
+        "children": {"api": "replaced", "contexts": "replaced"},
     }

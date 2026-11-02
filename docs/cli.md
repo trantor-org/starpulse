@@ -344,7 +344,7 @@ stream; a stream that drops is retried with backoff while the pane stays open. T
 
 ## The pull-request store
 
-With `gh` available and the config's `pull_requests` not false, `starpulse worker pulls` (a child `serve` supervises) keeps a store of pull requests (table
+With `gh` available and the config's `pull_requests` not false, the pulls context (a thread of the `contexts` child `serve` supervises, or `starpulse worker pulls`) keeps a store of pull requests (table
 `starpulse_pull_requests`) as a projection of the lifecycle events, and polls GitHub for nothing. A task's `machine:events` entry (`PR_OPENED`, `PR_READY`, `PUSHED`, `CHECKS_PASSED`, `CHECKS_FAILED`,
 `CONFLICTED`, `MERGEABLE`, `THREADS_CHANGED`, `PR_MERGED`, `PR_CLOSED`) lands on the pull requests the Board says the task cites, and a completed `ci:jobs` entry sets the head commit and its job's result on the
 record of the pull request it names. An entry applied twice leaves the record as once did, so the log may be replayed from any point: a start on a store that holds records replays only the entries appended after the cursor the replay keeps in the `pulls.cursor` worker state, a start on a new or wiped store replays every entry the log retains, and a second reader per stream, taken before the replay, hands over each entry appended meanwhile, so a `PR_MERGED` published during a restart is applied without waiting for the replay to end. A close names its pull request in the entry's `repository` and `pr` fields and applies to that one alone, none once the store holds it closed; a close that names none applies only when the task cites a single open pull request.
@@ -474,7 +474,7 @@ names the States and Tasks ([the machine registry](serving.md#machine-registry))
 It prints one JSON object, and the reply is sent before a `serve` that re-executes replaces itself:
 
 ```json
-{"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "replaced"}}
+{"supervisor": "kept", "children": {"api": "replaced", "contexts": "kept"}}
 ```
 
 | Exit | Meaning |

@@ -28,7 +28,7 @@ REFUSED = [
     ("take_over_command = []\n", {"take_over_command": []}),
     ('refresh_token_env = "not a name"\n', {"refresh_token_env": "not a name"}),
     ('mode = "team"\n', {"mode": "team"}),
-    ("[worker_memory.pulls]\nsoft_mb = 0\n", {"worker_memory": {"pulls": {"soft_mb": 0}}}),
+    ("[worker_memory.api]\nsoft_mb = 0\n", {"worker_memory": {"api": {"soft_mb": 0}}}),
     ("[worker_memory.nowhere]\nsoft_mb = 1\n", {"worker_memory": {"nowhere": {"soft_mb": 1}}}),
     (
         '[[repos]]\nname = "a"\npath = "a"\napplied_by = "merge"\n',

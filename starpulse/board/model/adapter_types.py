@@ -19,12 +19,8 @@ BUILT_IN = {
     "temporal": "starpulse.runs.adapters.outbound.temporal",
 }
 
-#: The run adapters' worker contexts. Each runs as a `starpulse worker <context>` child of `serve`.
+#: The run adapters' worker contexts. Each runs as a thread of `starpulse worker contexts`, or alone as `starpulse worker <context>`.
 ADAPTER_CONTEXTS = ("dagu", "github-actions", "systemd", "temporal")
-
-#: The (soft, hard) memory limit in MB of an adapter context that outgrows the 256/512 default: a Dagu of ~70 DAGs settles
-#: near 280 MB proportional after its first statistics pass.
-ADAPTER_MEMORY_MB = {"dagu": (384, 768)}
 
 
 def module_name(kind: str) -> str:

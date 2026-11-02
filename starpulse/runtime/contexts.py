@@ -37,12 +37,16 @@ BACKOFF_S = (1.0, 30.0)
 _JOIN_S = 5.0
 
 
-def contexts_of(config: Config) -> list[str]:
-    """The contexts this process runs for `config`: those `serve` supervises except the Page API (it holds the page's
-    socket), Search only with an `embeddings_url`, then the run Adapters its `[[runs]]` instances name."""
-    from starpulse.runtime.supervisor import WORKER_CONTEXTS, adapter_contexts
+#: The contexts that always run here, in start order; the run Adapters follow them (`adapter_contexts`).
+BACKGROUND_CONTEXTS = ("pulls", "scheduler", "runs", "flow-metrics", "search", "board")
 
-    kept = [c for c in WORKER_CONTEXTS if c != "api" and (c != "search" or config.search.embeddings_url)]
+
+def contexts_of(config: Config) -> list[str]:
+    """The contexts this process runs for `config`: `BACKGROUND_CONTEXTS`, Search only with an `embeddings_url`, then the
+    run Adapters its `[[runs]]` instances name."""
+    from starpulse.runtime.supervisor import adapter_contexts
+
+    kept = [c for c in BACKGROUND_CONTEXTS if c != "search" or config.search.embeddings_url]
     return [*kept, *adapter_contexts(config)]
 
 

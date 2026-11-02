@@ -4,7 +4,7 @@ Usage: fresh_serve.py VENV_PYTHON [DEADLINE_SECONDS]
 
 The interpreter is the one of a virtualenv that holds only the installed wheel. `serve` starts in an empty directory with
 no `starpulse.toml` and a bare environment, so nothing of the checkout is on its path. It must answer HTTP 200 on `/`
-and hold one live worker below it for every context `worker_commands` starts for the default config, on two checks a
+and hold one live child below it for each of the two `worker_commands` starts (the Page API and the contexts worker), on two checks a
 moment apart with the same processes, so a child that restarts in a loop fails. A worker's context is the one `serve`
 logged for its pid (a zygote-forked child shows the zygote's argv in `ps`); its liveness and ancestry are read from `ps`,
 so it runs on Linux and macOS.
@@ -78,11 +78,10 @@ def check(port: int, parent: int, expected: set[str], log: Path, scheme: str = "
 
 
 def worker_contexts(python: str, cwd: str) -> set[str]:
-    """The contexts `serve` supervises under the default config, which has no embeddings URL."""
+    """The children `serve` supervises: the Page API and the one process that runs every background context."""
     code = (
-        "import json; from starpulse.runtime.config import discover, load;"
-        " from starpulse.runtime.supervisor import worker_commands;"
-        " print(json.dumps(sorted(worker_commands(load(discover(None)), None))))"
+        "import json; from starpulse.runtime.supervisor import worker_commands;"
+        " print(json.dumps(sorted(worker_commands(None))))"
     )
     return set(
         json.loads(
