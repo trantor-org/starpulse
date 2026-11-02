@@ -6,8 +6,7 @@ import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from starpulse.event_log import lane_events
-from starpulse.event_log.lane_events import done_lanes
+from starpulse.event_log.lane_events import ARCHIVED, done_lanes
 from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -51,8 +50,7 @@ class ReadMethods:
             return None
         ready = task_id in self._read_model.ready(row["state"], self._roles.done)  # type: ignore[union-attr]
         return self._expiring(
-            summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row)))
-            | read_model_detail(row, self._roles.attention)
+            summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row))) | read_model_detail(row, self._roles.attention)
         )
 
     def follow_read_model(self, limit: int = 1000) -> int:
@@ -115,7 +113,7 @@ class ReadMethods:
             return row is not None and bool(row["archived"])
         with self._lock:
             settled = self._settled.get(task_id)
-            return settled is not None and settled["state"] == lane_events.ARCHIVED
+            return settled is not None and settled["state"] == ARCHIVED
 
     def titled(self) -> dict[str, dict]:
         """Every Board task's `title`, `labels`, `milestone` and `profile`, open, cold or settled, by id; a settled task
