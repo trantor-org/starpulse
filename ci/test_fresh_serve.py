@@ -14,7 +14,7 @@ import fresh_serve
 import pytest
 from fresh_serve import check, live_children, worker_contexts
 
-# sp-ci syncs with `--no-install-project`, so a fresh interpreter there cannot import `starpulse`; ci.yml proves it installed.
+# sp-ci syncs with `--no-install-project` and `ci/run.sh` adds a .pth for the clone; a venv with neither cannot import `starpulse` in a fresh interpreter.
 NOT_INSTALLED = pytest.mark.skipif(
     subprocess.run([sys.executable, "-I", "-c", "import starpulse"], capture_output=True).returncode != 0,
     reason="a fresh interpreter in this venv cannot import the project",

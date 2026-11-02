@@ -37,6 +37,9 @@ cmd_select() {
 # and, as `1`, the coverage data that ci/coverage_map.py combines.
 cmd_python_tests() {
   uv sync --locked --no-install-project
+  # A .pth in the venv puts the clone on the path of an isolated (`-I`) interpreter too, as the build would,
+  # so the two clean-machine tests that import `starpulse` that way run here instead of skipping.
+  uv run --no-sync python -c 'import pathlib, site, sys; (pathlib.Path(site.getsitepackages()[0]) / "starpulse.pth").write_text(sys.argv[1] + "\n")' "$PWD"
   local sizing=""
   if [ -d /sys/fs/cgroup/tests.slice ]; then
     sizing=--slice
