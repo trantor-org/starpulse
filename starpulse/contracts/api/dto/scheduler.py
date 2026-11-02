@@ -17,6 +17,24 @@ class SchedulerDimension(_Api):
     limit: float
 
 
+class SchedulerBlock(_Api):
+    """One gate holding admission back: a capacity dimension the top task overfits, or `start-limit`, the session-start
+    service refusing every start because its live-session limit is full."""
+
+    name: Literal["cpu", "memory", "sessions", "review", "start-limit"]
+    use: float
+    limit: float
+    count: int | None = Field(default=None, description="For `start-limit`, the refusals since a start last landed.")
+
+
+class SchedulerGateRow(_Api):
+    """One kept row of the gate history: every dimension's reading and every gate that held admission back at `at`."""
+
+    at: float = Field(description="When the row was kept, in epoch seconds.")
+    dimensions: list[SchedulerDimension]
+    blockedBy: list[SchedulerBlock]
+
+
 class SchedulerSession(_Api):
     """A session the scheduler started whose task is still running: the strip's Sessions menu draws one row of it."""
 
@@ -87,7 +105,7 @@ class SchedulerOperatorTask(_Api):
 class SchedulerStatus(_Api):
     """Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.
 
-    `inFlight`, `next`, `sessionsByHarness` and `needsOperator` are served only by a server that runs a dispatch loop; without one they
+    `inFlight`, `next`, `sessionsByHarness`, `blockedBy`, `gateHistory` and `needsOperator` are served only by a server that runs a dispatch loop; without one they
     are absent.
     """
 
@@ -110,6 +128,14 @@ class SchedulerStatus(_Api):
     sessionsByHarness: dict[str, SchedulerHarnessSessions] = Field(
         default_factory=dict,
         description="Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.",
+    )
+    blockedBy: list[SchedulerBlock] = Field(
+        default_factory=list,
+        description="Every gate holding admission back now, each with its use and limit; empty when none does.",
+    )
+    gateHistory: list[SchedulerGateRow] = Field(
+        default_factory=list,
+        description="The latest kept rows of gate readings and block reasons, oldest first, kept by the scheduler itself.",
     )
     needsOperator: list[SchedulerOperatorTask] = Field(
         default_factory=list,

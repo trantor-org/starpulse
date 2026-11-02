@@ -626,7 +626,9 @@ time as the row's `updated_at` (a row the store already holds wins), then rename
   "next": {"task": "TASK-2", "title": "Second", "verdict": "waits", "reason": "cpu", "priority": "high/low"},
   "pauses": [{"harness": "claude", "until": 1788344400.0, "reason": "usage limit"}],
   "sessionsByHarness": {"claude": {"use": 1.0, "limit": 3.0}, "cursor": {"use": 0.0, "limit": 2.0}},
-  "needsOperator": [{"task": "TASK-3", "title": "Choose the store"}]
+  "needsOperator": [{"task": "TASK-3", "title": "Choose the store"}],
+  "blockedBy": [{"name": "cpu", "use": 95.0, "limit": 80.0}, {"name": "start-limit", "use": 48, "limit": 48, "count": 3}],
+  "gateHistory": [{"at": 1788307200.5, "dimensions": [{"name": "cpu", "use": 95.0, "limit": 80.0}], "blockedBy": [{"name": "cpu", "use": 95.0, "limit": 80.0}]}]
 }
 ```
 
@@ -667,6 +669,13 @@ harness lands in `pauses` and blocks admission for that harness only.
 - `needsOperator` lists the `kind-decide` tasks in the eligible lane, each with its task and title. Admission starts one
   last (see Fit and Order); its session frames the choice and parks for the operator's answer. It is `[]` when there
   are none.
+- `blockedBy` lists every gate holding admission back now, each as `{name, use, limit}` for `cpu`, `memory`, `sessions` or
+  `review`, in that order (`next.reason` still names the first). While the start service refuses a start with "N of M task
+  sessions are live" it adds `{name: "start-limit", use: N, limit: M, count}`, where `count` is the refusals since the
+  last accepted start. It is `[]` when nothing holds.
+- `gateHistory` is the last 20 gate readings (`at`, `dimensions`, `blockedBy`) the loop kept in its event log, newest
+  last. A row is added when the blocking gates change, or five minutes after the last row; the log keeps 100.
+  It is the loop's own record and needs no Prometheus.
 
 `PUT /api/scheduler` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
 `{"quietHours": {"start": "HH:MM", "end": "HH:MM", "timezone": "<IANA zone>"}}` or `{"quietHours": null}` sets or clears

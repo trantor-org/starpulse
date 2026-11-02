@@ -10,6 +10,7 @@ import {
   level,
   type SchedulerState,
   type SchedulerStore,
+  type Block,
   type Dimension,
   type HarnessOption,
   type NextPick,
@@ -29,6 +30,8 @@ function Meter({ d }: { d: Dimension }) {
 }
 
 const why = (next: NextPick) => (next.verdict === "starting" ? "starting" : `waits: ${next.reason}`);
+
+const blockText = (b: Block) => [b.name, " ", b.use, "/", b.limit, b.count === null ? "" : " ×" + b.count].join("");
 
 /** The next pick as text: green when it starts, yellow with what it waits on. */
 function Next({ on, next }: { on: boolean; next: NextPick | null }) {
@@ -183,6 +186,12 @@ export function SchedulerCard({ store, quiet, clock }: { store: SchedulerStore; 
         <div><div className="lb">Next pick</div><div className="hint">The Ready task scheduler starts next, or what it waits on</div></div>
         <Next on={on} next={next} />
       </div>
+      {on && current.blockedBy.length > 0 && (
+        <div className="row">
+          <div><div className="lb">Blocked by</div><div className="hint">Every gate holding admission back now, with its use and limit</div></div>
+          <div className="inflight blocked">{current.blockedBy.map(blockText).join(" · ")}</div>
+        </div>
+      )}
       <div className="row">
         <div><div className="lb">In flight</div><div className="hint">Autopilot's sessions running now on {selectedLabel}</div></div>
         <div className="inflight">{running} running</div>

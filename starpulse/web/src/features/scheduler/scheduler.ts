@@ -30,6 +30,13 @@ export interface NextPick {
   verdict: "starting" | "waits";
   reason: string;
 }
+/** A gate holding admission back: a dimension the top task overfits, or `start-limit` while the session-start service's limit is full (`count` refusals). */
+export interface Block {
+  name: string;
+  use: number;
+  limit: number;
+  count: number | null;
+}
 /** A harness `GET /api/harnesses` names for the Admission Segments picker. */
 export interface HarnessOption {
   name: string;
@@ -66,6 +73,8 @@ export interface SchedulerState {
   inFlight: InFlight[] | null;
   /** The pick the loop would admit next, null when the server names none. */
   next: NextPick | null;
+  /** Every gate holding admission back now with its use and limit; empty when none does or the server does not serve it. */
+  blockedBy: Block[];
   /** Harnesses whose admission is paused until `until`; empty when none are. */
   pauses: Pause[];
   /** Each harness's in-flight count against its session cap; empty when the server serves none. */
@@ -132,6 +141,11 @@ function pick(raw: unknown): NextPick | null {
   };
 }
 
+function block(raw: unknown): Block | null {
+  if (!isRecord(raw) || typeof raw.name !== "string" || typeof raw.use !== "number" || typeof raw.limit !== "number") return null;
+  return { name: raw.name, use: raw.use, limit: raw.limit, count: typeof raw.count === "number" ? raw.count : null };
+}
+
 function pause(raw: unknown): Pause | null {
   if (!isRecord(raw) || typeof raw.harness !== "string" || typeof raw.until !== "number") return null;
   return { harness: raw.harness, until: raw.until, reason: str(raw.reason, "usage limit") };
@@ -170,7 +184,7 @@ function harnessOptions(body: unknown): HarnessOption[] {
 
 /** The card's state from an answer, or null when the answer is not a scheduler status. `inFlight`, `next`, `pauses`, `sessionsByHarness` and `sessionCap` are additive: absent is fine, present must hold. */
 function parse(body: unknown): SchedulerState | null {
-  const status = body as Partial<SchedulerStatus> & { inFlight?: unknown; next?: unknown; pauses?: unknown; sessionsByHarness?: unknown; sessionCap?: unknown };
+  const status = body as Partial<SchedulerStatus> & { inFlight?: unknown; next?: unknown; blockedBy?: unknown; pauses?: unknown; sessionsByHarness?: unknown; sessionCap?: unknown };
   if (!isRecord(body) || typeof status.enabled !== "boolean" || !Array.isArray(status.dimensions)) return null;
   const dimensions = status.dimensions.map(dimension);
   if (dimensions.some((d) => d === null)) return null;
@@ -185,6 +199,13 @@ function parse(body: unknown): SchedulerState | null {
   if (status.next !== undefined && status.next !== null) {
     next = pick(status.next);
     if (!next) return null;
+  }
+  let blockedBy: Block[] = [];
+  if (status.blockedBy !== undefined) {
+    if (!Array.isArray(status.blockedBy)) return null;
+    const rows = status.blockedBy.map(block);
+    if (rows.some((b) => b === null)) return null;
+    blockedBy = rows as Block[];
   }
   let pauses: Pause[] = [];
   if (status.pauses !== undefined) {
@@ -205,6 +226,7 @@ function parse(body: unknown): SchedulerState | null {
     dimensions: dimensions as Dimension[],
     inFlight,
     next,
+    blockedBy,
     pauses,
     sessionsByHarness: byHarness,
     sessionCap: cap,

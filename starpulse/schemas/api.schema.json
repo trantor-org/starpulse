@@ -6460,6 +6460,46 @@
       "title": "RunStats",
       "type": "object"
     },
+    "SchedulerBlock": {
+      "description": "One gate holding admission back: a capacity dimension the top task overfits, or `start-limit`, the session-start\nservice refusing every start because its live-session limit is full.",
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For `start-limit`, the refusals since a start last landed."
+        },
+        "limit": {
+          "type": "number"
+        },
+        "name": {
+          "enum": [
+            "cpu",
+            "memory",
+            "sessions",
+            "review",
+            "start-limit"
+          ],
+          "type": "string"
+        },
+        "use": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "use",
+        "limit"
+      ],
+      "title": "SchedulerBlock",
+      "type": "object"
+    },
     "SchedulerDimension": {
       "description": "One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.",
       "properties": {
@@ -6485,6 +6525,34 @@
         "limit"
       ],
       "title": "SchedulerDimension",
+      "type": "object"
+    },
+    "SchedulerGateRow": {
+      "description": "One kept row of the gate history: every dimension's reading and every gate that held admission back at `at`.",
+      "properties": {
+        "at": {
+          "description": "When the row was kept, in epoch seconds.",
+          "type": "number"
+        },
+        "blockedBy": {
+          "items": {
+            "$ref": "#/$defs/SchedulerBlock"
+          },
+          "type": "array"
+        },
+        "dimensions": {
+          "items": {
+            "$ref": "#/$defs/SchedulerDimension"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "at",
+        "dimensions",
+        "blockedBy"
+      ],
+      "title": "SchedulerGateRow",
       "type": "object"
     },
     "SchedulerHarnessSessions": {
@@ -6695,8 +6763,15 @@
       "type": "object"
     },
     "SchedulerStatus": {
-      "description": "Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.\n\n`inFlight`, `next`, `sessionsByHarness` and `needsOperator` are served only by a server that runs a dispatch loop; without one they\nare absent.",
+      "description": "Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.\n\n`inFlight`, `next`, `sessionsByHarness`, `blockedBy`, `gateHistory` and `needsOperator` are served only by a server that runs a dispatch loop; without one they\nare absent.",
       "properties": {
+        "blockedBy": {
+          "description": "Every gate holding admission back now, each with its use and limit; empty when none does.",
+          "items": {
+            "$ref": "#/$defs/SchedulerBlock"
+          },
+          "type": "array"
+        },
         "dimensions": {
           "items": {
             "$ref": "#/$defs/SchedulerDimension"
@@ -6705,6 +6780,13 @@
         },
         "enabled": {
           "type": "boolean"
+        },
+        "gateHistory": {
+          "description": "The latest kept rows of gate readings and block reasons, oldest first, kept by the scheduler itself.",
+          "items": {
+            "$ref": "#/$defs/SchedulerGateRow"
+          },
+          "type": "array"
         },
         "harness": {
           "description": "The harness the loop starts sessions on; defaults to claude.",
