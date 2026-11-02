@@ -942,6 +942,9 @@ def _parser() -> argparse.ArgumentParser:
     edit.add_argument("--priority", help="`high`, `medium` or `low`; blank removes it")
     edit.add_argument("--impact", help="how much the work matters, `high`, `medium` or `low`; blank removes it")
     edit.add_argument("--urgency", help="how soon the work matters, `high`, `medium` or `low`; blank removes it")
+    edit.add_argument(
+        "--profile", "--assignee", dest="profile", help="the agent profile it is routed to (`@agent-standard-high`); blank clears"
+    )
     edit.add_argument("--milestone", help="the milestone's id; blank removes it")
     edit.add_argument("--source", help="the key a producer files its task under, so a rerun finds it again")
     edit.add_argument("--label", action="append", help="a label; given at all, replaces the whole list (blank clears)")
