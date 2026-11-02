@@ -67,7 +67,8 @@ class MachineStep(_Api):
 
 
 class LaneHistory(_Api):
-    """`GET /api/history?task=`: a task's lane changes, oldest first."""
+    """`GET /api/history?task=`: a task's lane changes, oldest first, and how many times its plan was revised after work began."""
 
     task: str
     path: list[LaneStep]
+    plan_revisions: int = 0

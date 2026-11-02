@@ -503,6 +503,10 @@ def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     }
     if args.append_notes:
         changes["appendNotes"] = "\n".join(args.append_notes)
+    if args.reason is not None:
+        if args.plan is None:
+            raise agent_wire.CliError("usage", "--reason says why --plan rewrites the plan; give --plan too")
+        changes["planReason"] = args.reason
     checklists = [field for field, (key, _) in _CHECKLISTS.items() if any(_checklist_flags(args, key))]
     if not changes and not checklists:
         flags = (
@@ -527,7 +531,7 @@ def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
         record = _read_record(args, environ)  # the items are edited as read, so the same read is the edit's base
         for field in checklists:
             changes[field] = _checklist_after(args, field, record[field])
-        read = {field: record.get(field) for field in changes if field != "appendNotes"}
+        read = {field: record.get(field) for field in changes if field not in ("appendNotes", "planReason")}
         base_record = {**read, **(base_record or {})}
     return {"task": args.task, "changed": _task_edit_call(args, environ, changes, base_record, args.comment)}
 

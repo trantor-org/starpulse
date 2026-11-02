@@ -148,6 +148,9 @@ def test_canonical_task_key_is_the_spelling_the_history_is_asked_under() -> None
         def lane_path(self, task: str) -> list[dict]:
             return [{"at": 1.0, "from": None, "to": task}]
 
+        def plan_revisions(self, task: str) -> int:
+            return 0
+
     body, status = history_response(Paths(), {"task": ["task-7"]}, (), upstream_keys("TASK"))  # type: ignore[arg-type]
 
     assert status == 200

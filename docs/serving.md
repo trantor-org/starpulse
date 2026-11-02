@@ -249,6 +249,9 @@ Scheduler and the Unblocker, which all call those verbs.
 - The Events are the intent the file's before and after show: `TaskCreated`, `FieldsEdited` (own columns and `meta`),
   `Transitioned` (both states), `CriterionAdded`, `CriterionChecked`, `CommentAdded`, `Claimed`/`Released`, `Archived` and
   `Rehydrated`. A refused write appends nothing.
+- A plan rewrite on a started task also appends `PlanRevised` (`ordinal`, `reason`, counted per task from 1), after the
+  `FieldsEdited` it accompanies. The `/api/edit` change `planReason` carries the reason; the edit is refused without it.
+  The fold ignores the Event; `GET /api/history?task=` reports the count as `plan_revisions`.
 - A Task whose stream is empty is seeded first with a `TaskImported` of its record, so a replay equals the row for tasks
   written before History.
 - An append that finds the head moved reads it again and retries once, then raises `StaleVersion`.

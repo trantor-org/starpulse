@@ -176,7 +176,10 @@ def test_an_instance_whose_token_variable_is_unset_stops_the_server_naming_it(tm
 def test_serve_answers_on_the_listening_socket_the_service_manager_passes_in_and_binds_no_port_of_its_own(
     activated: Activated,
 ) -> None:
-    assert _get(activated.port, "/api/history?task=PROJ-1") == (200, {"task": "PROJ-1", "path": []})
+    assert _get(activated.port, "/api/history?task=PROJ-1") == (
+        200,
+        {"task": "PROJ-1", "path": [], "plan_revisions": 0},
+    )
     with pytest.raises(OSError), closing(socket.create_connection(("127.0.0.1", activated.named_port), timeout=2)):
         pass
 
@@ -202,7 +205,10 @@ def test_serve_on_a_port_something_holds_names_the_port_and_the_flag_and_starts_
 def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history(
     served: Served,
 ) -> None:
-    assert _get(served.plain_port, "/api/history?task=PROJ-1") == (200, {"task": "PROJ-1", "path": []})
+    assert _get(served.plain_port, "/api/history?task=PROJ-1") == (
+        200,
+        {"task": "PROJ-1", "path": [], "plan_revisions": 0},
+    )
     assert (served.home / DEFAULT_FILE).is_file()
     assert (served.home / ".starpulse" / "board" / "config.yml").is_file()  # the first serve made its own board
 

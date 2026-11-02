@@ -49,6 +49,7 @@ from starpulse.event_log.event_log import EventLog, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.event_log.store import EventStore
 from starpulse.event_log.tables import gaps as _gaps
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
@@ -184,6 +185,8 @@ class History(Protocol):
     """Where `/api/history` reads a task's paths from."""
 
     def lane_path(self, task: str) -> list[dict]: ...
+
+    def plan_revisions(self, task: str) -> int: ...
 
     def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]: ...
 
@@ -814,6 +817,10 @@ class HistoryStore:
                 select(c.observed_at, c.old_status, c.new_status, c.actor).where(c.task == task).order_by(*_LANE_ORDER)
             ).all()
         return lane_changes([tuple(row) for row in rows])
+
+    def plan_revisions(self, task: str) -> int:
+        """How many `PlanRevised` Events the task's History holds: plans rewritten after work began."""
+        return sum(1 for event in EventStore(self.engine).read("task", task) if event.type == "PlanRevised")
 
     def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]:
         """The events of the task, or of the run with that id, on `flow` as `{at, event, state}` in order, and their count."""

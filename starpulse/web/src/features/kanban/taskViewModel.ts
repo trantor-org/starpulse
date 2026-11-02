@@ -146,26 +146,30 @@ export async function postComment(task: string, base: TaskRecord, text: string, 
   }
 }
 
-/** Save one task diff. Validation happens before the sole request, and a refusal returns the caller's draft intact. */
+/** Save one task diff. Validation happens before the sole request, and a refusal returns the caller's draft intact.
+ * `planReason` says why a plan edit rewrites the plan; the board records it as a revision once work has begun and refuses the edit without one. */
 export async function saveTask(
   task: string,
   base: TaskRecord,
   draft: TaskRecord,
   evidence: Record<number, string>,
   fetcher: typeof apiFetch = apiFetch,
+  planReason = "",
 ): Promise<SaveResult> {
   const diff = changedFields(base, draft);
   const checked = newlyChecked(base, draft);
   const missingEvidence = checked.filter((n) => !evidence[n]?.trim());
   if (missingEvidence.length) return { ok: false, missingEvidence, record: draft };
   if (!diff.fields.length) return { ok: true, changed: [], record: draft };
+  const reason = diff.fields.includes("plan") ? planReason.trim() : "";
+  const changes = reason ? { ...withoutNew(diff.changes), planReason: reason } : withoutNew(diff.changes);
   const comment = checked.map((n) => `AC #${n}: ${evidence[n].trim()}`).join("\n");
   let response: Response;
   try {
     response = await fetcher("/api/edit", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ task, base: diff.base, changes: withoutNew(diff.changes), comment, actor: PAGE_ACTOR }),
+      body: JSON.stringify({ task, base: diff.base, changes, comment, actor: PAGE_ACTOR }),
     });
   } catch {
     return { ok: false, reason: "The task writer could not be reached.", skill: "", fields: diff.fields, record: draft };
@@ -197,12 +201,13 @@ export const SECTION_NAMES: Record<Section, string> = {
 /** Save one section: the guarded write carries that section's diff and nothing else the draft holds. A result's `record` is the base with that section applied. */
 export async function saveSection(
   task: string, section: Section, base: TaskRecord, draft: TaskRecord, evidence: Record<number, string>, fetcher: typeof apiFetch = apiFetch,
+  planReason = "",
 ): Promise<SaveResult> {
   const scoped = { ...base, ...Object.fromEntries(SECTION_FIELDS[section].map((field) => [field, draft[field]])) } as TaskRecord;
   // the board refuses a checklist item with no text, so a row added and left empty is not part of the write
   scoped.acceptanceCriteria = scoped.acceptanceCriteria.filter((item) => item.text.trim());
   scoped.definitionOfDone = scoped.definitionOfDone.filter((item) => item.text.trim());
-  return saveTask(task, base, scoped, evidence, fetcher);
+  return saveTask(task, base, scoped, evidence, fetcher, planReason);
 }
 
 /** The record with one checklist item checked or unchecked: the direct toggle, which needs no editor. */

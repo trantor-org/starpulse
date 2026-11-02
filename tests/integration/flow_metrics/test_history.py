@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from starpulse.event_log import events
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.store import EventStore, NewEvent, metadata
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore, record_machine_events
 from starpulse.flow_metrics.model.level_metrics import UNATTRIBUTED, Run
 
@@ -80,6 +81,18 @@ def test_a_lane_change_keeps_the_actor_that_made_it(store: HistoryStore) -> None
         {"at": 1.0, "from": None, "to": "needs_attention"},
         {"at": 2.0, "from": "needs_attention", "to": "done", "by": "operator"},
     ]
+
+
+def test_plan_revisions_count_one_tasks_plan_revised_events(store: HistoryStore) -> None:
+    metadata.create_all(store.engine)
+    events_store = EventStore(store.engine)
+    events_store.append(
+        "task", "PROJ-7", 0, [NewEvent("PlanRevised", {"ordinal": 1, "reason": "scope grew"}, "agent", "w")]
+    )
+    events_store.append("task", "PROJ-7", 1, [NewEvent("PlanRevised", {"ordinal": 2, "reason": "again"}, "agent", "w")])
+    events_store.append("task", "PROJ-8", 0, [NewEvent("PlanRevised", {"ordinal": 1, "reason": "other"}, "agent", "w")])
+
+    assert (store.plan_revisions("PROJ-7"), store.plan_revisions("PROJ-8"), store.plan_revisions("PROJ-9")) == (2, 1, 0)
 
 
 def test_a_status_that_repeats_the_tasks_last_adds_no_lane_change(store: HistoryStore) -> None:

@@ -321,3 +321,22 @@ def test_reconciling_a_task_whose_file_moved_without_events_appends_what_brings_
     held = replay(store.read("task", "task-5"))
     assert (held["state"], held["dependencies"]) == ("Ready", [])
     assert built.reconcile("task-5") is False
+
+
+def test_a_plan_edit_after_ready_needs_a_reason_and_appends_a_numbered_plan_revised(served) -> None:
+    built, _, store, _ = served
+
+    assert built.edit("task-5", {"plan": "1. First"}, "", actor="adin").ok
+    assert "PlanRevised" not in _types(store, "task-5")
+    assert built.edit("task-5", {"status": "In Progress"}, "", actor="adin").ok
+
+    refused = built.edit("task-5", {"plan": "1. Second"}, "", actor="adin")
+
+    assert not refused.ok
+    assert "--reason" in refused.output
+    assert "PlanRevised" not in _types(store, "task-5")
+    for reason, plan in (("scope grew", "1. Third"), ("tests first", "1. Fourth")):
+        assert built.edit("task-5", {"plan": plan, "planReason": reason}, "", actor="adin").ok
+    revised = [event.payload for event in store.read("task", "task-5") if event.type == "PlanRevised"]
+    assert revised == [{"ordinal": 1, "reason": "scope grew"}, {"ordinal": 2, "reason": "tests first"}]
+    assert replay(store.read("task", "task-5"))["plan"] == "1. Fourth"

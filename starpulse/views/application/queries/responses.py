@@ -126,6 +126,7 @@ def history_response(
         body |= {"hours": hours, "events": history.task_events(task, at - hours * 3600, at)}
     else:
         body["path"] = history.lane_path(task)
+        body["plan_revisions"] = history.plan_revisions(task)
     return encode("history", body), 200
 
 

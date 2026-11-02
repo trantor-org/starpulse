@@ -47,6 +47,7 @@ def test_a_task_answers_its_lane_changes(server: PageServer) -> None:
         {
             "task": "PROJ-7",
             "path": [{"at": 200.0, "from": None, "to": "waiting"}, {"at": 201.0, "from": "waiting", "to": "ready"}],
+            "plan_revisions": 0,
         },
     )
 
@@ -67,7 +68,7 @@ def test_a_task_and_flow_answer_that_machines_path_with_its_step_total(server: P
 
 
 def test_an_unknown_task_answers_an_empty_path(server: PageServer) -> None:
-    assert _get(server, "?task=PROJ-404") == (200, {"task": "PROJ-404", "path": []})
+    assert _get(server, "?task=PROJ-404") == (200, {"task": "PROJ-404", "path": [], "plan_revisions": 0})
     assert _get(server, "?task=PROJ-404&machine=in-progress") == (
         200,
         {"task": "PROJ-404", "machine": "in-progress", "path": [], "steps": 0},
@@ -90,5 +91,9 @@ def test_a_lane_change_answers_the_actor_that_made_it(tmp_path: Path) -> None:
     with serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), history=store) as server:
         assert _get(server, "?task=PROJ-8") == (
             200,
-            {"task": "PROJ-8", "path": [{"at": 300.0, "from": None, "to": "ready", "by": "starpulse/task-actor"}]},
+            {
+                "task": "PROJ-8",
+                "path": [{"at": 300.0, "from": None, "to": "ready", "by": "starpulse/task-actor"}],
+                "plan_revisions": 0,
+            },
         )

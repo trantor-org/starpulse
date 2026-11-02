@@ -199,11 +199,13 @@ def _trace(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
         raise agent_wire.CliError("not_found", document["error"])
     if status != 200 or not isinstance(document, dict) or "path" not in document:
         raise agent_wire.CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
+    revisions = {"plan_revisions": document["plan_revisions"]} if "plan_revisions" in document else {}
     return {
         "task": document["task"],
         "machine": document.get("machine"),
         "path": document["path"],
         "steps": document.get("steps", len(document["path"])),
+        **revisions,
     }
 
 
@@ -955,6 +957,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     edit.add_argument("--description", help="the Description section")
     edit.add_argument("--plan", help="the Implementation Plan section")
+    edit.add_argument(
+        "--reason", help="why --plan rewrites the plan; required once the task is past Ready, recorded as a PlanRevised"
+    )
     edit.add_argument("--notes", help="the Implementation Notes section")
     edit.add_argument("--final-summary", dest="final_summary", help="the Final Summary section")
     edit.add_argument(

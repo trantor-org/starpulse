@@ -1556,10 +1556,11 @@ export interface UnknownLaneWarning {
   [k: string]: unknown;
 }
 /**
- * `GET /api/history?task=`: a task's lane changes, oldest first.
+ * `GET /api/history?task=`: a task's lane changes, oldest first, and how many times its plan was revised after work began.
  */
 export interface LaneHistory {
   path: LaneStep[];
+  plan_revisions?: number;
   task: string;
   [k: string]: unknown;
 }

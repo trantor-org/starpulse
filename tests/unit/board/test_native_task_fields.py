@@ -133,7 +133,8 @@ def test_field_round_trip_edits_one_field_and_nothing_else(served: tuple[Board, 
     before = _record(built, task)
     value = EDITS[edit](before)
 
-    written = built.edit(task, {field: value}, "")
+    reason = {"planReason": "the fixture rewrites it"} if field == "plan" else {}
+    written = built.edit(task, {field: value, **reason}, "")
 
     assert written.ok, written.output
     frontmatter, body = _split(path.read_text())
@@ -208,7 +209,7 @@ def test_field_round_trip_of_an_edit_to_every_field_at_once_keeps_every_other_by
         for field in FRONT.keys() | SECTIONS.keys() - {"appendNotes"}
     }
 
-    assert built.edit(task, changes, "").ok
+    assert built.edit(task, {**changes, "planReason": "every field at once"}, "").ok
 
     assert {key: item for key, item in _record(built, task).items() if key not in changes} == {
         key: item for key, item in before.items() if key not in changes
