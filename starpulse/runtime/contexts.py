@@ -140,12 +140,14 @@ def default_starters(
         )  # fmt: skip
 
     def scheduler(own: threading.Event) -> Callable[[], None]:
+        from starpulse.runtime.assembly import scheduler_board
         from starpulse.runtime.server import _cached, trajectories_response
         from starpulse.scheduler.bin import scheduler_worker
         from starpulse.sessions.adapters.outbound.session_start import starter
 
         return scheduler_worker.start(
-            config, path, base, log, own, load=load, worker_board=shared, history_store=history_store,
+            config, path, base, log, own, load=load,
+            worker_board=lambda *_: scheduler_board(config, base, log, own), history_store=history_store,
             trajectories_response=trajectories_response, cached=_cached, starter=starter, delivered=own_pull_merged,
         )  # fmt: skip
 
