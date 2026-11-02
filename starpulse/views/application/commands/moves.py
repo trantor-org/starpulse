@@ -162,6 +162,26 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
     return (200, {**body, "assignee": who.session}) if status == 200 else (status, body)
 
 
+def _start_refusal(feed: BoardFeed, task: str, agent: dict[str, Any]) -> str | None:
+    """Why a session cannot start on `agent`, or None: it is held, outside the startable states, or a Ready task whose
+    unmet Start Criteria the task actor returns to Waiting (`CRITERIA_UNMET`), where the reaper ends the session."""
+    startable = feed.roles.startable
+    if agent["state"] == feed.roles.working:
+        if (holder := agent.get("assignee")) and holder != _RELEASED_ASSIGNEE:
+            return f"{task} is held by {holder}: a session starts an In Progress task only once its claim is released"
+        return None
+    if agent["state"] not in startable:
+        listed = [state for state in feed.roles.roles if state in startable]
+        names = " or ".join(filter(None, [", ".join(listed[:-1]), *listed[-1:]]))
+        return f"{task} is in {agent['state']}: a session starts only a {names} task"
+    if agent["state"] != feed.roles.ready or not (unmet := feed.unmet_criteria(task, agent.get("description", ""))):
+        return None
+    return (
+        f"{task} is in {agent['state']} with its Start Criteria unmet ({', '.join(unmet)}): "
+        f"the task actor returns it to {feed.roles.waiting}"
+    )
+
+
 def start_requested(
     request: StartRequest,
     feed: BoardFeed,
@@ -200,16 +220,8 @@ def start_requested(
             return 409, {"error": chosen.reason or f"{harness} cannot start a session"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
-    startable = feed.roles.startable
-    if agent["state"] == feed.roles.working:
-        if (holder := agent.get("assignee")) and holder != _RELEASED_ASSIGNEE:
-            return 409, {
-                "error": f"{task} is held by {holder}: a session starts an In Progress task only once its claim is released"
-            }
-    elif agent["state"] not in startable:
-        listed = [state for state in feed.roles.roles if state in startable]
-        names = " or ".join(filter(None, [", ".join(listed[:-1]), *listed[-1:]]))
-        return 409, {"error": f"{task} is in {agent['state']}: a session starts only a {names} task"}
+    if reason := _start_refusal(feed, task, agent):
+        return 409, {"error": reason}
     at = clock()
     if profile != agent["model"] and not (written := assign(task, profile, **named)).ok:
         return 409, {"error": written.output, "skill": written.skill}

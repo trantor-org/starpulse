@@ -617,6 +617,51 @@ def test_a_task_off_the_board_or_outside_ready_waiting_and_needs_attention_start
     assert sessions.started == []
 
 
+_GATE = "## Start Criteria\n\n```yaml\nstart_criteria:\n- id: S1\n  kind: prom\n  expr: up\n  at_least: 1\n```\n"
+
+
+def _gated_feed(state: str, status: str | None) -> BoardFeed:
+    """A feed holding PROJ-3 in `state` behind one Start Criterion that an evaluator reports as `status`."""
+    feed = BoardFeed(roles=ROLES)
+    feed.put(task("PROJ-3", state, profile="@agent-standard-high", description=_GATE))
+    feed.track_criteria(None if status is None else lambda _task, _description: [{"id": "S1", "status": status}], None)
+    return feed
+
+
+@pytest.mark.parametrize("status", ["not-met", "error"])
+def test_a_ready_task_whose_start_criteria_are_unmet_starts_no_session_that_the_task_actor_would_reap(
+    status: str,
+) -> None:
+    """The task actor returns it to Waiting at once (`CRITERIA_UNMET`), and the reaper ends the session on it."""
+    sessions = _Sessions()
+
+    result = _start(
+        {"task": "PROJ-3", "profile": "@agent-standard-high", "harness": "claude"},
+        sessions=sessions,
+        feed=_gated_feed("Ready", status),
+    )
+
+    assert result == (
+        409,
+        {"error": "PROJ-3 is in ready with its Start Criteria unmet (S1): the task actor returns it to waiting"},
+    )
+    assert sessions.started == []
+
+
+@pytest.mark.parametrize(("state", "status"), [("Ready", "met"), ("Ready", None), ("Waiting", "not-met")])
+def test_a_start_is_not_refused_on_met_or_unread_criteria_or_for_a_waiting_task(state: str, status: str | None) -> None:
+    sessions = _Sessions()
+
+    result = _start(
+        {"task": "PROJ-3", "profile": "@agent-standard-high", "harness": "claude"},
+        sessions=sessions,
+        feed=_gated_feed(state, status),
+    )
+
+    assert result[0] == 200
+    assert sessions.started == [("PROJ-3", "claude", "interactive")]
+
+
 def test_a_server_built_without_a_board_writer_refuses_every_move() -> None:
     assert _no_writer("PROJ-3", "Review") == Written(False, "no board writer is configured", unavailable=True)
 

@@ -36,6 +36,22 @@ class ClaimMethods:
                     logger.warning("StarPulse: cannot read when Start Criteria were met: %s", exc)
             self._reassess(list(self._open))
 
+    def unmet_criteria(self, task: str, description: str) -> list[str]:
+        """The ids of `task`'s Start Criteria that read `not-met`, `unmet` or `error` now; empty when it declares none, when
+        none is evaluated (`not evaluated` is no verdict), or when the evaluator raises.
+
+        A Ready task with such a criterion is returned to Waiting by the task actor, so a session started on it is
+        reaped as idle.
+        """
+        with self._lock:
+            evaluate = self._evaluate
+        try:
+            results = evaluate(task, description)
+        except Exception as exc:  # an evaluator is meant to return errors as results; this one raised
+            logger.warning("StarPulse: cannot evaluate the Start Criteria of %s: %s", task, exc)
+            return []
+        return [str(result["id"]) for result in results if result["status"] in ("not-met", "unmet", "error")]
+
     def evaluate_criteria(self) -> None:
         """Evaluate the Start Criteria of every Waiting task whose dependencies are done, and publish each task whose
         workability changed. A task whose criteria are all met keeps the moment it was first seen so; a task whose
