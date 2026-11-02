@@ -232,7 +232,7 @@ def test_a_query_that_only_refuses_does_not_wait_for_the_fold_running_for_anothe
     holder = threading.Thread(target=answers.answer, args=("diff", "168", first))
     holder.start()
     assert first_in.wait(10)
-    refusal = Answers.answer(answers, "diff", "999", lambda: (b"refused", 400), refused=lambda: True)
+    refusal = answers.answer("diff", "999", lambda: (b"refused", 400), refused=lambda: True)
     release_first.set()
     holder.join(10)
 

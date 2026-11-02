@@ -96,7 +96,9 @@ class Answers:
         self, key: _Key, compute: Callable[[], tuple[bytes, int]], refused: Callable[[], bool]
     ) -> Future[tuple[bytes, int]]:
         job: Future[tuple[bytes, int]] = Future()
-        thread = threading.Thread(target=self._fold, args=(key, compute, refused, job), name="analytics-answers", daemon=True)
+        thread = threading.Thread(
+            target=self._fold, args=(key, compute, refused, job), name="analytics-answers", daemon=True
+        )
         self._jobs[key] = job
         self._tried[key] = self._clock()
         self._threads.add(thread)
