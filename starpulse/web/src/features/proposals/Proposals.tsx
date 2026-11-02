@@ -89,7 +89,7 @@ export function Proposals({ cards, roles, profiles, fetcher = apiFetch }: Props)
                 {options.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
               <button type="button" className="btn go" disabled={busy[p.id]}
-                onClick={() => void decide(p.id, () => promoteProposal(p.id, profile, current, roles, fetcher))}>Promote</button>
+                onClick={() => void decide(p.id, () => promoteProposal(p.id, profile, current, roles, fetcher, p.openDeps))}>Promote</button>
               <button type="button" className="btn" disabled={busy[p.id]}
                 onClick={() => void decide(p.id, () => dropProposal(p.id, roles, fetcher))}>Drop</button>
             </div>

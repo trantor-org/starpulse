@@ -109,3 +109,13 @@ def test_trajectory_starts_at_promotion() -> None:
     result = trajectory_analytics(level, machine, [control, proposed], now=100 * H, window_s=100 * H)
 
     assert result["variants"] == [{"path": ["todo", "work", "done"], "count": 2, "share": 1.0}]
+
+
+def test_proposed_may_be_promoted_to_a_state_waiting_on_dependencies(tmp_path: Path) -> None:
+    text = PROPOSED_BOARD.read_text().replace("waiting: {role: waiting_on_fact, waits: {criteria_met: CRITERIA_MET}}",
+        "waiting: {role: waiting_on_fact, waits: {criteria_met: CRITERIA_MET, deps_done: DEPS_DONE}}")
+    text = text.replace("  DROP: [{from: proposed, to: archived}]", "  DROP: [{from: proposed, to: archived}]\n  DEPS_DONE: [{from: waiting, to: ready}]\n  PROMOTE_WAITING: [{from: proposed, to: waiting}]")
+    path = tmp_path / "waiting.yaml"
+    path.write_text(text)
+
+    assert load_machine(path) is not None
