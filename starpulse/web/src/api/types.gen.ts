@@ -19,6 +19,7 @@ export interface ApiContract {
     | Completed
     | Claimed
     | Parked
+    | ClaimReleased
     | Reviewed
     | Created
     | CreatedEach
@@ -76,6 +77,7 @@ export interface ApiContract {
     | CompleteRequest
     | ClaimRequest
     | ParkRequest
+    | ReleaseRequest
     | ReviewRequest
     | CreateRequest
     | MilestoneCreateRequest
@@ -186,6 +188,12 @@ export interface Claimed {
   [k: string]: unknown;
 }
 export interface Parked {
+  task: string;
+  to: string;
+  [k: string]: unknown;
+}
+export interface ClaimReleased {
+  releasedFrom: string;
   task: string;
   to: string;
   [k: string]: unknown;
@@ -2098,6 +2106,16 @@ export interface ParkRequest {
       }[]
     | null;
   untilTask?: string[] | null;
+}
+/**
+ * `POST /api/release`: end the claim whoever holds `task`: it loses its assignee, records the session as released and
+ * keeps its lane, so the next claim adopts it.
+ */
+export interface ReleaseRequest {
+  actor?: string | null;
+  harness?: string | null;
+  session?: string | null;
+  task: string;
 }
 /**
  * `POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge

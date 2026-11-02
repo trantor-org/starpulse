@@ -586,6 +586,26 @@
       "title": "ClaimRelease",
       "type": "object"
     },
+    "ClaimReleased": {
+      "properties": {
+        "releasedFrom": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "to",
+        "releasedFrom"
+      ],
+      "title": "ClaimReleased",
+      "type": "object"
+    },
     "ClaimRequest": {
       "additionalProperties": false,
       "description": "`POST /api/claim`: move `task` to In Progress and record `session` as its assignee, an opaque string; the same\nassignee claiming again changes nothing, and an assignee already on another open claim is refused.",
@@ -5727,6 +5747,53 @@
       "title": "RecentRun",
       "type": "object"
     },
+    "ReleaseRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/release`: end the claim whoever holds `task`: it loses its assignee, records the session as released and\nkeeps its lane, so the next claim adopts it.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "ReleaseRequest",
+      "type": "object"
+    },
     "RequiredCheck": {
       "properties": {
         "name": {
@@ -9272,6 +9339,9 @@
             "$ref": "#/$defs/Parked"
           },
           {
+            "$ref": "#/$defs/ClaimReleased"
+          },
+          {
             "$ref": "#/$defs/Reviewed"
           },
           {
@@ -9464,6 +9534,9 @@
           },
           {
             "$ref": "#/$defs/ParkRequest"
+          },
+          {
+            "$ref": "#/$defs/ReleaseRequest"
           },
           {
             "$ref": "#/$defs/ReviewRequest"
