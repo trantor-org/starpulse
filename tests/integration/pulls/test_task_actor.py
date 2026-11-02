@@ -141,7 +141,7 @@ def test_a_planned_merge_hands_the_task_to_the_verifying_hook_and_an_unplanned_o
     assert until(lambda: verifying == ["TASK-1"])
 
 
-def test_a_review_task_whose_every_pr_closed_unmerged_moves_to_needs_attention_with_a_question_and_a_merged_one_closes(
+def test_a_review_task_whose_every_pr_closed_unmerged_moves_to_needs_attention_with_a_question_and_one_with_a_closed_pr_beside_a_merged_one_is_held(
     store: PullStore, stop: threading.Event
 ) -> None:
     board = Board(
@@ -157,7 +157,8 @@ def test_a_review_task_whose_every_pr_closed_unmerged_moves_to_needs_attention_w
 
     actor.pulls_changed()
 
-    assert until(lambda: sorted(board.moved()) == [("TASK-1", "needs_attention"), ("TASK-2", "done")])
+    assert until(lambda: board.moved() == [("TASK-1", "needs_attention")])
+    assert until(lambda: [name for name, _ in board.comments()] == ["TASK-2"])  # a closed PR beside a merged one
     (_, changes, _, writer) = next(write for write in board.writes if write[0] == "TASK-1")
     reason = changes["description"]
     assert writer == ACTOR
@@ -237,12 +238,13 @@ def test_a_review_check_task_citing_only_other_tasks_prs_closes_and_a_feature_ta
     assert all(name == "TASK-1" for name, *_ in board.writes)
 
 
-def test_a_review_task_whose_own_pr_closed_unmerged_and_superseded_by_another_tasks_merged_pr_closes(
+def test_a_review_task_whose_own_pr_closed_unmerged_beside_another_tasks_merged_pr_is_held_naming_the_closed_one(
     store: PullStore, stop: threading.Event
 ) -> None:
+    waits = {**WAITS, "review": {"pr_merged": "MERGED"}}  # the board machine's fact, not the kit's `pr_terminal`
     board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE, PR_TWO)))
     store.save([pull(1, state="OPEN", branch="claude/task-1-own"), pull(2, state="OPEN", branch="claude/task-9-other")])
-    actor = running(board, store, stop)
+    actor = running(board, store, stop, waits)
     store.save(
         [
             pull(1, state="CLOSED", branch="claude/task-1-own"),
@@ -251,9 +253,15 @@ def test_a_review_task_whose_own_pr_closed_unmerged_and_superseded_by_another_ta
     )
 
     actor.pulls_changed()
+    actor.pulls_changed()
 
-    assert until(lambda: board.moved() == [("TASK-1", "done")])
-    assert PR_TWO in str(board.writes[0][2])
+    assert until(lambda: len(board.comments()) == 1)
+    assert board.moved() == []
+    [(name, comment)] = board.comments()
+    assert name == "TASK-1"
+    assert "Held from Done:" in comment
+    assert "acme/trantor#1 closed unmerged" in comment
+    assert "--remove-ref" in comment
 
 
 def test_a_ready_or_in_progress_task_citing_another_tasks_merged_pr_derives_nothing(
@@ -301,7 +309,8 @@ def test_a_needs_attention_task_closes_once_every_pr_ended_and_one_merged_but_no
     store.save([pull(1, state="MERGED")])
     actor.pulls_changed()
 
-    assert until(lambda: sorted(board.moved()) == [("TASK-1", "done"), ("TASK-3", "done")])
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    assert until(lambda: [name for name, _ in board.comments()] == ["TASK-3"])  # merged beside a closed one: held
     assert all(actor_name == ACTOR for _, _, _, actor_name in board.writes)
     assert f"acme/trantor#1 merged as {SHA}" in str(board.writes[0][2])
 
