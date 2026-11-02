@@ -93,7 +93,12 @@ def _wait_on_tasks(feed: BoardFeed, task: str, current: dict[str, Any], ids: Any
         if feed.is_done(name):
             raise _RefusalError(409, {"error": f"{name} is already Done: there is nothing to wait for"})
         if held_task(feed, name) is None:
+            if feed.is_archived(name):
+                raise _RefusalError(409, {"error": f"{name} is archived, so it never reaches Done"})
             raise _RefusalError(*not_held(feed, name))
+        if route := _route_to(feed, name, task):
+            chain = " -> ".join([task, *route])
+            raise _RefusalError(409, {"error": f"{task} cannot wait on {name}: it closes a cycle {chain}"})
     needs = [name for name in named if "#" in name]
     for need in needs:
         _open_criterion(feed, need)
@@ -101,6 +106,20 @@ def _wait_on_tasks(feed: BoardFeed, task: str, current: dict[str, Any], ids: Any
         "dependencies": list(dict.fromkeys([*current["dependencies"], *waits])),
         **({"dependencyNeeds": list(dict.fromkeys([*current.get("dependencyNeeds", []), *needs]))} if needs else {}),
     }
+
+
+def _route_to(feed: BoardFeed, start: str, target: str) -> list[str] | None:
+    """The chain of task ids from `start` through the dependencies each open task names to `target`, or None."""
+    seen, pending = {start.casefold()}, [[start]]
+    while pending:
+        route = pending.pop(0)
+        if route[-1].casefold() == target.casefold():
+            return route
+        for name in (feed.task(route[-1]) or {}).get("dependencies", ()):
+            if name.casefold() not in seen:
+                seen.add(name.casefold())
+                pending.append([*route, name])
+    return None
 
 
 def _open_criterion(feed: BoardFeed, need: str) -> None:

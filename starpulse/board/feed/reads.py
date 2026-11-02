@@ -6,7 +6,7 @@ import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from starpulse.event_log.lane_events import done_lanes
+from starpulse.event_log.lane_events import ARCHIVED, done_lanes
 from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -105,6 +105,15 @@ class ReadMethods:
             return row is not None and lane_id(row["state"]) in done_lanes(self._roles.done)
         with self._lock:
             return self._done_at(task_id) is not None
+
+    def is_archived(self, task_id: str) -> bool:
+        """Whether the Board holds the task as archived: its file left the lanes by archive, so it never reaches Done."""
+        if self._read_model is not None:
+            row = self._read_model.task(task_id)
+            return row is not None and bool(row["archived"])
+        with self._lock:
+            settled = self._settled.get(task_id)
+            return settled is not None and settled["state"] == ARCHIVED
 
     def titled(self) -> dict[str, dict]:
         """Every Board task's `title`, `labels`, `milestone` and `profile`, open, cold or settled, by id; a settled task
