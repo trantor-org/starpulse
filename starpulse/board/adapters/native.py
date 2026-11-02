@@ -129,6 +129,11 @@ _NOTES_END = re.compile(r"\s*<!-- SECTION:NOTES:END -->")
 _PLAN = re.compile(r"<!-- SECTION:PLAN:BEGIN -->(.*?)<!-- SECTION:PLAN:END -->", re.S)
 _DONE = re.compile(r"<!-- DOD:BEGIN -->(.*?)<!-- DOD:END -->", re.S)
 _FINAL_SUMMARY = re.compile(r"<!-- SECTION:FINAL_SUMMARY:BEGIN -->(.*?)<!-- SECTION:FINAL_SUMMARY:END -->", re.S)
+_NEEDS_ATTENTION_BLOCK = re.compile(r"<!-- SECTION:NEEDS_ATTENTION:BEGIN -->(.*?)<!-- SECTION:NEEDS_ATTENTION:END -->", re.S)
+#: The settled block with the `## Needs attention` heading over it, which an empty edit takes out whole.
+_NEEDS_ATTENTION_SECTION = re.compile(
+    r"\n*(?:^## Needs attention[ \t]*\n+)?" + _NEEDS_ATTENTION_BLOCK.pattern + r"[ \t]*\n?", re.S | re.M
+)
 _COMMENTS_SECTION = re.compile(r"<!-- COMMENTS:BEGIN -->(.*?)<!-- COMMENTS:END -->", re.S)
 _COMMENT_HEAD = re.compile(r"^created: (\S+ \S+)\n(?:author: (\S+)\n)?---\n", re.M)
 _SESSION_LINK = re.compile(r"^\*\*Session Link:\*\* (?:local \w+ session `([^`]+)`|(\S+))", re.M)
@@ -514,6 +519,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "plan": _section(_PLAN, body),
         "notes": notes,
         "finalSummary": _section(_FINAL_SUMMARY, body),
+        "needsAttention": _section(_NEEDS_ATTENTION_BLOCK, body),
         "comments": comments,
         "session": assignee_of(frontmatter) or _session(notes, comments),
         "createdBy": str(frontmatter.get("created_by") or ""),
@@ -584,6 +590,8 @@ def _marked(body: str, marker: str, heading: str, inner: str, *, after: str = ""
 def _set_text(body: str, field: str, value: Any) -> str:
     name, heading = _TEXT_SECTIONS[field]
     text = _text(field, value)
+    if field == "needsAttention" and not text:  # clearing takes the whole section out
+        return _NEEDS_ATTENTION_SECTION.sub("\n", body).rstrip("\n") + "\n"
     if field == "description" and not re.search(r"<!-- SECTION:DESCRIPTION:BEGIN -->", body):
         if headed := _HEADED_DESCRIPTION.search(body):  # a description under its heading, with no markers
             marked = f"\n<!-- SECTION:DESCRIPTION:BEGIN -->\n{text}\n<!-- SECTION:DESCRIPTION:END -->\n\n"
