@@ -5,7 +5,9 @@ A machine state's `waits` name a fact kind and the event that leaves the state w
 touches only the tasks naming it, and when a task's pull request state, its own lane or a dependency's changes it
 re-derives that task's waits and writes the first that holds through the board's task editor as `starpulse/task-actor`.
 The board's rules and the machine's guards judge the write like any other. A write the board refuses is logged and
-counted, and not tried again until the task's facts change. A release to Ready that the board's lint refuses (a
+counted, and not tried again until the task's facts change. A move to Done the board refuses (a Definition of Done item
+left open) is commented on the task as `Held from Done: <reason>` and handed to the `delivered` hook, so the holder
+wakes on the refusal; the last item checked tries the move again. A release to Ready that the board's lint refuses (a
 declared guard or the validate hook) leaves the task in its lane with the lint's reason as a comment and no operator
 question, and the release is tried again when the task's description, profile, labels or dependencies change; any
 other refused release parks the task in Needs attention with the refusal as its reason, once per refusal. A start
@@ -720,9 +722,24 @@ class TaskActor:
                 self._hold_for_repair(name, written.output)
             else:
                 self._park(name, written.output)
+        elif target == self._feed.roles.done:
+            self._hold_done(name, written.output)
         with self._metrics:
             self._refusals += 1
         return False
+
+    def _hold_done(self, name: str, refusal: str) -> None:
+        """Record a refused Done move on the task and hand its holder the refusal through `delivered`: the move is not
+        tried again until the task's facts change, so without the note and the wake a merged task sits in its lane."""
+        reason = refusal.rstrip(".")
+        written = self._apply(name, {}, f"{DONE_HELD} {reason}.")
+        if not written.ok:
+            logger.warning("task actor: the Done refusal of %s was not commented: %s", name, written.output)
+        if self._delivered:
+            try:
+                self._delivered(name, f"merged but Done refused: {reason}")
+            except Exception:  # the note stands; a board hook is a notice, not part of the write
+                logger.exception("task actor: %s was refused Done but its holder was not told", name)
 
     def _count_error_passes(self, name: str, evaluated: list[dict[str, Any]]) -> None:
         """Count the passes whose Start Criteria stayed in error; the second in a row re-gates the task."""

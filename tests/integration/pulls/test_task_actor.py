@@ -1140,6 +1140,29 @@ def test_a_dod_tick_that_leaves_a_merged_review_task_fully_checked_makes_the_don
     assert until(lambda: board.moved() == [("TASK-1", "done")] * 2)
 
 
+def test_a_done_move_the_board_refuses_is_commented_with_its_reason_and_wakes_the_holder_once(
+    store: PullStore, stop: threading.Event
+) -> None:
+    reason = "Done needs every Definition of Done item checked"
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    board.refusing["done"] = reason
+    told: list[tuple[str, str]] = []
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop, delivered=lambda name, verdict: told.append((name, verdict)))
+    store.save([pull(1, state="MERGED")])
+
+    actor.pulls_changed()
+    actor.pulls_changed()
+
+    assert until(lambda: len(told) == 1)
+    assert not until(lambda: len(told) > 1, within=0.2)
+    assert board.moved() == [("TASK-1", "done")]
+    [(name, comment)] = board.comments()
+    assert name == "TASK-1"
+    assert comment == f"Held from Done: {reason}."
+    assert told == [("TASK-1", f"merged but Done refused: {reason}")]
+
+
 def test_a_review_task_whose_pr_merged_into_an_integration_branch_closes_only_once_that_branch_landed_on_main(
     store: PullStore, stop: threading.Event
 ) -> None:
