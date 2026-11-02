@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.context == "scheduler":
         from starpulse.runtime.server import _cached, trajectories_response
         from starpulse.scheduler.bin import scheduler_worker
-        from starpulse.sessions.session_start import starter
+        from starpulse.sessions.adapters.outbound.session_start import starter
 
         return scheduler_worker.main(
             argv,

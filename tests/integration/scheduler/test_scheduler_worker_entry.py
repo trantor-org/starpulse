@@ -15,7 +15,7 @@ from starpulse.runtime.config import load
 from starpulse.scheduler.adapters.loop import PAUSES_KEY
 from starpulse.scheduler.adapters.remote import Remote
 from starpulse.scheduler.bin.scheduler_worker import Scheduler
-from starpulse.sessions.session_start import starter
+from starpulse.sessions.adapters.outbound.session_start import starter
 
 from tests.integration.scheduler.test_scheduler_served import IDLE_HOST, _start_service, _task, _until
 

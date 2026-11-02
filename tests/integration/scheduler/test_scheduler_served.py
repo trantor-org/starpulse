@@ -25,7 +25,7 @@ from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.bin.scheduler_service import start_scheduler
 from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.model.sampler import PERIOD
-from starpulse.sessions.session_start import starter
+from starpulse.sessions.adapters.outbound.session_start import starter
 
 #: How long a test waits for the loop: far under the sampler's period, which is the bound the spec names.
 DEADLINE_S = 10.0

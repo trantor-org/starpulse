@@ -230,7 +230,7 @@ from starpulse.runtime.control import control_file
 from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, adopted_from_env, announce_ready
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 from starpulse.runtime.zygote import Forker
-from starpulse.sessions.session_start import starter
+from starpulse.sessions.adapters.outbound.session_start import starter
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse.views.adapters.inbound.page_server import BACKLOG, DRAIN_S, PageServer
 from starpulse.views.application.queries.responses import (  # noqa: F401 - the read routes stay importable from here

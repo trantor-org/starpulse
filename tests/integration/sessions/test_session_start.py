@@ -12,8 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from starpulse.contracts.adapters import StartFailedError
-from starpulse.sessions import session_start
-from starpulse.sessions.session_start import starter
+from starpulse.sessions.adapters.outbound import session_start
+from starpulse.sessions.adapters.outbound.session_start import starter
 
 
 @contextmanager
