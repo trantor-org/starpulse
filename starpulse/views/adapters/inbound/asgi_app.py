@@ -442,9 +442,16 @@ def page_app(
     services: Services = Services(),
     clock: Callable[[], float] = time.time,
     gate: Callable[[GateRequest], bool] | None = None,
+    snapshot_refresh_s: float = 0.0,
 ) -> PageApp:
+    """The Page API over `feed`; a `snapshot_refresh_s` above zero keeps the snapshot warm, rebuilt that often off the
+    request path (a daemon thread that lives as long as the process)."""
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
-    snapshots = Snapshots(feed)
+    snapshots = Snapshots(feed, refresh_s=snapshot_refresh_s)
+    if snapshot_refresh_s > 0:
+        threading.Thread(
+            target=snapshots.keep_warm, args=(threading.Event(),), name="snapshot-warm", daemon=True
+        ).start()
 
     def build_frame() -> str | None:
         build = page_build(static)

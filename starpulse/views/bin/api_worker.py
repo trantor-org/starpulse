@@ -50,6 +50,9 @@ from starpulse.views.application.queries.answers import Answers
 from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
 
+#: How often (seconds) the warm `/api/snapshot` is rebuilt while the board changes: the bench judges it against 50 ms p95.
+SNAPSHOT_REFRESH_S = 2.0
+
 
 @dataclasses.dataclass(frozen=True)
 class Host:
@@ -219,7 +222,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         lane_sweep_metrics=lane_sweep.exposition,
         autopilot_metrics=lambda: autopilot_exposition(log),
     )
-    app = page_app(feed, host.static, store, window, board, services)
+    app = page_app(feed, host.static, store, window, board, services, snapshot_refresh_s=SNAPSHOT_REFRESH_S)
     collect_on_a_timer(stop)
     try:
         httpd = PageServer(
