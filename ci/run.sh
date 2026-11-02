@@ -54,8 +54,13 @@ cmd_python_tests() {
   # Pytest exits 5 when it collects no test, which is a pass only while targets were selected.
   # The full log is kept: an xdist worker crash (INTERNALERROR) prints its traceback only into this output.
   local status=0
+  # PYTEST_JUNIT set: pytest also writes each test's outcome and duration there, for the outcome report's run facts.
+  local junit=()
+  if [ -n "${PYTEST_JUNIT:-}" ]; then
+    junit=(--junitxml "$PYTEST_JUNIT" -o junit_family=xunit1)
+  fi
   # shellcheck disable=SC2086 # PYTEST_TARGETS is a list of paths
-  uv run --no-sync pytest ${PYTEST_TARGETS:-} 2>&1 | tee "${PYTEST_LOG:-pytest.log}" || status=$?
+  uv run --no-sync pytest "${junit[@]}" ${PYTEST_TARGETS:-} 2>&1 | tee "${PYTEST_LOG:-pytest.log}" || status=$?
   [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "${PYTEST_TARGETS:-}" ]; }
 }
 
