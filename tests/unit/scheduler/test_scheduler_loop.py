@@ -735,7 +735,9 @@ def test_reading_the_next_pick_logs_no_decision(rig: Rig, caplog: pytest.LogCapt
     with caplog.at_level("INFO"):
         rig.loop.next_pick()
 
-    assert caplog.records == []
+    # Only the loop's own records: a background thread left by an earlier test can log into caplog during this window.
+    loop_records = [r for r in caplog.records if r.name == "starpulse.scheduler.adapters.loop"]
+    assert loop_records == []
 
 
 # The rig's clock starts at 10_000 s, 02:46:40 UTC on 1 January 1970, inside this window; 3_600 s is 01:00, outside it.

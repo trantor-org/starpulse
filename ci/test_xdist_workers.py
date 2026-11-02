@@ -40,7 +40,7 @@ def test_the_pytest_job_sizes_its_workers_before_it_runs_pytest():
     assert "sizing=--slice" in body  # the build host's tests.slice budget, not a runner's memory limit
     assert "--dist worksteal" in body  # idle workers take queued tests, so a long file spreads over them
     assert "--dist worksteal -rA" in body  # the log names every test's outcome, not just totals
-    assert body.index("ci/xdist_workers.py") < body.index("pytest ${PYTEST_TARGETS")
+    assert body.index("ci/xdist_workers.py") < body.index('pytest "${junit[@]}" ${PYTEST_TARGETS')
 
 
 @pytest.mark.parametrize(
