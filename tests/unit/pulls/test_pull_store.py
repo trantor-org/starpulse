@@ -45,6 +45,7 @@ class Github:
         threads: tuple[bool, ...] = (),
         merged_at: str | None = None,
         files: tuple[str, ...] = (),
+        total_files: int | None = None,
         behind: int | None = None,
         branch: str = "claude/task-7-thing",
         author: str | None = "coderabbitai",
@@ -59,6 +60,7 @@ class Github:
             "threads": threads,
             "merged_at": merged_at,
             "files": files,
+            "total_files": len(files) if total_files is None else total_files,
             "behind": behind,
             "branch": branch,
             "author": author,
@@ -89,7 +91,7 @@ class Github:
             "createdAt": OLD,
             "mergedAt": pull["merged_at"],
             "mergeCommit": {"oid": f"{number:040x}"[::-1]} if pull["state"] == "MERGED" else None,
-            "files": {"nodes": [{"path": path} for path in pull["files"]]},
+            "files": {"totalCount": pull["total_files"], "nodes": [{"path": path} for path in pull["files"]]},
             "headRef": None if pull["behind"] is None else {"compare": {"aheadBy": pull["behind"]}},
             "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": contexts}}}}]},
             "ciCommits": {"nodes": [{"commit": {"oid": f"{number:040x}", "checkSuites": {"nodes": [SUITE]}}}]},
@@ -250,6 +252,16 @@ def test_a_record_carries_the_facts_pr_status_prints(store: PullStore) -> None:
             "fetchedAt": 100.0,
         }
     ]
+
+
+def test_a_pr_with_more_files_than_the_read_returns_records_its_files_as_unknown(store: PullStore) -> None:
+    github = Github()
+    github.add(6, files=("a.py",), total_files=101)
+
+    _read(store, github, 100.0)
+
+    (record,) = store.find(number=6, detailed=True)
+    assert record["detail"]["files"] is None
 
 
 def test_a_merged_prs_record_keeps_what_the_task_consumers_read_beside_the_served_fields(store: PullStore) -> None:

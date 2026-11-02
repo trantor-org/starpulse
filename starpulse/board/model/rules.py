@@ -323,7 +323,7 @@ def _pulls_changed(spec: Mapping[str, Any], where: str) -> Primitive:
     def holds(record: Record) -> bool:
         pulls = _pulls(record)
         if any(pull is None or pull["files"] is None for pull in pulls):
-            return False  # the store cannot say what changed: no evidence is asked for what it cannot see
+            return False  # the store cannot say what changed: the rule cannot clear, so it fails closed
         changed = [pull for pull in pulls if any(fnmatchcase(path, glob) for path in pull["files"] for glob in globs)]
         found = criteria.search(record.body)
         checked = _CHECKED.findall(found.group(1)) if found else []

@@ -98,6 +98,15 @@ def test_an_opened_record_answers_the_task_and_session_lookup() -> None:
     assert [(r["repo"], r["number"]) for r in store.find(body_contains="PROJ-1")] == [PULL]
 
 
+def test_an_opened_record_holds_its_files_as_unknown_not_as_none_changed() -> None:
+    projection, store, _ = _projection()
+
+    projection.handle(_entry(*OPEN))
+
+    (record,) = store.find(detailed=True)
+    assert record["detail"]["files"] is None
+
+
 def test_an_event_of_a_task_the_board_does_not_hold_is_ignored() -> None:
     projection, store, changes = _projection()
 
