@@ -184,6 +184,12 @@ def _split(text: str) -> tuple[Any, str]:
         return None, ""
 
 
+def dependencies(text: str) -> list[str]:
+    """The task ids a task file's front matter lists under `dependencies`, empty for a file with none."""
+    frontmatter, _ = _split(text)
+    return list(_strings(frontmatter.get("dependencies"))) if isinstance(frontmatter, dict) else []
+
+
 #: Each adapter whose thread is running, with that thread, so a caller can end what it started.
 _live: dict[UpstreamBacklog, threading.Thread] = {}
 

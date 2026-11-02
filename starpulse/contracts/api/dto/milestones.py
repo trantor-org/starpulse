@@ -75,7 +75,15 @@ class RetiredTask(_Api):
     text: str
 
 
-class RetiredTasks(_Api):
-    """`GET /api/retired[?task=<id>]`: every retired task, or the one `task` names, by id."""
+class RetiredDependencies(_Api):
+    """A retired task's id and the task ids its file lists as dependencies, with no name or text."""
 
-    tasks: list[RetiredTask]
+    task: str
+    dependencies: list[str]
+
+
+class RetiredTasks(_Api):
+    """`GET /api/retired[?task=<id>][&fields=dependencies]`: every retired task, or the one `task` names, by id; with
+    `fields=dependencies` each is `{task, dependencies}` alone."""
+
+    tasks: list[RetiredTask] | list[RetiredDependencies]

@@ -5892,6 +5892,26 @@
       "title": "Retired",
       "type": "object"
     },
+    "RetiredDependencies": {
+      "description": "A retired task's id and the task ids its file lists as dependencies, with no name or text.",
+      "properties": {
+        "dependencies": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "dependencies"
+      ],
+      "title": "RetiredDependencies",
+      "type": "object"
+    },
     "RetiredImportRequest": {
       "additionalProperties": false,
       "description": "`POST /api/retired/import`: keep the retired task file `name`, holding `text`, in the history store.",
@@ -5944,13 +5964,23 @@
       "type": "object"
     },
     "RetiredTasks": {
-      "description": "`GET /api/retired[?task=<id>]`: every retired task, or the one `task` names, by id.",
+      "description": "`GET /api/retired[?task=<id>][&fields=dependencies]`: every retired task, or the one `task` names, by id; with\n`fields=dependencies` each is `{task, dependencies}` alone.",
       "properties": {
         "tasks": {
-          "items": {
-            "$ref": "#/$defs/RetiredTask"
-          },
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RetiredTask"
+              },
+              "type": "array"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/RetiredDependencies"
+              },
+              "type": "array"
+            }
+          ]
         }
       },
       "required": [

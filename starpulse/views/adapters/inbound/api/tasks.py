@@ -1,7 +1,8 @@
 """Tasks: a task's record and every write that changes one, and the retired tasks.
 
 - `GET /api/task/{id}`: a task's record, with the pull requests it cites; a read that takes long is logged.
-- `GET /api/retired`: the retired tasks, filtered by `task` and `milestone`.
+- `GET /api/retired`: the retired tasks, filtered by `task` and `milestone`, or as `{task, dependencies}` for
+  `fields=dependencies`.
 - `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `rating`, `miss`, `restore`, `take-over`, `retire`,
   `retired/import`, `claim`, `park`, `review`, `complete` and `tasks`: a task's writes, each over the seams it needs.
 """
@@ -16,8 +17,8 @@ from starlette.responses import Response
 
 from starpulse.contracts.api.dto.requests import StartRequest
 from starpulse.views.adapters.inbound.api.answering import answer, on_loop, on_worker, query, reading, seams
-from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
+from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, no_writer, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task
 from starpulse.views.application.commands.moves import claim_task, move_task, start_requested, start_task
@@ -75,7 +76,9 @@ async def task(request: Request) -> Response:
 @reading
 def retired(request: Request) -> Response:
     asked = query(request)
-    status, body = retired_list(seams(request).board, asked.get("task", [""])[0], asked.get("milestone", [""])[0])
+    status, body = retired_list(
+        seams(request).board, asked.get("task", [""])[0], asked.get("milestone", [""])[0], asked.get("fields", [""])[0]
+    )
     return answer(request, encode("retired", body), status)
 
 
