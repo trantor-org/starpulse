@@ -198,9 +198,21 @@ def adapter_module(board_type: str) -> str:
         raise ReloadError(f"board type {board_type}: {exc}") from exc
 
 
-def _blocks(name: str, config: Config) -> tuple[object, object]:
+def _machine_hash(config: Config, base: Path) -> str:
+    """The content hash of the Board machine file `[board] machine` names, which a worker compiles once at start: a merged
+    change to it replaces the worker, as the file's path alone never changes. Empty when the board names none."""
+    file = config.board.get("machine")
+    if file is None:
+        return ""
+    try:
+        return sha256((base / str(file)).read_bytes()).hexdigest()
+    except OSError as exc:
+        raise ReloadError(f"board machine {file}: {exc}") from exc
+
+
+def _blocks(name: str, config: Config, base: Path) -> tuple[object, object]:
     """The (restart, live) config blocks of `name`: the ones a running worker needs a new process for, and the ones it
-    re-reads on `SIGHUP`. `serve` itself has none.
+    re-reads on `SIGHUP`, with the hash of the Board machine file it builds. `serve` itself has none.
 
     Each context's blocks are imported here, not at the top, so a worker's import closure holds no other context's."""
     from starpulse.board.bin.blocks import board_built_blocks, search_built_blocks
@@ -212,7 +224,7 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
 
     if name == "api":
         try:
-            return api_built_blocks(config), ()
+            return (api_built_blocks(config), _machine_hash(config, base)), ()
         except OSError as exc:  # the certificate or key being renewed
             raise ReloadError(f"api: {exc}") from exc
     if name == "contexts":
@@ -223,6 +235,7 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
             flow_metrics_built_blocks(config),
             search_built_blocks(config),
             board_built_blocks(config),
+            _machine_hash(config, base),
         )
         return restart, (pulls_delivery_blocks(config), scheduler_live_blocks(config))
     return (), ()
@@ -233,6 +246,7 @@ class Reader:
 
     def __init__(self, config_path: Path | None) -> None:
         self._path = discover(config_path)
+        self._base = self._path.parent if self._path else Path.cwd()
         self._hashes: dict[str, str] | None = None
 
     def _config(self) -> Config:
@@ -242,7 +256,7 @@ class Reader:
             raise ReloadError(f"{self._path}: {exc}") from exc
 
     def _blocks(self, name: str) -> tuple[object, object]:
-        return _blocks(name, self._config())
+        return _blocks(name, self._config(), self._base)
 
     def at_start(self, name: str) -> Reading:
         """The reading of `name` as `serve` starts it: its config blocks and the hash of each module file, no closure."""
@@ -255,4 +269,4 @@ class Reader:
         # a worker's main takes the root config loader from `runtime` (spec doc-966, D6), so its entry imports none
         extra = CONTEXT_ENTRIES if name == "contexts" else ()
         code = code_of(ENTRIES[name], extra=("starpulse.runtime.config", adapter_module(config.board_type), *extra))
-        return Reading(code, *_blocks(name, config))
+        return Reading(code, *_blocks(name, config, self._base))

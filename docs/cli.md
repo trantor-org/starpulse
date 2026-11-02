@@ -457,7 +457,8 @@ in the working directory) and removes the file when it stops; `reload` reads tha
 load it: the files of the `starpulse` modules the process imports, with their content hashes. It compares that and the
 process's config blocks with the last reading, taken when `serve` started or at the last `reload`, then:
 
-- **replaced**: a child whose closure changed, or whose `database_url`, `board_type` or `board` changed, is ended and
+- **replaced**: a child whose closure changed, or whose `database_url`, `board_type` or `board` changed, or whose Board machine file (the `[board] machine` path, read by
+  content hash) changed, is ended and
   started again with a new pid. The `runs` child builds its adapters once, so a `runs`
   change also replaces it.
 - **reloaded**: a child whose only change is its own config block (`pull_requests`, `repos`, `ci`, `release`,
