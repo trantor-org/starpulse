@@ -11,11 +11,11 @@ from pathlib import Path
 import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import signals
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.views.adapters.inbound.page_server import PageServer
 
+from tests.folded_telemetry import FoldedTelemetry
 from tests.machines import MACHINES, ROLES
 from tests.unit.harness_telemetry.test_telemetry import FIXTURES
 
@@ -38,7 +38,7 @@ def _get(server: PageServer, query: str = "") -> tuple[int, dict]:
 
 @pytest.fixture
 def server(tmp_path: Path) -> Iterator[PageServer]:
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    telemetry = FoldedTelemetry(tmp_path, KEYS)
     for name in ("claude_code/otlp.ndjson", "codex/otlp.ndjson"):
         for line in (FIXTURES / name).read_text().splitlines():
             telemetry.publish(signals(json.loads(line)))

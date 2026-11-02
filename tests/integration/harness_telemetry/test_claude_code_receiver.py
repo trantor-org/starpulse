@@ -7,10 +7,10 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.adapters.inbound.claude_code import handler
-from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, CODEX, TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, CODEX, signals
 
+from tests.folded_telemetry import FoldedTelemetry
 from tests.unit.harness_telemetry.test_claude_code import adapter, exports, replay
 from tests.unit.harness_telemetry.test_telemetry import FIXTURES
 
@@ -51,7 +51,7 @@ def _post(server: ThreadingHTTPServer, payload: dict) -> int:
 
 
 def test_the_receiver_records_the_signals_of_both_harnesses_exports_in_the_telemetry_log(tmp_path: Path) -> None:
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    telemetry = FoldedTelemetry(tmp_path, None)
     server = ThreadingHTTPServer(
         ("127.0.0.1", 0), handler(adapter(), lambda event: None, lambda payload: telemetry.publish(signals(payload)))
     )

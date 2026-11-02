@@ -190,6 +190,6 @@ def main(
         redact = redactor(args.redactor) if args.redactor else None
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
-    telemetry = telemetry_log(config.telemetry_loki_url, log)
+    telemetry = telemetry_log(log)
     read = ingest(args.root, telemetry, keys=keys, analytics=analytics, redact=redact, hours=args.hours)
     print(f"cursor: read {read} transcript(s) under {args.root}", flush=True)

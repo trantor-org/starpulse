@@ -9,12 +9,12 @@ from sqlalchemy import text
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import signals
-from starpulse.harness_telemetry.adapters.inbound.telemetry import KEEP_S, TelemetryLog
+from starpulse.harness_telemetry.adapters.inbound.telemetry import KEEP_S
 from starpulse.harness_telemetry.adapters.outbound.loki import LokiSignals
 from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable
 from starpulse.runtime.signal_copy import copy_signals
 
-from tests.integration.harness_telemetry.test_loki_signals import FakeLoki, served, signal
+from tests.integration.harness_telemetry.test_loki_signals import FakeLoki, push, served, signal
 
 
 def opened(tmp_path: Path) -> EventLog:
@@ -61,13 +61,30 @@ def test_the_copy_inserts_the_window_once_and_a_rerun_inserts_none(tmp_path: Pat
     loki = FakeLoki()
     with served(loki) as url:
         source = LokiSignals(url)
-        TelemetryLog(None, loki=source).publish([signal(1, 100.0), signal(2, 200.0), signal(3, 300.0), signal(4, 400.0)])
+        push(source, [signal(1, 100.0), signal(2, 200.0), signal(3, 300.0), signal(4, 400.0)])
         table.insert([asdict(signal(3, 300.0))])  # already there, as after the adapters write both
 
         first = copy_signals(source, table, since=200.0)
         second = copy_signals(source, table, since=200.0)
 
     assert (first, second, keys(log)) == (2, 0, ["k2", "k3", "k4"])
+
+
+def test_a_line_loki_took_after_a_copy_lands_in_the_table_on_the_copy_the_cutover_reruns(tmp_path: Path) -> None:
+    """The adapters wrote Loki until the cutover: a signal pushed after the deploy's first copy, with a time inside the
+    window, is the late line the rerun before the adapters switch must bring over."""
+    log = opened(tmp_path)
+    table = SignalTable(log.engine)
+    with served(FakeLoki()) as url:
+        source = LokiSignals(url)
+        push(source, [signal(1, 100.0), signal(2, 200.0)])
+        first = copy_signals(source, table, since=0.0)
+
+        push(source, [signal(3, 150.0)])  # pushed late: older signal time, newer Loki stamp
+        rerun = copy_signals(source, table, since=0.0)
+        settled = copy_signals(source, table, since=0.0)
+
+    assert (first, rerun, settled, keys(log)) == (2, 1, 0, ["k1", "k2", "k3"])
 
 
 def test_a_pass_of_the_prune_deletes_the_signals_older_than_the_keep_window(tmp_path: Path) -> None:

@@ -1,21 +1,27 @@
-"""The telemetry log over a Loki instance (a fake one speaking its push and query_range API): what a push, a replay,
-an outage and a trim do to what is read."""
+"""The Loki signal store the copy into `starpulse_signals` reads (a fake one speaking its push and query_range API):
+what a push, a paged fetch and an outage do. No adapter writes it any more; T4a deletes it."""
 
 import json
 import threading
 import urllib.parse
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
+from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, Signal, TelemetryLog, telemetry_log
+from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, Signal
 from starpulse.harness_telemetry.adapters.outbound import loki as loki_module
 from starpulse.harness_telemetry.adapters.outbound.loki import LokiSignals
 
 
 def signal(n: int, at: float) -> Signal:
     return Signal(CLAUDE_CODE, "s", "request", at, f"k{n}", model="m", input=n)
+
+
+def push(store: LokiSignals, found: Iterable[Signal]) -> None:
+    """Push `found` as an adapter did before the cutover: one line per signal."""
+    store.push(asdict(s) for s in found)
 
 
 class FakeLoki:
@@ -73,70 +79,30 @@ def served(loki: FakeLoki) -> Iterator[str]:
 def test_a_push_is_one_line_per_signal_in_the_signals_stream() -> None:
     loki = FakeLoki()
     with served(loki) as url:
-        TelemetryLog(None, loki=LokiSignals(url)).publish([signal(1, 100.0), signal(2, 200.0)])
+        push(LokiSignals(url), [signal(1, 100.0), signal(2, 200.0)])
 
     assert loki.pushes[0]["streams"][0]["stream"] == {"job": "starpulse-signals"}
     assert [json.loads(text)["key"] for _, text in loki.lines] == ["k1", "k2"]
 
 
-def test_what_is_published_reads_back_equal_and_in_order() -> None:
+def test_a_fetch_reads_back_what_was_pushed_in_stamp_order() -> None:
     loki = FakeLoki()
     found = [signal(1, 100.0), signal(2, 50.0), signal(3, 200.0)]
     with served(loki) as url:
-        telemetry = TelemetryLog(None, loki=LokiSignals(url))
-        telemetry.publish(found)
+        push(LokiSignals(url), found)
 
-        assert telemetry.read() == found
+        assert [row["key"] for _, row in LokiSignals(url).fetch(0)] == ["k1", "k2", "k3"]
 
 
-def test_a_replayed_signal_is_read_once_and_a_later_publish_joins_it() -> None:
+def test_a_fetch_after_a_stamp_returns_only_the_lines_stamped_later() -> None:
     loki = FakeLoki()
     with served(loki) as url:
-        telemetry = TelemetryLog(None, loki=LokiSignals(url))
-        telemetry.publish([signal(1, 100.0)])
-        telemetry.publish([signal(1, 100.0), signal(2, 101.0)])
-        assert [s.key for s in telemetry.read()] == ["k1", "k2"]
+        store = LokiSignals(url)
+        push(store, [signal(1, 100.0)])
+        last = max(stamp for stamp, _ in store.fetch(0))
+        push(store, [signal(2, 200.0)])
 
-        telemetry.publish([signal(3, 102.0), signal(2, 101.0)])
-        assert [s.key for s in telemetry.read()] == ["k1", "k2", "k3"]
-
-
-def test_a_second_reader_sees_what_the_first_published() -> None:
-    loki = FakeLoki()
-    with served(loki) as url:
-        TelemetryLog(None, loki=LokiSignals(url)).publish([signal(1, 100.0)])
-
-        assert [s.key for s in TelemetryLog(None, loki=LokiSignals(url)).read()] == ["k1"]
-
-
-def test_a_read_polls_after_the_last_stamp_it_saw() -> None:
-    loki = FakeLoki()
-    with served(loki) as url:
-        telemetry = TelemetryLog(None, loki=LokiSignals(url))
-        telemetry.publish([signal(1, 100.0)])
-        telemetry.read()
-        telemetry.read()
-
-    first, second = (int(query["start"]) for query in loki.queries)
-    assert second == max(stamp for stamp, _ in loki.lines) + 1 > first
-
-
-def test_a_read_returns_only_the_signals_from_the_window_on() -> None:
-    loki = FakeLoki()
-    with served(loki) as url:
-        telemetry = TelemetryLog(None, loki=LokiSignals(url))
-        telemetry.publish([signal(1, 100.0), signal(2, 200.0)])
-
-        assert [s.key for s in telemetry.read(150.0)] == ["k2"]
-
-
-def test_a_read_drops_what_is_older_than_keep_before_the_newest_signal() -> None:
-    loki = FakeLoki()
-    with served(loki) as url:
-        telemetry = TelemetryLog(None, 100.0, loki=LokiSignals(url))
-        telemetry.publish([signal(1, 100.0), signal(2, 250.0), signal(3, 300.0)])
-
-        assert [s.key for s in telemetry.read()] == ["k2", "k3"]
+        assert [row["key"] for _, row in store.fetch(last)] == ["k2"]
 
 
 def test_a_fetch_pages_through_more_lines_than_one_page(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,21 +115,13 @@ def test_a_fetch_pages_through_more_lines_than_one_page(monkeypatch: pytest.Monk
         assert [row["key"] for _, row in store.fetch(0)] == [f"k{n}" for n in range(5)]
 
 
-def test_an_unreachable_loki_raises_on_read_and_on_publish() -> None:
+def test_an_unreachable_loki_raises_on_fetch_and_on_push() -> None:
     loki = FakeLoki()
     with served(loki) as url:
-        telemetry = TelemetryLog(None, loki=LokiSignals(url))
+        store = LokiSignals(url)
         loki.down = True
 
         with pytest.raises(OSError):
-            telemetry.publish([signal(1, 100.0)])
+            push(store, [signal(1, 100.0)])
         with pytest.raises(OSError):
-            telemetry.read()
-
-
-def test_the_factory_chooses_loki_by_the_configured_url() -> None:
-    loki = FakeLoki()
-    with served(loki) as url:
-        telemetry_log(url, None).publish([signal(1, 100.0)])
-
-    assert len(loki.lines) == 1
+            store.fetch(0)

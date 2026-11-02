@@ -7,11 +7,16 @@ from __future__ import annotations
 import json
 import re
 import tracemalloc
+from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.signals import Signal
+from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.model.steps import session_steps
+from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable
+from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.application.queries.responses import steps_response
 from starpulse.views.model.encoding import encode
 
@@ -20,21 +25,16 @@ KEYS = TaskKeys(key=re.compile(r"TASK-\d+"), branch=re.compile(r"task-(\d+)"), k
 NOW = 2_000_000.0
 STEPS = 12_000
 SESSIONS = 60
-PEAK_PER_BODY_BYTE = 4  # the body, a join of its parts, and the parts themselves; a held list of step dicts is ~20
+PEAK_PER_BODY_BYTE = 10  # the stored step rows of the window as dicts (~7), the body, and its parts; a list of every signal too is ~20
 
 
-class _Log:
-    """A `TelemetryLog` holding `found`."""
-
-    def __init__(self, found: list[Signal]) -> None:
-        self._found = found
-
-    def read(self, since: float = 0.0) -> list[Signal]:
-        return self.held_from(since)[1]
-
-    def held_from(self, since: float = 0.0) -> tuple[float | None, list[Signal]]:
-        start = min((s.time for s in self._found), default=None)
-        return start, [s for s in self._found if s.time >= since]
+def _folds(tmp_path: Path, found: list[Signal]) -> SignalFolds:
+    """A `SignalFolds` over a table holding `found`, caught up."""
+    events = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    SignalTable(events.engine).insert(asdict(s) for s in found)
+    folds = SignalFolds(events, KEYS, None)
+    folds.catch_up()
+    return folds
 
 
 def _signals(count: int) -> list[Signal]:
@@ -78,10 +78,10 @@ def _old_body(found: list[Signal]) -> bytes:
     return encode("session_steps", {"now": NOW, "window_s": 7200.0, "steps": session_steps(window, KEYS, None)})
 
 
-def test_the_steps_body_is_the_one_a_list_of_every_step_encodes_to() -> None:
+def test_the_steps_body_is_the_one_a_list_of_every_step_encodes_to(tmp_path: Path) -> None:
     found = _signals(900)
 
-    body, status = steps_response(_Log(found), {"hours": ["2"]}, KEYS, NOW)
+    body, status = steps_response(_folds(tmp_path, found), {"hours": ["2"]}, KEYS, NOW)
 
     assert status == 200
     assert body == _old_body(found)
@@ -90,14 +90,13 @@ def test_the_steps_body_is_the_one_a_list_of_every_step_encodes_to() -> None:
     assert [s["at"] for s in steps] == sorted(s["at"] for s in steps)
 
 
-def test_the_traced_peak_of_a_steps_fold_stays_within_a_few_bodies() -> None:
-    found = _signals(STEPS)
-    log = _Log(found)
+def test_the_traced_peak_of_a_steps_fold_stays_within_a_few_bodies(tmp_path: Path) -> None:
+    folds = _folds(tmp_path, _signals(STEPS))
     tracemalloc.start()
     try:
         tracemalloc.reset_peak()
         base = tracemalloc.get_traced_memory()[0]
-        body, status = steps_response(log, {"hours": ["2"]}, KEYS, NOW)
+        body, status = steps_response(folds, {"hours": ["2"]}, KEYS, NOW)
         peak = tracemalloc.get_traced_memory()[1] - base
     finally:
         tracemalloc.stop()

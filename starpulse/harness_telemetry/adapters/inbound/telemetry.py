@@ -25,12 +25,8 @@ import json
 import logging
 import re
 import sys
-import threading
-import time
-from bisect import bisect_left, insort
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, fields
-from operator import itemgetter
 from typing import TYPE_CHECKING, Any
 
 from starpulse.contracts.adapters import TaskKeys
@@ -38,7 +34,6 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.harness_telemetry.model.activity import SHELLS, activities, elide_heredocs, paths, writes_file
 from starpulse.harness_telemetry.model.intent_classification import intent_label
-from starpulse.harness_telemetry.adapters.outbound.loki import LokiSignals
 from starpulse.harness_telemetry.adapters.inbound.otlp import BRANCH, _attributes, _epoch, _records
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -404,89 +399,32 @@ def held(found: Iterable[Signal]) -> list[Signal]:
 
 
 KEEP_S = 8 * 86400.0  # a day past the views' default 168 h window: the oldest held signal never lies inside it
-_arrival = itemgetter(1)  # a held entry is (time, arrival, signal): time to bisect by, arrival to restore the order
 
 
 class TelemetryLog:
-    """The signals both harnesses' exports gave, kept in Loki when the config names one, else in the event log's
-    `telemetry:signals` stream.
-
-    The stream is private to the instance: it has no entry in `EVENT_STREAMS` and no consumer tails it.
+    """Where the adapters put the signals both harnesses' exports gave: the `starpulse_signals` table.
 
     `publish` stores each signal under its `key`, so a replayed export adds nothing, and fails open like the log: a
-    database that cannot be opened drops the signals, never the export. `read` returns the signals no older than
-    `since`, in the order they were published; it polls the store since its last read and holds what it read,
-    dropping what is older than `keep` seconds before the newest signal it holds (the log prunes its own rows by its
-    `event_log_retention_days`, Loki's stream by its retention rule). Every read returns references into that one
-    held snapshot, so concurrent analytics requests cost a list of pointers each, never a second hydration of the
-    stream. A Loki store keeps a replayed signal's second line, which `read` drops by key.
+    table that cannot be written drops the signals, never the export. The views read the table through its folds
+    (`SignalFolds`), so this holds no signal and no key.
     """
 
-    STREAM = "telemetry:signals"
+    STREAM = "telemetry:signals"  # the private stream `starpulse backfill-signals` still reads; T4a deletes both
 
-    def __init__(self, log: EventLog | None, keep: float = KEEP_S, *, loki: LokiSignals | None = None) -> None:
-        self._log = log
-        self._loki = loki
-        self._keep = keep
-        self._held: list[tuple[float, int, Signal]] = []  # time-ordered, so a read bisects to its window
-        self._arrived = 0
-        self._keys: set[str] = set()
-        self._lock = threading.Lock()
-        if loki is None:
-            assert log is not None  # without Loki the event log is the store
-            from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
-
-            self._tail = Tail.replay(log, self.STREAM, batch=5000)
-        self._stamp = time.time_ns() - int(keep * 1e9)
+    def __init__(self, log: EventLog) -> None:
+        self._events = log
 
     def publish(self, found: Iterable[Signal]) -> None:
-        if self._loki is not None:
-            self._loki.push(asdict(signal) for signal in found)
-            return
-        for signal in found:
-            self._log.publish(self.STREAM, asdict(signal), event_id=signal.key)
+        from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415 - the database stack loads when a log opens
 
-    def _poll(self) -> list[Signal]:
-        """The stored signals since the last poll."""
-        if self._loki is None:
-            polled = []
-            while entries := self._tail.poll():
-                polled += [stored_signal(entry.fields) for entry in entries]
-                if len(entries) < self._tail.batch:
-                    break
-            return polled
-        new = []
-        for page in self._loki.pages(self._stamp):
-            if page:
-                self._stamp = page[-1][0]
-            for _, row in page:
-                if row.get("key") not in self._keys:
-                    self._keys.add(row["key"])
-                    new.append(stored_signal(row))
-        return new
+        from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable  # noqa: PLC0415
 
-    def read(self, since: float = 0.0) -> list[Signal]:
-        """The held signals from `since` on; raises when the store cannot be read."""
-        return self.held_from(since)[1]
-
-    def held_from(self, since: float = 0.0) -> tuple[float | None, list[Signal]]:
-        """The time of the oldest held signal (None when none is held) and the held signals from `since` on, in
-        time order; raises when the store cannot be read. Only a poll that brings signals prunes the hold, and a
-        read bisects to `since`, so its cost follows the window, not the history before it."""
-        with self._lock:
-            polled = self._poll()
-            if polled:
-                for signal in polled:
-                    self._arrived += 1
-                    insort(self._held, (signal.time, self._arrived, signal))
-                cut = bisect_left(self._held, (self._held[-1][0] - self._keep,))
-                self._keys.difference_update(entry[2].key for entry in self._held[:cut])
-                del self._held[:cut]
-            start = bisect_left(self._held, (since,))
-            window = sorted(self._held[start:], key=_arrival)  # the order they arrived in, as read has always given
-            return (self._held[0][0] if self._held else None), [entry[2] for entry in window]
+        try:
+            SignalTable(self._events.engine).insert([asdict(signal) for signal in found])
+        except SQLAlchemyError:
+            log.warning("signal table unwritable; dropping signals", exc_info=True)
 
 
-def telemetry_log(url: str | None, log: EventLog | None) -> TelemetryLog:
-    """The `TelemetryLog` of `telemetry_loki_url`, else of the event log `log`."""
-    return TelemetryLog(log, loki=LokiSignals(url) if url else None)
+def telemetry_log(log: EventLog) -> TelemetryLog:
+    """The `TelemetryLog` of the event log `log`."""
+    return TelemetryLog(log)

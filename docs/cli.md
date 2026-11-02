@@ -433,15 +433,16 @@ is not SQLite, which its own backup tool owns. The read lock is held only for th
 `starpulse backfill-telemetry [--days N] [--config starpulse.toml]` copies the last `N` days (default 8) of the event
 log's `telemetry:signals` rows into the Loki the config's `telemetry_loki_url` names, skipping each key Loki already holds,
 so a rerun pushes nothing. Use it after setting `telemetry_loki_url` on an instance that already held signals: the
-analytics views read only Loki and refuse a window longer than its history. The running `serve` reads the copies on its next
-poll, and it holds 8 days of signals, a day past the 168 h default window. It prints one JSON line with `days` and
+adapters no longer write Loki and the stream no longer receives signals, so this verb is for a Loki that still needs filling. It prints one JSON line with `days` and
 `pushed`, and exits 1 for a config with no `telemetry_loki_url` or a Loki it cannot reach. It is not an agent verb.
 
 ## Copying signals into the signal table
 
 `starpulse copy-signals [--days N] [--config starpulse.toml]` copies the last `N` days (default 8) of the signals in the
 Loki the config's `telemetry_loki_url` names into `starpulse_signals` in the history database, by signal time, skipping
-each key the table already holds, so a rerun inserts nothing. No view serves from the table yet; `SignalFolds` folds it
+each key the table already holds, so a rerun inserts nothing. The deploy and every adapter start run it before the adapters
+write the table alone, so a line Loki took late lands in the table. The analytics and trace routes read the fold rows;
+`SignalFolds` folds the table
 per session into `starpulse_signal_folds` from a rowid cursor in the settings, and the hourly prune of the event log
 deletes the rows of both tables older than 8 days. It prints one JSON line with `days` and `copied`, and exits 1 for a config with no
 `telemetry_loki_url` or a Loki it cannot reach. It is not an agent verb.

@@ -25,8 +25,7 @@ The time, prompt, intervention and cleanliness metrics (`agent_s`, `operator_wai
 from __future__ import annotations
 
 import re
-import threading
-from collections import Counter, OrderedDict, defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
@@ -322,41 +321,11 @@ def session_rows(
     return list(by_task.values())
 
 
-#: The rows of the most recently read sessions by (harness, session), with the signals, keys and analytics they were
-#: worked out from: a hit needs all three to be equal (list equality passes over the same `Signal` objects by identity).
-_MEMO_SESSIONS = 16384
-_memo: OrderedDict[tuple[str, str], tuple[list[Signal], TaskKeys | None, Analytics | None, list[dict[str, Any]]]] = (
-    OrderedDict()
-)
-_memo_lock = threading.Lock()
-
-
-def _remembered(ordered: list[Signal], keys: TaskKeys | None, analytics: Analytics | None) -> list[dict[str, Any]]:
-    """`session_rows` of one session, from the last time it was read with the same signals."""
-    name = (ordered[0].harness, ordered[0].session)
-    with _memo_lock:
-        held = _memo.get(name)
-        if held:
-            _memo.move_to_end(name)
-    if held and held[1] == keys and held[2] == analytics and held[0] == ordered:
-        return held[3]
-    rows = session_rows(ordered, keys, analytics)
-    with _memo_lock:
-        _memo[name] = (ordered, keys, analytics, rows)
-        _memo.move_to_end(name)
-        while len(_memo) > _MEMO_SESSIONS:
-            _memo.popitem(last=False)
-    return rows
-
-
 def fold_health(
     signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
 ) -> list[dict[str, Any]]:
-    """The fold of one session's `signals`: its rows, one per task it worked, as plain JSON data (see `session_rows`).
-
-    A session whose signals are those it was last read with is not worked out again, so a read costs the sessions that
-    changed since the last one, not every session of its window. The rows are shared between reads: do not mutate them."""
-    return _remembered(session_signals(signals, keys, analytics), keys, analytics)
+    """The fold of one session's `signals`: its rows, one per task it worked, as plain JSON data (see `session_rows`)."""
+    return session_rows(session_signals(signals, keys, analytics), keys, analytics)
 
 
 def combine_health(folds: Iterable[list[dict[str, Any]]]) -> list[dict[str, Any]]:

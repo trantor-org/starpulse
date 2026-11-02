@@ -14,11 +14,11 @@ import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.contracts.analytics import Analytics, SkillLoad
-from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import signals
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.views.adapters.inbound.page_server import PageServer
 
+from tests.folded_telemetry import FoldedTelemetry
 from tests.machines import MACHINES, ROLES
 
 pytestmark = pytest.mark.usefixtures("sqlite_stores_from_template")
@@ -95,7 +95,7 @@ def _get(server: PageServer, path: str) -> tuple[int, dict]:
 def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
     """One server for the module: every case only reads it."""
     tmp_path = tmp_path_factory.mktemp("server")
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    telemetry = FoldedTelemetry(tmp_path, KEYS, ANALYTICS)
     for payload in corpus():
         telemetry.publish(signals(payload))
     feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
@@ -148,7 +148,7 @@ def test_a_session_an_eval_run_stamped_is_left_out_of_the_recurring_work(tmp_pat
     payloads = corpus()
     for payload in payloads[:6]:
         payload["resourceLogs"][0]["resource"]["attributes"] += _attributes(**{"trantor.eval": "memory-search-judge"})
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    telemetry = FoldedTelemetry(tmp_path, KEYS, ANALYTICS)
     for payload in payloads:
         telemetry.publish(signals(payload, analytics=replace(ANALYTICS, eval_attribute="trantor.eval")))
     feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)

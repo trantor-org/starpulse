@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.contracts.analytics import Analytics
-    from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog
     from starpulse.harness_telemetry.model.harnesses import Harnesses
     from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
     from starpulse.scheduler.adapters.remote import Remote
     from starpulse.scheduler.adapters.runtime import Runtime
+    from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 
 
 class KeptAnswers(Protocol):
@@ -47,7 +47,7 @@ class Services:
     scheduler: Runtime | Remote | None = None
     contract: Callable[[], dict[str, Any]] | None = None
     pulls: PullStore | None = None
-    telemetry: TelemetryLog | None = None
+    telemetry: SignalFolds | None = None
     search: SearchIndex | None = None
     analytics: Analytics | None = None
     #: Keeps the telemetry analytics' answers past a restart so a read never waits on a fold; None folds per request.

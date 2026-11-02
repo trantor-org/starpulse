@@ -5,16 +5,18 @@ from __future__ import annotations
 import math
 from collections import Counter
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics.model.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
-from starpulse.flow_metrics.model.traces import Case, missed_loads
+from starpulse.flow_metrics.model.traces import Case, case_order, missed_loads
 from starpulse.flow_metrics.model.traces import cases as trace_cases
-from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog
-from starpulse.views.application.queries.responses import _HEALTH_HOURS, _error, _held_signals, _hours
+from starpulse.views.application.queries.responses import _HEALTH_HOURS, _error, _held_folds, _hours
 from starpulse.views.model.encoding import encode
+
+if TYPE_CHECKING:
+    from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 
 #: What `/api/analytics/missed-loads` lists per skill, and `/api/analytics/trace-clusters` samples per cluster.
 _LISTED = 5
@@ -39,7 +41,7 @@ def _case_ref(case: Case) -> dict[str, Any]:
 
 
 def _telemetry_cases(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFolds | None,
     window: float,
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -48,20 +50,24 @@ def _telemetry_cases(
     kind: str,
     include_eval: bool = True,
 ) -> list[Case] | tuple[bytes, int]:
-    """The cases of the signals from the last `window` hours, or the 501, 503 or (a window longer than the history)
-    400 response for a log that has none. `include_eval` False leaves out the signals an eval run stamped."""
+    """The cases of the signals from the last `window` hours, mined a session at a time so one session's signals are
+    held at once, or the 501, 503 or (a window longer than the history) 400 response for a log that has none.
+    `include_eval` False leaves out the signals an eval run stamped."""
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot read what its sessions did"), 501
-    found = _held_signals(telemetry, window, kind, now, "analytics")
-    if isinstance(found, tuple):
-        return found
-    if not include_eval:
-        found = [s for s in found if not s.eval]
-    return trace_cases(found, keys, roots=analytics.roots, tasks=titled(), analytics=analytics)
+    held = _held_folds(telemetry, window, kind, now, "analytics")
+    if isinstance(held, tuple):
+        return held
+    tasks = titled()
+    found: list[Case] = []
+    for group in telemetry.sessions(now - window * 3600):
+        signals = group if include_eval else [s for s in group if not s.eval]
+        found += trace_cases(signals, keys, roots=analytics.roots, tasks=tasks, analytics=analytics)
+    return sorted(found, key=case_order)
 
 
 def missed_loads_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFolds | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -142,7 +148,7 @@ def _cluster_view(cluster: Cluster, analytics: Analytics, outliers: int) -> dict
 
 
 def trace_clusters_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFolds | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],

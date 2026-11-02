@@ -120,7 +120,7 @@ def bind(settings: ClaudeCode, config: Any, log: EventLog) -> ThreadingHTTPServe
     loaded and `OSError` for an address that cannot be bound."""
     keys = TaskKeys(key=re.compile(settings.key), branch=re.compile(settings.branch), key_format=settings.key_format)
     redact = redactor(settings.redactor) if settings.redactor else None
-    telemetry = telemetry_log(config.telemetry_loki_url, log)
+    telemetry = telemetry_log(log)
 
     def publish_signals(found: list[Signal]) -> None:
         step_seconds.observe(found)

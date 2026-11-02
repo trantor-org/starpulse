@@ -30,7 +30,7 @@ from starpulse.contracts.adapters import MachineEvent, Move, TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import signals
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import serve as _real_serve
 from starpulse.runtime.adapter_kit import task
@@ -38,6 +38,7 @@ from starpulse.runtime.adapter_kit import url as _url
 from starpulse.views.adapters.inbound.api.writing import no_writer as _no_writer
 
 from tests.fake_board import bare_board
+from tests.folded_telemetry import FoldedTelemetry
 from tests.hosts import FakeHost
 from tests.machine_feed import MachineFeed
 from tests.machines import MACHINES, ROLES
@@ -244,7 +245,7 @@ def stepped(tmp_path: Path) -> Iterator[str]:
         branch=re.compile(r"(?:refs/heads/)?(?:[\w.-]+/)*task-(\d+)", re.IGNORECASE),
         key_format="TASK-{}",
     )
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    telemetry = FoldedTelemetry(tmp_path, keys)
     for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines():
         telemetry.publish(signals(json.loads(line)))
     with _serve(
@@ -1758,19 +1759,16 @@ def test_analytics_health_refuses_a_window_the_server_refuses(base: str, capsys:
 def test_analytics_estimates_lists_a_completed_tasks_label_beside_its_measured_effort(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
-    telemetry.publish(completed(1, "read", "edit", "test"))
-    feed = BoardFeed(
-        roles=ROLES,
-        machines=MACHINES,
-        keys=TaskKeys(
-            re.compile(r"TASK-\d+"), re.compile(r"(?:refs/heads/)?(?:[\w.-]+/)*task-(\d+)", re.IGNORECASE), "TASK-{}"
-        ),
+    keys = TaskKeys(
+        re.compile(r"TASK-\d+"), re.compile(r"(?:refs/heads/)?(?:[\w.-]+/)*task-(\d+)", re.IGNORECASE), "TASK-{}"
     )
+    analytics = Analytics(completion_skill="completing-tasks", size_bands=((3, 10, 5.0), (8, 100, 50.0)))
+    telemetry = FoldedTelemetry(tmp_path, keys, analytics)
+    telemetry.publish(completed(1, "read", "edit", "test"))
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=keys)
     feed.titled = lambda: {  # type: ignore[method-assign]
         "TASK-1": {"labels": ["kind-execute", "size-8"], "milestone": "m-305", "profile": "@agent-standard-high"}
     }
-    analytics = Analytics(completion_skill="completing-tasks", size_bands=((3, 10, 5.0), (8, 100, 50.0)))
     with _serve(tmp_path, feed, telemetry=telemetry, clock=lambda: 4600.0, analytics=analytics) as server:
         code, doc = _run(
             capsys, ["analytics", "estimates", "--hours", "1", "--milestone", "m-305", "--server", _url(server, "")]
