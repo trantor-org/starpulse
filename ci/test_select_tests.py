@@ -300,7 +300,7 @@ def test_the_import_layers_are_checked_in_the_static_checks_not_in_select_or_the
 
 
 def test_the_python_tests_run_the_targets_they_were_given():
-    assert "pytest ${PYTEST_TARGETS:-}" in _function("cmd_python_tests")
+    assert 'pytest "${junit[@]}" ${PYTEST_TARGETS:-}' in _function("cmd_python_tests")
 
 
 def test_an_adapter_no_test_names_is_not_selected_through_the_loader_even_though_the_type_table_lists_it(repo):
