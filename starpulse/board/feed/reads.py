@@ -108,7 +108,10 @@ class ReadMethods:
 
     def titled(self) -> dict[str, dict]:
         """Every Board task's `title`, `labels`, `milestone` and `profile`, open, cold or settled, by id; a settled task
-        saved before its labels were kept has none, and a cold done task has them from the scan after a restart."""
+        saved before its labels were kept has none, and a cold done task has them from the scan after a restart. With a
+        read model, its query answers, archived Tasks included."""
+        if self._read_model is not None:
+            return self._read_model.titled()
         with self._lock:
             named = {
                 task_id: {
