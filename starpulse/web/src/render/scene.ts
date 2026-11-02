@@ -12,7 +12,7 @@ import { shownRows, type Paging } from "../features/level/machinePaging";
 import { rankRows } from "../features/level/machineRows";
 import { ledgerOf, type Ledger, type Tie } from "../features/level/ledger";
 import type { Viewport } from "../features/level/ledgerScroll";
-import { countText, daily, HOUR, hosted, stale, stateCount, type Move, type Moves, type Sky } from "./sky";
+import { countText, daily, entry, HOUR, hosted, stale, stateCount, type Move, type Moves, type Sky } from "./sky";
 import { BOARD_COLOR, MUTED, RAMP } from "./palette";
 import { pinsOf } from "../features/level/ledgerPins";
 import type { Dag, DagStep, RawTask, Transition, Writer } from "../api";
@@ -825,9 +825,9 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const states = board.machine.states, transitions = board.machine.transitions;
     const BP = boardPlaces(states, transitions, board.machine.mainLine ?? undefined);
     const byState: Record<string, RawTask[]> = {};
-    // a starting state orbits no task, as each is drawn where it went; a terminal state orbits those that entered it since local midnight and the day's
-    // arrivals there not already in it
-    const initial = new Set(states.filter((s) => s.initial).map((s) => s.id)), final = new Set(states.filter((s) => s.final).map((s) => s.id));
+    // an entry state (the initial one, or Proposed) orbits no task, as each is drawn where it went or tallied; a terminal state orbits those that
+    // entered it since local midnight and the day's arrivals there not already in it
+    const initial = new Set(states.filter(entry).map((s) => s.id)), final = new Set(states.filter((s) => s.final).map((s) => s.id));
     board.agents.forEach((a) => initial.has(a.state) || stale(S, a) || (byState[a.state] ||= []).push(a));
     for (const [sid, list] of Object.entries(S.today)) if (final.has(sid)) (byState[sid] ||= []).push(...list.filter((t) => !byState[sid]?.some((a) => a.id === t.id)));
     // A task orbits the deepest body this level draws that it is in: the sub-state its latest session holds (a CHILD entry, pr_opened while a PR

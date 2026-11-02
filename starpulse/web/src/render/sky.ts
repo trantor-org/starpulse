@@ -122,8 +122,11 @@ function boardStates(board: FlowSnapshot): Map<string, string> {
 /** Local midnight today, in epoch seconds. */
 export const midnight = (now = new Date()) => new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
 
-/** A Board state that counts the day's arrivals rather than the tasks in it: where tasks start, or a final state where they end. */
-export const daily = (s: { initial: boolean; final: boolean }) => s.initial || s.final;
+/** A Board state tasks enter the Board through: its initial state, or the proposed one a suggestion waits in until it is promoted. */
+export const entry = (s: { initial: boolean; role?: string | null }) => s.initial || s.role === "proposed";
+
+/** A Board state that counts the day's arrivals rather than the tasks in it: where tasks enter, or a final state where they end. */
+export const daily = (s: { initial: boolean; final: boolean; role?: string | null }) => entry(s) || s.final;
 
 /** The tasks created since `since` on each starting state, and those settled since then on the terminal state each settled in. */
 function arrivals(board: FlowSnapshot, settled: Record<string, Settled>, since: number): Record<string, RawTask[]> {

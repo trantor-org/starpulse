@@ -1,7 +1,7 @@
 // The traced task's drawing: the path a hovered, pinned or rail-spotted task took through the level showing, lit over a dark veil, and the note
 // naming the source a mapped machine's level is observed from. It draws from the frame's context and primitives (draw.ts) and from what the
 // renderer owns (`TraceIO`, read as it draws); the renderer calls each in its frame order (`drawScene`).
-import { token } from "./palette";
+import { MUTED, token } from "./palette";
 import { EXT, MACHINE, MOON, OFF, REVIEW, TRACE, rgba, tierColor, type Drawing, type DrawCtx, type Hover } from "./draw";
 import type { Level } from "./levels";
 import { bez, curveOf, stateR, type Curve, type Pt, type Scene } from "./scene";
@@ -140,11 +140,13 @@ export function traceDraw(dc: DrawCtx, pen: Drawing, io: TraceIO): TraceDrawing 
       }
       for (const r of routes) {
         const { p0, c, p1 } = r.curve, g = cx.createLinearGradient(r.from.x, r.from.y, r.to.x, r.to.y);
-        g.addColorStop(0, rgba(r.off ? OFF : r.from.color, 0.95));
-        g.addColorStop(1, rgba(r.off ? OFF : r.to.color, 0.95));
+        // a hop before the task's promotion, into or out of Proposed, draws faint and dashed: its time is not the run's
+        const a = r.pre ? 0.45 : 0.95;
+        g.addColorStop(0, rgba(r.off ? OFF : r.from.color, a));
+        g.addColorStop(1, rgba(r.off ? OFF : r.to.color, a));
         cx.strokeStyle = g;
         cx.lineWidth = thick;
-        cx.setLineDash(r.off ? [5 / K, 5 / K] : []);
+        cx.setLineDash(r.off ? [5 / K, 5 / K] : r.pre ? [2 / K, 4 / K] : []);
         cx.beginPath();
         for (let i = 0; i <= 24; i++) {
           const q = bez(p0, c, p1, r.t0 + ((r.t1 - r.t0) * i) / 24);
@@ -153,13 +155,13 @@ export function traceDraw(dc: DrawCtx, pen: Drawing, io: TraceIO): TraceDrawing 
         }
         cx.stroke();
         cx.setLineDash([]);
-        arrow(bez(p0, c, p1, r.t1 - 0.02), bez(p0, c, p1, r.t1), rgba(r.off ? OFF : r.to.color, 0.95), 9);
+        arrow(bez(p0, c, p1, r.t1 - 0.02), bez(p0, c, p1, r.t1), rgba(r.off ? OFF : r.to.color, a), 9);
       }
       // each visited state's rim and name firm up, with the time it held the task beside it
       for (const p of pills) {
         circle(p.place.x, p.place.y, p.place.r, rgba(p.place.color, 1), 2.2 / Math.max(1, ZS));
         if (mode !== "state") label(p.place.name, p.place.lab.x, p.place.lab.y, true, null, board ? 13 : 12.5); // a state level's bodies keep their own names
-        pill(p.text, p.x, p.y, p.place.color);
+        pill(p.text, p.x, p.y, p.pre ? MUTED : p.place.color);
       }
       for (const r of routes) badge(r.badge, r.nums, r.off ? OFF : TRACE);
       if (first) {

@@ -387,12 +387,14 @@ SEED = [
     ("proposed", "", ["size-2", "kind-bug"], None, "@agent-standard-high", None),
     ("proposed", "", ["size-3"], None, "", None),
     ("proposed", "", ["size-1", "kind-feature"], None, "@agent-fast-low", None),
+    # A merged task whose post-merge QA items still run, so the Star Map draws the Verifying lane.
+    ("verifying", "m-2", ["size-2"], None, "@agent-standard-high", ("pass", True, 0)),
 ]
 
 
 #: The lanes `SEED` fills, as the Board machine a capture with no board of its own is drawn on: CI's native board has
 #: three lanes, which the Kanban would draw as three columns and leave every other seeded card without one.
-SEED_LANES = ("Proposed", "Ready", "Waiting", "In Progress", "Review", "Needs attention", "Done")
+SEED_LANES = ("Proposed", "Ready", "Waiting", "In Progress", "Review", "Verifying", "Needs attention", "Done")
 #: The roles the seeded lanes play, as a deployment's machine would declare them: a session starts a Ready task.
 SEED_ROLES = StateRoles(
     {
@@ -402,6 +404,7 @@ SEED_ROLES = StateRoles(
         "waiting": "waiting_on_fact",
         "in_progress": "resting",
         "review": "waiting_on_fact",
+        "verifying": "resting",
         "needs_attention": "waiting_on_person",
         "done": "final",
     },
@@ -409,7 +412,7 @@ SEED_ROLES = StateRoles(
 )
 #: The tiers the seeded Board declares for the Star Map, as a trantor Board does: the unworked lanes stacked in one cell, then each working
 #: stage in its own, left to right.
-SEED_TIERS = [["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done"]]
+SEED_TIERS = [["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["verifying"], ["done"]]
 
 #: How long before the capture each seeded task created that day was created, by its index in `SEED`.
 SEED_CREATED = {0: 900, 1: 2400}
@@ -419,7 +422,7 @@ SEED_SETTLED = [("archived", 4200, "")]
 DAY_S = 86400
 #: How many more tasks fill each lane of a Board machine that draws its own main line, so the demo has a working
 #: team's scale; the day's settled tasks it adds, by where they settled.
-FILL = {"new": 40, "proposed": 97, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "needs_attention": 3, "done": 20}
+FILL = {"new": 40, "proposed": 97, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "verifying": 3, "needs_attention": 3, "done": 20}
 FILL_SETTLED = {"archived": 2}
 #: Every how many filled Done tasks one entered Done over a day before the capture, which the page no longer draws.
 DONE_STALE_EVERY = 6
@@ -430,6 +433,7 @@ KINDS = ("kind-feature", "kind-bug", "kind-execute")
 FILL_PULLS = {
     "in_progress": ("pending", False),
     "review": ("pass", False),
+    "verifying": ("pass", True),
     "needs_attention": ("failing", False),
     "done": ("pass", True),
 }
@@ -655,6 +659,9 @@ def scrub(live: dict) -> dict:
     }
 
 
+#: The lane a seeded task's trace detours through, every Nth task of the lane it ends in, so the demo draws a
+#: suggestion promoted out of Proposed and a merge closed through Verifying: {lane: (detour, every)}.
+DETOURS = {"ready": ("proposed", 3), "done": ("verifying", 3)}
 #: The seconds between two synthetic steps of a task's path, before each task's own spread.
 STEP_S = 3 * 3600
 
@@ -911,9 +918,12 @@ def _history(flows: list[dict], now: float) -> dict[str, list[dict]]:
     line = board["machine"].get("mainLine", [])
     # through the Board's first working lane rather than a creation shortcut, so a path has the hops a real task's has
     via = line[1] if line[1:] else None
+    states = {s["id"] for s in board["machine"].get("states", [])}
     history = {}
     for i, a in enumerate(board["agents"]):
-        trail = _walk(board["machine"], a["state"], i, now, via=via, back=i % 2 == 1)
+        detour, every = DETOURS.get(a["state"], (via, 1))
+        detour = detour if i % every == 0 and detour in states else via
+        trail = _walk(board["machine"], a["state"], i, now, via=detour, back=i % 2 == 1)
         history[a["id"]] = [
             {"at": s["at"], "from": trail[k - 1]["state"] if k else None, "to": s["state"]} for k, s in enumerate(trail)
         ]
