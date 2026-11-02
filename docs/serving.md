@@ -940,7 +940,9 @@ check that waits on time after the merge. A command that exits nonzero is logged
 
 A write the board refuses is logged and counted, and is not retried until the task's facts change; checking the last
 Definition of Done item of a task (`definition_of_done` in its record) is such a change, so a Done move a guard refused
-for an unchecked item is tried again. A release to Ready
+for an unchecked item is tried again. A refused move to Done is also commented on the task as
+`Held from Done: <reason>` and runs the `delivered` command once with the verdict `merged but Done refused: <reason>`,
+so the holder is woken on the refusal instead of the task sitting in its lane unread. A release to Ready
 that a declared guard or the `validate` hook refuses is a defect in the task record: the task stays in its lane with a
 comment naming the refusal, no operator question is minted, and the actor retries once the task's description, profile,
 labels or dependencies change. `GET /metrics` carries:
