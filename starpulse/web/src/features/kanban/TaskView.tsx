@@ -316,6 +316,7 @@ export function TaskView(p: TaskViewProps) {
   const [tried, setTried] = useState<Set<number>>(new Set());
   const [invalid, setInvalid] = useState<Set<TaskField>>(new Set());
   const [writing, setWriting] = useState(false);
+  const [planReason, setPlanReason] = useState("");
   const [writeRefusal, setWriteRefusal] = useState<{ reason: string; skill: string } | null>(null);
   const [toast, setToast] = useState("");
   const [pending, setPending] = useState("");
@@ -351,6 +352,7 @@ export function TaskView(p: TaskViewProps) {
     setWriteRefusal(null);
     setPending("");
     setLabelRefusal("");
+    setPlanReason("");
     setPreview(false);
   }, []);
   const edit = (section: Section) => {
@@ -368,7 +370,7 @@ export function TaskView(p: TaskViewProps) {
     if (writing) return;
     setWriting(true);
     setWriteRefusal(null);
-    const result = await saveSection(p.task.id, section, base, next, notes);
+    const result = await saveSection(p.task.id, section, base, next, notes, undefined, planReason);
     setWriting(false);
     if (result.ok) {
       // an added row has no number until the board gives it one, so a later save would send it as new again
@@ -388,7 +390,7 @@ export function TaskView(p: TaskViewProps) {
       if (section === "details" && result.fields.includes("labels")) setLabelRefusal(result.reason);
       else setWriteRefusal({ reason: result.reason, skill: result.skill });
     }
-  }, [base, clear, p, writing]);
+  }, [base, clear, p, planReason, writing]);
   const typed = pending.trim();
   const typedError = typed ? labelRuleError(typed) || (draft.labels.includes(typed) ? `"${typed}" is already on this task.` : "") : "";
   const addLabel = () => {
@@ -521,8 +523,14 @@ export function TaskView(p: TaskViewProps) {
     const shown = section === "notes" ? taskBody(draft).notes : draft.plan;
     // An empty plan has no section to show: only an entry point to write one.
     if (section === "plan" && editing !== section && !shown.trim()) return canEdit ? <button className="addbtn" onClick={() => edit(section)}>+ Add plan</button> : null;
+    // Rewriting a plan that exists asks why: once work has begun the board records the reason as a plan revision and refuses the edit without one.
+    const asksWhy = section === "plan" && base.plan.trim() !== "";
     return sec(section, name, editing === section
-      ? <Txt {...fp(section)} value={draft[section]} label={name} long focus onChange={(value) => change(section, value)} />
+      ? <>
+          <Txt {...fp(section)} value={draft[section]} label={name} long focus onChange={(value) => change(section, value)} />
+          {asksWhy && <input className={fieldClass("fv reason", true, false)} type="text" value={planReason} placeholder="Why is the plan changing? (required once work has begun)"
+            aria-label="Reason for revising the plan" onChange={(e) => setPlanReason(e.currentTarget.value)} />}
+        </>
       : shown.trim() ? <Md text={shown} open={p.open} /> : <span className="none">—</span>);
   };
   const row = (name: string, value: ReactNode, className?: string) => <tr key={name} className={className}><td>{name}</td><td>{value}</td></tr>;

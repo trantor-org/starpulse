@@ -212,6 +212,9 @@ def test_a_history_with_lane_rows_and_no_gaps_can_feed_the_ledger_but_not_answer
         def lane_path(self, task: str) -> list[dict]:
             return []
 
+        def plan_revisions(self, task: str) -> int:
+            return 0
+
         def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]:
             return [], 0
 

@@ -3071,13 +3071,17 @@
       "type": "object"
     },
     "LaneHistory": {
-      "description": "`GET /api/history?task=`: a task's lane changes, oldest first.",
+      "description": "`GET /api/history?task=`: a task's lane changes, oldest first, and how many times its plan was revised after work began.",
       "properties": {
         "path": {
           "items": {
             "$ref": "#/$defs/LaneStep"
           },
           "type": "array"
+        },
+        "plan_revisions": {
+          "default": 0,
+          "type": "integer"
         },
         "task": {
           "type": "string"

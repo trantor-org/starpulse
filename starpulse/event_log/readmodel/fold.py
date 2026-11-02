@@ -125,6 +125,7 @@ _RULES: dict[str, Callable[[Row, StoredEvent], None]] = {
     "Claimed": _claimed,
     "Released": _released,
     "ClaimRefused": _nothing,
+    "PlanRevised": _nothing,
     "Transitioned": lambda row, event: row.update(state=event.payload["to"]),
     "Remapped": _remapped,
     "Archived": lambda row, event: row.update(archived=True),

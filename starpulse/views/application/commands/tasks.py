@@ -79,6 +79,8 @@ def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[in
 
 #: The edit change that adds a line to the task's notes rather than setting a record field.
 _APPEND_NOTES = "appendNotes"
+#: The edit change that says why the plan is rewritten, recorded with the `PlanRevised` Event; it is no record field either.
+_PLAN_REASON = "planReason"
 
 
 @with_request(EditRequest, "Editing a task")
@@ -91,7 +93,8 @@ def edit_task(
     changed field's current value differs, naming those fields with their current values, so another writer's
     change is never overwritten; fields the edit does not touch may differ. The writer refuses a whole edit or
     writes all of it, and its refusal carries the skill that satisfies it. `changes` may also hold `appendNotes`, text
-    added to the end of the notes as they are when the write lands: it needs no base and is reported as `notes`. A
+    added to the end of the notes as they are when the write lands: it needs no base and is reported as `notes`; and
+    `planReason`, why the plan changes, which a plan rewritten after work began needs and which has no base either. A
     non-blank `comment` is written even when every change already holds, which reports no changed field: a client
     that can only name a field to comment on sends the one it leaves as it is.
     """
@@ -109,7 +112,7 @@ def edit_task(
         if (current := read(task)) is None:
             return 404, {"error": f"{task} has no record to read"}
         # `appendNotes` is no record field: it adds to the notes as they are now, so it has no base to go stale
-        fields = {field: value for field, value in changes.items() if field != _APPEND_NOTES}
+        fields = {field: value for field, value in changes.items() if field not in (_APPEND_NOTES, _PLAN_REASON)}
         for field in fields:
             if field not in current:
                 return 400, {"error": f"{field} is not an editable field of {task}"}
@@ -124,6 +127,8 @@ def edit_task(
         todo = {field: value for field, value in fields.items() if value != current[field]}
         if _APPEND_NOTES in changes:
             todo[_APPEND_NOTES] = changes[_APPEND_NOTES]
+        if _PLAN_REASON in changes and "plan" in todo:
+            todo[_PLAN_REASON] = changes[_PLAN_REASON]
         if not todo and not comment.strip():
             return 200, {"task": task, "changed": []}
         from starpulse.board.adapters.task_history import break_glass  # noqa: PLC0415 - the database stack loads when a store does
@@ -132,7 +137,7 @@ def edit_task(
             written = record_written(feed, task, who, lambda: edit(task, todo, comment, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
-    changed = ("notes" if field == _APPEND_NOTES else field for field in todo)
+    changed = ("notes" if field == _APPEND_NOTES else field for field in todo if field != _PLAN_REASON)
     return 200, {"task": task, "changed": list(dict.fromkeys(changed))}
 
 

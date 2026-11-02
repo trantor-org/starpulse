@@ -123,6 +123,24 @@ describe("editing one section at a time", () => {
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ description: "a better description" }), ["description"]);
   });
 
+  it("plan: rewriting an existing plan asks why and sends the reason with the plan; any other section asks nothing", async () => {
+    const fetcher = stubWriter();
+    const host = mount();
+
+    click(pen(host, "description"));
+    expect(q(host, 'input[aria-label="Reason for revising the plan"]')).toBeNull();
+    await key("Escape");
+    click(pen(host, "implementation plan"));
+    type(q(host, '.sec.on textarea[aria-label="Implementation plan"]'), "1. Write the test\n2. Ship it");
+    const reason = q<HTMLInputElement>(host, 'input[aria-label="Reason for revising the plan"]');
+    expect(reason).toBeTruthy();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    act(() => { setter.call(reason, "scope grew"); reason!.dispatchEvent(new Event("input", { bubbles: true })); });
+    await key("Enter", { ctrlKey: true });
+
+    expect(wrote(fetcher).changes).toEqual({ plan: "1. Write the test\n2. Ship it", planReason: "scope grew" });
+  });
+
   it("edits the title and Details with their own bars, Details as kind, size, area, mode, priority, profile and milestone selects", async () => {
     const fetcher = stubWriter();
     const host = mount({ profiles: ["@agent-standard-high", "@agent-light-low"], milestones: ["m-89", "m-90"] });

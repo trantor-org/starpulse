@@ -34,7 +34,7 @@ from sqlalchemy.engine import Engine
 
 from starpulse.board import criteria
 from starpulse.board.adapters import native_docs, native_milestones
-from starpulse.board.adapters.task_history import TaskHistory
+from starpulse.board.adapters.task_history import TaskHistory, revises_plan
 from starpulse.board.adapters.upstream_backlog import (
     _CRITERIA,
     _FOLDERS,
@@ -694,12 +694,18 @@ def _doc_linker(root: Path, base: Path) -> _Linker:
     return link
 
 
+def _unstarted(roles: StateRoles) -> frozenset[str]:
+    """The lanes where work has not begun: where a task starts, is ready, waits on dependencies or is only proposed."""
+    return frozenset(lane for lane in (roles.initial, roles.ready, roles.waiting, roles.proposed) if lane)
+
+
 def _editor(
     root: Path,
     statuses: tuple[str, ...],
     guard: Guard = Guard(),
     link: _Linker = _unlinked,
     attention: str | None = None,
+    unstarted: frozenset[str] = frozenset(),
 ) -> TaskEditor:
     """A board writer that applies every change to a task's file in one write, or refuses the whole edit.
 
@@ -708,7 +714,8 @@ def _editor(
     empty priority, milestone, profile or type and an empty references, documentation or modified-files list removes its
     key, a status is spelled as its lane is, a checklist item without a number is new, and `link` reads a doc id in the
     documentation list as its file. A move to the `attention` lane with comment text also writes that text as the task's
-    `## Needs attention` section, the reason the lane's guard reads.
+    `## Needs attention` section, the reason the lane's guard reads. `planReason` is no field: a plan rewritten on a task
+    outside the `unstarted` lanes needs one, and the History records it.
     """
     spelled = {lane_id(status): status for status in statuses}
 
@@ -719,7 +726,14 @@ def _editor(
         if attention and reason and lane_id(status) == lane_id(attention):
             changes = {**changes, "needsAttention": reason}
 
+        plan_reason = str(changes.get("planReason") or "").strip()
+        changes = {field: value for field, value in changes.items() if field != "planReason"}
+
         def apply(frontmatter: dict, body: str) -> str:
+            if "plan" in changes and not plan_reason:
+                started = str(frontmatter.get("status") or "")
+                if revises_plan(started, _section(_PLAN, body), str(changes["plan"] or "").strip(), unstarted):
+                    raise ValueError("the plan needs a reason once work has started: pass --reason")
             body = _apply(task, frontmatter, body, link(changes), spelled)
             for text in texts:
                 recorded = _recorded(text, _comments(body))
@@ -1344,7 +1358,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
                 "delivered": _notice(settings.get("delivered"), base),
                 "returned": _notice(settings.get("returned"), base),
                 "closed": _notice(settings.get("closed"), base),
-                "edit": _editor(root, config.statuses, gate, link, roles.attention),
+                "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles)),
                 "archive": _archiver(root, config.statuses, roles, gate),
                 "restore": _restorer(root, retired, config.statuses, migrations, gate),
                 "complete": _completer(root, config.statuses, roles),
@@ -1398,7 +1412,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "writer": history.recorded(made.writer, read, actor_at=1),
         "assign": history.recorded(made.assign, read),
         "release": history.recorded(made.release, read, actor_at=1),
-        "edit": history.recorded(made.edit, read),
+        "edit": history.recorded(made.edit, read, unstarted=_unstarted(made.roles)),
         "archive": history.recorded(
             made.archive, read, reason_at=0, also=lambda task: _open_dependents(root, task, None)
         ),

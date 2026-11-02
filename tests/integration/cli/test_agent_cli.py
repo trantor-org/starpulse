@@ -1033,6 +1033,25 @@ def test_task_edit_writes_every_field_given_in_one_write_and_reports_those_that_
     assert "Retitled" in written
 
 
+def test_task_edit_rewriting_a_started_tasks_plan_needs_a_reason_and_a_reason_without_a_plan_is_a_usage_error(
+    lifecycled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    first = _run(capsys, ["task", "edit", "task-2", "--plan", "1. build", "--server", lifecycled])
+    bare = _run(capsys, ["task", "edit", "task-2", "--plan", "1. build\n2. ship", "--server", lifecycled])
+    reasoned = _run(
+        capsys,
+        ["task", "edit", "task-2", "--plan", "1. build\n2. ship", "--reason", "scope grew", "--server", lifecycled],
+    )
+    alone = _run(capsys, ["task", "edit", "task-2", "--reason", "scope grew", "--server", lifecycled])
+
+    assert first[0] == 0  # the first plan of a started task revises nothing
+    assert bare[0] != 0
+    assert "pass --reason" in str(bare[1])
+    assert (reasoned[0], reasoned[1]["changed"]) == (0, ["plan"])
+    assert alone[0] == 2
+    assert "give --plan too" in str(alone[1])
+
+
 def test_task_edit_sets_the_source_a_producer_finds_the_task_by(
     tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1582,6 +1601,7 @@ def test_task_trace_without_a_flow_is_the_boards_lane_path(base: str, capsys: py
         "machine": None,
         "path": [{"at": 200.0, "from": None, "to": "to_do"}, {"at": 201.0, "from": "to_do", "to": "ready"}],
         "steps": 2,
+        "plan_revisions": 0,
     }
 
 

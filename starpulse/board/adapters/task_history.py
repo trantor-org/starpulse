@@ -6,7 +6,7 @@ with no History yet is seeded with a `TaskImported` of its record before the wri
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
@@ -16,6 +16,7 @@ from sqlalchemy import Engine
 from starpulse.board.model.seam import OPERATOR, Written
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
+from starpulse.machine_engine.model.transitions import lane_id
 
 WRITER = "native-board"
 #: The actor of the Events that bring a History to its file (`reconciled`).
@@ -151,6 +152,13 @@ def _restored(record: Record) -> Event:
     return ("FieldsEdited", {"changes": columns, "meta": meta})
 
 
+def revises_plan(status: str, held: str, plan: str, unstarted: Collection[str]) -> bool:
+    """Whether writing `plan` over `held` on a task in `status` changes a plan that work began under (D10).
+
+    The first plan of a started task is no revision, and neither is a plan written while the task is still unstarted."""
+    return bool(held) and plan != held and lane_id(status) not in unstarted
+
+
 def _events(before: Record, after: Record | None, note: str) -> list[Event]:
     """The Events that take `before` to `after`; None is a task that left the board, `{}` one that was not on it."""
     if after is None:
@@ -176,6 +184,12 @@ def _events(before: Record, after: Record | None, note: str) -> list[Event]:
     return events
 
 
+def _plan_reason(args: tuple[Any, ...]) -> str:
+    """The reason an edit's changes (its first argument) give for rewriting the plan; blank when it gives none."""
+    changes = args[0] if args else None
+    return str(changes.get("planReason") or "").strip() if isinstance(changes, Mapping) else ""
+
+
 class TaskHistory:
     """Appends a board write's Events once the log's engine is known; before that, a write records nothing."""
 
@@ -193,22 +207,30 @@ class TaskHistory:
         actor_at: int | None = None,
         reason_at: int | None = None,
         also: Callable[[str], Iterable[str]] | None = None,
+        unstarted: Collection[str] | None = None,
     ) -> Callable[..., Written]:
         """`write` (a verb taking a task id first) that appends what it changed once it succeeds.
 
         `actor_at` is the index in the arguments after the task of an actor passed positionally; `reason_at` that of an archive's reason.
-        `also` names the other tasks the write edits, so an archive's removal of itself from its dependents is recorded too."""
+        `also` names the other tasks the write edits, so an archive's removal of itself from its dependents is recorded too.
+        `unstarted` (an edit's lanes where work has not begun) makes a plan change with a `planReason` in the changes also
+        append a numbered `PlanRevised`."""
 
         def run(task: str, *args: Any, **kwargs: Any) -> Written:
             before = read(task)
             others = {name: read(name) for name in also(task)} if also else {}
+            reason = _plan_reason(args) if unstarted is not None else ""
             written = write(task, *args, **kwargs)
             if written.ok:
                 actor = kwargs.get("actor") or (
                     args[actor_at] if actor_at is not None and len(args) > actor_at else OPERATOR
                 )
                 note = args[reason_at] if reason_at is not None and len(args) > reason_at else ""
-                self._append(task, before, read(task), actor, note.strip())
+                after = read(task)
+                revised = bool(reason and before and after) and revises_plan(
+                    before.get("status") or "", before.get("plan") or "", after.get("plan") or "", unstarted or ()
+                )
+                self._append(task, before, after, actor, note.strip(), reason if revised else None)
                 for name, was in others.items():
                     self._append(name, was, read(name), actor, "")
             return written
@@ -252,8 +274,11 @@ class TaskHistory:
                 ]
                 store.append(KIND, task, 0, events)
 
-    def _append(self, task: str, before: Record | None, after: Record | None, actor: str, note: str) -> bool:
-        """Append the Events that take `before` to `after`; whether any were appended."""
+    def _append(
+        self, task: str, before: Record | None, after: Record | None, actor: str, note: str, revision: str | None = None
+    ) -> bool:
+        """Append the Events that take `before` to `after`, and a numbered `PlanRevised` of `revision` when it is not None;
+        whether any were appended."""
         store = self._store
         if store is None:
             return False
@@ -264,6 +289,8 @@ class TaskHistory:
             base = before if before is not None else after
             held = _held(store, task, before) if head and before else before
             events = _events(held or {}, after, note)
+            if revision is not None:
+                events.append(("PlanRevised", {"ordinal": self._revisions(store, task) + 1, "reason": revision}))
             seeded = [("TaskImported", seed(base, 0.0))] if head == 0 and base else []
             if not events and not seeded:
                 return False
@@ -275,6 +302,12 @@ class TaskHistory:
         raise StaleVersion(f"task {task} kept moving while its History was appended to")
 
     @staticmethod
+    def _revisions(store: EventStore, task: str) -> int:
+        return sum(1 for event in store.read(KIND, task) if event.type == "PlanRevised")
+
+    @staticmethod
     def _new(kind: str, payload: dict[str, Any], actor: str) -> NewEvent:
-        stored = json.loads(json.dumps(payload, default=str))  # a front matter date is a datetime, which JSON cannot hold
+        stored = json.loads(
+            json.dumps(payload, default=str)
+        )  # a front matter date is a datetime, which JSON cannot hold
         return NewEvent(kind, stored, actor, BREAK_GLASS if _break_glass.get() else WRITER)

@@ -103,6 +103,17 @@ describe("postComment", () => {
 describe("saving an edited task", () => {
   const base = record as TaskRecord;
 
+  it("sends the reason for a plan rewrite with the plan, and none for any other change", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ task: "TASK-9", changed: ["plan"] })));
+    const had = { ...base, plan: "1. build" };
+
+    await saveTask("TASK-9", had, { ...had, plan: "1. build\n2. ship" }, {}, fetcher, "  scope grew ");
+    await saveTask("TASK-9", had, { ...had, title: "New" }, {}, fetcher, "scope grew");
+
+    const sent = fetcher.mock.calls.map((call) => JSON.parse(String((call as unknown as [string, RequestInit])[1].body)).changes);
+    expect(sent).toEqual([{ plan: "1. build\n2. ship", planReason: "scope grew" }, { title: "New" }]);
+  });
+
   it("posts only changed fields and the matching base values in one request", async () => {
     const draft = { ...base, title: "New title", labels: ["ui", "needs-review"] };
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ task: "TASK-9", changed: ["title", "labels"] })));

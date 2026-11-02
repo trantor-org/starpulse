@@ -9,7 +9,7 @@ internal and can change in any release.
   verbs are `task create TITLE [--description --priority --impact --urgency --milestone --profile --status --type --label --dependency --ac
   --reference --documentation --dod]`, which
   returns `{task}`; `task edit TASK [--title --type --priority --impact --urgency --milestone --label --dependency --reference
-  --documentation --modified-file --description --plan --notes --append-notes --final-summary --ac --reword-ac
+  --documentation --modified-file --description --plan --reason --notes --append-notes --final-summary --ac --reword-ac
   --remove-ac --check-ac --uncheck-ac --dod --reword-dod --remove-dod --check-dod --uncheck-dod --comment --base]`,
   which returns
   `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base;
