@@ -105,6 +105,7 @@ def task_agent(task: BoardTask) -> dict:
         "adr_needed": task.adr_needed,
         "duplicate_search": task.duplicate_search,
         "duplicate_resolution": task.duplicate_resolution,
+        "follows": task.follows,
         "type": task.type,
         "dependencies": list(task.dependencies),
         "prs": cited_pulls(task),

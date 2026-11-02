@@ -224,6 +224,17 @@ describe("the demo server", () => {
     for (const [state, session] of sessions) expect(session).toEqual(state === "in_progress" ? expect.stringMatching(/^#demo-session-\d+$/) : "");
   });
 
+  it("serves the followed task of a card that follows one, for the dialog's Follows group", async () => {
+    const f = fixture();
+    const board = f.flows[0].agents;
+    board[0] = { ...board[0], follows: "DEMO-2" };
+    const s = new DemoServer(f);
+
+    const opened = await body(s.fetch("/api/task/DEMO-1")) as { record: TaskRecord };
+
+    expect(opened.record.follows).toBe("DEMO-2");
+  });
+
   it("serves and edits a synthetic full task record so the public preview exercises edit mode", async () => {
     const s = new DemoServer(fixture());
     const opened = await body(s.fetch("/api/task/DEMO-1")) as { record: TaskRecord };

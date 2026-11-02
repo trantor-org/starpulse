@@ -1010,6 +1010,17 @@
           ],
           "default": null
         },
+        "follows": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "harness": {
           "anyOf": [
             {
@@ -1327,6 +1338,17 @@
           "default": null
         },
         "duplicateSearch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "follows": {
           "anyOf": [
             {
               "type": "string"
@@ -5342,6 +5364,18 @@
           ],
           "default": null,
           "description": "When a Board task entered its lane, epoch seconds; absent when the server holds no time for it."
+        },
+        "follows": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The id of the finished task a Board task follows up; empty or absent when none."
         },
         "id": {
           "type": "string"

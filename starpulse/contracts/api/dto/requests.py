@@ -25,6 +25,7 @@ CREATE_TEXT = (
     "adrNeeded",
     "duplicateSearch",
     "duplicateResolution",
+    "follows",
 )
 CREATE_LISTS =("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
 #: The lists whose every item must be nonblank, rather than dropped when blank.
@@ -193,6 +194,7 @@ class CreateSpec(_Request):
     adrNeeded: str | None = None
     duplicateSearch: str | None = None
     duplicateResolution: str | None = None
+    follows: str | None = None
     task: str | None = None
     size: str | None = None
     skill: str | None = None

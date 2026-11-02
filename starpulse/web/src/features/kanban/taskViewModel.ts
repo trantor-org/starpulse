@@ -41,6 +41,8 @@ export interface TaskRecord {
   session?: string;
   /** The session that filed the task (`created_by`), empty when the board records none. Read-only: an edit never carries it. */
   createdBy?: string;
+  /** The id of the finished task this one follows up, empty when it follows none. Read-only: an edit never carries it. */
+  follows?: string;
   /** The task's comments, oldest first. Read-only: a comment is posted through `postComment`, never an edit's changes. */
   comments?: TaskComment[];
   /** The lane as the board names it (`Done`). Read-only: a task moves through its moves, never an edit. */
@@ -51,7 +53,7 @@ export interface TaskRecord {
 
 export interface TaskComment { created: string; text: string; author?: string }
 
-export type TaskField = Exclude<keyof TaskRecord, "session" | "createdBy" | "comments" | "documentation" | "status" | "references">;
+export type TaskField = Exclude<keyof TaskRecord, "session" | "createdBy" | "follows" | "comments" | "documentation" | "status" | "references">;
 export interface TaskDiff {
   fields: TaskField[];
   base: Partial<TaskRecord>;
@@ -606,11 +608,13 @@ export const HOLDS_SHOWN = 6;
 export interface DepRow { id: string; title: string | null; lane: string | null }
 
 /** What a task depends on, and the tasks that depend on it (the first six, with how many more follow). */
-export function dependencyRows(tasks: KanbanTask[], task: KanbanTask): { dependsOn: DepRow[]; holds: DepRow[]; more: number } {
+export function dependencyRows(
+  tasks: KanbanTask[], task: KanbanTask, follows = "",
+): { dependsOn: DepRow[]; holds: DepRow[]; follows: DepRow[]; more: number } {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const row = (id: string): DepRow => ({ id, title: byId.get(id)?.title ?? null, lane: byId.get(id)?.lane ?? null });
   const held = tasks.filter((t) => t.dependencies.includes(task.id));
-  return { dependsOn: task.dependencies.map(row), holds: held.slice(0, HOLDS_SHOWN).map((t) => row(t.id)), more: Math.max(0, held.length - HOLDS_SHOWN) };
+  return { dependsOn: task.dependencies.map(row), follows: follows ? [row(follows)] : [], holds: held.slice(0, HOLDS_SHOWN).map((t) => row(t.id)), more: Math.max(0, held.length - HOLDS_SHOWN) };
 }
 
 /** How many criteria are met. */

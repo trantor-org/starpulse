@@ -502,6 +502,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "labels": list(_strings(frontmatter.get("labels"))),
         "milestone": str(frontmatter.get("milestone") or ""),
         "source": str(frontmatter.get("source") or ""),
+        "follows": str(frontmatter.get("follows") or ""),
         "dependencies": list(_strings(frontmatter.get("dependencies"))),
         "dependencyNeeds": list(_strings(frontmatter.get("dependency_needs"))),
         "references": list(_strings(frontmatter.get("references"))),
@@ -535,7 +536,12 @@ _CHECKLISTS = {
     "definitionOfDone": ("DOD", "Definition of Done", _DONE),
 }
 #: The creation bookkeeping a detail names in camelCase and the task file keeps under a snake_case front matter key.
-_FRONT_KEYS = {"adrNeeded": "adr_needed", "duplicateSearch": "duplicate_search", "duplicateResolution": "duplicate_resolution"}
+_FRONT_KEYS = {
+    "adrNeeded": "adr_needed",
+    "duplicateSearch": "duplicate_search",
+    "duplicateResolution": "duplicate_resolution",
+    "follows": "follows",
+}
 _SCALARS = {
     "title": "title",
     "assignee": "assignee",

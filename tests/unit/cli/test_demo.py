@@ -581,6 +581,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
         "milestone": "m-2",
         "labels": ["size-2", "kind-feature"],
         "dependencies": [],
+        "follows": "DEMO-2",
         "description": f"Synthetic demo task: {TITLES[0].lower()}.",
         "created": live["now"] - 900,
         "workable_since": live["now"] - 900,
