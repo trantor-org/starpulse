@@ -10,7 +10,7 @@ from starpulse.cli.demo import scrub
 
 PREVIEW = Path(__file__).with_name("preview.toml")
 NOW = 1_790_000_000.0
-LANES = ["new", "ready", "waiting", "in_progress", "review", "needs_attention", "done", "archived"]
+LANES = ["new", "proposed", "ready", "waiting", "in_progress", "review", "needs_attention", "done", "archived"]
 
 
 def _domain_workflows(value: object) -> list[str]:
@@ -40,6 +40,7 @@ def test_the_preview_board_serves_each_lanes_declared_type_for_the_column_header
 
     assert {s["id"]: s["role"] for s in states} == {
         "new": "initial",
+        "proposed": "proposed",
         "ready": "waiting_on_fact",
         "waiting": "waiting_on_fact",
         "in_progress": "resting",
@@ -50,7 +51,7 @@ def test_the_preview_board_serves_each_lanes_declared_type_for_the_column_header
     }
 
 
-def test_the_preview_board_draws_a_real_workspaces_eight_lanes_in_order() -> None:
+def test_the_preview_board_draws_a_real_workspaces_nine_states_in_order() -> None:
     board = _machines()["board"]
 
     assert [s["id"] for s in board["states"]] == LANES
@@ -68,7 +69,7 @@ def test_the_preview_board_declares_the_tiers_the_star_map_draws_it_in() -> None
         ["review"],
         ["done", "archived"],
     ]
-    assert sorted(state for tier in board["tiers"] for state in tier) == sorted(LANES)
+    assert sorted(state for tier in board["tiers"] for state in tier) == sorted(set(LANES) - {"proposed"})  # the Star Map draws no Proposed state yet
 
 
 def test_the_preview_board_reopens_done_to_every_open_lane_and_still_draws_done_as_an_end() -> None:
@@ -142,13 +143,13 @@ def _flows(demo: dict) -> dict[str, dict]:
     return {f["name"]: f for f in demo["flows"]}
 
 
-def test_the_demo_keeps_the_eight_lanes_and_fills_them_at_a_real_workspaces_scale() -> None:
+def test_the_demo_keeps_the_nine_states_and_fills_them_at_a_real_workspaces_scale() -> None:
     demo = scrub(_capture())
     board = _flows(demo)["board"]
 
     assert [s["id"] for s in board["machine"]["states"]] == LANES
     assert len(board["agents"]) >= 100
-    assert {a["state"] for a in board["agents"]} == set(LANES[:7])
+    assert {a["state"] for a in board["agents"]} == set(LANES[:8])
     assert {e["state"] for e in demo["settled"].values()} == {"archived"}
 
 

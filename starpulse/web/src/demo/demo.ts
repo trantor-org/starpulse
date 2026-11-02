@@ -359,7 +359,10 @@ export class DemoServer {
     const board = this.snapshot.flows.find((f) => f.name === "board");
     const card = board?.agents.find((a) => a.id === task);
     if (!board || !card) return json({ error: `${task} is not on the board` }, 404);
+    const roles = this.snapshot.roles;
+    if (plays(card.state, roles?.proposed) && plays(to, roles?.final)) return this.archive(JSON.stringify({ task }));
     if (!columns(board.machine, card.state).includes(to)) return json({ error: `${task} cannot move from ${card.state} to ${to}` }, 409);
+    if (plays(card.state, roles?.proposed) && plays(to, roles?.ready) && !this.records[task]?.profile) return json({ error: `${task} has no profile, so it cannot be promoted` }, 409);
     const next = structuredClone(this.snapshot);
     next.flows.find((f) => f.name === "board")!.agents.find((a) => a.id === task)!.state = to;
     this.publish(next);
