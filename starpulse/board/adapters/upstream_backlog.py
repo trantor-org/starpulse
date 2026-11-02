@@ -166,6 +166,14 @@ def _pause_reason(body: str, lane: str, attention: str | None) -> str:
     return needs_attention_reason(body) if lane == attention else ""
 
 
+def _marked(body: str) -> str:
+    """The session of the last `**Assignee:** <id>` line in the task's notes, else empty: an upstream Backlog.md board's CLI
+    writes its own `assignee`, so StarPulse's claim there is this marker."""
+    found = _NOTES.search(body)
+    marked = _ASSIGNEE.findall(found.group(1)) if found else []
+    return marked[-1] if marked else ""
+
+
 def _notes(body: str) -> str:
     """The task's notes without the claim markers, trimmed; empty when it has none."""
     found = _NOTES.search(body)
@@ -368,7 +376,7 @@ class UpstreamBacklog:
             settled_at=_when(frontmatter.get("updated_date")) if settled else None,
             observed_at=_when(frontmatter.get("updated_date")) if lane == self._roles.done else None,
             profile=_profile(frontmatter),
-            assignee=assignee_of(frontmatter, body),
+            assignee=assignee_of(frontmatter) or _marked(body),
             labels=_strings(frontmatter.get("labels")),
             impact=str(frontmatter.get("impact") or "").strip().lower(),
             urgency=str(frontmatter.get("urgency") or "").strip().lower(),

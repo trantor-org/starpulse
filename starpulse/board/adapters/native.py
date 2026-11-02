@@ -54,7 +54,7 @@ from starpulse.board.adapters.upstream_backlog import (
     _profile as _profile_of,
 )
 from starpulse.board.model import rules
-from starpulse.board.model.claims import assignee_of, claimed, released, unreleased
+from starpulse.board.model.claims import assignee_of, claimed, released
 from starpulse.board.model.guard import Guard, Validate
 from starpulse.board.model.seam import (
     ANONYMOUS,
@@ -514,7 +514,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "notes": notes,
         "finalSummary": _section(_FINAL_SUMMARY, body),
         "comments": comments,
-        "session": assignee_of(frontmatter, body) or _session(notes, comments),
+        "session": assignee_of(frontmatter) or _session(notes, comments),
         "createdBy": str(frontmatter.get("created_by") or ""),
         "acceptanceCriteria": _items(_CRITERIA, body),
         "definitionOfDone": _items(_DONE, body),
@@ -1060,15 +1060,6 @@ def _restorer(
     return restore
 
 
-def _assign(frontmatter: dict, body: str, session: str) -> str:
-    """`session` as `frontmatter`'s assignee, and `body` with `**Assignee:** <session>` appended to its notes beside it.
-
-    A session the notes already name as assignee is not named again: a claim's edit may have recorded it before the move.
-    """
-    claimed(frontmatter, session)
-    return body if assignee_of({}, body) == session else _append_notes(unreleased(body), f"**Assignee:** {session}")
-
-
 class _Claims:
     """Where the board records an agent's refused claim once `attach` binds the event log: one `board:claims` entry."""
 
@@ -1104,7 +1095,9 @@ def _writer(
 
         def edit(frontmatter: dict, body: str) -> str:
             frontmatter["status"] = spelled.get(lane_id(status), status)
-            return _assign(frontmatter, body, session) if claim else body
+            if claim:
+                claimed(frontmatter, session)
+            return body
 
         written = _update(root, task, edit, guard, actor)
         if claim and not written.ok:
@@ -1119,17 +1112,18 @@ class _Unheld(Exception):
 
 
 def _releaser(root: Path, guard: Guard = Guard()) -> TaskReleaser:
-    """A board writer that ends `session`'s claim on a task still in `status`: it loses its `assignee` field and its
-    notes' `**Assignee:**` marker, gains `released_from` and keeps its State. A file another writer moved off `status` or whose claim `session` no longer holds is
-    refused untouched, so a release judged from a stale row cannot undo a later move."""
+    """A board writer that ends `session`'s claim on a task still in `status`: it loses its `assignee` field, gains
+    `released_from` and keeps its State. A file another writer moved off `status` or whose claim `session` no longer holds
+    is refused untouched, so a release judged from a stale row cannot undo a later move."""
 
     def release(task: str, status: str, /, session: str, actor: str = ANONYMOUS) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
             held = str(frontmatter.get("status") or "")
-            holder = assignee_of(frontmatter, body)
+            holder = assignee_of(frontmatter)
             if lane_id(held) != lane_id(status) or holder != session:
                 raise _Unheld(f"{task} is {held or 'without a status'} held by {holder or 'no session'}")
-            return released(frontmatter, body)
+            released(frontmatter)
+            return body
 
         try:
             return _update(root, task, edit, guard, actor)

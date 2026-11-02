@@ -133,7 +133,7 @@ def test_a_claim_of_a_task_another_session_holds_is_refused_naming_the_holder(
     status, body = _claim(feed, built, task="task-1", session="s-2")
 
     assert status == 409 and "s-1" in body["error"] and "already In Progress" in body["error"]
-    assert "**Assignee:** s-1" in _text(tmp_path, "task-1")
+    assert _frontmatter(tmp_path, "task-1")["assignee"] == "s-1"
 
 
 def test_a_session_that_claims_the_task_it_holds_again_is_told_so_and_writes_nothing(
@@ -592,6 +592,19 @@ def test_a_release_removes_the_frontmatter_assignee_and_writes_released_from(
 
     front = _frontmatter(tmp_path, "task-1")
     assert ("assignee" in front, front["released_from"]) == (False, "s-1")
+
+
+def test_a_claim_and_a_release_add_no_line_to_the_notes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
+    before = _text(tmp_path, "task-1")
+    assert _claim(feed, built, task="task-1", session="s-1")[0] == 200
+    claimed = _text(tmp_path, "task-1")
+    assert built.release is not None and built.release("task-1", "In Progress", session="s-1").ok
+    released = _text(tmp_path, "task-1")
+
+    for text in (claimed, released):
+        assert text.split("---", 2)[2] == before.split("---", 2)[2]
+        assert "**Assignee:**" not in text and "**Released from:**" not in text
 
 
 def test_a_release_by_a_session_the_frontmatter_does_not_name_is_refused(
