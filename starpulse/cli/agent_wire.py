@@ -49,14 +49,20 @@ def auth(base: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {base.token}"} if isinstance(base, Server) and base.token else {}
 
 
+def _open_get(request: urllib.request.Request, timeout: float) -> Any:
+    """The response to a GET, sent once more when the server closed the connection before any byte (an empty reply, as
+    a restart does to a request it had taken); a second empty reply, and any other failure, raises."""
+    try:
+        return urllib.request.urlopen(request, timeout=timeout)
+    except ConnectionResetError:  # `RemoteDisconnected` is one; a refused connection is not
+        return urllib.request.urlopen(request, timeout=timeout)
+
+
 def get(base: str, path: str, timeout: float = 10.0) -> tuple[int, Any]:
     """The status and JSON body the server at `base` answers `path` with; None for a body that is no JSON. `timeout`
-    is the seconds the server may take to answer."""
+    is the seconds the server may take to answer; an empty reply is sent once more."""
     try:
-        with urllib.request.urlopen(
-            urllib.request.Request(f"{base}{path}", headers=auth(base)),
-            timeout=timeout,
-        ) as resp:
+        with _open_get(urllib.request.Request(f"{base}{path}", headers=auth(base)), timeout) as resp:
             return resp.status, json.load(resp)
     except urllib.error.HTTPError as exc:
         try:

@@ -448,11 +448,14 @@ def page_app(
     snapshot_refresh_s: float = 0.0,
 ) -> PageApp:
     """The Page API over `feed`; a `snapshot_refresh_s` above zero keeps the snapshot warm, rebuilt that often off the
-    request path (a daemon thread that lives as long as the process)."""
+    request path (a daemon thread that lives as long as the process). The first snapshot is built before this returns,
+    so the server that serves the app is not announced ready on a cold one: a restart's queued connections wait on the
+    held socket and are answered warm, and a swap's old child serves until the new one is warm."""
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
     snapshots = Snapshots(feed, refresh_s=snapshot_refresh_s)
     warm_stop = threading.Event()  # set by `PageApp.end_streams`
     if snapshot_refresh_s > 0:
+        snapshots.refresh()
         threading.Thread(target=snapshots.keep_warm, args=(warm_stop,), name="snapshot-warm", daemon=True).start()
 
     def build_frame() -> str | None:
