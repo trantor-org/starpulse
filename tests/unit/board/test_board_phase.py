@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
+
 from starpulse.board.model.view import board_columns, task_view
 
 from tests.machines import ROLES
@@ -114,3 +116,30 @@ def test_a_task_whose_phase_is_parked_reads_in_the_waiting_lane_and_not_the_in_p
     assert "T-5" not in columns["in_progress"]
     assert columns["waiting"] == ["T-5"]
     assert _view("T-1")["lane"] == "in_progress"
+
+
+def _review_snapshot(checks: str, *, merged: bool = False) -> dict[str, Any]:
+    url = "https://github.com/acme/trantor/pull/7"
+    pull = {"url": url, "repo": "acme/trantor", "number": 7, "checks": checks, "merged": merged, "closed": False}
+    agent = _agent("T-1", "in_progress", prs=[url], moves={"review": {"allowed": True}, "ready": {"allowed": True}})
+    return {"flows": [{"name": "board", "agents": [agent], "machine": {}}], "pulls": {"T-1": [pull]}, "settled": {},
+            "roles": ROLES.wire()}
+
+
+@pytest.mark.parametrize(("checks", "said"), [("pending", "checks still running"), ("failing", "failing checks")])
+def test_the_review_move_is_refused_while_a_cited_pr_has_checks_that_are_not_green(checks: str, said: str) -> None:
+    """TASK-10659: `task moves` read review.allowed=true while the PR's Validate was queued."""
+    snapshot = _review_snapshot(checks)
+    view = task_view(snapshot["flows"][0]["agents"][0], snapshot, set())
+
+    assert view["moves"]["review"]["allowed"] is False
+    assert f"acme/trantor#7 has {said}" in view["moves"]["review"]["reason"]
+    assert view["moves"]["ready"]["allowed"] is True
+
+
+@pytest.mark.parametrize(("checks", "merged"), [("pass", False), ("none", False), ("pending", True)])
+def test_the_review_move_stays_allowed_for_green_no_required_check_or_merged_prs(checks: str, merged: bool) -> None:
+    snapshot = _review_snapshot(checks, merged=merged)
+    view = task_view(snapshot["flows"][0]["agents"][0], snapshot, set())
+
+    assert view["moves"]["review"]["allowed"] is True
