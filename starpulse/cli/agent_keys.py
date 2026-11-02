@@ -16,6 +16,7 @@ SNAPSHOT_KEYS = (
     "claims",
     "settled",
     "cold_done",
+    "milestone_done",
     "ratings",
     "interactive",
     "roles",
@@ -30,7 +31,7 @@ SNAPSHOT_KEYS = (
 )
 
 # Keys a server one release behind may not serve yet: a snapshot without them is still a snapshot.
-NEWER_SNAPSHOT_KEYS = ("cpu",)
+NEWER_SNAPSHOT_KEYS = ("cpu", "milestone_done")
 
 
 HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")

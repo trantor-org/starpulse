@@ -361,6 +361,14 @@ const cited = (urls: string[], read: Pull[]): Pull[] => {
   return [...read, ...unread.map((url) => ({ number: Number(/(\d+)\/?$/.exec(url)?.[1] ?? 0), repo: /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(url)?.[1] ?? "", url, checks: "none" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: true }))];
 };
 
+/** A Done task the snapshot leaves out, as its modal and a dependency rail draw it from its record; null for a record that is not Done, which only an archived task has off the board. */
+export function offBoardTask(id: string, record: TaskRecord, roles: Roles): KanbanTask | null {
+  const lane = (record.status ?? "").toLowerCase().replace(/ /g, "_");
+  if (lane !== roles.done && lane !== "completed") return null;
+  const prs = cited((record.references ?? []).filter((url) => /github\.com\/[^/]+\/[^/]+\/pull\/\d+\/?$/.test(url)), []);
+  return applyTaskRecord({ id, title: "", lane: roles.done ?? lane, milestone: "", labels: [], assignee: "", dependencies: [], openDeps: 0, prs, description: "", live: null, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [] }, record);
+}
+
 /** The Board's tasks as cards: its own fields, the pull requests the server read for it and the machine that last placed it. */
 export function kanbanTasks(sky: Sky): KanbanTask[] {
   const { roles } = sky;

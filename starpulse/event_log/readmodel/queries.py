@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Select, column, exists, false, func, or_, select, true
+from sqlalchemy import ColumnElement, Select, and_, column, exists, false, func, or_, select, true
 
 from starpulse.event_log.lane_events import done_lanes
 from starpulse.event_log.readmodel.tables import criteria, tasks
@@ -34,18 +34,47 @@ SUMMARY = (
 CARD = (*SUMMARY, tasks.c.description, tasks.c.dependencies, tasks.c.references, tasks.c.meta)
 
 
-def snapshot(state: str | None = None) -> Select[Any]:
-    """The unarchived Tasks, in id order, narrowed to `state` when given."""
-    query = select(*CARD).where(tasks.c.archived == false()).order_by(tasks.c.id)
-    return query if state is None else query.where(tasks.c.state == state)
+def live(done: str, since: float) -> ColumnElement[bool]:
+    """The live Tasks: unarchived, and either outside the done lanes or changed at or after `since` (local midnight).
+
+    The partial index `ix_starpulse_tasks_live_set` on `(archived, state, updated_at)` serves it, so a Done Task
+    changed before `since` costs the read nothing.
+    """
+    lane = func.lower(func.replace(tasks.c.state, " ", "_"))
+    return and_(tasks.c.archived == false(), or_(lane.not_in(done_lanes(done)), tasks.c.updated_at >= since))
 
 
-def live_criteria() -> Select[Any]:
-    """The unarchived Tasks' Acceptance Criteria, in task and number order."""
+def held_states() -> Select[Any]:
+    """The states unarchived Tasks hold, Done ones of any age included."""
+    return select(tasks.c.state).where(tasks.c.archived == false()).distinct()
+
+
+def milestone_done(done: str, since: float) -> Select[Any]:
+    """How many Done Tasks each milestone holds that `live` leaves out: unarchived and last changed before `since`."""
+    lane = func.lower(func.replace(tasks.c.state, " ", "_"))
+    return (
+        select(tasks.c.milestone, func.count())
+        .where(
+            tasks.c.archived == false(),
+            lane.in_(done_lanes(done)),
+            tasks.c.updated_at < since,
+            tasks.c.milestone != "",
+        )
+        .group_by(tasks.c.milestone)
+    )
+
+
+def snapshot(done: str, since: float) -> Select[Any]:
+    """The live Tasks (`live`), in id order."""
+    return select(*CARD).where(live(done, since)).order_by(tasks.c.id)
+
+
+def live_criteria(done: str, since: float) -> Select[Any]:
+    """The live Tasks' Acceptance Criteria, in task and number order."""
     return (
         select(criteria.c.task_id, criteria.c.kind, criteria.c.text, criteria.c.checked)
         .join(tasks, tasks.c.id == criteria.c.task_id)
-        .where(tasks.c.archived == false(), criteria.c.kind == "ac")
+        .where(live(done, since), criteria.c.kind == "ac")
         .order_by(criteria.c.task_id, criteria.c.n)
     )
 

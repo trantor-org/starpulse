@@ -18,7 +18,7 @@ from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.views.adapters.inbound.api import metrics
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.asgi_app import PageApp
-from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.application.commands import guard as server_writes
 from starpulse.views.ports.services import Services
 
@@ -42,7 +42,7 @@ def _routes(feed: BoardFeed, tmp_path: Path, **pushes) -> Api:
     window = HistoryWindow(feed, 6, log)
     unwritten = lambda *args, **kwargs: None  # noqa: E731 - a writer that answers nothing
     board = bare_board(writer=unwritten, assign=unwritten, read=unwritten, edit=unwritten)
-    return Api(feed, HistoryStore("sqlite://", feed.machines), SnapshotCache(feed), window, board, Services(**pushes))
+    return Api(feed, HistoryStore("sqlite://", feed.machines), Snapshots(feed), window, board, Services(**pushes))
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ def _write(
     headers: dict[str, str] | None = None,
     client: str = "127.0.0.1",
 ) -> Any:
-    app = PageApp(api_routes(routes), metrics.routes, routes.snapshots, Path(__file__).parent, (), seams=routes)
+    app = PageApp(api_routes(routes), metrics.routes, Path(__file__).parent, (), seams=routes)
     sent = {"Content-Length": str(len(body)), **(headers if headers is not None else _JSON)}
     return TestClient(app, client=(client, 50000)).request(method, path, content=body, headers=sent)
 

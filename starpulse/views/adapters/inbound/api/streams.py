@@ -21,9 +21,9 @@ from starpulse.views.adapters.inbound.column_stream import ColumnViews, Interest
 from starpulse.views.application.queries.responses import _error
 from starpulse.views.model.encoding import encode, event
 
-if TYPE_CHECKING:  # annotation only: `snapshot_cache` and the feed are built by the caller
+if TYPE_CHECKING:  # annotation only: `snapshots` and the feed are built by the caller
     from starpulse.board.board_feed import BoardFeed
-    from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+    from starpulse.views.adapters.inbound.snapshots import Snapshots
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ class Streams:
     def __init__(
         self,
         feed: BoardFeed,
-        snapshots: SnapshotCache,
+        snapshots: Snapshots,
         build: Callable[[], str | None] = lambda: None,
     ) -> None:
         self._feed = feed
@@ -150,17 +150,23 @@ class Streams:
     def _events(self, by_ref: bool) -> Stream:
         """The Board's snapshot, then each change as it happens. `by_ref` sends the snapshot as `ref <path>`, the path its
         body is read from: a browser reads a long event on its main thread, a fetched body off it."""
-        # The held snapshot is sent as it is, however many changes it lacks, so a page connecting while the next
-        # one is built is not held up by it: it applies those changes after it.
-        served = self._snapshots.latest() or self._snapshots.get()
+        served, encoded = self._snapshots.build()
         while (attached := self._feed.watch_from(served.sent)) is None:
-            served = self._snapshots.get()
+            served, encoded = self._snapshots.build()
         missed, changes = attached
-        return Stream(self._event_frames(served, by_ref, missed, changes), lambda: self._feed.unsubscribe(changes))
+        key = self._snapshots.hold(encoded) if by_ref else None
+        first = f"ref /api/events/body/{key}" if key is not None else encoded.body.decode()
 
-    def _event_frames(self, served, by_ref: bool, missed: Sequence, changes: queue.Queue) -> Generator[bytes]:
+        def release() -> None:
+            self._feed.unsubscribe(changes)
+            if key is not None:
+                self._snapshots.release(key)
+
+        return Stream(self._event_frames(first, missed, changes), release)
+
+    def _event_frames(self, first: str, missed: Sequence, changes: queue.Queue) -> Generator[bytes]:
         try:
-            yield _frame("snapshot", f"ref /api/events/body/{served.key}" if by_ref else served.body.decode())
+            yield _frame("snapshot", first)
             if (build := self._build()) is not None:
                 yield _frame("build", build)  # a page holding another build than this one is out of date
             for change in missed:
@@ -201,14 +207,12 @@ class Streams:
         """The Board's columns (only `states`, when named) with the tasks `assignee` holds (all, when None), as `event`,
         then again each time a change alters that view. A burst of changes settles before one reread, and the streams
         that reread for a change read one build of the columns."""
-        served = self._snapshots.after_current()
+        served = self._column_views.take(self._snapshots)
         while (attached := self._feed.watch_from(served.sent)) is None:
-            served = self._snapshots.after_current()
+            served = self._column_views.take(self._snapshots)
         missed, changes = attached
-        if missed:
-            served = (
-                self._snapshots.after_current()
-            )  # the view must include what was published after the snapshot it started from
+        if missed:  # the view must include what was published after the snapshot it started from
+            served = self._column_views.take(self._snapshots)
         return Stream(
             self._column_frames(event, assignee, states, served, changes), lambda: self._feed.unsubscribe(changes)
         )
@@ -228,7 +232,7 @@ class Streams:
             while not changes.empty():
                 changes.get_nowait()
                 changes.task_done()
-            served = self._snapshots.after_current()
+            served = self._column_views.take(self._snapshots)
 
     def _wait_touched(self, changes: queue.Queue, interest: Interest) -> Generator[bytes]:
         """Take changes off `changes` until one alters the view `interest` describes, pinging while none arrives."""

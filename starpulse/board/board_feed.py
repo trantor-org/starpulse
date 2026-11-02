@@ -114,8 +114,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._threads: list[threading.Thread] = []
         #: When set, the Board's Tasks are read from it on each request and `_open` stays empty (D3: the feed holds no board).
         self._read_model = read_model
-        self._hot_cache: tuple[int, list[dict]] | None = None
-        self._hot_ids: frozenset[str] = frozenset()
         #: The read model's position the page's deltas have been published up to; the snapshot carries what came before.
         self._followed = read_model.position() if read_model is not None else 0
         #: Which of the Board's States play which part (`Board.roles`); the default is Backlog.md's default statuses.

@@ -17,9 +17,9 @@ _ARCHIVED = 18_000
 _BUDGET_MS = 50.0  # the page latency budget: bench/page_latency.py BUDGET_MS
 # The two snapshot reads build every live card with its Acceptance Criteria: ~2,000 cards and ~4,000 criteria
 # rows turned into dicts, ~35-70 CPU-ms at best on a loaded ai-vm-1, 2.5x the cards-only read that 50 ms was set for. The board
-# feed caches them by read-model position, so a page request pays this only after a change.
+# feed holds none of it, so every snapshot request pays this; bench/page_latency.py measures that request on the live board.
 _SNAPSHOT_BUDGET_MS = 100.0
-_SNAPSHOT_SURFACES = ("snapshot", "snapshot by state")
+_SNAPSHOT_SURFACES = ("live set, all of today's Done", "live set, no Done")
 _RSS_SOFT_LIMIT = 256 * 1024 * 1024  # growth the board context may add over a seeded board and every query below
 _RUNS = 30
 
@@ -73,8 +73,8 @@ def _load_per_cpu() -> float:
 
 def _surfaces(model: ReadModel, cursor: int) -> dict[str, Callable[[], object]]:
     return {
-        "snapshot": model.snapshot,
-        "snapshot by state": lambda: model.snapshot("Ready"),
+        "live set, all of today's Done": lambda: model.snapshot("done", 0.0),
+        "live set, no Done": lambda: model.snapshot("done", float("inf")),
         "task, live": lambda: model.task(f"TASK-{_TOTAL}"),
         "task, archived": lambda: model.task("TASK-17"),
         "by declared field": lambda: model.with_field("area", "area-3"),

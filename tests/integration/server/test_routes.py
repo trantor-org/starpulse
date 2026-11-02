@@ -30,7 +30,11 @@ def _ask(server: PageServer, path: str, method: str = "GET", headers: dict[str, 
         return refused.code, refused.headers, refused.read()
 
 
-def test_a_head_of_a_read_is_the_headers_of_its_get_and_no_body(server: PageServer) -> None:
+def test_a_head_of_a_read_is_the_headers_of_its_get_and_no_body(
+    server: PageServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Each request takes its own snapshot and a snapshot carries its `now`, whose digits vary its length.
+    monkeypatch.setattr("starpulse.board.feed.views.time.time", lambda: 1_700_000_000.0)
     got = _ask(server, "/api/snapshot")
     head = _ask(server, "/api/snapshot", "HEAD")
 

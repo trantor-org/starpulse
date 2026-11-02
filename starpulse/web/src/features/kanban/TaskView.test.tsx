@@ -260,7 +260,45 @@ describe("the task view's right rail", () => {
     expect(html.indexOf("Depends on")).toBeLessThan(html.indexOf("Holds"));
     expect(html).toMatch(/<button class="dep"><span class="id">TASK-1<\/span><span class="tt">title TASK-1<\/span><span class="tvlane sm" data-lane="done" data-role="done"><i><\/i>Done<\/span><\/button>/);
     expect(html).toContain("TASK-101");
-    expect(rows(draw({ task: { ...task, dependencies: ["TASK-404"] } }), "Dependencies")).toContain("not on the board");
+  });
+
+  describe("a dependency the snapshot leaves out", () => {
+    const mounted = async (answer: object | null) => {
+      vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ record: answer }) })));
+      const open = vi.fn();
+      const host = document.body.appendChild(document.createElement("div"));
+      const root = createRoot(host);
+      await act(async () => {
+        root.render(<TaskView {...props({ task: { ...task, dependencies: ["TASK-404"] }, open })} />);
+        await new Promise((done) => setTimeout(done));
+      });
+      const dep = host.querySelector<HTMLElement>(".dep");
+      const seen = { className: dep?.className, text: dep?.textContent };
+      dep?.click();
+      act(() => root.unmount());
+      host.remove();
+      vi.unstubAllGlobals();
+      return { ...seen, open };
+    };
+
+    it("draws its title and Done lane once its record is read, and opens it", async () => {
+      const { className, text, open } = await mounted({ title: "An older task", status: "Done" });
+      expect(className).toBe("dep");
+      expect(text).toContain("An older task");
+      expect(text).toContain("Done");
+      expect(open).toHaveBeenCalledWith("TASK-404");
+    });
+
+    it("is not on the board when the board has no record of it", async () => {
+      const { className, text, open } = await mounted(null);
+      expect(className).toBe("dep off");
+      expect(text).toContain("not on the board");
+      expect(open).not.toHaveBeenCalled();
+    });
+
+    it("claims nothing while its record is being read", () => {
+      expect(rows(draw({ task: { ...task, dependencies: ["TASK-404"] } }), "Dependencies")).not.toContain("not on the board");
+    });
   });
 
   it("leaves out Depends on when the task has none, and the whole section when it holds nothing either", () => {

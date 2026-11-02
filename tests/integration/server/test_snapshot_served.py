@@ -1,4 +1,4 @@
-"""How the server serves the snapshot: encoded once per change, never once per request."""
+"""How the server serves the snapshot: taken and encoded per request, nothing of it held between requests."""
 
 import gzip
 import json
@@ -13,11 +13,14 @@ import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import Move
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.projector import Projector
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.runtime.adapter_kit import next_event as _next_event
 from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url
-from starpulse.views.adapters.inbound import snapshot_cache
 from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.fake_board import bare_board
@@ -95,18 +98,18 @@ def test_the_full_view_sends_a_pull_request_without_the_fields_the_feed_keeps_fo
     assert "files" not in sent
 
 
-def test_a_snapshot_is_built_once_however_many_pages_ask(tmp_path: Path, builds: Counter[int]) -> None:
+def test_each_page_that_asks_takes_the_snapshot_afresh(tmp_path: Path, builds: Counter[int]) -> None:
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1"))
     with _serve(tmp_path, feed) as server:
-        started = builds[id(feed)]  # serving the window built one
-        bodies = {_get(server) for _ in range(5)}
+        started = builds[id(feed)]
+        for _ in range(5):
+            _get(server)
         for _ in range(3):
             with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
                 _next_event(resp)
 
-    assert len(bodies) == 1
-    assert builds[id(feed)] - started == 1
+    assert builds[id(feed)] - started == 8
 
 
 def test_a_change_is_in_the_next_snapshot_served(tmp_path: Path, builds: Counter[int]) -> None:
@@ -117,10 +120,6 @@ def test_a_change_is_in_the_next_snapshot_served(tmp_path: Path, builds: Counter
         first = _get(server)
         feed.put(task("PROJ-1", "In Progress"))
         second = _get(server)
-        deadline = time.monotonic() + 5
-        while b'"in_progress"' not in second and time.monotonic() < deadline:  # the rebuild lands behind the change
-            time.sleep(0.05)
-            second = _get(server)
 
     assert b'"to_do"' in first
     assert b'"in_progress"' in second
@@ -168,41 +167,6 @@ def test_a_connecting_page_neither_misses_nor_repeats_a_change(tmp_path: Path) -
     assert max(int(i.removeprefix("PROJ-")) for i in in_snapshot) + 1 == numbers[0]
 
 
-def test_a_page_connecting_during_a_rebuild_is_not_held_up_by_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    feed = BoardFeed(roles=ROLES, machines=MACHINES)
-    feed.put(task("PROJ-1", "To Do"))
-    release = threading.Event()
-    building = threading.Event()
-    real = snapshot_cache.encode_snapshot
-    stalled = False
-
-    def slow(data: dict, held: dict) -> bytes:
-        if stalled:
-            building.set()
-            release.wait(10)
-        return real(data, held)
-
-    monkeypatch.setattr(snapshot_cache, "encode_snapshot", slow)
-    with _serve(tmp_path, feed) as server:
-        _get(server)  # held, current
-        stalled = True
-        feed.put(task("PROJ-1", "In Progress"))  # the rebuild this starts stalls in its encode
-        assert building.wait(5)
-        try:
-            with urllib.request.urlopen(_url(server, "/api/events"), timeout=2) as resp:
-                first = _next_event(resp)
-                second = _next_event(resp)
-        finally:
-            release.set()
-
-    # the held snapshot, then the change it lacks, which the page applies on top
-    assert first[0] == "snapshot"
-    assert [(a["id"], a["state"]) for a in first[1]["flows"][0]["agents"]] == [("PROJ-1", "to_do")]
-    assert (second[0], second[1]["id"], second[1]["agent"]["state"]) == ("task", "PROJ-1", "in_progress")
-
-
 def _raw_event(resp) -> tuple[str, str]:
     """The next named event on the stream with its data as sent, skipping keep-alive comments."""
     name = ""
@@ -228,13 +192,40 @@ def test_a_page_that_asks_for_the_snapshot_by_reference_reads_the_same_snapshot_
             assert ref.startswith("ref /api/events/body/")
             with urllib.request.urlopen(_url(server, ref.removeprefix("ref ")), timeout=5) as body:
                 read, kind, cache = body.read().decode(), body.headers["Content-Type"], body.headers["Cache-Control"]
+            with pytest.raises(urllib.error.HTTPError) as again:
+                urllib.request.urlopen(_url(server, ref.removeprefix("ref ")), timeout=5)
             feed.put(task("PROJ-2"))
             after = _next_event(resp)
 
-    # the body is the snapshot the stream would have sent inline, and the stream goes on with the changes after it
-    assert (inline[0], read) == ("snapshot", inline[1])
+    # the body is the snapshot the stream would have sent inline, held for the one fetch, and the stream goes on with
+    # the changes after it
+    assert (inline[0], json.loads(read)["flows"]) == ("snapshot", json.loads(inline[1])["flows"])
+    assert again.value.code == 404
     assert (kind, cache) == ("application/json", "max-age=3600, immutable")
     assert (after[0], after[1]["id"]) == ("task", "PROJ-2")
+
+
+def test_a_task_done_before_local_midnight_is_not_in_the_snapshot_and_is_still_served_by_id(tmp_path: Path) -> None:
+    engine = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").engine
+    store = EventStore(engine)
+    for number, state in ((1, "Ready"), (2, "Done")):
+        payload = {"title": f"Task {number}", "state": state, "milestone": "m-1"}
+        store.append("task", f"TASK-{number}", 0, [NewEvent("TaskCreated", payload, "adin", "operator")])
+    Projector(engine, store).catch_up()
+    tomorrow = time.time() + 86_400  # the server's day starts after both Tasks last changed
+    model = ReadModel(engine)
+    feed = BoardFeed(read_model=model, clock=lambda: tomorrow)
+
+    with _serve(tmp_path, feed, bare_board(read=model.task)) as server:
+        snapshot = json.loads(_get(server))
+        with urllib.request.urlopen(_url(server, "/api/task/TASK-2"), timeout=5) as resp:
+            served = json.load(resp)
+    engine.dispose()
+
+    assert [agent["id"] for flow in snapshot["flows"] for agent in flow["agents"]] == ["TASK-1"]
+    assert b"TASK-2" not in json.dumps(snapshot).encode()
+    assert snapshot["milestone_done"] == {"m-1": 1}
+    assert (served["task"], served["record"]["title"]) == ("TASK-2", "Task 2")
 
 
 def test_a_snapshot_body_the_server_does_not_hold_is_not_found(tmp_path: Path) -> None:
@@ -244,7 +235,7 @@ def test_a_snapshot_body_the_server_does_not_hold_is_not_found(tmp_path: Path) -
     assert refused.value.code == 404
 
 
-def test_a_snapshot_is_gzipped_when_built_not_by_the_request_that_reads_it(
+def test_a_snapshot_is_gzipped_once_by_the_request_that_builds_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
@@ -253,24 +244,22 @@ def test_a_snapshot_is_gzipped_when_built_not_by_the_request_that_reads_it(
     real = gzip.compress
 
     def counting(data: bytes, *args: object, **kwargs: object) -> bytes:
-        # a cache an earlier test in this process left running rebuilds on its own timer; only this feed's task counts
         if b"x" * 100_000 in data:
             compressions.append(len(data))
         return real(data, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(gzip, "compress", counting)
     with _serve(tmp_path, feed) as server:
-        with urllib.request.urlopen(_url(server, "/api/events?snapshot=ref"), timeout=5) as resp:
-            _, ref = _raw_event(resp)  # a page connecting builds the snapshot and reads none of it
-        built = len(compressions)
-        gzipped = urllib.request.Request(_url(server, "/api/snapshot"), headers={"Accept-Encoding": "gzip"})
-        body = urllib.request.Request(_url(server, ref.removeprefix("ref ")), headers={"Accept-Encoding": "gzip"})
-        for request in (gzipped, gzipped, body):
-            with urllib.request.urlopen(request, timeout=5) as resp:
-                assert resp.headers["Content-Encoding"] == "gzip"
+        with urllib.request.urlopen(_url(server, "/api/events?snapshot=ref"), timeout=5) as stream:
+            _, ref = _raw_event(stream)  # a page connecting builds the snapshot and reads none of it
+            gzipped = urllib.request.Request(_url(server, "/api/snapshot"), headers={"Accept-Encoding": "gzip"})
+            body = urllib.request.Request(_url(server, ref.removeprefix("ref ")), headers={"Accept-Encoding": "gzip"})
+            for request in (gzipped, gzipped, body):
+                with urllib.request.urlopen(request, timeout=5) as resp:
+                    assert resp.headers["Content-Encoding"] == "gzip"
 
-    assert built == 1
-    assert len(compressions) == built
+    # the stream's build and each of the two reads; the body route sends the stream's gzip as it was held
+    assert len(compressions) == 3
 
 
 def test_a_snapshot_read_straight_after_a_write_holds_the_write(tmp_path: Path) -> None:

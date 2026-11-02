@@ -1,6 +1,7 @@
 """The read model's queries answer from the projected tables, each by index and none by scanning the board."""
 
 import re
+import time
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -58,14 +59,40 @@ def _scans(plan: list[str]) -> list[str]:
     return [line for line in plan if re.match(r"SCAN\b", line) and "USING" not in line and "VIRTUAL" not in line]
 
 
-def test_the_snapshot_is_the_unarchived_tasks_by_state(board) -> None:
+def test_the_snapshot_is_the_live_set_unarchived_and_not_done_or_done_since_midnight(board) -> None:
     engine, store, model = board
     _seed(store)
     _project(engine, store)
+    midnight_before, midnight_after = time.time() - 3600, time.time() + 3600
 
-    assert [item["id"] for item in model.snapshot()] == ["TASK-1", "TASK-2", "TASK-3", "TASK-4"]
-    assert [item["id"] for item in model.snapshot("Ready")] == ["TASK-1", "TASK-2", "TASK-4"]
-    assert model.snapshot("Ready")[0]["title"] == "one"
+    assert [item["id"] for item in model.snapshot("done", midnight_before)] == ["TASK-1", "TASK-2", "TASK-3", "TASK-4"]
+    assert [item["id"] for item in model.snapshot("done", midnight_after)] == ["TASK-1", "TASK-2", "TASK-4"]
+    assert model.snapshot("done", midnight_after)[0]["title"] == "one"
+
+
+def test_the_held_states_count_a_done_task_of_any_age_and_no_archived_one(board) -> None:
+    engine, store, model = board
+    _add(store, "TASK-1", _new("TaskCreated", title="one", state="Done"))
+    _add(store, "TASK-2", _new("TaskCreated", title="two", state="Ready"))
+    _add(store, "TASK-3", _new("TaskCreated", title="three", state="Blocked"), _new("Archived"))
+    _project(engine, store)
+
+    assert model.held_states() == {"Done", "Ready"}
+
+
+def test_the_milestone_done_counts_are_the_done_tasks_the_live_set_leaves_out(board) -> None:
+    engine, store, model = board
+    _add(store, "TASK-1", _new("TaskCreated", title="one", state="Done", milestone="m-1"))
+    _add(store, "TASK-2", _new("TaskCreated", title="two", state="completed", milestone="m-1"))
+    _add(store, "TASK-3", _new("TaskCreated", title="three", state="Done", milestone="m-2"))
+    _add(store, "TASK-4", _new("TaskCreated", title="four", state="Ready", milestone="m-1"))
+    _add(store, "TASK-5", _new("TaskCreated", title="five", state="Done", milestone="m-1"), _new("Archived"))
+    _add(store, "TASK-6", _new("TaskCreated", title="six", state="Done"))
+    _project(engine, store)
+    midnight_before, midnight_after = time.time() - 3600, time.time() + 3600
+
+    assert model.milestone_done("done", midnight_after) == {"m-1": 2, "m-2": 1}
+    assert model.milestone_done("done", midnight_before) == {}
 
 
 def test_a_task_loads_whole_archived_or_not_and_is_none_when_unknown(board) -> None:
@@ -125,14 +152,15 @@ def test_deltas_since_a_cursor_come_in_change_order_with_archived_tasks_and_page
 @pytest.mark.parametrize(
     "statement",
     [
-        queries.snapshot(),
-        queries.snapshot("Ready"),
-        queries.live_criteria(),
+        queries.snapshot("done", 0.0),
+        queries.live_criteria("done", 0.0),
+        queries.held_states(),
+        queries.milestone_done("done", 0.0),
         queries.with_field("field_area", "ops"),
         queries.ready("Ready", "done"),
         queries.since(10, 100),
     ],
-    ids=["snapshot", "snapshot-by-state", "live-criteria", "by-field", "ready", "since"],
+    ids=["snapshot", "live-criteria", "held-states", "milestone-done", "by-field", "ready", "since"],
 )
 def test_every_query_reads_through_an_index_and_never_scans_the_table(board, statement: Select) -> None:
     engine, _, _ = board
@@ -145,7 +173,6 @@ def test_every_query_reads_through_an_index_and_never_scans_the_table(board, sta
 def test_the_live_queries_use_partial_indexes_so_archived_tasks_cost_nothing(board) -> None:
     engine, _, _ = board
 
-    assert any("ix_starpulse_tasks_live_state" in line for line in _plan(engine, queries.snapshot("Ready")))
-    assert any("ix_starpulse_tasks_live_id" in line for line in _plan(engine, queries.snapshot()))
+    assert any("ix_starpulse_tasks_live_set" in line for line in _plan(engine, queries.snapshot("done", 0.0)))
     assert any("ix_starpulse_tasks_field_area" in line for line in _plan(engine, queries.with_field("field_area", "x")))
     assert any("ix_starpulse_tasks_seq" in line for line in _plan(engine, queries.since(10, 100)))

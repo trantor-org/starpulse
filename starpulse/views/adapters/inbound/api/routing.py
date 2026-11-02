@@ -34,7 +34,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.board_feed import BoardFeed
     from starpulse.board.model.seam import Board
     from starpulse.flow_metrics.adapters.outbound.history import History
-    from starpulse.views.adapters.inbound.snapshot_cache import SnapshotCache
+    from starpulse.views.adapters.inbound.snapshots import Snapshots
     from starpulse.views.ports.services import Services
 
 
@@ -45,7 +45,7 @@ class Api:
 
     feed: BoardFeed
     history: History
-    snapshots: SnapshotCache
+    snapshots: Snapshots
     window: HistoryWindow
     board: Board
     services: Services

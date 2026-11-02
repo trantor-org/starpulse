@@ -59,7 +59,6 @@ def writing(work: Callable[[Request], Response | None]) -> Callable[[Request], A
                 return Response(status_code=400)  # the client left mid-body; nobody reads this
             if response is None:
                 return PlainTextResponse("Not Found", 404)
-            request.app.state.snapshots.require_current()
             return response
 
         return await on_worker(request, run)

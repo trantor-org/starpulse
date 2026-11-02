@@ -119,6 +119,12 @@ def test_snapshot_slim_counts_every_completed_task_by_milestone_however_long_ago
     assert _sent(_feed())["milestone_done"] == {"m-1": 3}
 
 
+def test_snapshot_slim_adds_the_read_models_older_done_counts_to_the_settled_ones() -> None:
+    snapshot = {**_feed().snapshot(), "milestone_done": {"m-1": 2, "m-2": 5}}
+
+    assert slim_snapshot(snapshot)["milestone_done"] == {"m-1": 5, "m-2": 5}
+
+
 def test_snapshot_slim_encodes_to_the_bytes_the_slimmed_document_makes() -> None:
     feed = _feed()
     snapshot = feed.snapshot()

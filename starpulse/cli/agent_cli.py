@@ -585,7 +585,7 @@ def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     if args.config is not None:
         path = discover(args.config)
         log = open_event_log(load(path).database_url, path)
-        held = {row["state"] for row in ReadModel(log.engine).snapshot()}
+        held = ReadModel(log.engine).held_states()
         for machine in machines:
             if machine["ok"]:
                 machine["errors"] = _dead_migrations(Path(machine["path"]), held)

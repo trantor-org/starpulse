@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, typ
 import { ago, fmtAt } from "../../shared/clock";
 import { usePhone } from "../../shared/usePhone";
 import { RatingControl } from "./RatingControl";
-import { ciTone, columnsOf, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
+import { ciTone, columnsOf, offBoardTask, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import { DocReader, DocRows, useDocs } from "./DocReader";
@@ -198,10 +198,24 @@ function PullRows({ task }: { task: KanbanTask }) {
   );
 }
 
-/** A dependency or a held task: its id, title and lane, opening that task's modal; a task off the board is only named. */
+/** A dependency the snapshot leaves out: a Done one reads as any other once its record is read, and only one with no such record is off the board. */
+function OffBoardDep({ id, names, roles, open }: { id: string; names: Record<string, string>; roles: Roles; open: (id: string) => void }) {
+  const [read, setRead] = useState<KanbanTask | null | undefined>(undefined);
+  useEffect(() => {
+    let current = true;
+    void fetchRecord(id).then((record) => {
+      if (current) setRead(record && offBoardTask(id, record, roles));
+    });
+    return () => { current = false; };
+  }, [id, roles]);
+  if (read) return <DepRows rows={[{ id, title: read.title, lane: read.lane }]} names={names} roles={roles} open={open} />;
+  return <div className="dep off"><span className="id">{id}</span><span className="tt">{read === null && "not on the board"}</span></div>;
+}
+
+/** A dependency or a held task: its id, title and lane, opening that task's modal. */
 function DepRows({ rows, names, roles, open }: { rows: DepRow[]; names: Record<string, string>; roles: Roles; open: (id: string) => void }) {
   return rows.map((r) => r.lane === null ? (
-    <div key={r.id} className="dep off"><span className="id">{r.id}</span><span className="tt">not on the board</span></div>
+    <OffBoardDep key={r.id} id={r.id} names={names} roles={roles} open={open} />
   ) : (
     <button key={r.id} className="dep" onClick={() => open(r.id)}><span className="id">{r.id}</span><span className="tt">{r.title}</span><LanePill lane={r.lane} role={roleOf(roles, r.lane)} name={names[r.lane] ?? r.lane} small /></button>
   ));

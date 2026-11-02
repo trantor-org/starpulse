@@ -22,7 +22,7 @@ def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grpc=None) -> PageApp:
         WriteRoute("/write", ("POST",), reading(lambda request: answer(request, b"{}"))),
         StreamRoute("/held", reading(lambda request: answer(request, b"{}"))),
     ]
-    return PageApp(routes, [], None, tmp_path, (), grpc=grpc)  # type: ignore[arg-type]
+    return PageApp(routes, [], tmp_path, (), grpc=grpc)  # type: ignore[arg-type]
 
 
 async def _with_every_worker_busy(app: PageApp, path: str, method: str) -> Answer:
