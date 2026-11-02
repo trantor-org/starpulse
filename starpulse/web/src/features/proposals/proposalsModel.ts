@@ -23,15 +23,16 @@ export function sectionsOf(description: string): { why: string; duplicate: strin
   return { why, duplicate: sectionOf(description, "Duplicate Resolution") };
 }
 
-/** Set the profile when it changed, then move the task to Ready. A refused edit moves nothing. */
+/** Set the profile when it changed, then move the task to Ready, or to Waiting when a dependency is open. A refused edit moves nothing. */
 export async function promoteProposal(
-  task: string, profile: string, current: string, roles: Roles, fetcher: typeof apiFetch = apiFetch,
+  task: string, profile: string, current: string, roles: Roles, fetcher: typeof apiFetch = apiFetch, openDeps = 0,
 ): Promise<Reply> {
   if (profile !== current) {
     const failed = await editProfile(task, profile, current, fetcher);
     if (failed) return failed;
   }
-  return postMove(task, roles.ready ?? "ready", fetcher);
+  const target = openDeps > 0 ? (roles.waiting ?? "waiting") : (roles.ready ?? "ready");
+  return postMove(task, target, fetcher);
 }
 
 /** Archive a proposal: a move to the lifecycle's final State. */

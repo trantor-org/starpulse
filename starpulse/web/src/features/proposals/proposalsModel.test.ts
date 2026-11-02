@@ -49,6 +49,14 @@ describe("promoteProposal", () => {
     expect(JSON.parse(String(move[1].body))).toMatchObject({ task: "TASK-1", to: "ready" });
   });
 
+  it("moves a proposal with an open dependency to Waiting", async () => {
+    const fetcher = vi.fn(async () => answer());
+    await promoteProposal("TASK-1", "", "", { ...roles, waiting: "waiting" }, fetcher, 1);
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/move");
+    expect(JSON.parse(String(init.body))).toMatchObject({ task: "TASK-1", to: "waiting" });
+  });
+
   it("writes no edit when the profile is the one the task has", async () => {
     const fetcher = vi.fn(async () => answer());
     await promoteProposal("TASK-1", "@agent-standard-high", "@agent-standard-high", roles, fetcher);
