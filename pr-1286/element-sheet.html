@@ -743,6 +743,27 @@ body.dragging, body.dragging * { user-select: none; }
 #admin header .count { font-size: calc(11px * var(--fs)); color: var(--muted); }
 #admin .grid { display: grid; grid-template-columns: minmax(420px, 640px) minmax(280px, 1fr); gap: 20px; align-items: start; padding-bottom: 24px; }
 
+#proposals { position: fixed; z-index: 3; top: 0; bottom: 0; left: calc(var(--nav) + 20px); right: calc(var(--rail) + 20px); font-size: calc(12px * var(--fs)); color: var(--ink); }
+#proposals .hd { display: flex; align-items: center; gap: 14px; height: 64px; }
+#proposals .ttl { font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
+#proposals .ct, #proposals .none { font-size: calc(11px * var(--fs)); color: var(--muted); }
+#proposals .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 14px; align-items: start; }
+#proposals .prop { box-sizing: border-box; padding: 12px 16px; border-radius: 10px; background: color-mix(in srgb, var(--surface) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
+#proposals .prop h2 { margin: 0 0 6px; font-size: calc(13px * var(--fs)); font-weight: 500; }
+#proposals .prop .id { margin-right: 6px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11px * var(--fs)); color: var(--slate); }
+#proposals .why { margin: 0 0 10px; color: var(--ink-2); white-space: pre-wrap; }
+#proposals dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 12px; }
+#proposals dt { color: var(--muted); } #proposals dd { margin: 0; color: var(--ink-2); }
+#proposals .act { display: flex; align-items: center; gap: 8px; }
+#proposals select { height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: transparent; color: var(--ink); font: inherit; margin-right: auto; }
+#proposals .btn { all: unset; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); color: var(--ink-3); font-size: calc(11.5px * var(--fs)); cursor: pointer; }
+#proposals .btn:hover { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 50%, transparent); }
+#proposals .btn.go { border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, transparent); }
+#proposals .btn[disabled] { opacity: .45; cursor: default; }
+#proposals .btn:focus-visible, #proposals select:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
+#proposals .refused { margin: 8px 0 0; color: var(--fail); }
+
 #admin { container-type: inline-size; }
 @container (max-width: 719px) { #admin .grid { grid-template-columns: minmax(0, 1fr); } }
 #admin .card { border-radius: 10px; background: color-mix(in srgb, var(--surface) 85%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
@@ -1023,7 +1044,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #legend svg { vertical-align: middle; }
 
 
-#nav .matches, #nav .outline, #nav .leaderboard, #nav .drill-tasks, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #admin, #sd .sd-details {
+#nav .matches, #nav .outline, #nav .leaderboard, #nav .drill-tasks, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #proposals, #admin, #sd .sd-details {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
