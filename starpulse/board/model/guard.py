@@ -30,6 +30,8 @@ class Guard:
     validate: Validate | None = None
     #: The state of another task (a dependency a rule reads), or None when the board has none.
     state_of: Callable[[str], str | None] = lambda _: None
+    #: The stored pull request of `(repository, number)` (`rules.Record.pull_of`), or None when the board has none.
+    pull_of: Callable[[str, int], Mapping[str, Any] | None] = lambda _repo, _number: None
     #: The names a task's `type` may take; empty accepts any.
     types: tuple[str, ...] = ()
     #: The Waiting lane id and the Ready status, which a write leaving a task in Waiting must be able to move on to.
@@ -77,7 +79,7 @@ class Guard:
         if self.types and kind and kind != was and kind not in self.types:
             return Written(False, f"type {kind!r} is not one of this board's types: {', '.join(self.types)}")
         if self.rules:
-            after = rules.Record(frontmatter, body, self.state_of)
+            after = rules.Record(frontmatter, body, self.state_of, pull_of=self.pull_of)
             if broken := rules.refusal(self.rules, earlier, after, actor):
                 return Written(False, broken.explain(after), broken.skill, lint=True)
         staying = lane_id(str(frontmatter.get("status") or "")) == self.waiting

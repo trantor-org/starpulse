@@ -97,4 +97,26 @@ LIFECYCLE_KEYS = ("ok", "task", "to", "reason", "skill")
 MILESTONE_KEYS = ("id", "title", "outcome", "specs", "adrs", "retro", "description")
 
 
+PULL_KEYS = (
+    "repo",
+    "number",
+    "state",
+    "isDraft",
+    "mergeable",
+    "baseRefName",
+    "headRefOid",
+    "body",
+    "checks",
+    "requiredChecks",
+    "threads",
+    "unresolvedThreads",
+    "headRefName",
+    "updatedAt",
+    "mergedAt",
+    "mergeSha",
+    "fetchedAt",
+    "files",
+)
+
+
 DOC_KEYS = ("id", "title", "type", "created_date", "updated_date", "path", "body")

@@ -126,6 +126,7 @@ from starpulse.cli.agent_keys import (
     LIFECYCLE_KEYS,
     MILESTONE_KEYS,
     MOVE_KEYS,
+    PULL_KEYS,
     SCORE_KEYS,
     SNAPSHOT_KEYS,
     STAGE_KEYS,
@@ -1166,6 +1167,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     mermaid.add_argument("source", type=Path, help="the stateDiagram-v2 .mmd file")
     mermaid.add_argument("--out", type=Path, help="default: .starpulse/machines/<source name>.yaml")
+    pull = verbs.add_parser("pull", description="the pull requests the server stores", help="the pull requests the server stores")
+    pull_verbs = pull.add_subparsers(dest="verb", required=True, metavar="verb")
+    pull_show = leaf(
+        pull_verbs,
+        "show",
+        "one stored pull request: its state, merge commit, checks and changed files, read from the store, not GitHub",
+        _in_tasks("pull_show"),
+        PULL_KEYS,
+        (0, 2, 3, 4),
+    )
+    pull_show.add_argument("pull", help="the pull request, as `owner/name#N` or its GitHub URL")
     milestone = verbs.add_parser("milestone", description="the Board's milestones", help="the Board's milestones")
     milestone_verbs = milestone.add_subparsers(dest="verb", required=True, metavar="verb")
     milestone_list = leaf(

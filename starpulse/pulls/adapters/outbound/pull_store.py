@@ -36,7 +36,7 @@ def _selection(number: int) -> str:
   p{number}: pullRequest(number: {number}) {{
     number state isDraft mergeable baseRefName headRefName headRefOid title body updatedAt createdAt mergedAt
     mergeCommit {{ oid }}
-    files(first: 100) {{ nodes {{ path }} }}
+    files(first: 100) {{ totalCount nodes {{ path }} }}
     headRef {{ compare(headRef: "main") {{ aheadBy }} }}
     ciCommits: commits(last: 100) {{ nodes {{ commit {{ oid
       checkSuites(first: 20) {{ nodes {{ status conclusion createdAt updatedAt workflowRun {{ runAttempt }} }} }} }} }} }}
@@ -66,6 +66,12 @@ def _result(check: dict) -> str:
     if outcome in _PASSED:
         return "pass"
     return "pending" if outcome in _RUNNING else "failing"
+
+
+def _paths(files: dict) -> list[str] | None:
+    """The changed paths the read returned, None when the pull request has more than the read's first 100."""
+    paths = [file["path"] for file in files["nodes"]]
+    return paths if files["totalCount"] <= len(paths) else None
 
 
 def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
@@ -107,7 +113,7 @@ def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
             "mergedAt": node["mergedAt"],
             "mergeSha": (node["mergeCommit"] or {}).get("oid"),
             "behindMain": ((node["headRef"] or {}).get("compare") or {}).get("aheadBy"),
-            "files": [file["path"] for file in node["files"]["nodes"]],
+            "files": _paths(node["files"]),
             "ci": {  # the parts of the node `ci_trail.parse` reads
                 "createdAt": node["createdAt"],
                 "mergeable": node["mergeable"],

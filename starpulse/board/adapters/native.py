@@ -76,7 +76,7 @@ from starpulse.board.model.seam import (
     Written,
 )
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
-from starpulse.event_log.tables import retired_tasks
+from starpulse.event_log.tables import pull_requests, retired_tasks
 from starpulse.machine_engine.model.state_roles import StateRoles
 
 if TYPE_CHECKING:
@@ -251,6 +251,24 @@ def _front_matter(text: str) -> str:
 def _id_line(task: str) -> re.Pattern[str]:
     """A front matter line that spells `task` as the `id:`, quoted or not, in any case."""
     return re.compile(rf"^id:[ \t]*[\"']?{re.escape(task)}[\"']?[ \t]*$", re.M | re.I)
+
+
+def _pull_of(retired: _Retired) -> Callable[[str, int], dict[str, Any] | None]:
+    """A lookup of the stored pull request `(repository, number)` as `{draft, checks, body, files}`, None when the store
+    holds none; `files` is None for a record saved before the store kept them. A board that has not started has no store."""
+
+    def read(repo: str, number: int) -> dict[str, Any] | None:
+        if retired.engine is None:
+            return None
+        columns = (pull_requests.c.is_draft, pull_requests.c.checks, pull_requests.c.body, pull_requests.c.detail)
+        query = select(*columns).where(pull_requests.c.repo == repo, pull_requests.c.number == number)
+        with retired.engine.connect() as db:
+            row = db.execute(query).first()
+        if row is None:
+            return None
+        return {"draft": row.is_draft, "checks": row.checks, "body": row.body, "files": (row.detail or {}).get("files")}
+
+    return read
 
 
 def _state_of(root: Path, retired: _Retired) -> Callable[[str], str | None]:
@@ -1315,7 +1333,11 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     retired = _Retired()
     claims = _Claims()
     guard = Guard(
-        rules.load(settings.get("guards")), _hook(settings.get("validate")), _state_of(root, retired), _types(settings)
+        rules.load(settings.get("guards")),
+        _hook(settings.get("validate")),
+        _state_of(root, retired),
+        pull_of=_pull_of(retired),
+        types=_types(settings),
     )
 
     def assign(task: str, profile: str, /, actor: str = OPERATOR) -> Written:

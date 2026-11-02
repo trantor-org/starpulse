@@ -1839,12 +1839,15 @@ export interface Pulls {
  * One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).
  *
  * `headRefName` and `unresolvedThreads` (the first 100 threads) are null for a record saved before they were kept.
+ * `files`, the paths the pull request changes, is sent only when `repo` and `number` name one record, and is null for
+ * a record saved before they were kept.
  */
 export interface PullRecord {
   baseRefName: string;
   body: string;
   checks: "pass" | "failing" | "pending" | "none";
   fetchedAt: number;
+  files?: string[] | null;
   headRefName: string | null;
   headRefOid: string;
   isDraft: boolean;

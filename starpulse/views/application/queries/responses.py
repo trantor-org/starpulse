@@ -130,7 +130,8 @@ def history_response(
 
 
 def pulls_response(pulls: PullStore | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
-    """The body and status for `/api/pulls`: the stored pull requests matching every filter given.
+    """The body and status for `/api/pulls`: the stored pull requests matching every filter given; one named by both
+    `repo` and `number` also carries `files`, the paths it changes (null for a record saved before they were kept).
 
     A `number` that is not an integer, or a `state` that is not open, merged or closed, is 400."""
     state = query.get("state", [""])[0].upper() or None
@@ -140,11 +141,14 @@ def pulls_response(pulls: PullStore | None, query: dict[str, list[str]]) -> tupl
         return _error("pulls takes an integer ?number="), 400
     if state not in (None, "OPEN", "MERGED", "CLOSED"):
         return _error("pulls takes ?state= open, merged or closed"), 400
-    found = (
-        pulls.find(query.get("repo", [""])[0] or None, number, state, query.get("body_contains", [""])[0] or None)
-        if pulls
-        else []
-    )
+    repo = query.get("repo", [""])[0] or None
+    one = repo is not None and number is not None
+    found = pulls.find(repo, number, state, query.get("body_contains", [""])[0] or None, detailed=one) if pulls else []
+    if one:  # one pull request is read whole: its changed files, which a listing leaves out
+        found = [
+            {**{key: value for key, value in record.items() if key != "detail"}, "files": (record["detail"] or {}).get("files")}
+            for record in found
+        ]
     return encode("pulls", {"pulls": found}), 200
 
 

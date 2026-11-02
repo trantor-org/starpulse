@@ -31,6 +31,7 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
+from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import serve as _real_serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url
@@ -409,6 +410,36 @@ def searchable(tmp_path: Path) -> Iterator[str]:
     index.index(task("PROJ-1", "To Do", title="Rotate the signing keys", description="Cycle the authority"))
     index.index(task("PROJ-2", "Ready", title="Drain the queue"))
     with _serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), search=index) as server:
+        yield _url(server, "")
+
+
+@pytest.fixture
+def pulled(tmp_path: Path) -> Iterator[str]:
+    """A server whose pull request store holds `acme/app#5`."""
+    store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
+    store.save(
+        [
+            {
+                "repo": "acme/app",
+                "number": 5,
+                "state": "OPEN",
+                "isDraft": False,
+                "mergeable": "MERGEABLE",
+                "baseRefName": "main",
+                "headRefOid": "abc",
+                "body": "",
+                "checks": "pass",
+                "requiredChecks": [],
+                "threads": 0,
+                "updatedAt": "2026-11-02T00:00:00Z",
+                "mergedAt": None,
+                "mergeSha": None,
+                "fetchedAt": 0.0,
+                "detail": {"files": ["README.md"]},
+            }
+        ]
+    )
+    with _serve(tmp_path, BoardFeed(roles=ROLES, machines=MACHINES), pulls=store) as server:
         yield _url(server, "")
 
 
@@ -1472,6 +1503,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "machine show",
         "machine validate",
         "machine import mermaid",
+        "pull show",
         "milestone list",
         "milestone show",
         "milestone add",
@@ -2145,6 +2177,10 @@ CASES = {
     ("machine show", 2): ["machine", "show"],
     ("machine show", 3): ["machine", "show", "board", "--server", "{down}"],
     ("machine show", 4): ["machine", "show", "nowhere", "--server", "{server}"],
+    ("pull show", 0): ["pull", "show", "acme/app#5", "--server", "{pulled}"],
+    ("pull show", 2): ["pull", "show", "nowhere", "--server", "{pulled}"],
+    ("pull show", 3): ["pull", "show", "acme/app#5", "--server", "{down}"],
+    ("pull show", 4): ["pull", "show", "acme/app#99", "--server", "{pulled}"],
     ("milestone list", 0): ["milestone", "list", "--server", "{milestoned}"],
     ("milestone list", 2): ["milestone", "list", "--nope"],
     ("milestone list", 3): ["milestone", "list", "--server", "{server}"],  # a board that keeps no milestones
@@ -2298,6 +2334,7 @@ SERVERS = {
     "runnable": "runnable",
     "forbidden": "forbidden",
     "milestoned": "milestoned",
+    "pulled": "pulled",
     "tasked": "tasked",
     "archived": "archived",
     "checked": "checked",

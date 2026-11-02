@@ -57,7 +57,7 @@ def _bare_detail(at: float) -> Record:
         "mergedAt": None,
         "mergeSha": None,
         "behindMain": None,
-        "files": [],
+        "files": None,
         "ci": ci | {"commits": {"nodes": []}, "timelineItems": {"nodes": []}},
     }
 

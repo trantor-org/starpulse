@@ -88,7 +88,7 @@ class PinGate:
                 bumps = [
                     merge
                     for merge in merges
-                    if merge["repo"].startswith(f"{owner}/") and path in merge["detail"]["files"]
+                    if merge["repo"].startswith(f"{owner}/") and path in (merge["detail"]["files"] or ())
                 ]
                 projected = {record["url"]: record for record in map(_projected, [child, *bumps])}
                 applied = link(projected, self._repos, self._pins.pointer, self._pins.reaches)[url].get("applied_by")

@@ -4828,7 +4828,7 @@
       "type": "object"
     },
     "PullRecord": {
-      "description": "One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).\n\n`headRefName` and `unresolvedThreads` (the first 100 threads) are null for a record saved before they were kept.",
+      "description": "One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).\n\n`headRefName` and `unresolvedThreads` (the first 100 threads) are null for a record saved before they were kept.\n`files`, the paths the pull request changes, is sent only when `repo` and `number` name one record, and is null for\na record saved before they were kept.",
       "properties": {
         "baseRefName": {
           "type": "string"
@@ -4847,6 +4847,20 @@
         },
         "fetchedAt": {
           "type": "number"
+        },
+        "files": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "headRefName": {
           "anyOf": [
