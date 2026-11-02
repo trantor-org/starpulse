@@ -192,3 +192,50 @@ def test_a_read_with_nothing_new_looks_at_each_held_signal_once_to_apply_its_win
     telemetry.read(120.0)
 
     assert len(looked) <= 50
+
+
+class _Visited(list):
+    """A held list that counts the entries a read visits one by one: the cost of a read, not its answer."""
+
+    visits = 0
+
+    def __iter__(self):
+        for entry in list.__iter__(self):
+            _Visited.visits += 1
+            yield entry
+
+
+class _NoNewRows:
+    """A Loki store with nothing new since the log was built, so the held list is the test's own."""
+
+    def pages(self, stamp: float):
+        return iter(())
+
+
+def held_log(n: int) -> TelemetryLog:
+    telemetry = TelemetryLog(None, loki=_NoNewRows())  # type: ignore[arg-type]
+    telemetry._held = _Visited((float(i), i, signal(i, float(i))) for i in range(n))  # type: ignore[attr-defined]
+    telemetry._arrived = n  # type: ignore[attr-defined]
+    telemetry._keys = {f"k{i}" for i in range(n)}  # type: ignore[attr-defined]
+    return telemetry
+
+
+def test_a_read_of_a_late_window_of_a_long_held_log_reads_only_the_window() -> None:
+    telemetry = held_log(100_000)
+    _Visited.visits = 0
+
+    got = telemetry.read(99_990.0)
+
+    assert [s.key for s in got] == [f"k{n}" for n in range(99_990, 100_000)]
+    assert _Visited.visits < 100
+
+
+def test_a_window_reports_the_history_start_without_a_scan() -> None:
+    telemetry = held_log(100_000)
+    _Visited.visits = 0
+
+    start, got = telemetry.held_from(99_990.0)
+
+    assert start == 0.0
+    assert len(got) == 10
+    assert _Visited.visits < 100

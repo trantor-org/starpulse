@@ -30,7 +30,11 @@ class _Log:
         self._found = found
 
     def read(self, since: float = 0.0) -> list[Signal]:
-        return [s for s in self._found if s.time >= since]
+        return self.held_from(since)[1]
+
+    def held_from(self, since: float = 0.0) -> tuple[float | None, list[Signal]]:
+        start = min((s.time for s in self._found), default=None)
+        return start, [s for s in self._found if s.time >= since]
 
 
 def _signals(count: int) -> list[Signal]:

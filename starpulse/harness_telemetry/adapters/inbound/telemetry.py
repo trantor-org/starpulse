@@ -27,8 +27,10 @@ import re
 import sys
 import threading
 import time
+from bisect import bisect_left, insort
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, fields
+from operator import itemgetter
 from typing import TYPE_CHECKING, Any
 
 from starpulse.contracts.adapters import TaskKeys
@@ -402,6 +404,7 @@ def held(found: Iterable[Signal]) -> list[Signal]:
 
 
 KEEP_S = 8 * 86400.0  # a day past the views' default 168 h window: the oldest held signal never lies inside it
+_arrival = itemgetter(1)  # a held entry is (time, arrival, signal): time to bisect by, arrival to restore the order
 
 
 class TelemetryLog:
@@ -425,7 +428,8 @@ class TelemetryLog:
         self._log = log
         self._loki = loki
         self._keep = keep
-        self._held: list[Signal] = []
+        self._held: list[tuple[float, int, Signal]] = []  # time-ordered, so a read bisects to its window
+        self._arrived = 0
         self._keys: set[str] = set()
         self._lock = threading.Lock()
         if loki is None:
@@ -463,14 +467,24 @@ class TelemetryLog:
 
     def read(self, since: float = 0.0) -> list[Signal]:
         """The held signals from `since` on; raises when the store cannot be read."""
+        return self.held_from(since)[1]
+
+    def held_from(self, since: float = 0.0) -> tuple[float | None, list[Signal]]:
+        """The time of the oldest held signal (None when none is held) and the held signals from `since` on, in
+        time order; raises when the store cannot be read. Only a poll that brings signals prunes the hold, and a
+        read bisects to `since`, so its cost follows the window, not the history before it."""
         with self._lock:
             polled = self._poll()
-            if polled:  # the hold only changes when a poll brings signals: no rescan of it per request
-                self._held += polled
-                floor = max(s.time for s in self._held) - self._keep
-                self._held = [s for s in self._held if s.time >= floor]
-                self._keys.intersection_update(s.key for s in self._held)
-            return [s for s in self._held if s.time >= since]
+            if polled:
+                for signal in polled:
+                    self._arrived += 1
+                    insort(self._held, (signal.time, self._arrived, signal))
+                cut = bisect_left(self._held, (self._held[-1][0] - self._keep,))
+                self._keys.difference_update(entry[2].key for entry in self._held[:cut])
+                del self._held[:cut]
+            start = bisect_left(self._held, (since,))
+            window = sorted(self._held[start:], key=_arrival)  # the order they arrived in, as read has always given
+            return (self._held[0][0] if self._held else None), [entry[2] for entry in window]
 
 
 def telemetry_log(url: str | None, log: EventLog | None) -> TelemetryLog:
