@@ -88,6 +88,24 @@ class Decision:
     enforced_rank: int | None = None
 
 
+#: The gates a task meets in the order `decide` tries them, named as the `gate` label of the admission metric.
+GATES = ("profile", *DIMENSIONS)
+
+
+def gate_verdicts(decision: Decision) -> list[tuple[str, str]]:
+    """Each gate `decision` met and what it said: `admitted` for a gate it passed, `refused` for the one that bound.
+
+    The gates are tried in order and the first that overfits refuses, so a refused task never met the gates after it.
+    """
+    binding = "profile" if decision.blocked_by == NO_PROFILE else decision.blocked_by
+    verdicts = []
+    for gate in GATES:
+        if gate == binding:
+            return [*verdicts, (gate, "refused")]
+        verdicts.append((gate, "admitted"))
+    return verdicts
+
+
 def needs_operator(task: Mapping[str, Any]) -> bool:
     """Whether `task` asks the operator for a decision, which a session can only frame and park."""
     return "kind-decide" in task["labels"]
