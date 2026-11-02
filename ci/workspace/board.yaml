@@ -1,4 +1,4 @@
-# The UI preview's Board: the eight lanes a team's tracker walks a task through, with the workflows that move it.
+# The UI preview's Board: the nine lanes a team's tracker walks a task through, with the workflows that move it.
 name: Board
 states:
   new: {initial: true}
@@ -8,6 +8,8 @@ states:
   waiting: {role: waiting_on_fact, waits: {criteria_met: DEPS_DONE}}
   in_progress: {role: resting}
   review: {role: waiting_on_fact}
+  # A merged task whose post-merge QA items are still running.
+  verifying: {role: resting}
   needs_attention: {role: waiting_on_person}
   # Done reopens (REOPEN), so the machine declares it open; the preview draws it as an end (`ci/demo_workspace.py`).
   done: {role: resting}
@@ -38,7 +40,7 @@ events:
   PR_READY:
     - {from: in_progress, to: review}
   SEND_BACK:
-    - {from: review, to: in_progress}
+    - {from: [review, verifying], to: in_progress}
   DEFER:
     - {from: in_progress, to: needs_attention}
   RETURN_READY:
@@ -49,8 +51,12 @@ events:
     - {from: in_progress, to: done}
   MERGED:
     - {from: review, to: done}
+  MERGED_WITH_QA:
+    - {from: review, to: verifying}
+  POST_MERGE_QA_PASSED:
+    - {from: verifying, to: done}
   ARCHIVE:
-    - {from: [ready, waiting, in_progress, review, needs_attention], to: archived}
+    - {from: [ready, waiting, in_progress, review, verifying, needs_attention], to: archived}
   REOPEN:
     - {from: done, to: ready}
     - {from: done, to: waiting}
@@ -96,6 +102,10 @@ writers:
     - {actor: operator, trigger: "answer the blocker"}
   MERGED:
     - {actor: operator, trigger: "merge the pull request"}
+  MERGED_WITH_QA:
+    - {actor: operator, trigger: "merge a pull request with post-merge QA items"}
+  POST_MERGE_QA_PASSED:
+    - {actor: agent, trigger: "every post-merge QA item passes"}
   ARCHIVE:
     - {actor: operator, trigger: "archive"}
   REOPEN:

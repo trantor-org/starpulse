@@ -135,7 +135,7 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
   background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); backdrop-filter: blur(6px); max-width: 380px; opacity: 0; transition: opacity .12s; }
 #tip .k { color: var(--muted); font-size: calc(11px * var(--fs)); } #tip .n { font-weight: 500; }
 #tip pre { margin: 6px 0 2px; font: 11px/1.45 ui-monospace, monospace; font-size: calc(11px * var(--fs)); white-space: pre-wrap; color: var(--slate-3); }
-#tip .stats { display: flex; gap: 12px; margin: 6px 0 2px; } #tip .stats b { color: var(--run); font-weight: 600; }
+#tip .stats { display: flex; gap: 12px; margin: 6px 0 2px; } #tip .stats b { color: var(--run); font-weight: 600; } #tip .stats .pre, #tip .stats .pre b { color: var(--muted); }
 #tip .fc { margin-top: 4px; color: var(--slate-3); font-size: calc(11px * var(--fs)); border-top: 1px dashed color-mix(in srgb, var(--slate) 25%, transparent); padding-top: 4px; }
 #panel { position: fixed; z-index: 3; top: 20px; right: calc(var(--rail) + 20px); width: 380px; max-height: calc(100% - 40px); box-sizing: border-box;
   padding: 16px 18px; border-radius: 10px; font-size: calc(12px * var(--fs)); line-height: 1.6; background: color-mix(in srgb, var(--surface) 95%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); display: none; }
@@ -150,6 +150,7 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #panel .run[disabled] { border-color: var(--faint); color: var(--dim); background: none; }
 #panel .mrow td:first-child i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
 #panel table.trace td:first-child { color: var(--run); width: 22px; } #panel table.trace td:last-child { text-align: right; color: var(--muted); }
+#panel table.trace tr.pre td { color: var(--muted); font-style: italic; }
 #panel .note { margin-top: 6px; color: var(--muted); font-size: calc(11px * var(--fs)); }
 #panel a { color: var(--agent); text-decoration: none; } #panel a:hover { text-decoration: underline; }
 /* a DAG's fan-out: its pool's bar and one row per run in flight */

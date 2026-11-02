@@ -23,8 +23,8 @@ WORKSPACE = Path(__file__).with_name("workspace")
 #: The Board's main line, the lanes drawn on its axis; Waiting, Needs Attention and the final states sit off it.
 MAIN_LINE = ["new", "ready", "in_progress", "review"]
 #: The tiers the Star Map draws the Board's states in, left to right, as a working team's board declares them: each stage in
-#: a cell of its own, the unworked Ready and Waiting and the final Done and Archived stacked.
-TIERS = [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]]
+#: a cell of its own, the entry New and Proposed, the unworked Ready and Waiting and the final Done and Archived stacked.
+TIERS = [["new", "proposed"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["verifying"], ["done", "archived"]]
 #: Each machine that opens under another's state: (parent, state, flow, when).
 SUBFLOWS = [
     ("board", "in_progress", "in-progress", ""),

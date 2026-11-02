@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countText, hosted, merge, Moves, RING, stateCount, TRAVEL, withLedgers } from "./sky";
+import { countText, daily, hosted, merge, Moves, RING, stateCount, TRAVEL, withLedgers } from "./sky";
 import type { ActiveRun, Dag, Machine, RawTask, Snapshot } from "../api";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
@@ -72,6 +72,15 @@ describe("the sky", () => {
     const base = snap(5000, [{ ...task("PROJ-1", "ready"), created: 1500 }, { ...task("PROJ-2", "ready"), created: 10 }], []);
 
     expect(stateCount(merge(base, 1000), "ready")).toBe(1);
+  });
+  it("tallies a proposed state like a starting one: the day's arrivals in it, read as `N · M today`", () => {
+    const base = snap(5000, [{ ...task("PROJ-1", "proposed"), entered: 1500 }, { ...task("PROJ-2", "proposed"), entered: 10 }, task("PROJ-3", "review")], []);
+    base.flows[0].machine.states.push({ id: "proposed", name: "Proposed", initial: false, final: false, role: "proposed" });
+    const S = merge(base, 1000), proposed = S.board.machine.states.find((s) => s.id === "proposed")!;
+
+    expect(daily(proposed)).toBe(true);
+    expect(S.today.proposed?.map((t) => t.id)).toEqual(["PROJ-1"]);
+    expect(countText(stateCount(S, "proposed"), S.today.proposed?.length)).toBe("2 · 1 today");
   });
   it("gives a flow two Board states open each state only the tasks whose Board task sits there, reading the Board once however often it is asked", () => {
     const base = snap(5000, [task("PROJ-1", "in_progress"), task("PROJ-2", "review")], [placed("PROJ-1", [["worktree_ready", "w", 1]]), placed("PROJ-2", [["pr_opened", "p", 2]])]);

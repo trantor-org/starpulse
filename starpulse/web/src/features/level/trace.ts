@@ -33,6 +33,10 @@ export interface Run {
   end: number;
   live: boolean;
   total: number;
+  /** How many of the first hops came before the task's promotion, into and out of a proposed state: none for a task never proposed. */
+  pre: number;
+  /** The time the task waited in a proposed state before its promotion, kept out of its steps, loops and span. */
+  proposed: number;
 }
 
 interface Step {
@@ -44,22 +48,28 @@ interface Step {
 /**
  * One run from its steps: the hops in order (a step that stays in its state counts toward `total` but draws no hop), the time in each state
  * summed over its visits, the loops (a hop back into a state the run has been in) and the elapsed time from the first step to now, or to the
- * final state the run ended in.
+ * final state the run ended in. A run starts at its promotion: the leading hops into and out of a `proposed` state are drawn but count toward
+ * none of its steps, loops or span.
  */
-function runOf(steps: Step[], finals: Set<string>, now: number, total: number): Run {
+function runOf(steps: Step[], finals: Set<string>, now: number, total: number, proposed = new Set<string>()): Run {
   const moves = steps.filter((s): s is Step & { from: string; to: string } => !!s.from && !!s.to && s.from !== s.to);
-  const stay: Record<string, number> = {}, visits: Record<string, number> = {}, seen = new Set(moves.length ? [moves[0].from] : []);
+  const first = moves.findIndex((s) => !proposed.has(s.from) && !proposed.has(s.to)), pre = first < 0 ? moves.length : first;
+  const stay: Record<string, number> = {}, visits: Record<string, number> = {}, seen = new Set(moves.length > pre ? [moves[pre].from] : []);
   let loops = 0, end = now, ended = false;
   const hops = moves.map((s, i): Hop => {
-    if (seen.has(s.to)) loops++;
-    seen.add(s.to);
+    if (i >= pre) {
+      if (seen.has(s.to)) loops++;
+      seen.add(s.to);
+    }
     const last = i === moves.length - 1, until = moves[i + 1]?.at ?? (finals.has(s.to) ? s.at : now);
     stay[s.to] = (stay[s.to] ?? 0) + (until - s.at);
     visits[s.to] = (visits[s.to] ?? 0) + 1;
     if (last && finals.has(s.to)) [end, ended] = [s.at, true];
     return { n: i + 1, at: s.at, from: s.from, to: s.to, stay: until - s.at };
   });
-  return { hops, stay, visits, loops, start: steps[0]?.at ?? now, end, live: !ended, total };
+  const promotion = moves[pre - 1], waited = hops.slice(0, pre).filter((h) => proposed.has(h.to)).reduce((t, h) => t + h.stay, 0);
+  const start = !promotion ? (steps[0]?.at ?? now) : proposed.has(promotion.from) ? promotion.at : end;
+  return { hops, stay, visits, loops, start, end, live: !ended, total: total - pre, pre, proposed: waited };
 }
 
 const finalsOf = (m: Machine) => new Set(m.states.filter((s) => s.final).map((s) => s.id));
@@ -70,7 +80,8 @@ const laneId = (board: Machine, name: string) => board.states.find((s) => s.id =
 /** A task's run through the Board: its lane changes, the first from `new`. */
 export function laneRun(path: LaneStep[], board: Machine, now: number): Run {
   const steps = path.map((r): Step => ({ at: r.at, from: r.from === null ? "new" : laneId(board, r.from), to: laneId(board, r.to) }));
-  return runOf(steps, finalsOf(board), now, steps.filter((s) => s.from !== s.to).length);
+  const proposed = new Set(board.states.filter((s) => s.role === "proposed").map((s) => s.id));
+  return runOf(steps, finalsOf(board), now, steps.filter((s) => s.from !== s.to).length, proposed);
 }
 
 /** A task's run through one lifecycle machine: each event leaves it in the state the history names, the first from the machine's initial state. */
@@ -123,6 +134,8 @@ export interface Route {
   curve: Curve;
   off: boolean;
   nums: number[];
+  /** Every hop it lights came before the task's promotion. */
+  pre: boolean;
   t0: number;
   t1: number;
   badge: Pt;
@@ -133,6 +146,8 @@ export interface Pill {
   x: number;
   y: number;
   text: string;
+  /** The task left the state each time before its promotion: its stay is pre-promotion time. */
+  pre: boolean;
 }
 export interface Layout {
   routes: Route[];
@@ -167,9 +182,11 @@ export function layout(run: Run, places: Record<string, Place>, edgeOf: (from: s
       const e = edgeOf(h.from, h.to), off = !e;
       const curve = e ?? { p0: a, c: { x: (a.x + b.x) / 2 - (b.y - a.y) * 0.28, y: (a.y + b.y) / 2 + (b.x - a.x) * 0.28 }, p1: b };
       const L = Math.hypot(curve.p1.x - curve.p0.x, curve.p1.y - curve.p0.y) || 1, flush = board && !off;
-      routes.set(key, { from: a, to: b, curve, off, nums: [], t0: flush ? 0 : Math.min(0.4, (a.r + 2) / L), t1: flush ? 1 : 1 - Math.min(0.4, (b.r + 4) / L), badge: curve.c });
+      routes.set(key, { from: a, to: b, curve, off, nums: [], pre: true, t0: flush ? 0 : Math.min(0.4, (a.r + 2) / L), t1: flush ? 1 : 1 - Math.min(0.4, (b.r + 4) / L), badge: curve.c });
     }
-    routes.get(key)!.nums.push(h.n);
+    const route = routes.get(key)!;
+    route.nums.push(h.n);
+    route.pre &&= h.n <= run.pre;
   }
   const taken: Box[] = Object.values(places).map((s) => boxAt(s.lab.x, s.lab.y, textW(s.name, 13) / K, 18 / K));
   const clash = (b: Box) => taken.some((o) => b.x0 < o.x1 + 4 / K && b.x1 > o.x0 - 4 / K && b.y0 < o.y1 + 4 / K && b.y1 > o.y0 - 4 / K);
@@ -182,7 +199,7 @@ export function layout(run: Run, places: Record<string, Place>, edgeOf: (from: s
     const sides = s.lab.y < s.y ? [1, -1] : [-1, 1], at = (d: number) => s.y + d * (s.R + 16 / K);
     const y = sides.map(at).find((v) => !clash(boxAt(s.x, v, w, h))) ?? at(sides[0]);
     taken.push(boxAt(s.x, y, w, h));
-    pills.push({ place: s, x: s.x, y, text });
+    pills.push({ place: s, x: s.x, y, text, pre: run.hops.every((h) => h.to !== id || h.n < run.pre) });
   }
   for (const r of routes.values()) {
     const w = Math.max(16, textW(r.nums.join(" · "), 10.5) + 10) / K, h = 16 / K;
@@ -248,12 +265,12 @@ const plural = (n: number, w: string) => `<b>${n}</b> ${w}${n === 1 ? "" : "s"}`
 export function traceCard(head: CardHead, run: Run | "loading" | "unavailable", clock: ClockMode = "24"): string {
   const top = `<div class="k">${esc(head.kind)}</div><div class="n">${esc(head.id)}</div>${esc(head.title)}`;
   if (typeof run === "string") return `${top}<div class="k">${run === "loading" ? "tracing its path…" : "history unavailable"}</div>`;
-  return `${top}<div class="stats"><span>${plural(run.total, "step")}</span><span>${plural(run.loops, "loop")}</span><span><b>${fmtDur(run.end - run.start)}</b> ${run.live ? "so far" : "start to end"}</span></div>
+  return `${top}<div class="stats"><span>${plural(run.total, "step")}</span><span>${plural(run.loops, "loop")}</span><span><b>${fmtDur(run.end - run.start)}</b> ${run.live ? "so far" : "start to end"}</span>${run.proposed ? `<span class="pre"><b>${fmtDur(run.proposed)}</b> proposed</span>` : ""}</div>
     <div class="k">since ${fmtAt(run.start, clock)} MST</div>${run.live ? `<div class="fc">forecast · <i>Proposal D, not built</i> · e.g. 71% reach ${esc(head.goal)}, ~1d 6h left</div>` : ""}`;
 }
 
 /** The pinned panel's table: every hop with when it happened and how long the run stayed where it landed. */
 export const traceTable = (run: Run, name: (id: string) => string, clock: ClockMode = "24"): string =>
   `<div class="k" style="margin-top:12px">path · ${run.total} steps · ${run.loops} loops · ${fmtDur(run.end - run.start)}</div><table class="trace">${run.hops
-    .map((h) => `<tr><td>${h.n}</td><td>${fmtAt(h.at, clock)}</td><td>${esc(name(h.from))} → ${esc(name(h.to))}</td><td>${fmtDur(h.stay)}</td></tr>`)
+    .map((h) => `<tr${h.n <= run.pre ? ' class="pre"' : ""}><td>${h.n}</td><td>${fmtAt(h.at, clock)}</td><td>${esc(name(h.from))} → ${esc(name(h.to))}</td><td>${fmtDur(h.stay)}</td></tr>`)
     .join("")}</table>`;
