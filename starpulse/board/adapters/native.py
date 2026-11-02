@@ -769,19 +769,34 @@ def _editor(
     return edit
 
 
-def _open_dependents(root: Path, task: str, done: str | None) -> list[str]:
-    """Ids of the tasks under `tasks/` that are not Done and list `task` as a dependency, in file order."""
-    found = []
+def _open_tasks(root: Path, done: str | None) -> Iterator[tuple[str, dict]]:
+    """The id and front matter of each task under `tasks/` that is not Done, in file order."""
     for path in sorted((root / "tasks").glob("*.md")):
         try:
             frontmatter, _ = _split(path.read_text())
         except OSError:
             continue  # moved or removed while looking
-        if not isinstance(frontmatter, dict) or lane_id(str(frontmatter.get("status") or "")) == done:
-            continue
-        if task.casefold() in {dependency.casefold() for dependency in _strings(frontmatter.get("dependencies"))}:
-            found.append(str(frontmatter.get("id") or path.stem).strip())
-    return found
+        if isinstance(frontmatter, dict) and lane_id(str(frontmatter.get("status") or "")) != done:
+            yield str(frontmatter.get("id") or path.stem).strip(), frontmatter
+
+
+def _open_dependents(root: Path, task: str, done: str | None) -> list[str]:
+    """Ids of the tasks under `tasks/` that are not Done and list `task` as a dependency, in file order."""
+    wanted = task.casefold()
+    return [
+        found
+        for found, frontmatter in _open_tasks(root, done)
+        if wanted in {dependency.casefold() for dependency in _strings(frontmatter.get("dependencies"))}
+    ]
+
+
+def _holders(root: Path, done: str | None) -> Callable[[str, str], list[str]]:
+    """A lookup of the ids of the open tasks whose front matter `field` holds `value`."""
+
+    def holders(field: str, value: str) -> list[str]:
+        return [found for found, frontmatter in _open_tasks(root, done) if value in _strings(frontmatter.get(field))]
+
+    return holders
 
 
 def _needs(need: str, task: str) -> bool:
@@ -1363,7 +1378,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
     def surfaces(config: BacklogConfig, roles: StateRoles) -> dict[str, Any]:
         ready = next((status for status in config.statuses if lane_id(status) == roles.ready), "")
-        gate = replace(guard, waiting=roles.waiting, ready=ready)
+        gate = replace(guard, waiting=roles.waiting, ready=ready, holders=_holders(root, roles.done))
         return {
                 "writer": _writer(root, config.statuses, roles, gate, claims),
                 "release": _releaser(root, gate),

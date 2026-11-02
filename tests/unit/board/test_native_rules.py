@@ -528,3 +528,86 @@ def test_a_before_primitive_reads_the_task_as_it_was_not_as_the_write_leaves_it(
 
     assert (refused.ok, refused.output) == (False, rule["reason"])
     assert built.create("New", {"priority": "low"}).ok  # a create had no earlier task
+
+
+#: A create must leave `source` unlike any open task's.
+UNIQUE_KEY: dict[str, Any] = {
+    "on": {"create": True},
+    "require": {"unique": {"field": "source"}},
+    "reason": "source is held by an open task",
+}
+#: A create must name, in `source`, every `TASK-N` its `dependencies` list.
+NAMES_CANDIDATES: dict[str, Any] = {
+    "on": {"create": True},
+    "require": {"names_ids": {"from": "dependencies", "matches": r"TASK-\d+", "in": "source"}},
+    "reason": "source must name every dependency",
+}
+
+
+def test_a_unique_rule_refuses_a_create_whose_field_value_an_open_task_holds(tmp_path: Path) -> None:
+    path, built = ruled(tmp_path, [UNIQUE_KEY], source="alert-7")
+    assert built.create is not None
+
+    refused = built.create("Again", {"source": "alert-7"})
+
+    assert (refused.ok, refused.output) == (False, "source is held by an open task")
+    assert [file.name for file in native_root(tmp_path).glob("tasks/*.md")] == [path.name]
+    assert built.create("Other", {"source": "alert-8"}).ok
+    assert built.create("Keyless", {}).ok
+
+
+def test_a_unique_rule_ignores_a_done_task_and_judges_a_create_only(tmp_path: Path) -> None:
+    path, built = ruled(tmp_path, [UNIQUE_KEY], status="Done", source="alert-7")
+    write_task(tmp_path, "task-2", "To Do", source="alert-7")
+    assert built.create is not None and built.edit is not None
+
+    assert built.create("Reopened", {"source": "alert-7"}).ok is False  # task-2 is open
+    assert built.edit("task-2", {"source": "alert-7", "priority": "high"}, "").ok
+    assert path.exists()
+
+
+def test_a_unique_rule_lets_a_create_land_when_only_a_done_task_holds_the_value(tmp_path: Path) -> None:
+    _, built = ruled(tmp_path, [UNIQUE_KEY], status="Done", source="alert-7")
+    assert built.create is not None
+
+    assert built.create("Reopened", {"source": "alert-7"}).ok
+
+
+def test_a_names_ids_rule_refuses_a_create_leaving_a_listed_id_unnamed(tmp_path: Path) -> None:
+    _, built = ruled(tmp_path, [NAMES_CANDIDATES])
+    assert built.create is not None
+    listed = {"dependencies": ["TASK-1 close", "TASK-10 close"]}
+
+    refused = built.create("Missing", {**listed, "source": "TASK-1 is distinct"})
+
+    assert (refused.ok, refused.output) == (False, "source must name every dependency")
+    assert built.create("Named", {**listed, "source": "TASK-1 and TASK-10 are distinct"}).ok
+    assert built.create("None listed", {}).ok
+
+
+def test_a_names_ids_rule_judges_no_edit(tmp_path: Path) -> None:
+    path, built = ruled(tmp_path, [NAMES_CANDIDATES], dependencies=["TASK-5"])
+    assert built.edit is not None
+
+    assert built.edit("task-1", {"priority": "high"}, "").ok
+    assert "priority: high" in path.read_text()
+
+
+@pytest.mark.parametrize(
+    ("on", "primitive", "needle"),
+    [
+        ({"create": True, "write": True}, {"unique": {"field": "k"}}, "`write = true` alone"),
+        ({"create": True, "to": "Done"}, {"unique": {"field": "k"}}, "`create = true` alone"),
+        ({"create": False}, {"unique": {"field": "k"}}, "`create = true` alone"),
+        ({"create": True}, {"unique": {}}, "field"),
+        ({"create": True}, {"unique": {"field": "k", "extra": 1}}, "extra"),
+        ({"create": True}, {"names_ids": {"from": "a", "in": "b"}}, "matches"),
+        ({"create": True}, {"names_ids": {"from": "a", "matches": "(", "in": "b"}}, "regular expression"),
+        ({"create": True}, {"names_ids": {"from": "a", "matches": "x"}}, "in"),
+    ],
+)
+def test_a_malformed_create_scope_or_cross_field_primitive_is_a_startup_error(
+    tmp_path: Path, on: dict[str, Any], primitive: dict[str, Any], needle: str
+) -> None:
+    with pytest.raises(ValueError, match=needle):
+        rules.load([{"on": on, "require": primitive, "reason": "r"}])

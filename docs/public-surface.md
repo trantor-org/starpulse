@@ -164,7 +164,7 @@ A rule is a table of:
 
 | Key | Holds |
 |---|---|
-| `on` | which writes it judges: `{ to, from }` (a write that enters `to`, from one of `from` when given; either is a state name or a list), `{ to, from, while = true }` (also a write that leaves the task in a `to` state) or `{ write = true }` (every write, create and archive included) |
+| `on` | which writes it judges: `{ to, from }` (a write that enters `to`, from one of `from` when given; either is a state name or a list), `{ to, from, while = true }` (also a write that leaves the task in a `to` state), `{ write = true }` (every write, create and archive included) or `{ create = true }` (a create only; an edit, move or archive is never judged) |
 | `require` | one primitive the task as it will be after the write must satisfy |
 | `reason` | the refusal text the CLI and the page show (required) |
 | `skill` | the skill that satisfies the rule, carried with the refusal (optional) |
@@ -180,6 +180,8 @@ the value under that key:
 | `section` | `{ heading = "Needs attention", nonempty = true }` or `{ heading = "Needs attention", not_matching = "\\bTASK-\\d+\\b", except_self = true }` | the body has a `## <heading>` section (up to the next `##`); with `nonempty` it is not blank; with `not_matching` its text, an absent section's counting as empty, does not match, `except_self` first dropping the task's own id |
 | `dependencies` | `{ all_in = ["Done"] }` | every task in `dependencies` is in one of the named states; a dependency with no task file is in none, and no dependencies holds |
 | `checklist` | `{ sections = ["acceptance_criteria", "definition_of_done"], all_checked = true }` or `{ sections = ["acceptance_criteria"], min_items = 3 }` | every item of the named lists is checked (an empty or absent list holds), and/or the named lists hold at least `min_items` items between them; `all_checked` and `min_items` combine |
+| `unique` | `{ field = "source" }` | no other open task (under `tasks/`, not in the Done state) holds a value the task's scalar or list front matter `field` holds; a task with no value holds. A task's own id is not another task |
+| `names_ids` | `{ from = "dependencies", matches = "TASK-\\d+", in = "source" }` | every match of the pattern in the values of front matter field `from` is also a match of it in the values of field `in`, compared without regard to case; a `from` with no match holds |
 | `before` | `{ section = { heading = "Needs attention", not_matching = "\\?" } }`, any primitive | the task as it was before the write satisfies the nested primitive; a create had no earlier task, so it holds |
 | `body` | `{ region = "description", matches = "AGENTS\\.md\\b" }` | the regular expression is found in the body, or in one region of it (`description`, `plan`, `acceptance_criteria`, `definition_of_done`, each between its `<!-- ...:BEGIN -->` and `:END -->` markers); an absent region holds nothing |
 | `block` | `{ heading = "Start Criteria", key = "start_criteria" }` | the section under the `## ` heading holds a fenced `yaml` block that parses to a mapping whose `key` is a non-empty list; an absent section, fence or list fails |
