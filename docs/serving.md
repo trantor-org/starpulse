@@ -51,8 +51,8 @@ so a client moves to HTTP/3 on its next request; a cleartext port has no HTTP/3,
 Without `aioquic` (the free-threaded build installs none) a TLS port serves `h2` and `http/1.1` only, with no QUIC socket and no `alt-svc`.
 
 TLS is on when `starpulse.toml` sets both `tls_cert` and `tls_key`, paths relative to the config file's directory. Setting one without the other, or naming a
-file that is not there, stops `serve` at start with the reason. With neither, the port is cleartext and sends no `alt-svc`. A change to either key replaces the
-Page API child on `starpulse reload`; a client's certificate trust is its own, so `curl --cacert <cert>` or a browser that trusts the certificate reaches the HTTPS and HTTP/3 port.
+file that is not there, stops `serve` at start with the reason. With neither, the port is cleartext and sends no `alt-svc`. A change to either key, or to the bytes of either file (a renewed
+certificate written in place), replaces the Page API child on `starpulse reload` beside the old one on the same socket, with no `serve` restart and no dropped connection; a renewal hook runs `starpulse reload`. A reload that cannot read either file changes nothing and fails naming it. A client's certificate trust is its own, so `curl --cacert <cert>` or a browser that trusts the certificate reaches the HTTPS and HTTP/3 port.
 
 The handlers are blocking, so each request runs on a pooled worker thread (`REQUEST_THREADS`, 128, the listen backlog)
 and a crowd of pages queues for a worker rather than starting a thread each, until every worker is busy: the admission

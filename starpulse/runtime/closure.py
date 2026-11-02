@@ -212,7 +212,10 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
     from starpulse.views.bin.blocks import api_built_blocks
 
     if name == "api":
-        return api_built_blocks(config), ()
+        try:
+            return api_built_blocks(config), ()
+        except OSError as exc:  # the certificate or key being renewed
+            raise ReloadError(f"api: {exc}") from exc
     if name == "pulls":
         return pulls_fixed_blocks(config), pulls_delivery_blocks(config)
     if name == "scheduler":
