@@ -2,8 +2,10 @@
 name: Board
 states:
   new: {initial: true}
-  ready: {role: waiting_on_fact}
-  waiting: {role: waiting_on_fact}
+  # Off the lanes: an agent's suggestion waits here until the operator promotes or drops it (the Proposals view).
+  proposed: {role: proposed}
+  ready: {role: waiting_on_fact, waits: {criteria_unmet: WAIT_ON_DEPS}}
+  waiting: {role: waiting_on_fact, waits: {criteria_met: DEPS_DONE}}
   in_progress: {role: resting}
   review: {role: waiting_on_fact}
   needs_attention: {role: waiting_on_person}
@@ -11,6 +13,12 @@ states:
   done: {role: resting}
   archived: {final: true}
 events:
+  CREATE_PROPOSED:
+    - {from: new, to: proposed}
+  PROMOTE:
+    - {from: proposed, to: ready}
+  DROP:
+    - {from: proposed, to: archived}
   CREATE_READY:
     - {from: new, to: ready}
   CREATE_WAITING:
@@ -50,6 +58,12 @@ events:
     - {from: done, to: review}
     - {from: done, to: needs_attention}
 writers:
+  CREATE_PROPOSED:
+    - {actor: agent, trigger: "tracker create --propose"}
+  PROMOTE:
+    - {actor: operator, trigger: "promote a proposal in the Proposals view"}
+  DROP:
+    - {actor: operator, trigger: "drop a proposal in the Proposals view"}
   CREATE_READY:
     - {actor: agent, trigger: "tracker create"}
     - {actor: dagu/drift-to-task, trigger: "file a drift task"}

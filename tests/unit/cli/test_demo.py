@@ -13,6 +13,7 @@ from starpulse.cli.demo import (
     STATIC,
     TITLES,
     _iso,
+    _seed,
     _seed_ci,
     _send_back,
     capture,
@@ -555,6 +556,12 @@ def test_the_seeded_board_has_a_waiting_task_blocked_from_another_milestone_for_
     assert len(linked) == 1  # the Kanban draws its link badge, and it is not a self-dependency
 
 
+def test_the_filled_board_seeds_a_hundred_proposals_for_the_proposals_view_to_scale_against() -> None:
+    tasks, _pulls, _settled = _seed(1_700_000_000.0, ["proposed"])
+
+    assert sum(t["state"] == "proposed" for t in tasks) == 100
+
+
 def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
     live = _live()
     live["flows"][0]["agents"] = []
@@ -562,7 +569,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
     demo = scrub(live)
 
     board = demo["flows"][0]["agents"]
-    assert {a["state"] for a in board} == {"ready", "waiting", "in_progress", "review", "needs_attention", "done"}
+    assert {a["state"] for a in board} == {"proposed", "ready", "waiting", "in_progress", "review", "needs_attention", "done"}
     assert len({a["milestone"] for a in board}) >= 3  # two milestones and the tasks with none
     assert board[0] == {
         "id": "DEMO-1",
@@ -619,7 +626,7 @@ def test_scrub_draws_every_kanban_lane_with_a_card_when_the_capture_board_is_the
 
     board = demo["flows"][0]
     lanes = [s["id"] for s in board["machine"]["states"]]
-    assert lanes == ["ready", "waiting", "in_progress", "review", "needs_attention", "done"]
+    assert lanes == ["proposed", "ready", "waiting", "in_progress", "review", "needs_attention", "done"]
     assert {a["state"] for a in board["agents"]} == set(lanes)
     assert board["machine"]["mainLine"] == lanes
     # the Star Map draws the seeded lanes in the tiers a Board declares: the unworked states stacked, then each working stage

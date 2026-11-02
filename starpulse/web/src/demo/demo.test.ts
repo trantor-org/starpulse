@@ -388,6 +388,25 @@ describe("the demo server", () => {
     expect(lane(s, "DEMO-2")).toBe("ready");
   });
 
+  it("refuses to promote a proposal with no profile, as the served writer does, and promotes it once one is set", async () => {
+    const proposing = machine("new", [["new", "proposed", "CREATE_PROPOSED"], ["proposed", "ready", "PROMOTE"], ["proposed", "archived", "DROP"]], "archived");
+    const f = { ...fixture(), roles: { ...LIFECYCLE_ROLES, proposed: "proposed", ready: "ready" }, flows: [{ name: "board", machine: proposing, agents: [card("DEMO-7", "proposed"), card("DEMO-8", "proposed")] }] };
+    const s = new DemoServer(f);
+    const move = (task: string, to: string) => s.fetch("/api/move", { method: "POST", body: JSON.stringify({ task, to }) });
+
+    const refused = await move("DEMO-7", "ready");
+
+    expect(refused.status).toBe(409);
+    expect((await refused.json()).error).toMatch(/DEMO-7.*no profile/);
+    expect(lane(s, "DEMO-7")).toBe("proposed");
+    const edit = await s.fetch("/api/edit", { method: "POST", body: JSON.stringify({ task: "DEMO-7", base: { profile: "" }, changes: { profile: "@agent-fast-low" } }) });
+    expect(edit.status).toBe(200);
+    expect((await move("DEMO-7", "ready")).status).toBe(200);
+    expect(lane(s, "DEMO-7")).toBe("ready");
+    expect((await move("DEMO-8", "completed")).status).toBe(200);
+    expect(s.snapshot.flows[0].agents.map((a) => a.id)).toEqual(["DEMO-7"]);
+  });
+
   it("records the lane change of every card its walk moves", () => {
     const s = new DemoServer(fixture(), () => 40);
     const before = new Map(s.snapshot.flows[0].agents.map((a) => [a.id, a.state]));

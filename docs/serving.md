@@ -234,7 +234,7 @@ Board and read only by id; `task`, `held` and `is_done` are single-row reads, `i
 ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged. `serve`
 folds the History into the read tables every 0.5 s (`Projector.catch_up`, then `follow_read_model`), draws the board from them
 so the board reader opens no task file. The read model is the only read path: the old `read_model` config key is retired and ignored. Run `starpulse import-board` first. In this mode entered and workable-since times are approximated, and the overlays for runs,
-pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record. The search index is its
+pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record, whose `createdBy` is the session that filed the task (`created_by` in its front matter, empty when none). The search index is its
 own FTS table, queried by term and never by loading Tasks; `put` still feeds it, so the cutover feeds it from the read model.
 `ci/test_read_model_latency.py` (nightly) serves 20,000 Tasks with 18,000 archived and holds every read surface to the page
 budget and the board to its soft memory limit.

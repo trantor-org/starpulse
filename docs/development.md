@@ -3,7 +3,7 @@
 ```sh
 git clone https://github.com/trantor-org/starpulse && cd starpulse
 uv sync
-pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page, built into starpulse/static; its Kanban, DAGs and Admin views load on demand
+pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page, built into starpulse/static; its Kanban, Proposals, DAGs and Admin views load on demand
 uv run starpulse serve
 ```
 

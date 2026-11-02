@@ -39,6 +39,8 @@ export interface TaskRecord {
   start_criteria?: StartCriterion[];
   /** The link of the claiming session's latest Session Link line, empty when the board records none. Read-only: an edit never carries it. */
   session?: string;
+  /** The session that filed the task (`created_by`), empty when the board records none. Read-only: an edit never carries it. */
+  createdBy?: string;
   /** The task's comments, oldest first. Read-only: a comment is posted through `postComment`, never an edit's changes. */
   comments?: TaskComment[];
   /** The lane as the board names it (`Done`). Read-only: a task moves through its moves, never an edit. */
@@ -49,7 +51,7 @@ export interface TaskRecord {
 
 export interface TaskComment { created: string; text: string; author?: string }
 
-export type TaskField = Exclude<keyof TaskRecord, "session" | "comments" | "documentation" | "status" | "references">;
+export type TaskField = Exclude<keyof TaskRecord, "session" | "createdBy" | "comments" | "documentation" | "status" | "references">;
 export interface TaskDiff {
   fields: TaskField[];
   base: Partial<TaskRecord>;

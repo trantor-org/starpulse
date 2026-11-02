@@ -496,6 +496,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "finalSummary": _section(_FINAL_SUMMARY, body),
         "comments": comments,
         "session": assignee_of(frontmatter, body) or _session(notes, comments),
+        "createdBy": str(frontmatter.get("created_by") or ""),
         "acceptanceCriteria": _items(_CRITERIA, body),
         "definitionOfDone": _items(_DONE, body),
     }

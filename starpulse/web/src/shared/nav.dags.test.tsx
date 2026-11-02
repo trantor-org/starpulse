@@ -58,7 +58,7 @@ afterEach(() => {
 
 describe("the navigator's DAGs entry", () => {
   it("lists DAGs under Views, after Kanban, with the constellation glyph and the DAG count", () => {
-    expect(views().slice(0, 3).map((n) => n.title)).toEqual(["Star Map", "Kanban", "Jobs"]);
+    expect(views().slice(0, 4).map((n) => n.title)).toEqual(["Star Map", "Kanban", "Proposals", "Jobs"]);
     expect(dagsNode().querySelectorAll("svg.dg-glyph circle")).toHaveLength(4);
     expect(dagsNode().querySelector(".n")!.textContent).toBe("2");
   });

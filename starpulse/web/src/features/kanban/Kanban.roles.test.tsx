@@ -79,4 +79,15 @@ describe("the Kanban page over renamed States", () => {
 
     expect(starts.sort()).toEqual([["Start T-1", false], ["Start T-2", false], ["Start T-5", false]]);
   });
+
+  it("draws no Proposed task: not as a card, and not as a column", () => {
+    const proposed = { ...RENAMED_ROLES, proposed: "idea" };
+    const hud = { ...board([...cards, card("T-8", "idea", { title: "an idea" })]), roles: proposed, names: { ...RENAMED_NAMES, idea: "Idea" } } as HudState;
+
+    show(hud);
+
+    expect(host.querySelector('#cols .card[data-id="T-8"]')).toBeNull();
+    expect(host.querySelector("#kb")?.textContent).not.toContain("an idea");
+    expect(tabs().map((t) => t.dataset.lane)).not.toContain("idea");
+  });
 });

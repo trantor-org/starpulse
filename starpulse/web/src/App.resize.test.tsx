@@ -15,6 +15,7 @@ vi.mock("./lazyViews", () => ({
   Kanban: () => <div id="kb" />,
   Dags: () => <div id="dg" />,
   AdminPage: () => <div id="admin" />,
+  Proposals: () => <div id="proposals" />,
   OrbitCard: () => <div id="og" />,
   prefetchViews: () => () => {},
 }));

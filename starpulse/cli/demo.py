@@ -383,16 +383,21 @@ SEED = [
     ("waiting", "m-1", ["size-1"], 6, "@agent-fast-low", None),
     ("waiting", "m-1", ["size-2", "kind-bug"], 6, "", None),
     ("waiting", "m-2", ["size-2"], 6, "@agent-standard-high", None),
+    # Proposals an agent filed, waiting for the operator to promote or drop them; one has no profile, so Promote refuses it.
+    ("proposed", "", ["size-2", "kind-bug"], None, "@agent-standard-high", None),
+    ("proposed", "", ["size-3"], None, "", None),
+    ("proposed", "", ["size-1", "kind-feature"], None, "@agent-fast-low", None),
 ]
 
 
 #: The lanes `SEED` fills, as the Board machine a capture with no board of its own is drawn on: CI's native board has
 #: three lanes, which the Kanban would draw as three columns and leave every other seeded card without one.
-SEED_LANES = ("Ready", "Waiting", "In Progress", "Review", "Needs attention", "Done")
+SEED_LANES = ("Proposed", "Ready", "Waiting", "In Progress", "Review", "Needs attention", "Done")
 #: The roles the seeded lanes play, as a deployment's machine would declare them: a session starts a Ready task.
 SEED_ROLES = StateRoles(
     {
         "new": "initial",
+        "proposed": "proposed",
         "ready": "waiting_on_fact",
         "waiting": "waiting_on_fact",
         "in_progress": "resting",
@@ -414,7 +419,7 @@ SEED_SETTLED = [("archived", 4200, "")]
 DAY_S = 86400
 #: How many more tasks fill each lane of a Board machine that draws its own main line, so the demo has a working
 #: team's scale; the day's settled tasks it adds, by where they settled.
-FILL = {"new": 40, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "needs_attention": 3, "done": 20}
+FILL = {"new": 40, "proposed": 97, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "needs_attention": 3, "done": 20}
 FILL_SETTLED = {"archived": 2}
 #: Every how many filled Done tasks one entered Done over a day before the capture, which the page no longer draws.
 DONE_STALE_EVERY = 6
@@ -454,6 +459,17 @@ def _fill(line: list[str], start: int, now: float) -> list[tuple]:
                 + ((entered,) if lane == "done" else ())
             )
     return rows
+
+
+def _description(title: str, state: str) -> str:
+    """A synthetic task's description; a proposal's names why it was filed and how its duplicate search resolved, which the
+    Proposals view reads."""
+    if state != "proposed":
+        return f"Synthetic demo task: {title.lower()}."
+    return (
+        f"## Why\n\nA session noticed this while working: {title.lower()}.\n\n"
+        "## Duplicate Resolution\n\nNo open task covers it; the nearest candidate is unrelated."
+    )
 
 
 def _workable(i: int, state: str, after: int | None, now: float) -> dict:
@@ -555,7 +571,7 @@ def scrub(live: dict) -> dict:
                     "assignee": HELD.get(name, demo["assignee"]),
                     "labels": [x for x in a.get("labels", []) if LABELS.match(x)],
                     "dependencies": [names[d] for d in a.get("dependencies", []) if d in names],
-                    "description": f"Synthetic demo task: {demo['title'].lower()}.",
+                    "description": _description(demo["title"], a["state"]),
                     **({"entered": a["entered"]} if "entered" in a else {}),
                     **({"workable_since": a["workable_since"]} if "workable_since" in a else {}),
                     **({"moves": a["moves"]} if "moves" in a else {}),
@@ -964,7 +980,7 @@ def scrub_mockup(snap: dict) -> dict:
         **snap,
         **({"domains": domains} if "domains" in snap else {}),
         "dags": [{**d, "runId": f"demo-{i}"} for i, d in enumerate(snap["dags"])],
-        "descriptions": {t["id"]: f"Synthetic demo task: {t['title'].lower()}." for t in board},
+        "descriptions": {t["id"]: _description(t["title"], t.get("state", "")) for t in board},
         "flows": flows,
     }
 
