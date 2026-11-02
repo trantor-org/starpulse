@@ -65,6 +65,7 @@ export function Proposals({ cards, roles, profiles, fetcher = apiFetch }: Props)
         <span className="ct">{proposals.length}</span>
       </div>
       {proposals.length === 0 && <p className="none">No proposals</p>}
+      <div className="grid">
       {proposals.map((p) => {
         const detail = details[p.id];
         const { why, duplicate } = sectionsOf(detail?.description ?? p.description ?? "");
@@ -96,6 +97,7 @@ export function Proposals({ cards, roles, profiles, fetcher = apiFetch }: Props)
           </section>
         );
       })}
+      </div>
     </div>
   );
 }
