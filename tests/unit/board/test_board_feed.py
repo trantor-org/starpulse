@@ -390,6 +390,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "adr_needed": "",
             "duplicate_search": "",
             "duplicate_resolution": "",
+            "follows": "",
             "type": "",
             "dependencies": ["PROJ-0"],
             "prs": [PR],

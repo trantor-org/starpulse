@@ -474,7 +474,7 @@ export function TaskView(p: TaskViewProps) {
       {e.detail && <details className="out"><summary>output</summary><pre>{e.detail}</pre></details>}
     </div>
   );
-  const deps = dependencyRows(p.tasks, p.task);
+  const deps = dependencyRows(p.tasks, p.task, p.record?.follows ?? "");
   const offered = columnsOf(names, roles).filter((c) => c in p.task.moves).map((c) => ({
     to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason ?? "",
   }));
@@ -624,11 +624,15 @@ export function TaskView(p: TaskViewProps) {
               </RailSection>
             )}
             <RailSection name="Pull requests" count={p.task.prs.length + unlistedPulls(p.task, ciHistory(p.task)).length}><PullRows task={p.task} /></RailSection>
-            {deps.dependsOn.length + deps.holds.length > 0 && <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
+            {deps.dependsOn.length + deps.holds.length + deps.follows.length > 0 && <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.follows.length + deps.more}>
               <div className="deps">
                 {deps.dependsOn.length > 0 && <>
                   <div className="lb">Depends on</div>
                   <Box><DepRows rows={deps.dependsOn} names={names} roles={roles} open={p.open} /></Box>
+                </>}
+                {deps.follows.length > 0 && <>
+                  <div className="lb">Follows</div>
+                  <Box><DepRows rows={deps.follows} names={names} roles={roles} open={p.open} /></Box>
                 </>}
                 {deps.holds.length > 0 && <>
                   <div className="lb">Holds</div>

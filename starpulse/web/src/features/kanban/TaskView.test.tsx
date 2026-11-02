@@ -310,6 +310,17 @@ describe("the task view's right rail", () => {
     expect(headings(draw({ task: free }))).not.toContain("Dependencies");
   });
 
+  it("draws a Follows group naming the task the record follows up, and none when it follows nothing", () => {
+    const free = { ...task, dependencies: [] };
+    const html = rows(draw({ task: free, tasks: many, record: { ...record, follows: "TASK-101" } }), "Dependencies");
+
+    expect(html).toContain("Follows");
+    expect(html).toContain("TASK-101");
+    expect(html.indexOf("Follows")).toBeLessThan(html.indexOf("Holds"));
+    expect(rows(draw({ task: free, tasks: many, record: { ...record, follows: "" } }), "Dependencies")).not.toContain("Follows");
+    expect(headings(draw({ task: { ...free }, record: { ...record, follows: "TASK-101" } }))).toContain("Dependencies");
+  });
+
   it("caps Holds at six rows and counts the rest", () => {
     const html = rows(draw({ tasks: many }), "Dependencies");
 

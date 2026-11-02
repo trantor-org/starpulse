@@ -552,6 +552,10 @@ export interface RawTask {
    * When a Board task entered its lane, epoch seconds; absent when the server holds no time for it.
    */
   entered?: number | null;
+  /**
+   * The id of the finished task a Board task follows up; empty or absent when none.
+   */
+  follows?: string | null;
   id: string;
   /**
    * A Board task's Impact (low, medium or high); empty or absent when it has none.
@@ -2029,6 +2033,7 @@ export interface CreateSpec {
   documentation?: string[] | null;
   duplicateResolution?: string | null;
   duplicateSearch?: string | null;
+  follows?: string | null;
   impact?: string | null;
   labels?: string[] | null;
   milestone?: string | null;
@@ -2145,6 +2150,7 @@ export interface CreateRequest {
   documentation?: string[] | null;
   duplicateResolution?: string | null;
   duplicateSearch?: string | null;
+  follows?: string | null;
   harness?: string | null;
   impact?: string | null;
   labels?: string[] | null;

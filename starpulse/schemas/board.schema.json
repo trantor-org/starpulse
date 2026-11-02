@@ -229,6 +229,12 @@
       "title": "Duplicate Resolution",
       "type": "string"
     },
+    "follows": {
+      "default": "",
+      "description": "The id of the finished task this one follows up; empty when it follows none.",
+      "title": "Follows",
+      "type": "string"
+    },
     "type": {
       "default": "",
       "description": "The task's type, a name the deployment chooses (`spike`, `bug`); empty when it has none. StarPulse names no type.",

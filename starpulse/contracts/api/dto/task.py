@@ -99,6 +99,9 @@ class RawTask(_Api):
     duplicate_resolution: str | None = Field(
         default=None, description="How a Board task's duplicate search resolved its candidates; empty or absent when none."
     )
+    follows: str | None = Field(
+        default=None, description="The id of the finished task a Board task follows up; empty or absent when none."
+    )
     criteria:list[TaskCriterion] | None = Field(
         default=None, description="A Board task's acceptance criteria in file order; absent off the Board."
     )

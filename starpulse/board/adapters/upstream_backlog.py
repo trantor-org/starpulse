@@ -383,6 +383,7 @@ class UpstreamBacklog:
             adr_needed=str(frontmatter.get("adr_needed") or "").strip(),
             duplicate_search=str(frontmatter.get("duplicate_search") or "").strip(),
             duplicate_resolution=str(frontmatter.get("duplicate_resolution") or "").strip(),
+            follows=str(frontmatter.get("follows") or "").strip(),
             milestone=str(frontmatter.get("milestone") or "").strip(),
             type=str(frontmatter.get("type") or "").strip(),
             description=_description(body),

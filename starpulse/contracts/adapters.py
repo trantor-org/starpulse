@@ -150,6 +150,7 @@ class BoardTask(_Contract):
     duplicate_resolution: str = Field(
         default="", description="How the task's duplicate search resolved its candidates; empty when none."
     )
+    follows: str = Field(default="", description="The id of the finished task this one follows up; empty when it follows none.")
     type: str = Field(
         default="",
         description="The task's type, a name the deployment chooses (`spike`, `bug`); empty when it has none. StarPulse names no type.",
