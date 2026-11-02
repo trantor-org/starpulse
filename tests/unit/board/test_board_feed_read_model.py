@@ -439,3 +439,28 @@ def test_no_task_is_resident_in_a_read_model_feed_even_once_it_has_drawn_the_boa
     feed.snapshot()
 
     assert [feed.is_resident(task) for task in ("TASK-1", "TASK-2", "TASK-3")] == [False, False, False]
+
+
+def test_titled_returns_each_read_model_tasks_title_labels_milestone_and_profile(engine: Engine) -> None:
+    """The analytics reports join a settled slice to its kind and size labels, so an archived Task is named too."""
+    labelled = _new(
+        "TaskCreated",
+        title="Fix it",
+        description="",
+        state="Done",
+        labels=["kind-execute", "size-3"],
+        milestone="m-7",
+        meta={"profile": "@agent-fast-high"},
+    )
+    EventStore(engine).append("task", "TASK-1", 0, [labelled])
+    _append(engine, 2, "Done", archived=True)
+
+    named = _feed(engine).titled()
+
+    assert named["TASK-1"] == {
+        "title": "Fix it",
+        "labels": ["kind-execute", "size-3"],
+        "milestone": "m-7",
+        "profile": "@agent-fast-high",
+    }
+    assert named["TASK-2"] == {"title": "Task 2", "labels": ["kind-execute"], "milestone": None, "profile": None}

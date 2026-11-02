@@ -35,6 +35,19 @@ class ReadModel:
         """Up to `limit` archived Tasks changed before `before` (None: any time), newest first."""
         return self._summaries(queries.archived(before, limit))
 
+    def titled(self) -> dict[str, dict[str, Any]]:
+        """Every Task's `title`, `labels`, `milestone` and `profile` by id, archived Tasks included; an unset milestone
+        or profile is None."""
+        return {
+            item["id"]: {
+                "title": item["title"],
+                "labels": item["labels"],
+                "milestone": item["milestone"] or None,
+                "profile": (item["meta"] or {}).get("profile") or None,
+            }
+            for item in self._summaries(queries.titled())
+        }
+
     def with_field(self, name: str, value: object) -> list[str]:
         """The ids of unarchived Tasks whose queried declared field `name` equals `value`; KeyError when not queried."""
         field = self._declared.get(name)

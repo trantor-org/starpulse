@@ -115,6 +115,11 @@ def archived(before: float | None, limit: int) -> Select[Any]:
     return (query if before is None else query.where(tasks.c.updated_at < before)).limit(limit)
 
 
+def titled() -> Select[Any]:
+    """Each Task's id, title, milestone, labels and meta, archived ones included, without the bodies a card draws."""
+    return select(tasks.c.id, tasks.c.title, tasks.c.milestone, tasks.c.labels, tasks.c.meta)
+
+
 def position() -> Select[Any]:
     """The stream position of the newest change: one seek on the `seq` index."""
     return select(func.max(tasks.c.seq))
