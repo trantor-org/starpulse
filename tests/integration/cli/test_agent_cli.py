@@ -1132,6 +1132,31 @@ def test_task_edit_against_a_base_a_field_has_left_is_refused_whole_and_writes_n
     assert _task_file(tmp_path).read_text() == before
 
 
+def test_task_edit_profile_sets_replaces_and_clears_and_a_stale_base_refuses_it_whole(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def edit(*extra: str) -> tuple[int, dict]:
+        return _run(capsys, ["task", "edit", "task-1", *extra, "--server", tasked])
+
+    code, doc = edit("--profile", "@agent-standard-medium")
+    assert (code, doc["changed"]) == (0, ["profile"])
+    assert "@agent-standard-medium" in _task_file(tmp_path).read_text()
+
+    code, doc = edit("--assignee", "@agent-standard-low")
+    assert (code, doc["changed"]) == (0, ["profile"])
+    assert "@agent-standard-low" in _task_file(tmp_path).read_text()
+
+    before = _task_file(tmp_path).read_text()
+    code, doc = edit("--profile", "@agent-x", "--base", json.dumps({"profile": "@agent-standard-high"}))
+    assert (code, doc["code"]) == (1, "refused")
+    assert "profile" in doc["error"]
+    assert _task_file(tmp_path).read_text() == before
+
+    code, doc = edit("--profile", "")
+    assert (code, doc["changed"]) == (0, ["profile"])
+    assert "@agent-standard-low" not in _task_file(tmp_path).read_text()
+
+
 def test_task_edit_with_a_base_that_is_no_json_object_is_a_usage_error(
     tasked: str, capsys: pytest.CaptureFixture[str]
 ) -> None:

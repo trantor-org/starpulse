@@ -35,6 +35,7 @@ _TASK_EDIT_FIELDS = {
     "priority": "priority",
     "impact": "impact",
     "urgency": "urgency",
+    "profile": "profile",
     "milestone": "milestone",
     "source": "source",
     "label": "labels",
