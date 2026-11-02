@@ -5,11 +5,10 @@ from __future__ import annotations
 
 import os
 import socket
-import sys
 from pathlib import Path
 
 import pytest
-from starpulse.runtime import assembly, server, worker
+from starpulse.runtime import assembly, launch, server, worker
 from starpulse.runtime.hold import STATIC_ENV
 from starpulse.views.bin import api_worker
 
@@ -47,7 +46,7 @@ def test_serve_binds_the_socket_and_hands_it_to_the_api_child_it_supervises(
     assert isinstance(listening, socket.socket)
     assert listening.getsockname()[0] == "127.0.0.1"
     assert supervisor.commands["api"] == [
-        sys.executable, "-m", "starpulse", "worker", "api", "--config", str(config), "--hours", "3.0",
+        launch.interpreter(), "-m", "starpulse", "worker", "api", "--config", str(config), "--hours", "3.0",
     ]  # fmt: skip
     assert supervisor.started
     assert supervisor.stopped

@@ -7,13 +7,12 @@ import socket
 import subprocess
 import sys
 import time
-from dataclasses import replace
 from pathlib import Path
 
 import starpulse.runtime.memory as memory_module
 import starpulse.runtime.supervisor as supervisor_module
-from starpulse.board.model.search_config import Search
-from starpulse.runtime.config import MemoryLimit, load
+from starpulse.runtime import launch
+from starpulse.runtime.config import MemoryLimit
 from starpulse.runtime.hold import LISTEN_FD_ENV
 from starpulse.runtime.supervisor import Supervisor, spawn_child, worker_commands
 
@@ -64,10 +63,10 @@ def test_each_child_command_carries_the_config_path_when_one_is_given() -> None:
     every = worker_commands(None)
     with_config = worker_commands(Path("/etc/starpulse.toml"))
 
-    assert every["contexts"] == [sys.executable, "-m", "starpulse", "worker", "contexts"]
+    assert every["contexts"] == [launch.interpreter(), "-m", "starpulse", "worker", "contexts"]
     assert set(every) == {"api", "contexts"}
     assert with_config["contexts"] == [
-        sys.executable,
+        launch.interpreter(),
         "-m",
         "starpulse",
         "worker",
@@ -279,7 +278,7 @@ def test_the_api_child_command_names_the_config() -> None:
     config = Path("/etc/starpulse.toml")
 
     assert worker_commands(config)["api"] == [
-        sys.executable,
+        launch.interpreter(),
         "-m",
         "starpulse",
         "worker",
