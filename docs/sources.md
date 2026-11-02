@@ -171,7 +171,8 @@ body of the same path and query, kept in the `starpulse_answers` table (one row 
 least recently folded dropped first). A kept body older than five minutes is returned at once and refolded in the
 background, so an answer is at most one refold and five minutes behind the board and the log, and a restarted `serve`
 answers from the saved rows before it has read a signal. Only the first read of a query the instance has never answered waits for
-a fold, and readers of it share one. A refusal (400, 501, 503) is returned and never kept; a failed refold keeps the
+a fold, and readers of it share one. Folds run one at a time, since each holds a window's rows as Python data, and the
+steps body is encoded row by row. A refusal (400, 501, 503) is returned and never kept; a failed refold keeps the
 older body and is tried again after five minutes.
 
 ## Price each transition and report each cell

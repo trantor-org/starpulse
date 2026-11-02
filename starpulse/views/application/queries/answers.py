@@ -50,6 +50,7 @@ class Answers:
     ) -> None:
         self._engine, self._fresh_s, self._kept, self._clock = engine, fresh_s, kept, clock
         self._lock = threading.Lock()
+        self._folding = threading.Lock()  # one fold at a time: each holds a window's rows as Python data
         self._tried: dict[_Key, float] = {}
         self._jobs: dict[_Key, Future[tuple[bytes, int]]] = {}
         self._threads: set[threading.Thread] = set()
@@ -94,7 +95,8 @@ class Answers:
 
     def _fold(self, key: _Key, compute: Callable[[], tuple[bytes, int]], job: Future[tuple[bytes, int]]) -> None:
         try:
-            body, status = compute()
+            with self._folding:
+                body, status = compute()
         except BaseException as exc:  # noqa: BLE001 - the reader that waits on the job raises it; a stale answer stays
             logger.warning("analytics answers: the fold of %s failed: %s", key, exc)
             with self._lock:

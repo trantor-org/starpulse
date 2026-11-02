@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Callable, Iterable
+from operator import itemgetter
 from datetime import datetime, timedelta
 from hashlib import blake2b
 from typing import Any
@@ -23,6 +24,16 @@ def encode(kind: str, data: Any) -> bytes:
     `BODIES[kind]` accepts; the page reads only fields a model names."""
     adapter = _adapter(BODIES[kind])  # built once: building one costs more than a small body
     return adapter.dump_json(adapter.validate_python(data), by_alias=True, exclude_unset=True)
+
+
+def encode_rows(kind: str, data: dict[str, Any], field: str, item: Any, rows: Iterable[tuple[Any, Any]]) -> bytes:
+    """`encode(kind, {**data, field: [...]})` for `rows` of `(sort key, row)` pairs, ordered by the key and then as
+    given, each row validated as `item` and dumped alone: no list of every row exists as Python data, only its bytes."""
+    adapter = _adapter(item)
+    parts = [(key, adapter.dump_json(adapter.validate_python(row), by_alias=True, exclude_unset=True)) for key, row in rows]
+    parts.sort(key=itemgetter(0))
+    head = encode(kind, {**data, field: []})  # the body with no row, which ends `"field":[]}`
+    return b"".join([head[:-2], b",".join(part for _, part in parts), b"]}"])
 
 
 def _adapter(annotation: Any) -> TypeAdapter[Any]:
