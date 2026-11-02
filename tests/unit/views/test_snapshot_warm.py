@@ -139,11 +139,11 @@ def test_keep_warm_rebuilds_a_changed_feed_until_stopped() -> None:
     feed.put(task("PROJ-1", "In Progress"))
     deadline = threading.Event()
     for _ in range(200):
-        if snapshots.held_rev == feed.rev:
+        if snapshots.build()[0].rev == feed.rev:
             break
         deadline.wait(0.01)
     stop.set()
     thread.join(timeout=2)
 
-    assert snapshots.held_rev == feed.rev
+    assert snapshots.build()[0].rev == feed.rev
     assert not thread.is_alive()

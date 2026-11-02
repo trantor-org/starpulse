@@ -283,8 +283,10 @@ class PageApp:
         gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
         seams: Api | None = None,
+        warm_stop: threading.Event | None = None,
     ) -> None:
         self._grpc = grpc
+        self._warm_stop = warm_stop or threading.Event()
         self._flows = flows
         self._files = _Build(directory=static, check_dir=False)
         self._workers = CapacityLimiter(REQUEST_THREADS)
@@ -376,6 +378,7 @@ class PageApp:
     async def end_streams(self) -> None:
         """End every open stream and refuse a new one: a stopping server has no stream to wait for."""
         self._ending = True
+        self._warm_stop.set()
         for scope in list(self._scopes):
             scope.cancel()
 
@@ -448,10 +451,9 @@ def page_app(
     request path (a daemon thread that lives as long as the process)."""
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
     snapshots = Snapshots(feed, refresh_s=snapshot_refresh_s)
+    warm_stop = threading.Event()  # set by `PageApp.end_streams`
     if snapshot_refresh_s > 0:
-        threading.Thread(
-            target=snapshots.keep_warm, args=(threading.Event(),), name="snapshot-warm", daemon=True
-        ).start()
+        threading.Thread(target=snapshots.keep_warm, args=(warm_stop,), name="snapshot-warm", daemon=True).start()
 
     def build_frame() -> str | None:
         build = page_build(static)
@@ -469,4 +471,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api)
+    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api, warm_stop)
