@@ -505,6 +505,7 @@ def start_delivery(
             released=board.released,
             delivered=board.delivered,
             returned=board.returned,
+            verifying=board.verifying,
             closed=board.closed,
             live=live,
             advance=lambda machine, task, event: machine_events.publish(
