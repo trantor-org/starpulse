@@ -179,7 +179,7 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = wallClock, na
           <nav aria-label="In Progress tasks" className="fleet">
             {s.fleet.map((f) => (
               <button key={f.id} type="button" className={f.on ? "fchip set" : "fchip"} aria-label={f.aria} aria-current={f.on} onClick={f.pick}>
-                <b>{f.id}</b><span>{f.where}</span>
+                <b>{f.id}</b>
               </button>
             ))}
           </nav>
@@ -192,7 +192,7 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = wallClock, na
           <nav aria-label="In Progress tasks">
             {s.fleet.map((f) => (
               <button key={f.id} type="button" className={f.on ? "lb-row on" : "lb-row"} aria-label={f.aria} aria-current={f.on} onClick={f.pick}>
-                <span className="id">{f.id}</span><span className="w">{f.where}</span><i style={css(f.bar)} />
+                <span className="id">{f.id}</span><i style={css(f.bar)} />
               </button>
             ))}
           </nav>

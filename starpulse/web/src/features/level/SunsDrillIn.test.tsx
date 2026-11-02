@@ -87,7 +87,7 @@ describe("SunsDrillIn", () => {
     expect(host.textContent).toContain("2 tasks · showing TASK-1");
   });
 
-  it("lists the In Progress tasks in the Navigator's slot when the shell gives it one, each with its phase and progress bar, and none in its header", () => {
+  it("lists the In Progress tasks in the Navigator's slot when the shell gives it one, each with its id and progress bar and no status, and none in its header", () => {
     const slot = document.body.appendChild(document.createElement("section"));
     act(() => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress"), task("TASK-2", "In Progress")]} roles={roles} task="TASK-2" onClose={() => undefined} navSlot={slot} />));
 
@@ -96,6 +96,7 @@ describe("SunsDrillIn", () => {
     expect(slot.textContent).toMatch(/Tasks.*In Progress\s*2/);
     expect(rows[1].getAttribute("aria-current")).toBe("true");
     expect(rows.every((b) => b.querySelector("i[style*='linear-gradient']"))).toBe(true);
+    expect(rows.map((b) => b.textContent)).toEqual(["TASK-1", "TASK-2"]);
     expect(host.querySelector("#sd header nav")).toBeNull();
 
     act(() => rows[0].click());

@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import type { MachineEvent } from "../../api/types.gen";
 import { tint } from "./tint";
-import { HAIR, jobAt, LENSES, LN, PANE_R, PN, replay, ROWS_END, rows, setLayout, setNowMinutes, statusOf, STEPS, STYLE, template, TIER, type Job, type Scene, type View } from "./sunsEngine";
+import { HAIR, jobAt, LENSES, LN, PANE_R, replay, ROWS_END, rows, setLayout, setNowMinutes, statusOf, STEPS, STYLE, template, TIER, type Job, type Scene, type View } from "./sunsEngine";
 
 export type { Job, View };
 
@@ -197,7 +197,7 @@ export function sceneOf(jobs: Job[], view: View, setView: (patch: Partial<View>)
   };
   const det = view.det ? (main.dets[view.det] ?? rowScene.dets[view.det]) : undefined;
   const fleet = jobs.map((x) => ({
-    id: x.id, on: x.id === job.id, aria: `${x.id} ${x.title}, ${statusOf(x).t}`, where: x.settling ? "" : x.phase === "qa" ? "qa" : (PN[x.phase] ?? x.phase).toLowerCase(),
+    id: x.id, on: x.id === job.id, aria: `${x.id} ${x.title}, ${statusOf(x).t}`,
     pick: () => setView({ sel: x.id, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false }),
     bar: `flex-basis:100%;height:2px;margin-top:5px;border-radius:1px;background:linear-gradient(90deg,${TIER[x.tier]} ${Math.round(30 + ((x.mins * 7) % 60))}%,${tint("slate", 12)} 0)`,
   }));
