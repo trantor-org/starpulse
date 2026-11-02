@@ -1,6 +1,7 @@
 """The PR store as a projection of the lifecycle events our own writers publish on `machine:events`.
 
-Nothing here reads GitHub. A task's events name the task, never the pull request, so each one lands on the pull
+Nothing here reads GitHub; an event that may have moved a head (`_MOVES_HEAD`) asks `PullSync` to read the pull
+request. A task's events name the task, never the pull request, so each one lands on the pull
 requests the Board says the task cites (`BoardFeed.cited`); an event of a task that cites none is dropped. An event
 patches the fields it causes on the stored record, or on a new one it opens, and dates the record by its own time
 (`fetchedAt`): a record is current until a newer event lands, and an event older than the record is already in it.
@@ -121,15 +122,27 @@ _TASK_DELTAS = {
 for _machine in TASK_MACHINES:
     _DELTAS |= {(_machine, event): delta for event, delta in _TASK_DELTAS.items()}
 
+#: The events after which the head may have moved, and with it the conflicts and the commits behind main: only a read
+#: of GitHub says what the push left, so the record is read once more. A delivery that rebases and force-pushes publishes
+#: `PR_OPENED` (it opens or updates), never `PUSHED`.
+_MOVES_HEAD = {(machine, event) for machine in TASK_MACHINES for event in ("PUSHED", "PR_OPENED")}
+
 
 class RecordProjection:
     """Keeps `store`'s records current from the machine events handed to `handle`, calling `changed` after each
-    event that changed one."""
+    event that changed one and `refresh` with (repository, number) for each pull request an event may have pushed."""
 
-    def __init__(self, store: PullStore, feed: BoardFeed, changed: Callable[[], None] | None = None) -> None:
+    def __init__(
+        self,
+        store: PullStore,
+        feed: BoardFeed,
+        changed: Callable[[], None] | None = None,
+        refresh: Callable[[str, int], object] | None = None,
+    ) -> None:
         self._store = store
         self._feed = feed
         self._changed = changed
+        self._refresh = refresh
 
     def _cited(self, key: str) -> list[tuple[str, int]]:
         """The pull requests the task cites, as (repository, number)."""
@@ -151,18 +164,22 @@ class RecordProjection:
             return
         name = (fields.get("machine"), fields.get("event"))
         key = fields.get("task")
-        if name not in _DELTAS or not key:
+        if (name not in _DELTAS and name not in _MOVES_HEAD) or not key:
             return
         try:
             at = float(fields["time"])
         except KeyError, TypeError, ValueError:
             return
-        saved = []
+        saved, moved = [], []
         for repo, number in self._targets(key, name, fields):
             found = self._store.find(repo=repo, number=number, detailed=True)
-            record = found[0] if found else _opened(repo, number, self._body(key), at)
-            if found and at < record["fetchedAt"]:
+            if found and at < found[0]["fetchedAt"]:
                 continue  # the record already holds what a later event or read says
+            if found and name in _MOVES_HEAD:
+                moved.append((repo, number))
+            if name not in _DELTAS:
+                continue
+            record = found[0] if found else _opened(repo, number, self._body(key), at)
             patched = record | _DELTAS[name](record, fields, at) | {"fetchedAt": at, "updatedAt": _iso(at)}
             if not found or patched != record:
                 saved.append(patched)
@@ -170,6 +187,8 @@ class RecordProjection:
             self._store.save(saved)
             if self._changed:
                 self._changed()
+        for repo, number in moved if self._refresh else ():
+            self._refresh(repo, number)
 
     def _targets(self, key: str, name: tuple[str, str], fields: Mapping[str, Any]) -> list[tuple[str, int]]:
         """The task's pull requests an event applies to: those still open, for a reopen those closed unmerged, and for a

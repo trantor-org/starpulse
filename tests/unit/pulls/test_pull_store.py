@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, event
 from starpulse.board.board_feed import BoardFeed
+from starpulse.event_log.event_log import Entry
+from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
 from starpulse.pulls.adapters.outbound.pull_requests import query_github
 from starpulse.pulls.adapters.outbound.pull_store import PullSync, refresh_pull
 from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -479,3 +481,23 @@ def test_a_second_reconcile_reads_only_the_records_still_open(store: PullStore) 
 
     (query,) = github.queries
     assert "p1: pullRequest(number: 1)" in query
+
+
+@pytest.mark.parametrize(("machine", "event"), [("deliver", "PR_OPENED"), ("deliver", "PUSHED"), ("in-progress", "PUSHED")])
+def test_a_push_event_reads_the_pull_request_so_a_conflict_a_rebase_cleared_does_not_stay(
+    store: PullStore, machine: str, event: str
+) -> None:
+    url = f"https://github.com/{REPO}/pull/7"
+    feed = BoardFeed()
+    feed.put(task("PROJ-1", "In Progress", references=[url]))
+    github = Github()
+    github.add(7, behind=0)  # GitHub: mergeable, level with main
+    store.save([{**_stored(REPO, 7), "mergeable": "CONFLICTING"}])
+    sync = PullSync(store, feed, (), github, lambda: 100.0)
+    fields = {"event_id": "e1", "machine": machine, "event": event, "task": "PROJ-1", "time": "50.0"}
+
+    RecordProjection(store, feed, refresh=sync.request).handle(Entry(1, "machine:events", "e1", fields, 50.0))
+    sync.serve_requests()
+
+    [pull] = store.find(REPO, 7, detailed=True)
+    assert (pull["mergeable"], pull["detail"]["behindMain"]) == ("MERGEABLE", 0)
