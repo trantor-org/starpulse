@@ -5,6 +5,7 @@ import http.client
 import socket
 import ssl
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -17,7 +18,7 @@ from starpulse.views.adapters.inbound.page_server import PageServer
 pytest.importorskip("aioquic")
 
 from tests.integration.server.test_http2 import _h2_request
-from tests.integration.server.test_http3 import _h3, certificate  # noqa: F401 - `certificate` is a fixture
+from tests.integration.server.test_http3 import _h3, certificate, issue_certificate  # noqa: F401 - `certificate` is a fixture
 from tests.integration.server.test_standalone import _env, _free_port, _serve_command, build  # noqa: F401 - `build` is a fixture
 from tests.stores import migrate_config_store
 
@@ -78,6 +79,41 @@ def test_serve_with_a_certificate_answers_http11_http2_and_http3_on_one_port(
 
     assert (h11.status, h2.status, h3.status) == (200, 200, 200)
     assert h11.getheader("alt-svc") == ALT_SVC.format(port=port)
+
+
+def _served_certificate(port: int) -> bytes:
+    """The DER certificate the server at `port` presents."""
+    return ssl.PEM_cert_to_DER_cert(ssl.get_server_certificate(("127.0.0.1", port)))
+
+
+# Stays slow: a real `starpulse serve` and the Page API child that replaces its first
+@pytest.mark.slow
+@pytest.mark.usefixtures("build")
+def test_a_renewed_certificate_is_served_after_starpulse_reload_without_a_serve_restart(
+    tmp_path: Path, certificate: tuple[Path, Path]
+) -> None:
+    cert, key = certificate
+    context = ssl.create_default_context(cafile=str(cert))
+    with _serving(tmp_path, f'tls_cert = "{cert}"\ntls_key = "{key}"\n') as port:
+        _await_answer(port, context)
+        before = _served_certificate(port)
+        issue_certificate(cert, key)  # what `step ca renew` writes in place
+        reload = subprocess.run(
+            [sys.executable, "-m", "starpulse", "reload", "--config", str(tmp_path / "starpulse.toml")],
+            env=_env(PATH=str(tmp_path / "empty-path")),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        after = _served_certificate(port)
+        renewed = ssl.create_default_context(cafile=str(cert))
+        answer = _await_answer(port, renewed)
+
+    assert reload.returncode == 0, reload.stderr
+    assert before != after
+    assert after == ssl.PEM_cert_to_DER_cert(cert.read_text())
+    assert answer.status == 200
 
 
 @pytest.mark.usefixtures("build")

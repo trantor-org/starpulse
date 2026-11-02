@@ -104,7 +104,11 @@ def _h3(
 
 @pytest.fixture
 def certificate(tmp_path: Path) -> tuple[Path, Path]:
-    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    return issue_certificate(tmp_path / "cert.pem", tmp_path / "key.pem")
+
+
+def issue_certificate(cert: Path, key: Path) -> tuple[Path, Path]:
+    """A new self-signed certificate for 127.0.0.1 at `cert` and its key at `key`, replacing any there."""
     subprocess.run(
         [
             "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",

@@ -110,6 +110,35 @@ def test_the_database_is_a_restart_change_to_every_worker(tmp_path: Path) -> Non
 
 
 @pytest.mark.usefixtures("no_code")
+def test_a_renewed_certificate_is_a_restart_change_to_the_page_api_alone(tmp_path: Path) -> None:
+    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    cert.write_text("first")
+    key.write_text("key")
+    reader = Reader(_toml(tmp_path, f'tls_cert = "{cert}"\ntls_key = "{key}"\n'))
+    old = {name: reader(name) for name in WORKER_CONTEXTS}
+    unchanged = reader("api")
+
+    cert.write_text("renewed")
+    new = {name: reader(name) for name in WORKER_CONTEXTS}
+
+    assert unchanged == old["api"]
+    assert new["api"].restart != old["api"].restart
+    assert {n: new[n] for n in new if n != "api"} == {n: old[n] for n in old if n != "api"}
+
+
+@pytest.mark.usefixtures("no_code")
+def test_a_certificate_that_cannot_be_read_is_a_reload_error_naming_it(tmp_path: Path) -> None:
+    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    cert.write_text("cert")
+    key.write_text("key")
+    reader = Reader(_toml(tmp_path, f'tls_cert = "{cert}"\ntls_key = "{key}"\n'))
+    cert.unlink()
+
+    with pytest.raises(ReloadError, match="cert.pem"):
+        reader("api")
+
+
+@pytest.mark.usefixtures("no_code")
 def test_a_config_that_does_not_load_is_a_reload_error(tmp_path: Path) -> None:
     path = _toml(tmp_path, "")
     reader = Reader(path)
