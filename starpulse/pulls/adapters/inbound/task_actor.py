@@ -207,6 +207,7 @@ class TaskActor:
         delivered: Callable[[str, str], None] | None = None,
         closed: Callable[[str], None] | None = None,
         returned: Callable[[str], None] | None = None,
+        verifying: Callable[[str], None] | None = None,
         fresh_s: float = criteria.CACHE_SECONDS,
         live: LiveBuild | None = None,
         advance: Callable[[str, str, str], None] | None = None,
@@ -247,6 +248,7 @@ class TaskActor:
         self._told: dict[str, int] = {}
         self._closed = closed
         self._returned = returned
+        self._verifying = verifying
         self._fresh_s = fresh_s
         #: The lanes that wait on a task's Start Criteria.
         self._gated_lanes = {lane for lane, facts in waits.items() if facts.keys() & set(_CRITERIA_FACTS)}
@@ -689,6 +691,8 @@ class TaskActor:
             if fact in _ASKS:
                 changes = {"description": section_set(agent["description"], "Needs attention", comment)}
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes):
+                if self._verifying and fact == "pr_merged_planned":
+                    self._notice(self._verifying, name, "entered post-merge QA but its holder was not told")
                 return
 
     def _write(

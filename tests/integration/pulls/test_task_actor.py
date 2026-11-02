@@ -117,6 +117,30 @@ def test_a_merge_routes_on_verify_plan_a_planned_review_task_to_in_progress_and_
     assert all(name != "TASK-3" for name, *_ in board.writes)  # closed unmerged: neither route
 
 
+def test_a_planned_merge_hands_the_task_to_the_verifying_hook_and_an_unplanned_one_does_not(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Review", references=(PR_ONE,)),
+        task("TASK-2", "Review", references=(PR_TWO,)),
+    )
+    plans = {"TASK-1": ["make check"], "TASK-2": []}
+    verifying: list[str] = []
+    waits = {**WAITS, "review": {"pr_merged_planned": "MERGED_VERIFY", "pr_merged": "MERGED"}}
+    moves = {**MOVES, ("review", "MERGED_VERIFY"): "verifying"}
+    store.save([pull(1, state="OPEN"), pull(2, state="OPEN")])
+    actor = running(
+        board, store, stop, waits, moves, read=lambda name: {"verifyPlan": plans[name]}, verifying=verifying.append
+    )
+    store.save([pull(1, state="MERGED"), pull(2, state="MERGED")])
+
+    actor.pulls_changed()
+
+    assert until(lambda: sorted(board.moved()) == [("TASK-1", "verifying"), ("TASK-2", "done")])
+    assert until(lambda: verifying == ["TASK-1"])
+
+
 def test_a_review_task_whose_every_pr_closed_unmerged_moves_to_needs_attention_with_a_question_and_a_merged_one_closes(
     store: PullStore, stop: threading.Event
 ) -> None:
@@ -689,6 +713,7 @@ def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
         released=None,
         delivered=None,
         returned=None,
+        verifying=None,
     )
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
@@ -735,6 +760,7 @@ def test_a_merge_of_a_pr_added_after_startup_moves_the_task_to_done(
         released=None,
         delivered=None,
         returned=None,
+        verifying=None,
     )
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
@@ -790,6 +816,7 @@ def test_a_read_model_task_whose_cited_pr_merged_before_startup_moves_to_done(
         released=None,
         delivered=None,
         returned=None,
+        verifying=None,
     )
     monkeypatch.setattr(server.shutil, "which", lambda name: name)
     monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)

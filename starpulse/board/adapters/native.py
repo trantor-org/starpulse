@@ -103,6 +103,7 @@ _SETTINGS = {
     "released",
     "delivered",
     "returned",
+    "verifying",
     "closed",
     "validate",
     "python_path",
@@ -1316,10 +1317,11 @@ def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
 
 
 def _notice(command: object, base: Path) -> Callable[[str], None] | None:
-    """The `parked`, `released`, `delivered`, `returned` or `closed` command, run in `base` with `{id}` replaced by the task's
-    id, after the task actor moves a task from the working lane to Waiting, from Waiting to Ready, sees its delivery finish
-    (with `{verdict}` replaced by the run's verdict), sends it from Review back to the working lane or moves it to Done. A
-    nonzero exit raises with what the command said."""
+    """The `parked`, `released`, `delivered`, `returned`, `verifying` or `closed` command, run in `base` with `{id}`
+    replaced by the task's id, after the task actor moves a task from the working lane to Waiting, from Waiting to Ready,
+    sees its delivery finish (with `{verdict}` replaced by the run's verdict), sends it from Review back to the working
+    lane, moves it on a merge that leaves its post-merge QA to run, or moves it to Done. A nonzero exit raises with what
+    the command said."""
     if not command:
         return None
     parts = shlex.split(str(command))
@@ -1394,6 +1396,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
                 "released": _notice(settings.get("released"), base),
                 "delivered": _notice(settings.get("delivered"), base),
                 "returned": _notice(settings.get("returned"), base),
+                "verifying": _notice(settings.get("verifying"), base),
                 "closed": _notice(settings.get("closed"), base),
                 "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles)),
                 "archive": _archiver(root, config.statuses, roles, gate),

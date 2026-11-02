@@ -134,6 +134,7 @@ def test_the_server_publishes_the_exit_event_to_the_machine_events_log_as_the_ta
         released=None,
         delivered=None,
         returned=None,
+        verifying=None,
     )
     config = replace(load(None), task_actor=True, pull_requests=False, release=None)
     actor, _ = server.start_delivery(config, delivery, machine.feed, None, store, Pins(), stop)
