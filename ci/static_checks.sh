@@ -29,7 +29,7 @@ config_reference() {
 # The checked-in protobuf modules are generated from the .proto files beside them: regenerate them, fail when one differs.
 wire_pb2() {
   uv run --no-sync python -m grpc_tools.protoc -I. --python_out=. --pyi_out=. \
-    starpulse/runs/adapters/inbound/wire/ingest.proto starpulse/runs/adapters/inbound/wire/cloudevents.proto &&
+    starpulse/runs/adapters/inbound/wire/cloudevents.proto &&
     git diff --exit-code -- starpulse/runs/adapters/inbound/wire
 }
 
