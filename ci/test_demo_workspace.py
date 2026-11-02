@@ -10,7 +10,7 @@ from starpulse.cli.demo import scrub
 
 PREVIEW = Path(__file__).with_name("preview.toml")
 NOW = 1_790_000_000.0
-LANES = ["new", "proposed", "ready", "waiting", "in_progress", "review", "needs_attention", "done", "archived"]
+LANES = ["new", "proposed", "ready", "waiting", "in_progress", "review", "verifying", "needs_attention", "done", "archived"]
 
 
 def _domain_workflows(value: object) -> list[str]:
@@ -45,13 +45,14 @@ def test_the_preview_board_serves_each_lanes_declared_type_for_the_column_header
         "waiting": "waiting_on_fact",
         "in_progress": "resting",
         "review": "waiting_on_fact",
+        "verifying": "resting",
         "needs_attention": "waiting_on_person",
         "done": "final",
         "archived": "final",
     }
 
 
-def test_the_preview_board_draws_a_real_workspaces_nine_states_in_order() -> None:
+def test_the_preview_board_draws_a_real_workspaces_ten_states_in_order() -> None:
     board = _machines()["board"]
 
     assert [s["id"] for s in board["states"]] == LANES
@@ -62,14 +63,15 @@ def test_the_preview_board_declares_the_tiers_the_star_map_draws_it_in() -> None
     board = _machines()["board"]
 
     assert board["tiers"] == [
-        ["new"],
+        ["new", "proposed"],
         ["ready", "waiting"],
         ["needs_attention"],
         ["in_progress"],
         ["review"],
+        ["verifying"],
         ["done", "archived"],
     ]
-    assert sorted(state for tier in board["tiers"] for state in tier) == sorted(set(LANES) - {"proposed"})  # the Star Map draws no Proposed state yet
+    assert sorted(state for tier in board["tiers"] for state in tier) == sorted(LANES)
 
 
 def test_the_preview_board_reopens_done_to_every_open_lane_and_still_draws_done_as_an_end() -> None:
@@ -143,14 +145,23 @@ def _flows(demo: dict) -> dict[str, dict]:
     return {f["name"]: f for f in demo["flows"]}
 
 
-def test_the_demo_keeps_the_nine_states_and_fills_them_at_a_real_workspaces_scale() -> None:
+def test_the_demo_keeps_the_ten_states_and_fills_them_at_a_real_workspaces_scale() -> None:
     demo = scrub(_capture())
     board = _flows(demo)["board"]
 
     assert [s["id"] for s in board["machine"]["states"]] == LANES
     assert len(board["agents"]) >= 100
-    assert {a["state"] for a in board["agents"]} == set(LANES[:8])
+    assert {a["state"] for a in board["agents"]} == set(LANES[:9])
     assert {e["state"] for e in demo["settled"].values()} == {"archived"}
+
+
+def test_the_demo_traces_a_suggestion_promoted_out_of_proposed_and_a_merge_closed_through_verifying() -> None:
+    demo = scrub(_capture())
+    hops = {task: {(h["from"], h["to"]) for h in path} for task, path in demo["history"].items()}
+
+    assert any(("proposed", "ready") in h for h in hops.values())
+    assert any({("review", "verifying"), ("verifying", "done")} <= h for h in hops.values())
+    assert any(("verifying", "in_progress") in h for h in hops.values())
 
 
 def test_the_demo_holds_done_tasks_older_than_a_day_so_the_page_shows_only_the_last_day() -> None:
