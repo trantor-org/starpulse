@@ -8,6 +8,7 @@ import { css, jobOf, sceneOf, stepOut, type View } from "./sunsScene";
 const NOW = 1_800_000_000;
 const ev = (ago: number, machine: string, from: string, to: string, event = "E"): MachineEvent => ({ at: NOW - ago * 60, machine, event, from, to });
 const lens = (ago: number, event: string, from: string, to: string) => ev(ago, "qa", from, to, event);
+const LENS_ORDER: string[] = ["security", "ux", "ui", "code", "simplify"];
 const view = (sel: string): View => ({ sel, open: {}, pick: {}, hover: null, det: null, at: null, replaying: false });
 const texts = (s: ReturnType<typeof sceneOf>) => [...s.main.T, ...s.rows.T].map((t) => t.text);
 
@@ -179,46 +180,29 @@ describe("the tasks at work", () => {
     return `${Math.round(n("left") + n("width") / 2)},${Math.round(n("top") + n("height") / 2)}`;
   };
 
-  it("draws every working task as a dot beside the phase it is in, a task in QA on each lens still reviewing it, so several tasks in several phases all show at once", () => {
+  it("lights only the viewed task's state, filled in the task's own colour, and draws no other task on the template", () => {
     const jobs = [
       jobOf("B1", "b1", "@agent-deep-high", [], NOW),
       jobOf("B2", "b2", undefined, [], NOW),
       jobOf("D1", "d1", undefined, [ev(5, "in-progress", "build", "deliver")], NOW),
-      jobOf("R1", "r1", undefined, [ev(5, "in-progress", "deliver", "review_fix")], NOW),
       jobOf("Q1", "q1", undefined, [lens(9, "LENS_PASSED", "security", "ux")], NOW),
     ];
-    const s = sceneOf(jobs, view("B1"), () => {}, NOW);
-    const dots = orbiters(s);
-    const suns = new Map<string, number>();
-    for (const d of dots) suns.set(centre(d.style), (suns.get(centre(d.style)) ?? 0) + 1);
-    const perSun = [...suns.values()].sort();
+    const lit = orbiters(sceneOf(jobs, view("B1"), () => {}, NOW));
 
-    // build holds two, deliver and review fix one each, and the QA task rides the four lenses that have not passed it yet
-    expect(perSun).toEqual([1, 1, 1, 1, 1, 1, 2]);
-    // every task is one size, the viewed one included
-    expect(new Set(dots.map((d) => /width:([\d.]+)px/.exec(d.style)![1])).size).toBe(1);
+    expect(lit.map((d) => d.key)).toEqual(["orb:B1:build"]);
+    expect(centre(lit[0].style)).toBe("470,214");
+    expect(lit[0].style).toContain(TASKC.deep);
+    expect(lit[0].style).not.toContain("transform");
+    // a task in QA lights each lens still reviewing it
+    expect(orbiters(sceneOf(jobs, view("Q1"), () => {}, NOW)).map((d) => d.key)).toEqual(["orb:Q1:ux", "orb:Q1:ui", "orb:Q1:code", "orb:Q1:simplify"]);
   });
 
-  it("keeps each dot still at its own place round the sun, so two tasks on one sun never stack and only a real move stirs one", () => {
-    const s = sceneOf([jobOf("B1", "b1", undefined, [], NOW), jobOf("B2", "b2", undefined, [], NOW)], view("B1"), () => {}, NOW);
-    const places = orbiters(s).map((d) => /transform:translate\([^)]+\)/.exec(d.style)![0]);
+  it("marks Deliver while lenses are still reviewing: its ring and a pill counting the lenses passed, out of five", () => {
+    const passed = (n: number) => LENS_ORDER.slice(0, n).map((l, i) => lens(9 - i, "LENS_PASSED", l, LENS_ORDER[i + 1] ?? "done"));
+    const pill = (events: MachineEvent[]) => sceneOf([jobOf("W1", "w", undefined, events, NOW)], view("W1"), () => {}, NOW).main.T.find((t) => /^\d\/5$/.test(t.text ?? ""));
 
-    expect(new Set(places).size).toBe(2);
-    orbiters(s).forEach((d) => expect(d.style).not.toContain("animation"));
-  });
-
-  it("keeps a resting dot off the sun's name: below a phase's sun its name, above a lens's", () => {
-    const places = (jobs: ReturnType<typeof jobOf>[]) =>
-      orbiters(sceneOf(jobs, view(jobs[0].id), () => {}, NOW)).map((d) => /translate\(([-\d.]+)px,([-\d.]+)px\)/.exec(d.style)!.slice(1).map(Number));
-
-    for (const n of [1, 2, 3, 4, 5, 8]) {
-      const building = places(Array.from({ length: n }, (_, i) => jobOf(`B${i}`, "b", undefined, [], NOW)));
-      const reviewing = places(Array.from({ length: n }, (_, i) => jobOf(`Q${i}`, "q", undefined, [lens(9, "LENS_PASSED", "security", "ux"), lens(9, "LENS_PASSED", "ux", "ui"), lens(9, "LENS_PASSED", "ui", "code"), lens(9, "LENS_PASSED", "code", "simplify")], NOW)));
-
-      expect(Math.max(...building.map(([, dy]) => dy))).toBeLessThanOrEqual(10);
-      expect(Math.min(...reviewing.map(([, dy]) => dy))).toBeGreaterThanOrEqual(-9);
-      expect(new Set(building.map(String)).size).toBe(n);
-    }
+    expect(pill(passed(2))?.text).toBe("2/5");
+    expect(pill([])).toBeUndefined();
   });
 
   it("keeps the key of a QA task's dot on a lens when an earlier lens passes it, so the other dots stay put", () => {
@@ -263,7 +247,7 @@ describe("a task moving along the lines", () => {
     expect(Math.max(...straight.map((l) => reach(l.d)[1]))).toBeGreaterThan(span * 0.75);
   });
 
-  it("leaves the board where it is when the viewed task changes: no dot moves, resizes or flies, and no label shifts", () => {
+  it("leaves the board where it is when the viewed task changes: nothing flies and no label shifts", () => {
     start();
     const tall = { w: 1200, h: 1300 };
     const few = inBuild("V1"), many = moved("V2", ...story);
@@ -272,7 +256,6 @@ describe("a task moving along the lines", () => {
     const second = draw([few, many], "V2", tall);
     const label = (s: ReturnType<typeof sceneOf>, text: string) => s.main.T.find((t) => t.text === text)!.style;
 
-    expect(second.main.D).toEqual(first.main.D);
     expect(comet(second)).toEqual([]);
     expect(label(second, "Deliver")).toBe(label(first, "Deliver"));
   });
@@ -282,23 +265,31 @@ describe("a task moving along the lines", () => {
     draw([inBuild("T1")]).main.D.forEach((d) => expect(d.style).not.toContain("transition"));
   });
 
-  it("runs a comet along the flow lines when a task changes phase, viewed or not, however long since the last draw, then rests it on the new sun", () => {
+  it("runs a comet along the flow lines when the viewed task changes phase, however long since the last draw, then lights the new sun", () => {
     start();
-    const viewed = inBuild("M0");
-    draw([viewed, inBuild("M1")]);
+    const other = inBuild("M0");
+    draw([other, inBuild("M1")], "M1");
     vi.advanceTimersByTime(60_000);
 
-    const flying = draw([viewed, moved("M1", toDeliver)]);
+    const flying = draw([other, moved("M1", toDeliver)], "M1");
     vi.advanceTimersByTime(1000);
-    const mid = draw([viewed, moved("M1", toDeliver)]);
+    const mid = draw([other, moved("M1", toDeliver)], "M1");
     vi.advanceTimersByTime(60_000);
-    const landed = draw([viewed, moved("M1", toDeliver)]);
+    const landed = draw([other, moved("M1", toDeliver)], "M1");
 
     expect(comet(flying).length).toBeGreaterThan(1);
     expect(reach(comet(flying)[0].d)).toEqual([483, 837]);
     expect(keys(mid)).not.toContain("orb:M1:deliver");
     expect(comet(landed)).toEqual([]);
     expect(keys(landed)).toContain("orb:M1:deliver");
+  });
+
+  it("flies nothing for a task that is not viewed", () => {
+    start();
+    draw([inBuild("U0"), inBuild("U1")]);
+    vi.advanceTimersByTime(60_000);
+
+    expect(comet(draw([inBuild("U0"), moved("U1", toDeliver)]))).toEqual([]);
   });
 
   it("pulses one ring where the comet lands, in the task's own colour and never amber", () => {
@@ -353,15 +344,6 @@ describe("a task moving along the lines", () => {
 
     expect(comet(arrived)).toEqual([]);
     expect(keys(arrived)).toEqual(["orb:M5:deliver"]);
-  });
-
-  it("keeps a task's seat on its sun when another task leaves it", () => {
-    start();
-    const before = draw([inBuild("S1"), inBuild("S2")]).main.D.find((d) => d.key === "orb:S2:build")!;
-    vi.advanceTimersByTime(100);
-    const after = draw([moved("S1", toDeliver), inBuild("S2")]).main.D.find((d) => d.key === "orb:S2:build")!;
-
-    expect(after.style).toBe(before.style);
   });
 });
 
@@ -458,7 +440,7 @@ describe("a phase machine row", () => {
     const fx = (l: { fx?: boolean; d: string }[]) => l.filter((x) => x.fx).map((x) => x.d);
     const dropInMain = (x: number, y: number) => `M${x},${y} L${x},392 L392,392 Q384,392 384,400`;
     const dropInRows = (g: { L: { fx?: boolean; d: string }[] }) => fx(g.L).filter((d) => /^M384(\.0)?,400(\.0)? L384/.test(d));
-    const taskDots = (g: { S: { fx?: boolean; style: string }[] }) => g.S.filter((b) => b.fx && /width:3px;height:3px/.test(b.style));
+    const taskDots = (g: { S: { fx?: boolean; style: string }[] }) => g.S.filter((b) => b.fx && /box-shadow:0 0 14px/.test(b.style));
 
     it("runs a task entering Deliver from the Deliver state down the stem, the hairline and the lane into the row, once its flight has landed", () => {
       vi.useFakeTimers();
@@ -553,14 +535,32 @@ describe("a phase machine row", () => {
       const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
       return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
     };
-    const over = (hex: string, a: number, bg: string) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * a + parseInt(bg.slice(i, i + 2), 16) * (1 - a)).toString(16).padStart(2, "0")).join("");
     const contrast = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
     applyPack("starpulse");
     const rings = sceneOf([jobOf("N10", "n", undefined, story, NOW)], view("N10"), () => {}, NOW).rows.S
-      .map((b) => /border:1px solid color-mix\(in srgb, (#[0-9a-f]{6}) (\d+)%, transparent\)/i.exec(b.style))
+      .map((b) => /border:1\.5px solid (#[0-9a-f]{6});/i.exec(b.style))
       .filter((m) => m !== null);
 
     expect(rings.length).toBeGreaterThan(0);
-    for (const m of rings) expect(contrast(over(m[1]!, Number(m[2]) / 100, tokens.bg0!), tokens.bg0!)).toBeGreaterThanOrEqual(3);
+    for (const m of rings) expect(contrast(m[1]!, tokens.bg0!)).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("a task's rows", () => {
+  const rounds = [3, 2].flatMap((r) => [ev(r * 10 + 5, "in-progress", "build", "deliver"), ev(r * 10, "in-progress", "deliver", "build")]);
+  const rowsOf = (events: MachineEvent[], id = "K1") => sceneOf([jobOf(id, "k", undefined, events, NOW)], view(id), () => {}, NOW).rows;
+
+  it("says what the operator can do once a task parks after its third round", () => {
+    const note = "round 3 of 3 failed · approve more rounds, or merge as is";
+
+    expect(rowsOf([...rounds, ev(5, "in-progress", "build", "needs_attention")]).T.map((t) => t.text)).toContain(note);
+    expect(rowsOf([ev(5, "in-progress", "build", "needs_attention")]).T.map((t) => t.text)).not.toContain(note);
+  });
+
+  it("lights the row state the task rests in, in the task's own colour, with no dot beside it", () => {
+    const lit = rowsOf([], "K2").S.filter((x) => x.style.includes("background:" + TASKC.standard));
+
+    expect(lit).toHaveLength(1);
+    expect(lit[0].style).toContain("box-shadow:0 0 14px");
   });
 });
