@@ -4,9 +4,9 @@
 which writes it judges, `require` is one primitive the task as it will be after the write must satisfy, and `reason`
 is the refusal every writer, the CLI's and the page's, answers with. A primitive is a one-key table naming its kind:
 `{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{body: {...}}`, `{block: {...}}`,
-`{post_merge_checks: {}}`, `{dependencies: {...}}`, `{checklist: {...}}`, `{readable: {...}}`,
-`{pulls_ready: {}}` or `{pulls_changed: {...}}` (these two read the stored pull requests the task's `references`
-cite, never GitHub), or a combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives; `{before: <primitive>}` reads
+`{post_merge_checks: {}}`, `{dependencies: {...}}`, `{checklist: {...}}`, `{readable: {...}}`, `{unique: {...}}`,
+`{names_ids: {...}}`, `{pulls_ready: {}}` or `{pulls_changed: {...}}` (these two read the stored pull requests the task's
+`references` cite, never GitHub), or a combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives; `{before: <primitive>}` reads
 the task as it was before the write (a create had none, so it holds). A write carries the actor that makes it
 (`operator`, `agent`, or `<instance>/<workflow>` as a machine's `writers` spell it), which `unless_actor` exempts.
 """
@@ -39,6 +39,8 @@ class Record:
     #: The stored pull request `(repository, number)` as `{draft, checks, body, files}`, or None when the store holds
     #: none (`files` is None for a record saved before the store kept them); the `pulls_*` primitives read it.
     pull_of: Callable[[str, int], Mapping[str, Any] | None] = lambda _repo, _number: None
+    #: The ids of the open tasks whose front matter field (first argument) holds a value (second), none for a board with no tasks.
+    holders: Callable[[str, str], list[str]] = lambda _field, _value: []
 
     @property
     def state(self) -> str:
@@ -61,7 +63,7 @@ _ITEM = re.compile(r"^- \[[ xX]\]", re.M)
 _CHECKED = re.compile(r"^- \[[xX]\] .*$", re.M)
 _PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 _RULE_KEYS = {"on", "require", "reason", "skill", "unless_actor"}
-_ON_KEYS = {"to", "from", "while", "write"}
+_ON_KEYS = {"to", "from", "while", "write", "create"}
 
 
 @dataclass(frozen=True)
@@ -69,8 +71,8 @@ class Rule:
     """One rule of the set: the writes it judges, what the task must satisfy and what the refusal says.
 
     It judges every write (`always`), or a write that enters a state in `to` from one in `origin` (both empty
-    matching any), and with `staying` also a write that leaves the task in a state of `to`. `exempt` are the actors
-    it does not judge."""
+    matching any), and with `staying` also a write that leaves the task in a state of `to`, or only a create
+    (`created`). `exempt` are the actors it does not judge."""
 
     to: frozenset[str]
     origin: frozenset[str]
@@ -79,6 +81,7 @@ class Rule:
     skill: str = ""
     always: bool = False
     staying: bool = False
+    created: bool = False
     exempt: frozenset[str] = frozenset()
 
     def judges(self, before: Record | None, after: Record, actor: str) -> bool:
@@ -87,6 +90,8 @@ class Rule:
             return False
         if self.always:
             return True
+        if self.created:
+            return before is None
         if self.to and after.state not in self.to:
             return False
         if self.origin and (before is None or before.state not in self.origin):
@@ -269,6 +274,40 @@ def _dependencies(spec: Mapping[str, Any], where: str) -> Primitive:
     return lambda record: all(record.state_of(task) in states for task in _values(record.front.get("dependencies")))
 
 
+def _unique(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"field"}, where, "unique")
+    name = spec.get("field")
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"{where}: unique needs `field`, the front matter key whose value no other open task may hold")
+
+    def holds(record: Record) -> bool:
+        own = str(record.front.get("id") or "").strip().casefold()
+        return not any(
+            task.casefold() != own for value in _values(record.front.get(name)) for task in record.holders(name, value)
+        )
+
+    return holds
+
+
+def _names_ids(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"from", "matches", "in"}, where, "names_ids")
+    pattern = spec.get("matches")
+    if not isinstance(pattern, str) or not pattern:
+        raise ValueError(f"{where}: names_ids needs `matches`, the pattern that finds an ID")
+    source, target = spec.get("from"), spec.get("in")
+    if not (isinstance(source, str) and source and isinstance(target, str) and target):
+        raise ValueError(f"{where}: names_ids needs `from` and `in`, the front matter keys that list and name the IDs")
+    try:
+        found = re.compile(pattern)
+    except re.error as error:
+        raise ValueError(f"{where}: names_ids `matches` is not a regular expression: {error}") from error
+
+    def ids(record: Record, name: str) -> set[str]:
+        return {match.group(0).casefold() for value in _values(record.front.get(name)) for match in found.finditer(value)}
+
+    return lambda record: ids(record, source) <= ids(record, target)
+
+
 def _checklist(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, {"sections", "all_checked", "min_items"}, where, "checklist")
     names = spec.get("sections")
@@ -376,6 +415,8 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "post_merge_checks": _post_merge_checks,
     "dependencies": _dependencies,
     "checklist": _checklist,
+    "unique": _unique,
+    "names_ids": _names_ids,
     "readable": _readable,
     "pulls_ready": _pulls_ready,
     "pulls_changed": _pulls_changed,
@@ -421,10 +462,14 @@ def load(declared: object) -> tuple[Rule, ...]:
         if not isinstance(reason, str) or not reason.strip():
             raise ValueError(f"{where}: needs a `reason`, the refusal text both the CLI and the page show")
         on = spec.get("on")
-        if not isinstance(on, dict) or on.get("write", False) not in (True, False) or on.keys() - _ON_KEYS:
-            raise ValueError(f"{where}: `on` takes `to`, `from` and `while`, or `write`")
-        if bool(on.get("write")) == bool(on.keys() & {"to", "from"}) or ("while" in on and "to" not in on):
-            raise ValueError(f"{where}: `on` is `write = true` alone, or `to` and/or `from` (`while` with `to`)")
+        scopes = ("write", "create")
+        if not isinstance(on, dict) or on.keys() - _ON_KEYS or any(on.get(key, False) not in (True, False) for key in scopes):
+            raise ValueError(f"{where}: `on` takes `to`, `from` and `while`, or `write`, or `create`")
+        chosen = [bool(on.get("write")), bool(on.get("create")), bool(on.keys() & {"to", "from"})]
+        if chosen.count(True) != 1 or ("while" in on and "to" not in on):
+            raise ValueError(
+                f"{where}: `on` is `write = true` alone, `create = true` alone, or `to` and/or `from` (`while` with `to`)"
+            )
         if "while" in on and not isinstance(on["while"], bool):
             raise ValueError(f"{where}: `on.while` must be true or false")
         rules.append(
@@ -436,6 +481,7 @@ def load(declared: object) -> tuple[Rule, ...]:
                 skill=str(spec.get("skill", "")),
                 always=bool(on.get("write")),
                 staying=bool(on.get("while")),
+                created=bool(on.get("create")),
                 exempt=_actors(spec.get("unless_actor", []), f"{where}.unless_actor"),
             )
         )

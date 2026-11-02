@@ -37,6 +37,8 @@ class Guard:
     #: The Waiting lane id and the Ready status, which a write leaving a task in Waiting must be able to move on to.
     waiting: str | None = None
     ready: str = ""
+    #: The ids of the open tasks whose field holds a value (a `unique` rule reads it), none when the board has no tasks.
+    holders: Callable[[str, str], list[str]] = lambda _field, _value: []
 
     def standing(self, front: Mapping[str, Any], body: str, lane: str) -> dict[str, Any] | None:
         """The move update of the board rule that refuses moving the task to `lane`, or None when none does.
@@ -79,7 +81,7 @@ class Guard:
         if self.types and kind and kind != was and kind not in self.types:
             return Written(False, f"type {kind!r} is not one of this board's types: {', '.join(self.types)}")
         if self.rules:
-            after = rules.Record(frontmatter, body, self.state_of, pull_of=self.pull_of)
+            after = rules.Record(frontmatter, body, self.state_of, pull_of=self.pull_of, holders=self.holders)
             if broken := rules.refusal(self.rules, earlier, after, actor):
                 return Written(False, broken.explain(after), broken.skill, lint=True)
         staying = lane_id(str(frontmatter.get("status") or "")) == self.waiting
