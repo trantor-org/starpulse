@@ -30,10 +30,10 @@ const card = (id: string): KanbanTask => ({
 const hud = { cards: [card("TASK-1"), card("TASK-2"), card("TASK-3")], names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
 
 let host: HTMLDivElement, root: Root;
-const mount = (search: string) => {
+const mount = (search: string, state: HudState = hud) => {
   history.replaceState(null, "", `/${search}`);
   const moves = new MoveStore(async () => ({ ok: true }) as never);
-  act(() => root.render(<Kanban hud={hud} moves={moves} starts={new StartStore((async () => ({})) as never, moves)} compact={false} constellation={() => {}} searchSlot={null} outlineSlot={null} />));
+  act(() => root.render(<Kanban hud={state} moves={moves} starts={new StartStore((async () => ({})) as never, moves)} compact={false} constellation={() => {}} searchSlot={null} outlineSlot={null} />));
 };
 
 beforeEach(() => {
@@ -60,6 +60,16 @@ describe("a Kanban opened on a direct task link", () => {
   it("lays the board out only after the modal's first draw", () => {
     mount("?view=kanban&task=TASK-1");
     expect(drawn.indexOf("layout")).toBeGreaterThan(drawn.indexOf("modal"));
+  });
+
+  it("lays the board out only after the modal's draw when the snapshot lands once the page is up", () => {
+    const early = { ...hud, cards: [], tree: null } as unknown as HudState;
+    mount("?view=kanban&task=TASK-1", early);
+    drawn.length = 0;
+    mount("?view=kanban&task=TASK-1", { ...hud, tree: {} } as unknown as HudState);
+    expect(drawn.indexOf("modal")).toBeGreaterThanOrEqual(0);
+    expect(drawn.indexOf("layout")).toBeGreaterThan(drawn.indexOf("modal"));
+    expect(host.querySelectorAll("#cols .card").length).toBe(3);
   });
 
   it("still draws the whole board behind the modal", () => {

@@ -563,8 +563,10 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(storage, location.search));
   const [openTask] = useState(() => new OpenTask(linkedTask(location.search)));
   const setOpen = openTask.set;
-  // a direct link commits its modal first: the cards follow in a render of their own, which the modal's first paint does not wait on
-  const drawBoard = useDeferredValue(true, openTask.get() === null);
+  // a direct link commits its modal first: the cards follow in a render of their own, which the modal's first paint does not wait on.
+  // The modal needs the snapshot's card, so that render is the one the snapshot lands in: the board waits there, not at the mount.
+  const [direct] = useState(() => openTask.get() !== null);
+  const drawBoard = useDeferredValue(!direct || hud.tree !== null, !direct);
   const [records] = useState(() => adopted ?? new RecordCache());
   // the card the pointer rests on, and the timer that draws its modal hidden once it has rested; the record read on hover
   // fills that modal when it lands, so a slow server delays the record, never the drawing
