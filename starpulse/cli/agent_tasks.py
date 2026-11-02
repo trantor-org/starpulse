@@ -609,6 +609,24 @@ def task_checkpoint_ac(args: argparse.Namespace, environ: Mapping[str, str]) -> 
     return {"task": args.task, "criterion": args.criterion, "changed": changed}
 
 
+#: A pull request a caller cites: `owner/name#N` or its GitHub URL.
+_CITED_PULL = re.compile(r"(?:https://github\.com/)?([^/\s#]+/[^/\s#]+)(?:#|/pull/)(\d+)/?")
+
+
+def pull_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The stored record of one pull request, with the paths it changes, from the server's PR store: no GitHub read."""
+    cited = _CITED_PULL.fullmatch(args.pull)
+    if not cited:
+        raise agent_wire.CliError("usage", f"{args.pull!r} is no pull request: write `owner/name#N` or its GitHub URL")
+    query = urllib.parse.urlencode({"repo": cited[1], "number": cited[2]})
+    base, path = agent_wire.server_url(args.server, environ), f"/api/pulls?{query}"
+    status, reply = agent_wire.get(base, path)
+    found = _record_call(base, path, status, reply, noun="pull request")["pulls"]
+    if not found:
+        raise agent_wire.CliError("not_found", f"the store holds no pull request {cited[1]}#{cited[2]}")
+    return found[0]
+
+
 def milestone_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/milestones"
     status, reply = agent_wire.get(base, path)

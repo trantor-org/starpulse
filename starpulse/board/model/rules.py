@@ -4,8 +4,9 @@
 which writes it judges, `require` is one primitive the task as it will be after the write must satisfy, and `reason`
 is the refusal every writer, the CLI's and the page's, answers with. A primitive is a one-key table naming its kind:
 `{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{body: {...}}`, `{block: {...}}`,
-`{post_merge_checks: {}}`, `{dependencies: {...}}`, `{checklist: {...}}` or `{readable: {...}}`, or a
-combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives; `{before: <primitive>}` reads
+`{post_merge_checks: {}}`, `{dependencies: {...}}`, `{checklist: {...}}`, `{readable: {...}}`,
+`{pulls_ready: {}}` or `{pulls_changed: {...}}` (these two read the stored pull requests the task's `references`
+cite, never GitHub), or a combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives; `{before: <primitive>}` reads
 the task as it was before the write (a create had none, so it holds). A write carries the actor that makes it
 (`operator`, `agent`, or `<instance>/<workflow>` as a machine's `writers` spell it), which `unless_actor` exempts.
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from fnmatch import fnmatchcase
 from typing import Any
 
 from starpulse.board.model import post_merge_checks, readable
@@ -34,6 +36,9 @@ class Record:
     state_of: Callable[[str], str | None] = lambda _: None
     #: The task as it was before the write, None for a create; the `before` primitive reads it.
     earlier: Record | None = None
+    #: The stored pull request `(repository, number)` as `{draft, checks, body, files}`, or None when the store holds
+    #: none (`files` is None for a record saved before the store kept them); the `pulls_*` primitives read it.
+    pull_of: Callable[[str, int], Mapping[str, Any] | None] = lambda _repo, _number: None
 
     @property
     def state(self) -> str:
@@ -53,6 +58,8 @@ _REGIONS = {
 _CHECKLISTS = ("acceptance_criteria", "definition_of_done")
 _UNCHECKED = re.compile(r"^- \[ \] #\d+ ", re.M)
 _ITEM = re.compile(r"^- \[[ xX]\]", re.M)
+_CHECKED = re.compile(r"^- \[[xX]\] .*$", re.M)
+_PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 _RULE_KEYS = {"on", "require", "reason", "skill", "unless_actor"}
 _ON_KEYS = {"to", "from", "while", "write"}
 
@@ -287,6 +294,44 @@ def _checklist(spec: Mapping[str, Any], where: str) -> Primitive:
     return holds
 
 
+def _pulls(record: Record) -> list[Mapping[str, Any] | None]:
+    """The stored pull request of each URL in the task's `references`, None for one the store does not hold."""
+    links = [_PULL_URL.fullmatch(url) for url in _values(record.front.get("references"))]
+    return [record.pull_of(link[1], int(link[2])) for link in links if link]
+
+
+def _pulls_ready(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, set(), where, "pulls_ready")
+    return lambda record: all(
+        pull is not None and not pull["draft"] and pull["checks"] == "pass" for pull in _pulls(record)
+    )
+
+
+def _pulls_changed(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"files", "matches"}, where, "pulls_changed")
+    globs = spec.get("files")
+    if not isinstance(globs, list) or not globs or not all(isinstance(glob, str) for glob in globs):
+        raise ValueError(f"{where}: pulls_changed needs `files`, a list of globs a changed file is matched against")
+    try:
+        wanted = re.compile(spec["matches"])
+    except KeyError as error:
+        raise ValueError(f"{where}: pulls_changed needs `matches`, the regular expression the evidence carries") from error
+    except (re.error, TypeError) as error:
+        raise ValueError(f"{where}: pulls_changed `matches` is not a regular expression: {error}") from error
+    criteria = _region("acceptance_criteria")
+
+    def holds(record: Record) -> bool:
+        pulls = _pulls(record)
+        if any(pull is None or pull["files"] is None for pull in pulls):
+            return False  # the store cannot say what changed: no evidence is asked for what it cannot see
+        changed = [pull for pull in pulls if any(fnmatchcase(path, glob) for path in pull["files"] for glob in globs)]
+        found = criteria.search(record.body)
+        checked = _CHECKED.findall(found.group(1)) if found else []
+        return not changed or any(wanted.search(line) for line in checked) or all(wanted.search(pull["body"]) for pull in changed)
+
+    return holds
+
+
 def _found(primitive: Primitive, record: Record) -> str:
     """What a `readable` primitive finds broken in `record`, "" for any other primitive or a description that reads well."""
     return primitive.broken(record) if isinstance(primitive, _Readable) else ""
@@ -332,6 +377,8 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "dependencies": _dependencies,
     "checklist": _checklist,
     "readable": _readable,
+    "pulls_ready": _pulls_ready,
+    "pulls_changed": _pulls_changed,
 }
 _NAMES = ", ".join([*_KINDS, "before", *_COMBINATORS])
 
@@ -413,8 +460,11 @@ def standing_refusal(
     def unread(task: str) -> None:
         read.append(task)
 
-    before = Record(front, body, unread)
-    after = Record({**front, "status": lane}, body, unread, before)
+    def unread_pull(repo: str, number: int) -> None:
+        read.append(f"{repo}#{number}")
+
+    before = Record(front, body, unread, pull_of=unread_pull)
+    after = Record({**front, "status": lane}, body, unread, before, unread_pull)
     for rule in rules:
         read.clear()
         if rule.judges(before, after, actor) and not rule.require(after) and not read:
