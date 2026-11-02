@@ -419,7 +419,7 @@ SEED_SETTLED = [("archived", 4200, "")]
 DAY_S = 86400
 #: How many more tasks fill each lane of a Board machine that draws its own main line, so the demo has a working
 #: team's scale; the day's settled tasks it adds, by where they settled.
-FILL = {"new": 40, "proposed": 3, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "needs_attention": 3, "done": 20}
+FILL = {"new": 40, "proposed": 97, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "needs_attention": 3, "done": 20}
 FILL_SETTLED = {"archived": 2}
 #: Every how many filled Done tasks one entered Done over a day before the capture, which the page no longer draws.
 DONE_STALE_EVERY = 6
