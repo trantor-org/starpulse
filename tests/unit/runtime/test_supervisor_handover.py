@@ -74,7 +74,7 @@ def served() -> Iterator[tuple[socket.socket, list[Supervisor]]]:
 
 def test_worker_commands_run_on_the_launchers_interpreter(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(launch, "interpreter", lambda *_: "/srv/current/.venv/bin/python")
-    commands = worker_commands(load(None), None)
+    commands = worker_commands(None)
 
     assert {command[0] for command in commands.values()} == {"/srv/current/.venv/bin/python"}
 

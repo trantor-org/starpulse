@@ -3,16 +3,16 @@ only for what `serve` itself reads."""
 
 from __future__ import annotations
 
+import signal
 from dataclasses import replace
 
 import pytest
 from starpulse.runtime import closure
 from starpulse.runtime.closure import CONFIG_OWNERS, SELF, _blocks, restarts_serve
-from starpulse.runtime.config import _KEYS, Config, load
+from starpulse.runtime.config import _KEYS, load
 from starpulse.runtime.supervisor import WORKER_CONTEXTS, Supervisor, worker_commands
-from starpulse.runtime.worker import OPT_IN
 
-CHILDREN = (*WORKER_CONTEXTS, *OPT_IN)
+CHILDREN = WORKER_CONTEXTS
 
 #: The `Config` attribute each top-level key fills; a key absent here is read through no single attribute.
 ATTRIBUTE = {
@@ -70,26 +70,20 @@ def test_a_change_to_a_context_owned_table_does_not_restart_serve(old: dict, new
 @pytest.mark.parametrize(
     ("old", "new"),
     [
-        ({}, {"worker_memory": {"runs": {"soft_mb": 1, "hard_mb": 2}}}),
+        ({}, {"worker_memory": {"contexts": {"soft_mb": 1, "hard_mb": 2}}}),
         ({}, {"mode": "team"}),
         ({}, {"tls_cert": "a.crt", "tls_key": "a.key"}),
         ({}, {"unheard_of": 1}),
-        ({"search": {"embeddings_url": "http://a"}}, {"search": {}}),
     ],
 )
 def test_a_change_serve_reads_or_that_changes_the_children_restarts_serve(old: dict, new: dict) -> None:
     assert restarts_serve(old, new) is True
 
 
-@pytest.mark.parametrize(
-    "raw",
-    [{}, {"search": {"embeddings_url": "http://a"}}],
-)
-def test_the_structural_rule_agrees_with_the_children_serve_starts(raw: dict, tmp_path) -> None:
-    absent: Config = load(None)
-    config = replace(absent, search=replace(absent.search, embeddings_url=raw.get("search", {}).get("embeddings_url")))
-
-    assert (worker_commands(config, None) != worker_commands(absent, None)) is restarts_serve({}, raw)
+@pytest.mark.parametrize("raw", [{}, {"search": {"embeddings_url": "http://a"}}])
+def test_the_children_serve_starts_do_not_depend_on_the_config(raw: dict) -> None:
+    assert not restarts_serve({}, raw)
+    assert list(worker_commands(None)) == ["api", "contexts"]
 
 
 CONFIG = """
@@ -110,12 +104,12 @@ model = "small"
 """
 
 #: Each edit changes one table; the children it must replace are the ones that read that table, and the Page API beside
-#: them, which is built from the whole config and swaps behind its socket without dropping a request. CONFIG names a dagu
-#: run adapter, so its opt-in worker is a child that reads the runs and board tables too.
+#: them, which is built from the whole config and swaps behind its socket without dropping a request. `contexts` reads
+#: every table a background context reads, so an edit to one of them replaces it as the one process it is.
 EDITS = {
-    "runs": ('"nightly", "task-duplicate-retrain"', '"nightly"', {"api", "runs", "dagu"}),
-    "search": ('model = "small"', 'model = "large"', {"api", "search"}),
-    "board": ("interval = 1", "interval = 2", {"api", "pulls", "scheduler", "runs", "flow-metrics", "board", "dagu"}),
+    "runs": ('"nightly", "task-duplicate-retrain"', '"nightly"', {"api", "contexts"}),
+    "search": ('model = "small"', 'model = "large"', {"api", "contexts"}),
+    "board": ("interval = 1", "interval = 2", {"api", "contexts"}),
 }
 
 
@@ -155,8 +149,7 @@ def test_a_reload_after_a_change_to_one_table_replaces_only_the_children_that_re
     path.write_text(CONFIG)
     Child.made = []
     executed: list[bool] = []
-    config = load(path)
-    commands = {name: [name] for name in worker_commands(config, path)}
+    commands = {name: [name] for name in worker_commands(path)}
     supervisor = Supervisor(
         commands, spawn=Child, read=closure.Reader(path), execute=lambda: executed.append(True), poll=60.0
     )
@@ -175,5 +168,40 @@ def test_a_reload_after_a_change_to_one_table_replaces_only_the_children_that_re
         assert replaced == owners
         assert {name for name, child in after.items() if child.pid == before[name] and child.ended} == set()
         assert executed == []
+    finally:
+        supervisor.stop()
+
+
+class Signalled(Child):
+    """A `Child` that records the signals it is sent."""
+
+    def __init__(self, command: list[str]) -> None:
+        super().__init__(command)
+        self.signals: list[int] = []
+
+    def send_signal(self, number: int) -> None:
+        self.signals.append(number)
+
+
+def test_a_reload_after_a_live_only_change_keeps_the_contexts_pid_and_hangs_it_up(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(closure, "code_of", lambda entry, **_: frozenset())
+    path = tmp_path / "starpulse.toml"
+    path.write_text("pull_requests = true\n" + CONFIG)
+    Child.made = []
+    commands = {name: [name] for name in worker_commands(path)}
+    supervisor = Supervisor(commands, spawn=Signalled, read=closure.Reader(path), execute=lambda: None, poll=60.0)
+    supervisor.start()
+    try:
+        contexts = next(child for child in Child.made if child.command == ["contexts"])
+        path.write_text("pull_requests = false\n" + CONFIG)
+
+        report = supervisor.reload()
+
+        assert report["children"]["contexts"] == "reloaded"
+        assert contexts.signals == [signal.SIGHUP]
+        assert not contexts.ended
+        assert [child.pid for child in Child.made if child.command == ["contexts"]] == [contexts.pid]
     finally:
         supervisor.stop()

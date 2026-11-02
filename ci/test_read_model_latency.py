@@ -68,4 +68,4 @@ def test_every_read_surface_answers_a_record_within_the_budget(served: tuple[Pag
 
 
 def test_the_board_stays_under_its_soft_memory_limit_on_the_seeded_board(served: tuple[PageServer, list]) -> None:
-    assert _rss() < WORKER_MEMORY["board"].soft_mb * 1024 * 1024
+    assert _rss() < WORKER_MEMORY["contexts"].soft_mb * 1024 * 1024

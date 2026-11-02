@@ -1,11 +1,11 @@
-"""`serve` supervises a `starpulse worker` child for each context, and runs no context's threads itself."""
+"""`serve` supervises the api and contexts `starpulse worker` children, and runs no context's threads itself."""
 
 import threading
 from pathlib import Path
 
 import pytest
 from starpulse.runtime import server, worker
-from starpulse.runtime.closure import ENTRIES, Reader
+from starpulse.runtime.closure import CONTEXT_ENTRIES, ENTRIES, Reader
 from starpulse.runtime.server import DATABASE_STACK
 from starpulse.scheduler.adapters.remote import Remote
 from starpulse.scheduler.bin import scheduler_service as service
@@ -59,7 +59,7 @@ def test_serve_supervises_every_worker_and_starts_no_context_in_process(
     assert threads == []
     assert isinstance(handled["services"].scheduler, Remote)
     [supervisor] = supervisors
-    assert set(supervisor.commands) == {"api", "pulls", "scheduler", "runs", "flow-metrics", "board"}
+    assert set(supervisor.commands) == {"api", "contexts"}
     assert supervisor.started
 
 
@@ -80,7 +80,7 @@ def test_serve_forks_its_workers_from_one_preloaded_process_it_closes_at_the_end
     [forker] = forkers
     assert forker.started
     assert forker.closed
-    assert forker.modules == [*DATABASE_STACK, *(ENTRIES[context] for context in supervisors[0].commands)]
+    assert forker.modules == [*DATABASE_STACK, *(ENTRIES[context] for context in supervisors[0].commands), *CONTEXT_ENTRIES]
     assert forker.listening is not None  # the Page API child forks with the socket it serves
     assert supervisors[0].options["spawn"] is forker
     assert supervisors[0].options["retire"] == forker.retire
@@ -142,7 +142,7 @@ def test_serve_runs_neither_the_recorder_nor_the_prune_thread_whatever_the_histo
 SEARCH = '[search]\nembeddings_url = "http://embeddings.test/v1/embeddings"\nmodel = "m"\n'
 
 
-def test_serve_runs_no_embedding_thread_and_supervises_a_search_child(
+def test_serve_runs_no_embedding_thread_and_supervises_no_search_child(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
 ) -> None:
     before = {t.name for t in threading.enumerate()}
@@ -150,7 +150,7 @@ def test_serve_runs_no_embedding_thread_and_supervises_a_search_child(
     _serve(tmp_path, monkeypatch, SEARCH)
 
     assert "search-embeddings" not in {t.name for t in threading.enumerate()} - before
-    assert "search" in supervisors[0].commands
+    assert set(supervisors[0].commands) == {"api", "contexts"}
 
 
 def test_serve_runs_no_criteria_thread(

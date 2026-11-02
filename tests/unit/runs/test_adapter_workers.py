@@ -108,7 +108,6 @@ def run(
     monkeypatch.setattr(fake_board, "BUILT", [])
     monkeypatch.setattr(server, "runs_adapter", lambda _kind: adapter)
     monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
-    monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
 
     def start(context: str) -> None:
         config = tmp_path / "starpulse.toml"
@@ -127,21 +126,16 @@ def test_each_shipped_adapter_names_its_opt_in_worker(module: tuple) -> None:
     assert opt_in.worker_of(adapter) == WORKERS[kind]
 
 
-def test_serve_supervises_a_child_for_each_configured_adapter(kind: str, tmp_path: Path) -> None:
+def test_serve_supervises_only_the_api_and_contexts_children_for_a_config_naming_every_adapter(tmp_path: Path) -> None:
     path = tmp_path / "starpulse.toml"
-    path.write_text(config_of(kind))
+    runs = "".join(f'[[runs]]\nname = "{kind}"\ntype = "{kind}"\nurl = "http://{kind}.invalid"\n' for kind in WORKERS)
+    path.write_text(runs + BOARD)
+    assert [run.type for run in load(path).runs] == list(WORKERS)
 
-    commands = supervisor.worker_commands(load(path), path)
+    commands = supervisor.worker_commands(path)
 
-    assert commands[WORKERS[kind]] == [
-        sys.executable,
-        "-m",
-        "starpulse",
-        "worker",
-        WORKERS[kind],
-        "--config",
-        str(path),
-    ]
+    assert list(commands) == ["api", "contexts"]
+    assert commands["contexts"] == [sys.executable, "-m", "starpulse", "worker", "contexts", "--config", str(path)]
 
 
 def test_the_worker_follows_the_instance_and_keeps_its_workflows_in_the_log(

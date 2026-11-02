@@ -427,8 +427,8 @@ def test_history_worker_key_is_refused_as_unknown(tmp_path: Path) -> None:
 @pytest.mark.parametrize("key", ["flow_metrics", "history"])
 def test_worker_memory_retired_spellings_are_refused_as_unknown(tmp_path: Path, key: str) -> None:
     assert key in _refusal(tmp_path, f"[worker_memory.{key}]\nsoft_mb = 10\nhard_mb = 20\n")
-    tuned = load(_write(tmp_path, "[worker_memory.flow-metrics]\nsoft_mb = 10\nhard_mb = 20\n")).worker_memory
-    assert tuned["flow-metrics"] == MemoryLimit(10, 20)
+    tuned = load(_write(tmp_path, "[worker_memory.contexts]\nsoft_mb = 10\nhard_mb = 20\n")).worker_memory
+    assert tuned["contexts"] == MemoryLimit(10, 20)
 
 
 def test_the_retired_read_model_key_still_loads_and_sets_nothing(tmp_path: Path) -> None:
@@ -585,30 +585,25 @@ def test_duplicate_workflow_in_two_processes_is_refused(tmp_path: Path) -> None:
     assert "duplicate" in refusal and "runs instance dagu" in refusal
 
 
-def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrides_per_key(tmp_path: Path) -> None:
+def test_each_supervised_child_has_a_packaged_memory_limit_that_the_config_overrides_per_key(tmp_path: Path) -> None:
     packaged = load(None).worker_memory
-    text = "[worker_memory.pulls]\nsoft_mb = 100\n[worker_memory.scheduler]\nsoft_mb = 10\nhard_mb = 20\n"
+    text = "[worker_memory.api]\nsoft_mb = 100\n[worker_memory.contexts]\nsoft_mb = 10\nhard_mb = 20\n"
     tuned = load(_write(tmp_path, text)).worker_memory
 
-    assert set(packaged) == {
-        "pulls",
-        "scheduler",
-        "runs",
-        "flow-metrics",
-        "search",
-        "board",
-        "dagu",
-        "github-actions",
-        "systemd",
-        "temporal",
-    }
+    assert set(packaged) == {"api", "contexts"}
     assert all(0 < limit.soft_mb < limit.hard_mb for limit in packaged.values())
-    assert tuned["pulls"] == MemoryLimit(100, packaged["pulls"].hard_mb)
-    assert tuned["scheduler"] == MemoryLimit(10, 20)
+    assert tuned["api"] == MemoryLimit(100, packaged["api"].hard_mb)
+    assert tuned["contexts"] == MemoryLimit(10, 20)
 
 
-def test_the_dagu_worker_limit_clears_its_measured_steady_state_of_about_280_mb_proportional() -> None:
-    assert load(None).worker_memory["dagu"] == MemoryLimit(384, 768)
+@pytest.mark.parametrize(
+    "context", ["pulls", "scheduler", "runs", "flow-metrics", "search", "board", "dagu", "github-actions", "systemd", "temporal"]
+)
+def test_each_retired_per_context_key_is_refused_naming_the_replacement(tmp_path: Path, context: str) -> None:
+    refusal = _refusal(tmp_path, f"[worker_memory.{context}]\nsoft_mb = 10\nhard_mb = 20\n")
+
+    assert refusal.startswith(f"worker_memory.{context}:")
+    assert "[worker_memory.contexts]" in refusal
 
 
 @pytest.mark.parametrize(
@@ -616,19 +611,22 @@ def test_the_dagu_worker_limit_clears_its_measured_steady_state_of_about_280_mb_
     [
         (
             "[worker_memory.pulss]\nsoft_mb = 1\n",
-            "worker_memory: unknown context(s) pulss; known: board, dagu, flow-metrics, github-actions, pulls, runs, scheduler, search, systemd, temporal",
+            "worker_memory: unknown context(s) pulss; known: api, contexts",
         ),
-        ("[worker_memory.pulls]\nsoft_mb = 900\nhard_mb = 900\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
-        ("[worker_memory.pulls]\nsoft_mb = 5000\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
+        ("[worker_memory.api]\nsoft_mb = 9000\nhard_mb = 9000\n", "worker_memory.api: soft_mb must be below hard_mb"),
+        ("[worker_memory.api]\nsoft_mb = 90000\n", "worker_memory.api: soft_mb must be below hard_mb"),
         (
-            "[worker_memory.pulls]\nhard_mb = 0\n",
-            "worker_memory.pulls: hard_mb must be a whole number of megabytes, 1 or more",
+            "[worker_memory.contexts]\nhard_mb = 0\n",
+            "worker_memory.contexts: hard_mb must be a whole number of megabytes, 1 or more",
         ),
-        ("[worker_memory.pulls]\nsoftmb = 1\n", "worker_memory.pulls: unknown key(s) softmb; known: hard_mb, soft_mb"),
-        ("worker_memory = 3\n", "worker_memory must be a table of per-context tables"),
+        (
+            "[worker_memory.contexts]\nsoftmb = 1\n",
+            "worker_memory.contexts: unknown key(s) softmb; known: hard_mb, soft_mb",
+        ),
+        ("worker_memory = 3\n", "worker_memory must be a table of tables, one per child"),
     ],
 )
-def test_a_worker_memory_table_naming_no_context_or_with_soft_at_or_above_hard_is_refused_by_name(
+def test_a_worker_memory_table_naming_no_child_or_with_soft_at_or_above_hard_is_refused_by_name(
     tmp_path: Path, text: str, message: str
 ) -> None:
     assert _refusal(tmp_path, text) == message

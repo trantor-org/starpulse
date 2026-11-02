@@ -97,15 +97,8 @@ def test_check_reports_a_page_that_is_not_200(table, log, page):
 
 
 @NOT_INSTALLED
-def test_worker_contexts_are_the_ones_the_default_config_supervises(tmp_path):
-    assert worker_contexts(sys.executable, str(tmp_path)) == {
-        "api",
-        "pulls",
-        "scheduler",
-        "runs",
-        "flow-metrics",
-        "board",
-    }
+def test_worker_contexts_are_the_api_and_the_contexts_worker(tmp_path):
+    assert worker_contexts(sys.executable, str(tmp_path)) == {"api", "contexts"}
 
 
 def test_live_children_reads_a_hyphenated_context_name(table, log):

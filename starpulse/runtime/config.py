@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 
-from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
+from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS, DEFAULT_TYPE, module_name
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.model.search_config import Search, SearchError, parse_search
 from starpulse.cli.project import Project, ProjectError, parse_project
@@ -295,8 +295,12 @@ class MemoryLimit:
     hard_mb: int
 
 
-#: The limit of each `starpulse worker` context when `worker_memory` does not name one.
+#: The limit of each child `serve` supervises when `worker_memory` does not name one.
 WORKER_MEMORY = {context: MemoryLimit(soft, hard) for context, (soft, hard) in WORKER_MEMORY_MB.items()}
+
+
+#: The per-context `[worker_memory]` keys `serve` once took, one for each child it supervised.
+_RETIRED_MEMORY = frozenset({"pulls", "scheduler", "runs", "flow-metrics", "search", "board", *ADAPTER_CONTEXTS})
 
 
 def _megabytes(value: object, where: str, key: str) -> int:
@@ -306,9 +310,14 @@ def _megabytes(value: object, where: str, key: str) -> int:
 
 
 def _worker_memory(raw: object) -> dict[str, MemoryLimit]:
-    """The packaged limits with each `[worker_memory.<context>]` key laid over them."""
+    """The packaged limits with each `[worker_memory.api]` and `[worker_memory.contexts]` key laid over them."""
     if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
-        raise ConfigError("worker_memory must be a table of per-context tables")
+        raise ConfigError("worker_memory must be a table of tables, one per child")
+    for context in sorted(raw.keys() & _RETIRED_MEMORY):
+        raise ConfigError(
+            f"worker_memory.{context}: {context} no longer has a process of its own; "
+            "set [worker_memory.contexts], the limit of the one process that runs every background context"
+        )
     if unknown := sorted(raw.keys() - WORKER_MEMORY.keys()):
         known = ", ".join(sorted(WORKER_MEMORY))
         raise ConfigError(f"worker_memory: unknown context(s) {', '.join(unknown)}; known: {known}")

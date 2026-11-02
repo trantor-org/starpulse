@@ -55,12 +55,10 @@ def _closure_names(entry: str) -> set[str]:
     return {Path(file).name for file, _ in Reader(None)(entry).code}
 
 
-def test_the_pulls_closure_holds_no_scheduler_module() -> None:
-    assert "loop.py" not in _closure_names("pulls")
-
-
-def test_the_scheduler_closure_holds_the_scheduler_modules() -> None:
-    assert {"loop.py", "scheduler_worker.py"} <= _closure_names("scheduler")
+def test_the_contexts_closure_is_the_union_of_its_contexts_closures() -> None:
+    assert {"loop.py", "scheduler_worker.py", "pulls_worker.py", "runs_worker.py", "adapter_worker.py"} <= _closure_names(
+        "contexts"
+    )
 
 
 def test_the_serve_closure_holds_the_supervisor() -> None:
@@ -79,17 +77,16 @@ def no_code(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("no_code")
-def test_a_delivery_setting_is_a_live_change_to_pulls_and_leaves_scheduler_and_serve_unchanged(tmp_path: Path) -> None:
+def test_a_delivery_setting_is_a_live_change_to_contexts_and_leaves_serve_unchanged(tmp_path: Path) -> None:
     path = _toml(tmp_path, "")
     before = Reader(path)
-    old = {name: before(name) for name in ("pulls", "scheduler", SELF)}
+    old = {name: before(name) for name in ("contexts", SELF)}
     _toml(tmp_path, "pull_requests = false\n")
 
-    new = {name: before(name) for name in ("pulls", "scheduler", SELF)}
+    new = {name: before(name) for name in ("contexts", SELF)}
 
-    assert (new["pulls"].live, new["pulls"].restart) != (old["pulls"].live, old["pulls"].restart)
-    assert new["pulls"].restart == old["pulls"].restart
-    assert new["scheduler"] == old["scheduler"]
+    assert new["contexts"].live != old["contexts"].live
+    assert new["contexts"].restart == old["contexts"].restart
     assert new[SELF] == old[SELF]
 
 
@@ -145,7 +142,7 @@ def test_a_config_that_does_not_load_is_a_reload_error(tmp_path: Path) -> None:
     path.write_text("pull_requests = [\n")
 
     with pytest.raises(ReloadError, match="starpulse.toml"):
-        reader("pulls")
+        reader("contexts")
 
 
 def test_a_start_reading_is_unchanged_while_every_closure_file_keeps_the_hash_it_had_at_start() -> None:
@@ -170,11 +167,11 @@ def test_the_start_reading_runs_no_probe_and_its_hashes_cover_the_files_a_closur
     probes = []
     monkeypatch.setattr(closure, "code_of", lambda entry, package="starpulse", extra=(): probes.append(entry))
 
-    start = reader.at_start("pulls")
+    start = reader.at_start("contexts")
 
     assert probes == []
     monkeypatch.undo()
-    assert dict(reader("pulls").code).items() <= start.files.items()
+    assert dict(reader("contexts").code).items() <= start.files.items()
 
 
 def test_package_hashes_name_each_module_file_of_the_package_with_its_content_hash(
