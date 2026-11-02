@@ -316,9 +316,10 @@ runs on itself, and each check after the merge goes in one of two buckets:
 - **On merge.** A check the merge itself answers (the deploy applied, a pin moved, the merged
   commit's CI is green, a live endpoint answers after the apply) stays on the implementing task as
   a post-merge QA item: a criterion the task's QA plan names. Where the board's machine declares a
-  post-merge QA phase in `Review`, that phase runs the items on the merge's own events (the
-  merge, an apply finishing, a pin moving), never on a timer or a poll; a pass takes the task to
-  `Done`.
+  post-merge QA lane such as `Verifying`, between `Review` and `Done`, the merge moves a task with
+  a QA plan there, so `Review` holds only tasks awaiting the merge; that lane's phase runs the
+  items on the merge's own events (the merge, an apply finishing, a pin moving), never on a timer
+  or a poll; a pass takes the task to `Done`, a miss back to `In Progress`.
 - **Long wait.** A check that waits long on something else (a span of hours or days, a nightly, a
   scheduled run, a percentile over real traffic) is its own checkup task, `--type check`, filed
   at the moment the implementing task is created or delivered and parked

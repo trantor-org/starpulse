@@ -832,8 +832,8 @@ def test_a_review_task_whose_pr_merged_before_a_restart_moves_to_done_after_it_u
     store: PullStore, stop: threading.Event
 ) -> None:
     """The merge is in the store before the actor starts, as after a restart: the startup pass derives every Review task.
-    A planned task stays in Review under the board's waits (its post-merge QA closes it), which is how a task sat
-    there after its PR merged just before a restart, with no log line."""
+    Under waits that map no `pr_merged_planned`, a planned task keeps its Review lane for its post-merge QA to close,
+    which is how a task sat there after its PR merged just before a restart, with no log line."""
     board = Board(
         BoardFeed(),
         task("TASK-1", "Review", references=(PR_ONE,)),
