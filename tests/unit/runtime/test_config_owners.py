@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import signal
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from starpulse.runtime import closure
@@ -47,9 +48,9 @@ def test_every_config_key_has_an_owner() -> None:
 @pytest.mark.parametrize("key", sorted(ATTRIBUTE))
 def test_a_key_is_owned_by_exactly_the_processes_whose_reading_it_changes(key: str) -> None:
     base = load(None)
-    changed = replace(base, **{ATTRIBUTE[key]: object()})
+    changed = replace(base, **{ATTRIBUTE[key]: {"changed": True} if key == "board" else object()})
 
-    moved = {name for name in CHILDREN if _blocks(name, base) != _blocks(name, changed)}
+    moved = {name for name in CHILDREN if _blocks(name, base, Path.cwd()) != _blocks(name, changed, Path.cwd())}
 
     assert moved == set(CONFIG_OWNERS[key]) - {SELF}
 
