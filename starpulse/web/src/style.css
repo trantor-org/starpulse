@@ -540,17 +540,15 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 /* The description's capped pane: each `##` a sticky toggle row (open ▾ / closed ▸), a closed one with a one-line grey preview. */
 #kbm .tv .md.desc { max-height: 24rem; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); border-radius: 8px; overscroll-behavior: contain; }
 #kbm .tv .md.desc > div:first-child:not(:empty) { padding-top: 8px; }
-#kbm .tv .md details.dsec { border-top: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
-#kbm .tv .md details.dsec:first-child { border-top: 0; }
-#kbm .tv .md details.dsec > summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 7px 0; list-style: none; cursor: pointer; background: var(--surface); font-size: calc(11px * var(--fs)); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); }
+#kbm .tv .md details.dsec > summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 5px 0; list-style: none; cursor: pointer; background: var(--surface); font-size: calc(13px * var(--fs)); font-weight: 600; color: var(--ink-hi); }
 #kbm .tv .md details.dsec > summary::-webkit-details-marker { display: none; }
 #kbm .tv .md details.dsec > summary .car::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--muted); }
 #kbm .tv .md details.dsec[open] > summary .car::before { content: "▾"; }
 #kbm .tv .md details.dsec > summary:hover .ht { color: var(--ink-hi); }
 #kbm .tv .md details.dsec > summary:focus-visible { outline: 2px solid var(--ready); outline-offset: 2px; border-radius: 4px; }
-#kbm .tv .md details.dsec > summary .pv { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
+#kbm .tv .md details.dsec > summary .pv { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--muted); }
 #kbm .tv .md details.dsec[open] > summary .pv { display: none; }
-#kbm .tv .md details.dsec > .db { padding: 2px 0 6px; }
+#kbm .tv .md details.dsec > .db { padding: 0 0 4px 1.5em; } #kbm .tv .md details.dsec > .db > :last-child { margin-bottom: 0; }
 #kbm .tv .md ul, #kbm .tv .md ol { margin: 0 0 10px; padding-left: 1.4em; }
 #kbm .tv .md li { margin: 0 0 3px; }
 #kbm .tv .md li > :is(ul, ol) { margin: 3px 0 0; }
