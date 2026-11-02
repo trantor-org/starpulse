@@ -2,6 +2,8 @@
 
 import json
 import re
+import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -131,6 +133,34 @@ def test_a_restarted_instance_answers_a_report_from_the_saved_answer_before_it_r
         other = _get(restarted, "cells", "?hours=2")
 
     assert (before, after, other[0]) == ((200, {"now": NOW, "window_s": 3816.0, "cells": []}),) * 2 + (501,)
+
+
+def test_a_window_past_the_history_is_refused_while_a_fold_of_another_query_runs(tmp_path: Path) -> None:
+    """TASK-11099: a refusal needs no fold, so it never queues behind the one fold at a time that a refold holds."""
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    telemetry = _published(TelemetryLog(log))
+    answers = Answers(log.engine)
+    folding, release = threading.Event(), threading.Event()
+
+    def refold() -> tuple[bytes, int]:
+        folding.set()
+        release.wait(8)
+        return b"{}", 200
+
+    threading.Thread(target=answers.answer, args=("/api/analytics/cells", "other", refold), daemon=True).start()
+    assert folding.wait(10)
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
+    with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: NOW, answers=answers) as server:
+        started = time.monotonic()
+        try:
+            past = _get(server, "diff", "?hours=24")
+        except OSError:  # the request outwaited the client's timeout: still queued behind the fold
+            past = (0, {})
+        waited = time.monotonic() - started
+    release.set()
+    answers.join()
+
+    assert (past[0], "longer than the history" in past[1].get("error", ""), waited < 2) == (400, True, True)
 
 
 def test_estimates_carry_each_completed_tasks_label_beside_its_measured_effort(tmp_path: Path) -> None:

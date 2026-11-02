@@ -217,3 +217,23 @@ def test_folds_of_different_queries_run_one_at_a_time(engine: Engine, clock: Clo
 
     assert not overlapped
     assert second_in.is_set()
+
+
+def test_a_query_that_only_refuses_does_not_wait_for_the_fold_running_for_another(engine: Engine, clock: Clock) -> None:
+    """A refusal holds no rows, so it is not queued behind the one fold at a time (TASK-11099)."""
+    answers = Answers(engine, clock=clock)
+    first_in, release_first = threading.Event(), threading.Event()
+
+    def first() -> tuple[bytes, int]:
+        first_in.set()
+        release_first.wait(10)
+        return b"first", 200
+
+    holder = threading.Thread(target=answers.answer, args=("diff", "168", first))
+    holder.start()
+    assert first_in.wait(10)
+    refusal = Answers.answer(answers, "diff", "999", lambda: (b"refused", 400), refused=lambda: True)
+    release_first.set()
+    holder.join(10)
+
+    assert refusal == (b"refused", 400)
