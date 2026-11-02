@@ -42,6 +42,68 @@ describe("a task's lane run", () => {
   });
 });
 
+/** A Board with the Proposed and Verifying states: a suggestion waits in Proposed until promoted, a merge with QA items rests in Verifying. */
+const full: Machine = {
+  states: [
+    ...["new", "proposed", "ready", "in_progress", "review", "verifying", "done", "archived"].map((id, i) => ({
+      id, name: id.replace("_", " ").replace(/^./, (c) => c.toUpperCase()), initial: i === 0, final: id === "archived", role: id === "proposed" ? "proposed" : null,
+    })),
+  ],
+  transitions: [],
+};
+/** A suggestion proposed at T0, promoted after 5000s, then worked, merged into Verifying and passed to Done. */
+const promoted: LaneStep[] = [
+  { at: T0, from: null, to: "Proposed" },
+  { at: T0 + 5000, from: "Proposed", to: "Ready" },
+  { at: T0 + 5100, from: "Ready", to: "In Progress" },
+  { at: T0 + 5400, from: "In Progress", to: "Review" },
+  { at: T0 + 6000, from: "Review", to: "Verifying" },
+  { at: T0 + 6500, from: "Verifying", to: "Done" },
+];
+
+describe("a promoted suggestion's lane run", () => {
+  it("keeps its time in Proposed apart: the hops up to its promotion are marked, and its steps, loops and span start at the promotion", () => {
+    const run = laneRun(promoted, full, T0 + 9999);
+
+    expect(run.hops.map((h) => [h.from, h.to])).toEqual([
+      ["new", "proposed"], ["proposed", "ready"], ["ready", "in_progress"], ["in_progress", "review"], ["review", "verifying"], ["verifying", "done"],
+    ]);
+    expect([run.pre, run.proposed]).toEqual([2, 5000]);
+    expect([run.total, run.loops, run.start, run.end - run.start]).toEqual([4, 0, T0 + 5000, 9999 - 5000]);
+    expect(run.stay.verifying).toBe(500);
+  });
+
+  it("says the Proposed time beside the post-promotion stats on its card, and marks the pre-promotion rows in its table", () => {
+    const run = laneRun(promoted, full, T0 + 9999), card = traceCard({ kind: "task", id: "T-1", title: "t", goal: "Done" }, run, "24");
+    const table = traceTable(run, (id) => id, "24");
+
+    expect(card).toContain("<b>4</b> steps");
+    expect(card).toContain(`<b>${fmtDur(5000)}</b> proposed`);
+    expect(card).toContain(`<b>${fmtDur(9999 - 5000)}</b> so far`);
+    expect(table.match(/<tr class="pre">/g)).toHaveLength(2);
+  });
+
+  it("draws the Proposed hops and stay as pre-promotion, and the Review to Verifying to Done path on the machine's edges", () => {
+    const run = laneRun(promoted, full, T0 + 9999);
+    const places = Object.fromEntries(full.states.map((s, i): [string, Place] => [s.id, { id: s.id, name: s.name, x: i * 100, y: 0, r: 5, R: 10, color: "#888", lab: { x: i * 100, y: -20 } }]));
+    const edge = (a: string, b: string): Curve => ({ p0: places[a], c: { x: (places[a].x + places[b].x) / 2, y: 0 }, p1: places[b] });
+    const L = layout(run, places, edge, true, 1);
+
+    expect(L.routes.map((r) => [`${r.from.id}>${r.to.id}`, r.pre, r.off])).toEqual([
+      ["new>proposed", true, false], ["proposed>ready", true, false], ["ready>in_progress", false, false],
+      ["in_progress>review", false, false], ["review>verifying", false, false], ["verifying>done", false, false],
+    ]);
+    expect(L.pills.filter((p) => p.pre).map((p) => p.place.id)).toEqual(["proposed"]);
+  });
+
+  it("leaves a task never proposed with nothing pre-promotion, and one still in Proposed with no post-promotion span", () => {
+    const plain = laneRun(looped, board, T0 + 9999), waiting = laneRun(promoted.slice(0, 1), full, T0 + 700);
+
+    expect([plain.pre, plain.proposed, plain.start]).toEqual([0, 0, T0]);
+    expect([waiting.pre, waiting.proposed, waiting.total, waiting.end - waiting.start]).toEqual([1, 700, 0, 0]);
+  });
+});
+
 const skill: Machine = {
   states: ["worktree_ready", "red_proven", "pr_opened", "merged"].map((id, i) => ({ id, name: id, initial: i === 0, final: id === "merged" })),
   transitions: [],
@@ -89,7 +151,7 @@ describe("the trace's layout on a level", () => {
   const run = (() => {
     const hop = (n: number, at: number, from: string, to: string, stay: number) => ({ n, at, from, to, stay });
     const hops = [hop(1, 0, "a", "b", 60), hop(2, 60, "b", "c", 3600), hop(3, 3660, "c", "b", 120), hop(4, 3780, "b", "c", 60)];
-    return { hops, stay: { b: 180, c: 3780 }, visits: { b: 2, c: 2 }, loops: 2, start: 0, end: 3840, live: true, total: 4 };
+    return { hops, stay: { b: 180, c: 3780 }, visits: { b: 2, c: 2 }, loops: 2, start: 0, end: 3840, live: true, total: 4, pre: 0, proposed: 0 };
   })();
 
   it("lights each path once, carrying every number it was taken under", () => {
