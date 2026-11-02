@@ -185,3 +185,35 @@ def test_only_the_newest_kept_answers_are_saved(engine: Engine, clock: Clock) ->
         answers.join()
 
     assert [query for _, query, _, _ in _saved(engine)] == ["b", "c"]
+
+
+def test_folds_of_different_queries_run_one_at_a_time(engine: Engine, clock: Clock) -> None:
+    """Each fold of a 168 h window holds its signals' rows as Python data; several at once multiplied the worker's peak
+    (TASK-10788)."""
+    answers = Answers(engine, clock=clock)
+    first_in, release_first, second_in = threading.Event(), threading.Event(), threading.Event()
+
+    def first() -> tuple[bytes, int]:
+        first_in.set()
+        release_first.wait(10)
+        return b"first", 200
+
+    def second() -> tuple[bytes, int]:
+        second_in.set()
+        return b"second", 200
+
+    readers = [
+        threading.Thread(target=answers.answer, args=("steps", "168", first)),
+        threading.Thread(target=answers.answer, args=("steps", "48", second)),
+    ]
+    readers[0].start()
+    assert first_in.wait(10)
+    readers[1].start()
+
+    overlapped = second_in.wait(0.5)
+    release_first.set()
+    for reader in readers:
+        reader.join(10)
+
+    assert not overlapped
+    assert second_in.is_set()

@@ -15,15 +15,16 @@ from starpulse.board.model.seam import (
 )
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
+from starpulse.contracts.api.dto.health import SessionStep
 from starpulse.flow_metrics.model import analytics
 from starpulse.flow_metrics.model.cells import cell_report, estimate_report, transition_cost
 from starpulse.flow_metrics.model.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
-from starpulse.flow_metrics.model.session_health import session_health, slice_health
-from starpulse.flow_metrics.model.steps import session_steps
+from starpulse.flow_metrics.model.session_health import by_session, session_health, slice_health
+from starpulse.flow_metrics.model.steps import fold_steps
 from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, TelemetryLog
 from starpulse.machine_engine.model.stays import lane_stays
-from starpulse.views.model.encoding import encode
+from starpulse.views.model.encoding import encode, encode_rows
 
 logger = logging.getLogger(__name__)
 
@@ -311,9 +312,13 @@ def steps_response(
     found = _held_signals(telemetry, window, "session_steps", now, "steps")
     if isinstance(found, tuple):
         return found
-    return encode(
-        "session_steps", {"now": now, "window_s": window * 3600, "steps": session_steps(found, keys, analytics)}
-    ), 200
+    rows = (
+        ((row["at"], row["harness"], row["session"]), row)
+        for group in by_session(found)
+        for row in fold_steps(group, keys, analytics)
+    )
+    head = {"now": now, "window_s": window * 3600}
+    return encode_rows("session_steps", head, "steps", SessionStep, rows), 200
 
 
 def _kind_size_response(
