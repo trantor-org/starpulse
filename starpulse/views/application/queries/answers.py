@@ -16,6 +16,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import Future
+from contextlib import nullcontext
 from typing import NamedTuple
 
 from sqlalchemy import Engine, delete, select
@@ -70,9 +71,16 @@ class Answers:
             return None
         return None if row is None else _Held(bytes(row.body), row.status, row.folded_at)
 
-    def answer(self, view: str, query: str, compute: Callable[[], tuple[bytes, int]]) -> tuple[bytes, int]:
+    def answer(
+        self,
+        view: str,
+        query: str,
+        compute: Callable[[], tuple[bytes, int]],
+        refused: Callable[[], bool] = lambda: False,
+    ) -> tuple[bytes, int]:
         """The answer for `view` and `query`: the saved body at once when there is one, refolding with `compute` in the
-        background when it is `fresh_s` old; else the result of the fold of `compute`, which concurrent readers share."""
+        background when it is `fresh_s` old; else the result of the fold of `compute`, which concurrent readers share.
+        A `compute` that `refused` says answers with a refusal holds no rows, so it runs without waiting its turn."""
         key = (view, query)
         held = self._read(key)
         with self._lock:
@@ -81,21 +89,31 @@ class Answers:
                 held = self._read(key)  # a fold that ended since the read above has saved its row
             last = max(self._tried.get(key, 0.0), held.folded_at if held else 0.0)
             if job is None and (held is None or self._clock() - last >= self._fresh_s):
-                job = self._start(key, compute)
+                job = self._start(key, compute, refused)
         return (held.body, held.status) if held else job.result()
 
-    def _start(self, key: _Key, compute: Callable[[], tuple[bytes, int]]) -> Future[tuple[bytes, int]]:
+    def _start(
+        self, key: _Key, compute: Callable[[], tuple[bytes, int]], refused: Callable[[], bool]
+    ) -> Future[tuple[bytes, int]]:
         job: Future[tuple[bytes, int]] = Future()
-        thread = threading.Thread(target=self._fold, args=(key, compute, job), name="analytics-answers", daemon=True)
+        thread = threading.Thread(
+            target=self._fold, args=(key, compute, refused, job), name="analytics-answers", daemon=True
+        )
         self._jobs[key] = job
         self._tried[key] = self._clock()
         self._threads.add(thread)
         thread.start()
         return job
 
-    def _fold(self, key: _Key, compute: Callable[[], tuple[bytes, int]], job: Future[tuple[bytes, int]]) -> None:
+    def _fold(
+        self,
+        key: _Key,
+        compute: Callable[[], tuple[bytes, int]],
+        refused: Callable[[], bool],
+        job: Future[tuple[bytes, int]],
+    ) -> None:
         try:
-            with self._folding:
+            with nullcontext() if refused() else self._folding:
                 body, status = compute()
         except BaseException as exc:  # noqa: BLE001 - the reader that waits on the job raises it; a stale answer stays
             logger.warning("analytics answers: the fold of %s failed: %s", key, exc)

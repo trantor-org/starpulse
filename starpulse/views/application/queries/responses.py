@@ -258,6 +258,24 @@ def health_response(
     return encode("health", health), 200
 
 
+def refuses_at_once(telemetry: TelemetryLog | None, query: dict[str, list[str]], now: float, span: int = 1) -> bool:
+    """Whether a telemetry report of the last `span` x `hours` answers with a refusal that needs no fold: an `hours`
+    that is no positive number, no telemetry, or a window longer than the history (`_held_signals`)."""
+    window = _hours(query, "hours", _HEALTH_HOURS)
+    if window is None or telemetry is None:
+        return True
+    try:
+        start, _ = telemetry.held_from(now)
+    except Exception:  # the event log's database is unreachable: the fold answers 503
+        return False
+    return window * span * 3600 > _history_s(start, now)
+
+
+def _history_s(start: float | None, now: float) -> float:
+    """The seconds of history a log holds as of `now`, `start` the time of its oldest signal (none: it holds none)."""
+    return now - (now if start is None else start)
+
+
 def _held_signals(
     telemetry: TelemetryLog, window: float, kind: str, now: float, label: str
 ) -> list[Signal] | tuple[bytes, int]:
@@ -270,7 +288,7 @@ def _held_signals(
     except Exception as exc:  # the event log's database is unreachable
         logger.warning("%s: telemetry unreadable: %s", label, exc)
         return _error("the telemetry log cannot be read"), 503
-    history = now - (now if start is None else start)
+    history = _history_s(start, now)
     if window * 3600 > history:
         return encode(kind, {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
     return held
