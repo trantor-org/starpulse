@@ -415,6 +415,13 @@ def test_live_session_is_true_for_a_registered_session_or_bridge_id_whose_proces
     assert not live_session(tmp_path, "")
 
 
+def test_live_session_is_true_for_a_running_session_named_by_its_remote_control_url(tmp_path: Path) -> None:
+    _register(tmp_path, os.getpid(), "uuid-1", bridge="session_abc")
+
+    assert live_session(tmp_path, "https://claude.ai/code/session_abc")
+    assert not live_session(tmp_path, "https://claude.ai/code/session_other")
+
+
 def test_live_session_is_false_for_a_process_that_ended_or_whose_pid_was_reused(tmp_path: Path) -> None:
     _register(tmp_path, 2**22 + 7, "gone", proc_start="1")
     _register(tmp_path, os.getpid(), "reused", proc_start="1")

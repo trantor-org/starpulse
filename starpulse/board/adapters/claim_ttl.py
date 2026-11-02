@@ -78,17 +78,17 @@ def transcript_halt(root: Path, session: str, tail: int = 64 * 1024) -> tuple[fl
 
 
 def live_session(root: Path, session: str) -> bool:
-    """Whether the process registered under `root` for `session` (its session or bridge id) is still running."""
+    """Whether the process registered under `root` for `session` (its session id, bridge id or Remote Control URL) is still running."""
     for entry in root.glob("*.json") if session else ():
         try:
             data = json.loads(entry.read_text())
         except OSError, ValueError:
             continue
-        if (
-            isinstance(data, dict)
-            and session in (data.get("sessionId"), data.get("bridgeSessionId"))
-            and _running(data)
-        ):
+        if not isinstance(data, dict):
+            continue
+        bridge = data.get("bridgeSessionId")
+        named = session in (data.get("sessionId"), bridge) or bool(bridge and session.endswith(f"/{bridge}"))
+        if named and _running(data):
             return True
     return False
 
