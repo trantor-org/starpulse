@@ -12,7 +12,7 @@ directory. The `Board` says:
   archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `restore(task)` that
   returns an archived or retired task's file to the board's tasks unchanged (`POST /api/restore`), a `retire(task)`,
   `retired(task)` and `import_retired(name, text)` that keep a finished task's file in the history store instead
-  (`POST /api/retire`, `GET /api/retired[?task=<id>]`, `POST /api/retired/import`), a `complete(task)` that
+  (`POST /api/retire`, `GET /api/retired[?task=<id>][&fields=dependencies]`, `POST /api/retired/import`), a `complete(task)` that
   moves a Done task out of the lanes (the native board's to `completed/`, where `read` and `edit` still find it), a `create(title, details)` that
   makes a task whole, in one write, in the board's starting lane or the lane a `status` detail names, with the
   details the page filled (description, priority, impact, urgency, labels, milestone, assignee, dependencies, acceptance

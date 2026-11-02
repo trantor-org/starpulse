@@ -582,7 +582,7 @@ def test_an_archived_task_is_restored_through_the_server_and_a_refusal_carries_i
 
 
 def test_a_task_is_retired_read_back_and_imported_through_the_server(tmp_path: Path) -> None:
-    kept = {"PROJ-1": {"task": "PROJ-1", "name": "PROJ-1.md", "text": "---\nid: PROJ-1\n---\n"}}
+    kept = {"PROJ-1": {"task": "PROJ-1", "name": "PROJ-1.md", "text": "---\nid: PROJ-1\ndependencies: [PROJ-0]\n---\n"}}
 
     def retire(task: str) -> Written:
         return Written(task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is not finished", skill="retiring")
@@ -605,6 +605,8 @@ def test_a_task_is_retired_read_back_and_imported_through_the_server(tmp_path: P
             every = json.load(resp)
         with urllib.request.urlopen(_url(server, "/api/retired?task=PROJ-9"), timeout=5) as resp:
             none = json.load(resp)
+        with urllib.request.urlopen(_url(server, "/api/retired?fields=dependencies"), timeout=5) as resp:
+            projected = json.load(resp)
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(_url(server, "/api/retire"), timeout=5)
 
@@ -613,6 +615,7 @@ def test_a_task_is_retired_read_back_and_imported_through_the_server(tmp_path: P
     assert imported == (200, {"task": "PROJ-2"})
     assert every == {"tasks": [kept["PROJ-1"]]}
     assert none == {"tasks": []}
+    assert projected == {"tasks": [{"task": "PROJ-1", "dependencies": ["PROJ-0"]}]}
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
 
 

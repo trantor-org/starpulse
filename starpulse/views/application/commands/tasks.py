@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from starpulse.board.adapters.upstream_backlog import dependencies
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model import post_merge_checks
 from starpulse.board.model.seam import (
@@ -362,12 +363,18 @@ def retire_task(request: RetireRequest, board: Board | None) -> tuple[int, dict[
     return 200, {"task": task}
 
 
-def retired_list(board: Board | None, task: str, milestone: str = "") -> tuple[int, dict[str, Any]]:
+def retired_list(board: Board | None, task: str, milestone: str = "", fields: str = "") -> tuple[int, dict[str, Any]]:
     """The retired task `task` names, or every retired task for a blank one, each {task, name, text}, only those of
-    `milestone` when it is not blank: the HTTP status and JSON body. Reading is not LAN-limited."""
+    `milestone` when it is not blank: the HTTP status and JSON body. `fields=dependencies` answers each as {task,
+    dependencies} alone, the ids its file lists. Reading is not LAN-limited."""
     if board is None or board.retired is None:
         return 404, {"error": "this board keeps no retired tasks"}
-    return 200, {"tasks": board.retired(task, milestone)}
+    rows = board.retired(task, milestone)
+    if not fields:
+        return 200, {"tasks": rows}
+    if fields != "dependencies":
+        return 400, {"error": f"fields {fields!r} is not a retired projection; use dependencies"}
+    return 200, {"tasks": [{"task": row["task"], "dependencies": dependencies(row["text"])} for row in rows]}
 
 
 @with_request(RetiredImportRequest, "Importing a retired task")

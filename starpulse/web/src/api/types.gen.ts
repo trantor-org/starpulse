@@ -2196,10 +2196,11 @@ export interface RestartingEvent {
   [k: string]: unknown;
 }
 /**
- * `GET /api/retired[?task=<id>]`: every retired task, or the one `task` names, by id.
+ * `GET /api/retired[?task=<id>][&fields=dependencies]`: every retired task, or the one `task` names, by id; with
+ * `fields=dependencies` each is `{task, dependencies}` alone.
  */
 export interface RetiredTasks {
-  tasks: RetiredTask[];
+  tasks: RetiredTask[] | RetiredDependencies[];
   [k: string]: unknown;
 }
 /**
@@ -2209,6 +2210,14 @@ export interface RetiredTask {
   name: string;
   task: string;
   text: string;
+  [k: string]: unknown;
+}
+/**
+ * A retired task's id and the task ids its file lists as dependencies, with no name or text.
+ */
+export interface RetiredDependencies {
+  dependencies: string[];
+  task: string;
   [k: string]: unknown;
 }
 /**

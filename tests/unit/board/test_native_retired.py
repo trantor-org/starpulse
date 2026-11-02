@@ -353,3 +353,22 @@ def test_retired_filters_by_the_milestone_in_the_front_matter(started: tuple[Boa
     assert [row["task"] for row in built.retired("", "m-1")] == ["task-6"]
     assert [row["task"] for row in built.retired("", "")] == ["task-5", "task-6", "task-7", "task-8"]
     assert built.retired("task-7", "m-1") == []
+
+
+def test_the_retired_route_projects_dependencies_without_name_or_text(started: tuple[Board, Path]) -> None:
+    built, _ = started
+    linked = "---\nid: task-3\ntitle: Linked\ndependencies:\n  - TASK-1\n  - TASK-2\n---\n\nbody\n"
+    bare = "---\nid: task-4\ntitle: Bare\n---\n\nbody\n"
+    assert writes.import_retired(LAN, _raw(name="task-3.md", text=linked), built)[0] == 200
+    assert writes.import_retired(LAN, _raw(name="task-4.md", text=bare), built)[0] == 200
+
+    assert writes.retired_list(built, "", fields="dependencies") == (
+        200,
+        {"tasks": [{"task": "task-3", "dependencies": ["TASK-1", "TASK-2"]}, {"task": "task-4", "dependencies": []}]},
+    )
+    assert writes.retired_list(built, "task-3", fields="dependencies") == (
+        200,
+        {"tasks": [{"task": "task-3", "dependencies": ["TASK-1", "TASK-2"]}]},
+    )
+    assert writes.retired_list(built, "", fields="")[1]["tasks"][0].keys() == {"task", "name", "text"}
+    assert writes.retired_list(built, "", fields="name")[0] == 400
