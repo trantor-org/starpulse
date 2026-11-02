@@ -44,12 +44,12 @@ def test_a_refused_write_is_counted_and_not_retried_until_the_tasks_facts_change
     )  # a change that is no fact it waits on
     store.save([pull(1, state="MERGED")])
     actor.pulls_changed()
-    assert len(board.writes) == 1
+    assert len(board.moved()) == 1  # the refused move; its hold comment is no move
 
     store.save([pull(1, state="MERGED", sha="b" * 40)])  # the merge commit changed: the facts did
     actor.pulls_changed()
 
-    assert until(lambda: len(board.writes) == 2)
+    assert until(lambda: len(board.moved()) == 2)
     assert _sample(actor.exposition(), "starpulse_task_actor_refusals_total") == 2
 
 
