@@ -15,7 +15,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
 from starpulse.views.application.commands.lifecycle import park_task, review_task
-from starpulse.views.application.commands.moves import claim_task
+from starpulse.views.application.commands.moves import claim_task, release_task
 
 from tests.unit.board.test_native import native_root, write_task
 
@@ -592,6 +592,24 @@ def test_a_release_removes_the_frontmatter_assignee_and_writes_released_from(
 
     front = _frontmatter(tmp_path, "task-1")
     assert ("assignee" in front, front["released_from"]) == (False, "s-1")
+
+
+def test_a_released_claim_keeps_the_lane_and_the_next_session_claims_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
+    assert _claim(feed, built, task="task-1", session="s-1")[0] == 200
+    _scan(tmp_path, feed)
+    assert _claim(feed, built, task="task-1", session="s-2")[0] == 409
+
+    released = release_task(LAN, json.dumps({"task": "task-1"}).encode(), feed, built.release)
+    _scan(tmp_path, feed)
+    adopted = _claim(feed, built, task="task-1", session="s-2")
+
+    assert released == (200, {"task": "task-1", "to": "in_progress", "releasedFrom": "s-1"})
+    assert adopted[0] == 200
+    front = _frontmatter(tmp_path, "task-1")
+    assert (front["status"], front["assignee"]) == ("In Progress", "s-2")
 
 
 def test_a_claim_and_a_release_add_no_line_to_the_notes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

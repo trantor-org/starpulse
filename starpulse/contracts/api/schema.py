@@ -34,6 +34,7 @@ from starpulse.contracts.api.dto.requests import (
     MoveRequest,
     ParkRequest,
     RatingRequest,
+    ReleaseRequest,
     RestoreRequest,
     RetiredImportRequest,
     RetireRequest,
@@ -49,6 +50,7 @@ from starpulse.contracts.api.dto.results import (
     Archived,
     ArchivedEach,
     Claimed,
+    ClaimReleased,
     Completed,
     Created,
     CreatedEach,
@@ -155,6 +157,7 @@ class ApiContract(_Api):
         | CompleteRequest
         | ClaimRequest
         | ParkRequest
+        | ReleaseRequest
         | ReviewRequest
         | CreateRequest
         | MilestoneCreateRequest
@@ -182,6 +185,7 @@ class ApiContract(_Api):
         | Completed
         | Claimed
         | Parked
+        | ClaimReleased
         | Reviewed
         | Created
         | CreatedEach

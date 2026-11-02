@@ -661,6 +661,28 @@ def test_a_board_that_completes_no_tasks_answers_404(tmp_path: Path) -> None:
     assert answer == (404, {"error": "this board does not complete tasks"})
 
 
+def test_a_claim_is_released_through_the_server_whoever_holds_it(tmp_path: Path) -> None:
+    released: list[tuple[str, str, str]] = []
+
+    def release(task_id: str, state: str, /, session: str, actor: str = "anonymous") -> Written:
+        released.append((task_id, state, session))
+        return Written(True, "ok")
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "In Progress", assignee="s-1"))
+    feed.put(task("PROJ-4", "In Progress"))
+    with _serve(tmp_path, feed, bare_board(release=release)) as server:
+        done = _post(server, "/api/release", {"task": "PROJ-3"})
+        unheld = _post(server, "/api/release", {"task": "PROJ-4"})
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/release"), timeout=5)
+
+    assert done == (200, {"task": "PROJ-3", "to": "in_progress", "releasedFrom": "s-1"})
+    assert unheld == (409, {"error": "PROJ-4 holds no claim"})
+    assert released == [("PROJ-3", "in_progress", "s-1")]
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
 def test_a_task_is_claimed_through_the_server_and_the_lifecycle_routes_answer_post_only(tmp_path: Path) -> None:
     moved: list[tuple[str, str]] = []
 

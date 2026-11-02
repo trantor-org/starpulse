@@ -91,6 +91,9 @@ MOVE_KEYS = ("ok", "task", "to", "reason", "skill", "advice")
 CLAIM_KEYS = ("ok", "task", "to", "assignee", "reason", "skill")
 
 
+RELEASE_KEYS = ("ok", "task", "to", "releasedFrom", "reason", "skill")
+
+
 LIFECYCLE_KEYS = ("ok", "task", "to", "reason", "skill")
 
 

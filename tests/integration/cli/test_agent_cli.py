@@ -349,6 +349,16 @@ def lifecycled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]
 
 
 @pytest.fixture
+def held(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """A server whose native board holds `task-1` In Progress under `s-1` and `task-2` Ready, with claims releasable."""
+    tasks = {"task-1": ("In Progress", {"assignee": "s-1"}), "task-2": ("Ready", {})}
+    feed, built = _lifecycle(tmp_path, monkeypatch, tasks)
+    board = bare_board(writer=built.writer, read=built.read, edit=built.edit, release=built.release)
+    with _serve(tmp_path, feed, board) as server:
+        yield _url(server, "")
+
+
+@pytest.fixture
 def checked(tmp_path: Path) -> Iterator[str]:
     """The `tasked` server whose `task-1` declares the post-merge check `live`."""
     with _native_server(tmp_path, ("task-1 - Draw the board.md", CHECKED_FILE)) as url:
@@ -1372,6 +1382,17 @@ def test_task_claim_records_the_session_as_the_assignee_and_names_it(
     )
 
 
+def test_task_release_ends_the_holders_claim_and_names_the_session_it_ended(
+    held: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "release", "task-1", "--server", held])
+
+    assert (code, doc) == (
+        0,
+        {"ok": True, "task": "task-1", "to": "in_progress", "releasedFrom": "s-1", "reason": "", "skill": ""},
+    )
+
+
 def test_task_claim_without_a_session_is_refused_as_invalid(
     lifecycled: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1527,6 +1548,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task moves",
         "task move",
         "task claim",
+        "task release",
         "task park",
         "task review",
         "task trace",
@@ -2133,6 +2155,11 @@ CASES = {
     ("task claim", 2): ["task", "claim"],
     ("task claim", 3): ["task", "claim", "task-1", "--session", "s-1", "--server", "{down}"],
     ("task claim", 4): ["task", "claim", "task-99", "--session", "s-1", "--server", "{lifecycled}"],
+    ("task release", 0): ["task", "release", "task-1", "--server", "{held}"],
+    ("task release", 1): ["task", "release", "task-2", "--server", "{held}"],
+    ("task release", 2): ["task", "release"],
+    ("task release", 3): ["task", "release", "task-1", "--server", "{down}"],
+    ("task release", 4): ["task", "release", "task-99", "--server", "{held}"],
     ("task park", 0): ["task", "park", "task-2", "--until-task", "task-1", "--server", "{lifecycled}"],
     ("task park", 1): ["task", "park", "task-1", "--operator", "choose", "--server", "{lifecycled}"],
     ("task park", 2): ["task", "park"],
@@ -2375,6 +2402,7 @@ SERVERS = {
     "stepped": "stepped",
     "movable": "movable",
     "lifecycled": "lifecycled",
+    "held": "held",
     "bare": "bare",
     "runnable": "runnable",
     "forbidden": "forbidden",

@@ -12,12 +12,14 @@ from starpulse.board.model.seam import (
     OPERATOR,
     AssigneeWriter,
     MoveWriter,
+    TaskReleaser,
 )
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api.dto.requests import (
     ClaimRequest,
     MoveRequest,
     NonBlank,
+    ReleaseRequest,
     StartRequest,
 )
 from starpulse.harness_telemetry.model.harnesses import Harnesses
@@ -160,6 +162,29 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
     else:
         status, body = _move(feed, agent, task, working, who, writer)
     return (200, {**body, "assignee": who.session}) if status == 200 else (status, body)
+
+
+@with_request(ReleaseRequest, "Releasing a claim")
+def release_task(
+    request: ReleaseRequest, feed: BoardFeed, release: TaskReleaser | None
+) -> tuple[int, dict[str, str]]:
+    """End the claim on the task `request` names, whoever holds it: the HTTP status and JSON body.
+
+    The task loses its assignee, records the session as released and keeps its lane, so the next claim adopts it. A task
+    no session holds is refused 409; judging whether the holder is gone is the caller's.
+    """
+    task, who = request.task, who_of(request)
+    if release is None:
+        return 404, {"error": "this board does not release claims"}
+    if (agent := held_task(feed, task)) is None:
+        return not_held(feed, task)
+    state, holder = agent["state"], agent.get("assignee")
+    if not holder or holder == _RELEASED_ASSIGNEE:
+        return 409, {"error": f"{task} holds no claim"}
+    written = record_written(feed, task, who, lambda: release(task, state, session=holder, actor=who.actor))
+    if not written.ok:
+        return 409, {"error": written.output}
+    return 200, {"task": task, "to": state, "releasedFrom": holder}
 
 
 def start_requested(
