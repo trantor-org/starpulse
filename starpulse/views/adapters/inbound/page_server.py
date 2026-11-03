@@ -1,8 +1,9 @@
 """The server of the page: Hypercorn serving `PageApp` on one socket, HTTP/1.1 and HTTP/2 on the same port.
 
-A cleartext port answers HTTP/1.1, and HTTP/2 to a client that opens with its preface (prior knowledge) or asks to
-upgrade; a TLS port negotiates `h2` or `http/1.1` through ALPN, and a QUIC socket at the same address answers HTTP/3,
-which every TCP response advertises through `alt-svc`.
+A cleartext connection gets HTTP/1.1, and HTTP/2 when the client opens with its preface (prior knowledge) or asks to
+upgrade; a TLS connection negotiates `h2` or `http/1.1` through ALPN, and a QUIC socket at the same address answers
+HTTP/3, which every TCP response advertises through `alt-svc`. With a certificate configured, TLS and cleartext share
+one TCP port (`protocol_split`).
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from hypercorn.config import Config, Sockets
 from hypercorn.utils import wrap_app
 
 from starpulse.views.adapters.inbound.asgi_app import PageApp
+from starpulse.views.adapters.inbound.protocol_split import ProtocolSplit
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +99,8 @@ class PageServer:
     """Serves `app` on its own thread until `stop`.
 
     Given `listening`, it serves on that socket with backlog `INHERITED_BACKLOG`, and binds nothing; given
-    `tls` (a certificate and its key), it serves TLS on it and HTTP/3 on a UDP socket bound to the same address.
+    `tls` (a certificate and its key), it serves TLS and cleartext on it, told apart by a connection's first byte, and
+    HTTP/3 on a UDP socket bound to the same address.
     `stopping`, when set, is called once as the server stops
     and before its streams end, so a page learns the server is restarting before it loses the stream.
 
@@ -134,19 +137,21 @@ class PageServer:
         if tls is not None:
             self._config.certfile, self._config.keyfile = str(tls[0]), str(tls[1])
         self._quic: socket.socket | None = None
-        if tls is None:
-            self._sockets = Sockets([], [self.socket], [])
-        elif importlib.util.find_spec("aioquic") is None:
+        self._split: ProtocolSplit | None = None
+        self._sockets = Sockets([], [self.socket], [])
+        if tls is not None:
+            # TLS and cleartext share the TCP port, told apart by a connection's first byte.
+            self._split = ProtocolSplit(self.socket, self._config.backlog)
+            self._sockets = Sockets([self._split.tls], [self._split.cleartext], [])
+        if tls is not None and importlib.util.find_spec("aioquic") is not None:
             # The free-threaded build installs no aioquic: its TLS port serves h2 and http/1.1 and advertises no `h3`.
-            self._sockets = Sockets([self.socket], [], [])
-        else:
             self._quic = socket.socket(self.socket.family, socket.SOCK_DGRAM)
             # A reload's replacement worker binds while the old one still holds the address.
             self._quic.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             self._quic.bind(self.server_address)
             self._config.alt_svc_headers = [f'h3=":{self.server_port}"; ma={ALT_SVC_MAX_AGE_S}']
             _survive_cancelled_streams()
-            self._sockets = Sockets([self.socket], [], [self._quic])
+            self._sockets.quic_sockets.append(self._quic)
         self._stopped = threading.Event()
         self._wake: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -207,6 +212,8 @@ class PageServer:
         if self._stopped.is_set():  # `stop` came before the loop did
             self._wake.set()
         nudger = asyncio.create_task(self._nudge_quic())
+        if self._split is not None:
+            self._split.start()
         try:
             await worker_serve(
                 wrap_app(self.app, self._config.wsgi_max_body_size, "asgi"),
@@ -216,6 +223,8 @@ class PageServer:
             )
         finally:
             nudger.cancel()
+            if self._split is not None:
+                self._split.stop()
 
     async def _nudge_quic(self) -> None:
         """Once stopping, send the QUIC socket a datagram Hypercorn drops: its QUIC loop checks for the stop only as a

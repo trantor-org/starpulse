@@ -1,5 +1,5 @@
-"""`starpulse serve` with a certificate and key in its config answers HTTP/1.1, HTTP/2 and HTTP/3 on one port; without
-them it stays cleartext and advertises no HTTP/3."""
+"""`starpulse serve` with a certificate and key in its config answers cleartext HTTP/1.1, TLS HTTP/1.1 and HTTP/2, and
+HTTP/3 on one port; without them it stays cleartext and advertises no HTTP/3."""
 
 import http.client
 import socket
@@ -63,7 +63,7 @@ def _await_answer(port: int, context: ssl.SSLContext | None) -> http.client.HTTP
 # Stays slow: a real `starpulse serve` child cold-imports the server (~2.3 s) and boots to its first answer (~4 s)
 @pytest.mark.slow
 @pytest.mark.usefixtures("build")
-def test_serve_with_a_certificate_answers_http11_http2_and_http3_on_one_port(
+def test_serve_with_a_certificate_answers_cleartext_http11_https_http2_and_http3_on_one_port(
     tmp_path: Path, certificate: tuple[Path, Path]
 ) -> None:
     cert, key = certificate
@@ -76,8 +76,9 @@ def test_serve_with_a_certificate_answers_http11_http2_and_http3_on_one_port(
             with context.wrap_socket(raw, server_hostname="127.0.0.1") as connection:
                 h2 = _h2_request(connection, f"127.0.0.1:{port}", "GET", "/", {})
         h3 = _h3(certificate, port, "GET", "/", {})
+        cleartext = _await_answer(port, None)
 
-    assert (h11.status, h2.status, h3.status) == (200, 200, 200)
+    assert (cleartext.status, h11.status, h2.status, h3.status) == (200, 200, 200, 200)
     assert h11.getheader("alt-svc") == ALT_SVC.format(port=port)
 
 

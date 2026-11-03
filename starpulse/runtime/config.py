@@ -386,7 +386,7 @@ class Config:
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
     """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `scheduler`, `runs`, `history` and `search`."""
     tls: tuple[Path, Path] | None = None
-    """The certificate and key `tls_cert` and `tls_key` name: `serve` answers TLS, and HTTP/3 beside it; none is cleartext."""
+    """The certificate and key `tls_cert` and `tls_key` name: `serve` answers TLS and HTTP/3, and cleartext HTTP beside them on the same TCP port."""
     host: str = _DEFAULTS.host
     """The address `serve` and `worker api` listen on when no `--host` is given."""
     port: int = _DEFAULTS.port
