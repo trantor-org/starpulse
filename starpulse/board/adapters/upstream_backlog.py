@@ -174,6 +174,15 @@ def _marked(body: str) -> str:
     return marked[-1] if marked else ""
 
 
+_COMMENTS = re.compile(r"<!-- COMMENTS:BEGIN -->(.*?)<!-- COMMENTS:END -->", re.S)
+
+
+def _comments(body: str) -> str:
+    """The text of the task's comments, trimmed; empty when it has none."""
+    found = _COMMENTS.search(body)
+    return found.group(1).strip() if found else ""
+
+
 def _notes(body: str) -> str:
     """The task's notes without the claim markers, trimmed; empty when it has none."""
     found = _NOTES.search(body)
@@ -391,6 +400,7 @@ class UpstreamBacklog:
             acceptance_checked=tuple(checked for checked, _ in criteria),
             pause_reason=_pause_reason(body, lane, self._roles.attention),
             notes=_notes(body),
+            comments=_comments(body),
             moves={} if settled else self._offered(lane, frontmatter, body),
             readable="" if settled else self._readable(frontmatter, body),
         )

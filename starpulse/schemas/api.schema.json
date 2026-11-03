@@ -6992,6 +6992,10 @@
     "SearchHit": {
       "description": "One task a search found: where it is now, and the text around the match.",
       "properties": {
+        "field": {
+          "default": "",
+          "type": "string"
+        },
         "lane": {
           "type": "string"
         },

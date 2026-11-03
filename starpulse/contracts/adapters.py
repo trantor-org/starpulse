@@ -174,6 +174,10 @@ class BoardTask(_Contract):
         default="",
         description="The task's running notes, searched with the title and description; empty when the board keeps none.",
     )
+    comments: str = Field(
+        default="",
+        description="The text of the task's comments, searched with its notes; empty when the board keeps none.",
+    )
     readable: str = Field(
         default="",
         description="The first rule the task's description breaks among the board's `readable` guards, with its line; "

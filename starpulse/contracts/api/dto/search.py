@@ -13,6 +13,7 @@ class SearchHit(_Api):
     lane: str
     score: float
     snippet: str
+    field: str = ""
 
 
 class SearchResults(_Api):

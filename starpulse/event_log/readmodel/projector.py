@@ -24,7 +24,7 @@ CHECKPOINT = "read-model:tasks"
 MACHINE_CHECKPOINT = "read-model:machine-tasks"
 #: How far the search index holds the read model, apart from `CHECKPOINT`: any process may fold a row, and only the one
 #: holding the index writes its search row. The name carries the lane rule, so a rule change reindexes every row.
-SEARCH_CHECKPOINT = "read-model:search-done-lane"
+SEARCH_CHECKPOINT = "read-model:search-comments"
 #: The states in which a task has finished, as the search index dates it.
 _FINISHED = frozenset({"done", "archived"})
 BATCH = 500
@@ -45,6 +45,7 @@ class SearchIndex(Protocol):
         labels: Sequence[str],
         finished_at: float | None = None,
         connection: Connection | None = None,
+        comments: str = "",
     ) -> None: ...
 
 
@@ -187,6 +188,7 @@ class Projector:
             description=row["description"],
             criteria=[item["text"] for item in row["criteria"] if item["kind"] == "ac"],
             notes=row["notes"],
+            comments="\n".join(comment["text"] for comment in row["comments"]),
             lane="archived" if row["archived"] and not done else row["state"],
             labels=row["labels"],
             finished_at=row["updated_at"] if finished else None,

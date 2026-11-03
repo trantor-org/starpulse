@@ -412,6 +412,7 @@ def test_five_thousand_embedded_tasks_are_scored_in_under_a_tenth_of_a_second(en
                     "description": "d",
                     "criteria": "",
                     "notes": "",
+                    "comments": "",
                     "lane": "to_do",
                     "digest": task_id,
                 }
