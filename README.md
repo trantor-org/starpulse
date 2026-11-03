@@ -42,6 +42,29 @@ live, with tasks, workflow runs and agent sessions moving through it.
 - **Built-in scheduler.** Admission, quiet hours and dispatch of Ready tasks to agent sessions.
 - **Observable.** Prometheus `/metrics`, OTLP intake for agent telemetry, and flow and session analytics.
 
+## Why StarPulse
+
+Most issue trackers treat a status as a label: anyone, or any agent, can drag a card to any column. StarPulse treats a task's lifecycle as a state machine you declare, and it is built for boards that AI agents work through.
+
+- **Moves are enforced, not just drawn.** States, transitions and which writers may make each move live in YAML. `[[board.guards]]` rules add record-level conditions, for example "Done needs a pull request in references". A forbidden move is refused the same way from the CLI, the HTTP API and the web page, with a reason and the skill that satisfies it. `starpulse conform` replays recorded history against the declared machines and prints each violation.
+- **A scheduler that dispatches work to agents.** The built-in scheduler admits Ready tasks into agent sessions, with admission limits and quiet hours, so agents pull work from the board instead of waiting to be assigned.
+- **Paused work says why.** A paused task sits in Waiting when it is blocked on something specific, or in Needs attention when a person has to act, with the reason recorded on the task.
+- **Every change is an event.** State lives in append-only, event-sourced streams with optimistic concurrency and a transactional outbox, in one portable SQLite database. Prometheus `/metrics`, OTLP agent telemetry and flow and session analytics sit on top of that record.
+- **One model for agents, code and workflows.** A task board, a delivery pipeline, a skill's steps and a pull request's CI are all machines. Agents, workflow schedulers such as Dagu or GitHub Actions, and plain code move them through the same enforced write path.
+- **Yours to run.** Install it with `uv tool install starpulse` or `pipx install starpulse` and run `starpulse serve`. There is no hosted service and no per-seat pricing; `serve` supervises its own workers, and your board is files and a database you own.
+
+### Compared with a hosted tracker
+
+| | Typical hosted tracker | StarPulse |
+|---|---|---|
+| Where it runs | The vendor's cloud | Your machine, installed from PyPI |
+| Cost | Usually per seat | Free and open source (MIT) |
+| Status changes | Free-form; anyone can move anything | Declared machines and guards; refused moves are never written |
+| Agent work | Agents act when a person assigns or mentions them | The scheduler admits Ready tasks into agent sessions |
+| History | An activity feed | An append-only event log that guards and analytics replay |
+
+Hosted tools such as Linear have polished planning features (cycles, projects, triage) and their own agent platform, where you assign an issue to an agent or @mention it. StarPulse doesn't try to replace that. It is for teams that want the board to enforce the process their agents follow.
+
 ## Installation
 
 StarPulse requires Python 3.14 or later.
