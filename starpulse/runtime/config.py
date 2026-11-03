@@ -19,14 +19,16 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import re
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from types import ModuleType
+from typing import Any
 
-from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS, DEFAULT_TYPE, module_name
+from pydantic import ValidationError
+
+from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.model.search_config import Search, SearchError, parse_search
 from starpulse.cli.project import Project, ProjectError, parse_project
@@ -44,26 +46,17 @@ from starpulse.pulls.model.pins import Repo
 from starpulse.runs.model.config import Producer, RunsInstance
 from starpulse.runtime.config_model import (
     WORKER_MEMORY_MB,
-    CommitFile,
     ConfigFile,
-    MemoryFile,
     ProducerFile,
     RepoFile,
     RunsInstanceFile,
+    memory_limit,
 )
 from starpulse.scheduler.model.config import Scheduler, SchedulerError, parse_scheduler
 from starpulse.sweeper.config import Sweeper, SweeperError, parse_sweeper
 
 _DEFAULTS = ConfigFile()
 _KEYS = set(ConfigFile.model_fields)
-_INSTANCE_KEYS = set(RunsInstanceFile.model_fields)
-_COMMIT_KEYS = set(CommitFile.model_fields)
-_REPO_KEYS = set(RepoFile.model_fields)
-_PRODUCER_KEYS = set(ProducerFile.model_fields)
-_MEMORY_KEYS = set(MemoryFile.model_fields)
-
-_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-_PHASE = re.compile(r"[a-z][a-z0-9]*([_-][a-z0-9]+)*")
 
 __all__ = [
     "Config",
@@ -80,10 +73,6 @@ class ConfigError(ValueError):
     def __init__(self, message: str, unknown_keys: Sequence[str] = ()) -> None:
         super().__init__(message)
         self.unknown_keys = tuple(unknown_keys)
-
-
-def _names(value: object) -> bool:
-    return isinstance(value, list) and all(isinstance(name, str) for name in value)
 
 
 @dataclass(frozen=True)
@@ -118,176 +107,42 @@ def runs_adapter(kind: str) -> ModuleType:
     return module
 
 
-def _instance(raw: object) -> RunsInstance:
-    if not isinstance(raw, dict):
-        raise ConfigError("runs must be a list of [[runs]] tables")
-    for key in ("name", "type", "url"):
-        if key not in raw:
-            raise ConfigError(f"a runs instance needs {key}")
-    name = raw["name"]
-    if not isinstance(name, str) or not name or "/" in name:
-        raise ConfigError("runs instance names must be non-empty text without a /")
-    if unknown := sorted(raw.keys() - _INSTANCE_KEYS):
-        raise ConfigError(
-            f"runs instance {name}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_INSTANCE_KEYS))}",
-            [f"runs.{name}.{key}" for key in unknown],
-        )
-    kind, url = raw.get("type"), raw.get("url")
+def _instance(table: RunsInstanceFile) -> RunsInstance:
     try:
-        runs_adapter(kind)
+        runs_adapter(table.type)
     except ConfigError as exc:
-        raise ConfigError(f"runs instance {name}: {exc}") from exc
-    if not isinstance(url, str):
-        raise ConfigError(f"runs instance {name}: url must be text")
-    run_safe, domains = raw.get("run_safe", []), raw.get("domains", {})
-    if not _names(run_safe):
-        raise ConfigError(f"runs instance {name}: run_safe must be a list of workflow names")
-    flat, processes = _domains(domains, name)
-    return RunsInstance(
-        name,
-        kind,
-        url,
-        tuple(run_safe),
-        flat,
-        processes,
-        _commit(raw["commit"], name) if "commit" in raw else None,
-    )
+        raise ConfigError(f"runs instance {table.name}: {exc}") from exc
+    flat, processes = _domains(table.domains)
+    commit = CommitKeys(**table.commit.model_dump()) if table.commit is not None else None
+    return RunsInstance(table.name, table.type, table.url, tuple(table.run_safe), flat, processes, commit)
 
 
 def _domains(
-    raw: object, name: str
+    raw: dict[str, list[str] | dict[str, list[str]]],
 ) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[tuple[str, tuple[str, ...]], ...]]]:
     """A runs instance's `domains`: each domain is a workflow list, or a table of process name to workflow list."""
-    refusal = f"runs instance {name}: domains must map each domain name to a list of workflow names"
-    if not isinstance(raw, dict):
-        raise ConfigError(refusal)
     domains: dict[str, tuple[str, ...]] = {}
     processes: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {}
     for domain, value in raw.items():
-        if _names(value):
-            domains[domain] = tuple(value)
-            processes[domain] = ()
-        elif isinstance(value, dict) and all(_names(ws) for ws in value.values()):
+        if isinstance(value, dict):
             ordered = tuple((proc, tuple(ws)) for proc, ws in value.items())
-            workflows = [w for _, ws in ordered for w in ws]
-            for w in workflows:
-                if workflows.count(w) > 1:
-                    raise ConfigError(
-                        f"runs instance {name}: workflow {w!r} listed twice (duplicate) in the processes under {domain!r}"
-                    )
-            domains[domain] = tuple(sorted(workflows))
+            domains[domain] = tuple(sorted(w for _, ws in ordered for w in ws))
             processes[domain] = ordered
         else:
-            raise ConfigError(refusal)
+            domains[domain] = tuple(value)
+            processes[domain] = ()
     return domains, processes
 
 
-def _commit(raw: object, instance: str) -> CommitKeys:
-    """The `[runs.commit]` table as keys; each refusal names the key to fix."""
-    who = f"runs instance {instance}"
-    if not isinstance(raw, dict):
-        raise ConfigError(f"{who}: commit must be a [runs.commit] table")
-    if unknown := sorted(raw.keys() - _COMMIT_KEYS):
-        raise ConfigError(
-            f"{who}: commit: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_COMMIT_KEYS))}"
-        )
-    for key, name in raw.items():
-        if not (isinstance(name, str) and _ENV_NAME.fullmatch(name)):
-            raise ConfigError(f"{who}: commit.{key} must be the name of a run parameter")
-    return CommitKeys(**raw)
+def _repos(tables: list[RepoFile]) -> tuple[Repo, ...]:
+    return tuple(Repo(table.name, table.path, table.applied_by) for table in tables)
 
 
-def _repo(raw: object) -> Repo:
-    """One `[[repos]]` table as a repository; each refusal names the key to fix."""
-    if not isinstance(raw, dict):
-        raise ConfigError("repos must be a list of [[repos]] tables")
-    for key in ("name", "path", "applied_by"):
-        if key not in raw:
-            raise ConfigError(f"a repos entry needs {key}")
-    name, path, applied_by = raw["name"], raw["path"], raw["applied_by"]
-    if not isinstance(name, str) or not name or "/" in name:
-        raise ConfigError("repos names must be non-empty text without a /")
-    _unknown(raw, _REPO_KEYS, f"repos entry {name}")
-    if not isinstance(path, str) or not path or PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
-        raise ConfigError(f"repos entry {name}: path must be a relative path inside the parent repository")
-    if applied_by != "pin-bump":
-        raise ConfigError(f"repos entry {name}: applied_by must be pin-bump")
-    return Repo(name, path, applied_by)
-
-
-def _repos(raw: object) -> tuple[Repo, ...]:
-    if not isinstance(raw, list):
-        raise ConfigError("repos must be a list of [[repos]] tables")
-    repos = tuple(_repo(table) for table in raw)
-    for at, repo in enumerate(repos):
-        if any(repo.name == earlier.name for earlier in repos[:at]):
-            raise ConfigError(f"repos entry {repo.name} is configured twice")
-    return repos
-
-
-def _env_var_name(key: str, raw: object) -> str | None:
-    if raw is not None and not (isinstance(raw, str) and _ENV_NAME.fullmatch(raw)):
-        raise ConfigError(f"{key} must be the name of an environment variable")
-    return raw
-
-
-def _take_over_command(raw: object) -> tuple[str, ...] | None:
-    if raw is None:
-        return None
-    if not (isinstance(raw, list) and raw and all(isinstance(part, str) and part for part in raw)):
-        raise ConfigError("take_over_command must be a non-empty list of strings")
-    return tuple(raw)
-
-
-def _token_env(raw: object, who: str) -> str:
-    if not (isinstance(raw, str) and _ENV_NAME.fullmatch(raw)):
-        raise ConfigError(f"{who} token_env must be the name of an environment variable")
-    return raw
-
-
-def _unknown(raw: dict, known: set[str], who: str) -> None:
-    if unknown := sorted(raw.keys() - known):
-        raise ConfigError(f"{who}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(known))}")
-
-
-def _name_list(raw: dict, key: str, who: str) -> tuple[str, ...]:
-    names = raw[key]
-    if not (isinstance(names, list) and names and all(isinstance(name, str) and name for name in names)):
-        raise ConfigError(f"{who}: {key} must be a non-empty list of text")
-    return tuple(names)
-
-
-def _producer(raw: object) -> Producer:
-    if not isinstance(raw, dict):
-        raise ConfigError("producers must be a list of [[producers]] tables")
-    for key in ("name", "token_env"):
-        if key not in raw:
-            raise ConfigError(f"a producer needs {key}")
-    name = raw["name"]
-    if not isinstance(name, str) or not name or "/" in name:
-        raise ConfigError("producer names must be non-empty text without a /")
-    who = f"producer {name}"
-    _unknown(raw, _PRODUCER_KEYS, who)
-    machines = _name_list(raw, "machines", who) if "machines" in raw else ()
-    actors = _name_list(raw, "actors", who) if "actors" in raw else ()
-    adapter = raw.get("adapter")
-    if adapter is not None and not (isinstance(adapter, str) and adapter):
-        raise ConfigError(f"{who}: adapter must be the name of a run adapter type")
-    return Producer(name, _token_env(raw["token_env"], f"{who}:"), machines, actors, adapter)
-
-
-def _producers(raw: object) -> tuple[Producer, ...]:
-    if not isinstance(raw, list):
-        raise ConfigError("producers must be a list of [[producers]] tables")
-    producers = tuple(_producer(table) for table in raw)
-    for at, producer in enumerate(producers):
-        if any(producer.name == earlier.name for earlier in producers[:at]):
-            raise ConfigError(f"producer {producer.name} is configured twice")
-        if shared := next((p for p in producers[:at] if p.token_env == producer.token_env), None):
-            raise ConfigError(
-                f"producers {shared.name} and {producer.name} share token_env {producer.token_env}; each needs its own token"
-            )
-    return producers
+def _producers(tables: list[ProducerFile]) -> tuple[Producer, ...]:
+    return tuple(
+        Producer(table.name, table.token_env, tuple(table.machines), tuple(table.actors), table.adapter)
+        for table in tables
+    )
 
 
 @dataclass(frozen=True)
@@ -302,46 +157,9 @@ class MemoryLimit:
 WORKER_MEMORY = {context: MemoryLimit(soft, hard) for context, (soft, hard) in WORKER_MEMORY_MB.items()}
 
 
-#: The per-context `[worker_memory]` keys `serve` once took, one for each child it supervised.
-_RETIRED_MEMORY = frozenset({"pulls", "scheduler", "runs", "flow-metrics", "search", "board", *ADAPTER_CONTEXTS})
-
-
-def _megabytes(value: object, where: str, key: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-        raise ConfigError(f"{where}: {key} must be a whole number of megabytes, 1 or more")
-    return value
-
-
-def _worker_memory(raw: object) -> dict[str, MemoryLimit]:
+def _worker_memory(file: ConfigFile) -> dict[str, MemoryLimit]:
     """The packaged limits with each `[worker_memory.api]` and `[worker_memory.contexts]` key laid over them."""
-    if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
-        raise ConfigError("worker_memory must be a table of tables, one per child")
-    for context in sorted(raw.keys() & _RETIRED_MEMORY):
-        raise ConfigError(
-            f"worker_memory.{context}: {context} no longer has a process of its own; "
-            "set [worker_memory.contexts], the limit of the one process that runs every background context"
-        )
-    if unknown := sorted(raw.keys() - WORKER_MEMORY.keys()):
-        known = ", ".join(sorted(WORKER_MEMORY))
-        raise ConfigError(f"worker_memory: unknown context(s) {', '.join(unknown)}; known: {known}")
-    limits = dict(WORKER_MEMORY)
-    for context, table in raw.items():
-        where = f"worker_memory.{context}"
-        if unknown := sorted(table.keys() - _MEMORY_KEYS):
-            raise ConfigError(f"{where}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_MEMORY_KEYS))}")
-        soft = _megabytes(table.get("soft_mb", limits[context].soft_mb), where, "soft_mb")
-        hard = _megabytes(table.get("hard_mb", limits[context].hard_mb), where, "hard_mb")
-        if soft >= hard:
-            raise ConfigError(f"{where}: soft_mb must be below hard_mb")
-        limits[context] = MemoryLimit(soft, hard)
-    return limits
-
-
-def _flag(raw: dict, key: str, default: bool) -> bool:
-    value = raw.get(key, default)
-    if not isinstance(value, bool):
-        raise ConfigError(f"{key} must be true or false")
-    return value
+    return {**WORKER_MEMORY, **{c: MemoryLimit(*memory_limit(c, t)) for c, t in file.worker_memory.items()}}
 
 
 @dataclass(frozen=True)
@@ -462,24 +280,8 @@ def _analytics(raw: object) -> Analytics:
         raise ConfigError(str(exc)) from exc
 
 
-def _sequences(raw: object) -> dict[str, tuple[str, ...]]:
-    """The `[sequences]` table: each task type's phase ids, distinct and in order."""
-    if raw is None:
-        return {}
-    if not isinstance(raw, dict):
-        raise ConfigError("sequences must be a [sequences] table")
-    return {kind: _phases(kind, phases) for kind, phases in raw.items()}
-
-
-def _phases(kind: str, phases: object) -> tuple[str, ...]:
-    if not isinstance(phases, list) or not phases or not all(isinstance(phase, str) for phase in phases):
-        raise ConfigError(f"sequences: {kind} must be a list of phase ids")
-    for phase in phases:
-        if not _PHASE.fullmatch(phase):
-            raise ConfigError(f"sequences: {kind}: {phase!r} is not a phase id (lowercase words joined by _ or -)")
-    if repeated := next((phase for phase in phases if phases.count(phase) > 1), None):
-        raise ConfigError(f"sequences: {kind}: {repeated} is listed twice")
-    return tuple(phases)
+def _sequences(raw: dict[str, list[str]] | None) -> dict[str, tuple[str, ...]]:
+    return {kind: tuple(phases) for kind, phases in (raw or {}).items()}
 
 
 def _project(raw: object) -> Project:
@@ -530,50 +332,21 @@ def _sweeper(raw: object) -> Sweeper:
         raise ConfigError(str(exc)) from exc
 
 
-def _release(raw: Mapping[str, object], repos: Sequence[Repo]) -> Release | None:
-    """The `[release]` table, or None when the config has none; a table the server cannot apply is a `ConfigError`."""
-    if "release" not in raw:
+def _release(file: ConfigFile) -> Release | None:
+    """The `[release]` table, or None when the config has none."""
+    if file.release is None:
         return None
-    table = raw["release"]
-    if not isinstance(table, dict) or not table.keys() <= {"settle", "repo"}:
-        raise ConfigError("release: the [release] table takes only settle and repo")
-    settle, repo = table.get("settle"), table.get("repo")
-    if repo is not None and settle != "release":
-        raise ConfigError("release: repo is only for settle = release")
-    if settle is None:
-        return Release()
-    if settle not in ("pin-bump", "release"):
-        raise ConfigError("release: settle must be pin-bump or release")
-    if settle == "release":
-        if not isinstance(repo, str) or not repo:
-            raise ConfigError("release: settle = release needs a repo, the repository the running build comes from")
-        return Release(settle="release", repo=repo)
-    if not repos:
-        raise ConfigError(
-            "release: settle = pin-bump needs a [[repos]] entry to say which repositories the parent pins"
-        )
-    return Release(settle="pin-bump")
+    return Release(file.release.settle, file.release.repo)
 
 
-def _level(raw: Mapping[str, object]) -> Level | None:
+def _level(raw: dict[str, Any] | None) -> Level | None:
     """The `[level]` table's level, or None when the config has none; a table the schema refuses is a `ConfigError`."""
+    if raw is None:
+        return None
     try:
-        return parse_level(raw["level"]) if "level" in raw else None
+        return parse_level(raw)
     except LevelError as exc:
         raise ConfigError(str(exc)) from exc
-
-
-def _ci(raw: Mapping[str, object]) -> tuple[str, ...]:
-    """The Board states the `[ci]` table names, or none when the config has no such table."""
-    if "ci" not in raw:
-        return ()
-    table = raw["ci"]
-    if not isinstance(table, dict) or table.keys() != {"states"}:
-        raise ConfigError("ci: the [ci] table takes one key, states")
-    states = table["states"]
-    if not isinstance(states, list) or not states or not all(isinstance(s, str) and s for s in states):
-        raise ConfigError("ci: states must be a non-empty list of Board state ids")
-    return tuple(states)
 
 
 def discover(path: Path | None) -> Path | None:
@@ -584,136 +357,46 @@ def discover(path: Path | None) -> Path | None:
     return path
 
 
-def _retention(value: object, key: str) -> int:
-    """The days `key` keeps rows for; a whole number, 1 or more."""
-    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-        raise ConfigError(f"{key} must be a whole number of days, 1 or more")
-    return value
-
-
-def _tls(raw: dict, path: Path | None) -> tuple[Path, Path] | None:
-    """The certificate and key `raw` names, from beside the config file; both or neither. Whether they exist is `serve`'s to
-    check: a client reads the same config and never opens them, and a release can name them before the host issues them."""
-    names = [raw.get("tls_cert"), raw.get("tls_key")]
-    if names == [None, None]:
+def _tls(file: ConfigFile, path: Path | None) -> tuple[Path, Path] | None:
+    """The certificate and key `tls_cert` and `tls_key` name, from beside the config file; the model holds them to both or
+    neither. Whether they exist is `serve`'s to check: a client reads the same config and never opens them, and a release
+    can name them before the host issues them."""
+    if path is None or file.tls_cert is None or file.tls_key is None:
         return None
-    if None in names or path is None:
-        raise ConfigError("tls_cert and tls_key are set together")
-    files = []
-    for key, name in zip(("tls_cert", "tls_key"), names, strict=True):
-        if not isinstance(name, str):
-            raise ConfigError(f"{key} must be text")
-        files.append(path.parent / name)
-    return files[0], files[1]
+    return path.parent / file.tls_cert, path.parent / file.tls_key
 
 
-def _slow_read(value: object) -> float:
-    """The seconds a read takes to be logged as slow; a number above zero."""
-    if not isinstance(value, int | float) or isinstance(value, bool) or not value > 0:
-        raise ConfigError("slow_read_seconds must be a number of seconds above 0")
-    return float(value)
+def _dotted(loc: Sequence[int | str]) -> str:
+    """A pydantic error location in the config's own spelling: `runs[0].name`."""
+    out = ""
+    for part in loc:
+        if isinstance(part, int):
+            out += f"[{part}]"
+        else:
+            out += f".{part}" if out else part
+    return out
 
 
-def _archive_dir(value: object) -> str:
-    """The directory `event_log_archive_dir` names; text, not empty."""
-    if not isinstance(value, str) or not value:
-        raise ConfigError("event_log_archive_dir must be a directory path")
-    return value
+def _refusal(exc: ValidationError) -> ConfigError:
+    """The first violation as one line naming its key; every key it refused as unknown is listed beside it."""
+    errors = exc.errors()
+    where = _dotted(errors[0]["loc"])
+    text = errors[0]["msg"].removeprefix("Value error, ")
+    unknown = [_dotted(error["loc"]) for error in errors if error["type"] == "extra_forbidden"]
+    return ConfigError(f"{where}: {text}" if where else text, unknown)
 
 
-def _host(value: object) -> str:
-    """The address `serve` listens on; text, not empty."""
-    if not isinstance(value, str) or not value:
-        raise ConfigError("host must be an address")
-    return value
-
-
-def _port(value: object) -> int:
-    """The port `serve` listens on; a whole number from 1 to 65535."""
-    if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 65535:
-        raise ConfigError("port must be a whole number from 1 to 65535")
-    return value
-
-
-def _hours(value: object) -> float:
-    """How far back a task's latest move counts; a number of hours above zero."""
-    if not isinstance(value, int | float) or isinstance(value, bool) or not value > 0:
-        raise ConfigError("hours must be a number of hours above 0")
-    return float(value)
-
-
-def load(path: Path | None) -> Config:
-    """The config in `path`, or the defaults when there is none."""
-    raw = tomllib.loads(path.read_text()) if path else {}
-    _check_keys(raw)
-    mode = _mode(raw)
-    runs = _runs(raw)
-    session_start_url = _text(raw, "session_start_url")
-    log_retention = _retention(
-        raw.get("event_log_retention_days", _DEFAULTS.event_log_retention_days), "event_log_retention_days"
-    )
-    harnesses = _harnesses(raw, path)
-    tls = _tls(raw, path)
-    kind, board, actor = _board(raw)
-    url = _text(raw, "database_url")
-    repos = _repos(raw.get("repos", []))
-    return _config(
-        raw, mode, runs, harnesses, kind, board, url, session_start_url, log_retention, tls, actor, repos
-    )
-
-
-def _check_keys(raw: dict) -> None:
-    if "triggers" in raw:
-        raise ConfigError("[[triggers]] removed in 0.4: start runs from your orchestrator", ["triggers"])
-    if unknown := sorted(raw.keys() - _KEYS):
-        raise ConfigError(f"unknown config key(s) {', '.join(unknown)}; known: {', '.join(sorted(_KEYS))}", unknown)
-
-
-def _mode(raw: dict) -> str:
-    if (mode := raw.get("mode", "ic")) != "ic":
-        raise ConfigError(f'mode {mode!r} is not a config setting; use mode = "ic"')
-    return mode
-
-
-def _runs(raw: dict) -> tuple[RunsInstance, ...]:
-    runs_raw = raw.get("runs", [])
-    if not isinstance(runs_raw, list):
-        raise ConfigError("runs must be a list of [[runs]] tables")
-    runs = tuple(_instance(table) for table in runs_raw)
-    for at, instance in enumerate(runs):
-        if any(instance.name == earlier.name for earlier in runs[:at]):
-            raise ConfigError(f"runs instance {instance.name} is configured twice")
-    return runs
-
-
-def _text(raw: dict, key: str) -> str | None:
-    if not isinstance(value := raw.get(key), str | None):
-        raise ConfigError(f"{key} must be text")
-    return value
-
-
-def _harnesses(raw: dict, path: Path | None) -> Harnesses | None:
-    if path and (name := raw.get("harnesses_file")):
-        if not (file := path.parent / name).is_file():
-            raise ConfigError(f"harnesses_file {file} does not exist")
-        return load_harnesses(file)
+def _harnesses(file: ConfigFile, path: Path | None) -> Harnesses | None:
+    if path and file.harnesses_file:
+        if not (found := path.parent / file.harnesses_file).is_file():
+            raise ConfigError(f"harnesses_file {found} does not exist")
+        return load_harnesses(found)
     return None
 
 
-def _board(raw: dict) -> tuple[str, dict, dict | None]:
-    """The board adapter's type, its table without `[board.actor]`, and `[board.actor]` (None when absent)."""
-    board = raw.get("board", {})
-    if not isinstance(board, dict):
-        raise ConfigError("board must be a [board] table")
-    actor = board.get("actor")
-    if "actor" in board:
-        if not isinstance(actor, dict):
-            raise ConfigError("board.actor must be a [board.actor] table")
-        if unknown := actor.keys() - {"repo"}:
-            raise ConfigError(f"board.actor: the [board.actor] table takes only repo, not {', '.join(sorted(unknown))}")
-        if not isinstance(actor.get("repo", ""), str):
-            raise ConfigError("board.actor: repo must be text")
-        board = {key: value for key, value in board.items() if key != "actor"}
+def _board(table: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """The board adapter's type, and its table without `[board.actor]`; a type that names no adapter is a `ConfigError`."""
+    board = {key: value for key, value in table.items() if key != "actor"}
     kind = board.get("type", DEFAULT_TYPE)
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
         raise ConfigError(f"board type {kind!r} is not a module name")
@@ -723,60 +406,55 @@ def _board(raw: dict) -> tuple[str, dict, dict | None]:
         found = None
     if found is None:
         raise ConfigError(f"no board adapter of type {kind}")
-    return kind, board, actor
+    return kind, board
 
 
-def _config(
-    raw: dict,
-    mode: str,
-    runs: tuple[RunsInstance, ...],
-    harnesses: Harnesses | None,
-    kind: str,
-    board: dict,
-    url: str | None,
-    session_start_url: str | None,
-    log_retention: int,
-    tls: tuple[Path, Path] | None,
-    actor: dict | None,
-    repos: tuple[Repo, ...],
-) -> Config:
-    """The `Config` of the validated parts of `raw`, with the rest read from it as it is."""
+def load(path: Path | None) -> Config:
+    """The config in `path`, or the defaults when there is none."""
+    raw = tomllib.loads(path.read_text()) if path else {}
+    if "triggers" in raw:
+        raise ConfigError("[[triggers]] removed in 0.4: start runs from your orchestrator", ["triggers"])
+    try:
+        file = ConfigFile.model_validate(raw)
+    except ValidationError as exc:
+        raise _refusal(exc) from exc
+    kind, board = _board(file.board)
     return Config(
-        raw.get("tracker_url"),
-        mode,
-        runs,
-        harnesses,
+        file.tracker_url,
+        file.mode,
+        tuple(_instance(table) for table in file.runs),
+        _harnesses(file, path),
         kind,
         board,
-        url,
-        session_start_url,
-        _level(raw),
-        producers=_producers(raw.get("producers", [])),
-        event_log_retention_days=log_retention,
-        event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", _DEFAULTS.event_log_archive_dir)),
-        telemetry_loki_url=_text(raw, "telemetry_loki_url"),
-        repos=repos,
-        ci=_ci(raw),
-        scheduler=_scheduler(raw.get("scheduler")),
-        analytics=_analytics(raw.get("analytics")),
-        release=_release(raw, repos),
-        task_actor=actor is not None,
-        board_repo=(actor or {}).get("repo"),
-        search=_search(raw.get("search")),
-        sequences=_sequences(raw.get("sequences")),
-        project=_project(raw.get("project")),
-        cursor_context=_cursor_context(raw.get("cursor_context")),
-        claude_code=_claude_code(raw.get("claude_code")),
-        github=_github(raw.get("github")),
-        sweeper=_sweeper(raw.get("sweeper")),
-        refresh_token_env=_env_var_name("refresh_token_env", raw.get("refresh_token_env")),
-        github_token_env=_env_var_name("github_token_env", raw.get("github_token_env")),
-        take_over_command=_take_over_command(raw.get("take_over_command")),
-        pull_requests=_flag(raw, "pull_requests", _DEFAULTS.pull_requests),
-        worker_memory=_worker_memory(raw.get("worker_memory", {})),
-        slow_read_seconds=_slow_read(raw.get("slow_read_seconds", _DEFAULTS.slow_read_seconds)),
-        tls=tls,
-        host=_host(raw.get("host", _DEFAULTS.host)),
-        port=_port(raw.get("port", _DEFAULTS.port)),
-        hours=_hours(raw.get("hours", _DEFAULTS.hours)),
+        file.database_url,
+        file.session_start_url,
+        _level(file.level),
+        producers=_producers(file.producers),
+        event_log_retention_days=file.event_log_retention_days,
+        event_log_archive_dir=file.event_log_archive_dir,
+        telemetry_loki_url=file.telemetry_loki_url,
+        repos=_repos(file.repos),
+        ci=tuple(file.ci.states) if file.ci is not None else (),
+        scheduler=_scheduler(file.scheduler),
+        analytics=_analytics(file.analytics),
+        release=_release(file),
+        task_actor="actor" in file.board,
+        board_repo=file.board.get("actor", {}).get("repo"),
+        search=_search(file.search),
+        sequences=_sequences(file.sequences),
+        project=_project(file.project),
+        cursor_context=_cursor_context(file.cursor_context),
+        claude_code=_claude_code(file.claude_code),
+        github=_github(file.github),
+        sweeper=_sweeper(file.sweeper),
+        refresh_token_env=file.refresh_token_env,
+        github_token_env=file.github_token_env,
+        take_over_command=tuple(file.take_over_command) if file.take_over_command is not None else None,
+        pull_requests=file.pull_requests,
+        worker_memory=_worker_memory(file),
+        slow_read_seconds=float(file.slow_read_seconds),
+        tls=_tls(file, path),
+        host=file.host,
+        port=file.port,
+        hours=float(file.hours),
     )

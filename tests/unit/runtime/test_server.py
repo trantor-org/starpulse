@@ -202,7 +202,7 @@ def test_without_the_flag_or_a_file_the_defaults_apply(tmp_path: Path, monkeypat
 
 @pytest.mark.parametrize(
     ("text", "reason"),
-    [('trakcer_url = "x"\n', "unknown config key(s) trakcer_url"), (None, "No such file or directory")],
+    [('trakcer_url = "x"\n', "trakcer_url: Extra inputs are not permitted"), (None, "No such file or directory")],
 )
 def test_a_config_the_view_cannot_run_from_exits_one_naming_the_file_and_the_reason(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], text: str | None, reason: str

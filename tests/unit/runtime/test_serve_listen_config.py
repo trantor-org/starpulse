@@ -43,13 +43,13 @@ def test_listen_options_come_from_a_flag_then_the_config_then_the_defaults(
 @pytest.mark.parametrize(
     ("line", "refusal"),
     [
-        ('host = ""', "host must be an address"),
-        ("host = 1", "host must be an address"),
-        ("port = 0", "port must be a whole number from 1 to 65535"),
-        ("port = 70000", "port must be a whole number from 1 to 65535"),
-        ("port = true", "port must be a whole number from 1 to 65535"),
-        ("hours = 0", "hours must be a number of hours above 0"),
-        ('hours = "6"', "hours must be a number of hours above 0"),
+        ('host = ""', "host: String should have at least 1 character"),
+        ("host = 1", "host: Input should be a valid string"),
+        ("port = 0", "port: Input should be greater than or equal to 1"),
+        ("port = 70000", "port: Input should be less than or equal to 65535"),
+        ("port = true", "port: Input should be a valid integer"),
+        ("hours = 0", "hours: Input should be greater than 0"),
+        ('hours = "6"', "hours: Input should be a valid number"),
     ],
 )
 def test_a_listen_key_that_is_not_an_address_port_or_hours_is_refused(line: str, refusal: str, tmp_path: Path) -> None:

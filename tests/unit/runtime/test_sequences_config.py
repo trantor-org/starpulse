@@ -25,10 +25,10 @@ def test_a_config_without_a_sequences_table_names_none(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ('[sequences]\nstory = "build"\n', "story must be a list of phase ids"),
-        ("[sequences]\nstory = []\n", "story must be a list of phase ids"),
-        ('[sequences]\nstory = ["build", "Qa Phase"]\n', "story: .Qa Phase. is not a phase id"),
-        ('[sequences]\nstory = ["build", "build"]\n', "story: build is listed twice"),
+        ('[sequences]\nstory = "build"\n', "sequences.story: Input should be a valid list"),
+        ("[sequences]\nstory = []\n", "sequences.story: List should have at least 1 item"),
+        ('[sequences]\nstory = ["build", "Qa Phase"]\n', "sequences.story\\[1\\]: String should match pattern"),
+        ('[sequences]\nstory = ["build", "build"]\n', "sequences: story: build is listed twice"),
     ],
 )
 def test_a_sequence_that_is_not_a_list_of_distinct_phase_ids_is_refused(
