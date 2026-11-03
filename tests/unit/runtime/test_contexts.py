@@ -3,6 +3,7 @@ others' threads stay, and reloads each context on `SIGHUP`."""
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 import threading
 import time
@@ -10,8 +11,9 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
 from starpulse.runtime.config import load
-from starpulse.runtime.contexts import _SharedStore, run_contexts
+from starpulse.runtime.contexts import _SharedStore, contexts_of, run_contexts
 
 WAIT_S = 5.0
 BACKOFF_S = (0.02, 0.05)
@@ -68,6 +70,13 @@ def process() -> Iterator[Callable[..., Process]]:
     for running in made:
         running.stop.set()
         running.thread.join(WAIT_S)
+
+
+def test_the_claude_code_context_runs_only_with_a_claude_code_table() -> None:
+    plain = load(None)
+
+    assert "claude-code" not in contexts_of(plain)
+    assert "claude-code" in contexts_of(dataclasses.replace(plain, claude_code=ClaudeCode()))
 
 
 def test_a_context_that_raises_restarts_after_a_backoff_while_the_others_keep_their_threads(

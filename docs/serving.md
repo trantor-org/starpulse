@@ -494,6 +494,12 @@ applied_by = "pin-bump"
 # limit_tokens = 150000    # a session past this many context tokens is asked to checkpoint, then restarted fresh
 # window_tokens = 200000   # the context window the pane footer's percent is read against; limit_tokens may not exceed it
 # wrapup_s = 600           # seconds an asked session has to checkpoint before it is restarted regardless
+
+# Optional: have `serve` run the Claude Code receiver (see docs/sources.md); every key is optional.
+# [claude_code]
+# host = "0.0.0.0"         # the address to bind (default 127.0.0.1)
+# port = 4321              # the port to bind (default 4318)
+# redactor = "pkg.mod:redact"  # the filter a shell command's text passes through before it is stored; none keeps no command text
 ```
 
 ### Runs adapters
@@ -513,7 +519,7 @@ also serves the share of all the host's cores the `dagu*.service` units used sin
 
 ### Settings reference
 
-The board adapters, `[scheduler]`, `[analytics]`, `[search]`, `[project]` and `[cursor_context]` are described by the examples above and
+The board adapters, `[scheduler]`, `[analytics]`, `[search]`, `[project]`, `[cursor_context]` and `[claude_code]` are described by the examples above and
 by [Scheduler](#scheduler); `[level]` by the flow graph it draws. Every other setting is described below, generated from the
 models in `starpulse/runtime/config_model.py`, which the loader takes its keys and defaults from: edit a description there, run
 `python -m starpulse.runtime.config_reference`, and commit the result. CI fails when this section differs from the models.
@@ -554,6 +560,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `project` (table): The project's own command line for each step a shipped skill names.
 - `sequences` (table of list of text): The phases a task goes through, in order, keyed by task type (`story`, `bug`), with `default` for a type it does not name. A lifecycle machine link that lists `routes` sends a task to the route its sequence names next.
 - `cursor_context` (table): Holds Cursor task sessions to a context limit (see docs/sources.md).
+- `claude_code` (table): Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).
 - `read_model` (any value, retired): Retired: the read model is the only board reader; accepted so a config that still names it loads.
 
 #### [ci]
