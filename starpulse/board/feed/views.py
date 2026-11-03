@@ -60,7 +60,7 @@ class ViewMethods:
         }
         return [
             self._expiring(
-                summary_agent(summary, summary["id"] in ready, self._read_model_moves(summary))
+                summary_agent(summary, summary["id"] in ready, self._read_model_moves(summary), self._default_profiles)
                 | read_model_detail(summary, self._roles.attention)
             )
             for summary in summaries

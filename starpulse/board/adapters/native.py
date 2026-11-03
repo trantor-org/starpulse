@@ -111,6 +111,7 @@ _SETTINGS = {
     "guards",
     "task_file_name",
     "types",
+    "default_profiles",
 }
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.

@@ -37,9 +37,9 @@ def _append(engine: Engine, number: int, state: str, *, archived: bool = False) 
     EventStore(engine).append("task", f"TASK-{number}", 0, events)
 
 
-def _feed(engine: Engine, machines: dict | None = None) -> BoardFeed:
+def _feed(engine: Engine, machines: dict | None = None, **settings: object) -> BoardFeed:
     Projector(engine, EventStore(engine)).catch_up()
-    return BoardFeed(machines=machines, read_model=ReadModel(engine))
+    return BoardFeed(machines=machines, read_model=ReadModel(engine), **settings)
 
 
 def _board(feed: BoardFeed) -> dict:
@@ -57,6 +57,17 @@ def test_the_board_flow_draws_the_live_tasks_of_the_read_model(engine: Engine) -
         ("TASK-1", "Task 1", "ready"),
         ("TASK-2", "Task 2", "in_progress"),
     ]
+
+
+def test_a_task_with_no_profile_is_drawn_with_the_default_profile_for_its_kind_and_size(engine: Engine) -> None:
+    labels = ["kind-execute", "size-2"]
+    events = [_new("TaskCreated", title="T", description="", state="Ready", labels=labels)]
+    EventStore(engine).append("task", "TASK-1", 0, events)
+
+    feed = _feed(engine, default_profiles={"execute": {"2": "@agent-standard-medium"}})
+
+    [agent] = _board(feed)["agents"]
+    assert (agent["profile"], agent["model"]) == ("@agent-standard-medium", "@agent-standard-medium")
 
 
 def test_the_kanban_columns_hold_the_read_model_tasks_by_state_id(engine: Engine) -> None:

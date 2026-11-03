@@ -138,6 +138,7 @@ def assemble(
         commit={instance.name: instance.commit for instance in config.runs if instance.commit},
         read_model=read_model,
         standing=board.standing or (lambda *_: None),
+        default_profiles=config.board.get("default_profiles", {}),
     )
     return board, feed
 

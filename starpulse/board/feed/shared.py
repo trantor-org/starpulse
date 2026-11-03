@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -130,14 +130,26 @@ def read_model_lane_moves(machine: dict) -> dict[str, dict[str, dict]]:
     }
 
 
-def summary_agent(summary: Mapping[str, Any], workable: bool = False, moves: Mapping[str, Any] = {}) -> dict:
+def default_profile(labels: Sequence[str], defaults: Mapping[str, Mapping[str, str]]) -> str | None:
+    """The board's default profile for the `kind-*` and `size-*` labels, None when the labels or the defaults lack them."""
+    kinds = [label.removeprefix("kind-") for label in labels if label.startswith("kind-")]
+    sizes = [label.removeprefix("size-") for label in labels if label.startswith("size-")]
+    return defaults.get(kinds[0], {}).get(sizes[0]) if len(kinds) == 1 and len(sizes) == 1 else None
+
+
+def summary_agent(
+    summary: Mapping[str, Any],
+    workable: bool = False,
+    moves: Mapping[str, Any] = {},
+    defaults: Mapping[str, Mapping[str, str]] = {},
+) -> dict:
     """One read-model summary as an agent on the Board machine: what a card draws; the record is `/api/task/<id>`.
 
     A workable Task is workable since it last changed: the read model keeps no finer date. Its profile is the one the
-    fold keeps in `meta`, as a held Task's is its own.
+    fold keeps in `meta`, as a held Task's is its own; a Task with none draws the board's `defaults` for its labels.
     """
     meta = summary.get("meta") or {}
-    profile = meta.get("profile") or None
+    profile = meta.get("profile") or default_profile(summary.get("labels") or [], defaults)
     return {
         "id": summary["id"],
         "title": summary["title"],

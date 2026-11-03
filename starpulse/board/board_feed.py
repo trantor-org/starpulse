@@ -107,6 +107,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         roles: StateRoles | None = None,
         read_model: ReadModel | None = None,
         standing: Callable[[str, str], Mapping[str, Any] | None] = lambda *_: None,
+        default_profiles: Mapping[str, Mapping[str, str]] | None = None,
     ) -> None:
         self._hint = hint
         #: Set by `stop`: every thread an adapter runs for this feed (`spawn`) waits on it.
@@ -119,6 +120,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         #: Which of the Board's States play which part (`Board.roles`); the default is Backlog.md's default statuses.
         self._roles = roles or StateRoles.of_statuses(DEFAULT_STATUSES)
         self._clock = clock
+        #: The profile a Task with none of its own draws, by its `kind-*` then `size-*` label (`[board.default_profiles]`).
+        self._default_profiles = default_profiles or {}
         #: A task's lane changes as the history keeps them (`History.lane_path`), read while the feed replays.
         self._lane_path: Callable[[str], list[dict]] = lambda _task: []
         #: Where a lane change the feed applies is kept (`HistoryStore`); None records nothing.
