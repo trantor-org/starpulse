@@ -19,17 +19,23 @@ from starpulse.runtime.closure import SELF, Reading
 from starpulse.runtime.hold import ADOPT_ENV, LISTEN_FD_ENV, adopted_from_env
 from starpulse.runtime.supervisor import Adopted, Supervisor, spawn_child, worker_commands
 
-# an API stand-in: answers its pid on the socket it was handed, announces itself ready, and ends when its stdin closes
+# an API stand-in: answers its pid on the socket it was handed, announces itself ready, and ends when its stdin closes;
+# like the real API it drains on SIGTERM, ending between connections, never between accepting one and answering it
 API = """
-import os, socket, sys, threading
+import os, signal, socket, sys, threading
+signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
 listening = socket.socket(fileno=int(os.environ["STARPULSE_LISTEN_FD"]))
 ready = os.environ.pop("STARPULSE_READY_FD", None)
 if ready:
     os.write(int(ready), b"1")
     os.close(int(ready))
 threading.Thread(target=lambda: (sys.stdin.buffer.read(), os._exit(0)), daemon=True).start()
-while True:
-    conn, _ = listening.accept()
+listening.settimeout(0.05)
+while signal.SIGTERM not in signal.sigpending():
+    try:
+        conn, _ = listening.accept()
+    except TimeoutError:
+        continue
     conn.sendall(str(os.getpid()).encode())
     conn.close()
 """
