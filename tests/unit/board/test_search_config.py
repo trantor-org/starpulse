@@ -40,7 +40,7 @@ def test_an_empty_table_is_lexical(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("table", "refusal"),
     [
-        ('search = "x"', "search must be a [search] table"),
+        ('search = "x"', "search: Input should be a valid dictionary"),
         ("[search]\nurl = 'x'", "search: unknown key(s) url"),
         ("[search]\nembeddings_url = 1", "search: embeddings_url must be an http:// or https:// address"),
         (
