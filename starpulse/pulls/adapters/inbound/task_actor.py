@@ -18,6 +18,9 @@ too: when the skill machine reaches an exit state the actor calls `advance(machi
 once per visit to the phase, and only for the skill machine the task's current phase links. A link that lists `routes`
 (phase state to event) sends instead the event for the phase that follows it in the `sequences` entry of the task's
 type (`default` for a type it does not name), when one is listed; the exit's own event serves every other sequence.
+The Board's phase is a task's lane, and its links count only when the actor writes every event they exit on (the Verify
+machine's `passed` and `missed` close and send back a Verifying task); a skill placement from before the task entered
+the lane is the last visit's and advances nothing.
 
 A task whose lane waits on its Start Criteria is evaluated on a thread of its own when it has no result or its result is
 older than `fresh_s`, and re-derived when the result changes; a criterion that cannot be evaluated is exported, not
@@ -59,6 +62,8 @@ __all__ = ["ACTOR", "ATTENTION_QUESTION", "LINT_REFUSED", "TaskActor", "moves_of
 
 #: The actor every write of the task actor names.
 ACTOR = "starpulse/task-actor"
+#: The machine whose phase is a task's lane.
+BOARD = "board"
 #: What the task actor comments when the board's lint refuses a task's release to Ready, before the refusal.
 LINT_REFUSED = "Release to Ready refused by the task lint, repair the record to release it:"
 #: What the task actor comments on a task whose Start Criteria stayed in error for two passes, before the errors.
@@ -103,11 +108,24 @@ _EVALUATIONS = 8
 
 
 def _exit_links(machines: Mapping[str, Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
-    """Each lifecycle machine's links that exit on a skill machine's state: `{machine: [link]}`, the Board's apart."""
+    """Each lifecycle machine's links that exit on a skill machine's state: `{machine: [link]}`.
+
+    The Board's links count only when the actor writes every event they exit on: another writer's exit (an agent's
+    `review`, `park`) is that writer's to send, and sending it here would move the lane twice.
+    """
     found = {
-        name: [link for link in drawn.get("submachines", ()) if link.get("exits")] for name, drawn in machines.items()
+        name: [link for link in drawn.get("submachines", ()) if link.get("exits") and _written_here(name, drawn, link)]
+        for name, drawn in machines.items()
     }
-    return {name: links for name, links in found.items() if links and name != "board"}
+    return {name: links for name, links in found.items() if links}
+
+
+def _written_here(name: str, drawn: Mapping[str, Any], link: Mapping[str, Any]) -> bool:
+    """Whether the link may be sent by the actor: any link of a phase machine, a Board link whose exits it writes."""
+    if name != BOARD:
+        return True
+    writers = drawn.get("writers", {})
+    return all(ACTOR in (writer["actor"] for writer in writers.get(event, ())) for event in link["exits"].values())
 
 
 def _lint_record(agent: Mapping[str, Any]) -> tuple[Any, ...]:
@@ -520,7 +538,7 @@ class TaskActor:
                 self._derive(name, observed)
         with self._lock:
             for parent in self._links:
-                for placed in self._feed.machine_tasks(parent):
+                for placed in tasks if parent == BOARD else self._feed.machine_tasks(parent):
                     self._exit_phase(placed["id"])
         self.ready.set()
         while not stop.is_set():
@@ -616,16 +634,25 @@ class TaskActor:
         on. A skill machine the current phase does not link never counts, so a late final event of an earlier phase's
         skill advances nothing."""
         for parent, links in self._links.items():
-            phase = self._feed.machine_task(parent, task)
-            event = self._exit_event(links, phase["state"], task) if phase else None
+            phase = self._phase(parent, task)
+            event = self._exit_event(links, phase, task) if phase else None
             if phase and event and self._exited.get((parent, task)) != (phase["state"], phase["steps"], event):
                 self._exited[parent, task] = (phase["state"], phase["steps"], event)
                 self._advance(parent, task, event)
 
-    def _exit_event(self, links: Sequence[Mapping[str, Any]], phase: str, task: str) -> str | None:
+    def _phase(self, parent: str, task: str) -> dict[str, Any] | None:
+        """The phase `task` is in under lifecycle machine `parent`: the machine's placement, or the Board's lane, whose
+        visit is told apart by when the task entered it (`since`, which a skill placement must not precede)."""
+        if parent != BOARD:
+            return self._feed.machine_task(parent, task)
+        agent = self._feed.task(task)
+        entered = (agent or {}).get("entered") or 0.0
+        return {"state": agent["state"], "steps": entered, "since": entered} if agent else None
+
+    def _exit_event(self, links: Sequence[Mapping[str, Any]], phase: Mapping[str, Any], task: str) -> str | None:
         for link in links:
-            placed = self._feed.machine_task(link["machine"], task) if link["state"] == phase else None
-            if placed and link["exits"].get(placed["state"]):
+            placed = self._feed.machine_task(link["machine"], task) if link["state"] == phase["state"] else None
+            if placed and placed["active"] >= phase.get("since", 0.0) and link["exits"].get(placed["state"]):
                 return self._route(link, task) or link["exits"][placed["state"]]
         return None
 

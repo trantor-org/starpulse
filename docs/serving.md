@@ -933,6 +933,9 @@ advances too. When the skill machine of the task's current phase reaches a state
 the exit's event for that machine to `machine:events` as `starpulse/task-actor`, once per visit to the phase. A skill
 machine the current phase does not link advances nothing, so a late final event of an earlier phase's skill cannot move
 the task. The machine's `writers` name `starpulse/task-actor` for each such event.
+The Board is such a machine, its phase the task's lane: the actor sends only the Board links whose every exit event
+the Board's `writers` give to `starpulse/task-actor` (a Verifying task's `passed` and `missed` exits), and ignores a skill
+placement from before the task entered the lane, so a task sent back and merged again starts its next round clean.
 
 The actor evaluates a task's Start Criteria with the board's evaluator (`[board] criteria`) on a thread of its own, when
 the task is in a lane that waits on a criteria fact and has no result or one older than the evaluator's cache (30 s), and
