@@ -23,7 +23,7 @@ from typing import Any
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
-from starpulse.scheduler.model.capacity_limits import CapacityLimitSetting
+from starpulse.scheduler.model.capacity_limits import CapacityLimitSetting, served
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
 from starpulse.scheduler.model.session_caps import SessionCapSetting
@@ -136,12 +136,11 @@ class Remote:
         reported = kept.get("capacityLimits")
         if not isinstance(reported, dict):
             return {}
-        served = {}
+        limits = {}
         for name, row in reported.items():
             override = self._capacity_limits.get(name)
-            limit = row["configLimit"] if override is None else override
-            served[name] = {**row, "limit": float(limit), "source": "starpulse.toml" if override is None else "admin"}
-        return served
+            limits[name] = {**row, **served(row["configLimit"], override)}
+        return limits
 
     def _session_cap_over(self, kept: dict[str, Any], harness: str) -> dict[str, Any]:
         """The worker's `sessionCap` and sessions limit with the stored override applied, for the harness it reported on;

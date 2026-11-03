@@ -2,13 +2,11 @@
 `[scheduler.limits]` in `starpulse.toml` until cleared. The sampler reads them on every reading, so a change needs no
 restart."""
 
-import logging
 import math
 from collections.abc import Mapping
 
 from starpulse.event_log.event_log import EventLog
-
-logger = logging.getLogger(__name__)
+from starpulse.scheduler.model.override_store import OverrideStore
 
 KEY = "scheduler.capacity_limits"
 NAMES = ("cpu", "memory")
@@ -26,18 +24,10 @@ class CapacityLimitSetting:
     config limit."""
 
     def __init__(self, log: EventLog) -> None:
-        self.log = log
-
-    def _stored(self) -> dict[str, object]:
-        raw = self.log.setting(KEY)
-        return raw if isinstance(raw, dict) else {}
+        self.store = OverrideStore(log, KEY, _limit)
 
     def get(self, name: str) -> float | None:
-        try:
-            return _limit(self._stored().get(name))
-        except Exception as exc:  # an unreadable limit is no override; the config limit still holds
-            logger.warning("StarPulse scheduler: reading the capacity limits failed: %s", exc)
-            return None
+        return _limit(self.store.get(name))
 
     def set(self, changes: Mapping[str, object]) -> None:
         """Keep each `changes` value as that dimension's limit, or with None clear it; a dimension left out stays. A name
@@ -47,10 +37,14 @@ class CapacityLimitSetting:
                 raise ValueError(f"{name} has no limit to set; only {' and '.join(NAMES)} do")
             if value is not None and _limit(value) is None:
                 raise ValueError(f"{name} limit must be a percent above 0 and at most 100; got {value!r}")
-        kept = {name: self.get(name) for name in NAMES}
-        merged = {name: changes[name] if name in changes else kept[name] for name in NAMES}
-        limits = {name: value for name, value in merged.items() if value is not None}
-        if limits:
-            self.log.set_setting(KEY, limits)
-        else:
-            self.log.delete_setting(KEY)
+        merged = {**self.store.all(), **changes}
+        self.store.save({name: value for name, value in merged.items() if value is not None})
+
+
+def served(config_limit: float, override: float | None) -> dict[str, object]:
+    """The limit in force, where it comes from and what the config would give it, as the status serves one dimension."""
+    return {
+        "limit": float(config_limit if override is None else override),
+        "source": "starpulse.toml" if override is None else "admin",
+        "configLimit": float(config_limit),
+    }

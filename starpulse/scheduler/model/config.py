@@ -13,6 +13,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from typing import Any
 
+from starpulse.scheduler.model.capacity_limits import served
+
 __all__ = ["DIMENSIONS", "LEVELS", "Scheduler", "SchedulerError", "parse_scheduler"]
 
 #: The capacity dimensions: host CPU and memory (percent), scheduler sessions in flight, and review-lane points.
@@ -105,11 +107,7 @@ class Scheduler:
 
     def capacity_limit(self, name: str) -> dict[str, Any]:
         """The cpu or memory limit in force, where it comes from and what the config would give it, as the status serves it."""
-        return {
-            "limit": self.limit(name),
-            "source": "starpulse.toml" if self.limit_override_of(name) is None else "admin",
-            "configLimit": float(self.limits[name]),
-        }
+        return served(float(self.limits[name]), self.limit_override_of(name))
 
     def eligible_lane(self, initial: str) -> str:
         """The lane scheduler admits from: the configured one, else the board's `initial` lane."""
