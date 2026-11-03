@@ -52,7 +52,7 @@ A relative `message` or `body` path resolves against `--arg worktree`, not the c
 file is refused with its resolved path.
 
 - green: the checks passed; go to step 5.
-- red: read the failing check, fix the cause in the worktree, rerun the final gates, and deliver again.
+- red: invoke the `fix-checks` skill with the failing check names and the run link.
 - blocked, crashed, or a criterion only the merge can prove: read
   [references/verdicts.md](references/verdicts.md) and follow that verdict's section;
   a task waiting on a person is never left In Progress.
