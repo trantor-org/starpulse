@@ -119,13 +119,20 @@ def test_the_board_worker_builds_the_board_starts_the_writers_and_holds(
     monkeypatch.setattr(fake_board, "BUILT", [])
     config = tmp_path / "starpulse.toml"
     config.write_text(BOARD)
-    before = set(threading.enumerate())
+    started: list[str] = []
+    start = threading.Thread.start
+
+    def record(thread: threading.Thread) -> None:  # a short-lived thread may be gone before a snapshot sees it
+        started.append(thread.name)
+        start(thread)
+
+    monkeypatch.setattr(threading.Thread, "start", record)
 
     worker.main(["board", "--config", str(config)])
 
     assert len(held) == 1  # it reached the hold rather than exiting
     assert len(fake_board.BUILT) == 1
-    assert "board-criteria" in {t.name for t in set(threading.enumerate()) - before}
+    assert "board-criteria" in started
     held[0].set()
 
 

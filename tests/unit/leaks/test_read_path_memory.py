@@ -7,6 +7,7 @@ from __future__ import annotations
 import gc
 import json
 import os
+import sys
 import tracemalloc
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -32,7 +33,8 @@ PULL_DETAIL = 8_000
 REPO = "acme/widgets"
 
 SIGNALS = 6_000
-SIGNAL_BYTES = 900  # what one held signal may cost, of the ~3.7 KB the live server paid for each
+#: The free-threaded build's objects are larger, so the same signals hold ~3% more bytes.
+SIGNAL_BYTES = 900 if sys._is_gil_enabled() else 1000  # what one held signal may cost, of the ~3.7 KB the live server paid for each
 
 
 MACHINE = """\
