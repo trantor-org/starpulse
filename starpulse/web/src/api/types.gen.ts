@@ -2295,6 +2295,7 @@ export interface SearchResults {
  * One task a search found: where it is now, and the text around the match.
  */
 export interface SearchHit {
+  field?: string;
   lane: string;
   score: number;
   snippet: string;

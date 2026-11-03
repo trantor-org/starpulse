@@ -47,7 +47,7 @@ def test_a_query_answers_the_matching_tasks_best_first(server: PageServer) -> No
         ("PROJ-1", "to_do"),
         ("PROJ-3", "to_do"),
     ]
-    assert set(body["hits"][0]) == {"task", "title", "lane", "score", "snippet"}
+    assert set(body["hits"][0]) == {"task", "title", "lane", "score", "snippet", "field"}
 
 
 def test_a_query_with_no_match_answers_no_hits(server: PageServer) -> None:
