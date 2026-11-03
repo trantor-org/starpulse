@@ -146,6 +146,7 @@ def summary_agent(summary: Mapping[str, Any], workable: bool = False, moves: Map
         "profile": profile,
         "impact": meta.get("impact", ""),
         "urgency": meta.get("urgency", ""),
+        "source": meta.get("source", ""),
         "assignee": summary["assignee"],
         "released": summary["released"],
         "labels": list(summary["labels"]),

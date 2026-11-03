@@ -108,6 +108,7 @@ def test_a_cold_done_task_is_done_to_a_dependent_and_a_verb_view_loads_its_full_
         "moves": {},
         "rating": None,
         "released": None,
+        "source": "",
     }
     assert cold["description"] == "Long ago."
 
