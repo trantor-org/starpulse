@@ -57,7 +57,7 @@ _OWN = {
 }
 _LISTS = ("labels", "dependencies", "references", "documentation", "modifiedFiles")
 #: The record's keys the fold keeps in `meta`.
-_META = ("profile", "impact", "urgency", "start_criteria")
+_META = ("profile", "impact", "urgency", "start_criteria", "source")
 #: The record's criteria lists, by the kind the fold keeps them under.
 _KINDS = {"ac": "acceptanceCriteria", "dod": "definitionOfDone"}
 
@@ -109,7 +109,8 @@ def _held(store: EventStore, task: str, before: Record) -> Record:
     fields, and its move from where the History left it."""
     row = replay(store.read(KIND, task))
     filed = seed(before, 0.0)
-    return {**before, **{key: row[name] for key, name in _OWN.items() if row[name] != filed[name]}}
+    own = {key: row[name] for key, name in _OWN.items() if row[name] != filed[name]}
+    return {**before, **own, "source": row["meta"].get("source", "")}
 
 
 def _field_changes(before: Record, after: Record) -> dict[str, Any]:

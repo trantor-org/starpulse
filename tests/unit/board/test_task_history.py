@@ -340,3 +340,25 @@ def test_a_plan_edit_after_ready_needs_a_reason_and_appends_a_numbered_plan_revi
     revised = [event.payload for event in store.read("task", "task-5") if event.type == "PlanRevised"]
     assert revised == [{"ordinal": 1, "reason": "scope grew"}, {"ordinal": 2, "reason": "tests first"}]
     assert replay(store.read("task", "task-5"))["plan"] == "1. Fourth"
+
+
+def test_an_edit_that_sets_the_source_key_appends_it_to_the_historys_meta(served) -> None:
+    built, _, store, _ = served
+
+    assert built.edit("task-5", {"source": "audit-signal:disk"}, [], actor="adin").ok
+
+    assert replay(store.read("task", "task-5"))["meta"]["source"] == "audit-signal:disk"
+
+
+def test_reconciling_a_task_whose_file_gained_a_source_key_appends_it_to_the_historys_meta(
+    served, tmp_path: Path
+) -> None:
+    built, _, store, _ = served
+    assert built.edit("task-5", {"priority": "low"}, [], actor="adin").ok
+    path = tmp_path / ".starpulse" / "board" / "tasks" / "task-5 - Draw.md"
+    path.write_text(path.read_text().replace("status: To Do", "status: To Do\nsource: audit-signal:disk"))
+
+    assert built.reconcile("task-5") is True
+
+    assert replay(store.read("task", "task-5"))["meta"]["source"] == "audit-signal:disk"
+    assert built.reconcile("task-5") is False

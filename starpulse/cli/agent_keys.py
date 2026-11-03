@@ -77,6 +77,7 @@ TASK_KEYS = (
     "criteria",
     "pause_reason",
     "readable",
+    "source",
     "prs",
     "moves",
     "rating",

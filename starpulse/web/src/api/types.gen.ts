@@ -613,6 +613,10 @@ export interface RawTask {
    * The skill machine an In Progress task is held in; absent off the held view.
    */
   skill?: HeldSkill | null;
+  /**
+   * The key the producer filed a Board task under (`task create --source`); empty or absent when none.
+   */
+  source?: string | null;
   state: string;
   steps?: number | null;
   /**

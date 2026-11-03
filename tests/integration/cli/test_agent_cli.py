@@ -104,7 +104,7 @@ def base(tmp_path: Path) -> Iterator[str]:
             "references": [PULL, "docs/plan.md"],
             "description": "Add the verbs, as in `TASK-9` and TASK-9.",
         },
-        meta={"profile": "@agent-a"},
+        meta={"profile": "@agent-a", "source": "audit-signal:disk"},
     )
     machine.put_task(
         "PROJ-2",
@@ -635,6 +635,7 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         },
         "rating": None,
         "released": None,
+        "source": "audit-signal:disk",
     }
 
 
@@ -790,7 +791,17 @@ def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys:
         "description": "",
         "rating": None,
         "released": None,
+        "source": "",
     }
+
+
+def test_task_show_returns_the_source_key_a_producer_filed_the_task_under(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, filed = _run(capsys, ["task", "show", "PROJ-1", "--server", base])
+    _, unfiled = _run(capsys, ["task", "show", "PROJ-2", "--server", base])
+
+    assert (filed["source"], unfiled["source"]) == ("audit-signal:disk", "")
 
 
 def test_a_task_the_board_does_not_hold_is_not_found(base: str, capsys: pytest.CaptureFixture[str]) -> None:

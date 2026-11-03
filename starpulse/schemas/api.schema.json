@@ -5562,6 +5562,18 @@
           "default": null,
           "description": "The skill machine an In Progress task is held in; absent off the held view."
         },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The key the producer filed a Board task under (`task create --source`); empty or absent when none."
+        },
         "state": {
           "type": "string"
         },
