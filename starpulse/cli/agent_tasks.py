@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,6 +20,7 @@ from typing import Any
 
 import yaml
 
+from starpulse.board.adapters.session_activity import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS, holder_activity
 from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
 from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
@@ -74,6 +76,8 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
         )
 
     board = board_columns(snapshot, kept, args.state)
+    for column in board["columns"]:
+        column["tasks"] = [_active(task, snapshot) for task in column["tasks"]]
     finished = roles_of(snapshot).done
     if args.milestone and snapshot.get("cold_done") and args.state in (None, finished):
         done = done_ids(snapshot)
@@ -157,7 +161,7 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             "description": "",
         }
     base = agent_wire.server_url(args.server, environ)
-    return _described(task_view(agent, snapshot), agent["description"], base)
+    return _described(_active(task_view(agent, snapshot), snapshot), agent["description"], base)
 
 
 def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -745,3 +749,20 @@ def _milestone_fields(args: argparse.Namespace) -> dict[str, Any]:
     """The detail fields (outcome, specs, ADRs, retro) the caller gave; a list flag given at all replaces the list."""
     given = {"outcome": args.outcome, "specs": args.spec, "adrs": args.adr, "retro": args.retro}
     return {field: value for field, value in given.items() if value is not None}
+
+
+def with_activity(view: dict[str, Any], working: str, transcripts: Path, sessions: Path, now: float) -> dict[str, Any]:
+    """`view` with the `session_activity` of the session holding it, when it sits in the `working` lane the machine
+    declares and has a holder: working, idle since its last agent turn, or `unknown` when the holder is no running
+    session with a transcript."""
+    if view["lane"] != working or not view["assignee"]:
+        return view
+    found = holder_activity(transcripts, sessions, view["assignee"], now=now)
+    return {**view, "session_activity": found or {"state": "unknown"}}
+
+
+def _active(view: dict[str, Any], snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    working = roles_of(snapshot).working
+    return with_activity(
+        view, working, Path(DEFAULT_TRANSCRIPTS).expanduser(), Path(DEFAULT_SESSIONS).expanduser(), time.time()
+    )

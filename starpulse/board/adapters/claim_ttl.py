@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 import psutil
 
 from starpulse.board.adapters.running_workflows import DEFAULT_QUERY, running_tasks
+from starpulse.board.adapters.session_activity import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS
 from starpulse.board.model.seam import Board
 from starpulse.event_log.store import EventStore, NewEvent, StoredEvent
 from starpulse.machine_engine.model.transitions import lane_id
@@ -39,10 +40,6 @@ __all__ = ["DEFAULT_TTL", "ACTOR", "last_renewal", "live_session", "start", "swe
 
 DEFAULT_TTL = 30 * 60
 """Seconds a claim lives without an Event by its session: `[board] claim_ttl`."""
-DEFAULT_TRANSCRIPTS = "~/.claude/projects"
-"""Where Claude Code writes each session's transcript, read for a terminal halt: `[board] transcripts`."""
-DEFAULT_SESSIONS = "~/.claude/sessions"
-"""Where Claude Code registers each running session, `<pid>.json`, read for a live holder: `[board] sessions`."""
 logger = logging.getLogger(__name__)
 ACTOR = "starpulse"
 WRITER = "claim-ttl"
@@ -83,9 +80,13 @@ def live_session(root: Path, session: str) -> bool:
     for entry in root.glob("*.json") if session else ():
         try:
             data = json.loads(entry.read_text())
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
-        if isinstance(data, dict) and session in (data.get("sessionId"), data.get("bridgeSessionId")) and _running(data):
+        if (
+            isinstance(data, dict)
+            and session in (data.get("sessionId"), data.get("bridgeSessionId"))
+            and _running(data)
+        ):
             return True
     return False
 
@@ -95,7 +96,7 @@ def _running(entry: dict) -> bool:
     try:
         started = psutil.Process(int(entry["pid"])).create_time() - psutil.boot_time()
         return round(started * os.sysconf("SC_CLK_TCK")) == int(entry["procStart"])  # `procStart` is in clock ticks
-    except (psutil.Error, KeyError, ValueError):
+    except psutil.Error, KeyError, ValueError:
         return False
 
 
@@ -233,10 +234,18 @@ def start(
             expiries: dict[str, float] = {}
             try:
                 seen.update(dict.fromkeys(running_tasks(workflows, query) if workflows else (), time.time()))
-            except (OSError, ValueError, KeyError):
+            except OSError, ValueError, KeyError:
                 continue  # Temporal unread: a claim its workflow may be holding is not judged this pass
             sweep(
-                board, store, feed.open_tasks(), ttl=ttl, activity=activity, expiries=expiries, halted=halted, seen_running=seen, alive=alive
+                board,
+                store,
+                feed.open_tasks(),
+                ttl=ttl,
+                activity=activity,
+                expiries=expiries,
+                halted=halted,
+                seen_running=seen,
+                alive=alive,
             )
             persist(expiries)
             feed.serve_expiries(expiries)
