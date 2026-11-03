@@ -894,6 +894,30 @@ def test_a_tick_keeps_each_verdict_with_its_reason_and_each_start_in_the_decisio
     assert kept["restored_at"] is not None  # the loop restored its in-flight set once when it was built
 
 
+def test_an_unreadable_decision_log_is_left_as_kept_rather_than_rebuilt_from_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rig = Rig(tmp_path, limits={"sessions": 1})
+    rig.put("T-1")
+    rig.put("T-2")
+    rig.loop.tick()
+    kept = rig.log.state(DECISION_LOG_KEY)[1]
+    assert kept["starts"]
+    read = rig.log.state
+
+    def unreadable(key: str) -> Any:
+        if key == DECISION_LOG_KEY:
+            raise OperationalError("SELECT", {}, Exception("database is locked"))
+        return read(key)
+
+    monkeypatch.setattr(rig.log, "state", unreadable)
+    rig.session("T-1")
+    rig.loop.tick()
+    monkeypatch.setattr(rig.log, "state", read)
+
+    assert rig.log.state(DECISION_LOG_KEY)[1] == kept
+
+
 def test_a_dry_read_of_the_decisions_keeps_nothing(rig: Rig) -> None:
     rig.put("T-1")
 

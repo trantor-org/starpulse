@@ -403,9 +403,9 @@ class PageApp:
                 return
             yield frame
 
-    def _route(self, route: ApiRoute, path: str | None = None) -> Route:
-        """`route` as a Starlette route: at its own path, or at `path` where it is not under `/api`."""
-        at = route.path if path is None else path
+    def _route(self, route: ApiRoute) -> Route:
+        """`route` as a Starlette route at its own path."""
+        at = route.path
         match route:
             case ReadRoute(_, handler, watch):
                 timed = (

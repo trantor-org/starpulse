@@ -882,7 +882,11 @@ class Loop:
 
     def _note(self, **entry: Any) -> None:
         """Add `entry` (`note`'s keywords) to the decision log the server's `/autopilot-log` serves."""
-        kept = self._kept_state(DECISION_LOG_KEY) or EMPTY_DECISION_LOG
+        try:
+            kept = self._ledger.log.state(DECISION_LOG_KEY)[1] or EMPTY_DECISION_LOG
+        except Exception:  # an unreadable log is left as kept: rebuilding from empty would overwrite its history
+            logger.exception("StarPulse scheduler: cannot read %s", DECISION_LOG_KEY)
+            return
         self._keep_state(DECISION_LOG_KEY, note(kept, self._clock(), **entry))
 
     def _kept_state(self, key: str) -> Any:
