@@ -130,10 +130,10 @@ from starpulse.cli.agent_keys import (
     RELEASE_KEYS,
     SCORE_KEYS,
     SNAPSHOT_KEYS,
+    SPEND_KEYS,
     STAGE_KEYS,
     STEP_KEYS,
     TASK_KEYS,
-    SPEND_KEYS,
     TRANSITION_KEYS,
     VERDICT_KEYS,
 )

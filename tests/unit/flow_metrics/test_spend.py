@@ -76,3 +76,17 @@ def test_a_task_far_above_its_cells_median_is_flagged_and_a_cell_under_five_task
 
     few = spend_report([s for n in (1, 2) for s in lifecycle(n)], KEYS, tasks, ANALYTICS)
     assert {(r["norm_wte"], r["above_norm"]) for r in few} == {(None, False)}
+
+
+def test_two_phases_of_a_task_starting_at_the_same_instant_still_take_its_compactions() -> None:
+    branch = "claude/task-1-x"
+    found = [
+        *[sig("skill", 5, s, branch=branch, name=skill, turn="p1") for s, skill in (("sa", "qa"), ("sb", "deliver"))],
+        *[sig("request", 5, s, branch=branch, model="m", turn="p1", input=10) for s in ("sa", "sb")],
+        sig("compaction", 6, "sa", branch=branch, name="auto", turn="p1"),
+    ]
+
+    rows = spend_report(found, KEYS, {"TASK-1": {"labels": EXECUTE_3}}, ANALYTICS)
+
+    assert sorted(r["phase"] for r in rows) == ["deliver", "qa"]
+    assert sum(r["compactions"] for r in rows) == 1

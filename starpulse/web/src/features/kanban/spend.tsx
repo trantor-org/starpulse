@@ -4,23 +4,27 @@ import type { Spend, SpendPhase } from "../../api";
 
 /** How long the page keeps a spend answer: the report folds a week of model requests, so the drawer asks once a minute at most. */
 const TTL_MS = 60_000;
+/** A failed read is asked again after this, so a blip does not read as a minute of nothing. */
+const FAILED_TTL_MS = 5_000;
 
-let cached: { at: number; answer: Promise<SpendPhase[]> } | null = null;
+let cached: { at: number; ttl: number; answer: Promise<SpendPhase[] | null> } | null = null;
 
-/** Every task's phases over the last week; empty when the read is refused, times out or answers something else. */
-export function fetchSpend(fetcher: typeof apiFetch = apiFetch, now: number = Date.now()): Promise<SpendPhase[]> {
-  if (cached && now - cached.at < TTL_MS) return cached.answer;
-  const answer = (async (): Promise<SpendPhase[]> => {
+/** Every task's phases over the last week; `null` when the read is refused, times out or answers something else, kept for a few seconds only. */
+export function fetchSpend(fetcher: typeof apiFetch = apiFetch, now: number = Date.now()): Promise<SpendPhase[] | null> {
+  if (cached && now - cached.at < cached.ttl) return cached.answer;
+  const answer = (async (): Promise<SpendPhase[] | null> => {
     try {
       const response = await fetcher("/api/analytics/spend");
-      if (!response.ok) return [];
+      if (!response.ok) return null;
       const body: Partial<Spend> | null = await response.json().catch(() => null);
-      return Array.isArray(body?.spend) ? body.spend : [];
+      return Array.isArray(body?.spend) ? body.spend : null;
     } catch {
-      return [];
+      return null;
     }
   })();
-  cached = { at: now, answer };
+  const entry = { at: now, ttl: TTL_MS, answer };
+  cached = entry;
+  void answer.then((rows) => { if (rows === null) entry.ttl = FAILED_TTL_MS; });
   return answer;
 }
 
@@ -46,14 +50,14 @@ const shortModel = (model: string): string => model.replace(/^claude-/, "");
 
 /** The task drawer's Spend section body: the task's weighted tokens by phase, flagged when far above its kind and size norm. */
 export function SpendRows({ rows }: { rows: SpendPhase[] }) {
-  if (rows.length === 0) return <span className="none">No spend recorded</span>;
+  if (rows.length === 0) return <span className="none">No spend recorded in the last 7 days</span>;
   const total = rows[0].task_wte;
   const norm = rows[0].norm_wte;
   const top = Math.max(...rows.map((r) => r.wte), 1);
   return <div className="spend">
     <div className="spend-total">
-      <span className="big">{compactWte(total)} WTE</span>
-      {rows[0].above_norm && norm != null && <span className="spend-flag" title={`Median for ${rows[0].kind ?? "?"} size ${rows[0].size ?? "?"}: ${compactWte(norm)} WTE`}>{(total / norm).toFixed(1)}× norm</span>}
+      <span className="big" title="Weighted token equivalents: an uncached input token is 1, a cache write 1.25, a cache read 0.1, an output token 5">{compactWte(total)} WTE</span>
+      {rows[0].above_norm && norm != null && <span className="spend-flag" title={`Median for ${rows[0].kind ?? "?"} size ${rows[0].size ?? "?"}: ${compactWte(norm)} WTE`}>{(total / norm).toFixed(1)}× norm ({compactWte(norm)})</span>}
       {!rows[0].above_norm && norm != null && <span className="k">norm {compactWte(norm)}</span>}
     </div>
     {rows.map((r) => <div className="spend-row" key={r.phase} data-phase={r.phase}>
@@ -65,13 +69,14 @@ export function SpendRows({ rows }: { rows: SpendPhase[] }) {
   </div>;
 }
 
-/** The task's spend, read once per minute for the whole board; nothing until the read answers. */
+/** The task's spend, read once per minute for the whole board; "Reading spend…" until the read answers, "Spend unavailable" when it fails. */
 export function SpendRail({ task }: { task: string }) {
-  const [rows, setRows] = useState<SpendPhase[] | null>(null);
+  const [rows, setRows] = useState<SpendPhase[] | null | "unavailable">(null);
   useEffect(() => {
     let live = true;
-    void fetchSpend().then((all) => { if (live) setRows(phasesOf(all, task)); });
+    void fetchSpend().then((all) => { if (live) setRows(all === null ? "unavailable" : phasesOf(all, task)); });
     return () => { live = false; };
   }, [task]);
-  return rows === null ? <span className="none">Reading spend…</span> : <SpendRows rows={rows} />;
+  if (rows === null) return <span className="none" role="status">Reading spend…</span>;
+  return rows === "unavailable" ? <span className="none" role="status">Spend unavailable</span> : <SpendRows rows={rows} />;
 }

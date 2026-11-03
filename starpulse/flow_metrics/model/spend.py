@@ -54,9 +54,7 @@ def _owned_steps(found: Iterable[Signal], keys: TaskKeys | None, analytics: Anal
     return sorted(steps, key=lambda o: o.step["at"])
 
 
-def _compactions(
-    found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None
-) -> dict[str, list[float]]:
+def _compactions(found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None) -> dict[str, list[float]]:
     """The times of each task's compactions."""
     times: dict[str, list[float]] = defaultdict(list)
     for group in by_session(found):
@@ -76,9 +74,7 @@ def _phases(steps: list[Owned]) -> list[tuple[str, Owned]]:
     for o in steps:
         if _edits(o):
             first_edit.setdefault(o.step["task"], o.step["at"])
-    return [
-        (_phase(o.step, o.step["at"] >= first_edit.get(o.step["task"], 0)), o) for o in steps
-    ]
+    return [(_phase(o.step, o.step["at"] >= first_edit.get(o.step["task"], 0)), o) for o in steps]
 
 
 def _row(task: str, phase: str) -> dict[str, Any]:
@@ -92,8 +88,6 @@ def _row(task: str, phase: str) -> dict[str, Any]:
         "peak_context": 0,
         "compactions": 0,
         "models": set(),
-        "first_at": None,
-        "last_at": None,
     }
 
 
@@ -118,18 +112,21 @@ def spend_report(
         row["wte"] += _wte(tokens)
         row["peak_context"] = max(row["peak_context"], tokens["input"] + tokens["cache_read"] + tokens["cache_write"])
         row["models"].add(step["model"])
-        row["first_at"] = min(step["at"], row["first_at"] or step["at"])
-        row["last_at"] = max(step["at"], row["last_at"] or step["at"])
+        row.setdefault("first_at", step["at"])
+        row["last_at"] = step["at"]
     for task, times in _compactions(signals, keys, analytics).items():
-        phases = sorted((r["first_at"], r) for (t, _), r in rows.items() if t == task)
-        starts = [first for first, _ in phases]
+        phases = sorted((r for (t, _), r in rows.items() if t == task), key=lambda r: r["first_at"])
+        if not phases:
+            continue
+        starts = [r["first_at"] for r in phases]
         for at in times:
-            if phases:
-                phases[max(bisect_right(starts, at) - 1, 0)][1]["compactions"] += 1
+            phases[max(bisect_right(starts, at) - 1, 0)]["compactions"] += 1
     return _flagged(rows, tasks)
 
 
-def _flagged(rows: dict[tuple[str, str], dict[str, Any]], tasks: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _flagged(
+    rows: dict[tuple[str, str], dict[str, Any]], tasks: Mapping[str, Mapping[str, Any]]
+) -> list[dict[str, Any]]:
     """The `rows` with each task's cell, total, norm and flag, by task then first step."""
     total: dict[str, float] = defaultdict(float)
     for (task, _), row in rows.items():

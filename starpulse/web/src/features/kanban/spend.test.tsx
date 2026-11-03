@@ -38,15 +38,18 @@ describe("spend", () => {
     expect(phasesOf(rows, "TASK-1").map((r) => r.phase)).toEqual(["claim", "deliver"]);
   });
 
-  it("asks the server once a minute and treats a refusal as no spend", async () => {
+  it("asks the server once a minute, and again after a few seconds when it failed", async () => {
     const fetcher = answer([phase({})]);
     await fetchSpend(fetcher, 0);
     await fetchSpend(fetcher, 30_000);
     expect(fetcher).toHaveBeenCalledTimes(1);
     forgetSpend();
-    expect(await fetchSpend(vi.fn(async () => ({ ok: false }) as Response), 0)).toEqual([]);
+    expect(await fetchSpend(vi.fn(async () => ({ ok: false }) as Response), 0)).toBeNull();
     forgetSpend();
-    expect(await fetchSpend(vi.fn(async () => { throw new Error("down"); }), 0)).toEqual([]);
+    expect(await fetchSpend(vi.fn(async () => { throw new Error("down"); }), 0)).toBeNull();
+    const retry = answer([phase({})]);
+    expect(await fetchSpend(retry, 1_000)).toBeNull();
+    expect(await fetchSpend(retry, 6_000)).toHaveLength(1);
   });
 
   it("flags a task far above its norm and names each phase with its steps, compactions and models", async () => {
@@ -55,7 +58,7 @@ describe("spend", () => {
       phase({ phase: "implement", wte: 89_850, compactions: 2, task_wte: 90_000, norm_wte: 20_000, above_norm: true }),
     ]} />);
     expect(text).toContain("90.0K WTE");
-    expect(text).toContain("4.5× norm");
+    expect(text).toContain("4.5× norm (20.0K)");
     expect(text).toContain("1 step");
     expect(text).toContain("3 steps · 2 compactions · sonnet-5-5");
   });
@@ -65,6 +68,9 @@ describe("spend", () => {
     expect(near).not.toContain("× norm");
     expect(near).toContain("norm 2.0K");
     vi.stubGlobal("fetch", answer([phase({ task: "TASK-9" })]));
-    expect(await draw(<SpendRail task="TASK-1" />)).toContain("No spend recorded");
+    expect(await draw(<SpendRail task="TASK-1" />)).toContain("No spend recorded in the last 7 days");
+    forgetSpend();
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false }) as Response));
+    expect(await draw(<SpendRail task="TASK-1" />)).toContain("Spend unavailable");
   });
 });
