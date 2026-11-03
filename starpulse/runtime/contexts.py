@@ -192,9 +192,10 @@ def default_starters(
         return receiver.start(config, log, own)
 
     def github(own: threading.Event) -> Callable[[], None]:
+        from starpulse.event_log.migrate import migrate_chain
         from starpulse.github.adapters.inbound import listener
 
-        return listener.start(config, base, own)
+        return listener.start(config, base, own, migrate_chain)
 
     known: dict[str, Starter] = {
         "board": board, "pulls": pulls, "scheduler": scheduler, "runs": runs, "flow-metrics": flow_metrics,

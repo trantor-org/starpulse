@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select, text
 
+from starpulse.event_log.migrate import migrate_chain
 from starpulse.github.adapters.inbound import listener
 from starpulse.github.adapters.inbound.listener import bind
 from starpulse.github.adapters.outbound.inbox import SqlInbox, github_inbox
@@ -67,7 +68,7 @@ def sign(body: bytes) -> str:
 def intake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Intake]:
     monkeypatch.setattr(listener, "READ_TIMEOUT", 0.2)
     settings = GitHub(secret_env="X", organisation="acme", max_body_bytes=MAX_BODY, port=0)
-    inbox = SqlInbox(f"sqlite:///{tmp_path / 'github.sqlite'}")
+    inbox = SqlInbox(f"sqlite:///{tmp_path / 'github.sqlite'}", migrate_chain)
     server = bind(settings, SECRET, inbox)
     threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     yield Intake(server, inbox)

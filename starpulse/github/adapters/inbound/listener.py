@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.github.adapters.outbound import verdicts as metrics
-from starpulse.github.adapters.outbound.inbox import SqlInbox
+from starpulse.github.adapters.outbound.inbox import Migrate, SqlInbox
 from starpulse.github.model.delivery import UNVERIFIED, Delivery, Refusal, admit, declared_length
 from starpulse.github.model.github_config import GitHub
 from starpulse.github.ports.inbox import Inbox, InboxError
@@ -102,8 +102,9 @@ def bind(settings: GitHub, secret: bytes, inbox: Inbox) -> ThreadingHTTPServer:
     return ThreadingHTTPServer((settings.host, settings.port), _handler(settings, secret, inbox, metrics.Verdicts()))
 
 
-def start(config: Any, base: Path, stop: threading.Event) -> Callable[[], None]:
-    """The `github` context: serve `[github]` on threads until `stop` is set, which closes the listener.
+def start(config: Any, base: Path, stop: threading.Event, migrate: Migrate) -> Callable[[], None]:
+    """The `github` context: serve `[github]` on threads until `stop` is set, which closes the listener. `migrate` builds the
+    inbox's schema.
 
     Raises `ValueError` without the table or without the secret in the environment, and `OSError` when the address is
     taken, which the `contexts` process retries with a backoff. Returns the context's reload, which has nothing to
@@ -114,7 +115,7 @@ def start(config: Any, base: Path, stop: threading.Event) -> Callable[[], None]:
     secret = os.environ.get(settings.secret_env)
     if not secret:
         raise ValueError(f"github: the environment variable {settings.secret_env} holds no webhook secret")
-    inbox = SqlInbox(settings.database_url or f"sqlite:///{(base / INBOX_FILE).resolve()}")
+    inbox = SqlInbox(settings.database_url or f"sqlite:///{(base / INBOX_FILE).resolve()}", migrate)
     try:
         server = bind(settings, secret.encode(), inbox)
     except OSError:

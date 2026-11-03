@@ -12,15 +12,18 @@ from pathlib import Path
 
 from sqlalchemy import Column, Float, Integer, LargeBinary, MetaData, String, Table, create_engine
 from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse.event_log.migrate import migrate_chain
 from starpulse.github.model.delivery import Delivery
 from starpulse.github.ports.inbox import InboxError
 
-__all__ = ["SqlInbox", "github_inbox"]
+__all__ = ["Migrate", "SqlInbox", "github_inbox"]
 
 VERSION_TABLE = "github_alembic_version"
+#: Brings an engine's database to the head of a migration chain: `(engine, migrations directory, version table)`. The
+#: composition root passes the event log's shared runner, which this context may not import.
+Migrate = Callable[[Engine, Path, str], None]
 _MIGRATIONS = Path(__file__).parent / "migrations"
 
 metadata = MetaData()
@@ -42,7 +45,7 @@ _INSERTS = {"sqlite": sqlite.insert, "postgresql": postgresql.insert}
 class SqlInbox:
     """Saves each delivery in one transaction: `INSERT ... ON CONFLICT (delivery_id) DO NOTHING`, then commit."""
 
-    def __init__(self, database_url: str, clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, database_url: str, migrate: Migrate, clock: Callable[[], float] = time.time) -> None:
         scheme = database_url.partition(":")[0].partition("+")[0]
         insert = _INSERTS.get(scheme)
         if insert is None:
@@ -51,7 +54,7 @@ class SqlInbox:
         self._clock = clock
         self.engine = create_engine(database_url)
         try:
-            migrate_chain(self.engine, _MIGRATIONS, VERSION_TABLE)
+            migrate(self.engine, _MIGRATIONS, VERSION_TABLE)
         except BaseException:
             self.engine.dispose()  # the `contexts` process retries `start`, which opens a new inbox
             raise
