@@ -8059,6 +8059,150 @@
       "title": "Snapshot",
       "type": "object"
     },
+    "Spend": {
+      "description": "`GET /api/analytics/spend`: each task's tokens by phase, oldest task first, Codex left out.",
+      "properties": {
+        "now": {
+          "type": "number"
+        },
+        "spend": {
+          "items": {
+            "$ref": "#/$defs/SpendPhase"
+          },
+          "type": "array"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "spend"
+      ],
+      "title": "Spend",
+      "type": "object"
+    },
+    "SpendPhase": {
+      "description": "One phase of one task: the tokens its steps burned, and the task's total against its cell's norm.",
+      "properties": {
+        "above_norm": {
+          "description": "`task_wte` is over three times `norm_wte`.",
+          "type": "boolean"
+        },
+        "cache_read": {
+          "type": "integer"
+        },
+        "cache_write": {
+          "type": "integer"
+        },
+        "compactions": {
+          "description": "The compactions that fell in the phase.",
+          "type": "integer"
+        },
+        "first_at": {
+          "type": "number"
+        },
+        "input": {
+          "type": "integer"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The task's `kind-*` label, without the prefix; null when it has none."
+        },
+        "last_at": {
+          "type": "number"
+        },
+        "models": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "norm_wte": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The median `task_wte` of the task's kind and size; null under five tasks in the cell."
+        },
+        "output": {
+          "type": "integer"
+        },
+        "peak_context": {
+          "description": "The most input, cache-read and cache-write tokens one request held.",
+          "type": "integer"
+        },
+        "phase": {
+          "description": "`claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.",
+          "type": "string"
+        },
+        "side_steps": {
+          "description": "The subagents' share of `steps`.",
+          "type": "integer"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The task's `size-*` label; null when it has none."
+        },
+        "steps": {
+          "description": "Model requests, a subagent's included.",
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        },
+        "task_wte": {
+          "description": "`wte` summed over the task's phases.",
+          "type": "number"
+        },
+        "wte": {
+          "description": "Uncached input + 1.25 x cache write + 0.1 x cache read + 5 x output.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "task",
+        "phase",
+        "kind",
+        "size",
+        "steps",
+        "side_steps",
+        "input",
+        "output",
+        "cache_read",
+        "cache_write",
+        "wte",
+        "peak_context",
+        "compactions",
+        "models",
+        "first_at",
+        "last_at",
+        "task_wte",
+        "norm_wte",
+        "above_norm"
+      ],
+      "title": "SpendPhase",
+      "type": "object"
+    },
     "StaleEdit": {
       "description": "An edit refused because a field changed since the page read it: those fields with their current values.",
       "properties": {
@@ -9753,6 +9897,9 @@
     "snapshot": {
       "$ref": "#/$defs/Snapshot"
     },
+    "spend": {
+      "$ref": "#/$defs/Spend"
+    },
     "stages": {
       "$ref": "#/$defs/SubStages"
     },
@@ -9793,6 +9940,7 @@
     "sessions",
     "sessionSteps",
     "transitions",
+    "spend",
     "cells",
     "estimates",
     "graph",

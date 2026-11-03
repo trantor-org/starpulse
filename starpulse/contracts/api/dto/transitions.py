@@ -32,6 +32,40 @@ class Transitions(_Api):
     transitions: list[TransitionCost]
 
 
+class SpendPhase(_Api):
+    """One phase of one task: the tokens its steps burned, and the task's total against its cell's norm."""
+
+    task: str
+    phase: str = Field(description="`claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.")
+    kind: str | None = Field(description="The task's `kind-*` label, without the prefix; null when it has none.")
+    size: int | None = Field(description="The task's `size-*` label; null when it has none.")
+    steps: int = Field(description="Model requests, a subagent's included.")
+    side_steps: int = Field(description="The subagents' share of `steps`.")
+    input: int
+    output: int
+    cache_read: int
+    cache_write: int
+    wte: float = Field(description="Uncached input + 1.25 x cache write + 0.1 x cache read + 5 x output.")
+    peak_context: int = Field(description="The most input, cache-read and cache-write tokens one request held.")
+    compactions: int = Field(description="The compactions that fell in the phase.")
+    models: list[str]
+    first_at: float
+    last_at: float
+    task_wte: float = Field(description="`wte` summed over the task's phases.")
+    norm_wte: float | None = Field(
+        description="The median `task_wte` of the task's kind and size; null under five tasks in the cell."
+    )
+    above_norm: bool = Field(description="`task_wte` is over three times `norm_wte`.")
+
+
+class Spend(_Api):
+    """`GET /api/analytics/spend`: each task's tokens by phase, oldest task first, Codex left out."""
+
+    now: float
+    window_s: float
+    spend: list[SpendPhase]
+
+
 class Cell(_Api):
     """Median steps per clean completion of one kind and size, over its latest-fifth holdout."""
 

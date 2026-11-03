@@ -133,6 +133,7 @@ from starpulse.cli.agent_keys import (
     STAGE_KEYS,
     STEP_KEYS,
     TASK_KEYS,
+    SPEND_KEYS,
     TRANSITION_KEYS,
     VERDICT_KEYS,
 )
@@ -391,6 +392,12 @@ def _transitions(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
     answers. A window longer than the telemetry history is `refused`; a server that receives no telemetry is
     `unavailable`."""
     return _window_read(args, environ, "/api/analytics/transitions", TRANSITION_KEYS)
+
+
+def _spend(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Each task's tokens by phase over `--hours`, as `/api/analytics/spend` answers, with the task's weighted total
+    against its kind and size norm. Refusals as `analytics transitions`."""
+    return _window_read(args, environ, "/api/analytics/spend", SPEND_KEYS)
 
 
 def _cells(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1383,6 +1390,13 @@ def _parser() -> argparse.ArgumentParser:
             "wasted-step rate, agent seconds and peak context",
             _transitions,
             TRANSITION_KEYS,
+        ),
+        (
+            "spend",
+            "each task's tokens by phase (claim, implement, qa, deliver, review fix): weighted tokens, cache reads, peak "
+            "context, compactions and models, with the task's total against its kind and size norm",
+            _spend,
+            SPEND_KEYS,
         ),
         (
             "cells",

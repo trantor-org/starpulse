@@ -9,6 +9,7 @@ import { StartCriteria } from "./StartCriteria";
 import { DocReader, DocRows, useDocs } from "./DocReader";
 import { Inline, Md, RepoBase } from "./Markdown";
 import { sessionNickname } from "./nickname";
+import { SpendRail } from "./spend";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
   LABEL_FIELDS, LABEL_RULE, repoBase, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem, unlistedPulls,
@@ -624,6 +625,7 @@ export function TaskView(p: TaskViewProps) {
               </RailSection>
             )}
             <RailSection name="Pull requests" count={p.task.prs.length + unlistedPulls(p.task, ciHistory(p.task)).length}><PullRows task={p.task} /></RailSection>
+            <RailSection name="Spend"><SpendRail task={p.task.id} /></RailSection>
             {deps.dependsOn.length + deps.holds.length + deps.follows.length > 0 && <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.follows.length + deps.more}>
               <div className="deps">
                 {deps.dependsOn.length > 0 && <>

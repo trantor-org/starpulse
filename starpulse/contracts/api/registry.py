@@ -93,6 +93,7 @@ from starpulse.contracts.api.dto.transitions import (
     Estimates,
     FlowGraph,
     RunDiffs,
+    Spend,
     SubStages,
     Transitions,
 )
@@ -121,6 +122,7 @@ RESPONSES: dict[str, Any] = {
     "/api/analytics/sessions": Sessions,
     "/api/analytics/steps": SessionSteps,
     "/api/analytics/transitions": Transitions,
+    "/api/analytics/spend": Spend,
     "/api/analytics/cells": Cells,
     "/api/analytics/estimates": Estimates,
     "/api/analytics/graph": FlowGraph,
@@ -189,6 +191,7 @@ BODIES: dict[str, Any] = {
     "sessions": Sessions | ApiError | WindowTooLong,
     "session_steps": SessionSteps | ApiError | WindowTooLong,
     "transitions": Transitions | ApiError | WindowTooLong,
+    "spend": Spend | ApiError | WindowTooLong,
     "cells": Cells | ApiError | WindowTooLong,
     "estimates": Estimates | ApiError | WindowTooLong,
     "graph": FlowGraph | ApiError | WindowTooLong,

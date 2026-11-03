@@ -229,6 +229,30 @@ largest, or with no bands) and `effort_size_step` is its distance from `size` in
 overran (null with no bands, or a `size` that is no band's). The rows are read from the telemetry and the board on
 each request, so a relabelled task shows its current label.
 
+## Report each task's spend by phase
+
+`GET /api/analytics/spend[?hours=N]` (168 hours by default) is `{now, window_s, spend}`: one row per task and phase over
+the steps of [Read each step of a session](#read-each-step-of-a-session), a subagent's counted to its task, Codex and
+Cursor left out, by task then the phase's first step. Its columns:
+
+- `task`, `kind`, `size`: the task and its board labels `kind-<kind>` and `size-<n>`, null when it has none.
+- `phase`: `claim`, `implement`, `qa`, `deliver` or `review_fix`. The skills `qa`, `deliver`, `review-fix` and
+  `cr-triage` set their phase. Every other step is `claim` until the first step of the task that edits a file (`Edit`,
+  `Write`, `MultiEdit`, `NotebookEdit`, `StrReplace`), across all its sessions in the window, and `implement` from it; a
+  task with no edit in the window is all `implement`, so a window that starts mid-task does not bill its work to `claim`.
+- `steps`, `side_steps`: model requests and the subagents' share of them.
+- `input`, `output`, `cache_read`, `cache_write`: the phase's tokens. `wte` weighs them as the provider prices them
+  against one uncached input token: a cache write 1.25, a cache read 0.1, an output token 5.
+- `peak_context`: the most input, cache-read and cache-write tokens one request held. `compactions`: the compactions
+  that fell in the phase, a compaction counted to the phase of the step before it.
+- `models`, `first_at`, `last_at`: the models used and the epoch seconds of the phase's first and last step.
+- `task_wte`: `wte` over the task's phases in the window. `norm_wte`: the median `task_wte` of the tasks of its kind and
+  size, null under 5 tasks in the cell. `above_norm`: `task_wte` is over 3 times `norm_wte`.
+
+Blind spot: `starting-task` stays in force through the build, so the skill alone cannot split `claim` from `implement`;
+the first edit does, and a task worked by hand with no skill loaded is still placed by it. A task with no labels has
+no norm.
+
 ## Graph a transition's activities and diff a fast run against a slow one
 
 `GET /api/analytics/graph`, `/stages` and `/diff` (`?hours=N`, 168 by default) read the same steps by the kind and size
