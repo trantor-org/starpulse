@@ -25,7 +25,7 @@ from typing import Any
 
 from starpulse.contracts.signals import CLAUDE_CODE
 from starpulse.flow_metrics.model.cells import cell_of
-from starpulse.github import Transport, get
+from starpulse.github.adapters.outbound.rest import Transport, get
 
 __all__ = ["WEIGHTS", "PullFacts", "cell_task_scores", "merged_pulls", "pull_facts", "score_cells", "task_score"]
 

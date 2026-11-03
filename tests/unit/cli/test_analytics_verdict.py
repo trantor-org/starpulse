@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import pytest
-from starpulse import github
+from starpulse.github.adapters.outbound import rest as github
 from starpulse.cli import agent_cli as cli
 from starpulse.cli import agent_wire
 

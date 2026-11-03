@@ -18,7 +18,7 @@ from sqlalchemy import Connection, Engine, create_engine, inspect, text
 
 from starpulse.event_log.tables import VERSION_TABLE
 
-__all__ = ["StoreNotMigrated", "alembic_config", "migrate", "require_migrated"]
+__all__ = ["StoreNotMigrated", "alembic_config", "migrate", "migrate_chain", "require_migrated"]
 
 _MIGRATIONS = Path(__file__).parent / "migrations"
 #: Alembic's environment is process-global, so two threads of one process cannot run the chain at once.
@@ -29,17 +29,17 @@ class StoreNotMigrated(RuntimeError):
     """The store is not at the schema revision the chain declares; `starpulse migrate` brings it there."""
 
 
-def alembic_config(db: Connection) -> AlembicConfig:
-    """The chain's configuration; its environment runs on `db`."""
+def alembic_config(db: Connection, migrations: Path = _MIGRATIONS) -> AlembicConfig:
+    """The configuration of the chain in `migrations` (the event log's by default); its environment runs on `db`."""
     config = AlembicConfig()
-    config.set_main_option("script_location", str(_MIGRATIONS))
+    config.set_main_option("script_location", str(migrations))
     config.attributes["connection"] = db
     return config
 
 
 @cache
-def _head() -> str | None:
-    return ScriptDirectory(str(_MIGRATIONS)).get_current_head()
+def _head(migrations: Path = _MIGRATIONS) -> str | None:
+    return ScriptDirectory(str(migrations)).get_current_head()
 
 
 @cache
@@ -71,10 +71,10 @@ def _replay(db: Connection) -> None:
         db.exec_driver_sql(f'INSERT INTO "{table}" VALUES ({marks})', [tuple(row) for row in held])
 
 
-def _recorded(db: Connection) -> str | None:
-    if not inspect(db).has_table(VERSION_TABLE):
+def _recorded(db: Connection, version_table: str = VERSION_TABLE) -> str | None:
+    if not inspect(db).has_table(version_table):
         return None
-    return db.execute(text(f"SELECT version_num FROM {VERSION_TABLE}")).scalar()
+    return db.execute(text(f"SELECT version_num FROM {version_table}")).scalar()
 
 
 def migrate(engine: Engine) -> None:
@@ -90,6 +90,20 @@ def migrate(engine: Engine) -> None:
             return
         config = alembic_config(db)
         command.upgrade(config, "head")
+        db.commit()
+
+
+def migrate_chain(engine: Engine, migrations: Path, version_table: str) -> None:
+    """Bring the store `engine` opens to the head of another chain, `migrations` versioned in `version_table`.
+
+    It runs under the lock every chain in the process shares, as Alembic's environment is process-global."""
+    head = _head(migrations)
+    with _RUNNING, engine.connect() as db:
+        if _recorded(db, version_table) == head:
+            return
+        if engine.dialect.name == "sqlite":
+            db.exec_driver_sql("BEGIN IMMEDIATE")
+        command.upgrade(alembic_config(db, migrations), "head")
         db.commit()
 
 

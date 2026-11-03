@@ -509,6 +509,16 @@ applied_by = "pin-bump"
 # host = "0.0.0.0"         # the address to bind (default 127.0.0.1)
 # port = 4321              # the port to bind (default 4318)
 # redactor = "pkg.mod:redact"  # the filter a shell command's text passes through before it is stored; none keeps no command text
+
+# Optional: have `serve` run the GitHub intake listener (see docs/sources.md); the secret and one of organisation or repositories are required.
+# [github]
+# secret_env = "GITHUB_WEBHOOK_SECRET"   # the environment variable that holds the App's webhook secret
+# organisation = "acme"                  # accept every repository this owner has
+# repositories = ["solo/tool"]           # accept these owner/name repositories as well
+# database_url = "sqlite:///github.sqlite"  # the inbox database (default github.sqlite beside this file); sqlite or postgresql
+# max_body_bytes = 5242880               # a larger body is answered 413 (default 5 MiB)
+# host = "127.0.0.1"                     # the address to bind (default 127.0.0.1)
+# port = 8767                            # the port to bind (default 8767)
 ```
 
 ### Runs adapters
@@ -528,7 +538,7 @@ also serves the share of all the host's cores the `dagu*.service` units used sin
 
 ### Settings reference
 
-The board adapters, `[scheduler]`, `[analytics]`, `[search]`, `[project]`, `[cursor_context]` and `[claude_code]` are described by the examples above and
+The board adapters, `[scheduler]`, `[analytics]`, `[search]`, `[project]`, `[cursor_context]`, `[claude_code]` and `[github]` are described by the examples above and
 by [Scheduler](#scheduler); `[level]` by the flow graph it draws. Every other setting is described below, generated from the
 models in `starpulse/runtime/config_model.py`, which the loader takes its keys and defaults from: edit a description there, run
 `python -m starpulse.runtime.config_reference`, and commit the result. CI fails when this section differs from the models.
@@ -570,6 +580,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `sequences` (table of list of text): The phases a task goes through, in order, keyed by task type (`story`, `bug`), with `default` for a type it does not name. A lifecycle machine link that lists `routes` sends a task to the route its sequence names next.
 - `cursor_context` (table): Holds Cursor task sessions to a context limit (see docs/sources.md).
 - `claude_code` (table): Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).
+- `github` (table): Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).
 - `read_model` (any value, retired): Retired: the read model is the only board reader; accepted so a config that still names it loads.
 
 #### [ci]

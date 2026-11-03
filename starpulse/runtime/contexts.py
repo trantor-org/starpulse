@@ -43,11 +43,11 @@ BACKGROUND_CONTEXTS = ("pulls", "scheduler", "runs", "flow-metrics", "search", "
 
 def contexts_of(config: Config) -> list[str]:
     """The contexts this process runs for `config`: `BACKGROUND_CONTEXTS`, Search only with an `embeddings_url`, then the
-    run Adapters its `[[runs]]` instances name, then the Claude Code receiver its `[claude_code]` table asks for."""
+    run Adapters its `[[runs]]` instances name, then the receivers its `[claude_code]` and `[github]` tables ask for."""
     from starpulse.runtime.supervisor import adapter_contexts
 
     kept = [c for c in BACKGROUND_CONTEXTS if c != "search" or config.search.embeddings_url]
-    receivers = ["claude-code"] if config.claude_code else []
+    receivers = [name for name, table in (("claude-code", config.claude_code), ("github", config.github)) if table]
     return [*kept, *adapter_contexts(config), *receivers]
 
 
@@ -191,9 +191,14 @@ def default_starters(
 
         return receiver.start(config, log, own)
 
+    def github(own: threading.Event) -> Callable[[], None]:
+        from starpulse.github.adapters.inbound import listener
+
+        return listener.start(config, base, own)
+
     known: dict[str, Starter] = {
         "board": board, "pulls": pulls, "scheduler": scheduler, "runs": runs, "flow-metrics": flow_metrics,
-        "search": search, "claude-code": claude_code, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
+        "search": search, "claude-code": claude_code, "github": github, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
     }  # fmt: skip
     unknown = [name for name in names if name not in known]
     if unknown:
