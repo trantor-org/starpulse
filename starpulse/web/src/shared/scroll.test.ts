@@ -7,8 +7,6 @@ const scrolls = (body: string) => /overflow(-[xy])?\s*:\s*(auto|scroll)/.test(bo
 
 /** An open DAG's chart, which wraps a wide DAG onto bands below rather than scrolling. */
 const CHART = "#kbm .dgm .chart";
-/** The In Progress drill-in's board: its phase columns need 800px, so on a phone it scrolls inside its region rather than draw overlapping. */
-const DRILL_BOARD = "#sd .sd-body";
 /** The Kanban board: its lanes keep one fixed width, so it scrolls sideways once they outgrow the viewport. */
 const KANBAN_BOARD = "#kb #cols";
 
@@ -21,7 +19,7 @@ describe("the page's scrolling boxes", () => {
   });
 
   it("scroll in one rule only: vertically, never sideways, with the Kanban columns' thin scrollbar", () => {
-    const scrolling = rules.filter((r) => scrolls(r.body) && r.sel !== CHART && r.sel !== DRILL_BOARD && r.sel !== KANBAN_BOARD);
+    const scrolling = rules.filter((r) => scrolls(r.body) && r.sel !== CHART && r.sel !== KANBAN_BOARD);
     expect(scrolling.map((r) => r.sel)).toHaveLength(1);
     const [rule] = scrolling;
     expect(rule.body).toMatch(/overflow-x:\s*hidden/);

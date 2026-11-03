@@ -32,8 +32,6 @@ interface Props {
 
 /** The mockup's content starts at this x (the mockup's navigation was left of it) and its board at this y below the header, so the stage is offset by both. */
 const ORIGIN = 251, TOP = 48;
-/** Narrower or shorter than this the board scrolls rather than overlap: its phase columns need the room. */
-const MIN_W = 800, MIN_H = 600;
 const LANE = { stroke: tint("slate", 16) }, GUIDE = { stroke: tint("slate", 10) }, GROUP = { stroke: tint("released", 38) };
 const SVG = { position: "absolute", left: 0, top: 0, pointerEvents: "none" } as const;
 
@@ -112,7 +110,7 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = wallClock, na
   const moves = useMemo(() => movesOf(createHistory({ onChange: () => redraw((n) => n + 1), ttl: 5 })), []);
   const [body, room] = useSize<HTMLDivElement>();
   // the stage fills the room the shell leaves; before it is measured it is the mockup's own size
-  const stageW = room.w ? Math.max(MIN_W, room.w) : MOCKUP.w, stageH = room.h ? Math.max(MIN_H, room.h) : MOCKUP.h - TOP;
+  const stageW = room.w || MOCKUP.w, stageH = room.h || MOCKUP.h - TOP;
   const W = ORIGIN + stageW, H = stageH + TOP, size = { w: stageW, h: H };
   const stars = useMemo(() => starfield(W, H, 70), [W, H]);
 
