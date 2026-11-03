@@ -57,6 +57,7 @@ from starpulse.board.adapters.upstream_backlog import (
 from starpulse.board.model import rules
 from starpulse.board.model.claims import assignee_of, claimed, released
 from starpulse.board.model.guard import Guard, Validate
+from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
 from starpulse.board.model.seam import (
     ANONYMOUS,
     FLAGGED,
@@ -522,6 +523,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "priority": str(frontmatter.get("priority") or ""),
         "impact": str(frontmatter.get("impact") or ""),
         "urgency": str(frontmatter.get("urgency") or ""),
+        "tier": str(frontmatter.get("tier") or ""),
         "labels": list(_strings(frontmatter.get("labels"))),
         "milestone": str(frontmatter.get("milestone") or ""),
         "source": str(frontmatter.get("source") or ""),
@@ -572,6 +574,7 @@ _SCALARS = {
     "priority": "priority",
     "impact": "impact",
     "urgency": "urgency",
+    "tier": "tier",
     "milestone": "milestone",
     "source": "source",
     **_FRONT_KEYS,
@@ -653,6 +656,14 @@ def _append_notes(body: str, text: str) -> str:
     return body.rstrip("\n") + "\n" + _NOTES_SECTION.format(text)
 
 
+def _tier(text: str) -> str:
+    """`text` as a tier the board names (blank stays blank, which clears it), or raise."""
+    tier = text.strip().lower()
+    if tier and tier not in TIERS:
+        raise ValueError(f"tier must be one of {', '.join(TIERS)}, not {text!r}")
+    return tier
+
+
 def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, str]) -> bool:
     """Set `field` in `frontmatter` and say so, or say it is no front matter field, leaving `frontmatter` as it was."""
     if field in _SCALARS:
@@ -660,6 +671,8 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
         text = _text(field, value)
         if not text and field == "title":
             raise ValueError("title cannot be empty")
+        if field == "tier":
+            text = _tier(text)
         frontmatter[key] = text
         if not text:
             del frontmatter[key]
@@ -1326,6 +1339,7 @@ _NEW_TASK_DETAILS = {
     "priority",
     "impact",
     "urgency",
+    "tier",
     "description",
     "acceptanceCriteria",
     "created_by",
@@ -1340,6 +1354,7 @@ def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) ->
         frontmatter["profile"] = [profile]
     keys = ("labels", "milestone", "dependencies", "priority", "impact", "urgency", "created_by")
     frontmatter |= {key: details[key] for key in keys if key in details}
+    frontmatter["tier"] = _tier(str(details.get("tier") or "")) or DEFAULT_TIER
     frontmatter |= {_FRONT_KEYS[field]: details[field] for field in _FRONT_KEYS if field in details}
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---\n"
     if description := details.get("description"):

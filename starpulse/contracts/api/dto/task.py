@@ -90,6 +90,10 @@ class RawTask(_Api):
     urgency: str | None = Field(
         default=None, description="A Board task's Urgency (low, medium or high); empty or absent when it has none."
     )
+    tier: str | None = Field(
+        default=None,
+        description="A Board task's tier (regression, bug, leverage, standard or decide); absent on a row an adapter does not tier.",
+    )
     source: str | None = Field(
         default=None,
         description="The key the producer filed a Board task under (`task create --source`); empty or absent when none.",

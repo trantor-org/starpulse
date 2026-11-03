@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from starpulse.contracts.api.dto.requests import CreateRequest, MissRequest, StartRequest
 
 ROOT = Path(__file__).resolve().parents[3] / "starpulse"
@@ -60,3 +63,10 @@ def test_api_schema_carries_the_create_start_and_miss_bodies() -> None:
     assert "profile" in start_props
     miss_props = defs["MissRequest"]["properties"]
     assert "reason" in miss_props
+
+
+def test_a_create_takes_a_tier_the_board_names_in_lower_case_and_refuses_any_other() -> None:
+    assert CreateRequest(title="Fix it", tier="  Bug ").tier == "bug"
+    assert CreateRequest(title="Add it").tier is None
+    with pytest.raises(ValidationError, match="regression, bug, leverage, standard, decide"):
+        CreateRequest(title="Fix it", tier="urgent")

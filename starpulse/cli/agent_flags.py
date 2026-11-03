@@ -23,6 +23,7 @@ def create_flags(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--priority", help="`high`, `medium` or `low`")
     sub.add_argument("--impact", help="how much the work matters: `high`, `medium` or `low`")
     sub.add_argument("--urgency", help="how soon the work matters: `high`, `medium` or `low`")
+    sub.add_argument("--tier", help="the task's tier: `regression`, `bug`, `leverage`, `standard` (default) or `decide`")
     sub.add_argument("--milestone", help="the milestone's id (`m-106`)")
     sub.add_argument("--source", help="the key a producer files its task under, so a rerun finds it again")
     sub.add_argument("--follows", help="the id of the finished task this one follows up (`TASK-9`)")

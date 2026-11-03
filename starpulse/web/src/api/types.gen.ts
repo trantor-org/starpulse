@@ -624,6 +624,10 @@ export interface RawTask {
    * A machine's task: the id of the Backlog task its events name.
    */
   task?: string | null;
+  /**
+   * A Board task's tier (regression, bug, leverage, standard or decide); absent on a row an adapter does not tier.
+   */
+  tier?: string | null;
   title: string;
   trail?: TrailStep[] | null;
   /**
@@ -2078,6 +2082,7 @@ export interface CreateSpec {
   source?: string | null;
   status?: string | null;
   task?: string | null;
+  tier?: string | null;
   title: string;
   type?: string | null;
   urgency?: string | null;
@@ -2198,6 +2203,7 @@ export interface CreateRequest {
   status?: string | null;
   task?: string | null;
   tasks?: [CreateSpec, ...CreateSpec[]] | null;
+  tier?: string | null;
   title?: string | null;
   type?: string | null;
   urgency?: string | null;

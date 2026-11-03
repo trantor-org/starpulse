@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from starpulse.board import criteria
 from starpulse.board.model.markdown import needs_attention_reason
-from starpulse.contracts.adapters import BoardTask
+from starpulse.contracts.adapters import DEFAULT_TIER, BoardTask
 from starpulse.machine_engine.model.machine_definition import Writer
 from starpulse.machine_engine.model.transitions import board_moves, lane_id
 
@@ -102,6 +102,7 @@ def task_agent(task: BoardTask) -> dict:
         "milestone": task.milestone,
         "impact": task.impact,
         "urgency": task.urgency,
+        "tier": task.tier,
         "adr_needed": task.adr_needed,
         "duplicate_search": task.duplicate_search,
         "duplicate_resolution": task.duplicate_resolution,
@@ -158,6 +159,7 @@ def summary_agent(
         "profile": profile,
         "impact": meta.get("impact", ""),
         "urgency": meta.get("urgency", ""),
+        "tier": meta.get("tier") or DEFAULT_TIER,
         "source": meta.get("source", ""),
         "assignee": summary["assignee"],
         "released": summary["released"],
