@@ -41,6 +41,7 @@ CONTEXT_ENTRIES = (
     "starpulse.flow_metrics.bin.flow_metrics_worker",
     "starpulse.board.bin.search_worker",
     "starpulse.board.bin.board_worker",
+    "starpulse.harness_telemetry.adapters.inbound.claude_code",
     _ADAPTER_ENTRY,
 )
 
@@ -85,6 +86,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "analytics": _owned_by(),
     "telemetry_loki_url": _owned_by(),
     "cursor_context": _owned_by(),
+    "claude_code": _owned_by("contexts"),
     "producers": _owned_by(),
     "project": _owned_by(),
     "database_url": _CHILDREN,
@@ -235,6 +237,7 @@ def _blocks(name: str, config: Config, base: Path) -> tuple[object, object]:
             flow_metrics_built_blocks(config),
             search_built_blocks(config),
             board_built_blocks(config),
+            config.claude_code,
             _machine_hash(config, base),
         )
         return restart, (pulls_delivery_blocks(config), scheduler_live_blocks(config))

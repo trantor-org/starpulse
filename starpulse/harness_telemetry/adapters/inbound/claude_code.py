@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -45,6 +46,7 @@ from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
 from starpulse.harness_telemetry.adapters.outbound import step_seconds
+from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
 from starpulse.harness_telemetry.model.harness import HARNESS
 from starpulse.harness_telemetry.adapters.inbound.otlp import TOOL_RESULT, LogEvent, receiver
 from starpulse.harness_telemetry.adapters.inbound.telemetry import redactor, signals, telemetry_log
@@ -113,6 +115,48 @@ def publisher(log: EventLog) -> Callable[[dict], int | None]:
     return publish
 
 
+def bind(settings: ClaudeCode, config: Any, log: EventLog) -> ThreadingHTTPServer:
+    """The receiver listening on `settings`' address, appending to `log`. Raises `ValueError` for a redactor that cannot be
+    loaded and `OSError` for an address that cannot be bound."""
+    keys = TaskKeys(key=re.compile(settings.key), branch=re.compile(settings.branch), key_format=settings.key_format)
+    redact = redactor(settings.redactor) if settings.redactor else None
+    telemetry = telemetry_log(config.telemetry_loki_url, log)
+
+    def publish_signals(found: list[Signal]) -> None:
+        step_seconds.observe(found)
+        telemetry.publish(found)
+
+    return ThreadingHTTPServer(
+        (settings.host, settings.port),
+        handler(
+            ClaudeCodeAdapter(keys),
+            publisher(log),
+            lambda payload: publish_signals(signals(payload, redact, analytics=config.analytics, keys=keys)),
+            (step_seconds.CONTENT_TYPE, step_seconds.exposition),
+        ),
+    )
+
+
+def start(config: Any, log: EventLog, stop: threading.Event) -> Callable[[], None]:
+    """The `claude-code` context: serve `[claude_code]` on threads until `stop` is set, which closes the listener.
+
+    Raises `ValueError` without the table or with a redactor that cannot be loaded, and `OSError` when the address is
+    taken, which the `contexts` process retries with a backoff. Returns the context's reload, which has nothing to
+    re-read: the table is a restart block."""
+    if config.claude_code is None:
+        raise ValueError("the claude-code context needs a [claude_code] table")
+    server = bind(config.claude_code, config, log)
+
+    def close() -> None:
+        stop.wait()
+        server.shutdown()
+        server.server_close()
+
+    threading.Thread(target=server.serve_forever, name="claude-code-receiver", daemon=True).start()
+    threading.Thread(target=close, name="claude-code-close", daemon=True).start()
+    return lambda: None
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -135,34 +179,19 @@ def main(
         help="the filter a shell command's text passes through before it is stored; without one none is stored",
     )
     args = parser.parse_args(argv)
-    keys = TaskKeys(key=re.compile(args.key), branch=re.compile(args.branch), key_format=args.key_format)
+    settings = ClaudeCode(args.host, args.port, args.key, args.branch, args.key_format, args.redactor)
 
     try:
         path = discover(args.config)
         config = load(path)
         log = open_event_log(config.database_url, path)
-        analytics = config.analytics
     except (OSError, ValueError) as exc:
         parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
 
     try:
-        redact = redactor(args.redactor) if args.redactor else None
+        server = bind(settings, config, log)
     except ValueError as exc:
         parser.error(str(exc))
 
-    telemetry = telemetry_log(config.telemetry_loki_url, log)
-
-    def publish_signals(found: list[Signal]) -> None:
-        step_seconds.observe(found)
-        telemetry.publish(found)
-
     print(f"claude code adapter on {args.host}:{args.port}", flush=True)
-    ThreadingHTTPServer(
-        (args.host, args.port),
-        handler(
-            ClaudeCodeAdapter(keys),
-            publisher(log),
-            lambda payload: publish_signals(signals(payload, redact, analytics=analytics, keys=keys)),
-            (step_seconds.CONTENT_TYPE, step_seconds.exposition),
-        ),
-    ).serve_forever()
+    server.serve_forever()

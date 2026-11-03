@@ -43,11 +43,12 @@ BACKGROUND_CONTEXTS = ("pulls", "scheduler", "runs", "flow-metrics", "search", "
 
 def contexts_of(config: Config) -> list[str]:
     """The contexts this process runs for `config`: `BACKGROUND_CONTEXTS`, Search only with an `embeddings_url`, then the
-    run Adapters its `[[runs]]` instances name."""
+    run Adapters its `[[runs]]` instances name, then the Claude Code receiver its `[claude_code]` table asks for."""
     from starpulse.runtime.supervisor import adapter_contexts
 
     kept = [c for c in BACKGROUND_CONTEXTS if c != "search" or config.search.embeddings_url]
-    return [*kept, *adapter_contexts(config)]
+    receivers = ["claude-code"] if config.claude_code else []
+    return [*kept, *adapter_contexts(config), *receivers]
 
 
 class _Refusing(argparse.ArgumentParser):
@@ -185,9 +186,14 @@ def default_starters(
 
         return search_worker.start(config, path, base, log, own, load=load)
 
+    def claude_code(own: threading.Event) -> Callable[[], None]:
+        from starpulse.harness_telemetry.adapters.inbound import claude_code as receiver
+
+        return receiver.start(config, log, own)
+
     known: dict[str, Starter] = {
         "board": board, "pulls": pulls, "scheduler": scheduler, "runs": runs, "flow-metrics": flow_metrics,
-        "search": search, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
+        "search": search, "claude-code": claude_code, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
     }  # fmt: skip
     unknown = [name for name in names if name not in known]
     if unknown:

@@ -9,6 +9,10 @@ through the event log of the history database the server reads, so give it the s
 (`starpulse-history.sqlite` beside that file; without one, the working directory's). Port 4318, OpenTelemetry's
 default, is often taken: `--port` moves the receiver, and the endpoint below follows it.
 
+`starpulse serve` runs the receiver itself, as a thread of its `contexts` child, when `starpulse.toml` holds a
+`[claude_code]` table (`host`, `port`, `redactor`; see [Serving](serving.md)): it restarts with that child under its
+memory limit and closes its port when `serve` stops, and no second process or unit is needed.
+
 ```sh
 uvx --from starpulse python -m starpulse.runtime.claude_code --config starpulse.toml --port 4319
 

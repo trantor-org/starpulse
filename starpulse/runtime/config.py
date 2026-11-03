@@ -32,6 +32,7 @@ from starpulse.board.model.search_config import Search, SearchError, parse_searc
 from starpulse.cli.project import Project, ProjectError, parse_project
 from starpulse.contracts.analytics import Analytics, AnalyticsError, parse_analytics
 from starpulse.flow_metrics.model.level import Level, LevelError, parse_level
+from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode, ClaudeCodeError, parse_claude_code
 from starpulse.harness_telemetry.model.cursor_context_config import (
     CursorContext,
     CursorContextError,
@@ -408,6 +409,8 @@ class Config:
     """The project's own command line for each step a shipped skill names (`[project.commands]`); no table: none is mapped."""
     cursor_context: CursorContext = field(default_factory=CursorContext)
     """The context limit a Cursor task session is reset at (`[cursor_context]`); no table: 150000 of a 200000 window."""
+    claude_code: ClaudeCode | None = None
+    """The Claude Code adapter the `contexts` child runs (`[claude_code]`); no table: none runs."""
 
     def reads_domains_at_start(self) -> bool:
         """Whether an instance lists no domains and its adapter reads them from its workflows as `serve` starts."""
@@ -492,6 +495,14 @@ def _cursor_context(raw: object) -> CursorContext:
     try:
         return parse_cursor_context(raw)
     except CursorContextError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _claude_code(raw: object) -> ClaudeCode | None:
+    """The `[claude_code]` table, or None when the config has none; a refusal is a `ConfigError`."""
+    try:
+        return parse_claude_code(raw)
+    except ClaudeCodeError as exc:
         raise ConfigError(str(exc)) from exc
 
 
@@ -728,6 +739,7 @@ def _config(
         sequences=_sequences(raw.get("sequences")),
         project=_project(raw.get("project")),
         cursor_context=_cursor_context(raw.get("cursor_context")),
+        claude_code=_claude_code(raw.get("claude_code")),
         refresh_token_env=_env_var_name("refresh_token_env", raw.get("refresh_token_env")),
         github_token_env=_env_var_name("github_token_env", raw.get("github_token_env")),
         take_over_command=_take_over_command(raw.get("take_over_command")),
