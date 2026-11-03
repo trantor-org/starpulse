@@ -12,6 +12,10 @@ describe("what the status dot and its note say of the connection", () => {
     expect(linkHud("retrying", "6:00 pm", false)).toEqual({ live: "wait", note: "retrying · 6:00 pm MST" });
   });
 
+  it("is amber, with the time of the Board drawn, while the Board shown is one the server has not confirmed", () => {
+    expect(linkHud("stale", "18:00", false)).toEqual({ live: "wait", note: "stale · 18:00 MST" });
+  });
+
   it("is red once the connection is lost", () => {
     expect(linkHud("offline", "18:00", false)).toEqual({ live: "off", note: "offline · 18:00 MST" });
   });

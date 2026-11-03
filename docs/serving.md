@@ -126,6 +126,7 @@ clock time of the last data the page drew.
 | --- | --- | --- | --- |
 | Live | green | `live · HH:MM MST` | The stream is open. |
 | Restarting | amber, pulsing | `restarting · HH:MM MST` | The server sent `restarting` before it exited. |
+| Stale | amber, pulsing | `stale · HH:MM MST` | The page drew the Board it kept from an earlier load and the server has not yet sent its own. |
 | Retrying | amber, pulsing | `retrying · HH:MM MST` | The stream dropped with no announcement. |
 | Offline | red | `offline · HH:MM MST` | The stream has been down for 20 s, from the drop or the announcement. It keeps retrying. |
 | New build | green | `updating when idle` | The server runs a page build other than the one loaded. |
@@ -134,6 +135,14 @@ The dot does not pulse under `prefers-reduced-motion`.
 
 The page reconnects at once after a drop, then waits 250 ms, 500 ms, 1 s, 2 s and 3 s between tries and keeps trying at 3 s.
 Each connect replaces the page's Board with a fresh snapshot.
+
+The page keeps the Board it draws in IndexedDB (database `starpulse`, store `kept`), at most once a second and never a
+partial Board from a server still `reading`. A load reads it back and draws it at once, marked `stale`, so a reload while
+the server is down or restarting shows the cards it last had instead of an empty page; `<time>` is the snapshot's own time.
+It stays stale, turning to `retrying` or `offline` as the stream fails, until the server's snapshot arrives and replaces
+it; a server that is still `reading` does not clear the mark. A Board the page held through a drop is marked stale from the
+reconnect until the server's whole Board arrives. A snapshot is read back only by the page build that wrote it. Where the
+browser has no IndexedDB or refuses a write (a full quota), the page works as before with nothing kept.
 
 While the Board is replaying after a start, `/api/events` resends only `snapshot`, once the replay has ended, because a
 reconnecting page needs the Board the replay built. Every other kind is a delta of that Board; resending it would make

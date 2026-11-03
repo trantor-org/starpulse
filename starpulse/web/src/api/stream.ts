@@ -3,6 +3,7 @@
 import { demoServer, type DemoServerHandle } from "../demo/host";
 import { playLink } from "../demo/linkDemo";
 import type { SchedulerStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
+import { browserCache, type SnapshotCache } from "./savedSnapshot";
 import { keep } from "./same";
 
 export { embedded } from "../demo/host";
@@ -11,6 +12,8 @@ export { embedded } from "../demo/host";
 export const RETRY_CAP_MS = 3000;
 /** How long a connection stays down before the page calls it lost; it goes on retrying. */
 export const LOST_MS = 20_000;
+/** The longest a snapshot waits to be written to browser storage: a burst of deltas is written once. */
+export const KEEP_MS = 1000;
 /** The wait before the `attempt`th reopen of a dropped connection: none for the first, then 250 ms doubling to the cap. */
 export const retryWait = (attempt: number) => (attempt === 0 ? 0 : Math.min(RETRY_CAP_MS, 250 * 2 ** (attempt - 1)));
 /** The stream, asking for each snapshot as `ref <path>`: a browser reads a long event on its main thread, a fetched body off it. */
@@ -92,8 +95,12 @@ function takeEarly(): EarlyStream | null {
   return early;
 }
 
-/** What the connection is doing: up, down after the server announced a restart, down with no announcement, or down for LOST_MS. */
-export type Link = "live" | "restarting" | "retrying" | "offline";
+/**
+ * What the connection is doing: up, down after the server announced a restart, down with no announcement, or down for LOST_MS. `stale`
+ * is the page showing a Board the server has not confirmed: the one kept from the last load before the server answers, or the one it
+ * held while the server it reconnected to is still reading its own.
+ */
+export type Link = "live" | "restarting" | "retrying" | "offline" | "stale";
 
 export interface StreamHandlers {
   /** The sky as it stands: each connect's snapshot, then that snapshot folded with every delta after it, `kind` naming that delta. */
@@ -110,7 +117,8 @@ export interface StreamHandlers {
 
 /**
  * One EventSource on /api/events, or on a self-contained demo page its DemoServer, followed with no connection at all. The server opens
- * each connection with a fresh snapshot, so a reconnect resyncs. A browser waits seconds before it retries a source of its own, so the
+ * each connection with a fresh snapshot, so a reconnect resyncs. The snapshot the page holds is kept in `kept` (browser storage), and a
+ * page that loads while the server is down draws that one, marked `stale`, until the server's own arrives; null keeps and restores nothing. A browser waits seconds before it retries a source of its own, so the
  * page closes a dropped connection and opens a new one at once, then after 250 ms, 500 ms and so on up to RETRY_CAP_MS.
  */
 export function openStream(
@@ -118,6 +126,7 @@ export function openStream(
   open: (url: string) => EventSource = (url) => new EventSource(url),
   demo: DemoServerHandle | null = demoServer(),
   early: EarlyStream | null = takeEarly(),
+  kept: SnapshotCache | null = browserCache(),
 ): { close(): void } {
   if (demo) {
     handlers.live(true);
@@ -143,10 +152,25 @@ export function openStream(
   let shown = false;
   /** Set while a snapshot and the events queued behind it fold into one state: each hand is a full pass over the sky, so they cost one. */
   let folding = false;
+  /** Set while the Board the page shows predates the connection: the one kept from the last load, or the one held through a drop, until the server's whole one is handed over. */
+  let old = false;
+  let keeping: ReturnType<typeof setTimeout> | undefined;
+  /** Writes the state as it stands KEEP_MS after the first change since the last write; a browser that refuses it (quota) leaves the page as it was. */
+  const keepSoon = () => {
+    if (!kept || keeping || state!.reading) return;
+    keeping = setTimeout(() => {
+      keeping = undefined;
+      kept.write(state!).catch(() => {});
+    }, KEEP_MS);
+  };
   const hand = (kind?: Delta["kind"]) => {
     if (folding || (shown && state!.reading)) return;
     shown = true;
     handlers.snapshot(state!, kind);
+    keepSoon();
+    if (!old || state!.reading) return;
+    old = false;
+    if (showing === "stale") show("live");
   };
 
   /** While a snapshot's body is read, the events after it, run in order once it is the page's state. */
@@ -191,10 +215,11 @@ export function openStream(
     lost = undefined;
     attempts = 0;
     announced = false;
-    show("live");
+    show(old ? "stale" : "live");
     handlers.live(true);
   };
   const drop = () => {
+    old ||= shown;
     handlers.live(false);
     if (showing !== "offline") show(announced ? "restarting" : "retrying");
     goesLost();
@@ -291,11 +316,22 @@ export function openStream(
   };
 
   connect(demo ? null : early);
+  // the Board kept from the last load is drawn unless the server's has come first, or its connection has already been heard from
+  kept?.read().then(
+    (snap) => {
+      if (!snap || state || stopped) return;
+      [state, shown, old] = [snap, true, true];
+      handlers.snapshot(snap);
+      show("stale");
+    },
+    () => {},
+  );
   return {
     close() {
       stopped = true;
       clearTimeout(timer);
       clearTimeout(lost);
+      clearTimeout(keeping);
       source?.close();
     },
   };
