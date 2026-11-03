@@ -6,13 +6,22 @@ wrote there.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import func, select
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import scheduler_runs
 from starpulse.scheduler.adapters.loop import GATE_TALLY_KEY, TALLY_KEY
 from starpulse.scheduler.model.admission import GATES
+from starpulse.scheduler.model.decision_log import EMPTY as EMPTY_DECISION_LOG
+from starpulse.scheduler.model.decision_log import KEY as DECISION_LOG_KEY
 from starpulse.scheduler.model.toggle import KEY as SWITCH_KEY
+
+
+def autopilot_log(log: EventLog) -> dict[str, Any]:
+    """The decision log the scheduler kept in the store: verdicts per local day, the starts and the first restore."""
+    return log.state(DECISION_LOG_KEY)[1] or EMPTY_DECISION_LOG
 
 
 def autopilot_exposition(log: EventLog) -> str:

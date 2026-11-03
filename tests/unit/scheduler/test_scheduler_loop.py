@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from starpulse.scheduler.adapters.loop import (
     Loop,
 )
 from starpulse.scheduler.model.config import Scheduler
+from starpulse.scheduler.model.decision_log import KEY as DECISION_LOG_KEY
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.inputs import STALE_S
 from starpulse.scheduler.model.ledger import Ledger
@@ -873,6 +875,32 @@ def test_a_tick_tallies_each_gate_a_task_passed_and_the_one_that_refused_it(tmp_
     assert tally["sessions/refused"] >= 1
     assert tally["cpu/admitted"] >= 2  # both tasks passed the cpu gate on the first pass
     assert "review/refused" not in tally
+
+
+def test_a_tick_keeps_each_verdict_with_its_reason_and_each_start_in_the_decision_log(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"sessions": 1})
+    rig.put("T-1")
+    rig.put("T-2")
+    rig.loop.tick()  # T-1 starts and takes the one slot; T-2 is refused by the sessions gate
+    rig.session("T-1")
+
+    rig.loop.tick()
+
+    kept = rig.log.state(DECISION_LOG_KEY)[1]
+    today = kept["days"][datetime.fromtimestamp(rig.now).date().isoformat()]
+    assert today["admitted"] >= 1
+    assert today["refused/sessions"] >= 1
+    assert kept["starts"] == [{"task": "T-1", "at": rig.now}]
+    assert kept["restored_at"] is not None  # the loop restored its in-flight set once when it was built
+
+
+def test_a_dry_read_of_the_decisions_keeps_nothing(rig: Rig) -> None:
+    rig.put("T-1")
+
+    rig.loop.next_pick()
+
+    kept = rig.log.state(DECISION_LOG_KEY)[1]
+    assert (kept["days"], kept["starts"]) == ({}, [])
 
 
 def test_a_stopped_session_that_becomes_active_again_is_not_admitted_as_a_new_run(rig: Rig) -> None:

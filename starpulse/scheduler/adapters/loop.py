@@ -46,6 +46,9 @@ from starpulse.scheduler.model.admission import (
     tier_of,
 )
 from starpulse.scheduler.model.config import Scheduler
+from starpulse.scheduler.model.decision_log import EMPTY as EMPTY_DECISION_LOG
+from starpulse.scheduler.model.decision_log import KEY as DECISION_LOG_KEY
+from starpulse.scheduler.model.decision_log import note
 from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.inputs import STALE_S, points
@@ -89,6 +92,14 @@ GATE_HISTORY_EVERY = 300.0
 START_LIMIT = "start-limit"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
 _HOST = ("cpu", "memory")
+
+
+def _verdict(decision: Decision) -> str:
+    """`admitted`, or `refused/<gate>` for the gate that bound `decision`."""
+    if decision.admitted:
+        return "admitted"
+    refused = [gate for gate, verdict in gate_verdicts(decision) if verdict == "refused"]
+    return f"refused/{refused[0] if refused else decision.blocked_by}"
 
 
 def _run_from(fields: Mapping[str, Any]) -> _Run | None:
@@ -418,6 +429,7 @@ class Loop:
             if (run := _run_from(fields)) is not None:
                 self._running[task] = run
         self._starts = self._state.starts()
+        self._note(restored=True)
         logger.info("StarPulse scheduler: restored %d in-flight", len(self._running))
 
     def _remember(self) -> None:
@@ -627,6 +639,7 @@ class Loop:
             gate_tally = Counter(self._kept_state(GATE_TALLY_KEY) or {})
             gate_tally.update(gates)
             self._keep_state(GATE_TALLY_KEY, dict(gate_tally))
+            self._note(verdicts=[_verdict(decision) for decision in decisions])
 
     def next_pick(self) -> dict[str, Any] | None:
         """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.
@@ -749,6 +762,7 @@ class Loop:
             )
             self._remember()
             started.append(picked.task)
+            self._note(started=picked.task)
             logger.info("StarPulse scheduler: started %s at %s", picked.task, session)
             self._note_claim(picked.task, session)
         if last is not None:
@@ -865,6 +879,11 @@ class Loop:
 
     def _save_pauses(self) -> None:
         self._keep_state(PAUSES_KEY, self._paused)
+
+    def _note(self, **entry: Any) -> None:
+        """Add `entry` (`note`'s keywords) to the decision log the server's `/autopilot-log` serves."""
+        kept = self._kept_state(DECISION_LOG_KEY) or EMPTY_DECISION_LOG
+        self._keep_state(DECISION_LOG_KEY, note(kept, self._clock(), **entry))
 
     def _kept_state(self, key: str) -> Any:
         try:
