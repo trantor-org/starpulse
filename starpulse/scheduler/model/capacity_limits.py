@@ -40,11 +40,3 @@ class CapacityLimitSetting:
         merged = {**self.store.all(), **changes}
         self.store.save({name: value for name, value in merged.items() if value is not None})
 
-
-def served(config_limit: float, override: float | None) -> dict[str, object]:
-    """The limit in force, where it comes from and what the config would give it, as the status serves one dimension."""
-    return {
-        "limit": float(config_limit if override is None else override),
-        "source": "starpulse.toml" if override is None else "admin",
-        "configLimit": float(config_limit),
-    }

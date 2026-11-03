@@ -13,9 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from typing import Any
 
-from starpulse.scheduler.model.capacity_limits import served
-
-__all__ = ["DIMENSIONS", "LEVELS", "Scheduler", "SchedulerError", "parse_scheduler"]
+__all__ = ["DIMENSIONS", "LEVELS", "Scheduler", "SchedulerError", "parse_scheduler", "served"]
 
 #: The capacity dimensions: host CPU and memory (percent), scheduler sessions in flight, and review-lane points.
 DIMENSIONS = ("cpu", "memory", "sessions", "review")
@@ -46,6 +44,16 @@ _KEYS = {
 
 class SchedulerError(ValueError):
     """The block cannot be run from; the message names the key to fix."""
+
+
+
+def served(config_limit: float, override: float | None) -> dict[str, object]:
+    """The limit in force, where it comes from and what the config would give it, as the status serves one dimension."""
+    return {
+        "limit": float(config_limit if override is None else override),
+        "source": "starpulse.toml" if override is None else "admin",
+        "configLimit": float(config_limit),
+    }
 
 
 @dataclass(frozen=True)

@@ -23,7 +23,8 @@ from typing import Any
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
-from starpulse.scheduler.model.capacity_limits import CapacityLimitSetting, served
+from starpulse.scheduler.model.capacity_limits import CapacityLimitSetting
+from starpulse.scheduler.model.config import served
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
 from starpulse.scheduler.model.session_caps import SessionCapSetting
