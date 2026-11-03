@@ -207,6 +207,7 @@ ROOT = {
     "scheduler",
     "schemas",
     "sessions",
+    "sweeper",
     "skills",
     "views",
     "web",
