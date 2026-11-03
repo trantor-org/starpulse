@@ -106,13 +106,15 @@ def require_project(root: Path, config: BacklogConfig) -> str:
     return config.project
 
 
-def upstream_keys(prefix: str = DEFAULT_PREFIX) -> TaskKeys:
+def upstream_keys(prefix: str = DEFAULT_PREFIX, proposal_prefix: str = "") -> TaskKeys:
     """Task keys `<prefix>-N` (and subtasks `<prefix>-N.M`) and the branches that name them, read in any case and
-    named in the case of `prefix`."""
+    named in the case of `prefix`. A `proposal_prefix` adds the keys `<proposal_prefix>-N` of the board's proposals, which
+    name no branch."""
     number = r"\d+(?:\.\d+)*"
     head = re.escape(prefix)
+    heads = "|".join(re.escape(found) for found in (prefix, proposal_prefix) if found)
     return TaskKeys(
-        key=re.compile(rf"{head}-{number}", re.I),
+        key=re.compile(rf"(?:{heads})-{number}", re.I),
         branch=re.compile(rf"(?:refs/heads/)?(?:[^/]+/)*?{head}-({number})(?=$|[-_/])", re.I),
         key_format=prefix.replace("{", "{{").replace("}", "}}") + "-{}",
     )
@@ -395,6 +397,7 @@ class UpstreamBacklog:
             follows=str(frontmatter.get("follows") or "").strip(),
             milestone=str(frontmatter.get("milestone") or "").strip(),
             type=str(frontmatter.get("type") or "").strip(),
+            aliases=_strings(frontmatter.get("aliases")),
             description=_description(body),
             acceptance_criteria=tuple(text for _, text in criteria),
             acceptance_checked=tuple(checked for checked, _ in criteria),
@@ -573,7 +576,7 @@ def project_board(
     return Board(
         machines=machines,
         start=start,
-        keys=upstream_keys(config.prefix),
+        keys=upstream_keys(config.prefix, str(settings.get("proposal_prefix", ""))),
         cues=lambda qualify: cues,
         waits=compiled.waits if compiled else {},
         roles=roles,

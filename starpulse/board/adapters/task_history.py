@@ -250,6 +250,22 @@ class TaskHistory:
 
         return run
 
+    def renumbered(
+        self, renumber: Callable[[str], Written], read: Callable[[str], Record | None]
+    ) -> Callable[[str], Written]:
+        """`renumber` (a verb giving a task a new id, the new id its output) that retires the old id's History with an
+        `Archived` and seeds the new id's History from its file once it succeeds."""
+
+        def run(task: str) -> Written:
+            before = read(task)
+            written = renumber(task)
+            if written.ok:
+                self._append(task, before, None, OPERATOR, "")
+                self._append(written.output, read(written.output), read(written.output), OPERATOR, "")
+            return written
+
+        return run
+
     def created(self, create: Callable[..., Written], read: Callable[[str], Record | None]) -> Callable[..., Written]:
         """`create` that appends the new task's `TaskCreated` once it succeeds."""
 

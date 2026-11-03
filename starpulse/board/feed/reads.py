@@ -27,6 +27,7 @@ class ReadMethods:
         It takes no lock, so opening a task never waits on the feed: one dict read is atomic, and a placed task's
         entry is replaced, never changed in place.
         """
+        task_id = self._aliases.get(task_id, task_id)
         if self._read_model is not None:
             return self._read_model_agent(task_id)
         agent = self.held(task_id)
@@ -66,6 +67,7 @@ class ReadMethods:
 
     def held(self, task_id: str) -> dict | None:
         """The open Board task as `task` has it, or its cold stub (`is_cold`) when it is done and entered before local midnight."""
+        task_id = self._aliases.get(task_id, task_id)
         if self._read_model is not None:
             return self._read_model_agent(task_id)
         return self._open.get(task_id) or self._open.get(self._keys.canonical(task_id) if self._keys else task_id)

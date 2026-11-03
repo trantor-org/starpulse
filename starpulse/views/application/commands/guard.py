@@ -179,7 +179,7 @@ def record_written(feed: BoardFeed | None, task: str | None, who: Who, write: Ca
         written = write()
         if feed is not None and written.ok and written.lane:
             feed.record_written(
-                task or written.output,
+                written.renumbered or task or written.output,
                 written.lane,
                 written.at or time.time(),
                 (who.actor, who.session, who.harness),

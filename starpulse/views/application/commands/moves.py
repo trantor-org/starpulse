@@ -130,7 +130,12 @@ def _write_move(feed: BoardFeed, task: str, column: str, who: Who, writer: MoveW
         return 501, {"error": written.output}
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"task": task, "to": column, **({"advice": written.advice} if written.advice else {})}
+    return 200, {
+        "task": written.renumbered or task,
+        "to": column,
+        **({"was": task} if written.renumbered else {}),
+        **({"advice": written.advice} if written.advice else {}),
+    }
 
 
 @with_request(_ClaimBody, "Claiming a task")
