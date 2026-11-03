@@ -71,8 +71,6 @@ ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
 _TERMINAL = ("MERGED", "CLOSED")
 #: The pull request check rollups that keep a task out of Review (`none` is a repository with no required check).
 _NOT_GREEN = ("pending", "failing")
-#: The repository the board renders a bare `PR #N` against; another repo's pull request links its own URL.
-_BOARD_REPO = "trantor-org/trantor"
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
 CRITERIA_ERRORS_METRIC = "starpulse_task_actor_criteria_errors"
 PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
@@ -201,6 +199,7 @@ class TaskActor:
         repos: Sequence[Repo] = (),
         pin_rule: str | None = None,
         pins: Pins | None = None,
+        board_repo: str | None = None,
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None,
@@ -266,6 +265,7 @@ class TaskActor:
         #: Tasks whose `deps_done` the board adapter holds; a task created re-derives them.
         self._held: set[str] = set()
         self._gate = PinGate(feed, store, repos, pin_rule, pins, live)
+        self._board_repo = board_repo  # the repository whose pull requests read as a bare `PR #N`; another repo links its URL
         self._lock = threading.RLock()
         #: Each open task's lane, dependencies and pull requests as the actor last saw them.
         self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...]]] = {}
@@ -887,7 +887,7 @@ class TaskActor:
                 return None
             if record["state"] == "MERGED" and not record["mergedAt"]:
                 return None  # merged on an event's word alone: the next read of GitHub settles it
-            link = f"PR #{record['number']}" if record["repo"] == _BOARD_REPO else url
+            link = f"PR #{record['number']}" if record["repo"] == self._board_repo else url
             if record["state"] == "MERGED" and not landed(self._store, record):
                 # merged into an integration branch not yet on main: the work is not delivered
                 self._note_hold(agent, (f"{link} merged into {record['baseRefName']}, not main",), DONE_HELD)

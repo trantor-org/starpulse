@@ -24,7 +24,7 @@ class Repo:
     """A repository whose merges reach live state through the parent's pin bump (`[[repos]]`)."""
 
     name: str
-    """The repository's name as its pull request links spell it (`trantor-org/<name>`)."""
+    """The repository's name as its pull request links spell it (`<owner>/<name>`)."""
     path: str
     """Where the parent repository holds it as a submodule."""
     applied_by: str

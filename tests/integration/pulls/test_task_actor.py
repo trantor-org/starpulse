@@ -362,6 +362,21 @@ def test_a_needs_attention_task_returns_to_ready_with_the_error_when_the_unfinis
     assert "unfinished printed nothing" in str(board.writes[0][2])
 
 
+def test_a_closing_comment_renders_a_pull_request_of_the_configured_board_repo_as_a_bare_number(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop, board_repo="acme/trantor")
+    store.save([pull(1, state="MERGED")])
+
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    _, _, comment, _ = board.writes[0]
+    assert "(PR #1)" in str(comment)
+
+
 def test_a_closing_comment_for_a_pull_request_in_another_repo_links_that_repos_pull_url(
     store: PullStore, stop: threading.Event
 ) -> None:

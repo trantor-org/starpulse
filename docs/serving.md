@@ -358,8 +358,8 @@ type = "native"
 # skill = "completing-tasks"
 # unless_actor = ["dagu/reconciler"]
 
-# Optional: move a task on the facts its lane waits on (see Task actor). The table takes no keys; its presence turns the
-# actor on, and the board must edit tasks, else `serve` refuses to start. With it, the [release] polling pass does not run.
+# Optional: move a task on the facts its lane waits on (see Task actor). Its presence turns the
+# actor on; optional `repo = "owner/name"` is the repository whose pull requests the board renders as a bare `PR #N`, and the board must edit tasks, else `serve` refuses to start. With it, the [release] polling pass does not run.
 # [board.actor]
 
 # To draw a Backlog.md project instead:
@@ -862,7 +862,8 @@ re-derived each poll, so a restart onto the new build settles the dependents its
 
 With a `[board.actor]` table, `serve` runs the task actor: an in-process worker that moves a task out of a lane when a
 fact that lane's machine state waits on (`waits`, [Public surface](public-surface.md)) holds, through the board's task
-editor as actor `starpulse/task-actor`. The board must edit tasks, else `serve` refuses to start. The table takes no keys.
+editor as actor `starpulse/task-actor`. The board must edit tasks, else `serve` refuses to start. The table's one key, `repo` (`owner/name`), names the board's own repository: its pull
+requests read as `PR #N` in a closing comment, every other repository's as its URL.
 
 The actor reads the `waits` of the Board machine and the transition each wait's event draws, so it moves only along a
 move the machine declares. For a task in a state with `waits`, the first fact that holds fires its event:

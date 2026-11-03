@@ -25,7 +25,7 @@ nothing: the `skill_activated` record for the same call already did. The export 
 directory or branch, so an event is keyed by the task the `vcs.ref.head.name` resource attribute's
 branch names under the adapter's `TaskKeys`, else by the session as a run.
 
-The adapter depends on nothing of trantor's: not its hooks, its `AGENTS.md` or its branch names.
+The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.md` or its branch names.
 """
 
 from __future__ import annotations
