@@ -33,7 +33,7 @@ SCAN_INTERVAL_S = 0.05
 PLACED_WITHIN_S = 5.0
 #: Held while an instance starts its adapter, so the threads that start is the only new ones in the adapter registry.
 _STARTING = threading.Lock()
-_MISSING = re.compile(r"([\w-]+) is not on the board")
+_MISSING = re.compile(r"([\w-]+) (?:is not on the board|has no record to read)")
 _TASK_FOLDERS = ("tasks", "completed", "archive/tasks")
 
 
