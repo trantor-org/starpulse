@@ -130,9 +130,9 @@ def test_metrics_serves_the_server_process_gauges_with_or_without_a_pull_store(t
         with urllib.request.urlopen(url(server, "/metrics"), timeout=5) as resp:
             samples = dict(line.split() for line in resp.read().decode().splitlines() if not line.startswith("#"))
 
-    assert int(samples["process_resident_memory_bytes"]) > 0
-    assert int(samples["process_threads"]) > 0
-    assert int(samples["process_open_fds"]) > 0
+    assert float(samples["process_resident_memory_bytes"]) > 0
+    assert float(samples["process_threads"]) > 0
+    assert float(samples["process_open_fds"]) > 0
     assert float(samples["process_start_time_seconds"]) > 1_700_000_000
 
 

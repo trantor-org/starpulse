@@ -371,7 +371,7 @@ leaves `files` out. A `number` that is not an integer or an unknown `state` answ
 a rebuild moves the series; a server whose `static/` holds no build serves none. The same route carries the server
 process's own metrics, `process_resident_memory_bytes`, the `process_cpu_seconds_total` counter,
 `process_threads`, `process_open_fds` and `process_start_time_seconds`; the last changes on every restart, so a growth rule can tell one
-process lifetime from the next. A host with no `/proc` serves none of them.
+process lifetime from the next. A host with no `/proc` serves only `process_threads`.
 
 `waiting_on` is the dependencies neither in the `done` lane (hot or cold) nor settled as completed. `criteria` and `pause_reason` come
 from `BoardTask.acceptance_criteria` with `acceptance_checked`, and `BoardTask.pause_reason`; an adapter that sets none
