@@ -1107,7 +1107,7 @@ def test_a_release_drops_only_the_dependencies_whose_needs_are_met(store: PullSt
     assert board.writes[0][1] == {"status": "ready", "dependencies": ["TASK-1"], "dependencyNeeds": []}
 
 
-def test_a_dod_tick_that_leaves_a_merged_review_task_fully_checked_makes_the_done_move_the_guard_refused(
+def test_a_leftover_unchecked_dod_item_does_not_keep_a_checked_task_with_every_pr_closed_unmerged_open(
     tmp_path: Path, store: PullStore, stop: threading.Event
 ) -> None:
     engine = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").engine
@@ -1118,32 +1118,27 @@ def test_a_dod_tick_that_leaves_a_merged_review_task_fully_checked_makes_the_don
     referenced = NewEvent(
         type="FieldsEdited", payload={"changes": {"references": [PR_ONE]}}, actor="adin", writer="operator"
     )
+    criterion = NewEvent(type="CriterionAdded", payload={"kind": "ac", "text": "Ship"}, actor="adin", writer="operator")
     item = NewEvent(type="CriterionAdded", payload={"kind": "dod", "text": "Verify"}, actor="adin", writer="operator")
-    events.append("task", "TASK-1", 0, [created, referenced, item])
-    projector = Projector(engine, events)
-    projector.catch_up()
-    feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine))
-    board = Board(feed)
-    board.refusing["done"] = "Done needs every Definition of Done item checked"
-    store.save([pull(1, state="MERGED")])
-    running(board, store, stop)
-    assert until(lambda: board.moved() == [("TASK-1", "done")])  # the merge's own attempt, refused
-
-    board.refusing.clear()
-    ticked = NewEvent(
-        type="CriterionChecked", payload={"kind": "dod", "n": 1, "checked": True}, actor="adin", writer="operator"
+    checked = NewEvent(
+        type="CriterionChecked", payload={"kind": "ac", "n": 1, "checked": True}, actor="adin", writer="operator"
     )
-    events.append("task", "TASK-1", 3, [ticked])
-    projector.catch_up()
-    feed.follow_read_model()  # the page's follow publishes the changed task to the actor, as the server does
+    events.append("task", "TASK-1", 0, [created, referenced, criterion, item, checked])
+    Projector(engine, events).catch_up()
+    board = Board(BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine)))
+    waits = {**WAITS, "review": {"pr_merged": "MERGED", "pr_closed_unmerged_complete": "CLOSED_COMPLETE"}}
+    moves = {**MOVES, ("review", "CLOSED_COMPLETE"): "done"}
+    store.save([pull(1, state="CLOSED")])
 
-    assert until(lambda: board.moved() == [("TASK-1", "done")] * 2)
+    running(board, store, stop, waits, moves)
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
 
 
 def test_a_done_move_the_board_refuses_is_commented_with_its_reason_and_wakes_the_holder_once(
     store: PullStore, stop: threading.Event
 ) -> None:
-    reason = "Done needs every Definition of Done item checked"
+    reason = "Done needs every Acceptance Criterion checked"
     board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
     board.refusing["done"] = reason
     told: list[tuple[str, str]] = []
