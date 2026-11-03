@@ -57,6 +57,12 @@ file is refused with its resolved path.
   [references/verdicts.md](references/verdicts.md) and follow that verdict's section;
   a task waiting on a person is never left In Progress.
 
+A turn never ends with the task In Progress. Delivered: `starpulse task move PROJ-45 review` (Verifying once it
+merges). Waiting on a task or condition: `starpulse task park PROJ-45 --until-task PROJ-46` or `--until
+'<criterion>'`. Blocked on the operator: Needs attention through `starpulse task park PROJ-45 --operator
+'<reason ending with the question>'`, with the ask copied into the reply. Let go: `starpulse task move PROJ-45
+ready`. The lane table is in the `starting-task` skill.
+
 Done when the delivery prints green.
 
 ## 5. Mark the PR ready
