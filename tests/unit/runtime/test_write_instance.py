@@ -1,11 +1,12 @@
 """`write_instance` serves a config's board with its write routes, and a verb run through it writes a task file."""
 
 import json
+import subprocess
 import threading
 from pathlib import Path
 
 import pytest
-from starpulse.runtime.write_instance import write_instance
+from starpulse.runtime.write_instance import WriteInstance, write_instance
 
 
 def _board(base: Path) -> None:
@@ -18,7 +19,7 @@ def test_a_verb_creates_a_task_file_and_a_second_verb_edits_the_task_it_made(tmp
         created = instance.run("task", "create", "First")
         task = json.loads(created.stdout)["task"]
         edited = instance.run("task", "edit", task, "--title", "Second")
-    assert (created.returncode, edited.returncode) == (0, 0)
+    assert (created.returncode, edited.returncode) == (0, 0), (created, edited)
     assert any("Second" in file.read_text() for file in (tmp_path / "board" / "tasks").glob("*.md"))
 
 
@@ -49,3 +50,16 @@ def test_its_scratch_store_is_migrated_before_the_board_publishes_to_it(tmp_path
     with write_instance(tmp_path) as instance:
         created = instance.run("task", "create", "First")
     assert created.returncode == 0
+
+
+@pytest.mark.parametrize("reply", ["{task} is not on the board", "{task} has no record to read"])
+def test_a_verb_naming_a_task_whose_file_exists_runs_again_until_the_feed_has_its_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reply: str
+) -> None:
+    _board(tmp_path)
+    with write_instance(tmp_path) as instance:
+        task = json.loads(instance.run("task", "create", "First").stdout)["task"]
+        answers = [subprocess.CompletedProcess([], 4, "", reply.format(task=task)), subprocess.CompletedProcess([], 0, "", "")]
+        monkeypatch.setattr(WriteInstance, "_once", lambda self, argv: answers.pop(0))
+        done = instance.run("task", "edit", task, "--title", "Second")
+    assert (done.returncode, answers) == (0, [])
