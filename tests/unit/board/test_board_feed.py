@@ -32,6 +32,20 @@ def test_an_unsubscribed_page_gets_no_more_deltas() -> None:
     assert deltas.empty()
 
 
+def test_following_changes_builds_no_snapshot() -> None:
+    """A follower that discards the snapshot (the Scheduler, the task actor) must not pay for building it."""
+    feed = BoardFeed(roles=ROLES)
+    built: list[int] = []
+    feed.snapshot = lambda: built.append(1) or {}  # type: ignore[method-assign]
+
+    deltas = feed.follow_changes()
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="to_do"))
+
+    assert built == []
+    assert not deltas.empty()
+    feed.unsubscribe(deltas)
+
+
 def test_an_instances_runs_arrive_as_a_delta_only_when_they_change() -> None:
     feed = BoardFeed(roles=ROLES)
     _, deltas = feed.subscribe()

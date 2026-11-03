@@ -896,6 +896,10 @@ class _Retired:
 
     def texts(self) -> Iterator[str]:
         """Every retired task's text, by id, a page of rows at a time, so no more than a page is held at once."""
+        return (text for _, text in self.pairs())
+
+    def pairs(self) -> Iterator[tuple[str, str]]:
+        """Every retired `(task, text)`, by id, a page of rows at a time."""
         after = ""
         while self.engine is not None:
             query = (
@@ -906,7 +910,7 @@ class _Retired:
             )
             with self.engine.connect() as db:
                 page = db.execute(query).all()
-            yield from (row.text for row in page)
+            yield from ((row.task, row.text) for row in page)
             if len(page) < _RETIRED_PAGE:
                 return
             after = page[-1].task
@@ -1436,8 +1440,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         retired.engine = log.engine  # the retired tasks live in the view's history store
         claims.log = log
         history.attach(log.engine)
-        rows = [(row["task"], row["text"]) for row in retired.rows()]
-        history.import_retired(rows, lambda text: _record_of(text, "", lambda *_: []))
+        history.import_retired(retired.pairs(), lambda text: _record_of(text, "", lambda *_: []))
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)

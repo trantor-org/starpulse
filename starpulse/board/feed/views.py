@@ -173,9 +173,14 @@ class ViewMethods:
     def subscribe(self) -> tuple[dict[str, Any], queue.Queue]:
         """The snapshot now and the queue of every change after it."""
         with self._lock:
+            return self.snapshot(), self.follow_changes()
+
+    def follow_changes(self) -> queue.Queue:
+        """The queue of every change from now on, with no snapshot built: for a follower that discards it."""
+        with self._lock:
             subscriber: queue.Queue = queue.Queue()
             self._subscribers.append(subscriber)
-            return self.snapshot(), subscriber
+            return subscriber
 
     @property
     def rev(self) -> int:
