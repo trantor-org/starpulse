@@ -1,7 +1,13 @@
 """`GET /metrics`: the Prometheus text of the gauges this process serves. It is no `/api` route: Prometheus scrapes the
-path by its convention."""
+path by its convention.
+
+`GET /autopilot-log`: the autopilot's decision log as JSON, beside `/metrics` because a series per start would grow
+without bound. It answers 404 on an instance that keeps no store for it.
+"""
 
 from __future__ import annotations
+
+import json
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -30,4 +36,12 @@ def prometheus(request: Request) -> Response:
     return answer(request, text.encode(), content_type="text/plain; version=0.0.4; charset=utf-8")
 
 
-routes: list[ApiRoute] = [ReadRoute("/metrics", prometheus)]
+@reading
+def autopilot_log(request: Request) -> Response:
+    read = seams(request).services.autopilot_log
+    if read is None:
+        return answer(request, b'{"error": "this instance keeps no autopilot log"}', 404)
+    return answer(request, json.dumps(read()).encode())
+
+
+routes: list[ApiRoute] = [ReadRoute("/metrics", prometheus), ReadRoute("/autopilot-log", autopilot_log)]

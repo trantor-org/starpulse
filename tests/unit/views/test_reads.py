@@ -63,6 +63,7 @@ def test_a_missing_record_answers_its_status(client: TestClient) -> None:
 
 # What each read route answers over an empty board and no optional service, by its path template.
 _NOT_FOUND = {
+    "/autopilot-log",
     "/api/docs/{id:path}",
     "/api/docs",
     "/api/done",

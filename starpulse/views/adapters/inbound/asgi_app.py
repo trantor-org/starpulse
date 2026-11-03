@@ -305,7 +305,7 @@ class PageApp:
         # by path alone is that route's 405 only while no later route matches it in full.
         table = [
             Mount("/api", routes=[self._route(route) for route in api]),
-            *(self._route(route, "/metrics") for route in metrics),
+            *(self._route(route) for route in metrics),
             *(Route(path, self._page, methods=["GET"]) for path in ("/", "/board", "/runs")),
             Route("/flow/{flow}", self._flow, methods=["GET"]),
             Route("/{path:served}", self._file, methods=["GET"]),
@@ -403,9 +403,9 @@ class PageApp:
                 return
             yield frame
 
-    def _route(self, route: ApiRoute, path: str | None = None) -> Route:
-        """`route` as a Starlette route: at its own path, or at `path` where it is not under `/api`."""
-        at = route.path if path is None else path
+    def _route(self, route: ApiRoute) -> Route:
+        """`route` as a Starlette route at its own path."""
+        at = route.path
         match route:
             case ReadRoute(_, handler, watch):
                 timed = (

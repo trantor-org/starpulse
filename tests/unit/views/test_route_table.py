@@ -96,6 +96,7 @@ _TABLE = [
     ("/api/pulls/refresh", ("POST",)),
     # metrics, beside `/api`
     ("/metrics", _READ),
+    ("/autopilot-log", _READ),
     # the page and the static files
     ("/", _READ),
     ("/board", _READ),
