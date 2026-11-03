@@ -22,8 +22,9 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import TaskEditor
+from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, delivers
-from starpulse.pulls.model.pins import GitHub, LiveBuild, Pins, Repo, link
+from starpulse.pulls.model.pins import LiveBuild, Pins, Repo, link
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
     from starpulse.pulls.adapters.outbound.pulls import PullStore

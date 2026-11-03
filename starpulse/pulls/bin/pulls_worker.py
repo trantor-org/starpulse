@@ -28,10 +28,10 @@ from starpulse.pulls.adapters.inbound.delivery import (
     follow_refreshes,
     keep_metrics,
 )
+from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.adapters.outbound.pull_events import JOBS_STREAM, MACHINE_STREAM, RecordProjection
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.pulls.bin.blocks import PullsConfig, pulls_delivery_blocks, pulls_fixed_blocks
-from starpulse.pulls.model.pins import GitHub
 
 logger = logging.getLogger(__name__)
 

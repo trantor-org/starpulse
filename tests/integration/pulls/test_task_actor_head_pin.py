@@ -1,6 +1,5 @@
 """A pin pushed to the parent's default branch with no bump PR releases the dependent of a merged child PR."""
 
-import subprocess
 import threading
 import time
 from collections.abc import Iterator
@@ -9,8 +8,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
+from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.adapters.outbound.pulls import PullStore
-from starpulse.pulls.model.pins import GitHub
 from starpulse.runtime.adapter_kit import task
 
 from tests.task_actor_kit import CHILD, CHILD_PR, REPOS, Board, pull, running, until
@@ -23,17 +22,16 @@ NO_BUMP = "no merged bump pins it"
 
 
 class Gh:
-    """A `gh api` stand-in: each endpoint's answer; an endpoint in `down` fails the way an expired token does."""
+    """A GitHub transport: each endpoint's answer; an endpoint in `down` fails the way an expired token does."""
 
     def __init__(self) -> None:
-        self.answers = {HEAD: TIP, AT_TIP: POINTER, CONTAINS: "ahead"}
+        self.answers = {HEAD: {"sha": TIP}, AT_TIP: {"sha": POINTER}, CONTAINS: {"status": "ahead"}}
         self.down: set[str] = set()
 
-    def __call__(self, command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        endpoint = command[2]
-        if endpoint in self.down or endpoint not in self.answers:
-            return subprocess.CompletedProcess(command, 1, '{"message":"Bad credentials","status":"401"}', "")
-        return subprocess.CompletedProcess(command, 0, self.answers[endpoint], "")
+    def __call__(self, method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        if path in self.down or path not in self.answers:
+            return 401, {}
+        return 200, self.answers[path]
 
 
 @pytest.fixture
@@ -49,10 +47,8 @@ def stop() -> Iterator[threading.Event]:
 
 
 @pytest.fixture
-def gh(monkeypatch: pytest.MonkeyPatch) -> Gh:
-    fake = Gh()
-    monkeypatch.setattr(subprocess, "run", fake)
-    return fake
+def gh() -> Gh:
+    return Gh()
 
 
 def _board() -> Board:
@@ -68,7 +64,7 @@ def test_a_pin_on_the_default_branch_with_no_bump_pr_releases_the_dependent(
 ) -> None:
     board = _board()
     store.save([pull(10, state="MERGED", repo="acme/starpulse", sha=CHILD), pull(2, state="OPEN")])
-    actor = running(board, store, stop, repos=REPOS, pin_rule="pin-bump", pins=GitHub())
+    actor = running(board, store, stop, repos=REPOS, pin_rule="pin-bump", pins=GitHub(transport=gh))
 
     assert until(lambda: board.moved() == [("TASK-2", "ready")])
     assert "\nstarpulse_task_actor_pin_held 0\n" in actor.exposition()
@@ -82,7 +78,7 @@ def test_a_github_failure_holds_the_dependent_naming_the_failed_call_until_it_an
     gh.down = {HEAD}
     board = _board()
     store.save([pull(10, state="MERGED", repo="acme/starpulse", sha=CHILD), pull(2, state="OPEN")])
-    actor = running(board, store, stop, repos=REPOS, pin_rule="pin-bump", pins=GitHub())
+    actor = running(board, store, stop, repos=REPOS, pin_rule="pin-bump", pins=GitHub(transport=gh))
 
     held = [comment for _, comment in board.comments() if "Held from Ready" in comment]
     assert board.moved() == []
