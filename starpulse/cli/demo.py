@@ -410,7 +410,7 @@ SEED_ROLES = StateRoles(
     },
     {"ready": {"criteria_unmet": ""}, "waiting": {"criteria_met": ""}, "review": {"pr_terminal": ""}},
 )
-#: The tiers the seeded Board declares for the Star Map, as a trantor Board does: the unworked lanes stacked in one cell, then each working
+#: The tiers the seeded Board declares for the Star Map, as a real Board does: the unworked lanes stacked in one cell, then each working
 #: stage in its own, left to right.
 SEED_TIERS = [["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["verifying"], ["done"]]
 

@@ -497,6 +497,7 @@ def start_delivery(
             config.repos,
             config.release.settle if config.release else None,
             pins,
+            config.board_repo,
             evaluate=board.evaluate,
             holds=board.holds,
             read=board.read,

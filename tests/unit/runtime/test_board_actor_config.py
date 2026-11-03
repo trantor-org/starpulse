@@ -27,10 +27,16 @@ def test_an_empty_table_starts_the_actor_and_leaves_the_adapters_settings_withou
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ("[board.actor]\nevery = 5\n", "the .board.actor. table takes no keys"),
+        ("[board.actor]\nevery = 5\n", "takes only repo, not every"),
+        ("[board.actor]\nrepo = 5\n", "repo must be text"),
         ("[board]\nactor = true\n", "board.actor must be a \\[board.actor\\] table"),
     ],
 )
 def test_an_actor_table_the_server_cannot_apply_is_refused(tmp_path: Path, text: str, message: str) -> None:
     with pytest.raises(ConfigError, match=message):
         load(_write(tmp_path, text))
+
+
+def test_the_actor_table_names_the_repository_its_pull_requests_render_bare(tmp_path: Path) -> None:
+    assert load(_write(tmp_path, '[board.actor]\nrepo = "acme/board"\n')).board_repo == "acme/board"
+    assert load(_write(tmp_path, "[board.actor]\n")).board_repo is None

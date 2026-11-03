@@ -18,7 +18,7 @@ no per-tool trajectory for Copilot sessions, so these are spans and outcomes, no
 GitHub documents neither Copilot timeline event name; the recorded fixtures in the tests pin them, so a rename fails
 the adapter's tests rather than the page.
 
-The adapter depends on nothing of trantor's: not its hooks, its `AGENTS.md` or its branch names.
+The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.md` or its branch names.
 """
 
 from __future__ import annotations

@@ -403,6 +403,8 @@ class Config:
     """The `[release]` table: None releases no task, so a config without it leaves release to whoever does it today."""
     task_actor: bool = False
     """The `[board.actor]` table is present: `serve` runs the task actor, which moves a task on the facts its lane waits on and replaces the release pass."""
+    board_repo: str | None = None
+    """`[board.actor] repo`, the `owner/name` the board's own pull requests live in: the actor renders them as a bare `PR #N`."""
     search: Search = field(default_factory=Search)
     """The optional embeddings service that ranks search by meaning (`[search]`); no table: search is lexical only."""
     sequences: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
@@ -652,11 +654,11 @@ def load(path: Path | None) -> Config:
     )
     harnesses = _harnesses(raw, path)
     tls = _tls(raw, path)
-    kind, board, task_actor = _board(raw)
+    kind, board, actor = _board(raw)
     url = _text(raw, "database_url")
     repos = _repos(raw.get("repos", []))
     return _config(
-        raw, mode, runs, harnesses, kind, board, url, session_start_url, log_retention, tls, task_actor, repos
+        raw, mode, runs, harnesses, kind, board, url, session_start_url, log_retention, tls, actor, repos
     )
 
 
@@ -698,8 +700,8 @@ def _harnesses(raw: dict, path: Path | None) -> Harnesses | None:
     return None
 
 
-def _board(raw: dict) -> tuple[str, dict, bool]:
-    """The board adapter's type, its table without `[board.actor]`, and whether `[board.actor]` is present."""
+def _board(raw: dict) -> tuple[str, dict, dict | None]:
+    """The board adapter's type, its table without `[board.actor]`, and `[board.actor]` (None when absent)."""
     board = raw.get("board", {})
     if not isinstance(board, dict):
         raise ConfigError("board must be a [board] table")
@@ -707,8 +709,10 @@ def _board(raw: dict) -> tuple[str, dict, bool]:
     if "actor" in board:
         if not isinstance(actor, dict):
             raise ConfigError("board.actor must be a [board.actor] table")
-        if actor:
-            raise ConfigError("board.actor: the [board.actor] table takes no keys")
+        if unknown := actor.keys() - {"repo"}:
+            raise ConfigError(f"board.actor: the [board.actor] table takes only repo, not {', '.join(sorted(unknown))}")
+        if not isinstance(actor.get("repo", ""), str):
+            raise ConfigError("board.actor: repo must be text")
         board = {key: value for key, value in board.items() if key != "actor"}
     kind = board.get("type", DEFAULT_TYPE)
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
@@ -719,7 +723,7 @@ def _board(raw: dict) -> tuple[str, dict, bool]:
         found = None
     if found is None:
         raise ConfigError(f"no board adapter of type {kind}")
-    return kind, board, actor is not None
+    return kind, board, actor
 
 
 def _config(
@@ -733,7 +737,7 @@ def _config(
     session_start_url: str | None,
     log_retention: int,
     tls: tuple[Path, Path] | None,
-    task_actor: bool,
+    actor: dict | None,
     repos: tuple[Repo, ...],
 ) -> Config:
     """The `Config` of the validated parts of `raw`, with the rest read from it as it is."""
@@ -756,7 +760,8 @@ def _config(
         scheduler=_scheduler(raw.get("scheduler")),
         analytics=_analytics(raw.get("analytics")),
         release=_release(raw, repos),
-        task_actor=task_actor,
+        task_actor=actor is not None,
+        board_repo=(actor or {}).get("repo"),
         search=_search(raw.get("search")),
         sequences=_sequences(raw.get("sequences")),
         project=_project(raw.get("project")),
