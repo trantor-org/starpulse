@@ -81,7 +81,7 @@ def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
     required = [
         {"name": check.get("name") or check["context"], "result": _result(check)}
         for check in rollup["contexts"]["nodes"]
-        if check.get("isRequired")
+        if check and check.get("isRequired")  # GitHub can return a null node in a connection
     ]
     unresolved = [
         {"id": thread["id"], "author": ((thread["comments"]["nodes"] or [{}])[0].get("author") or {}).get("login")}

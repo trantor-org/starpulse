@@ -343,6 +343,28 @@ def test_a_pr_with_no_commits_is_recorded_with_an_empty_rollup_and_leaves_the_ot
     }
 
 
+def test_a_null_check_node_is_skipped_and_the_pr_and_the_others_stay_saved(store: PullStore) -> None:
+    github = Github()
+    github.add(1, checks={"lint": "SUCCESS"})
+    github.add(2, checks={"lint": "SUCCESS"})
+    node = github._node
+
+    def with_null_check(number: int) -> dict:
+        record = node(number)
+        contexts = record["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["contexts"]
+        contexts["nodes"] = [None, *contexts["nodes"]]
+        return record
+
+    github._node = with_null_check  # type: ignore[method-assign]
+
+    _read(store, github, 100.0)
+
+    assert {pull["number"]: pull["requiredChecks"] for pull in store.find()} == {
+        1: [{"name": "lint", "result": "pass"}],
+        2: [{"name": "lint", "result": "pass"}],
+    }
+
+
 def test_a_refresh_request_reads_that_pr_alone_and_publishes_its_merge_without_the_next_refresh(
     store: PullStore,
 ) -> None:
