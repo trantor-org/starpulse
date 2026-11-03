@@ -1,5 +1,6 @@
 """A write the board refuses is counted and not tried again until the task's facts change; latency is exported."""
 
+import logging
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -12,7 +13,7 @@ from starpulse.pulls.adapters.inbound.task_actor import ACTOR, ATTENTION_QUESTIO
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import task
 
-from tests.task_actor_kit import GATED, PR_ONE, PR_TWO, ROLES, Board, Criteria, pull, running, until
+from tests.task_actor_kit import GATED, MOVES, PR_ONE, PR_TWO, ROLES, Board, Criteria, pull, running, until
 
 
 @pytest.fixture
@@ -52,6 +53,37 @@ def test_a_refused_write_is_counted_and_not_retried_until_the_tasks_facts_change
 
     assert until(lambda: len(board.moved()) == 2)
     assert _sample(actor.exposition(), "starpulse_task_actor_refusals_total") == 2
+
+
+def _without_merge_move() -> dict[tuple[str, str], str]:
+    """The moves of a machine that predates the lane a merged task leaves Review for: `MERGED` leaves nowhere."""
+    return {key: target for key, target in MOVES.items() if key != ("review", "MERGED")}
+
+
+def test_no_legal_move_for_a_held_fact_logs_a_warning_naming_the_task_lane_event_and_fact(
+    store: PullStore, stop: threading.Event, caplog: pytest.LogCaptureFixture
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="MERGED")])
+    with caplog.at_level(logging.WARNING):
+        running(board, store, stop, moves=_without_merge_move())
+
+    assert board.moved() == []
+    text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "TASK-1" in text and "review" in text.lower() and "MERGED" in text and "pr_terminal" in text
+
+
+def test_no_legal_move_is_logged_once_per_task_lane_and_event(
+    store: PullStore, stop: threading.Event, caplog: pytest.LogCaptureFixture
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="MERGED")])
+    with caplog.at_level(logging.WARNING):
+        actor = running(board, store, stop, moves=_without_merge_move())
+        store.save([pull(1, state="MERGED", sha="b" * 40)])
+        actor.pulls_changed()
+
+    assert sum("no legal move" in record.getMessage() for record in caplog.records) == 1
 
 
 HEAD = "0" * 12  # the first twelve digits of a stand-in pull request's head commit

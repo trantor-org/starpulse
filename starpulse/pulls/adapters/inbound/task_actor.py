@@ -308,6 +308,8 @@ class TaskActor:
         self._store_rev = store.rev
         #: The move last tried for each task, until the task changes lane: the same facts are not tried twice.
         self._tried: dict[str, tuple] = {}
+        #: The (task, lane, event) triples already logged as holding a fact the machine has no move for.
+        self._unmovable: set[tuple[str, str, str]] = set()
         #: The refusal each task was last parked in Needs attention for, so the same refusal parks it once.
         self._parked: dict[str, str] = {}
         #: The record each task's release was last refused on by the board's lint, so a repaired record is tried again.
@@ -794,8 +796,11 @@ class TaskActor:
         self._arm(name, agent)
         for fact, event in self._waits.get(agent["state"], {}).items():
             target = self._moves.get((agent["state"], event))
-            held = self._facts.get(fact, lambda *_: None)(self, agent) if target else None
+            held = self._facts.get(fact, lambda *_: None)(self, agent)
             if held is None:
+                continue
+            if target is None:
+                self._note_unmovable(name, agent["state"], event, fact)
                 continue
             evidence, comment = held
             sent = (agent["state"], event, evidence)
@@ -812,6 +817,19 @@ class TaskActor:
                     self._woken[name] = self._clock()
                     self._notice(self._verifying, name, "entered post-merge QA but its holder was not told")
                 return
+
+    def _note_unmovable(self, name: str, lane: str, event: str, fact: str) -> None:
+        """Say once why a held fact moved nothing: the loaded machine has no move out of the lane on its event."""
+        if (name, lane, event) in self._unmovable:
+            return
+        self._unmovable.add((name, lane, event))
+        logger.warning(
+            "task actor: %s holds %s in %s but the machine has no legal move on %s; a reload may be owed",
+            name,
+            fact,
+            lane,
+            event,
+        )
 
     def _write(
         self, name: str, target: str, comment: str, observed: float, source: str, stale: Mapping[str, Any] = {}
