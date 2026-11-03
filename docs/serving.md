@@ -901,7 +901,7 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   `waits: {pr_draft: SEND_BACK}` to return its tasks to the working lane, which runs the board's `returned` command.
 - `pr_conflicting`: any pull request the task cites as its own delivery is open and conflicts with its base. The same
   `SEND_BACK` move serves it.
-- `deps_done`: the task has dependencies, every one is Done, its description declares no Start Criteria, and, under
+- `deps_done`: the task has dependencies, every one is Done or Archived, its description declares no Start Criteria, and, under
   `[release] settle = "pin-bump"`, every dependency's pin bump has merged (the rule in Release).
 - `deps_done_with_pr`: `deps_done` holds and `pr_ready` holds (the task cites a ready or merged pull request). A state lists it before `deps_done` to
   return a task that has a delivery to another lane than the one a task without one returns to.
@@ -939,6 +939,13 @@ saved it; the tasks held for a pin bump are re-derived after that projection. At
 it re-derives every open task once, so a pull request that merged while the server was down still moves its task. With
 the actor on, the 30-second pass of Release does not start; the actor settles and releases on the same rules, so
 `[release]` still names the settle rule.
+
+Every `sweep_s` seconds (default 300, `0` off) after the first derive, the actor sweeps the lanes whose `waits` name
+`deps_done`: it derives each task there again, so a fact that changed with no event to carry it still releases the
+task, and it flags once, as a task-actor comment `Flagged in Waiting: <reason>`, a task waiting on a dependency nothing
+will finish, either a task the board does not hold or one in Proposed until the operator promotes it. A flag is not
+repeated while it is the task's latest flag, across restarts too. A task in any other lane, Needs attention included,
+is not read. The sweep runs on a thread of the server, with no systemd unit or Dagu DAG.
 
 A park that names `TASK-X#K` records the criterion the dependent needs (`dependency_needs`). A dependee's state change or
 a criterion it checks re-derives its dependents. Once every criterion a dependent needs of an open dependency is checked,

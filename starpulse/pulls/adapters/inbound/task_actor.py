@@ -23,6 +23,10 @@ A task whose lane waits on its Start Criteria is evaluated on a thread of its ow
 older than `fresh_s`, and re-derived when the result changes; a criterion that cannot be evaluated is exported, not
 retried before then. The board adapter may hold a task's `deps_done` with reasons, written once as a comment; a task
 created re-derives every held task.
+
+Every `sweep_s` seconds the actor derives each task in a lane that waits on `deps_done` again, so a fact that changed
+with no event to carry it still releases the task, and comments once, as `Flagged in Waiting: <reason>`, on one whose
+dependency nothing will finish (the board holds no such task, or it is Proposed). A dependency Done or Archived is met.
 """
 
 from __future__ import annotations
@@ -41,7 +45,7 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.markdown import section_set
-from starpulse.board.model.seam import HELD, MERGE_EVIDENCE, TaskCreator, TaskEditor, TaskReader, Written
+from starpulse.board.model.seam import FLAGGED, HELD, MERGE_EVIDENCE, TaskCreator, TaskEditor, TaskReader, Written
 from starpulse.pulls.adapters.inbound.unblock import PinGate
 from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
@@ -84,6 +88,8 @@ HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
 #: Seconds the event loop waits for a change before it looks at its stop flag.
 _POLL_S = 0.5
+#: Seconds between two sweeps of the Waiting lane, which derive each task there again and flag the ones nothing releases.
+SWEEP_S = 300.0
 #: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
 _DAY_S = 86_400.0
 #: Seconds to wait before each retry of a write that found the board database locked.
@@ -212,6 +218,7 @@ class TaskActor:
         sequences: Mapping[str, Sequence[str]] = MappingProxyType({}),
         unfinished: Callable[[str], Sequence[str]] | None = None,
         create: TaskCreator | None = None,
+        sweep_s: float = SWEEP_S,
     ) -> None:
         self._read = read
         self._create = create
@@ -247,6 +254,9 @@ class TaskActor:
         self._returned = returned
         self._verifying = verifying
         self._fresh_s = fresh_s
+        self._sweep_s = sweep_s
+        #: The lanes that wait on their tasks' dependencies, which the sweep derives again.
+        self._sweep_lanes = {lane for lane, facts in waits.items() if "deps_done" in facts}
         #: The lanes that wait on a task's Start Criteria.
         self._gated_lanes = {lane for lane, facts in waits.items() if facts.keys() & set(_CRITERIA_FACTS)}
         #: When each gated task's criteria were last evaluated, and each criterion's `(id, status)` then.
@@ -345,6 +355,8 @@ class TaskActor:
         if self._evaluate is not None and self._gated_lanes:
             threading.Thread(target=self._keep_criteria, args=(stop,), name="task-actor-criteria", daemon=True).start()
         threading.Thread(target=self._follow_store, args=(stop,), name="task-actor-store", daemon=True).start()
+        if self._sweep_lanes and self._sweep_s > 0:
+            threading.Thread(target=self._keep_sweeping, args=(stop,), name="task-actor-sweep", daemon=True).start()
         if self._timed_lanes:
             threading.Thread(target=self._keep_deadlines, args=(stop,), name="task-actor-deadlines", daemon=True).start()
         return thread
@@ -395,6 +407,45 @@ class TaskActor:
             except Exception:  # one pass must not end the thread
                 logger.exception("task actor: cannot evaluate Start Criteria")
             stop.wait(min(self._fresh_s / 2, _POLL_S))
+
+    def _keep_sweeping(self, stop: threading.Event) -> None:
+        """Sweep the Waiting lane every `sweep_s`, so a fact that changed with no event to carry it still releases the task."""
+        self.ready.wait()  # the first derive just read every task
+        while not stop.wait(self._sweep_s):
+            try:
+                self.sweep()
+            except Exception:  # one pass must not end the thread
+                logger.exception("task actor: cannot sweep the waiting tasks")
+
+    def sweep(self) -> None:
+        """Derive each task in a lane that waits on its dependencies again, and flag, once as a comment, one whose
+        dependency nothing will finish. The release is the lane's own `deps_done` or `criteria_met` move; a task in
+        Needs attention, or off those lanes, is not read."""
+        with self._lock:
+            observed = self._clock()
+            names = [agent["id"] for agent in self._feed.open_tasks() if agent["state"] in self._sweep_lanes]
+            self._derive_all(names, observed)
+            for name in names:
+                agent = self._feed.task(name)
+                if agent and agent["state"] in self._sweep_lanes and (reasons := self._stuck(agent)):
+                    self._note_hold(agent, reasons, FLAGGED)
+
+    def _stuck(self, agent: dict[str, Any]) -> tuple[str, ...]:
+        """The dependencies that will not finish on their own: the Board holds no such task, or it is Proposed until the
+        operator promotes it."""
+        proposed = self._feed.roles.proposed
+        reasons = []
+        for dependency in agent["dependencies"]:
+            found = self._feed.task(dependency)
+            if found and proposed and found["state"] == proposed:
+                reasons.append(f"{dependency} is Proposed until the operator promotes it")
+            elif found is None and not self._cleared(dependency):
+                reasons.append(f"{dependency} is not on the board")
+        return tuple(reasons)
+
+    def _cleared(self, dependency: str) -> bool:
+        """Whether the dependency is done, or archived: its file left the lanes without reaching Done."""
+        return self._feed.is_done(dependency) or self._feed.is_archived(dependency)
 
     def _keep_deadlines(self, stop: threading.Event) -> None:
         """Derive each armed task again at its own deadline, so a Waiting task goes overdue with no event to wake it."""
@@ -1056,7 +1107,7 @@ class TaskActor:
     def _moving(self, agent: dict[str, Any]) -> bool:
         """Whether the task has open dependencies and each is In Progress or Review: work is under way on its gate."""
         roles = self._feed.roles
-        open_ = [dependency for dependency in agent["dependencies"] if not self._feed.is_done(dependency)]
+        open_ = [dependency for dependency in agent["dependencies"] if not self._cleared(dependency)]
         return bool(open_) and all(
             (self._feed.task(dependency) or {}).get("state") in (roles.working, roles.review) for dependency in open_
         )
@@ -1109,14 +1160,14 @@ class TaskActor:
         return tuple(
             dependency
             for dependency in agent["dependencies"]
-            if not self._feed.is_done(dependency) and dependency not in early
+            if not self._cleared(dependency) and dependency not in early
         )
 
     def _early(self, agent: dict[str, Any]) -> tuple[str, ...]:
         """The open dependencies whose every criterion the task's record says it needs (`dependencyNeeds`, `TASK-N#K`)
         is checked: the fact the task waited on holds, whatever the dependency still has open. A dependency with no
         need names the whole task; a record the board cannot read names none."""
-        open_ = [dependency for dependency in agent["dependencies"] if not self._feed.is_done(dependency)]
+        open_ = [dependency for dependency in agent["dependencies"] if not self._cleared(dependency)]
         if not open_ or self._read is None:
             return ()
         try:
