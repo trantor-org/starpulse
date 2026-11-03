@@ -321,3 +321,9 @@ def test_the_scheduler_strip_the_live_page_reads_is_a_timed_surface():
     timed = [*pl.READS, "/api/events"]
 
     assert pl.untimed(["http://h/api/scheduler"], timed) == []
+
+
+def test_every_probed_view_has_a_nav_button_in_the_page_source():
+    app = (Path(__file__).resolve().parents[1] / "starpulse" / "web" / "src" / "App.tsx").read_text()
+    nodes = re.findall(r"<button className=\{`node[^`]*`\} title=(\{[^}]*\}|\"[^\"]*\")", app)
+    assert all(any(f'"{view}' in node for node in nodes) for view in pl.VIEWS.values())
