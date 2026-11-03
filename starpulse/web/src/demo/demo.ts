@@ -318,6 +318,7 @@ export class DemoServer {
   private quietHours: typeof NIGHT | null;
   /** The session caps an Admin save overrides `CAPS` with, per harness. */
   private capOverrides: Record<string, number> = {};
+  private limitOverrides: Record<string, number> = {};
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private merges: ReturnType<typeof setInterval> | undefined;
@@ -558,18 +559,28 @@ export class DemoServer {
     if (this.pilot === "down") return json({ error: "This server has no scheduler." }, 404);
     if (method === "PUT") {
       if (this.pilot === "refused") return json({ error: "Autopilot changes are taken only from loopback or a private address; this demo is neither." }, 403);
-      let sent: { enabled?: unknown; quietHours?: unknown; harness?: unknown; sessionCap?: unknown } = {};
+      let sent: { enabled?: unknown; quietHours?: unknown; harness?: unknown; sessionCap?: unknown; cpuLimit?: unknown; memoryLimit?: unknown } = {};
       try { sent = JSON.parse(raw) as typeof sent; } catch { /* refused below */ }
-      const usage = 'the scheduler takes {"enabled": true|false}, {"harness": "<name>"}, {"sessionCap": <whole number above zero>|null} and/or {"quietHours": {"start", "end", "timezone"}|null}';
+      const usage = 'the scheduler takes {"enabled": true|false}, {"harness": "<name>"}, {"sessionCap": <whole number above zero>|null}, {"cpuLimit": <percent above 0, at most 100>|null}, {"memoryLimit": <percent above 0, at most 100>|null} and/or {"quietHours": {"start", "end", "timezone"}|null}';
       const window = sent?.quietHours as typeof NIGHT | null | undefined;
-      const noField = sent.enabled === undefined && window === undefined && sent.harness === undefined && sent.sessionCap === undefined;
+      const noField = sent.enabled === undefined && window === undefined && sent.harness === undefined && sent.sessionCap === undefined && sent.cpuLimit === undefined && sent.memoryLimit === undefined;
       if (!sent || noField || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
       if (sent.harness !== undefined && (typeof sent.harness !== "string" || !sent.harness)) return json({ error: usage }, 400);
       const cap = sent.sessionCap;
       if (cap !== undefined && cap !== null && !(typeof cap === "number" && Number.isInteger(cap) && cap > 0)) {
         return json({ error: `session cap must be a whole number above zero; got ${JSON.stringify(cap)}` }, 400);
       }
+      const limits = { cpu: sent.cpuLimit, memory: sent.memoryLimit };
+      for (const [name, value] of Object.entries(limits)) {
+        if (value !== undefined && value !== null && !(typeof value === "number" && value > 0 && value <= 100)) {
+          return json({ error: `${name} limit must be a percent above 0 and at most 100; got ${JSON.stringify(value)}` }, 400);
+        }
+      }
       if (window && window.start === window.end) return json({ error: "quiet hours start and end must differ" }, 400);
+      for (const [name, value] of Object.entries(limits)) {
+        if (value === null) delete this.limitOverrides[name];
+        else if (value !== undefined) this.limitOverrides[name] = value as number;
+      }
       if (typeof sent.enabled === "boolean") this.admitting = sent.enabled;
       if (typeof sent.harness === "string") this.harness = sent.harness;
       if (window !== undefined) this.quietHours = window;
@@ -592,14 +603,16 @@ export class DemoServer {
     const pauses = this.pilot === "credits" ? [{ harness: "cursor", until: at + 2 * 3600, reason: "usage limit" }] : [];
     const paused = pauses.some((p) => p.harness === this.harness);
     const limit = (name: string) => this.capOverrides[name] ?? CAPS[name];
-    const waits = this.quietHours ? "quiet hours" : paused ? `${this.harness} usage limit` : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= limit(this.harness) ? `Sessions ${use.sessions}/${limit(this.harness)}` : "";
+    const capacity = (name: "cpu" | "memory") => ({ limit: this.limitOverrides[name] ?? PILOT[name], source: name in this.limitOverrides ? "admin" : "starpulse.toml", configLimit: PILOT[name] });
+    const memory = capacity("memory").limit;
+    const waits = this.quietHours ? "quiet hours" : paused ? `${this.harness} usage limit` : use.memory > memory ? `RAM ${use.memory}/${memory}%` : use.sessions >= limit(this.harness) ? `Sessions ${use.sessions}/${limit(this.harness)}` : "";
     const other = this.harness === "claude" ? "cursor" : "claude";
     return json({
       enabled: this.admitting,
       harness: this.harness,
       quietHours: this.quietHours,
       sampledAt: at,
-      dimensions: (Object.keys(PILOT) as (keyof typeof PILOT)[]).map((name) => ({ name, use: use[name], limit: name === "sessions" && this.harness in this.capOverrides ? limit(this.harness) : PILOT[name] })),
+      dimensions: (Object.keys(PILOT) as (keyof typeof PILOT)[]).map((name) => ({ name, use: use[name], limit: name === "sessions" && this.harness in this.capOverrides ? limit(this.harness) : name === "cpu" || name === "memory" ? capacity(name).limit : PILOT[name] })),
       inFlight,
       next: this.admitting && pick ? { task: pick.id, title: pick.title ?? pick.id, verdict: waits ? "waits" : "starting", reason: waits } : null,
       pauses,
@@ -613,6 +626,7 @@ export class DemoServer {
         source: this.harness in this.capOverrides ? "admin" : "starpulse.toml",
         configLimit: CAPS[this.harness],
       },
+      capacityLimits: { cpu: capacity("cpu"), memory: capacity("memory") },
     });
   }
 

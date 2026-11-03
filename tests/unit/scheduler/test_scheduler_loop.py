@@ -58,7 +58,7 @@ class Rig:
         self.feed = self.harness.feed
         self.policy = Scheduler(lane="ready", limits={**Scheduler().limits, **(limits or {})}, **policy)
         self.sampler = Sampler(
-            self.policy.limits,
+            lambda: self.policy.limits,
             probe=lambda: self.host,
             sessions=lambda: 0,
             review=lambda: 0,
@@ -90,7 +90,7 @@ class Rig:
     def restarted(self) -> Loop:
         """A new loop and sampler over this store: a StarPulse restart."""
         sampler = Sampler(
-            self.policy.limits,
+            lambda: self.policy.limits,
             probe=lambda: self.host,
             sessions=lambda: 0,
             review=lambda: 0,

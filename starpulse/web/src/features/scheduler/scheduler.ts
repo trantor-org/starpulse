@@ -63,6 +63,14 @@ export interface SessionCap {
   source: "admin" | "starpulse.toml";
   configLimit: number;
 }
+/** The cpu or memory limit in percent and where it comes from: `admin` is an operator's override, `starpulse.toml` the configured limit it overrides. */
+export interface CapacityLimit {
+  limit: number;
+  source: "admin" | "starpulse.toml";
+  configLimit: number;
+}
+export type CapacityName = "cpu" | "memory";
+export type CapacityLimits = Record<CapacityName, CapacityLimit>;
 export interface SchedulerState {
   on: boolean;
   /** The harness the loop starts sessions on; defaults to claude. */
@@ -81,6 +89,8 @@ export interface SchedulerState {
   sessionsByHarness: Record<string, HarnessSessions>;
   /** The selected harness's session cap and its source, null when the server does not serve it. */
   sessionCap: SessionCap | null;
+  /** The cpu and memory limits and their source, null when the server does not serve them. */
+  capacityLimits: CapacityLimits | null;
 }
 
 export type Phase = { kind: "idle" } | { kind: "saving" } | { kind: "refused"; reason: string };
@@ -169,6 +179,19 @@ function sessionCap(raw: unknown): SessionCap | null | undefined {
   return { harness: raw.harness, limit: raw.limit, source: raw.source, configLimit: raw.configLimit };
 }
 
+function capacityLimit(raw: unknown): CapacityLimit | undefined {
+  if (!isRecord(raw) || typeof raw.limit !== "number" || typeof raw.configLimit !== "number") return undefined;
+  if (raw.source !== "admin" && raw.source !== "starpulse.toml") return undefined;
+  return { limit: raw.limit, source: raw.source, configLimit: raw.configLimit };
+}
+
+function capacityLimits(raw: unknown): CapacityLimits | null | undefined {
+  if (raw === undefined || raw === null) return null;
+  if (!isRecord(raw)) return undefined;
+  const cpu = capacityLimit(raw.cpu), memory = capacityLimit(raw.memory);
+  return cpu && memory ? { cpu, memory } : undefined;
+}
+
 function harnessOptions(body: unknown): HarnessOption[] {
   if (!isRecord(body) || !Array.isArray(body.harnesses)) return [];
   return body.harnesses.flatMap((raw) => {
@@ -182,9 +205,9 @@ function harnessOptions(body: unknown): HarnessOption[] {
   });
 }
 
-/** The card's state from an answer, or null when the answer is not a scheduler status. `inFlight`, `next`, `pauses`, `sessionsByHarness` and `sessionCap` are additive: absent is fine, present must hold. */
+/** The card's state from an answer, or null when the answer is not a scheduler status. `inFlight`, `next`, `pauses`, `sessionsByHarness`, `sessionCap` and `capacityLimits` are additive: absent is fine, present must hold. */
 function parse(body: unknown): SchedulerState | null {
-  const status = body as Partial<SchedulerStatus> & { inFlight?: unknown; next?: unknown; blockedBy?: unknown; pauses?: unknown; sessionsByHarness?: unknown; sessionCap?: unknown };
+  const status = body as Partial<SchedulerStatus> & { inFlight?: unknown; next?: unknown; blockedBy?: unknown; pauses?: unknown; sessionsByHarness?: unknown; sessionCap?: unknown; capacityLimits?: unknown };
   if (!isRecord(body) || typeof status.enabled !== "boolean" || !Array.isArray(status.dimensions)) return null;
   const dimensions = status.dimensions.map(dimension);
   if (dimensions.some((d) => d === null)) return null;
@@ -218,6 +241,8 @@ function parse(body: unknown): SchedulerState | null {
   if (byHarness === null) return null;
   const cap = sessionCap(status.sessionCap);
   if (cap === undefined) return null;
+  const limits = capacityLimits(status.capacityLimits);
+  if (limits === undefined) return null;
   const harness = typeof status.harness === "string" && status.harness ? status.harness : "claude";
   return {
     on: status.enabled,
@@ -230,6 +255,7 @@ function parse(body: unknown): SchedulerState | null {
     pauses,
     sessionsByHarness: byHarness,
     sessionCap: cap,
+    capacityLimits: limits,
   };
 }
 
@@ -310,6 +336,11 @@ export class SchedulerStore {
   /** Override the selected harness's session cap, or clear the override with null so `starpulse.toml` sets it; a refusal keeps the cap and names why. */
   setSessionCap(sessionCap: number | null): Promise<void> {
     return this.put({ sessionCap });
+  }
+
+  /** Override the cpu or memory limit in percent, or clear the override with null so `starpulse.toml` sets it; a refusal keeps the limit and names why. */
+  setLimit(name: CapacityName, limit: number | null): Promise<void> {
+    return this.put({ [`${name}Limit`]: limit });
   }
 
   private async put(change: Record<string, unknown>): Promise<void> {

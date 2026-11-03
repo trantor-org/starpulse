@@ -17,12 +17,13 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
+from starpulse.scheduler.model.capacity_limits import CapacityLimitSetting
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
 from starpulse.scheduler.model.session_caps import SessionCapSetting
@@ -83,6 +84,7 @@ class Remote:
         self._quiet_hours = QuietHoursSetting(log)
         self._harness = HarnessSetting(log)
         self._session_caps = SessionCapSetting(log)
+        self._capacity_limits = CapacityLimitSetting(log)
 
     def set_enabled(self, value: bool) -> None:
         self._toggle.set(value)
@@ -103,11 +105,16 @@ class Remote:
         self._session_caps.set(self._harness.get(), raw)
         self._wake()
 
+    def set_limits(self, changes: Mapping[str, object]) -> None:
+        """Keep the cpu and memory limits `changes` names (None clears one); a value `CapacityLimitSetting` refuses raises ValueError."""
+        self._capacity_limits.set(changes)
+        self._wake()
+
     def served_status(self) -> dict[str, Any]:
         """The worker's last status, none before it has sampled, over the settings as the store holds them now."""
         kept = _kept(self._log)
         harness = self._harness.get()
-        return {
+        body = {
             "sampledAt": None,
             "dimensions": [],
             **kept,
@@ -116,6 +123,25 @@ class Remote:
             "quietHours": self._quiet_hours.state(),
             **self._session_cap_over(kept, harness),
         }
+        if limits := self._limits_over(kept):
+            body["capacityLimits"] = limits
+            body["dimensions"] = [
+                {**row, "limit": limits[row["name"]]["limit"]} if row.get("name") in limits else row
+                for row in body["dimensions"]
+            ]
+        return body
+
+    def _limits_over(self, kept: dict[str, Any]) -> dict[str, Any]:
+        """The worker's `capacityLimits` with the stored overrides applied; nothing before it has reported any."""
+        reported = kept.get("capacityLimits")
+        if not isinstance(reported, dict):
+            return {}
+        served = {}
+        for name, row in reported.items():
+            override = self._capacity_limits.get(name)
+            limit = row["configLimit"] if override is None else override
+            served[name] = {**row, "limit": float(limit), "source": "starpulse.toml" if override is None else "admin"}
+        return served
 
     def _session_cap_over(self, kept: dict[str, Any], harness: str) -> dict[str, Any]:
         """The worker's `sessionCap` and sessions limit with the stored override applied, for the harness it reported on;

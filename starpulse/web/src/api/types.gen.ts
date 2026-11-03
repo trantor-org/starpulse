@@ -1301,6 +1301,10 @@ export interface SchedulerStatus {
    * Every gate holding admission back now, each with its use and limit; empty when none does.
    */
   blockedBy?: SchedulerBlock[];
+  /**
+   * Absent before the scheduler worker has reported them.
+   */
+  capacityLimits?: SchedulerCapacityLimits | null;
   dimensions: SchedulerDimension[];
   enabled: boolean;
   /**
@@ -1356,6 +1360,29 @@ export interface SchedulerBlock {
   limit: number;
   name: "cpu" | "memory" | "sessions" | "review" | "start-limit";
   use: number;
+  [k: string]: unknown;
+}
+/**
+ * The cpu and memory limits the scheduler admits against.
+ */
+export interface SchedulerCapacityLimits {
+  cpu: SchedulerCapacityLimit;
+  memory: SchedulerCapacityLimit;
+  [k: string]: unknown;
+}
+/**
+ * The cpu or memory limit in force, in percent, and where it comes from.
+ */
+export interface SchedulerCapacityLimit {
+  /**
+   * What `starpulse.toml` gives this dimension, which clearing the Admin limit returns to.
+   */
+  configLimit: number;
+  limit: number;
+  /**
+   * `admin` when an operator set the limit in Admin, `starpulse.toml` when the config's limit holds.
+   */
+  source: "admin" | "starpulse.toml";
   [k: string]: unknown;
 }
 /**
@@ -2238,12 +2265,20 @@ export interface WindowRequest {
   hours: number;
 }
 /**
- * `PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours and/or the
- * selected harness's session cap.
+ * `PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours, the
+ * selected harness's session cap and/or the cpu and memory limits.
  */
 export interface SchedulerRequest {
+  /**
+   * The cpu limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it.
+   */
+  cpuLimit?: number | null;
   enabled?: boolean | null;
   harness?: string | null;
+  /**
+   * The memory limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it.
+   */
+  memoryLimit?: number | null;
   quietHours?: QuietHours | null;
   /**
    * The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it.

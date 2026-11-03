@@ -524,6 +524,22 @@ describe("the demo server", () => {
     expect(await body(put(null))).toMatchObject({ sessionCap: { limit: 3, source: "starpulse.toml" } });
   });
 
+  it("overrides the cpu and memory limits with a PUT, drops one on null and refuses a value that is not a percent", async () => {
+    const s = new DemoServer(fixture(), () => 1000);
+    const put = (change: unknown) => s.fetch("/api/scheduler", { method: "PUT", body: JSON.stringify(change) });
+    const dimension = (status: { dimensions: { name: string; limit: number }[] }, name: string) => status.dimensions.find((d) => d.name === name)?.limit;
+
+    expect(await body(s.fetch("/api/scheduler"))).toMatchObject({
+      capacityLimits: { cpu: { limit: 80, source: "starpulse.toml", configLimit: 80 }, memory: { limit: 85, source: "starpulse.toml", configLimit: 85 } },
+    });
+    const set = await body(put({ cpuLimit: 95, memoryLimit: 60.5 }));
+    expect(set).toMatchObject({ capacityLimits: { cpu: { limit: 95, source: "admin", configLimit: 80 }, memory: { limit: 60.5, source: "admin", configLimit: 85 } } });
+    expect([dimension(set, "cpu"), dimension(set, "memory")]).toEqual([95, 60.5]);
+    for (const bad of [0, -1, 101, "50", true, [], {}]) expect((await put({ cpuLimit: bad })).status).toBe(400);
+    expect(await body(s.fetch("/api/scheduler"))).toMatchObject({ capacityLimits: { cpu: { limit: 95 } } });
+    expect(await body(put({ cpuLimit: null }))).toMatchObject({ capacityLimits: { cpu: { limit: 80, source: "starpulse.toml" }, memory: { limit: 60.5, source: "admin" } } });
+  });
+
   it("can stand in for a paused scheduler, a host over its limit, an empty queue, a refused switch and a server with no scheduler", async () => {
     const mode = (m: "off" | "over" | "empty" | "refused" | "down") => new DemoServer(fixture(), () => 1000, false, false, m);
     const turnOff = { method: "PUT", body: JSON.stringify({ enabled: false }) };

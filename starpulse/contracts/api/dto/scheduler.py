@@ -95,6 +95,23 @@ class SchedulerSessionCap(_Api):
     configLimit: float = Field(description="What `starpulse.toml` gives this harness, which clearing the Admin cap returns to.")
 
 
+class SchedulerCapacityLimit(_Api):
+    """The cpu or memory limit in force, in percent, and where it comes from."""
+
+    limit: float
+    source: Literal["admin", "starpulse.toml"] = Field(
+        description="`admin` when an operator set the limit in Admin, `starpulse.toml` when the config's limit holds."
+    )
+    configLimit: float = Field(description="What `starpulse.toml` gives this dimension, which clearing the Admin limit returns to.")
+
+
+class SchedulerCapacityLimits(_Api):
+    """The cpu and memory limits the scheduler admits against."""
+
+    cpu: SchedulerCapacityLimit
+    memory: SchedulerCapacityLimit
+
+
 class SchedulerOperatorTask(_Api):
     """A task in the eligible lane that waits on the operator's decision rather than on capacity."""
 
@@ -114,6 +131,9 @@ class SchedulerStatus(_Api):
     quietHours: QuietHours | None = Field(default=None, description="Null when no window holds admission back.")
     sessionCap: SchedulerSessionCap | None = Field(
         default=None, description="Absent before the scheduler worker has reported one."
+    )
+    capacityLimits: SchedulerCapacityLimits | None = Field(
+        default=None, description="Absent before the scheduler worker has reported them."
     )
     sampledAt: float | None
     dimensions: list[SchedulerDimension]
