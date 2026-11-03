@@ -25,7 +25,14 @@ from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, no_writer, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task
-from starpulse.views.application.commands.moves import claim_task, move_task, release_task, start_requested, start_task
+from starpulse.views.application.commands.moves import (
+    claim_task,
+    move_task,
+    release_task,
+    resume_task,
+    start_requested,
+    start_task,
+)
 from starpulse.views.application.commands.tasks import (
     archive_task,
     complete_task,
@@ -124,6 +131,7 @@ def routes(api: Api) -> list[ApiRoute]:
     # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.
     writes: dict[str, tuple[TaskWrite, str]] = {
         "/move": (lambda client, raw: move_task(client, raw, feed, writer, start), "move"),
+        "/resume": (lambda client, raw: resume_task(client, raw, feed, services.start_session, edit), "resume"),
         "/start": (
             lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
             "start",

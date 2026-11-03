@@ -41,6 +41,7 @@ from starpulse.contracts.api.dto.requests import (
     RetireRequest,
     ReviewRequest,
     SchedulerRequest,
+    ResumeRequest,
     StartRequest,
     TakeOverRequest,
     VerdictRequest,
@@ -72,6 +73,7 @@ from starpulse.contracts.api.dto.results import (
     Retired,
     RetiredImported,
     Reviewed,
+    Resumed,
     RunStarted,
     Started,
     TakenOver,
@@ -148,6 +150,7 @@ class ApiContract(_Api):
     retiredTasks: RetiredTasks
     requests: list[
         MoveRequest
+        | ResumeRequest
         | StartRequest
         | EditRequest
         | ArchiveRequest
@@ -201,6 +204,7 @@ class ApiContract(_Api):
         | DocArchived
         | DocRestored
         | Started
+        | Resumed
         | RunStarted
         | Accepted
         | ApiError

@@ -12,6 +12,7 @@ from starpulse.board.model.seam import (
     OPERATOR,
     AssigneeWriter,
     MoveWriter,
+    TaskEditor,
     TaskReleaser,
 )
 from starpulse.contracts.adapters import Move, StartFailedError
@@ -20,6 +21,7 @@ from starpulse.contracts.api.dto.requests import (
     MoveRequest,
     NonBlank,
     ReleaseRequest,
+    ResumeRequest,
     StartRequest,
 )
 from starpulse.harness_telemetry.model.harnesses import Harnesses
@@ -178,9 +180,7 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
 
 
 @with_request(ReleaseRequest, "Releasing a claim")
-def release_task(
-    request: ReleaseRequest, feed: BoardFeed, release: TaskReleaser | None
-) -> tuple[int, dict[str, str]]:
+def release_task(request: ReleaseRequest, feed: BoardFeed, release: TaskReleaser | None) -> tuple[int, dict[str, str]]:
     """End the claim on the task `request` names, whoever holds it: the HTTP status and JSON body.
 
     The task loses its assignee, records the session as released and keeps its lane, so the next claim adopts it. A task
@@ -272,3 +272,43 @@ def start_task(
 ) -> tuple[int, dict[str, Any]]:
     """`POST /api/start`: `start_requested` for the request body a page or a client posts."""
     return start_requested(request, feed, assign, start_session, harnesses, clock)
+
+
+def resume_requested(
+    request: ResumeRequest,
+    feed: BoardFeed,
+    start_session: Callable[..., str] | None,
+    edit: TaskEditor | None,
+) -> tuple[int, dict[str, Any]]:
+    """Recreate the session parked on the task `request` names, with Remote Control and its reply as the first message:
+    the HTTP status and JSON body.
+
+    Only a task in a lane a session parks from (review, waiting, needs attention) resumes. The session-start service
+    refuses a task whose session is still live, so a resume never forks one. The new session's link is recorded on the
+    task as a comment, so it outlives the page.
+    """
+    task = request.task
+    if start_session is None:
+        return 404, {"error": "no session-start service is configured (session_start_url)"}
+    if (agent := held_task(feed, task)) is None:
+        return not_held(feed, task)
+    roles = feed.roles
+    resumable = [state for state in (roles.review, roles.waiting, roles.attention) if state]
+    if agent["state"] not in resumable:
+        names = " or ".join(filter(None, [", ".join(resumable[:-1]), *resumable[-1:]]))
+        return 409, {"error": f"{task} is in {agent['state']}: a session resumes only a {names} task"}
+    try:
+        url = start_session(task, verb="Resume", text=request.text)
+    except StartFailedError as exc:
+        return 502, {"error": str(exc)}
+    who = who_of(request)
+    recorded = edit is not None and edit(task, {}, f"Resumed in {url}", actor=who.actor).ok
+    return 200, {"task": task, "url": url, "recorded": recorded}
+
+
+@with_request(ResumeRequest, "Resuming a session")
+def resume_task(
+    request: ResumeRequest, feed: BoardFeed, start_session: Callable[..., str] | None, edit: TaskEditor | None
+) -> tuple[int, dict[str, Any]]:
+    """`POST /api/resume`: `resume_requested` for the request body a page or a client posts."""
+    return resume_requested(request, feed, start_session, edit)

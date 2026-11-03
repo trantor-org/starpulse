@@ -38,7 +38,7 @@ CREATE_TEXT = (
     "duplicateResolution",
     "follows",
 )
-CREATE_LISTS =("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
+CREATE_LISTS = ("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
 #: The lists whose every item must be nonblank, rather than dropped when blank.
 _CREATE_NONBLANK = ("acceptanceCriteria", "definitionOfDone")
 _PRIORITIES = frozenset({"high", "medium", "low"})  # also the levels of Impact and Urgency
@@ -90,6 +90,13 @@ class StartRequest(_Request):
     mode: str | None = None
     actor: NonBlank | None = None
     session: NonBlank | None = None
+
+
+class ResumeRequest(_Writer):
+    """`POST /api/resume`: recreate the parked session of `task` with Remote Control, `text` its first message."""
+
+    task: str
+    text: str | None = Field(None, max_length=4000)
 
 
 class EditRequest(_Writer):

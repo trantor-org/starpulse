@@ -6,6 +6,8 @@ import { RatingControl } from "./RatingControl";
 import { ciTone, columnsOf, offBoardTask, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
+import { ResumeControl } from "./ResumeControl";
+import { resumable, resumedLink } from "./resume";
 import { DocReader, DocRows, useDocs } from "./DocReader";
 import { Inline, Md, RepoBase } from "./Markdown";
 import { sessionNickname } from "./nickname";
@@ -560,6 +562,7 @@ export function TaskView(p: TaskViewProps) {
               {startVisible && <button className="startbtn" disabled={!startable(p.task, roles) || unavailable}
                 title={startable(p.task, roles) ? undefined : working?.reason}
                 onClick={p.start}>▶ Start session</button>}
+              {resumable(p.task.lane, roles) && <ResumeControl task={p.task.id} recorded={resumedLink(base.comments ?? [])} disabled={unavailable} />}
               <MoveMenu items={offered} disabled={unavailable} move={p.move} />
               <button className="hidebtn" onClick={p.hide}>Hide task</button>
               {p.capabilities?.archive && <button className="archbtn" onClick={p.archive}>Archive…</button>}

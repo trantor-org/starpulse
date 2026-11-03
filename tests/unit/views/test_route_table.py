@@ -57,6 +57,7 @@ _TABLE = [
     ("/api/task/{id:path}", _READ),
     ("/api/retired", _READ),
     ("/api/move", ("POST",)),
+    ("/api/resume", ("POST",)),
     ("/api/start", ("POST",)),
     ("/api/edit", ("POST",)),
     ("/api/archive", ("POST",)),

@@ -31,6 +31,7 @@ export interface ApiContract {
     | DocArchived
     | DocRestored
     | Started
+    | Resumed
     | RunStarted
     | Accepted
     | ApiError
@@ -65,6 +66,7 @@ export interface ApiContract {
   pulls: Pulls;
   requests: (
     | MoveRequest
+    | ResumeRequest
     | StartRequest
     | EditRequest
     | ArchiveRequest
@@ -263,6 +265,12 @@ export interface DocRestored {
 }
 export interface Started {
   at: number;
+  task: string;
+  url: string;
+  [k: string]: unknown;
+}
+export interface Resumed {
+  recorded: boolean;
   task: string;
   url: string;
   [k: string]: unknown;
@@ -1998,6 +2006,16 @@ export interface MoveRequest {
   task?: string | null;
   tasks?: [string, ...string[]] | null;
   to: string;
+}
+/**
+ * `POST /api/resume`: recreate the parked session of `task` with Remote Control, `text` its first message.
+ */
+export interface ResumeRequest {
+  actor?: string | null;
+  harness?: string | null;
+  session?: string | null;
+  task: string;
+  text?: string | null;
 }
 /**
  * `POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.

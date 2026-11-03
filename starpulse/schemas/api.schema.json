@@ -6139,6 +6139,85 @@
       "title": "Restored",
       "type": "object"
     },
+    "ResumeRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/resume`: recreate the parked session of `task` with Remote Control, `text` its first message.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "ResumeRequest",
+      "type": "object"
+    },
+    "Resumed": {
+      "properties": {
+        "recorded": {
+          "type": "boolean"
+        },
+        "task": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "url",
+        "recorded"
+      ],
+      "title": "Resumed",
+      "type": "object"
+    },
     "RetireRequest": {
       "additionalProperties": false,
       "description": "`POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks.",
@@ -9863,6 +9942,9 @@
             "$ref": "#/$defs/Started"
           },
           {
+            "$ref": "#/$defs/Resumed"
+          },
+          {
             "$ref": "#/$defs/RunStarted"
           },
           {
@@ -9986,6 +10068,9 @@
         "anyOf": [
           {
             "$ref": "#/$defs/MoveRequest"
+          },
+          {
+            "$ref": "#/$defs/ResumeRequest"
           },
           {
             "$ref": "#/$defs/StartRequest"
