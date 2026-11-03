@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.model.seam import Written
+from starpulse.scheduler.model.capacity_limits import NAMES, CapacityLimitSetting
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.board_feed import BoardFeed
 from starpulse.scheduler.model.harness_setting import HarnessSetting
@@ -41,6 +42,7 @@ class Runtime:
     harness: HarnessSetting
     policy: Scheduler
     session_caps: SessionCapSetting
+    capacity_limits: CapacityLimitSetting
     loop: Loop | None = None
     _push_status: Callable[[], None] | None = None
     _served: dict[str, Any] | None = None
@@ -75,6 +77,14 @@ class Runtime:
             self.loop.wake()
         self.push_status()
 
+    def set_limits(self, changes: Mapping[str, object]) -> None:
+        """Keep the cpu and memory limits `changes` names (None clears one, back to `starpulse.toml`); a value that is not a
+        percent above 0 and at most 100 raises ValueError. The loop wakes, since a higher limit may let a task in."""
+        self.capacity_limits.set(changes)
+        if self.loop is not None:
+            self.loop.wake()
+        self.push_status()
+
     def status(self) -> dict[str, Any]:
         """Whether admission is on, which harness it starts on, when capacity was last sampled, and each dimension.
 
@@ -100,6 +110,7 @@ class Runtime:
             "harness": selected,
             "quietHours": self.quiet_hours.state(),
             "sessionCap": self.policy.session_cap(selected),
+            "capacityLimits": {name: self.policy.capacity_limit(name) for name in NAMES},
             "sampledAt": at,
             "dimensions": dimensions,
         }
@@ -191,14 +202,15 @@ def build(
             loop.wake()
 
     session_caps = SessionCapSetting(log)
-    policy = policy.with_overrides(session_caps.get)
+    capacity_limits = CapacityLimitSetting(log)
+    policy = policy.with_overrides(session_caps.get, capacity_limits.get)
     state = SchedulerState(log)
 
     def remember_sample(readings: list[Reading], at: float) -> None:
         state.save_sample([{"name": r.name, "use": r.use, "limit": r.limit} for r in readings], at)
 
     sampler = Sampler(
-        policy.limits,
+        policy.effective_limits,
         probe or LocalProbe(),
         sessions=lambda: sessions_held(
             feed.open_tasks(), feed.roles.working, feed.machine_tasks(HARNESS.name), clock()
@@ -238,4 +250,4 @@ def build(
             harness=harness,
             transcript=transcript,
         )
-    return Runtime(toggle, sampler, quiet_hours, harness, policy, session_caps, loop)
+    return Runtime(toggle, sampler, quiet_hours, harness, policy, session_caps, capacity_limits, loop)

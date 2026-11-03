@@ -27,29 +27,33 @@ const HARNESSES = {
 };
 const BY_HARNESS = { claude: { use: 2, limit: 3 }, cursor: { use: 0, limit: 2 } };
 
-let host: HTMLDivElement, root: Root, enabled: boolean, harness: string, cap: number | null, status: () => unknown, fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
+let host: HTMLDivElement, root: Root, enabled: boolean, harness: string, cap: number | null, limits: Record<string, number | null>, status: () => unknown, fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
 const reply = (body: unknown, code = 200) => Promise.resolve(new Response(JSON.stringify(body), { status: code }));
 const settle = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 const q = <T extends Element = HTMLElement>(sel: string) => host.querySelector<T>(sel);
 const SWITCH = '[role="switch"][aria-label="Autopilot"]';
 const HARNESS = '[role="radiogroup"][aria-label="Harness"]';
 
-async function draw(body: Record<string, unknown> = {}, opts: { put?: () => Promise<Response>; down?: boolean; cap?: number } = {}) {
+async function draw(body: Record<string, unknown> = {}, opts: { put?: () => Promise<Response>; down?: boolean; cap?: number; limits?: Record<string, number> } = {}) {
   cap = opts.cap ?? null;
+  limits = { cpu: null, memory: null, ...opts.limits };
   enabled = (body.enabled as boolean | undefined) ?? true;
   harness = (body.harness as string | undefined) ?? "claude";
   status = () => ({
     sampledAt: NOW, dimensions: dims(), inFlight: SESSIONS, next: NEXT, quietHours: null,
     sessionsByHarness: BY_HARNESS, pauses: [], ...body, enabled, harness,
     sessionCap: { harness, limit: cap ?? 4, source: cap === null ? "starpulse.toml" : "admin", configLimit: 4 },
+    capacityLimits: Object.fromEntries([["cpu", 80], ["memory", 85]].map(([name, config]) => [name, { limit: limits[name] ?? config, source: limits[name] === null ? "starpulse.toml" : "admin", configLimit: config }])),
   });
   fetcher = vi.fn<typeof fetch>((url, init) => {
     if (String(url).endsWith("/api/harnesses")) return reply(HARNESSES);
     if (opts.down) return reply({ error: "This server has no scheduler." }, 404);
     if (init?.method === "PUT") {
       if (opts.put) return opts.put();
-      const sent = JSON.parse(String(init.body)) as { enabled?: boolean; harness?: string; sessionCap?: number | null };
+      const sent = JSON.parse(String(init.body)) as { enabled?: boolean; harness?: string; sessionCap?: number | null; cpuLimit?: number | null; memoryLimit?: number | null };
       if ("sessionCap" in sent) cap = sent.sessionCap ?? null;
+      if ("cpuLimit" in sent) limits.cpu = sent.cpuLimit ?? null;
+      if ("memoryLimit" in sent) limits.memory = sent.memoryLimit ?? null;
       if (typeof sent.enabled === "boolean") enabled = sent.enabled;
       if (typeof sent.harness === "string") harness = sent.harness;
     }
@@ -313,6 +317,69 @@ describe("the Admin view's Autopilot card", () => {
       await settle();
 
       expect(q(".refusal")?.textContent).toContain("session cap must be a whole number above zero");
+    });
+  });
+
+  describe.each([["CPU", "cpu", "cpuLimit", 80], ["Memory", "memory", "memoryLimit", 85]] as const)("%s limit", (label, name, field, config) => {
+    const row = () => q(`[aria-label="${label} limit"]`)!.closest(".row")!;
+    const input = () => q<HTMLInputElement>(`input[aria-label="${label} limit"]`)!;
+    const button = (text: string) => [...row().querySelectorAll("button")].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
+    const type = (value: string) =>
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input(), value);
+        input().dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+    it("shows the configured limit and says starpulse.toml sets it until an operator overrides it", async () => {
+      await draw();
+
+      expect(input().value).toBe(String(config));
+      expect(row().textContent).toContain("Set by starpulse.toml");
+      expect(button("Use starpulse.toml")).toBeUndefined();
+      expect(button("Save")!.disabled).toBe(true);
+    });
+
+    it("saves a percent as the limit and then says Admin overrides the config", async () => {
+      await draw();
+
+      await type("62.5");
+      await act(async () => button("Save")!.click());
+      await settle();
+
+      expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ [field]: 62.5 }) });
+      expect(input().value).toBe("62.5");
+      expect(row().textContent).toContain("Admin override");
+      expect(row().textContent).toContain("starpulse.toml sets " + config);
+    });
+
+    it("clears the override with a PUT of null and falls back to the configured limit", async () => {
+      await draw({}, { limits: { [name]: 55 } });
+      expect(input().value).toBe("55");
+
+      await act(async () => button("Use starpulse.toml")!.click());
+      await settle();
+
+      expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ [field]: null }) });
+      expect(input().value).toBe(String(config));
+      expect(row().textContent).not.toContain("Admin override");
+    });
+
+    it.each(["0", "-2", "101", "abc", ""])("offers no Save for %j, which is not a percent above 0 and at most 100", async (value) => {
+      await draw();
+
+      await type(value);
+
+      expect(button("Save")!.disabled).toBe(true);
+    });
+
+    it("names the server's reason when it refuses the limit", async () => {
+      await draw({}, { put: () => reply({ error: name + " limit must be a percent above 0 and at most 100; got 60" }, 400) });
+
+      await type("60");
+      await act(async () => button("Save")!.click());
+      await settle();
+
+      expect(q(".refusal")?.textContent).toContain("limit must be a percent above 0 and at most 100");
     });
   });
 });

@@ -26,6 +26,7 @@ from tests.machine_feed import MachineFeed
 from tests.machines import MACHINES, ROLES
 
 HOST = {"cpu": 35.0, "memory": 60.0}
+CONFIG_LIMITS = {name: {"limit": 80.0, "source": "starpulse.toml", "configLimit": 80.0} for name in HOST}
 
 
 def _harness(tmp_path: Path) -> MachineFeed:
@@ -94,6 +95,7 @@ def test_a_get_reports_every_dimensions_use_and_limit_and_that_the_scheduler_is_
         "harness": "claude",
         "quietHours": None,
         "sessionCap": {"harness": "claude", "limit": 2, "source": "starpulse.toml", "configLimit": 2},
+        "capacityLimits": CONFIG_LIMITS,
         "sampledAt": 1000.0,
         "dimensions": [
             {"name": "cpu", "use": 35.0, "limit": 80},
@@ -112,6 +114,7 @@ def test_a_get_before_the_first_sample_has_no_readings(tmp_path: Path) -> None:
             "harness": "claude",
             "quietHours": None,
             "sessionCap": {"harness": "claude", "limit": 2, "source": "starpulse.toml", "configLimit": 2},
+            "capacityLimits": CONFIG_LIMITS,
             "sampledAt": None,
             "dimensions": [],
         },
@@ -548,4 +551,75 @@ def test_the_loops_next_pass_admits_against_the_override_with_no_restart(tmp_pat
     assert runtime.loop.tick() == []  # T-9 fills the cap of 1; the config limit of 2 would let T-4 in
 
     _put(runtime, {"sessionCap": None})
+    assert runtime.loop.tick() == ["T-4"]
+
+
+CPU = {"limit": 97.0, "source": "admin", "configLimit": 80.0}
+
+
+def test_a_get_reports_each_limit_with_its_source_and_the_config_value(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+    runtime.sampler.sample()
+
+    body = scheduler("127.0.0.1", "GET", b"", runtime)[1]
+
+    assert body["capacityLimits"] == {
+        "cpu": {"limit": 80.0, "source": "starpulse.toml", "configLimit": 80.0},
+        "memory": {"limit": 80.0, "source": "starpulse.toml", "configLimit": 80.0},
+    }
+
+
+def test_a_put_sets_a_limit_that_the_dimension_reports_and_that_survives_a_restart(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+    runtime.sampler.sample()
+
+    status, body = _put(runtime, {"cpuLimit": 97})
+
+    assert status == 200 and body["capacityLimits"]["cpu"] == CPU
+    assert body["capacityLimits"]["memory"]["source"] == "starpulse.toml"
+    assert next(d for d in body["dimensions"] if d["name"] == "cpu")["limit"] == 97
+    restarted = _runtime(tmp_path)
+    restarted.sampler.sample()
+    again = scheduler("127.0.0.1", "GET", b"", restarted)[1]
+    assert again["capacityLimits"]["cpu"] == CPU
+    assert next(d for d in again["dimensions"] if d["name"] == "cpu")["limit"] == 97
+
+
+def test_a_null_limit_returns_to_the_config_limit(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+    _put(runtime, {"cpuLimit": 97, "memoryLimit": 50})
+
+    body = _put(runtime, {"cpuLimit": None})[1]
+
+    assert body["capacityLimits"]["cpu"] == {"limit": 80.0, "source": "starpulse.toml", "configLimit": 80.0}
+    assert body["capacityLimits"]["memory"]["limit"] == 50
+
+
+@pytest.mark.parametrize("limit", [0, -3, 100.5, 250, "90", True, [90], {"limit": 90}])
+def test_a_limit_that_is_not_a_percentage_is_a_4xx_and_changes_nothing(tmp_path: Path, limit: object) -> None:
+    runtime = _runtime(tmp_path)
+    _put(runtime, {"cpuLimit": 97, "memoryLimit": 50})
+
+    status, body = _put(runtime, {"memoryLimit": 60, "cpuLimit": limit})
+
+    assert 400 <= status < 500 and body["error"]
+    assert (runtime.capacity_limits.get("cpu"), runtime.capacity_limits.get("memory")) == (97, 50)
+
+
+def test_a_limit_put_from_outside_the_private_network_is_refused(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    assert _put(runtime, {"cpuLimit": 97}, "203.0.113.9")[0] == 403
+    assert runtime.capacity_limits.get("cpu") is None
+
+
+def test_the_loops_next_pass_admits_against_a_changed_limit_with_no_restart(tmp_path: Path) -> None:
+    runtime = _looping(tmp_path)  # the host reads cpu 5, the config limit is 80
+    assert runtime.loop is not None
+    runtime.set_enabled(True)
+
+    _put(runtime, {"cpuLimit": 4})
+    assert runtime.loop.tick() == []  # cpu 5 is past the Admin limit of 4
+
+    _put(runtime, {"cpuLimit": None})
     assert runtime.loop.tick() == ["T-4"]

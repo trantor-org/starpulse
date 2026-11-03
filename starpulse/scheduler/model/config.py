@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from typing import Any
 
-__all__ = ["DIMENSIONS", "LEVELS", "Scheduler", "SchedulerError", "parse_scheduler"]
+__all__ = ["DIMENSIONS", "LEVELS", "Scheduler", "SchedulerError", "parse_scheduler", "served"]
 
 #: The capacity dimensions: host CPU and memory (percent), scheduler sessions in flight, and review-lane points.
 DIMENSIONS = ("cpu", "memory", "sessions", "review")
@@ -46,6 +46,16 @@ class SchedulerError(ValueError):
     """The block cannot be run from; the message names the key to fix."""
 
 
+
+def served(config_limit: float, override: float | None) -> dict[str, object]:
+    """The limit in force, where it comes from and what the config would give it, as the status serves one dimension."""
+    return {
+        "limit": float(config_limit if override is None else override),
+        "source": "starpulse.toml" if override is None else "admin",
+        "configLimit": float(config_limit),
+    }
+
+
 @dataclass(frozen=True)
 class Scheduler:
     lane: str | None = None
@@ -73,13 +83,39 @@ class Scheduler:
     verify_profile: str | None = None
     """The agent profile every verify session starts on; set together with `verify_lane`."""
 
-    def with_overrides(self, session_override: Callable[[str], int | None]) -> Scheduler:
-        """This policy with `session_override` consulted before the configured session limits."""
-        return _Overridden(**{f.name: getattr(self, f.name) for f in fields(self)}, session_override=session_override)
+    def with_overrides(
+        self,
+        session_override: Callable[[str], int | None],
+        limit_override: Callable[[str], float | None] = lambda name: None,
+    ) -> Scheduler:
+        """This policy with `session_override` consulted before the configured session limits and `limit_override`
+        before the configured cpu and memory limits."""
+        return _Overridden(
+            **{f.name: getattr(self, f.name) for f in fields(self)},
+            session_override=session_override,
+            limit_override=limit_override,
+        )
 
     def override_of(self, harness: str) -> int | None:
         """The session cap an operator set in Admin for `harness`; none here, the policy `with_overrides` returns has them."""
         return None
+
+    def limit_override_of(self, name: str) -> float | None:
+        """The cpu or memory limit an operator set in Admin; none here, the policy `with_overrides` returns has them."""
+        return None
+
+    def limit(self, name: str) -> float:
+        """The limit on dimension `name`: the Admin override when one is set, else the configured limit."""
+        override = self.limit_override_of(name)
+        return float(override) if override is not None else float(self.limits[name])
+
+    def effective_limits(self) -> dict[str, float]:
+        """Every dimension's limit as it stands now, the Admin cpu and memory overrides applied."""
+        return {name: self.limit(name) for name in self.limits}
+
+    def capacity_limit(self, name: str) -> dict[str, Any]:
+        """The cpu or memory limit in force, where it comes from and what the config would give it, as the status serves it."""
+        return served(float(self.limits[name]), self.limit_override_of(name))
 
     def eligible_lane(self, initial: str) -> str:
         """The lane scheduler admits from: the configured one, else the board's `initial` lane."""
@@ -122,9 +158,14 @@ class _Overridden(Scheduler):
 
     session_override: Callable[[str], int | None] = field(default=lambda harness: None, compare=False, repr=False)
     """Read on every call, so a change takes effect on the loop's next pass."""
+    limit_override: Callable[[str], float | None] = field(default=lambda name: None, compare=False, repr=False)
+    """Read on every call, so a changed cpu or memory limit takes effect on the sampler's next reading."""
 
     def override_of(self, harness: str) -> int | None:
         return self.session_override(harness)
+
+    def limit_override_of(self, name: str) -> float | None:
+        return self.limit_override(name)
 
 
 def _lane(value: object, key: str) -> str | None:

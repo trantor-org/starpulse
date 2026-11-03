@@ -42,8 +42,10 @@ def history_window(source: str, method: str, raw: bytes, window: HistoryWindow) 
 
 _SCHEDULER_USAGE = (
     'the scheduler takes {"enabled": true|false}, {"harness": "<name>"} and/or '
-    '{"quietHours": {"start", "end", "timezone"}|null} and/or {"sessionCap": <whole number above zero>|null}'
+    '{"quietHours": {"start", "end", "timezone"}|null} and/or {"sessionCap": <whole number above zero>|null} and/or '
+    '{"cpuLimit": <percent above 0, at most 100>|null} and/or {"memoryLimit": <percent above 0, at most 100>|null}'
 )
+_LIMIT_FIELDS = {"cpuLimit": "cpu", "memoryLimit": "memory"}
 
 
 @with_request(SchedulerRequest, "The scheduler switch")
@@ -59,6 +61,8 @@ def _put_scheduler(request: SchedulerRequest, runtime: Runtime | Remote) -> tupl
             runtime.set_quiet_hours(None if quiet is None else quiet.model_dump())
         if "sessionCap" in named:
             runtime.set_session_cap(request.sessionCap)
+        if limits := {name: getattr(request, field) for field, name in _LIMIT_FIELDS.items() if field in named}:
+            runtime.set_limits(limits)
     except ValueError as exc:
         return 400, {"error": str(exc)}
     if request.enabled is not None:
@@ -68,8 +72,10 @@ def _put_scheduler(request: SchedulerRequest, runtime: Runtime | Remote) -> tupl
 
 def scheduler(source: str, method: str, raw: bytes, runtime: Runtime | Remote | None) -> tuple[int, dict[str, Any]]:
     """Read (`GET`) whether the scheduler admits tasks, which harness it starts on, its quiet hours, the selected
-    harness's session cap and each capacity dimension's use against its limit, or set (`PUT {"enabled": bool}`,
-    `PUT {"harness": "<name>"}`, `PUT {"quietHours": {...} | null}`, `PUT {"sessionCap": N | null}`, or any combination) those settings, for a browser at `source`.
+    harness's session cap, the cpu and memory limits and each capacity dimension's use against its limit, or set
+    (`PUT {"enabled": bool}`, `PUT {"harness": "<name>"}`, `PUT {"quietHours": {...} | null}`,
+    `PUT {"sessionCap": N | null}`, `PUT {"cpuLimit": P | null}`, `PUT {"memoryLimit": P | null}`, or any combination)
+    those settings, for a browser at `source`.
 
     Settings are kept in the store the scheduler reads, so a PUT takes effect at the next admission and survives a
     restart. A read answers any address, as every read does; a write answers only loopback and RFC 1918. A body with

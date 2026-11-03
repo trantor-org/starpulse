@@ -61,7 +61,7 @@ def _scheduler_step(tmp_path: Path) -> tuple[Callable[[], None], list[int]]:
     policy = Scheduler(lane="ready", limits=limits)
     feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
     sampler = Sampler(
-        policy.limits,
+        lambda: policy.limits,
         probe=lambda: {"cpu": 5.0, "memory": 5.0},
         sessions=lambda: 0,
         review=lambda: 0,

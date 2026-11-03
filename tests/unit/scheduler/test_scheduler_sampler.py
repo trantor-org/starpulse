@@ -22,7 +22,7 @@ class Rig:
         self.now = 1000.0
         self.crossings: list[Crossing] = []
         self.sampler = Sampler(
-            LIMITS,
+            lambda: LIMITS,
             probe=lambda: self.host,
             sessions=lambda: self.sessions,
             review=lambda: self.review,

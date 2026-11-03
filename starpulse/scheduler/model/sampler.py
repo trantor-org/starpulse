@@ -47,12 +47,13 @@ class Sampler:
     """Samples `probe` (CPU and memory percent), `sessions` (scheduler sessions in flight) and `review` (review-lane
     points) against `limits`, and tells `on_crossing` each dimension whose fullness changed.
 
-    `sample` runs on the sampler's thread and `readings` on the server's, so the latest pass is swapped in whole.
+    `limits` is read on every sample and every `readings`, so a limit an operator changes counts at once. `sample` runs
+    on the sampler's thread and `readings` on the server's, so the latest pass is swapped in whole.
     """
 
     def __init__(
         self,
-        limits: Mapping[str, float],
+        limits: Callable[[], Mapping[str, float]],
         probe: Callable[[], Mapping[str, float]],
         sessions: Callable[[], float],
         review: Callable[[], float],
@@ -73,15 +74,19 @@ class Sampler:
         self._latest = (readings, at)
 
     def readings(self) -> tuple[list[Reading], float | None]:
-        """The latest pass in `DIMENSIONS` order and when it was taken; nothing, and no time, before the first sample."""
-        return self._latest
+        """The latest pass in `DIMENSIONS` order, each judged against its limit as it is now, and when it was taken;
+        nothing, and no time, before the first sample."""
+        readings, at = self._latest
+        limits = self._limits()
+        return [Reading(r.name, r.use, limits.get(r.name, r.limit)) for r in readings], at
 
     def sample(self) -> None:
         """Read every dimension once; a probe that fails keeps the readings of the pass before."""
         try:
             host = self._probe()
             use = {"cpu": host["cpu"], "memory": host["memory"]} | {name: read() for name, read in self._uses.items()}
-            now = [Reading(name, use[name], self._limits[name]) for name in DIMENSIONS]
+            limits = self._limits()
+            now = [Reading(name, use[name], limits[name]) for name in DIMENSIONS]
         except Exception:  # a probe is third-party code; the next period goes again
             logger.exception("StarPulse: the scheduler cannot sample capacity")
             return

@@ -16,6 +16,8 @@ import {
   type NextPick,
   type Pause,
   type SessionCap,
+  type CapacityLimit,
+  type CapacityName,
 } from "./scheduler";
 
 const pct = (d: Dimension) => `${Math.min(100, (d.used / d.limit) * 100)}%`;
@@ -91,6 +93,29 @@ function SessionCapRow({ store, cap, harness, saving }: { store: SchedulerStore;
           {admin && <button type="button" className="btn" disabled={saving} onClick={() => void store.setSessionCap(null)}>Use starpulse.toml</button>}
         </div>
         <div className="hint">{admin ? `Admin override; starpulse.toml sets ${cap.configLimit}` : "Set by starpulse.toml"}</div>
+      </div>
+    </div>
+  );
+}
+
+const PERCENT = /^\d+(\.\d+)?$/;
+
+/** One of cpu or memory's limit: what admission holds the dimension under, whether an operator or `starpulse.toml` sets it, and the override's controls. */
+function CapacityLimitRow({ store, name, label, row, saving }: { store: SchedulerStore; name: CapacityName; label: string; row: CapacityLimit; saving: boolean }) {
+  const [text, setText] = useState(String(row.limit));
+  const value = Number(text);
+  const valid = PERCENT.test(text.trim()) && value > 0 && value <= 100;
+  const admin = row.source === "admin";
+  return (
+    <div className="row">
+      <div><div className="lb">{label} limit</div><div className="hint">Percent of {label} in use at which autopilot starts nothing; a saved limit replaces the one in starpulse.toml</div></div>
+      <div>
+        <div className="hours pct">
+          <input type="number" min={1} max={100} step="any" value={text} aria-label={`${label} limit`} onChange={(e) => setText(e.target.value)} />
+          <button type="button" className="btn go" disabled={!valid || value === row.limit || saving} onClick={() => void store.setLimit(name, value)}>Save</button>
+          {admin && <button type="button" className="btn" disabled={saving} onClick={() => void store.setLimit(name, null)}>Use starpulse.toml</button>}
+        </div>
+        <div className="hint">{admin ? `Admin override; starpulse.toml sets ${row.configLimit}` : "Set by starpulse.toml"}</div>
       </div>
     </div>
   );
@@ -182,6 +207,10 @@ export function SchedulerCard({ store, quiet, clock }: { store: SchedulerStore; 
         <SessionCapRow key={`${current.sessionCap.harness}:${current.sessionCap.source}:${current.sessionCap.limit}`}
           store={store} cap={current.sessionCap} harness={selectedLabel} saving={phase.kind === "saving"} />
       )}
+      {current.capacityLimits && (["cpu", "memory"] as const).map((name) => {
+        const row = current.capacityLimits![name];
+        return <CapacityLimitRow key={`${name}:${row.source}:${row.limit}`} store={store} name={name} label={name === "cpu" ? "CPU" : "Memory"} row={row} saving={phase.kind === "saving"} />;
+      })}
       <div className="row">
         <div><div className="lb">Next pick</div><div className="hint">The Ready task scheduler starts next, or what it waits on</div></div>
         <Next on={on} next={next} />

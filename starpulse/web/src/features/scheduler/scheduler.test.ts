@@ -32,12 +32,20 @@ function server(opts: { down?: boolean; body?: unknown; status?: number } = {}) 
   let enabled = true;
   let harness = "claude";
   let cap: number | null = null;
+  const limits: Record<string, number | null> = { cpu: null, memory: null };
   return vi.fn<typeof fetch>((url, init) => {
     if (opts.down) return Promise.reject(new Error("offline"));
     if (String(url).endsWith("/api/harnesses")) return answer(HARNESSES);
     if (opts.body !== undefined) return answer(opts.body, opts.status);
     if (init?.method === "PUT") {
-      const sent = JSON.parse(String(init.body)) as { enabled?: unknown; harness?: unknown; sessionCap?: unknown };
+      const sent = JSON.parse(String(init.body)) as { enabled?: unknown; harness?: unknown; sessionCap?: unknown; cpuLimit?: unknown; memoryLimit?: unknown };
+      for (const [name, value] of [["cpu", sent.cpuLimit], ["memory", sent.memoryLimit]] as const) {
+        if (value === undefined) continue;
+        if (value !== null && !(typeof value === "number" && value > 0 && value <= 100)) {
+          return answer({ error: name + " limit must be a percent above 0 and at most 100" }, 400);
+        }
+        limits[name] = value;
+      }
       if ("sessionCap" in sent) {
         if (sent.sessionCap !== null && !(Number.isInteger(sent.sessionCap) && (sent.sessionCap as number) > 0)) {
           return answer({ error: "session cap must be a whole number above zero" }, 400);
@@ -50,14 +58,15 @@ function server(opts: { down?: boolean; body?: unknown; status?: number } = {}) 
       if (sent.harness !== undefined && (typeof sent.harness !== "string" || !sent.harness)) {
         return answer({ error: "harness must be a non-empty string" }, 400);
       }
-      if (sent.enabled === undefined && sent.harness === undefined && !("sessionCap" in sent)) {
+      if (sent.enabled === undefined && sent.harness === undefined && !("sessionCap" in sent) && !("cpuLimit" in sent) && !("memoryLimit" in sent)) {
         return answer({ error: "the scheduler takes enabled and/or harness" }, 400);
       }
       if (typeof sent.enabled === "boolean") enabled = sent.enabled;
       if (typeof sent.harness === "string") harness = sent.harness;
     }
     const sessionCap = { harness, limit: cap ?? 4, source: cap === null ? "starpulse.toml" : "admin", configLimit: 4 };
-    return answer({ ...STATUS, enabled, harness, sessionCap });
+    const capacityLimits = Object.fromEntries([["cpu", 80], ["memory", 85]].map(([name, config]) => [name, { limit: limits[name] ?? config, source: limits[name] === null ? "starpulse.toml" : "admin", configLimit: config }]));
+    return answer({ ...STATUS, enabled, harness, sessionCap, capacityLimits });
   });
 }
 
@@ -213,6 +222,47 @@ describe("the Autopilot card's store", () => {
     const bare = new SchedulerStore(server({ body: { ...STATUS, sessionCap: undefined } }));
     await bare.load();
     expect(bare.get().current!.sessionCap).toBeNull();
+  });
+
+  it("reads the cpu and memory limits with where they come from, and null while the server does not serve them", async () => {
+    const store = new SchedulerStore(server());
+    await store.load();
+    expect(store.get().current!.capacityLimits).toEqual({
+      cpu: { limit: 80, source: "starpulse.toml", configLimit: 80 },
+      memory: { limit: 85, source: "starpulse.toml", configLimit: 85 },
+    });
+
+    const bare = new SchedulerStore(server({ body: STATUS }));
+    await bare.load();
+    expect(bare.get().current!.capacityLimits).toBeNull();
+
+    const broken = new SchedulerStore(server({ body: { ...STATUS, capacityLimits: { cpu: { limit: "high" } } } }));
+    await broken.load();
+    expect(broken.get().current).toBeNull();
+  });
+
+  it.each([["cpu", "cpuLimit"], ["memory", "memoryLimit"]] as const)("sets the %s limit by PUTting {%s} and clears it with null", async (name, field) => {
+    const fetcher = server();
+    const store = new SchedulerStore(fetcher);
+    await store.load();
+
+    await store.setLimit(name, 62.5);
+    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ [field]: 62.5 }) });
+    expect(store.get().current!.capacityLimits![name]).toMatchObject({ limit: 62.5, source: "admin" });
+
+    await store.setLimit(name, null);
+    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ [field]: null }) });
+    expect(store.get().current!.capacityLimits![name].source).toBe("starpulse.toml");
+  });
+
+  it("says why the server refused a limit and keeps the one it had", async () => {
+    const store = new SchedulerStore(server());
+    await store.load();
+
+    await store.setLimit("cpu", 101);
+
+    expect(store.get().phase).toEqual({ kind: "refused", reason: "cpu limit must be a percent above 0 and at most 100" });
+    expect(store.get().current!.capacityLimits!.cpu.limit).toBe(80);
   });
 
   it("reads every blocking gate with its use and limit, and the start-limit count", async () => {

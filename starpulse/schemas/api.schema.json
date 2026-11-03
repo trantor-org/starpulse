@@ -6613,6 +6613,50 @@
       "title": "SchedulerBlock",
       "type": "object"
     },
+    "SchedulerCapacityLimit": {
+      "description": "The cpu or memory limit in force, in percent, and where it comes from.",
+      "properties": {
+        "configLimit": {
+          "description": "What `starpulse.toml` gives this dimension, which clearing the Admin limit returns to.",
+          "type": "number"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "source": {
+          "description": "`admin` when an operator set the limit in Admin, `starpulse.toml` when the config's limit holds.",
+          "enum": [
+            "admin",
+            "starpulse.toml"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "limit",
+        "source",
+        "configLimit"
+      ],
+      "title": "SchedulerCapacityLimit",
+      "type": "object"
+    },
+    "SchedulerCapacityLimits": {
+      "description": "The cpu and memory limits the scheduler admits against.",
+      "properties": {
+        "cpu": {
+          "$ref": "#/$defs/SchedulerCapacityLimit"
+        },
+        "memory": {
+          "$ref": "#/$defs/SchedulerCapacityLimit"
+        }
+      },
+      "required": [
+        "cpu",
+        "memory"
+      ],
+      "title": "SchedulerCapacityLimits",
+      "type": "object"
+    },
     "SchedulerDimension": {
       "description": "One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.",
       "properties": {
@@ -6761,8 +6805,23 @@
     },
     "SchedulerRequest": {
       "additionalProperties": false,
-      "description": "`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours and/or the\nselected harness's session cap.",
+      "description": "`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours, the\nselected harness's session cap and/or the cpu and memory limits.",
       "properties": {
+        "cpuLimit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The cpu limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it."
+        },
         "enabled": {
           "anyOf": [
             {
@@ -6784,6 +6843,21 @@
             }
           ],
           "default": null
+        },
+        "memoryLimit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The memory limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it."
         },
         "quietHours": {
           "anyOf": [
@@ -6884,6 +6958,18 @@
             "$ref": "#/$defs/SchedulerBlock"
           },
           "type": "array"
+        },
+        "capacityLimits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SchedulerCapacityLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Absent before the scheduler worker has reported them."
         },
         "dimensions": {
           "items": {

@@ -132,3 +132,28 @@ def test_remote_serves_a_saved_session_cap_over_the_workers_last_status(log: Eve
 def test_remote_refuses_a_session_cap_the_runtime_refuses(log: EventLog) -> None:
     with pytest.raises(ValueError, match="session cap"):
         Remote(log).set_session_cap(0)
+
+
+def test_remote_serves_a_saved_limit_over_the_workers_last_status(log: EventLog) -> None:
+    remote = Remote(log)
+    limits = {
+        "cpu": {"limit": 80.0, "source": "starpulse.toml", "configLimit": 80.0},
+        "memory": {"limit": 80.0, "source": "starpulse.toml", "configLimit": 80.0},
+    }
+    publisher(log, BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES}))(
+        "scheduler", {**STATUS, "capacityLimits": limits, "dimensions": [{"name": "cpu", "use": 1.0, "limit": 80.0}]}
+    )
+
+    remote.set_limits({"cpu": 97})
+    served = remote.served_status()
+    assert served["capacityLimits"]["cpu"] == {"limit": 97.0, "source": "admin", "configLimit": 80.0}
+    assert served["capacityLimits"]["memory"] == limits["memory"]
+    assert served["dimensions"] == [{"name": "cpu", "use": 1.0, "limit": 97.0}]
+
+    remote.set_limits({"cpu": None})
+    assert remote.served_status()["capacityLimits"] == limits
+
+
+def test_remote_refuses_a_limit_the_runtime_refuses(log: EventLog) -> None:
+    with pytest.raises(ValueError, match="cpu limit"):
+        Remote(log).set_limits({"cpu": 0})

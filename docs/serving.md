@@ -694,6 +694,8 @@ time as the row's `updated_at` (a row the store already holds wins), then rename
 `[scheduler.session_limits]`, else `limits.sessions`.
 `sessionCap` names that cap as `{"harness", "limit", "source", "configLimit"}`: `source` is `admin` for an override or
 `starpulse.toml`, and `configLimit` is what the config sets.
+`capacityLimits` names the `cpu` and `memory` limits the same way, each as `{"limit", "source", "configLimit"}`: `source` is
+`admin` for an override (see Capacity limits below) or `starpulse.toml`, and the `cpu` and `memory` dimensions follow `limit`.
 `sessionsByHarness` names every harness's in-flight count against its own cap. A started session counts while its task
 is In Progress or it has shown an event inside half an hour of its start; one at a prompt that never claimed its task
 frees its slot. A credit or usage pause for one
@@ -735,7 +737,8 @@ harness lands in `pauses` and blocks admission for that harness only.
 `PUT /api/scheduler` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
 `{"quietHours": {"start": "HH:MM", "end": "HH:MM", "timezone": "<IANA zone>"}}` or `{"quietHours": null}` sets or clears
 the quiet hours; `{"sessionCap": <whole number above zero>}` or `{"sessionCap": null}` sets or clears the selected
-harness's session cap; a body may carry several. It answers the same body as the `GET`, and a body with anything wrong is a 400
+harness's session cap; `{"cpuLimit": <percent above 0, up to 100>}` or `{"memoryLimit": <percent>}` sets, and `null` clears, that
+admission limit; a body may carry several. It answers the same body as the `GET`, and a body with anything wrong is a 400
 that changes nothing. It answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhere, and like every write it needs
 `Content-Type: application/json`. A `serve` that runs no scheduler, an adapter-kit server, answers 404.
 
@@ -745,7 +748,7 @@ to at or over it, or back, logs one `StarPulse scheduler: <dimension> is full|fr
 StarPulse Admin's Scheduler card shows it: the switch with **On** or **Paused**, a meter per dimension (amber from
 80% of its limit, red past it, dimmed while the switch is off), the next pick as text (its task, title and `starting`
 in green or `waits: <reason>` in yellow, or **Nothing eligible**), the count of sessions in flight (the Sessions
-dimension's use, or the length of `inFlight` without it), the session cap row, and the quiet hours row. A click on the switch sends the
+dimension's use, or the length of `inFlight` without it), the session cap row, the CPU and memory limit rows, and the quiet hours row. A click on the switch sends the
 `PUT` with no dialog, and a refusal shows its reason under the switch. The card reads `next` from the same body when it
 carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `scheduler`
 event after. A server with no scheduler (404) shows the card with its reason and no controls. The Kanban draws no
@@ -760,6 +763,16 @@ Anything but a whole number above zero is a 400 that changes the stored cap not 
 override on every pass and a save wakes it, so a new cap takes effect with no restart; sessions already running past a
 lowered cap continue and nothing new starts until the count falls under it. The override survives a restart. The
 sampler's full/free log lines still read the configured limit.
+
+### Capacity limits
+
+The Scheduler card's **CPU limit** and **Memory limit** rows set the two host limits from StarPulse Admin, over
+`[scheduler.limits]` in `starpulse.toml`. `PUT /api/scheduler {"cpuLimit": 95, "memoryLimit": 70}` keeps both in the
+history store (setting `scheduler.capacity_limits`, one percent per dimension); `null` clears one, and the config's limit
+applies again. Anything but a number above 0 and up to 100 is a 400 that changes neither stored limit. The sampler reads
+the limit on every call and a save wakes the loop, so the next admission pass judges cpu and memory against the new limit
+with no restart, and the sampler's full/free lines follow it. The override survives a restart and a reload; the
+`review` limit and the other settings have no override.
 
 ### Quiet hours
 
