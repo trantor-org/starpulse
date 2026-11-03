@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from starpulse.runs.model import opt_in
 from starpulse.runtime import launch
 from starpulse.runtime.closure import SELF, Reading, ReloadError
@@ -193,7 +195,7 @@ class Supervisor:
         """Replace `child` past its soft limit and kill it past its hard one; the caller holds the lock."""
         try:
             used = self._memory(child.proc.pid)  # type: ignore[misc]
-        except OSError, ValueError, IndexError, subprocess.CalledProcessError:
+        except psutil.Error:  # the child is gone or unreadable; the next tick reaps or retries it
             return
         limit = self._limits[name]
         old = child.proc

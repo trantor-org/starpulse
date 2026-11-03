@@ -107,7 +107,7 @@ On Linux `serve` starts one preloaded process before any thread, `python -m star
 
 `starpulse reload` replaces the children whose installed code or Board machine file (`[board] machine`, by content hash) changed, tells the `contexts` child whose only change is a live config block to re-read it, and re-executes `serve` when its own code changed, so a deploy restarts only what it changed. A reload that changes code any child runs also retires the preloaded process: it takes no more forks and exits when its last child has, and a new one that imports the installed code forks every replaced child, so a replaced child never runs the old preloaded code. See [Reloading a running serve](cli.md#reloading-a-running-serve).
 
-`serve` also holds each child to a memory limit, sampled every 5 s. Past the soft limit it replaces the child: the new one starts, then the old one is stopped (killed after 10 s if it ignores `SIGTERM`). Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is the proportional set size on Linux (`Pss` in `/proc/<pid>/smaps_rollup`, which divides each page the forked children share among the processes that map it, so the shared floor is not charged to every child) and the resident size on macOS (`ps`), read with the standard library only; where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits.
+`serve` also holds each child to a memory limit, sampled every 5 s. Past the soft limit it replaces the child: the new one starts, then the old one is stopped (killed after 10 s if it ignores `SIGTERM`). Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is the proportional set size on Linux (`Pss`, which divides each page the forked children share among the processes that map it, so the shared floor is not charged to every child) and the resident size on macOS, read with psutil; where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits.
 
 | Child | `soft_mb` | `hard_mb` |
 | --- | --- | --- |
@@ -658,7 +658,7 @@ frees its slot. A credit or usage pause for one
 harness lands in `pauses` and blocks admission for that harness only.
 `sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
 
-- `cpu` and `memory` are the host's busy share and used share, in percent, read from `/proc`.
+- `cpu` and `memory` are the host's busy share and used share, in percent, read with psutil.
 - `sessions` counts the tasks with an active harness session; with a dispatch loop it counts the selected harness's `inFlight` sessions that are active, so a session stopped between a reply and its next tool result frees its slot.
 - `review` sums the `size-N` labels of the tasks in `review_lane`; a task without one counts `unsized_points`.
 

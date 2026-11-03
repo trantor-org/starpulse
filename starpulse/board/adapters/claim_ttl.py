@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -22,6 +23,8 @@ from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import psutil
 
 from starpulse.board.adapters.running_workflows import DEFAULT_QUERY, running_tasks
 from starpulse.board.model.seam import Board
@@ -90,9 +93,9 @@ def live_session(root: Path, session: str) -> bool:
 def _running(entry: dict) -> bool:
     """Whether the registered pid runs with the registered start time, so a reused pid is not the session."""
     try:
-        stat = Path(f"/proc/{int(entry['pid'])}/stat").read_text()
-        return stat.rsplit(")", 1)[1].split()[19] == str(entry["procStart"])
-    except (OSError, KeyError, ValueError, IndexError):
+        started = psutil.Process(int(entry["pid"])).create_time() - psutil.boot_time()
+        return round(started * os.sysconf("SC_CLK_TCK")) == int(entry["procStart"])  # `procStart` is in clock ticks
+    except (psutil.Error, KeyError, ValueError):
         return False
 
 
