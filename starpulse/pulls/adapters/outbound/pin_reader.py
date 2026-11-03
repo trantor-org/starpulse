@@ -8,7 +8,7 @@ import re
 import time
 from collections.abc import Callable, Mapping
 
-from starpulse.github import Transport, connect
+from starpulse.github.adapters.outbound.rest import Transport, connect
 
 #: Seconds a read of a default branch's head commit is reused; the branch moves, so it is never saved.
 _HEAD_TTL_S = 60.0

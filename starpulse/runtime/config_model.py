@@ -391,6 +391,10 @@ class ConfigFile(_Table):
         default=None,
         description="Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).",
     )
+    github: dict[str, Any] | None = Field(
+        default=None,
+        description="Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).",
+    )
     read_model: Any = Field(
         default=None,
         deprecated=True,

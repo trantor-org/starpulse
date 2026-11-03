@@ -349,6 +349,31 @@ order that breaks a tie between equal weights may differ.
 
 Both answer 501 with no telemetry stream, 503 when it cannot be read, and 400 for a number out of range.
 
+## Save GitHub webhook deliveries
+
+A `[github]` table (`secret_env`, `organisation` or `repositories`, `database_url`, `max_body_bytes`, `host`, `port`; see
+[Serving](serving.md)) makes `serve` run a listener in the `contexts` child for a GitHub App's webhook. Without the
+table none runs. Point the App's webhook URL at the listener, set its secret in the environment variable `secret_env`
+names, and the listener answers each POST in this order:
+
+1. A missing or non-numeric `Content-Length` is 400, a body over `max_body_bytes` is 413, and a body that stops
+   arriving within 15 seconds is 408.
+2. A missing or wrong `X-Hub-Signature-256` over the raw body is 401; nothing is parsed before it matches.
+3. An `X-GitHub-Event` outside the allowlist is 204. For an allowed event, a body that is not a JSON object, or a
+   request with no `X-GitHub-Delivery`, is 400, and a repository outside `organisation` and `repositories` is 204.
+4. One transaction inserts the raw body into the `github_inbox` table keyed by `X-GitHub-Delivery` and commits, then
+   the answer is 202. A delivery already saved is 202 too, and adds no row.
+5. A commit that fails is 503, so GitHub keeps the delivery as failed.
+
+The inbox is its own database (`database_url`, SQLite `github.sqlite` beside the config by default), never the event
+store. If the variable `secret_env` names is unset or empty, or the address is taken, the `github` context fails to
+start, and the `contexts` process logs why and retries it with the usual backoff; no request is answered meanwhile.
+
+`GET /metrics` on the listener serves `starpulse_github_deliveries_total{event,verdict}` for Prometheus, with the
+verdicts `accepted`, `duplicate`, `bad_signature`, `oversize`, `ignored`, `foreign_repository`, `invalid`, `timeout`
+and `error`. It shares the listener's port without authentication: keep `host` on loopback, or have the proxy that
+faces GitHub forward only `POST`.
+
 ## Report runs from any scheduler
 
 A cron line, a systemd unit, an engine that can only send webhooks (Cronicle, Rundeck, a GitHub `workflow_run` relay) or

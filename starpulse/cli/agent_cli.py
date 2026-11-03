@@ -423,7 +423,7 @@ def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
         score_cells,
     )
     from starpulse.flow_metrics.model.verdicts import cell_verdicts  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.github import GitHubError, connect, repo_of  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.github.adapters.outbound.rest import GitHubError, connect, repo_of  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.runtime.config import discover, load  # noqa: PLC0415 - import cost, paid on first use
 
     window = _window_read(args, environ, "/api/analytics/sessions", ("now", "window_s", "slices"))

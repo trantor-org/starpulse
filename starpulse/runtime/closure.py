@@ -87,6 +87,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "telemetry_loki_url": _owned_by(),
     "cursor_context": _owned_by(),
     "claude_code": _owned_by("contexts"),
+    "github": _owned_by("contexts"),
     "producers": _owned_by(),
     "project": _owned_by(),
     "database_url": _CHILDREN,

@@ -38,7 +38,7 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
-from starpulse.github import Transport, connect, get, repo_of
+from starpulse.github.adapters.outbound.rest import Transport, connect, get, repo_of
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 

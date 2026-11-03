@@ -23,7 +23,7 @@ import yaml
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
-from starpulse.github import GitHubError, Transport, connect, get, repo_of
+from starpulse.github.adapters.outbound.rest import GitHubError, Transport, connect, get, repo_of
 from starpulse.runs.model import run_events
 
 #: Each status a run, job or step reports before it completes, and the status it becomes.
