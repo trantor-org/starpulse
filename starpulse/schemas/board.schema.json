@@ -277,6 +277,12 @@
       "title": "Notes",
       "type": "string"
     },
+    "comments": {
+      "default": "",
+      "description": "The text of the task's comments, searched with its notes; empty when the board keeps none.",
+      "title": "Comments",
+      "type": "string"
+    },
     "readable": {
       "default": "",
       "description": "The first rule the task's description breaks among the board's `readable` guards, with its line; empty when it reads well or the board keeps no such guard.",

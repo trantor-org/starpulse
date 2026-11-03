@@ -1,6 +1,6 @@
 """Full-text search over the board's tasks, kept in the instance's own database.
 
-The index is an SQLite FTS5 table of each placed task's id, title, description, acceptance criteria and notes. It lives
+The index is an SQLite FTS5 table of each placed task's id, title, description, acceptance criteria, notes and comments. It lives
 beside the event log on the instance. A row is keyed by a
 rowid derived from the task id, so replacing a task and reading its stored digest are point lookups, and a task placed
 again unchanged, as every task is on a restart, writes nothing.
@@ -39,19 +39,31 @@ logger = logging.getLogger(__name__)
 _TABLE = "starpulse_task_search"
 _CREATE = (
     f"CREATE VIRTUAL TABLE IF NOT EXISTS {_TABLE} USING fts5("
-    "task, title, description, criteria, notes, lane UNINDEXED, digest UNINDEXED, tokenize = 'porter unicode61')"
+    "task, title, description, criteria, notes, comments, lane UNINDEXED, digest UNINDEXED, tokenize = 'porter unicode61')"
 )
 #: What a match in each column is worth, in the column order above: a title says most, a note least.
-_WEIGHTS = "4, 10, 2, 1, 1, 0, 0"
+_WEIGHTS = "4, 10, 2, 1, 1, 1, 0, 0"
+#: The indexed text columns in table order, which `snippet` counts from 0: a hit names the first holding a query word.
+_FIELDS = ("task", "title", "description", "criteria", "notes", "comments")
+_MARK = "char(2), char(3)"
+#: The column index of the first field with a match, -1 when none shows one; `snippet` takes it as its column.
+_HIT_COLUMN = (
+    "CASE "
+    + " ".join(
+        f"WHEN instr(snippet({_TABLE}, {at}, {_MARK}, '', 1), char(2)) THEN {at}" for at in range(len(_FIELDS))
+    )
+    + " ELSE -1 END"
+)
+_LOCATED = f"{_HIT_COLUMN} AS field, snippet({_TABLE}, {_HIT_COLUMN}, '', '', '…', 16) AS snippet"
 _SNIPPET_CHARS = 160
 #: The lexical query: MATCH first into a MATERIALIZED CTE, then `{filtered}` (facets) on those rowids. ANDing the
 #: facets IN onto MATCH makes SQLite look up each facet rowid in FTS (`0:=M`) and cost grows with rows × words.
 _SEARCH = (
     f"WITH matched AS MATERIALIZED ("
     f"SELECT {_TABLE}.rowid AS row, task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, "
-    f"snippet({_TABLE}, -1, '', '', '…', 16) AS snippet, bm25({_TABLE}, {_WEIGHTS}) AS rank "
+    f"{_LOCATED}, bm25({_TABLE}, {_WEIGHTS}) AS rank "
     f"FROM {_TABLE} WHERE {_TABLE} MATCH :query"
-    f") SELECT task, title, lane, score, snippet FROM matched WHERE 1{{filtered}} "
+    f") SELECT task, title, lane, score, snippet, field FROM matched WHERE 1{{filtered}} "
     f"ORDER BY rank, task LIMIT :limit"
 )
 _DIGEST = text(f"SELECT digest FROM {_TABLE} WHERE rowid = :row")
@@ -82,16 +94,16 @@ _EMBEDDED_TEXT = "title+description"
 _RANKED = (
     f"WITH matched AS MATERIALIZED ("
     f"SELECT {_TABLE}.rowid AS row, task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, "
-    f"snippet({_TABLE}, -1, '', '', '…', 16) AS snippet, bm25({_TABLE}, {_WEIGHTS}) AS rank, "
+    f"{_LOCATED}, bm25({_TABLE}, {_WEIGHTS}) AS rank, "
     f"{_VECTORS}.vector AS vector FROM {_TABLE} LEFT JOIN {_VECTORS} "
     f"ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model "
     f"WHERE {_TABLE} MATCH :query"
-    f") SELECT task, title, lane, score, snippet, vector FROM matched WHERE 1{{filtered}} "
+    f") SELECT task, title, lane, score, snippet, field, vector FROM matched WHERE 1{{filtered}} "
     f"ORDER BY rank, task LIMIT :limit"
 )
 #: Every embedded task, for a query whose meaning (not its words) is what is wanted; `snippet` is the task's opening.
 _EMBEDDED_SELECT = (
-    f"SELECT {_TABLE}.rowid AS row, task, title, lane, substr(description, 1, {_SNIPPET_CHARS}) AS snippet, "
+    f"SELECT {_TABLE}.rowid AS row, task, title, lane, substr(description, 1, {_SNIPPET_CHARS}) AS snippet, 2 AS field, "
     f"{_VECTORS}.vector AS vector FROM {_TABLE} JOIN {_VECTORS} "
     f"ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model"
 )
@@ -132,8 +144,8 @@ _QUERY_TIMEOUT = 1.0
 _POLL = 5.0
 _RETRY = 60.0
 _INSERT = text(
-    f"INSERT INTO {_TABLE} (rowid, task, title, description, criteria, notes, lane, digest) "
-    "VALUES (:row, :task, :title, :description, :criteria, :notes, :lane, :digest)"
+    f"INSERT INTO {_TABLE} (rowid, task, title, description, criteria, notes, comments, lane, digest) "
+    "VALUES (:row, :task, :title, :description, :criteria, :notes, :comments, :lane, :digest)"
 )
 
 
@@ -175,6 +187,19 @@ def _cosine(left: array.array, right: array.array) -> float:
     return math.sumprod(left, right) / norm
 
 
+def _drop_without_comments(connection: Connection) -> None:
+    """Drops an index made before it held comments, whose columns cannot change; `index` fills the new one again."""
+    columns = {row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({_TABLE})")}
+    if columns and "comments" not in columns:
+        connection.exec_driver_sql(f"DROP TABLE {_TABLE}")
+
+
+def _named(hit: dict) -> dict:
+    """`hit` with its `field` column index as the field's name; a match in no one column (-1) is the title's."""
+    hit["field"] = _FIELDS[max(hit["field"], 1)]
+    return hit
+
+
 def _match(query: str) -> str:
     """`query` as an FTS5 expression of quoted words, all of which a task must hold, so its punctuation is text and
     never FTS5 syntax (`PROJ-45`, `NEAR`, `title:`)."""
@@ -197,7 +222,7 @@ class EmbeddingError(RuntimeError):
 
 
 class SearchIndex:
-    """An FTS5 index of each placed task's id, title, description, acceptance criteria and notes."""
+    """An FTS5 index of each placed task's id, title, description, acceptance criteria, notes and comments."""
 
     def __init__(self, engine: Engine, settings: Search | None = None) -> None:
         self._engine = engine
@@ -224,6 +249,7 @@ class SearchIndex:
         index = cls(engine, settings)
         try:
             with engine.begin() as connection:
+                _drop_without_comments(connection)
                 connection.execute(text(_CREATE))
                 connection.execute(text(_CREATE_VECTORS))
                 connection.execute(text(_CREATE_FACETS))
@@ -247,6 +273,7 @@ class SearchIndex:
             description=task.description,
             criteria=task.acceptance_criteria,
             notes=task.notes,
+            comments=task.comments,
             lane=task.settled or task.lane,
             labels=task.labels,
             finished_at=finished_at,
@@ -264,6 +291,7 @@ class SearchIndex:
         labels: Sequence[str],
         finished_at: float | None = None,
         connection: Connection | None = None,
+        comments: str = "",
     ) -> None:
         """Make the index hold these fields of `task_id` as they are now, as `index` does for a task. With `connection`
         the rows are written in its transaction, so a projector's rows and its index rows commit together."""
@@ -274,6 +302,7 @@ class SearchIndex:
             "description": description,
             "criteria": "\n".join(criteria),
             "notes": notes,
+            "comments": comments,
             "lane": lane,
         }
         digest = hashlib.sha256("\x1f".join(fields.values()).encode()).hexdigest()
@@ -328,12 +357,12 @@ class SearchIndex:
                 rows = connection.execute(
                     text(_SEARCH.format(filtered=filtered)), {"query": match, "limit": limit, **narrowing}
                 )
-                return [dict(row._mapping) for row in rows]
+                return [_named(dict(row._mapping)) for row in rows]
             rows = connection.execute(
                 text(_RANKED.format(filtered=filtered)),
                 {"query": match, "model": self._recipe, "limit": max(limit, _POOL), **narrowing},
             )
-            hits = [dict(row._mapping) for row in rows]
+            hits = [_named(dict(row._mapping)) for row in rows]
             lexical = {hit["task"] for hit in hits}
             facets, _ = _filtered(labels, finished_since)
             allowed = (
@@ -388,7 +417,7 @@ class SearchIndex:
         query = _EMBEDDED if held is None else _EMBEDDED_ROWS
         with self._engine.connect() as connection:
             result = connection.execute(query, {"model": self._recipe, "rows": list(changed)})
-            fresh = [dict(row._mapping) for row in result if len(row.vector) == dimension * 4]
+            fresh = [_named(dict(row._mapping)) for row in result if len(row.vector) == dimension * 4]
         blobs = b"".join(row.pop("vector") for row in fresh)
         rows = [row.pop("row") for row in fresh]
         matrix = _unit(np.frombuffer(blobs, dtype=np.float32).reshape(-1, dimension))

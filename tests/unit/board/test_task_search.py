@@ -271,3 +271,37 @@ def test_a_label_filtered_search_of_200_words_returns_in_under_one_second(many) 
     started = time.perf_counter()
     index.search(query, labels=["disk"])
     assert time.perf_counter() - started < 1.0
+
+
+def test_a_comment_is_found_and_the_hit_names_the_field_that_matched(index: SearchIndex) -> None:
+    index.index(_task("PROJ-8", title="Rotate keys", comments="merged-run blocker: quota exhausted"))
+
+    [hit] = index.search("quota")
+
+    assert hit["task"] == "PROJ-8"
+    assert hit["field"] == "comments"
+    assert "quota" in hit["snippet"]
+
+
+def test_a_hit_in_the_title_names_the_title_and_an_appended_comment_is_reindexed(index: SearchIndex) -> None:
+    index.index(_task("PROJ-9", title="Rotate keys"))
+    assert index.search("quota") == []
+
+    index.index(_task("PROJ-9", title="Rotate keys", comments="quota exhausted"))
+
+    assert _found(index, "quota") == ["PROJ-9"]
+    assert index.search("rotate")[0]["field"] == "title"
+
+
+def test_an_index_made_before_comments_is_rebuilt_with_the_column(engine) -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE VIRTUAL TABLE starpulse_task_search USING fts5("
+            "task, title, description, criteria, notes, lane UNINDEXED, digest UNINDEXED, tokenize = 'porter unicode61')"
+        )
+
+    opened = SearchIndex.open(engine)
+    assert opened is not None
+    opened.index(_task("PROJ-1", comments="needle"))
+
+    assert _found(opened, "needle") == ["PROJ-1"]
