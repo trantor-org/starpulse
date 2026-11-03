@@ -8,7 +8,7 @@ export const RENAMED_NAMES: Record<string, string> = {
 
 export const RENAMED_ROLES: Roles = {
   initial: "inbox", final: "gone", done: "shipped", working: "doing", ready: "todo", waiting: "parked", review: "checking", attention: "on_me",
-  startable: ["on_me", "parked", "todo"],
+  startable: ["on_me", "parked", "todo"], lanes: ["todo", "parked", "doing", "checking", "on_me", "shipped"],
 };
 
 export const card = (id: string, lane: string, extra: Partial<KanbanTask> = {}): KanbanTask => ({

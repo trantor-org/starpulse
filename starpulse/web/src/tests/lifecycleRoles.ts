@@ -4,6 +4,7 @@ import type { Roles } from "../api";
 export const LIFECYCLE_ROLES: Roles = {
   initial: "new", final: "completed", done: "done", working: "in_progress", ready: "ready", waiting: "waiting", review: "review", attention: "needs_attention",
   startable: ["needs_attention", "ready", "waiting"],
+  lanes: ["ready", "waiting", "in_progress", "review", "needs_attention", "done"],
 };
 
 /** The columns the trantor lifecycle draws, in order. */

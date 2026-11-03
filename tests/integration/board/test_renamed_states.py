@@ -88,6 +88,7 @@ def test_the_board_reads_its_roles_from_the_machine_it_was_given(
         "attention": "on_me",
         "proposed": None,
         "startable": ["on_me", "parked", "todo"],
+        "lanes": ["todo", "parked", "doing", "checking", "on_me", "shipped"],
     }
     assert feed.snapshot()["roles"] == built.roles.wire()
 
