@@ -17,6 +17,7 @@ from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import task
+from starpulse.scheduler.adapters import loop as scheduler_loop
 from starpulse.scheduler.adapters.loop import Loop
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.scheduler.model.ledger import Ledger
@@ -116,7 +117,9 @@ def test_pull_events_stay_within_their_retained_memory_budget() -> None:
 def test_scheduler_stays_within_its_retained_memory_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # The feed's reconnect log holds the last 512 events by design, so a window shorter than that reads as retained;
     # a log the warm-up fills leaves only what the scheduler itself keeps.
+    # The gate history keeps its last `GATE_HISTORY_MAX` rows in the store by design, the same way.
     monkeypatch.setattr(board_feed, "_SENT_LOG", 8)
+    monkeypatch.setattr(scheduler_loop, "GATE_HISTORY_MAX", 8)
     step, starts = _scheduler_step(tmp_path)
 
     retained = check("scheduler", step, BUDGETS["scheduler"])

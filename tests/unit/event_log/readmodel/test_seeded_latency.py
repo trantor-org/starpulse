@@ -10,7 +10,8 @@ import pytest
 import seeded_server
 from starpulse.event_log.readmodel.read_model import ReadModel
 
-pytestmark = [pytest.mark.nightly, pytest.mark.slow]
+# Seeding 20,000 tasks outlasts the suite-wide 120 s timeout when the nightly's workers load ai-vm-1 past 100.
+pytestmark = [pytest.mark.nightly, pytest.mark.slow, pytest.mark.timeout(600)]
 
 _TOTAL = 20_000
 _ARCHIVED = 18_000

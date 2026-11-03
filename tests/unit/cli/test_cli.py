@@ -1,6 +1,7 @@
 """The installed `starpulse` command: `serve` gets the rest of the line, any other word is an agent verb."""
 
 import json
+import tomllib
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -10,9 +11,11 @@ from starpulse import __main__ as cli
 
 
 def test_the_installed_starpulse_command_is_this_module() -> None:
-    (script,) = entry_points(group="console_scripts", name="starpulse")
+    declared = tomllib.loads((Path(__file__).parents[3] / "pyproject.toml").read_text())["project"]["scripts"]
 
-    assert script.load() is cli.main
+    assert declared["starpulse"] == f"{cli.__name__}:{cli.main.__name__}"
+    installed = entry_points(group="console_scripts", name="starpulse")
+    assert all(script.load() is cli.main for script in installed)
 
 
 def test_help_names_every_subcommand(capsys: pytest.CaptureFixture[str]) -> None:
