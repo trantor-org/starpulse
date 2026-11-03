@@ -330,6 +330,33 @@ def test_a_task_with_an_open_dependent_goes_after_the_bugs_and_ahead_of_leverage
     assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["BUG", "DEEP", "LEVER"]
 
 
+def test_a_throughput_task_goes_ahead_of_an_otherwise_equal_one(ledger: Ledger) -> None:
+    tasks = [_task("A-PLAIN"), _task("Z-THROUGHPUT", labels=["size-3", "throughput"])]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == ["Z-THROUGHPUT", "A-PLAIN"]
+
+
+def test_a_throughput_task_ranks_after_every_bug_and_task_with_dependents_and_ahead_of_leverage(ledger: Ledger) -> None:
+    tasks = [
+        _task("A-PLAIN"),
+        _task("LEVER", labels=["size-3", "leverage"]),
+        _task("THROUGHPUT", labels=["size-3", "throughput"]),
+        _task("DEEP"),
+        _task("AFTER", deps=("DEEP",), state="waiting"),
+        _task("BUG", type="bug"),
+        _task("REGRESSED", labels=["size-3", "regression"]),
+    ]
+
+    assert _by_rank(_decide(tasks, ledger), "enforced_rank") == [
+        "REGRESSED",
+        "BUG",
+        "DEEP",
+        "THROUGHPUT",
+        "LEVER",
+        "A-PLAIN",
+    ]
+
+
 def test_a_kind_decide_task_nothing_waits_on_is_admitted_and_ranks_after_every_other_task(ledger: Ledger) -> None:
     tasks = [
         _task("ASK", labels=["size-1", "kind-decide", "regression"], type="bug", impact="high", urgency="high"),
