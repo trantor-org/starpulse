@@ -100,6 +100,16 @@ worker_state = Table(
     Column("updated_at", Float, nullable=False),
 )
 
+#: The one process that holds a singleton worker's role (the sweeper), by role `name`: `holder` is its pid, `taken_at`
+#: the epoch second it took the role. A row whose holder process is gone is taken over (`sweeper.lease`).
+leases = Table(
+    "starpulse_leases",
+    metadata,
+    Column("name", String, primary_key=True),
+    Column("holder", Integer, nullable=False),
+    Column("taken_at", Float, nullable=False),
+)
+
 #: The scheduler's run ledger: one row per finished run, the labelled data admission learns demand from. `peak` is the
 #: demand the run drew per capacity dimension; `recorded_at` is the epoch second the run was recorded (a run imported
 #: from the old JSONL file carries that file's modification time). Event-log pruning never touches it.

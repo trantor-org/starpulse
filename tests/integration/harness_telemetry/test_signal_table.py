@@ -1,4 +1,4 @@
-"""`starpulse_signals`: the signal store's idempotent insert, the Loki copy into it, and the hourly prune of its rows."""
+"""`starpulse_signals`: the signal store's idempotent insert, the Loki copy into it, and the prune of its rows."""
 
 import json
 import threading
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from starpulse.event_log.event_log import EventLog, prune_forever
+from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import signals
 from starpulse.harness_telemetry.adapters.inbound.telemetry import KEEP_S, TelemetryLog
 from starpulse.harness_telemetry.adapters.outbound.loki import LokiSignals
@@ -78,17 +78,6 @@ def test_a_pass_of_the_prune_deletes_the_signals_older_than_the_keep_window(tmp_
     )
     assert log.prune_signals(KEEP_S, now=now) == 1
     assert keys(log) == ["k2", "k3"]
-
-
-def test_the_hourly_prune_loop_runs_the_signal_pass(tmp_path: Path) -> None:
-    log = opened(tmp_path)
-    SignalTable(log.engine).insert([asdict(signal(1, 1.0)), asdict(signal(2, 9e9))])
-    stop = threading.Event()
-    stop.set()  # one pass, then the loop returns
-
-    prune_forever(log, retention_days=30, archive_dir=tmp_path / "archive", stop=stop, signal_keep=KEEP_S)
-
-    assert keys(log) == ["k2"]
 
 
 def test_the_two_reads_a_view_makes_each_use_their_index(tmp_path: Path) -> None:

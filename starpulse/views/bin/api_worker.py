@@ -42,6 +42,7 @@ from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
 from starpulse.scheduler.adapters.exposition import autopilot_exposition
 from starpulse.sessions.adapters.outbound.session_start import starter
+from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.outbound.gc_pauses import install as collect_on_a_timer
@@ -221,6 +222,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         conformance_metrics=conformance.exposition,
         lane_sweep_metrics=lane_sweep.exposition,
         autopilot_metrics=lambda: autopilot_exposition(log),
+        sweeper_metrics=sweeper_metrics_of(log),
     )
     app = page_app(feed, host.static, store, window, board, services, snapshot_refresh_s=SNAPSHOT_REFRESH_S)
     collect_on_a_timer(stop)

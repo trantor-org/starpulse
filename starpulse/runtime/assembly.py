@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import logging
 import threading
 from collections.abc import Collection, Mapping
 from pathlib import Path
@@ -14,7 +15,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineDeltas
 from starpulse.board.model.seam import Board
 from starpulse.board.model.seam import load as load_board
-from starpulse.event_log.event_log import EventLog, prune_forever
+from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.read_model import ReadModel
@@ -26,9 +27,12 @@ from starpulse.pulls.adapters.inbound.task_actor import ACTOR
 from starpulse.pulls.model.ci import CiError, attach
 from starpulse.runtime import read_model_follow
 from starpulse.runtime.config import Config, ConfigError, runs_adapter
+from starpulse.sweeper.passes import Step
 
 if TYPE_CHECKING:
     from starpulse.pulls.adapters.outbound.pulls import PullStore
+
+logger = logging.getLogger(__name__)
 
 
 @functools.cache
@@ -193,21 +197,18 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
     )
 
 
-def prune_event_log(log: EventLog, config: Config, base: Path, stop: threading.Event) -> None:
-    """The hourly prune of the event log, until `stop`: archives each row it deletes under `event_log_archive_dir`, and
-    drops the signals and signal folds older than `KEEP_S` seconds."""
-    prune_forever(
-        log,
-        retention_days=config.event_log_retention_days,
-        archive_dir=base / config.event_log_archive_dir,
-        stop=stop,
-        signal_keep=KEEP_S,
-    )
+def prune_steps(log: EventLog, config: Config, base: Path) -> list[Step]:
+    """The sweeper's event-log housekeeping: one pass of the prune, which archives each row it deletes under
+    `event_log_archive_dir`, and one of the signal table and its folds, which keep the last `KEEP_S` seconds."""
+    archive = base / config.event_log_archive_dir
+    days = config.event_log_retention_days
 
+    def events() -> None:
+        if pruned := log.prune(days * 86400, archive_dir=archive):
+            logger.info("EventLog: pruned %d rows older than %d days", pruned, days)
 
-def keep_event_log(log: EventLog, config: Config, base: Path, *, stop: threading.Event) -> threading.Thread:
-    """Start the hourly prune of the event log, which archives each row it deletes under `event_log_archive_dir`, and
-    of the signal table and its folds, which keep the last `KEEP_S` seconds of signals."""
-    thread = threading.Thread(target=prune_event_log, args=(log, config, base, stop), name="event-log-prune", daemon=True)
-    thread.start()
-    return thread
+    def signals() -> None:
+        if pruned := log.prune_signals(KEEP_S):
+            logger.info("EventLog: pruned %d signals older than %d s", pruned, KEEP_S)
+
+    return [Step("event-log-prune", events), Step("signal-prune", signals)]

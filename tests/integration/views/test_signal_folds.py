@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import event, text
 
 from starpulse.contracts.signals import CLAUDE_CODE, Signal
-from starpulse.event_log.event_log import EventLog, prune_forever
+from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.model import cells, flow, session_health, steps
 from starpulse.harness_telemetry.adapters.inbound.telemetry import KEEP_S
 from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable
@@ -177,9 +177,7 @@ def test_the_prune_pass_deletes_fold_rows_older_than_the_keep_window(tmp_path: P
     SignalFolds(log, KEYS, ANALYTICS).catch_up()
     assert sessions_folded(log) == 2
 
-    stop = threading.Event()
-    stop.set()
-    prune_forever(log, retention_days=30, archive_dir=tmp_path / "archive", stop=stop, signal_keep=KEEP_S)
+    log.prune_signals(KEEP_S)
 
     with log.engine.connect() as db:
         left = set(db.execute(text("SELECT DISTINCT session FROM starpulse_signal_folds")).scalars())

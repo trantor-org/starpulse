@@ -28,6 +28,7 @@ ATTRIBUTE = {
     "ci": "ci",
     "event_log_retention_days": "event_log_retention_days",
     "event_log_archive_dir": "event_log_archive_dir",
+    "sweeper": "sweeper",
     "scheduler": "scheduler",
     "release": "release",
     "analytics": "analytics",

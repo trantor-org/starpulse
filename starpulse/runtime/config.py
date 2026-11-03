@@ -52,6 +52,7 @@ from starpulse.runtime.config_model import (
     RunsInstanceFile,
 )
 from starpulse.scheduler.model.config import Scheduler, SchedulerError, parse_scheduler
+from starpulse.sweeper.config import Sweeper, SweeperError, parse_sweeper
 
 _DEFAULTS = ConfigFile()
 _KEYS = set(ConfigFile.model_fields)
@@ -414,6 +415,8 @@ class Config:
     """The Claude Code adapter the `contexts` child runs (`[claude_code]`); no table: none runs."""
     github: GitHub | None = None
     """The GitHub intake listener the `contexts` child runs (`[github]`); no table: none runs."""
+    sweeper: Sweeper = field(default_factory=Sweeper)
+    """The sweeper's pass interval and the kinds and housekeeping it runs as commands (`[sweeper]`); no table: an hourly pass."""
 
     def reads_domains_at_start(self) -> bool:
         """Whether an instance lists no domains and its adapter reads them from its workflows as `serve` starts."""
@@ -514,6 +517,14 @@ def _github(raw: object) -> GitHub | None:
     try:
         return parse_github(raw)
     except GitHubConfigError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _sweeper(raw: object) -> Sweeper:
+    """The `[sweeper]` table, or its defaults when the config has none; a refusal is a `ConfigError`."""
+    try:
+        return parse_sweeper(raw)  # type: ignore[arg-type]
+    except SweeperError as exc:
         raise ConfigError(str(exc)) from exc
 
 
@@ -752,6 +763,7 @@ def _config(
         cursor_context=_cursor_context(raw.get("cursor_context")),
         claude_code=_claude_code(raw.get("claude_code")),
         github=_github(raw.get("github")),
+        sweeper=_sweeper(raw.get("sweeper")),
         refresh_token_env=_env_var_name("refresh_token_env", raw.get("refresh_token_env")),
         github_token_env=_env_var_name("github_token_env", raw.get("github_token_env")),
         take_over_command=_take_over_command(raw.get("take_over_command")),

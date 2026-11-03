@@ -77,7 +77,7 @@ Call `drain` from a timer, a cron job or a loop; a call with nothing new costs o
 - **Where a new reader starts.** `Tail(log, reader, after=...)` takes its start explicitly. `Tail.replay(log, stream)` starts at the oldest retained row; `Tail.live(log, stream)` starts after the newest row now, for a reader that rebuilds its state from elsewhere.
 - **At least once.** A crash after the log handed over a row but before the commit reads it again, so key the sink on
   `event_id`, as `INSERT OR IGNORE` does above.
-- **Retention.** `serve` (through its Flow Metrics child, `starpulse worker flow-metrics`) prunes rows older than `event_log_retention_days` and archives them first (see the event log
+- **Retention.** `serve` (through its sweeper, `starpulse worker sweeper`) prunes rows older than `event_log_retention_days` and archives them first (see the event log
   archive in [Serve and configure](serving.md)). A cursor older than the oldest retained row resumes at that row and the
   log notes the span you missed in `starpulse_gaps`; start a new sink from the archive when you need that span.
 - **A resident reader.** `Tail.run(handle, stop)` polls until `stop` is set and passes each entry to `handle`; pass the

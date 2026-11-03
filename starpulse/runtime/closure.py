@@ -41,6 +41,7 @@ CONTEXT_ENTRIES = (
     "starpulse.flow_metrics.bin.flow_metrics_worker",
     "starpulse.board.bin.search_worker",
     "starpulse.board.bin.board_worker",
+    "starpulse.sweeper.bin.sweeper_worker",
     "starpulse.harness_telemetry.adapters.inbound.claude_code",
     _ADAPTER_ENTRY,
 )
@@ -105,6 +106,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "session_start_url": _owned_by("contexts"),
     "event_log_retention_days": _owned_by("contexts"),
     "event_log_archive_dir": _owned_by("contexts"),
+    "sweeper": _owned_by("contexts"),
     **dict.fromkeys(_SERVE_KEYS, (SELF,)),
 }
 
@@ -223,6 +225,7 @@ def _blocks(name: str, config: Config, base: Path) -> tuple[object, object]:
     from starpulse.pulls.bin.blocks import pulls_delivery_blocks, pulls_fixed_blocks
     from starpulse.runs.bin.blocks import runs_built_blocks
     from starpulse.scheduler.bin.blocks import scheduler_fixed_blocks, scheduler_live_blocks
+    from starpulse.sweeper.bin.blocks import sweeper_built_blocks
     from starpulse.views.bin.blocks import api_built_blocks
 
     if name == "api":
@@ -238,6 +241,7 @@ def _blocks(name: str, config: Config, base: Path) -> tuple[object, object]:
             flow_metrics_built_blocks(config),
             search_built_blocks(config),
             board_built_blocks(config),
+            sweeper_built_blocks(config),
             config.claude_code,
             _machine_hash(config, base),
         )

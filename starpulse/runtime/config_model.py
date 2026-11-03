@@ -202,8 +202,8 @@ class ConfigFile(_Table):
         default=7,
         ge=1,
         description=(
-            "How long `serve` keeps the event log's rows: it prunes older ones at start and hourly, so the table, a "
-            "SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this "
+            "How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the "
+            "table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this "
             "resumes at the oldest kept row and records the span it missed in `starpulse_gaps`. A whole number of "
             "days."
         ),
@@ -212,7 +212,7 @@ class ConfigFile(_Table):
         default="starpulse-archive",
         min_length=1,
         description=(
-            "Where `serve`'s History child writes each row it prunes, before it deletes the row (see Event log "
+            "Where the sweeper writes each row it prunes, before it deletes the row (see Event log "
             "archive): a directory, relative to this file unless absolute."
         ),
     )
@@ -394,6 +394,14 @@ class ConfigFile(_Table):
     github: dict[str, Any] | None = Field(
         default=None,
         description="Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).",
+    )
+    sweeper: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Sets the sweeper's pass `interval_s` (default 3600) and declares its kinds (`[[sweeper.kinds]]`) and "
+            "housekeeping (`[[sweeper.housekeeping]]`) as commands, each with a `name`, a `command` argv and an "
+            "optional `timeout_s`; a kind prints its correction count (see docs/serving.md)."
+        ),
     )
     read_model: Any = Field(
         default=None,

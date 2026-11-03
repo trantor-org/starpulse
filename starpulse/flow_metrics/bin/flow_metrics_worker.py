@@ -1,9 +1,8 @@
 """`starpulse worker flow-metrics`: the Flow Metrics context (the recorder that copies the event log's machine events into the
-history store, and the hourly prune of the event log) as its own process, beside `serve`.
+history store) as its own process, beside `serve`.
 
 It reads the config and the history database `serve` does and meets `serve` only in the database: the page reads the
-history this worker writes. The two threads run together because both write that database: a prune beside a recorder
-that is behind archives rows the recorder has not read. The recorder's cursor is saved with each row in one
+history this worker writes. The recorder's cursor is saved with each row in one
 transaction (`HistoryStore.record_machine`), so a new process resumes after the last event the store holds and neither
 drops nor repeats a history row. `SIGTERM` stops it; `SIGHUP` re-reads the config and, as the threads are built once,
 only says whether a restart is needed.
@@ -55,13 +54,11 @@ def start(
     load: Callable[[Path | None], FlowMetricsConfig],
     assemble: Callable[..., tuple[object, Feed]],
     history_store: Callable[[FlowMetricsConfig, Path, Mapping[str, dict]], HistoryStore],
-    keep_event_log: Callable[..., object],
 ) -> Callable[[], None]:
-    """Start the History recorders and the event log prune over `log`, each ending when `stop` is set, and return their
+    """Start the History recorders over `log`, each ending when `stop` is set, and return their
     reload. Raises `ValueError` as `assemble` does."""
     _, feed = assemble(config, base, None, [])
     store = history_store(config, base, feed.machines)
-    keep_event_log(log, config, base, stop=stop)
     threading.Thread(target=record_machine_events, args=(store, log, stop), name="machine-history", daemon=True).start()
     threading.Thread(target=record_verdicts, args=(store, log, stop), name="verdict-history", daemon=True).start()
     return lambda: reload(path, config, load)
@@ -75,7 +72,6 @@ def main(
     load: Callable[[Path | None], FlowMetricsConfig],
     assemble: Callable[..., tuple[object, Feed]],
     history_store: Callable[[FlowMetricsConfig, Path, Mapping[str, dict]], HistoryStore],
-    keep_event_log: Callable[..., object],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
     """Run the History recorder; `runtime` passes the collaborators it builds, as no context imports it."""
@@ -98,7 +94,6 @@ def main(
             load=load,
             assemble=assemble,
             history_store=history_store,
-            keep_event_log=keep_event_log,
         )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")

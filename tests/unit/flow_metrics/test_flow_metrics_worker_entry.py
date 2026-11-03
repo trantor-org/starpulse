@@ -1,4 +1,4 @@
-"""`starpulse worker flow-metrics` records the log's machine events into the history store and prunes the log, alone."""
+"""`starpulse worker flow-metrics` records the log's machine events into the history store, alone."""
 
 import threading
 import time
@@ -37,19 +37,12 @@ def _recorded(store: HistoryStore) -> list[str]:
 
 
 @pytest.fixture
-def pruned(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
-    calls: list[dict] = []
-    monkeypatch.setattr(assembly, "prune_forever", lambda log, **kwargs: calls.append(kwargs))
-    return calls
-
-
-@pytest.fixture
 def held() -> list[threading.Event]:
     return []
 
 
 @pytest.fixture
-def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pruned: list[dict], held: list[threading.Event]):
+def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: list[threading.Event]):
     """`worker.main` on `text`, holding returns at once; yields the log and store the worker shares with `serve`."""
     monkeypatch.setattr(fake_board, "BUILT", [])
     monkeypatch.setattr("starpulse.runtime.hold.hold", lambda stop, reload: held.append(stop))
@@ -72,14 +65,6 @@ def test_the_worker_records_the_logs_machine_events_into_the_history(run) -> Non
     _move(log, "T-1")
 
     assert _eventually(lambda: _recorded(store) == ["T-1"])
-
-
-def test_the_worker_prunes_the_log_into_the_configured_archive(run, pruned: list[dict], tmp_path: Path) -> None:
-    run("event_log_retention_days = 3\nevent_log_archive_dir = 'kept'\n" + BOARD)
-
-    assert _eventually(lambda: pruned)
-    assert pruned[0]["retention_days"] == 3
-    assert pruned[0]["archive_dir"] == tmp_path / "kept"
 
 
 def test_a_restarted_worker_neither_drops_nor_repeats_a_history_row(

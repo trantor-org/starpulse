@@ -21,7 +21,7 @@ from starpulse.event_log.tables import events
 from starpulse.harness_telemetry.model.harnesses import Harness, Harnesses, Tier, load_harnesses
 from starpulse.runs.model.config import RunsInstance
 from starpulse.runtime.adapter_kit import serve, task, url
-from starpulse.runtime.assembly import keep_event_log
+from starpulse.runtime.assembly import prune_steps
 from starpulse.runtime.config import Config, load
 from starpulse.runtime.server import _adapter, _config
 from starpulse.views.adapters.inbound.api.writing import no_writer as _no_writer
@@ -791,24 +791,17 @@ def test_a_rerun_the_adapter_fails_answers_with_its_reason() -> None:
     assert _rerun(failed) == (502, {"error": "Dagu unreachable: refused"})
 
 
-def test_an_instance_serve_archives_the_rows_it_prunes_beside_the_config(tmp_path: Path) -> None:
+def test_an_instance_sweeper_archives_the_rows_it_prunes_beside_the_config(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     log.publish("a", {"n": 1}, event_id="old")
     stale = time.time() - 30 * 86400
     with log.engine.begin() as db:
         db.execute(update(events).values(at=stale))
-    stop = threading.Event()
 
-    pruner = keep_event_log(log, load(None), tmp_path, stop=stop)
-    try:
-        assert pruner is not None
-        deadline = time.monotonic() + 10
-        while log.oldest() is not None and time.monotonic() < deadline:
-            time.sleep(0.02)
-    finally:
-        stop.set()
-        pruner.join(timeout=5)
+    for step in prune_steps(log, load(None), tmp_path):
+        step.run()
 
+    assert log.oldest() is None
     [day] = (tmp_path / "starpulse-archive").iterdir()
     with gzip.open(day, "rt") as lines:
         assert [json.loads(line)["event_id"] for line in lines] == ["old"]
