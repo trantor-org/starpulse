@@ -58,6 +58,7 @@ from starpulse.board.model.claims import assignee_of, claimed, released
 from starpulse.board.model.guard import Guard, Validate
 from starpulse.board.model.seam import (
     ANONYMOUS,
+    FLAGGED,
     HELD,
     MERGE_EVIDENCE,
     OPERATOR,
@@ -421,12 +422,13 @@ def _comments(body: str) -> list[dict[str, str]]:
 
 
 def _recorded(text: str, comments: list[dict[str, str]]) -> bool:
-    """Whether the task already records `text`: merge evidence anywhere, a hold only as its latest hold comment."""
+    """Whether the task already records `text`: merge evidence anywhere, a hold or flag only as its latest of its kind."""
     texts = [c["text"] for c in comments]
     if text.startswith(MERGE_EVIDENCE):
         return text.strip() in texts
-    holds = [t for t in texts if t.startswith(HELD)]
-    return text.startswith(HELD) and bool(holds) and holds[-1] == text.strip()
+    prefix = next((each for each in (HELD, FLAGGED) if text.startswith(each)), None)
+    latest = [t for t in texts if prefix and t.startswith(prefix)]
+    return bool(latest) and latest[-1] == text.strip()
 
 
 def _session(notes: str, comments: list[dict[str, str]]) -> str:
