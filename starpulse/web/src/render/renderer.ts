@@ -124,8 +124,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let stream: { close(): void } | null = null, last = 0, requestedAt = 0;
   // The open Ledger's rows and the stream that feeds them: the snapshot carries none, so they are held here and put back into every sky `merge` builds.
   let ledgerRows: Sky["ledgers"] = {}, ledgerOpen: { event: string; stream: { close(): void } } | null = null;
-  /** The clock time of the last data drawn, a note's "as of"; whether a newer page build is waiting for the page to be idle; and the wait's cancel. */
-  let lastAt: string | null = null, updating = false, cancelReload: (() => void) | null = null;
+  /** What the stream says it is doing; the clock time of the last data drawn, a note's "as of"; whether a newer page build is waiting for the page to be idle; and the wait's cancel. */
+  let link: Link = "live", lastAt: string | null = null, updating = false, cancelReload: (() => void) | null = null;
 
   // The frame's drawing: the primitives read the zoom, clock, type scale and hover as they run, and the machine ledger draws from the state below.
   const dc: DrawCtx = {
@@ -426,7 +426,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       stream?.close();
       stream = null;
       resync();
-    } else stream ??= openStream(connection);
+    } else stream ??= openStream(connection, undefined, undefined, undefined, null); // the page already holds a Board: the kept one is older
   };
 
   // ---- data: every machine's tasks and the runs instances' workflows, pushed by the stream ----
@@ -458,7 +458,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (!on) resync(); // the reconnect's snapshot places what the drop missed, as a returning tab's does
   }
   /** The dot and its note follow what the stream says it is doing; a note keeps the time of the last data drawn, which the Board still shows. */
-  function onLink(link: Link) {
+  function onLink(next: Link) {
+    link = next;
     hud.set(linkHud(link, lastAt, updating));
   }
   /** The server runs a page build other than the one loaded: the dot says so and the page reloads once nobody is using it. */
@@ -580,6 +581,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       boardUrl: sky.boardUrl,
       capabilities: sky.capabilities,
       hint: sky.hint,
+      // the note beside the dot names the time of the Board drawn, so a Board drawn after the link changed (the kept one, drawn after the server was found down) is dated
+      ...(link === "live" ? {} : linkHud(link, lastAt, updating)),
     };
     return next;
   }

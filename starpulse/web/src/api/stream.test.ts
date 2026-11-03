@@ -539,6 +539,124 @@ describe("openStream", () => {
     expect(seen.map((s) => s.error)).toEqual(["board: reading q:tasks"]);
   });
 
+  describe("with a snapshot kept in browser storage", () => {
+    const links: string[] = [];
+    const kept = (held: Snapshot | null = null) => {
+      const writes: Snapshot[] = [];
+      return { writes, cache: { read: () => Promise.resolve(held), write: (s: Snapshot) => (writes.push(s), Promise.resolve()) } };
+    };
+    const withLinks = { ...handlers, link: (state: string) => void links.push(state) };
+    const start = (held: Snapshot | null) => {
+      const store = kept(held);
+      const stream = openStream(withLinks, open, null, null, store.cache);
+      return { ...store, stream };
+    };
+    const lane = (s: Snapshot | undefined) => (s ? ids(s) : []);
+    beforeEach(() => void (links.length = 0));
+
+    it("keeps each snapshot it hands over, at most once a second, and never a partial Board", async () => {
+      const { writes } = start(null);
+
+      last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+      last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(writes).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      last().send("snapshot", board([], { reading: true }));
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(writes.map(ids)).toEqual([["PROJ-1:in_progress"]]);
+    });
+
+    it("draws the kept Board at once, marked stale, before the server has answered", async () => {
+      start(board([agent("PROJ-1", "to_do"), agent("PROJ-2", "review")]));
+
+      await flush();
+
+      expect(seen.map(ids)).toEqual([["PROJ-1:to_do", "PROJ-2:review"]]);
+      expect(links).toEqual(["stale"]);
+    });
+
+    it("keeps drawing the kept Board when the server never answers, and does not write it back", async () => {
+      const { writes } = start(board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      last().onerror?.();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect([seen.map(ids), links, writes]).toEqual([[["PROJ-1:to_do"]], ["stale", "retrying"], []]);
+    });
+
+    it("replaces the kept Board with the server's snapshot and clears the stale mark once the connection is up", async () => {
+      start(board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      last().send("snapshot", board([agent("PROJ-1", "done")]));
+      last().onopen?.();
+
+      expect([seen.map(ids), links]).toEqual([[["PROJ-1:to_do"], ["PROJ-1:done"]], ["stale", "live"]]);
+    });
+
+    it("leaves the kept Board out once the server's snapshot is already the page's Board", async () => {
+      const store = kept(board([agent("PROJ-1", "to_do")]));
+      let release: (s: Snapshot | null) => void = () => {};
+      const slow = { ...store.cache, read: () => new Promise<Snapshot | null>((resolve) => void (release = resolve)) };
+      openStream(withLinks, open, null, null, slow);
+
+      last().send("snapshot", board([agent("PROJ-1", "done")]));
+      release(board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      expect([seen.map(ids), links]).toEqual([[["PROJ-1:done"]], []]);
+    });
+
+    it("holds the stale mark, and the kept Board, while a restarted server is still reading its board", async () => {
+      start(board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      last().send("snapshot", board([], { reading: true }));
+      last().onopen?.();
+      expect([seen.length, links]).toEqual([1, ["stale"]]);
+      last().send("snapshot", board([agent("PROJ-1", "in_progress")], { reading: false }));
+
+      expect([seen.map(ids).at(-1), links]).toEqual([["PROJ-1:in_progress"], ["stale", "live"]]);
+    });
+
+    it("marks the Board it held through a drop stale from the reconnect until the server's whole Board arrives", () => {
+      const { cache } = kept(null);
+      openStream(withLinks, open, null, null, cache);
+      last().onopen?.();
+      last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+      last().onerror?.();
+      vi.advanceTimersByTime(0);
+      last().onopen?.();
+      last().send("snapshot", board([], { reading: true }));
+      last().send("snapshot", board([agent("PROJ-1", "done")]));
+
+      expect([seen.map(ids), links]).toEqual([[["PROJ-1:to_do"], ["PROJ-1:done"]], ["live", "retrying", "stale", "live"]]);
+    });
+
+    it("draws nothing from a store that is empty, unreadable or without a kept Board", async () => {
+      openStream(withLinks, open, null, null, { read: () => Promise.reject(new Error("blocked")), write: () => Promise.resolve() });
+      await flush();
+      start(null);
+      await flush();
+
+      expect([seen, links]).toEqual([[], []]);
+    });
+
+    it("lives with a store that refuses a write", async () => {
+      openStream(withLinks, open, null, null, { read: () => Promise.resolve(null), write: () => Promise.reject(new Error("quota")) });
+
+      last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+      await vi.advanceTimersByTimeAsync(2000);
+      last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "done"), settled: null });
+
+      expect(lane(seen.at(-1))).toEqual(["PROJ-1:done"]);
+    });
+  });
+
   it("opens a new connection when the browser gives the old one up", () => {
     openStream(handlers, open);
     last().readyState = 2;
