@@ -348,7 +348,7 @@ class Loop:
     def run_forever(self, stop: threading.Event, period: float = PERIOD) -> None:
         """Tick on each wanted event until `stop` is set, and on `period` seconds without one to settle idle sessions."""
         self._feed.wait_replayed()
-        _, events = self._feed.subscribe()
+        events = self._feed.follow_changes()
         self._events = events
         try:
             self._safely(self.tick)  # whatever waited before the loop began

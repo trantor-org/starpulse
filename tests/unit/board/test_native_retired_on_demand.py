@@ -71,6 +71,7 @@ def test_the_reader_streams_every_text_in_id_order_across_pages(
     retired.engine = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}").engine
 
     assert list(retired.texts()) == texts
+    assert [task for task, _ in retired.pairs()] == ["task-5", "task-6"]
     assert len(texts) == 2
 
 

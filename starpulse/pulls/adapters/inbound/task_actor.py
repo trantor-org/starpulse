@@ -525,7 +525,7 @@ class TaskActor:
 
     def _run(self, stop: threading.Event) -> None:
         self._feed.wait_replayed()
-        _, changes = self._feed.subscribe()
+        changes = self._feed.follow_changes()
         with self._lock:
             observed = self._clock()
             tasks = self._feed.open_tasks()
