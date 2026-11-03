@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { card } from "../../tests/taskViewFixtures";
 import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
-import { dropProposal, promoteProposal, proposedOf, sectionsOf } from "./proposalsModel";
+import {
+  dropProposal, groupsOf, isPreapproved, kindOf, matchesQuery, modelOf, promoteProposal, proposedOf, sectionsOf, sizeOf, verdictOf,
+} from "./proposalsModel";
 
 const roles = { ...LIFECYCLE_ROLES, final: "archived", proposed: "proposed" };
 
@@ -78,5 +80,84 @@ describe("dropProposal", () => {
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/move");
     expect(JSON.parse(String(init.body))).toMatchObject({ task: "TASK-1", to: "archived" });
+  });
+});
+
+describe("triage markers", () => {
+  it("is pre-approved when the triage label is on the card", () => {
+    expect(isPreapproved(card("TASK-1", "proposed", { labels: ["triage-preapproved", "kind-spike"] }))).toBe(true);
+    expect(isPreapproved(card("TASK-2", "proposed", { labels: ["kind-spike"] }))).toBe(false);
+  });
+
+  it("reads the reason of the last pre-approved verdict comment", () => {
+    const comments = [
+      { created: "", text: "triage verdict: pre-approved: first look" },
+      { created: "", text: "unrelated" },
+      { created: "", text: "triage verdict: pre-approved: Fits the board design; no duplicate." },
+    ];
+    expect(verdictOf(comments)).toBe("Fits the board design; no duplicate.");
+    expect(verdictOf([{ created: "", text: "unrelated" }])).toBe("");
+    expect(verdictOf(undefined)).toBe("");
+  });
+
+  it("reads kind and size from the labels", () => {
+    expect(kindOf(["size-5", "kind-execute"])).toBe("execute");
+    expect(sizeOf(["size-5", "kind-execute"])).toBe("5");
+    expect(kindOf(["x"])).toBe("");
+    expect(sizeOf([])).toBe("");
+  });
+});
+
+describe("modelOf", () => {
+  const harnesses = {
+    tiers: ["standard"],
+    harnesses: [{ name: "claude", label: "Claude", sessions: true, reason: "", tiers: { standard: { model: "sonnet", efforts: ["high"], models: { high: "claude-sonnet-5-5" } } } }],
+  };
+  it("names the model a profile runs", () => {
+    expect(modelOf("@agent-standard-high", harnesses)).toBe("claude-sonnet-5-5");
+  });
+  it("is empty for a profile no harness runs and for no profile", () => {
+    expect(modelOf("@agent-nope", harnesses)).toBe("");
+    expect(modelOf("", harnesses)).toBe("");
+  });
+});
+
+describe("matchesQuery", () => {
+  const c = card("TASK-12", "proposed", { title: "Speed up CI", description: "" });
+  it("matches every word against the id, title and description, case-blind", () => {
+    expect(matchesQuery(c, "task-12")).toBe(true);
+    expect(matchesQuery(c, "speed ci")).toBe(true);
+    expect(matchesQuery(c, "flaky ci")).toBe(false);
+    expect(matchesQuery(c, "  ")).toBe(true);
+  });
+  it("matches the description the detail loaded", () => {
+    expect(matchesQuery(c, "cache", "Warm the cache.")).toBe(true);
+  });
+});
+
+describe("groupsOf", () => {
+  const cards = [
+    card("TASK-1", "proposed", { milestone: "m-2", labels: ["kind-spike"], created: 100 }),
+    card("TASK-2", "proposed", { milestone: "", labels: ["kind-execute"], created: 300 }),
+    card("TASK-3", "proposed", { milestone: "m-2", labels: ["kind-execute"], created: 200 }),
+  ];
+  const details = { "TASK-1": { priority: "low" }, "TASK-2": { priority: "high" } };
+  const ids = (groups: ReturnType<typeof groupsOf>) => groups.map((g) => [g.label, g.cards.map((x) => x.id)]);
+
+  it("is one unlabeled group without grouping, in the chosen order", () => {
+    expect(ids(groupsOf(cards, "none", "oldest", details))).toEqual([["", ["TASK-1", "TASK-3", "TASK-2"]]]);
+    expect(ids(groupsOf(cards, "none", "priority", details))).toEqual([["", ["TASK-2", "TASK-1", "TASK-3"]]]);
+  });
+
+  it("groups by milestone, with the unmilestoned last", () => {
+    expect(ids(groupsOf(cards, "milestone", "newest", details))).toEqual([["m-2", ["TASK-3", "TASK-1"]], ["No milestone", ["TASK-2"]]]);
+  });
+
+  it("groups by priority, high first and unknown last", () => {
+    expect(ids(groupsOf(cards, "priority", "newest", details))).toEqual([["high", ["TASK-2"]], ["low", ["TASK-1"]], ["No priority", ["TASK-3"]]]);
+  });
+
+  it("groups by kind, alphabetical with no kind last", () => {
+    expect(ids(groupsOf(cards, "kind", "newest", details))).toEqual([["execute", ["TASK-2", "TASK-3"]], ["spike", ["TASK-1"]]]);
   });
 });

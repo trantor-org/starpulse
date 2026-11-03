@@ -193,7 +193,7 @@ export function App() {
         </Suspense>
       </Kept>
       <Kept name="proposals" on={view === "proposals"} warm={drawn}>
-        <Suspense fallback={null}><Proposals cards={hud.cards} roles={hud.roles} profiles={view === "proposals" ? profilesOf(started.harnesses) : []} /></Suspense>
+        <Suspense fallback={null}><Proposals cards={hud.cards} roles={hud.roles} profiles={view === "proposals" ? profilesOf(started.harnesses) : []} harnesses={started.harnesses} /></Suspense>
       </Kept>
       <Kept name="jobs" on={view === "jobs"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
       <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} hint={hud.hint} /></Suspense></Kept>

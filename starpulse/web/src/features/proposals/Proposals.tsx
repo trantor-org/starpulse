@@ -1,37 +1,59 @@
-// The Proposals view: the tasks agents proposed and the operator has not yet decided. Each row shows the title, why, filing session
-// and duplicate resolution; Promote moves it to Ready under the chosen profile and Drop archives it. Proposed tasks are drawn here
-// and never on the Kanban.
+// The Proposals view: the tasks agents proposed and the operator has not yet decided, in two sections by the triage marker
+// (Pre-approved, then Unapproved), searchable and groupable like the Kanban. Each card shows the title, why, kind, size, profile and
+// model, the triage verdict with its reason, filing session and duplicate resolution; Promote moves it to Ready under the chosen
+// profile and Drop archives it. Proposed tasks are drawn here and never on the Kanban.
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api/apiFetch";
 import type { Roles } from "../../api";
 import type { KanbanTask } from "../kanban/kanbanModel";
 import type { Reply } from "../kanban/move";
-import { dropProposal, promoteProposal, proposedOf, sectionsOf } from "./proposalsModel";
+import { NO_HARNESSES, type Harnesses } from "../kanban/start";
+import type { TaskComment } from "../kanban/taskViewModel";
+import {
+  dropProposal, groupsOf, isPreapproved, kindOf, matchesQuery, modelOf, promoteProposal, proposedOf, sectionsOf, sizeOf, verdictOf,
+  type GroupBy, type SortBy,
+} from "./proposalsModel";
 
-/** The part of a task's full record a proposal row reads; the snapshot slims the description off. */
+/** The part of a task's full record a proposal card reads; the snapshot slims the description off and carries no priority. */
 interface Detail {
   description: string;
   profile: string;
   createdBy: string;
+  priority: string;
+  comments: TaskComment[];
 }
 
 interface Props {
   cards: KanbanTask[];
   roles: Roles;
   profiles: string[];
+  harnesses?: Harnesses;
   fetcher?: typeof apiFetch;
 }
 
 const detailOf = (record: Partial<Detail> | null | undefined): Detail | null =>
-  record ? { description: record.description ?? "", profile: record.profile ?? "", createdBy: record.createdBy ?? "" } : null;
+  record
+    ? {
+        description: record.description ?? "", profile: record.profile ?? "", createdBy: record.createdBy ?? "",
+        priority: (record.priority ?? "").toLowerCase(), comments: record.comments ?? [],
+      }
+    : null;
 
-export function Proposals({ cards, roles, profiles, fetcher = apiFetch }: Props) {
+const SECTIONS = [
+  { key: "preapproved", title: "Pre-approved", empty: "Nothing pre-approved" },
+  { key: "unapproved", title: "Unapproved", empty: "Nothing awaiting triage" },
+] as const;
+
+export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, fetcher = apiFetch }: Props) {
   const proposals = proposedOf(cards, roles);
   const ids = proposals.map((p) => p.id).join(" ");
   const [details, setDetails] = useState<Record<string, Detail>>({});
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [refused, setRefused] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
+  const [by, setBy] = useState<GroupBy>("none");
+  const [sort, setSort] = useState<SortBy>("newest");
 
   useEffect(() => {
     let live = true;
@@ -58,46 +80,93 @@ export function Proposals({ cards, roles, profiles, fetcher = apiFetch }: Props)
     setRefused((r) => ({ ...r, [id]: reply.reason }));
   };
 
+  const shown = proposals.filter((p) => matchesQuery(p, query, details[p.id]?.description ?? p.description));
+
+  const card = (p: KanbanTask) => {
+    const detail = details[p.id];
+    const { why, duplicate } = sectionsOf(detail?.description ?? p.description ?? "");
+    const current = detail?.profile ?? p.profile ?? "";
+    const profile = chosen[p.id] ?? current;
+    const options = profile && !profiles.includes(profile) ? [profile, ...profiles] : profiles;
+    const model = modelOf(current, harnesses);
+    const kind = kindOf(p.labels);
+    const size = sizeOf(p.labels);
+    const verdict = verdictOf(detail?.comments);
+    return (
+      <article className={`prop${isPreapproved(p) ? " ok" : ""}`} key={p.id} data-task={p.id}>
+        <h4><span className="id">{p.id}</span> {p.title}</h4>
+        <div className="chips">
+          {kind && <span className="chip kind">{kind}</span>}
+          {size && <span className="chip size">size {size}</span>}
+          {detail?.priority && <span className={`chip pri ${detail.priority}`}>{detail.priority}</span>}
+          {current && <span className="chip profile">{current}</span>}
+          {model && <span className="chip model">{model}</span>}
+        </div>
+        <div className={`verdict${isPreapproved(p) ? " ok" : ""}`}>
+          <span className="vd">{isPreapproved(p) ? "Pre-approved" : "Not triaged"}</span>
+          {verdict && <span className="vr">{verdict}</span>}
+        </div>
+        {why && <p className="why">{why}</p>}
+        <dl>
+          <dt>Filed by</dt>
+          <dd>{detail?.createdBy || "unknown"}</dd>
+          <dt>Duplicates</dt>
+          <dd>{duplicate || "none recorded"}</dd>
+        </dl>
+        <div className="act">
+          <select aria-label={`Profile for ${p.id}`} value={profile} disabled={busy[p.id]}
+            onChange={(e) => setChosen((c) => ({ ...c, [p.id]: e.target.value }))}>
+            <option value="">No profile</option>
+            {options.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+          <button type="button" className="btn go" disabled={busy[p.id]}
+            onClick={() => void decide(p.id, () => promoteProposal(p.id, profile, current, roles, fetcher, p.openDeps))}>Promote</button>
+          <button type="button" className="btn" disabled={busy[p.id]}
+            onClick={() => void decide(p.id, () => dropProposal(p.id, roles, fetcher))}>Drop</button>
+        </div>
+        {refused[p.id] && <p className="refused" role="alert">{refused[p.id]}</p>}
+      </article>
+    );
+  };
+
   return (
     <div id="proposals">
       <div className="hd">
-        <span className="ttl">Proposals</span>
+        <h1 className="ttl">Proposals</h1>
         <span className="ct">{proposals.length}</span>
+        <div className="tools">
+          <input type="search" aria-label="Search proposals" placeholder="Search title, description, ID" value={query}
+            onChange={(e) => setQuery(e.target.value)} />
+          <select aria-label="Group by" value={by} onChange={(e) => setBy(e.target.value as GroupBy)}>
+            <option value="none">No grouping</option>
+            <option value="milestone">Group by milestone</option>
+            <option value="priority">Group by priority</option>
+            <option value="kind">Group by kind</option>
+          </select>
+          <select aria-label="Sort by" value={sort} onChange={(e) => setSort(e.target.value as SortBy)}>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="priority">Priority</option>
+          </select>
+        </div>
       </div>
       {proposals.length === 0 && <p className="none">No proposals</p>}
-      <div className="grid">
-      {proposals.map((p) => {
-        const detail = details[p.id];
-        const { why, duplicate } = sectionsOf(detail?.description ?? p.description ?? "");
-        const current = detail?.profile ?? p.profile ?? "";
-        const profile = chosen[p.id] ?? current;
-        const options = profile && !profiles.includes(profile) ? [profile, ...profiles] : profiles;
+      {proposals.length > 0 && shown.length === 0 && <p className="none">No proposals match</p>}
+      {shown.length > 0 && SECTIONS.map(({ key, title, empty }) => {
+        const inSection = shown.filter((p) => isPreapproved(p) === (key === "preapproved"));
         return (
-          <section className="prop" key={p.id} data-task={p.id}>
-            <h2><span className="id">{p.id}</span> {p.title}</h2>
-            {why && <p className="why">{why}</p>}
-            <dl>
-              <dt>Filed by</dt>
-              <dd>{detail?.createdBy || "unknown"}</dd>
-              <dt>Duplicates</dt>
-              <dd>{duplicate || "none recorded"}</dd>
-            </dl>
-            <div className="act">
-              <select aria-label={`Profile for ${p.id}`} value={profile} disabled={busy[p.id]}
-                onChange={(e) => setChosen((c) => ({ ...c, [p.id]: e.target.value }))}>
-                <option value="">No profile</option>
-                {options.map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-              <button type="button" className="btn go" disabled={busy[p.id]}
-                onClick={() => void decide(p.id, () => promoteProposal(p.id, profile, current, roles, fetcher, p.openDeps))}>Promote</button>
-              <button type="button" className="btn" disabled={busy[p.id]}
-                onClick={() => void decide(p.id, () => dropProposal(p.id, roles, fetcher))}>Drop</button>
-            </div>
-            {refused[p.id] && <p className="refused" role="alert">{refused[p.id]}</p>}
+          <section className={`sec ${key}`} key={key} data-section={key}>
+            <div className="sh"><h2>{title}</h2><span className="ct">{inSection.length}</span></div>
+            {inSection.length === 0 && <p className="none">{empty}</p>}
+            {groupsOf(inSection, by, sort, details).map((g) => (
+              <div className="group" key={g.label}>
+                {g.label && <h3 className="grp">{g.label}</h3>}
+                <div className="grid">{g.cards.map(card)}</div>
+              </div>
+            ))}
           </section>
         );
       })}
-      </div>
     </div>
   );
 }
