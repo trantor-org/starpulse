@@ -135,6 +135,10 @@ class BoardTask(_Contract):
         default="",
         description="The session that last claimed the task, as its harness names it; empty when none has. `profile` is who or which agent model the task is for.",
     )
+    aliases: tuple[str, ...] = Field(
+        default=(),
+        description="Keys the task was known by before: a proposal's key once it is promoted. A read by one of them finds this task.",
+    )
     labels: tuple[str, ...] = Field(default=(), description="The task's labels.")
     milestone: str = Field(default="", description="The milestone the task belongs to; empty when it has none.")
     impact: str = Field(

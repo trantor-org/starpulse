@@ -19,6 +19,12 @@ describe("task dialog body", () => {
     expect(html).toContain('<a class="tl" href="?view=kanban&amp;task=TASK-1">TASK-1</a>');
   });
 
+  it("draws a PROP-N proposal id as a link that opens that task", () => {
+    const html = draw({ record: { ...record, description: "Promoted from PROP-7." } });
+
+    expect(html).toContain('<a class="tl" href="?view=kanban&amp;task=PROP-7">PROP-7</a>');
+  });
+
   it("draws inline code, bold and links in the description, plan, notes and a criterion", () => {
     const line = "Run `make lint` with **care** and read [the guide](https://example.com).";
     const html = draw({ record: { ...record, description: line, plan: line, notes: line, acceptanceCriteria: [{ n: 1, text: line, checked: false }] } });

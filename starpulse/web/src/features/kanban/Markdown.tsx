@@ -3,9 +3,9 @@ import { createContext, useContext, useState } from "react";
 import { Diagram } from "./Diagram";
 import { markdown, opensByDefault, preview, repoPath, sections, type Block } from "./taskViewModel";
 
-/** Text with each TASK-N id drawn as a link that opens that task in this dialog. */
+/** Text with each TASK-N or PROP-N id drawn as a link that opens that task in this dialog. */
 export function Linked({ text, open }: { text: string; open: (id: string) => void }) {
-  return <>{text.split(/(TASK-\d+)/).map((part, i) => i % 2 ? (
+  return <>{text.split(/((?:TASK|PROP)-\d+)/).map((part, i) => i % 2 ? (
     <a key={i} className="tl" href={`?view=kanban&task=${part}`} onClick={(e) => { e.preventDefault(); open(part); }}>{part}</a>
   ) : part)}</>;
 }

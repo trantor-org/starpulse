@@ -366,6 +366,7 @@ type = "native"
 # workflows_query = 'ExecutionStatus="Running"'  # the Temporal visibility query that lists those workflows, such as `WorkflowType="task_lifecycle" AND ExecutionStatus="Running"`
 # types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
+# proposal_prefix = "PROP"  # the id prefix of a task created in the proposed lane, numbered from its own sequence so a proposal takes no task number and keeps its id as an alias once promoted; unset: a proposal is numbered like any task
 
 # Task fields this deployment adds to StarPulse's own, checked on write and kept in the read model (see Task read model):
 # [board.fields]

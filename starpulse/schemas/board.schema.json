@@ -184,6 +184,15 @@
       "title": "Assignee",
       "type": "string"
     },
+    "aliases": {
+      "default": [],
+      "description": "Keys the task was known by before: a proposal's key once it is promoted. A read by one of them finds this task.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
     "labels": {
       "default": [],
       "description": "The task's labels.",

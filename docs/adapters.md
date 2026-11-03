@@ -66,6 +66,15 @@ With `[board] task_file_name` set to `slug`, a create writes `task-<n>-<slug>.md
 most 19 characters with a trailing `YYYY-MM-DD` kept past the cut, and `untitled` for a title with neither. A value
 other than `title` or `slug` is a startup error. The setting names only files a create writes; an existing file keeps
 its name, and every later write to a task reuses its file.
+With `[board] proposal_prefix` set (`PROP`), a create into the proposed lane takes the next number of its own
+sequence, `PROP-1`, `PROP-2`, so a proposal consumes no task number; a create anywhere else keeps the task prefix and
+its sequence. Moving a proposal out of the proposed lane renumbers it: the file takes the next task number, its old id
+is kept in the front matter `aliases` list, and the move answers `{"task": <new id>, "was": <proposal id>}`. A lookup
+by an alias finds the task, a new id never reuses one, and the feed holds one card for the task. Without the setting a
+proposal is numbered like any task and keeps its id.
+`starpulse migrate-proposals` gives the existing Proposed tasks `PROP-N` ids with their task numbers kept as aliases,
+and writes the old-to-new map to `<board>/proposal-aliases.json`; `--reverse` reads the map and restores each task
+number. Stop `serve` before either run, since the files are renamed. A rerun finishes an interrupted run.
 With `[board] validate` set to `module:function`, the board imports that function when it loads (a name that resolves
 to no function is a startup error) and calls it before every task write with the file's path, its text before the write
 (`None` for a create) and the text about to be written. A returned string refuses the write: the writer answers with it

@@ -49,6 +49,7 @@ from starpulse.board.adapters.upstream_backlog import (
     _strings,
     lane_id,
     project_board,
+    read_config,
 )
 from starpulse.board.adapters.upstream_backlog import (
     _profile as _profile_of,
@@ -91,7 +92,9 @@ DEFAULT_PATH = ".starpulse/board"
 #: `validate` the `module:function` that may refuse a task write before it lands, `python_path` the directories, relative
 #: to the config, put at the front of `sys.path` before `validate` is imported, `guards` the record-level rules every
 #: task write must satisfy (the `rules` module of `starpulse.board.model`), `task_file_name` the form of the name a created task's
-#: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent).
+#: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent),
+#: `proposal_prefix` the id prefix of a task created in the proposed lane (its own sequence, so a proposal takes no task
+#: number; absent, a proposal is numbered like any task).
 _SETTINGS = {
     "type",
     "path",
@@ -112,6 +115,7 @@ _SETTINGS = {
     "task_file_name",
     "types",
     "default_profiles",
+    "proposal_prefix",
 }
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
@@ -236,7 +240,10 @@ def _has_id(path: Path, task: str, spelled: re.Pattern[str], prefilter: bool) ->
     if prefilter and not spelled.search(_front_matter(text)):
         return False
     frontmatter, _ = _split(text)
-    return isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip().casefold() == task.casefold()
+    if not isinstance(frontmatter, dict):
+        return False
+    ids = [str(frontmatter.get("id") or "").strip(), *_aliases(frontmatter)]
+    return task.casefold() in {found.casefold() for found in ids}
 
 
 def _named_for(name: str, task: str) -> bool:
@@ -252,8 +259,15 @@ def _front_matter(text: str) -> str:
 
 
 def _id_line(task: str) -> re.Pattern[str]:
-    """A front matter line that spells `task` as the `id:`, quoted or not, in any case."""
-    return re.compile(rf"^id:[ \t]*[\"']?{re.escape(task)}[\"']?[ \t]*$", re.M | re.I)
+    """A front matter line that spells `task` as the `id:` or as a list item (an `aliases:` entry), quoted or not, in
+    any case; the parse decides which list the item is in."""
+    return re.compile(rf"^(?:id:|-)[ \t]*[\"']?{re.escape(task)}[\"']?[ \t]*$", re.M | re.I)
+
+
+def _aliases(frontmatter: Mapping[str, Any]) -> list[str]:
+    """The ids a task answers to besides its own `id`, as its `aliases` front matter lists them."""
+    aliases = frontmatter.get("aliases")
+    return [str(alias).strip() for alias in aliases] if isinstance(aliases, list) else []
 
 
 def _pull_of(retired: _Retired) -> Callable[[str, int], dict[str, Any] | None]:
@@ -895,6 +909,15 @@ class _Retired:
             return rows
         return [row for row in rows if str(_split_record(row["text"])[0].get("milestone") or "").strip() == milestone]
 
+    def aliases(self) -> list[str]:
+        """The ids the retired tasks answer to besides their own: those their `aliases` front matter lists."""
+        if self.engine is None:
+            return []
+        query = select(retired_tasks.c.text).where(retired_tasks.c.text.contains("\naliases:"))
+        with self.engine.connect() as db:
+            texts = [row.text for row in db.execute(query)]
+        return [alias for text in texts for alias in _aliases(_split_record(text)[0])]
+
     def texts(self) -> Iterator[str]:
         """Every retired task's text, by id, a page of rows at a time, so no more than a page is held at once."""
         return (text for _, text in self.pairs())
@@ -1172,18 +1195,101 @@ def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles) -> Task
     return complete
 
 
+def _reidentified(root: Path, path: Path, new: str, file_name: str, *, restore: bool = False) -> Written:
+    """Give the task in `path` the id `new`, rename its file for it and point the dependencies on its old id at `new`.
+
+    The old id joins the task's `aliases`, so a link to it still finds the task; with `restore`, `new` is an id the
+    task held before, which leaves the aliases instead. The answer's output is the old id."""
+    try:
+        before = path.read_text()
+        frontmatter, body = _split_record(before)
+        old = str(frontmatter.get("id") or "")
+        held = [alias for alias in _aliases(frontmatter) if alias != new]
+        aliases = held if restore else [*held, old]
+        renamed = {**{key: value for key, value in frontmatter.items() if key != "aliases"}, "id": new}
+        target = path.with_name(_file_name(new, str(frontmatter.get("title") or ""), file_name))
+        if refused := _land(
+            path, before, _stamped({**renamed, **({"aliases": aliases} if aliases else {})}), body, Guard(), OPERATOR
+        ):
+            return refused
+        os.replace(path, target)
+        _repointed(root, old, new)
+    except OSError as error:
+        return Written(False, f"{path}: {error}")
+    return Written(True, old)
+
+
+def _repointed(root: Path, old: str, new: str) -> None:
+    """Rewrite each open task's dependency on `old` to `new`."""
+    for path in (root / "tasks").glob("*.md"):
+        text = path.read_text()
+        if old not in text:
+            continue
+        frontmatter, body = _split_record(text)
+        dependencies = list(_strings(frontmatter.get("dependencies")))
+        if old not in dependencies:
+            continue
+        repointed = [new if dependency == old else dependency for dependency in dependencies]
+        _land(path, text, _stamped({**frontmatter, "dependencies": repointed}), body, Guard(), OPERATOR)
+
+
+def _renumberer(root: Path, prefix: str, retired: _Retired, file_name: str) -> Callable[[str], Written]:
+    """A board writer that gives a task the next id of the board's task sequence and keeps its old id as an alias, so a
+    link to the old id still finds it. The answer's output is the new id."""
+    lock = threading.Lock()  # two renumbers, in this process or another, must not both read the same highest id
+
+    def renumber(task: str) -> Written:
+        with lock, _allocating(root):
+            if (path := _find(root, task)) is None:
+                return Written(False, f"{task} is not on the board")
+            new = _next_id(root, prefix, retired)
+            done = _reidentified(root, path, new, file_name)
+            return Written(True, new) if done.ok else done
+
+    return renumber
+
+
+def _promoter(
+    write: MoveWriter,
+    read: Callable[[str], Mapping[str, Any] | None],
+    renumber: Callable[[str], Written],
+    leaves: tuple[str, str],
+) -> MoveWriter:
+    """`write` that renumbers a `<prefix>-N` proposal it moves out of the proposed lane, unless the move is the drop to
+    the `final` lane. A proposal that still holds a task number keeps it. `leaves` is `(proposed lane, final lane,
+    prefix)`."""
+    proposed, final, prefix = leaves
+    own = f"{prefix.casefold()}-"
+
+    def promote(task: str, status: str, actor: str, session: str = "") -> Written:
+        before = read(task)
+        written = write(task, status, actor, session) if session else write(task, status, actor)
+        in_proposed = before is not None and lane_id(str(before.get("status", ""))) == proposed
+        proposal = in_proposed and task.casefold().startswith(own)
+        if not (written.ok and proposal and lane_id(status) not in (proposed, final)):
+            return written
+        renumbered = renumber(task)
+        return written._replace(renumbered=renumbered.output) if renumbered.ok else written
+
+    return promote
+
+
 def _next_id(root: Path, prefix: str, retired: _Retired) -> str:
     """`<prefix>-N` with N one past the highest on the board, its completed, archived and retired tasks included."""
     number = re.compile(rf"{re.escape(prefix)}-(\d+)", re.I)
-    highest = max((int(found[1]) for task in retired.ids() if (found := number.fullmatch(task))), default=0)
+    taken = [*retired.ids(), *retired.aliases()]
+    highest = max((int(found[1]) for task in taken if (found := number.fullmatch(task))), default=0)
     for folder, _ in _FOLDERS:
         for path in (root / folder).glob("*.md"):
             try:
                 frontmatter, _ = _split(path.read_text())
             except OSError:
                 continue  # moved or removed while looking
-            if isinstance(frontmatter, dict) and (found := number.fullmatch(str(frontmatter.get("id") or "").strip())):
-                highest = max(highest, int(found[1]))
+            if not isinstance(frontmatter, dict):
+                continue
+            for taken_id in (str(frontmatter.get("id") or "").strip(), *_aliases(frontmatter)):
+                if found := number.fullmatch(taken_id):
+                    highest = max(highest, int(found[1]))
     return f"{prefix}-{highest + 1}"
 
 
@@ -1266,19 +1372,23 @@ def _creator(
     guard: Guard = Guard(),
     file_name: str = "title",
     link: _Linker = _unlinked,
+    proposals: tuple[str, str] = ("", ""),
 ) -> TaskCreator:
     """A board writer that makes a task file with the next id, named in the `file_name` form, in one write.
 
     It starts in the first lane; any detail beyond the ones the page fills (a `status`, `type`, `references`,
     `documentation`, `definitionOfDone`, `plan`, `notes` or other field `edit` sets) is set as `edit` sets it, so a
     detail it cannot set refuses the create and nothing is written. A refused create leaves its id to the next one.
+    `proposals` is the proposed lane and the id prefix of its own sequence; a create in that lane takes its id there.
     """
+    proposed_lane, proposal_prefix = proposals
     lock = threading.Lock()  # two creates, in this process or another, must not both read the same highest id
     spelled = {lane_id(status): status for status in config.statuses}
 
     def create(title: str, details: Mapping[str, Any], /, actor: str = OPERATOR) -> Written:
         with lock, _allocating(root):
-            task = _next_id(root, config.prefix, retired)
+            proposed = bool(proposal_prefix) and lane_id(str(details.get("status", ""))) == proposed_lane
+            task = _next_id(root, proposal_prefix if proposed else config.prefix, retired)
             path = root / "tasks" / _file_name(task, title, file_name)
             frontmatter, body = _split(_new_task(task, title, config.statuses[0], details))
             rest = {field: value for field, value in details.items() if field not in _NEW_TASK_DETAILS}
@@ -1356,6 +1466,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     file_name = str(settings.get("task_file_name", _FILE_NAMES[0]))
     if file_name not in _FILE_NAMES:
         raise ValueError(f"board: task_file_name {file_name!r} is not one of {', '.join(sorted(_FILE_NAMES))}")
+    proposal_prefix = str(settings.get("proposal_prefix", ""))
     _python_path(settings.get("python_path"), base)
     root = base / str(settings.get("path", DEFAULT_PATH))
     _create(root, base.resolve().name)
@@ -1388,11 +1499,12 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     def surfaces(config: BacklogConfig, roles: StateRoles) -> dict[str, Any]:
         ready = next((status for status in config.statuses if lane_id(status) == roles.ready), "")
         gate = replace(guard, waiting=roles.waiting, ready=ready, holders=_holders(root, roles.done))
+        proposals = (roles.proposed or "", proposal_prefix)
         return {
                 "writer": _writer(root, config.statuses, roles, gate, claims),
                 "release": _releaser(root, gate),
                 "assign": assign,
-                "create": _creator(root, config, retired, gate, file_name, link),
+                "create": _creator(root, config, retired, gate, file_name, link, proposals),
                 "read": _reader(
                     root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate, roles.done
                 ),
@@ -1454,8 +1566,16 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         claim_ttl.start(replace(made, **recorded), feed, log, settings, persist)
 
     read = made.read
+
+    def promoted(write: MoveWriter) -> MoveWriter:
+        """`write`, a proposal it moves into the task lanes renumbered when the board has a proposal prefix."""
+        if not (proposal_prefix and made.roles.proposed):
+            return write
+        renumber = history.renumbered(_renumberer(root, read_config(root).prefix, retired, file_name), read)
+        return _promoter(write, read, renumber, (made.roles.proposed, made.roles.final or "", proposal_prefix))
+
     recorded = {
-        "writer": history.recorded(made.writer, read, actor_at=1),
+        "writer": promoted(history.recorded(made.writer, read, actor_at=1)),
         "assign": history.recorded(made.assign, read),
         "release": history.recorded(made.release, read, actor_at=1),
         "edit": history.recorded(made.edit, read, unstarted=_unstarted(made.roles)),

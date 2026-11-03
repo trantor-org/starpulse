@@ -183,6 +183,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._building = threading.Lock()
         self._window_s = window_s
         self._open: dict[str, dict] = {}
+        #: Each key a placed task was known by before, to the key it holds now.
+        self._aliases: dict[str, str] = {}
         self._settled: dict[str, dict] = {}
         #: Every placed task's assignee, a settled one's included, so a machine still drawing it keeps its colour.
         self._assignees: dict[str, str] = {}

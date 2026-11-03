@@ -96,6 +96,8 @@ class Written(NamedTuple):
     transient: bool = False
     """The write raised a locked-database error that outlasted its retries: no refusal of the change, so the task stays put."""
     """Whether a declared guard or the board's validate hook refused the write: a defect in the task record an editor of the record repairs."""
+    renumbered: str = ""
+    """The id the write gave the task when it renumbered it (a promoted proposal takes a task number); empty when the id stands."""
 
 
 class MoveWriter(Protocol):
