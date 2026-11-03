@@ -5,7 +5,7 @@ admitted last: it fits only the room left after every other task that fits, and 
 slot mitigation or bug work needs. One that frees another task ranks and is priced like any task that does. Its session frames the choice and parks for the operator. The tasks that fit rank two ways. The enforced
 order puts first the tasks labelled `regression`, then a bug another open task waits on,
 then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks an open task waits on
-directly (a `kind-decide` one included), then the tasks labelled `leverage`, then the rest, a `kind-decide` task nothing
+directly (a `kind-decide` one included), then the tasks labelled `throughput`, then those labelled `leverage`, then the rest, a `kind-decide` task nothing
 waits on after them all, and within each the most open tasks waiting on it directly, then the deepest critical path, the heaviest Priority weight and
 the id. The shadow order is `value / dominant share` (Dominant Resource
 Fairness), where value is that weight times depth times the chance of the goal. The shadow order is only logged beside the enforced one until a calibration
@@ -39,6 +39,8 @@ NO_PROFILE = "no agent profile"
 REGRESSION = "regression"
 #: The labels that mark a task a bug whatever its type: a board that shows the wrong state, or a behavior that regressed.
 BUG_LABELS = frozenset({"board-state", REGRESSION})
+#: The label of a task that raises future board throughput: it goes ahead of other work below the bugs and unblockers.
+THROUGHPUT = "throughput"
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +131,7 @@ def _dependents(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
 
 def _enforced_key(task: Mapping[str, Any], dependents: int, decision: Decision) -> tuple[Any, ...]:
     """Where `task` goes in the enforced order: a `kind-decide` task no open task waits on last, else regressions,
-    blocking bugs, bugs, tasks an open task waits on (a `kind-decide` one included), leverage, then dependents, depth,
+    blocking bugs, bugs, tasks an open task waits on (a `kind-decide` one included), throughput, leverage, then dependents, depth,
     weight and id."""
     bug = task.get("type") == "bug" or not BUG_LABELS.isdisjoint(task["labels"])
     leverage = "leverage" in task["labels"]
@@ -139,6 +141,7 @@ def _enforced_key(task: Mapping[str, Any], dependents: int, decision: Decision) 
         not (bug and dependents > 0),
         not bug,
         dependents == 0,
+        THROUGHPUT not in task["labels"],
         not leverage,
         -dependents,
         -decision.depth,

@@ -745,7 +745,7 @@ forecast P(goal), and the run ledger.
   `kind-decide` fits against the headroom less the demand of every other admitted task, so it never takes room a
   mitigation, bug or story task needs.
 - **Order.** The admitted tasks go first by class: the tasks labelled `regression`, then a bug another open task waits on,
-  then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `leverage`, then the rest, then the `kind-decide` tasks. Within a class they go by
+  then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks labelled `throughput`, then those labelled `leverage`, then the rest, then the `kind-decide` tasks. Within a class they go by
   the most open tasks waiting on them directly, then the deepest critical path (the task itself plus the longest chain
   of open tasks waiting on it), then the heaviest Priority weight, the lowest id breaking a tie. The weight is the `[scheduler.priority_matrix]`
   cell of the task's `<impact>/<urgency>` (`high/low`), 1 to 9 by default as the product of the two levels' places
