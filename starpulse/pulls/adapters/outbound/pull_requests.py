@@ -20,7 +20,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.application.commands.ci_trail import PullHistory, parse
-from starpulse.pulls.model.pins import GitHub, Pins, Repo, link
+from starpulse.pulls.adapters.outbound.github import GitHub
+from starpulse.pulls.model.pins import Pins, Repo, link
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
     from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -75,7 +76,7 @@ def merged(store: PullStore, agent: dict[str, Any]) -> bool:
 
 
 class GhUnavailableError(Exception):
-    """GitHub could not be read: `gh` is missing, refused, timed out or answered something unreadable."""
+    """GitHub could not be read: GitHub refused, timed out or answered something unreadable."""
 
 
 def query_github(repo: str, query: str) -> dict:

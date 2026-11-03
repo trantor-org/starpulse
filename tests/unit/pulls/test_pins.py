@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
 import time
 
 import pytest
-from starpulse.pulls.model.pins import _RETRY_WAIT_S, GitHub, Repo, build_commit, contained, link
+from starpulse.pulls.adapters.outbound.github import _RETRY_WAIT_S, GitHub
+from starpulse.pulls.model.pins import Repo, build_commit, contained, link
 
 REPOS = (Repo(name="skills", path="skills", applied_by="pin-bump"),)
 CHILD_SHA, LATER_SHA = "c1" * 20, "c2" * 20
@@ -86,32 +86,29 @@ def test_a_child_pull_request_that_has_not_merged_carries_no_link() -> None:
 
 
 class Gh:
-    """A `gh api` stand-in: each endpoint's answer, and the endpoints asked."""
+    """A GitHub transport: each endpoint's answer body, the endpoints asked, and the status an unanswered one gets."""
 
-    def __init__(self, answers: dict[str, str]) -> None:
-        self.answers, self.asked, self.failure = answers, [], ""
+    def __init__(self, answers: dict[str, dict]) -> None:
+        self.answers, self.asked, self.failure = answers, [], 500
 
-    def __call__(self, command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        self.asked.append(command[2])
-        answer = self.answers.get(command[2], "")
-        return subprocess.CompletedProcess(command, 0 if answer else 1, answer or self.failure, "")
+    def __call__(self, method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        self.asked.append(path)
+        return (200, self.answers[path]) if path in self.answers else (self.failure, {})
 
 
-def test_the_pointer_a_parent_merge_pins_is_read_once_and_remembered(monkeypatch: pytest.MonkeyPatch) -> None:
-    gh = Gh({"repos/trantor-org/trantor/contents/skills?ref=p1": NEW_POINTER})
-    monkeypatch.setattr(subprocess, "run", gh)
-    github = GitHub()
+def test_the_pointer_a_parent_merge_pins_is_read_once_and_remembered() -> None:
+    gh = Gh({"repos/trantor-org/trantor/contents/skills?ref=p1": {"sha": NEW_POINTER}})
+    github = GitHub(transport=gh)
 
     assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(2)] == [NEW_POINTER] * 2
     assert len(gh.asked) == 1
 
 
 def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypatch: pytest.MonkeyPatch) -> None:
-    gh = Gh({"repos/trantor-org/trantor/commits/HEAD": NEW_POINTER})
-    monkeypatch.setattr(subprocess, "run", gh)
+    gh = Gh({"repos/trantor-org/trantor/commits/HEAD": {"sha": NEW_POINTER}})
     clock = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
-    github = GitHub()
+    github = GitHub(transport=gh)
 
     assert [github.head("trantor-org/trantor") for _ in range(2)] == [NEW_POINTER] * 2
     clock[0] += 61
@@ -124,62 +121,45 @@ def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypa
 def test_a_failed_read_is_named_by_failing_until_a_later_read_of_it_answers(monkeypatch: pytest.MonkeyPatch) -> None:
     head, contents = "repos/trantor-org/trantor/commits/HEAD", "repos/trantor-org/trantor/contents/skills?ref=p1"
     gh = Gh({})
-    monkeypatch.setattr(subprocess, "run", gh)
     clock = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
-    github = GitHub()
+    github = GitHub(transport=gh)
 
     github.head("trantor-org/trantor")
     github.pointer("trantor-org/trantor", "p1", "skills")
     assert github.failing() == [head, contents]
 
-    gh.answers = {head: NEW_POINTER, contents: NEW_POINTER}
+    gh.answers = {head: {"sha": NEW_POINTER}, contents: {"sha": NEW_POINTER}}
     clock[0] += 301
     github.head("trantor-org/trantor")
     github.pointer("trantor-org/trantor", "p1", "skills")
     assert github.failing() == []
 
 
-NOT_FOUND = '{"message":"Not Found","status":"404"}'
-
-
-def failing(body: str) -> Gh:
-    """A `gh api` that exits 1 printing `body`, as `gh` prints an error answer to stdout."""
+def failing(status: int) -> Gh:
+    """A transport that answers every read with `status` and no body."""
     gh = Gh({})
-    gh.failure = body
+    gh.failure = status
     return gh
 
 
-def test_a_path_github_answers_not_found_is_kept_and_saved_rather_than_asked_again(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    gh = failing(NOT_FOUND)
-    monkeypatch.setattr(subprocess, "run", gh)
-    github = GitHub()
+def test_a_path_github_answers_not_found_is_kept_and_saved_rather_than_asked_again() -> None:
+    gh = failing(404)
+    github = GitHub(transport=gh)
 
     assert [github.pointer("trantor-org/unraid", "p1", "skills") for _ in range(2)] == [None, None]
     assert len(gh.asked) == 1
     assert github.answers()["pointers"] == [["trantor-org/unraid", "p1", "skills", None]]
 
 
-@pytest.mark.parametrize(
-    "body",
-    [
-        '{"message":"API rate limit exceeded for user ID 1.","status":"403"}',
-        '{"message":"Server Error","status":"500"}',
-        "upstream connect error",
-        '["Not Found", "404"]',
-        "",
-    ],
-)
+@pytest.mark.parametrize("status", [401, 403, 500, 502])
 def test_a_pointer_read_that_fails_without_a_not_found_answer_is_asked_again_only_after_the_retry_wait(
-    monkeypatch: pytest.MonkeyPatch, body: str
+    monkeypatch: pytest.MonkeyPatch, status: int
 ) -> None:
-    gh = failing(body)
+    gh = failing(status)
     clock = [1000.0]
-    monkeypatch.setattr(subprocess, "run", gh)
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
-    github = GitHub()
+    github = GitHub(transport=gh)
 
     assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(3)] == [None] * 3
     assert len(gh.asked) == 1
@@ -190,11 +170,10 @@ def test_a_pointer_read_that_fails_without_a_not_found_answer_is_asked_again_onl
 
 
 def test_a_compare_that_fails_is_asked_again_only_after_the_retry_wait(monkeypatch: pytest.MonkeyPatch) -> None:
-    gh = failing("HTTP 502")
+    gh = failing(502)
     clock = [1000.0]
-    monkeypatch.setattr(subprocess, "run", gh)
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
-    github = GitHub()
+    github = GitHub(transport=gh)
 
     assert [github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) for _ in range(3)] == [False] * 3
     assert len(gh.asked) == 1
@@ -203,11 +182,8 @@ def test_a_compare_that_fails_is_asked_again_only_after_the_retry_wait(monkeypat
     assert len(gh.asked) == 2
 
 
-def test_a_compare_that_fails_with_an_error_body_answers_not_contained_and_keeps_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(subprocess, "run", failing(NOT_FOUND))
-    github = GitHub()
+def test_a_compare_that_answers_not_found_answers_not_contained_and_keeps_nothing() -> None:
+    github = GitHub(transport=failing(404))
 
     assert github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is False
     assert github.answers()["reaches"] == []
@@ -215,7 +191,7 @@ def test_a_compare_that_fails_with_an_error_body_answers_not_contained_and_keeps
 
 def test_a_saved_pointer_that_is_not_a_commit_is_dropped_on_restore_so_the_next_read_settles_it() -> None:
     body = '{"message":"Not Found","status":"404"}'
-    github = GitHub()
+    github = GitHub(transport=failing(500))
 
     github.restore(
         {
@@ -230,12 +206,9 @@ def test_a_saved_pointer_that_is_not_a_commit_is_dropped_on_restore_so_the_next_
     assert github.answers() == {"pointers": [["trantor-org/trantor", "p2", "skills", NEW_POINTER]], "reaches": []}
 
 
-def test_a_path_a_merge_does_not_pin_is_a_remembered_answer_that_is_never_asked_of_gh(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_path_a_merge_does_not_pin_is_a_remembered_answer_that_is_never_asked_of_github() -> None:
     gh = Gh({})
-    monkeypatch.setattr(subprocess, "run", gh)
-    github = GitHub()
+    github = GitHub(transport=gh)
 
     github.restore({"pointers": [["trantor-org/unraid", "p1", "skills", None]]})
 
@@ -247,23 +220,17 @@ def test_a_path_a_merge_does_not_pin_is_a_remembered_answer_that_is_never_asked_
 @pytest.mark.parametrize(
     ("status", "contained"), [("ahead", True), ("identical", True), ("behind", False), ("diverged", False)]
 )
-def test_a_pointer_contains_a_merge_when_it_is_that_commit_or_ahead_of_it(
-    monkeypatch: pytest.MonkeyPatch, status: str, contained: bool
-) -> None:
-    monkeypatch.setattr(
-        subprocess, "run", Gh({f"repos/trantor-org/skills/compare/{CHILD_SHA}...{NEW_POINTER}": status})
-    )
+def test_a_pointer_contains_a_merge_when_it_is_that_commit_or_ahead_of_it(status: str, contained: bool) -> None:
+    gh = Gh({f"repos/trantor-org/skills/compare/{CHILD_SHA}...{NEW_POINTER}": {"status": status}})
 
-    assert GitHub().reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is contained
+    assert GitHub(transport=gh).reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is contained
 
 
-def test_a_gh_that_cannot_run_answers_that_nothing_is_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
-    def missing(command: list[str], **_: object) -> None:
-        raise FileNotFoundError("gh")
+def test_a_transport_that_cannot_connect_answers_that_nothing_is_pinned() -> None:
+    def down(method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        raise ConnectionError("unreachable")
 
-    monkeypatch.setattr(subprocess, "run", missing)
-
-    assert GitHub().pointer("trantor-org/trantor", "p1", "skills") is None
+    assert GitHub(transport=down).pointer("trantor-org/trantor", "p1", "skills") is None
 
 
 def page(*commits: tuple[str, str], more: bool = False) -> dict:

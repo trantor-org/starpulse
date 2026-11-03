@@ -25,7 +25,7 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    open stream on `SIGTERM`, before the process exits.
                    `pulls` maps each open task that cites a pull request to [{number, repo (org/repo), url, checks
                    (pass, failing, pending, none), merged, closed (unmerged), conflicting (open and conflicting with its base), merge_sha, merged_at (null until merged), threads (unresolved), behind_main (commits main holds that the head lacks; null once the head branch is gone), stale}], read from
-                   GitHub through `gh` once a minute and held between reads; a failed read keeps the
+                   GitHub once a minute and held between reads; a failed read keeps the
                    last value with `stale` true.
                    Everything is held in memory: the Board from the configured board adapter, other machines' tasks
                    from machine:events, each instance's workflows from its adapter (`pushed/`: runs:events)
@@ -217,7 +217,8 @@ from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor, moves_
 from starpulse.pulls.adapters.inbound.unblock import UNBLOCK_S, Unblocker
 from starpulse.pulls.adapters.outbound.pull_requests import PullRequests
 from starpulse.pulls.adapters.outbound.pull_store import PullSync
-from starpulse.pulls.model.pins import GitHub, LiveBuild, running_commit
+from starpulse.pulls.adapters.outbound.github import GitHub
+from starpulse.pulls.model.pins import LiveBuild, running_commit
 from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
 from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
 from starpulse.runs.application.queries import projection as runs_projection

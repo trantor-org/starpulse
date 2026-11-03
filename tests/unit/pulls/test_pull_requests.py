@@ -12,7 +12,9 @@ from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
 from starpulse.pulls.adapters.outbound.pull_requests import GhUnavailableError, PullRequests, query_github
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.pulls.application.commands.ci_trail import parse
-from starpulse.pulls.model.pins import GitHub, Repo
+from starpulse.pulls.adapters.outbound import github
+from starpulse.pulls.adapters.outbound.github import GitHub
+from starpulse.pulls.model.pins import Repo
 from starpulse.runtime.adapter_kit import task
 
 REPO = "https://github.com/acme/widgets/pull"
@@ -24,12 +26,12 @@ NOW = 10_000.0
 
 @pytest.fixture(autouse=True)
 def no_github(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every `gh` call in this module's tests is a failure unless the test installs its own."""
+    """Every GitHub read in this module's tests is a failure unless the test passes its own transport."""
 
-    def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        raise AssertionError(f"GitHub was read: {command}")
+    def send(method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        raise AssertionError(f"GitHub was read: {path}")
 
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(github, "connect", lambda token: send)
 
 
 @pytest.fixture
@@ -360,17 +362,16 @@ def test_a_merged_pr_of_a_pinned_repository_carries_the_parent_merge_that_applie
 
 
 def test_pin_answers_saved_with_the_board_spare_a_restarted_projector_every_pointer_and_compare_read(
-    store: PullStore, monkeypatch: pytest.MonkeyPatch
+    store: PullStore,
 ) -> None:
     asked: list[str] = []
 
-    def gh(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        asked.append(command[2])
-        return subprocess.CompletedProcess(command, 0, SHA if "/contents/" in command[2] else "ahead", "")
+    def send(method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        asked.append(path)
+        return 200, {"sha": SHA} if "/contents/" in path else {"status": "ahead"}
 
-    monkeypatch.setattr(subprocess, "run", gh)
     before = _pinned(store)
-    PullRequests(before, store, repos=REPOS, pins=GitHub()).refresh()
+    PullRequests(before, store, repos=REPOS, pins=GitHub(transport=send)).refresh()
     assert len(asked) == 2
 
     after = _feed(proj_7=[FIRST], proj_8=[CHILD])

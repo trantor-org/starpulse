@@ -1,6 +1,5 @@
 """A Waiting task moves to Ready once every dependency merges; a pinned repository's dependency merges on its bump."""
 
-import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -10,6 +9,7 @@ from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.pulls.adapters.inbound.unblock import Unblocker
+from starpulse.pulls.adapters.outbound import github
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.pulls.model.pins import LiveBuild, Repo
 from starpulse.runtime.adapter_kit import task
@@ -214,11 +214,11 @@ def test_an_unblock_pass_after_a_restart_reads_no_pin_answer_the_board_saved(
 ) -> None:
     asked: list[str] = []
 
-    def gh(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        asked.append(command[2])
-        return subprocess.CompletedProcess(command, 1, "", "")
+    def send(method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        asked.append(path)
+        return 500, {}
 
-    monkeypatch.setattr(subprocess, "run", gh)
+    monkeypatch.setattr(github, "connect", lambda token: send)
     store.save([_pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN)])
     store.save([_pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"])])
     feed = _pinned()
