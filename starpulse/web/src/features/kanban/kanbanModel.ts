@@ -16,7 +16,7 @@ export const roleOf = (roles: Roles, state: string): string | undefined => Objec
 export const recent = (tasks: KanbanTask[], now: number, roles: Roles): KanbanTask[] =>
   tasks.filter((t) => t.lane !== roles.done || !t.entered || t.entered >= midnight(new Date(now * 1000)));
 
-/** The lanes drawn as columns: the machine's lifecycle States in order when it names a ready State (a lifecycle with a ready State), else the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses); none before the lanes are known. */
+/** The lanes drawn as columns: the machine's lifecycle States in order when it names a ready State (trantor's lifecycle), else the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses); none before the lanes are known. */
 export const columnsOf = (names: Record<string, string>, roles: Roles): string[] => {
   const states = new Set(Object.values(lifecycleStates(roles)).filter((s): s is string => !!s));
   return roles.ready ? [...states] : Object.keys(names).filter((s) => s !== roles.proposed);

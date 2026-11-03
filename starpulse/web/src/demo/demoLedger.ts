@@ -59,12 +59,12 @@ export function demoLedger(snap: Snapshot, now: number, scenario: Scenario): Led
       if (state === "failed") fails[t.dag] = { runId: run.runId, step: Object.entries(run.steps).find(([, s]) => s === "failed")?.[0] ?? "", startedAt: run.startedAt, finishedAt: run.finishedAt, resolves: t.resolves, resolved: null };
       return [[t.dag, run]];
     }));
-    return { key: sha(i), at, tasks: [`DEMO-${i + 1}`], sha: sha(i), pr: { repo: "demo", number: 300 - i, url: "#" }, runs, fails, pinned: failing };
+    return { key: sha(i), at, tasks: [`DEMO-${i + 1}`], sha: sha(i), pr: { repo: "trantor", number: 300 - i, url: "#" }, runs, fails, pinned: failing };
   });
   if (scenario !== "cross") return rows;
   // another repository's merge is applied only when a later merge of this one bumps its pin; the newest is still waiting for one
   const bumpAt = now - 150, bump: LedgerRow = {
-    key: sha(5040), at: bumpAt, tasks: [], sha: sha(5040), pr: { repo: "demo", number: 331, url: "#" }, applies: [sha(5041)], fails: {}, pinned: false,
+    key: sha(5040), at: bumpAt, tasks: [], sha: sha(5040), pr: { repo: "trantor", number: 331, url: "#" }, applies: [sha(5041)], fails: {}, pinned: false,
     runs: Object.fromEntries(ties.map((t) => [t.dag, runOf(snap, t, bumpAt, 40, scenario, "done")])),
   };
   const kid = (n: number, ago: number, appliedBy: string | null): LedgerRow => ({ key: sha(n), at: now - ago, tasks: [`DEMO-${n}`], sha: sha(n), pr: { repo: "skills", number: n, url: "#" }, appliedBy, runs: {}, fails: {}, pinned: false });
@@ -85,7 +85,7 @@ export function arriveMerge(snap: Snapshot, rows: LedgerRow[], now: number): Led
       steps: Object.fromEntries(names.map((s, k) => [s, live && k === 0 ? "running" : "not_started"])),
     };
   }
-  return [{ key: sha(n), at: now, tasks: [`DEMO-${n}`], sha: sha(n), pr: { repo: "demo", number: 300 + n, url: "#" }, runs: writer, fails: {}, pinned: false }, ...next];
+  return [{ key: sha(n), at: now, tasks: [`DEMO-${n}`], sha: sha(n), pr: { repo: "trantor", number: 300 + n, url: "#" }, runs: writer, fails: {}, pinned: false }, ...next];
 }
 
 const DAY = 86400, BUCKET = 900;

@@ -94,7 +94,7 @@ function tieRow(row: LedgerRow, tie: Tie, ctx: PanelCtx): string {
 
 /** The panel a clicked merge opens: its commit, where the Board moved it, and each tied DAG's run with its steps, pairing and failure. */
 export function mergePanel(row: LedgerRow, ctx: PanelCtx): string {
-  const repo = row.pr?.repo ?? "the repository", who = row.tasks[0] ? ctx.task(row.tasks[0]) : "pin bump", writer = ctx.ties.find((t) => t.role === "writer");
+  const repo = row.pr?.repo ?? "trantor", who = row.tasks[0] ? ctx.task(row.tasks[0]) : "pin bump", writer = ctx.ties.find((t) => t.role === "writer");
   const bump = row.appliedBy ? ctx.by(row.appliedBy) : undefined;
   const board = writer ? `${esc(ctx.from)} → ${esc(ctx.to)}: ${esc(writer.dag)} wrote ${esc(ctx.event)}` : `${esc(ctx.from)} → ${esc(ctx.to)}`;
   const other = cross(row)
@@ -137,7 +137,7 @@ function runRow(row: LedgerRow, tie: Tie, ctx: PanelCtx): string {
 
 /** A merge row's tip: the commit, the task, each tied DAG's status line and its failures. */
 export function mergeTip(row: LedgerRow, ctx: PanelCtx): string {
-  const repo = row.pr?.repo ?? "the repository";
+  const repo = row.pr?.repo ?? "trantor";
   return `<div class="k">${row.applies?.length ? "pin bump" : `merge to ${esc(repo)}`} · ${esc(ctx.hm(row.at))}${row.pr ? ` · #${row.pr.number}` : ""} · ${esc(sha7(row))}</div><div class="n">${esc(row.tasks[0] ?? "pin bump")}</div>`
     + `${ctx.ties.map((t) => runRow(row, t, ctx)).join("")}${failHtml(row, ctx, "k")}`
     + `${cross(row) ? `<div class="k">another repo's merge: nothing applies until the pin bump</div>` : ""}<div class="k">click for its runs</div>`;
