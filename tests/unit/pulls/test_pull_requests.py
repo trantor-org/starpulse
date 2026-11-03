@@ -8,12 +8,12 @@ import pytest
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import Entry
+from starpulse.pulls.adapters.outbound import github
+from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
 from starpulse.pulls.adapters.outbound.pull_requests import GhUnavailableError, PullRequests, query_github
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.pulls.application.commands.ci_trail import parse
-from starpulse.pulls.adapters.outbound import github
-from starpulse.pulls.adapters.outbound.github import GitHub
 from starpulse.pulls.model.pins import Repo
 from starpulse.runtime.adapter_kit import task
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from starpulse.pulls.adapters.outbound.github import _RETRY_WAIT_S, GitHub
+from starpulse.pulls.adapters.outbound.pin_reader import _RETRY_WAIT_S, GitHub
 from starpulse.pulls.model.pins import Repo, build_commit, contained, link
 
 REPOS = (Repo(name="skills", path="skills", applied_by="pin-bump"),)

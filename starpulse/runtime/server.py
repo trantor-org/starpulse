@@ -217,7 +217,7 @@ from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor, moves_
 from starpulse.pulls.adapters.inbound.unblock import UNBLOCK_S, Unblocker
 from starpulse.pulls.adapters.outbound.pull_requests import PullRequests
 from starpulse.pulls.adapters.outbound.pull_store import PullSync
-from starpulse.pulls.adapters.outbound.github import GitHub
+from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.model.pins import LiveBuild, running_commit
 from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
 from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
