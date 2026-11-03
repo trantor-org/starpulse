@@ -142,6 +142,12 @@ class Started(_Api):
     at: float
 
 
+class Resumed(_Api):
+    task: str
+    url: str
+    recorded: bool
+
+
 class RunStarted(_Api):
     runId: str
 

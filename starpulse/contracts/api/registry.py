@@ -42,6 +42,7 @@ from starpulse.contracts.api.dto.requests import (
     RatingRequest,
     ReleaseRequest,
     RestoreRequest,
+    ResumeRequest,
     RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
@@ -74,6 +75,7 @@ from starpulse.contracts.api.dto.results import (
     Parked,
     Rated,
     Restored,
+    Resumed,
     Retired,
     RetiredImported,
     Reviewed,
@@ -161,6 +163,7 @@ RESPONSES: dict[str, Any] = {
 #: Each write route's request body.
 REQUESTS: dict[str, type[BaseModel]] = {
     "/api/move": MoveRequest,
+    "/api/resume": ResumeRequest,
     "/api/start": StartRequest,
     "/api/edit": EditRequest,
     "/api/archive": ArchiveRequest,
@@ -223,6 +226,7 @@ BODIES: dict[str, Any] = {
     "task_records": TaskRecords,
     "move": Moved | MovedEach | SkillRefusal | ApiError,
     "start": Started | SkillRefusal | ApiError,
+    "resume": Resumed | ApiError,
     "edit": Edited | StaleEdit | SkillRefusal | ApiError,
     "archive": Archived | ArchivedEach | SkillRefusal | ApiError,
     "verdict": Judged | SkillRefusal | ApiError,
