@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event, select, text, update
-from starpulse.event_log.event_log import Entry, EventLog, Tail, prune_forever
+from starpulse.event_log.event_log import Entry, EventLog, Tail
 from starpulse.event_log.migrate import migrate
 from starpulse.event_log.tables import events, gaps
 
@@ -114,7 +114,7 @@ def test_appends_from_several_processes_are_all_read_once_in_cursor_order(
     assert [e.id for e in entries] == sorted(e.id for e in entries)
 
 
-def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str, tmp_path: Path) -> None:
+def test_a_reader_left_behind_by_the_prune_records_a_gap(database_url: str, tmp_path: Path) -> None:
     log = EventLog(database_url)
     for n in range(1, 5):
         log.publish("machine:events", {"n": n})
@@ -126,20 +126,8 @@ def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str
         db.execute(update(events).where(events.c.id.between(1, 5)).values(at=time.time() - 10 * 86400))
     reader.cursor = 1
 
-    stop = threading.Event()
-    timer = threading.Thread(
-        target=prune_forever,
-        args=(log,),
-        kwargs={"retention_days": 7, "archive_dir": tmp_path / "archive", "stop": stop},
-    )
-    timer.start()
-    try:
-        deadline = time.monotonic() + 10
-        while log.oldest() != 6 and time.monotonic() < deadline:
-            time.sleep(0.05)
-    finally:
-        stop.set()
-        timer.join()
+    assert log.prune(7 * 86400, archive_dir=tmp_path / "archive") == 5
+    assert log.oldest() == 6
 
     assert [e.id for e in reader.poll()] == [6, 7]
     with log.engine.connect() as db:

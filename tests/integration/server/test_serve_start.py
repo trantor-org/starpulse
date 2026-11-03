@@ -22,8 +22,8 @@ _NOT_YET = ("sqlalchemy", "alembic", "starpulse.runtime.assembly")
 # subpackages add five `__init__` modules (TASK-9254), and Sessions' two add two more (TASK-9255).
 # The `[claude_code]` table's parser is one more (TASK-10783), and the pins reader with the `Transport` it reads
 # through are two more (TASK-10893). The `[github]` table's parser and the REST client's move into role
-# subpackages add four (TASK-11636).
-_STARPULSE_MODULES = 209
+# subpackages add four (TASK-11636). The `[sweeper]` table's parser and its package `__init__` are two more (TASK-11658).
+_STARPULSE_MODULES = 211
 
 _FIRST_CHILD = """
 import json, sys

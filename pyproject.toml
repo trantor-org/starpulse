@@ -97,7 +97,7 @@ layers = [
     "starpulse.views",
     "starpulse.cli",
     # producers
-    "starpulse.pulls | starpulse.scheduler | starpulse.sessions",
+    "starpulse.pulls | starpulse.scheduler | starpulse.sessions | starpulse.sweeper",
     "starpulse.runs | starpulse.harness_telemetry",
     # derived
     "starpulse.flow_metrics",
@@ -297,6 +297,21 @@ forbidden_modules = [
     "starpulse.scheduler",
     "starpulse.harness_telemetry", "starpulse.sessions",
     "starpulse.pulls",
+]
+
+[[tool.importlinter.contracts]]
+id = "context-sweeper"
+name = "Sweeper imports no other StarPulse context"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["starpulse.sweeper"]
+forbidden_modules = [
+    "starpulse.board",
+    "starpulse.scheduler",
+    "starpulse.flow_metrics",
+    "starpulse.harness_telemetry", "starpulse.sessions",
+    "starpulse.pulls",
+    "starpulse.runs",
 ]
 
 [[tool.importlinter.contracts]]

@@ -38,7 +38,7 @@ _JOIN_S = 5.0
 
 
 #: The contexts that always run here, in start order; the run Adapters follow them (`adapter_contexts`).
-BACKGROUND_CONTEXTS = ("pulls", "scheduler", "runs", "flow-metrics", "search", "board")
+BACKGROUND_CONTEXTS = ("pulls", "scheduler", "runs", "flow-metrics", "search", "board", "sweeper")
 
 
 def contexts_of(config: Config) -> list[str]:
@@ -110,7 +110,7 @@ def default_starters(
 ) -> dict[str, Starter]:
     """The starter of each context in `names`, all over `log` and one board. Raises `ValueError` for a name that is no
     context or a `[[runs]]` instance whose adapter the config cannot load."""
-    from starpulse.runtime.assembly import assemble, keep_event_log, own_pull_merged, worker_board
+    from starpulse.runtime.assembly import assemble, own_pull_merged, prune_steps, worker_board
     from starpulse.runtime.assembly import history_store as build_history_store
     from starpulse.runtime.config import load
     from starpulse.runtime.read_model_follow import follow
@@ -178,8 +178,12 @@ def default_starters(
 
         return flow_metrics_worker.start(
             config, path, base, log, own, load=load, assemble=shared, history_store=history_store,
-            keep_event_log=keep_event_log,
         )  # fmt: skip
+
+    def sweeper(own: threading.Event) -> Callable[[], None]:
+        from starpulse.sweeper.bin import sweeper_worker
+
+        return sweeper_worker.start(config, path, base, log, own, load=load, prune=prune_steps(log, config, base))
 
     def search(own: threading.Event) -> Callable[[], None]:
         from starpulse.board.bin import search_worker
@@ -199,7 +203,7 @@ def default_starters(
 
     known: dict[str, Starter] = {
         "board": board, "pulls": pulls, "scheduler": scheduler, "runs": runs, "flow-metrics": flow_metrics,
-        "search": search, "claude-code": claude_code, "github": github, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
+        "search": search, "sweeper": sweeper, "claude-code": claude_code, "github": github, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
     }  # fmt: skip
     unknown = [name for name in names if name not in known]
     if unknown:

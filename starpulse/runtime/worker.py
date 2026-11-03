@@ -6,6 +6,7 @@ Runs context, run by `starpulse.runs.bin.runs_worker`; `dagu`, `github-actions`,
 `starpulse.runs.bin.adapter_worker`; `flow-metrics` is the Flow Metrics context, run by
 `starpulse.flow_metrics.bin.flow_metrics_worker`; `search` is the Search context's embedding catch-up, run by
 `starpulse.board.bin.search_worker`; `board` is the Board context's writer (the Start Criteria dating), run by `starpulse.board.bin.board_worker`;
+`sweeper` is the one leased sweeper, run by `starpulse.sweeper.bin.sweeper_worker`;
 `contexts` runs every one of those but `api` as threads of this one process (`starpulse.runtime.contexts`).
 
 `pulls` is run by `starpulse.pulls.bin.pulls_worker`. This module is the composition root of the workers: it builds the
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 #: The run Adapters that run as their own workers (`starpulse.runs.bin.adapter_worker`): `serve`'s `contexts` child runs one as a thread for each that a `[[runs]]` instance names.
 OPT_IN = ("dagu", "github-actions", "systemd", "temporal")
-CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", *OPT_IN, "contexts")
+CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", "sweeper", *OPT_IN, "contexts")
 
 
 def worker_parser() -> argparse.ArgumentParser:
@@ -140,7 +141,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     if args.context == "flow-metrics":
         from starpulse.flow_metrics.bin import flow_metrics_worker
-        from starpulse.runtime.assembly import assemble, keep_event_log
+        from starpulse.runtime.assembly import assemble
 
         return flow_metrics_worker.main(
             argv,
@@ -148,9 +149,13 @@ def main(argv: list[str] | None = None) -> None:
             **loader,
             assemble=assemble,
             history_store=history_store,
-            keep_event_log=keep_event_log,
             hold=hold,
         )
+    if args.context == "sweeper":
+        from starpulse.runtime.assembly import prune_steps
+        from starpulse.sweeper.bin import sweeper_worker
+
+        return sweeper_worker.main(argv, parser, **loader, prune=prune_steps, hold=hold)
     if args.context == "search":
         from starpulse.board.bin import search_worker
 

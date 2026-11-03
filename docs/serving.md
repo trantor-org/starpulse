@@ -116,6 +116,36 @@ On Linux `serve` starts one preloaded process before any thread, `python -m star
 
 `[worker_memory.api]` and `[worker_memory.contexts]` override either key for a child (whole megabytes, 1 or more; `soft_mb` below `hard_mb`). An unknown child, an unknown key or a soft limit not below the hard one is refused at load by name, and so is a per-context key from before the contexts shared a process (`[worker_memory.pulls]`, `[worker_memory.scheduler]`, `[worker_memory.dagu]` and the rest): the message names `[worker_memory.contexts]` as the replacement. The `api` child holds the telemetry window and the read model, so its limit is set above the peak the deployment measures; Trantor's `starpulse.toml` does.
 
+### The sweeper
+
+`starpulse worker sweeper` (a `ctx-sweeper` thread of the `contexts` child under `serve`) is the one reconciler. It
+passes once at start and every `[sweeper] interval_s` (default 3600 s). A pass runs each kind in order, then the
+housekeeping steps, and writes one journal line (`sweeper: pass N: readers=0 ...`) naming each kind and its correction
+count. The built-in `readers` kind wakes a log reader that has entries waiting and made no progress since the last pass,
+and counts it. The event-log prune and the signal prune are housekeeping steps of the pass.
+
+A project declares more kinds and housekeeping as commands, each printing its result on its last line, a count (`3`) or
+`{"corrected": 3, "sampled": 8}`:
+
+```toml
+[sweeper]
+interval_s = 3600
+
+[[sweeper.kinds]]
+name = "sessions"
+command = ["bin/sweep-sessions"]
+timeout_s = 120
+
+[[sweeper.housekeeping]]
+name = "tmp-purge"
+command = ["bin/purge-tmp"]
+```
+
+One process holds the `sweeper` lease row of `starpulse_leases` (its pid). A second `starpulse worker sweeper` exits 1
+naming the holder; a row whose pid is gone is taken over. `/metrics` carries `starpulse_sweeper_passes_total`,
+`starpulse_sweeper_samples_total{kind}`, `starpulse_sweeper_corrections_total{kind}` and
+`starpulse_sweeper_errors_total{kind}`. A kind or step that fails or times out counts an error and the pass goes on.
+
 ### What the page shows when the server restarts
 
 The page keeps its last Board on screen while the connection is down and says why in the navigator's header, where the dot
@@ -549,8 +579,8 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 
 - `tracker_url` (text): The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's own Kanban.
 - `database_url` (text): The SQLAlchemy URL of the history store; unset, `starpulse-history.sqlite` beside the config. The credentials never live here; they come from the driver's environment, such as `PGPASSWORD`.
-- `event_log_retention_days` (whole number, 1 or more, default `7`): How long `serve` keeps the event log's rows: it prunes older ones at start and hourly, so the table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept row and records the span it missed in `starpulse_gaps`. A whole number of days.
-- `event_log_archive_dir` (text, default `"starpulse-archive"`): Where `serve`'s History child writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to this file unless absolute.
+- `event_log_retention_days` (whole number, 1 or more, default `7`): How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept row and records the span it missed in `starpulse_gaps`. A whole number of days.
+- `event_log_archive_dir` (text, default `"starpulse-archive"`): Where the sweeper writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to this file unless absolute.
 - `telemetry_loki_url` (text): The Loki base URL the harness adapters push each telemetry signal to, one log line per signal in `{job="starpulse-signals"}`, and the analytics views read back. Unset, the signals go to the event log. Give the stream its own Loki `retention_stream` rule to keep it as long as the event log.
 - `slow_read_seconds` (number, above 0, default `1.0`): The seconds a `GET /api/pulls` or `GET /api/task/<id>` read may take, from accept to the last byte written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of the same route running when it began, and `busy` and `streams`, the request workers in use (the read itself included) and the streams open when it was accepted. No other route is timed.
 - `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds its two worker children to, in megabytes (see Worker processes), set as `[worker_memory.api]` and `[worker_memory.contexts]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `api` 4096/8192, `contexts` 1536/3072.
@@ -581,6 +611,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `cursor_context` (table): Holds Cursor task sessions to a context limit (see docs/sources.md).
 - `claude_code` (table): Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).
 - `github` (table): Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).
+- `sweeper` (table): Sets the sweeper's pass `interval_s` (default 3600) and declares its kinds (`[[sweeper.kinds]]`) and housekeeping (`[[sweeper.housekeeping]]`) as commands, each with a `name`, a `command` argv and an optional `timeout_s`; a kind prints its correction count (see docs/serving.md).
 - `read_model` (any value, retired): Retired: the read model is the only board reader; accepted so a config that still names it loads.
 
 #### [ci]
@@ -1023,11 +1054,11 @@ earlier history; the stored-history replay judges it from the initial state. Gua
 
 ## Event log archive
 
-Before `serve` deletes an event-log row it appends the row to a gzip JSONL file under `event_log_archive_dir`, one
+Before the sweeper deletes an event-log row it appends the row to a gzip JSONL file under `event_log_archive_dir`, one
 file per UTC day of the row's `at`, named `YYYY-MM-DD.jsonl.gz`. A later pass that prunes more of a day appends to that
 day's file, which is then several gzip members in a row; `gzip` and DuckDB read them as one stream. A pass writes and
 fsyncs a batch of rows, 1000 at most, before it deletes that batch, so a write that fails (disk full, directory not
-writable) deletes nothing and logs the failure, and the next hourly pass retries. A crash between the write and the
+writable) deletes nothing and logs the failure, and the next pass retries. A crash between the write and the
 delete archives those rows again, so a reader of the archive keys a row on `id`.
 
 Each line is one JSON object with every column of `starpulse_events`:

@@ -3,8 +3,8 @@
 Every producer on the host appends one row (`EventLog.publish`), which never raises, so reporting an event never
 fails the work that caused it. Every reader keeps its own cursor, the `id` of the last row it passed, and
 polls `id > cursor` (`Tail`); there are no consumer groups. A tail without a cursor replays the retained log, one
-given a cursor resumes after it, and `EventLog.prune` drops rows older than a retention, which `serve` runs hourly
-(`prune_forever`) after writing each row to its UTC day's gzip JSONL archive file. A cursor below the oldest retained row means rows were pruned unread, which is recorded in
+given a cursor resumes after it, and `EventLog.prune` drops rows older than a retention, which the sweeper runs each pass
+(`runtime.assembly.prune_steps`) after writing each row to its UTC day's gzip JSONL archive file. A cursor below the oldest retained row means rows were pruned unread, which is recorded in
 `starpulse_gaps`.
 
 The database is the history store's: SQLite by default (in WAL mode, so processes on the host append while the
@@ -542,34 +542,6 @@ class Tail:
                 stop.wait(self.interval)
             elif len(entries) < self.batch:
                 self.log.wait_for_append(seen, self.interval, stop)
-
-
-def prune_forever(
-    log: EventLog,
-    *,
-    retention_days: int,
-    archive_dir: Path,
-    stop: threading.Event,
-    interval: float = 3600,
-    signal_keep: float | None = None,
-) -> None:
-    """Prune the rows older than `retention_days` into `archive_dir` at start and then every `interval` seconds until
-    `stop` is set; the same pass deletes the `starpulse_signals` and `starpulse_signal_folds` rows more than `signal_keep`
-    seconds old when it is given. A pass that fails is logged and the next one retries, so a database that was briefly away, or an
-    archive that could not be written, does not end the pruning."""
-    while True:
-        try:
-            if pruned := log.prune(retention_days * 86400, archive_dir=archive_dir):
-                logger.info("EventLog: pruned %d rows older than %d days", pruned, retention_days)
-        except Exception:  # the database is unreachable or locked; the next pass retries
-            logger.exception("EventLog: prune failed; retrying in %ss", interval)
-        try:
-            if signal_keep is not None and (pruned := log.prune_signals(signal_keep)):
-                logger.info("EventLog: pruned %d signals older than %d s", pruned, signal_keep)
-        except Exception:  # the next pass retries
-            logger.exception("EventLog: signal prune failed; retrying in %ss", interval)
-        if stop.wait(interval):
-            return
 
 
 def _archive(directory: Path, rows: Sequence[Any]) -> None:

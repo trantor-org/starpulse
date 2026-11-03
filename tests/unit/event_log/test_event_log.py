@@ -19,7 +19,6 @@ from starpulse.event_log.event_log import (
     EventLog,
     Tail,
     _sqlite_pragmas,
-    prune_forever,
 )
 from starpulse.event_log.migrate import migrate
 from starpulse.event_log.tables import events
@@ -555,46 +554,6 @@ def test_an_instances_database_never_gains_the_hubs_rollups(tmp_path: Path) -> N
     names = set(inspect(log.engine).get_table_names())
     assert "starpulse_events" in names
     assert "starpulse_day_rollups" not in names
-
-
-class _SpyLog:
-    """Stands in for the log at the one seam under test, what the timer asks it to prune; `outcomes` is what each
-    pass does, an exception to raise or None, and the last pass stops the timer."""
-
-    def __init__(self, stop: threading.Event, outcomes: list[Exception | None]) -> None:
-        self.stop = stop
-        self.outcomes = outcomes
-        self.retentions: list[float] = []
-        self.archives: list[Path] = []
-
-    def prune(self, retention: float, *, archive_dir: Path) -> int:
-        self.retentions.append(retention)
-        self.archives.append(archive_dir)
-        outcome = self.outcomes[len(self.retentions) - 1]
-        if len(self.retentions) == len(self.outcomes):
-            self.stop.set()
-        if outcome is not None:
-            raise outcome
-        return 0
-
-
-def test_the_prune_timer_prunes_at_start_and_every_interval_with_the_configured_days_in_seconds(archive: Path) -> None:
-    stop = threading.Event()
-    spy = _SpyLog(stop, [None, None, None])
-
-    prune_forever(spy, retention_days=7, archive_dir=archive, stop=stop, interval=0.001)
-
-    assert spy.retentions == [7 * 86400] * 3
-    assert spy.archives == [archive] * 3
-
-
-def test_a_prune_pass_that_fails_is_retried_on_the_next_interval(archive: Path) -> None:
-    stop = threading.Event()
-    spy = _SpyLog(stop, [OperationalError("DELETE", {}, Exception("database is locked")), None])
-
-    prune_forever(spy, retention_days=1, archive_dir=archive, stop=stop, interval=0.001)
-
-    assert spy.retentions == [86400, 86400]
 
 
 def _day(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0) -> float:

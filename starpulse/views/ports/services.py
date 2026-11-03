@@ -61,3 +61,4 @@ class Services:
     conformance_metrics: Callable[[], str] | None = None
     lane_sweep_metrics: Callable[[], str] | None = None
     autopilot_metrics: Callable[[], str] | None = None
+    sweeper_metrics: Callable[[], str] | None = None
