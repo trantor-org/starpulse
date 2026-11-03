@@ -597,7 +597,7 @@ LEDGER_MACHINE = {
 }
 CUE = {"event": "MERGED", "dag": "ci/apply", "on": "merge", "resolves": "forced", "state": "done"}
 MERGED_PR = {
-    "url": "https://github.com/o/trantor/pull/7",
+    "url": "https://github.com/o/example/pull/7",
     "merged": True,
     "merge_sha": SHA,
     "merged_at": "2026-10-07T00:01:00Z",
@@ -645,7 +645,7 @@ def test_the_snapshot_carries_each_merge_with_its_tasks_pr_cued_run_and_per_step
 
     (row,) = _head(feed, "MERGED")
     assert (row["sha"], row["tasks"]) == (SHA, ["TASK-1"])
-    assert row["pr"] == {"repo": "trantor", "number": 7, "url": MERGED_PR["url"]}
+    assert row["pr"] == {"repo": "example", "number": 7, "url": MERGED_PR["url"]}
     run = row["runs"]["ci/apply"]
     assert (run["runId"], run["status"], run["inferred"], run["ambiguous"]) == ("r1", "succeeded", False, 0)
     assert run["steps"] == {"validate": "succeeded", "deploy": "succeeded"}
@@ -997,7 +997,7 @@ def test_the_open_failure_is_the_newest_when_several_merges_are_pinned() -> None
             "TASK-0": [
                 {
                     **MERGED_PR,
-                    "url": "https://github.com/o/trantor/pull/6",
+                    "url": "https://github.com/o/example/pull/6",
                     "merge_sha": "b" * 40,
                     "merged_at": "2026-10-06T23:00:00Z",
                 }
@@ -1037,8 +1037,8 @@ def _merged(n: int, minute: int, day: int = 7) -> tuple[str, list[dict]]:
     return f"TASK-{n}", [
         {
             "number": n,
-            "repo": "o/trantor",
-            "url": f"https://github.com/o/trantor/pull/{n}",
+            "repo": "o/example",
+            "url": f"https://github.com/o/example/pull/{n}",
             "checks": "pass",
             "merged": True,
             "merge_sha": f"{n:040x}",

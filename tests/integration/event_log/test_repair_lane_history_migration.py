@@ -20,29 +20,29 @@ BEFORE = "0034"
 #: moves, but dated by the file's age (200), so it sorts between Ready and In Progress. Its twin, dated by the floor,
 #: closes the path. `T-2` really moved on from `completed` and back, in the order the moves landed.
 SETTLED = [
-    ("trantor/T-1@ready@100.0", "T-1", None, "ready", 100.0),
-    ("trantor/T-1@in_progress@300.0", "T-1", "ready", "in_progress", 300.0),
-    ("trantor/T-1@done@400.0", "T-1", "in_progress", "done", 400.0),
-    ("trantor/T-1@completed@200.0", "T-1", "done", "completed", 200.0),
-    ("trantor/T-1@completed@400.0", "T-1", "completed", "completed", 400.0),
-    ("trantor/T-2@done@100.0", "T-2", None, "done", 100.0),
-    ("trantor/T-2@completed@200.0", "T-2", "done", "completed", 200.0),
-    ("trantor/T-2@done@300.0", "T-2", "completed", "done", 300.0),
-    ("trantor/T-2@completed@400.0", "T-2", "done", "completed", 400.0),
+    ("example/T-1@ready@100.0", "T-1", None, "ready", 100.0),
+    ("example/T-1@in_progress@300.0", "T-1", "ready", "in_progress", 300.0),
+    ("example/T-1@done@400.0", "T-1", "in_progress", "done", 400.0),
+    ("example/T-1@completed@200.0", "T-1", "done", "completed", 200.0),
+    ("example/T-1@completed@400.0", "T-1", "completed", "completed", 400.0),
+    ("example/T-2@done@100.0", "T-2", None, "done", 100.0),
+    ("example/T-2@completed@200.0", "T-2", "done", "completed", 200.0),
+    ("example/T-2@done@300.0", "T-2", "completed", "done", 300.0),
+    ("example/T-2@completed@400.0", "T-2", "done", "completed", 400.0),
 ]
 
 #: One task's rows as two writers left them, in the order they landed: the replayed board events (a UUID, a status
 #: as spelled, the board's time) and the lane stream (a lane id, the feed's later clock), each chaining off whichever
 #: row came before it.
 TWO_WRITERS = [
-    ("trantor/u1", "T-1", None, "Waiting", 100.0),
-    ("trantor/T-1@waiting@160.0", "T-1", "Waiting", "waiting", 160.0),  # u1 seen again, a minute late
-    ("trantor/u2", "T-1", "waiting", "Ready", 200.0),
-    ("trantor/u3", "T-1", "Ready", "In Progress", 300.0),
-    ("trantor/T-1@ready@250.0", "T-1", "In Progress", "ready", 250.0),  # u2 seen again, late
-    ("trantor/T-1@in_progress@360.0", "T-1", "ready", "in_progress", 360.0),  # u3 seen again, late
-    ("trantor/T-1@review@900.0", "T-1", "in_progress", "review", 900.0),  # a move only the stream saw
-    ("trantor/u4", "T-1", "review", "Review", 901.0),  # the same move, spelled by the replay
+    ("example/u1", "T-1", None, "Waiting", 100.0),
+    ("example/T-1@waiting@160.0", "T-1", "Waiting", "waiting", 160.0),  # u1 seen again, a minute late
+    ("example/u2", "T-1", "waiting", "Ready", 200.0),
+    ("example/u3", "T-1", "Ready", "In Progress", 300.0),
+    ("example/T-1@ready@250.0", "T-1", "In Progress", "ready", 250.0),  # u2 seen again, late
+    ("example/T-1@in_progress@360.0", "T-1", "ready", "in_progress", 360.0),  # u3 seen again, late
+    ("example/T-1@review@900.0", "T-1", "in_progress", "review", 900.0),  # a move only the stream saw
+    ("example/u4", "T-1", "review", "Review", 901.0),  # the same move, spelled by the replay
 ]
 
 

@@ -14,7 +14,7 @@ OLD_POINTER, NEW_POINTER = "a0" * 20, "d0" * 20
 
 
 def pull(repo: str, number: int, sha: str, merged_at: str) -> tuple[str, dict]:
-    url = f"https://github.com/trantor-org/{repo}/pull/{number}"
+    url = f"https://github.com/acme/{repo}/pull/{number}"
     return url, {"number": number, "url": url, "merged": True, "merge_sha": sha, "merged_at": merged_at}
 
 
@@ -44,10 +44,10 @@ def test_a_child_merge_links_to_the_first_parent_merge_whose_pin_bump_includes_i
     child_url, child = pull("skills", 7, CHILD_SHA, "2026-10-07T10:00:00Z")
     records = pulls(
         (child_url, child),
-        pull("trantor", 1, "p1" * 20, "2026-10-07T09:00:00Z"),
-        pull("trantor", 2, "p2" * 20, "2026-10-07T11:00:00Z"),
-        pull("trantor", 3, "p3" * 20, "2026-10-07T12:00:00Z"),
-        pull("trantor", 4, "p4" * 20, "2026-10-07T13:00:00Z"),
+        pull("example", 1, "p1" * 20, "2026-10-07T09:00:00Z"),
+        pull("example", 2, "p2" * 20, "2026-10-07T11:00:00Z"),
+        pull("example", 3, "p3" * 20, "2026-10-07T12:00:00Z"),
+        pull("example", 4, "p4" * 20, "2026-10-07T13:00:00Z"),
     )
     git = Git(
         {"p1" * 20: OLD_POINTER, "p2" * 20: OLD_POINTER, "p3" * 20: NEW_POINTER, "p4" * 20: NEW_POINTER},
@@ -55,25 +55,25 @@ def test_a_child_merge_links_to_the_first_parent_merge_whose_pin_bump_includes_i
     )
 
     assert linked(records, git)[child_url]["applied_by"] == "p3" * 20
-    assert ("trantor-org/trantor", "p1" * 20, "skills") not in git.asked
+    assert ("acme/example", "p1" * 20, "skills") not in git.asked
 
 
 def test_a_child_merge_stays_unapplied_until_a_parent_merge_pins_it() -> None:
     child_url, child = pull("skills", 7, CHILD_SHA, "2026-10-07T10:00:00Z")
-    records = pulls((child_url, child), pull("trantor", 2, "p2" * 20, "2026-10-07T11:00:00Z"))
+    records = pulls((child_url, child), pull("example", 2, "p2" * 20, "2026-10-07T11:00:00Z"))
 
     assert linked(records, Git({"p2" * 20: OLD_POINTER}, {}))[child_url]["applied_by"] is None
 
 
 def test_a_parent_merge_whose_pointer_cannot_be_read_does_not_apply_the_child() -> None:
     child_url, child = pull("skills", 7, CHILD_SHA, "2026-10-07T10:00:00Z")
-    records = pulls((child_url, child), pull("trantor", 2, "p2" * 20, "2026-10-07T11:00:00Z"))
+    records = pulls((child_url, child), pull("example", 2, "p2" * 20, "2026-10-07T11:00:00Z"))
 
     assert linked(records, Git({"p2" * 20: None}, {}))[child_url]["applied_by"] is None
 
 
 def test_a_merge_in_a_repository_the_parent_does_not_pin_carries_no_link() -> None:
-    url, record = pull("trantor", 2, "p2" * 20, "2026-10-07T11:00:00Z")
+    url, record = pull("example", 2, "p2" * 20, "2026-10-07T11:00:00Z")
 
     assert "applied_by" not in linked(pulls((url, record)), Git({}, {}))[url]
 
@@ -97,42 +97,42 @@ class Gh:
 
 
 def test_the_pointer_a_parent_merge_pins_is_read_once_and_remembered() -> None:
-    gh = Gh({"repos/trantor-org/trantor/contents/skills?ref=p1": {"sha": NEW_POINTER}})
+    gh = Gh({"repos/acme/example/contents/skills?ref=p1": {"sha": NEW_POINTER}})
     github = GitHub(transport=gh)
 
-    assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(2)] == [NEW_POINTER] * 2
+    assert [github.pointer("acme/example", "p1", "skills") for _ in range(2)] == [NEW_POINTER] * 2
     assert len(gh.asked) == 1
 
 
 def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypatch: pytest.MonkeyPatch) -> None:
-    gh = Gh({"repos/trantor-org/trantor/commits/HEAD": {"sha": NEW_POINTER}})
+    gh = Gh({"repos/acme/example/commits/HEAD": {"sha": NEW_POINTER}})
     clock = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     github = GitHub(transport=gh)
 
-    assert [github.head("trantor-org/trantor") for _ in range(2)] == [NEW_POINTER] * 2
+    assert [github.head("acme/example") for _ in range(2)] == [NEW_POINTER] * 2
     clock[0] += 61
-    github.head("trantor-org/trantor")
+    github.head("acme/example")
 
     assert len(gh.asked) == 2
     assert github.answers() == {"pointers": [], "reaches": []}
 
 
 def test_a_failed_read_is_named_by_failing_until_a_later_read_of_it_answers(monkeypatch: pytest.MonkeyPatch) -> None:
-    head, contents = "repos/trantor-org/trantor/commits/HEAD", "repos/trantor-org/trantor/contents/skills?ref=p1"
+    head, contents = "repos/acme/example/commits/HEAD", "repos/acme/example/contents/skills?ref=p1"
     gh = Gh({})
     clock = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     github = GitHub(transport=gh)
 
-    github.head("trantor-org/trantor")
-    github.pointer("trantor-org/trantor", "p1", "skills")
+    github.head("acme/example")
+    github.pointer("acme/example", "p1", "skills")
     assert github.failing() == [head, contents]
 
     gh.answers = {head: {"sha": NEW_POINTER}, contents: {"sha": NEW_POINTER}}
     clock[0] += 301
-    github.head("trantor-org/trantor")
-    github.pointer("trantor-org/trantor", "p1", "skills")
+    github.head("acme/example")
+    github.pointer("acme/example", "p1", "skills")
     assert github.failing() == []
 
 
@@ -147,9 +147,9 @@ def test_a_path_github_answers_not_found_is_kept_and_saved_rather_than_asked_aga
     gh = failing(404)
     github = GitHub(transport=gh)
 
-    assert [github.pointer("trantor-org/unraid", "p1", "skills") for _ in range(2)] == [None, None]
+    assert [github.pointer("acme/unraid", "p1", "skills") for _ in range(2)] == [None, None]
     assert len(gh.asked) == 1
-    assert github.answers()["pointers"] == [["trantor-org/unraid", "p1", "skills", None]]
+    assert github.answers()["pointers"] == [["acme/unraid", "p1", "skills", None]]
 
 
 @pytest.mark.parametrize("status", [401, 403, 500, 502])
@@ -161,10 +161,10 @@ def test_a_pointer_read_that_fails_without_a_not_found_answer_is_asked_again_onl
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     github = GitHub(transport=gh)
 
-    assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(3)] == [None] * 3
+    assert [github.pointer("acme/example", "p1", "skills") for _ in range(3)] == [None] * 3
     assert len(gh.asked) == 1
     clock[0] += _RETRY_WAIT_S
-    assert github.pointer("trantor-org/trantor", "p1", "skills") is None
+    assert github.pointer("acme/example", "p1", "skills") is None
     assert len(gh.asked) == 2
     assert github.answers()["pointers"] == []
 
@@ -175,17 +175,17 @@ def test_a_compare_that_fails_is_asked_again_only_after_the_retry_wait(monkeypat
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     github = GitHub(transport=gh)
 
-    assert [github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) for _ in range(3)] == [False] * 3
+    assert [github.reaches("acme/skills", CHILD_SHA, NEW_POINTER) for _ in range(3)] == [False] * 3
     assert len(gh.asked) == 1
     clock[0] += _RETRY_WAIT_S
-    github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER)
+    github.reaches("acme/skills", CHILD_SHA, NEW_POINTER)
     assert len(gh.asked) == 2
 
 
 def test_a_compare_that_answers_not_found_answers_not_contained_and_keeps_nothing() -> None:
     github = GitHub(transport=failing(404))
 
-    assert github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is False
+    assert github.reaches("acme/skills", CHILD_SHA, NEW_POINTER) is False
     assert github.answers()["reaches"] == []
 
 
@@ -196,24 +196,24 @@ def test_a_saved_pointer_that_is_not_a_commit_is_dropped_on_restore_so_the_next_
     github.restore(
         {
             "pointers": [
-                ["trantor-org/unraid", "p1", "skills", body],
-                ["trantor-org/trantor", "p2", "skills", NEW_POINTER],
+                ["acme/unraid", "p1", "skills", body],
+                ["acme/example", "p2", "skills", NEW_POINTER],
             ],
-            "reaches": [["trantor-org/skills", CHILD_SHA, body, False]],
+            "reaches": [["acme/skills", CHILD_SHA, body, False]],
         }
     )
 
-    assert github.answers() == {"pointers": [["trantor-org/trantor", "p2", "skills", NEW_POINTER]], "reaches": []}
+    assert github.answers() == {"pointers": [["acme/example", "p2", "skills", NEW_POINTER]], "reaches": []}
 
 
 def test_a_path_a_merge_does_not_pin_is_a_remembered_answer_that_is_never_asked_of_github() -> None:
     gh = Gh({})
     github = GitHub(transport=gh)
 
-    github.restore({"pointers": [["trantor-org/unraid", "p1", "skills", None]]})
+    github.restore({"pointers": [["acme/unraid", "p1", "skills", None]]})
 
-    assert github.pointer("trantor-org/unraid", "p1", "skills") is None
-    assert github.answers()["pointers"] == [["trantor-org/unraid", "p1", "skills", None]]
+    assert github.pointer("acme/unraid", "p1", "skills") is None
+    assert github.answers()["pointers"] == [["acme/unraid", "p1", "skills", None]]
     assert gh.asked == []
 
 
@@ -221,16 +221,16 @@ def test_a_path_a_merge_does_not_pin_is_a_remembered_answer_that_is_never_asked_
     ("status", "contained"), [("ahead", True), ("identical", True), ("behind", False), ("diverged", False)]
 )
 def test_a_pointer_contains_a_merge_when_it_is_that_commit_or_ahead_of_it(status: str, contained: bool) -> None:
-    gh = Gh({f"repos/trantor-org/skills/compare/{CHILD_SHA}...{NEW_POINTER}": {"status": status}})
+    gh = Gh({f"repos/acme/skills/compare/{CHILD_SHA}...{NEW_POINTER}": {"status": status}})
 
-    assert GitHub(transport=gh).reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is contained
+    assert GitHub(transport=gh).reaches("acme/skills", CHILD_SHA, NEW_POINTER) is contained
 
 
 def test_a_transport_that_cannot_connect_answers_that_nothing_is_pinned() -> None:
     def down(method: str, path: str, body: dict | None) -> tuple[int, dict]:
         raise ConnectionError("unreachable")
 
-    assert GitHub(transport=down).pointer("trantor-org/trantor", "p1", "skills") is None
+    assert GitHub(transport=down).pointer("acme/example", "p1", "skills") is None
 
 
 def page(*commits: tuple[str, str], more: bool = False) -> dict:

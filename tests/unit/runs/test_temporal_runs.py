@@ -83,7 +83,7 @@ class Sink:
 
 
 LIFECYCLE = execution(
-    "task-lifecycle/TASK-10434/trantor-org/trantor", "run-1", "task_lifecycle", "RUNNING", "2026-10-31T14:51:32.261922Z"
+    "task-lifecycle/TASK-10434/acme/example", "run-1", "task_lifecycle", "RUNNING", "2026-10-31T14:51:32.261922Z"
 )
 FAILED = execution(
     "TASK-10232", "run-2", "task_phases", "FAILED", "2026-10-30T23:18:56.531623Z", "2026-10-31T05:18:59.892121Z"
@@ -109,7 +109,7 @@ def by_name(dags: list[dict]) -> dict[str, dict]:
 
 
 def test_a_workflow_id_names_its_task_or_none() -> None:
-    assert temporal.task_of("task-lifecycle/TASK-10434/trantor-org/trantor") == "TASK-10434"
+    assert temporal.task_of("task-lifecycle/TASK-10434/acme/example") == "TASK-10434"
     assert temporal.task_of("TASK-9708") == "TASK-9708"
     assert temporal.task_of("alert-investigation-grafana-1") is None
     assert temporal.task_of("skill-eval-20261031-6323c478730a") is None

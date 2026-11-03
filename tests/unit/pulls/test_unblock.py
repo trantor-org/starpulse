@@ -53,10 +53,10 @@ class Pins:
         return []
 
     def head(self, repo: str) -> str | None:
-        return self.tip if repo == "acme/trantor" else None
+        return self.tip if repo == "acme/example" else None
 
     def pointer(self, repo: str, sha: str, path: str) -> str | None:
-        return CHILD if (repo, sha, path) == ("acme/trantor", PARENT, "starpulse") else None
+        return CHILD if (repo, sha, path) == ("acme/example", PARENT, "starpulse") else None
 
     def reaches(self, repo: str, sha: str, pointer: str) -> bool:
         return sha == pointer
@@ -191,7 +191,7 @@ def test_a_pin_merged_dependency_waits_for_its_bump_merge(store: PullStore) -> N
 
     assert _unblock(feed, store, "pin-bump") == []
 
-    store.save([_pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"])])
+    store.save([_pull("acme/example", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"])])
 
     assert _unblock(feed, store, "pin-bump") == ["TASK-2"]
 
@@ -202,7 +202,7 @@ def test_a_pull_request_a_dependency_cites_for_another_task_never_holds_its_depe
         [
             _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN, branch="claude/task-1-the-change"),
             _pull("acme/starpulse", 11, state="OPEN", sha=None, at=None, branch="claude/task-2-the-dependents-change"),
-            _pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"]),
+            _pull("acme/example", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"]),
         ]
     )
 
@@ -220,10 +220,10 @@ def test_an_unblock_pass_after_a_restart_reads_no_pin_answer_the_board_saved(
 
     monkeypatch.setattr(github, "connect", lambda token: send)
     store.save([_pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN)])
-    store.save([_pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"])])
+    store.save([_pull("acme/example", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"])])
     feed = _pinned()
     saved = {
-        "pointers": [["acme/trantor", PARENT, "starpulse", CHILD]],
+        "pointers": [["acme/example", PARENT, "starpulse", CHILD]],
         "reaches": [["acme/starpulse", CHILD, CHILD, True]],
     }
     feed.set_pulls({}, {"pins": saved})  # what `BoardFeed.resume` restores
@@ -241,7 +241,7 @@ def test_a_pin_pushed_to_the_parent_default_branch_without_a_pull_request_merges
     store.save(
         [
             _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN),
-            _pull("acme/trantor", 50, state="MERGED", sha="d" * 40, at=LATER, files=["README.md"]),
+            _pull("acme/example", 50, state="MERGED", sha="d" * 40, at=LATER, files=["README.md"]),
         ]
     )
 
@@ -252,7 +252,7 @@ def test_a_parent_default_branch_that_does_not_pin_the_merge_holds_the_dependent
     store.save(
         [
             _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN),
-            _pull("acme/trantor", 50, state="MERGED", sha="d" * 40, at=LATER, files=["README.md"]),
+            _pull("acme/example", 50, state="MERGED", sha="d" * 40, at=LATER, files=["README.md"]),
         ]
     )
 
@@ -263,7 +263,7 @@ def test_a_bump_merged_before_the_child_does_not_merge_it(store: PullStore) -> N
     store.save(
         [
             _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=LATER),
-            _pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=WHEN, files=["starpulse"]),
+            _pull("acme/example", 50, state="MERGED", sha=PARENT, at=WHEN, files=["starpulse"]),
         ]
     )
 
@@ -274,7 +274,7 @@ def test_a_merge_that_does_not_move_the_pin_does_not_merge_the_dependency(store:
     store.save(
         [
             _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN),
-            _pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["README.md"]),
+            _pull("acme/example", 50, state="MERGED", sha=PARENT, at=LATER, files=["README.md"]),
         ]
     )
 

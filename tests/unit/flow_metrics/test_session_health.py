@@ -635,9 +635,9 @@ def test_no_doc_lists_starpulse_insights() -> None:
 
 def test_a_session_row_names_the_eval_run_its_signals_came_from() -> None:
     at = "2026-10-09T11:00:00.000Z"
-    reading = Analytics(eval_attribute="trantor.eval")
+    reading = Analytics(eval_attribute="example.eval")
     evaluated = signals(
-        export(claude("api_request", 0, at, model="m"), resource={"trantor.eval": "judge"}), analytics=reading
+        export(claude("api_request", 0, at, model="m"), resource={"example.eval": "judge"}), analytics=reading
     )
     plain = signals(export(claude("api_request", 0, at, model="m", **{"session.id": "s2"})))
 

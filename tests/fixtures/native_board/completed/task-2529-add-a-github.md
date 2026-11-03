@@ -48,7 +48,7 @@ github adapter pull requests copilot
 
 ## Duplicate Resolution
 
-Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2511, TASK-2516 are the m-80 retro, sibling core slices, or shipped trantor-only flow-view work (TASK-2356 is trantor's /api/history over its own machine events), none covering this slice's package scope.
+Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2511, TASK-2516 are the m-80 retro, sibling core slices, or shipped example-only flow-view work (TASK-2356 is example's /api/history over its own machine events), none covering this slice's package scope.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -71,13 +71,13 @@ Distinct scope: the only candidate is TASK-2433, the slicing task that created t
 1. Child clone trantor-org/starpulse in .tmp/, branch claude/task-2529-github-adapter from origin/main.
 2. RED/GREEN AC2: record fixtures off public Copilot PRs (timeline with copilot_work_started/finished, dynamic runs, reviewer-bot review, PR, check runs); pure mapper github.py turns a PR bundle into MachineEvents on a shipped copilot machine and pull-request machine, keyed task (branch via TaskKeys) else run owner/repo#N; tests pin the event names so a rename fails.
 3. RED/GREEN AC1: GitHubAdapterKit subclass (MachineEventsAdapterKit) over the fixtures; REST reader on github_actions Transport; follow loop publishing with deterministic event_id so a re-read never duplicates.
-4. Update README and writing-starpulse-adapters skill; gates: package pytest, ruff, ty per package CI; child PR in starpulse; trantor gitlink bump is Renovate's.
+4. Update README and writing-starpulse-adapters skill; gates: package pytest, ruff, ty per package CI; child PR in starpulse; example gitlink bump is Renovate's.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Package work ships as a PR in trantor-org/starpulse (child); trantor gitlink bump is Renovate's, never committed here. ADR decision: none needed; H13 of doc-82 and the Flow View core ADR (Copilot mapping) cover it. Fixtures are recorded off public Copilot PRs (jeremytrimble/specview#46 and #38), scrubbed of ids and text.
+Package work ships as a PR in trantor-org/starpulse (child); example gitlink bump is Renovate's, never committed here. ADR decision: none needed; H13 of doc-82 and the Flow View core ADR (Copilot mapping) cover it. Fixtures are recorded off public Copilot PRs (jeremytrimble/specview#46 and #38), scrubbed of ids and text.
 
 **Assignee:** 37a688b6-bfa8-4d9c-8b81-0b83aba08da1
 <!-- SECTION:NOTES:END -->
@@ -97,7 +97,7 @@ created: 2026-10-06 22:52
 
 created: 2026-10-06 23:11
 ---
-Verified AC #1: `cd /home/adinb/trantor/.claude/worktrees/task-2529-add-a-github/.tmp/starpulse && uv run --no-sync pytest tests/unit/test_github.py -q -p no:cacheprovider -k TestGitHubAdapter` exited 0
+Verified AC #1: `cd /home/adinb/example/.claude/worktrees/task-2529-add-a-github/.tmp/starpulse && uv run --no-sync pytest tests/unit/test_github.py -q -p no:cacheprovider -k TestGitHubAdapter` exited 0
 
 ```
 ......                                                                   [100%]
@@ -107,7 +107,7 @@ Verified AC #1: `cd /home/adinb/trantor/.claude/worktrees/task-2529-add-a-github
 
 created: 2026-10-06 23:11
 ---
-Verified AC #2: `cd /home/adinb/trantor/.claude/worktrees/task-2529-add-a-github/.tmp/starpulse && uv run --no-sync pytest tests/unit/test_github.py -q -p no:cacheprovider -k "copilot or reviewer or merged or keyed"` exited 0
+Verified AC #2: `cd /home/adinb/example/.claude/worktrees/task-2529-add-a-github/.tmp/starpulse && uv run --no-sync pytest tests/unit/test_github.py -q -p no:cacheprovider -k "copilot or reviewer or merged or keyed"` exited 0
 
 ```
 .......                                                                  [100%]

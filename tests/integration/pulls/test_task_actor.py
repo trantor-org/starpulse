@@ -87,7 +87,7 @@ def test_a_review_task_whose_only_pr_merged_moves_to_done_and_no_other_task_is_d
     assert time.monotonic() - projected < WITHIN_S
     name, changes, comment, actor_name = board.writes[0]
     assert (changes, actor_name) == ({"status": "done"}, ACTOR)
-    assert f"acme/trantor#1 merged as {SHA}" in str(comment)
+    assert f"acme/example#1 merged as {SHA}" in str(comment)
     assert {name: count - derived[name] for name, count in actor.derivations.items()} == {
         "TASK-1": 1,
         "TASK-2": 0,
@@ -260,7 +260,7 @@ def test_a_review_task_whose_own_pr_closed_unmerged_beside_another_tasks_merged_
     [(name, comment)] = board.comments()
     assert name == "TASK-1"
     assert "Held from Done:" in comment
-    assert "acme/trantor#1 closed unmerged" in comment
+    assert "acme/example#1 closed unmerged" in comment
     assert "--remove-ref" in comment
 
 
@@ -312,7 +312,7 @@ def test_a_needs_attention_task_closes_once_every_pr_ended_and_one_merged_but_no
     assert until(lambda: board.moved() == [("TASK-1", "done")])
     assert until(lambda: [name for name, _ in board.comments()] == ["TASK-3"])  # merged beside a closed one: held
     assert all(actor_name == ACTOR for _, _, _, actor_name in board.writes)
-    assert f"acme/trantor#1 merged as {SHA}" in str(board.writes[0][2])
+    assert f"acme/example#1 merged as {SHA}" in str(board.writes[0][2])
 
 
 def test_a_needs_attention_task_whose_pr_merged_with_work_unfinished_returns_to_ready_and_one_without_closes(
@@ -393,8 +393,8 @@ def test_an_in_progress_task_citing_a_ready_or_merged_pull_request_moves_to_revi
     assert until(lambda: board.moved() == [("TASK-1", "review"), ("TASK-2", "review"), ("TASK-2", "done")])
     actor.pulls_changed()
     assert len(board.writes) == 3
-    assert "acme/trantor#1 ready" in str(board.writes[0][2])
-    assert "acme/trantor#2 merged" in str(board.writes[1][2])
+    assert "acme/example#1 ready" in str(board.writes[0][2])
+    assert "acme/example#2 merged" in str(board.writes[1][2])
 
 
 def test_an_in_progress_task_citing_only_a_draft_or_closed_pull_request_stays(
@@ -496,12 +496,12 @@ def test_a_review_task_stays_while_its_parent_pr_is_open_after_its_child_pr_clos
     store.save([pull(1, state="OPEN"), pull(2, state="CLOSED")])  # a poll read the child closed before the event
     actor = running(board, store, stop)
     event = {"event_id": "e1", "machine": "github-pull-request", "event": "PR_CLOSED", "task": "TASK-1"}
-    event |= {"time": str(time.time() + 60), "repository": "acme/trantor", "pr": "2"}
+    event |= {"time": str(time.time() + 60), "repository": "acme/example", "pr": "2"}
 
     RecordProjection(store, feed).handle(Entry(1, "machine:events", "e1", event, time.time()))
     actor.pulls_changed()
 
-    assert [record["state"] for record in store.find(repo="acme/trantor", number=1)] == ["OPEN"]
+    assert [record["state"] for record in store.find(repo="acme/example", number=1)] == ["OPEN"]
     assert board.moved() == []
 
 
@@ -664,7 +664,7 @@ def test_a_restarted_actor_does_not_write_the_hold_comment_the_task_already_hold
 ) -> None:
     tasks = tmp_path / ".starpulse" / "board" / "tasks"
     tasks.mkdir(parents=True)
-    (tasks.parent / "config.yml").write_text("project_name: Trantor\n")
+    (tasks.parent / "config.yml").write_text("project_name: Example\n")
     path = tasks / "task-2 - Held.md"
     path.write_text(
         "---\nid: task-2\ntitle: Held\nstatus: Waiting\ndependencies:\n  - task-1\n---\n\n## Description\n\nHeld.\n"
@@ -1216,10 +1216,10 @@ def test_a_pr_merged_during_the_start_derivation_moves_its_task_to_done_before_t
             return super().edit(name, changes, comment, actor=actor)
 
     backlog = [
-        task(f"TASK-{100 + n}", "Review", references=(f"https://github.com/acme/trantor/pull/{100 + n}",))
+        task(f"TASK-{100 + n}", "Review", references=(f"https://github.com/acme/example/pull/{100 + n}",))
         for n in range(30)
     ]
-    late = "https://github.com/acme/trantor/pull/999"
+    late = "https://github.com/acme/example/pull/999"
     board = SlowBoard(BoardFeed(), *backlog, task("TASK-999", "Review", references=(late,)))
     store.save([pull(100 + n, state="MERGED") for n in range(30)] + [pull(999, state="OPEN")])
     actor = TaskActor(board.feed, store, board.edit, WAITS, MOVES, create=board.create)

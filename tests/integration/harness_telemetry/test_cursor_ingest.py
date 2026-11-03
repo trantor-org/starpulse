@@ -15,7 +15,7 @@ NOW = 1_800_000_000.0
 
 
 def projects(tmp_path: Path, age_hours: float) -> Path:
-    target = tmp_path / "projects" / "home-adinb-trantor" / "agent-transcripts" / SESSION
+    target = tmp_path / "projects" / "home-adinb-example" / "agent-transcripts" / SESSION
     shutil.copytree(TRANSCRIPT.parent, target)
     os.utime(target / TRANSCRIPT.name, (NOW - age_hours * 3600,) * 2)
     return tmp_path / "projects"

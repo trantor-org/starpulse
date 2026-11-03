@@ -4,7 +4,7 @@ doc-1020 D1–D3 place every `pulls` module in a role subpackage under one `laye
 
 ## Current State
 `starpulse/starpulse/pulls/` holds 12 modules flat beside `__init__.py`; 54 StarPulse src and test
-files import a moving module path. Docs naming module paths: `/home/adinb/trantor-docs/services/ai/starpulse/adapters.md`.
+files import a moving module path. Docs naming module paths: `/home/adinb/example-docs/services/ai/starpulse/adapters.md`.
 
 ## Scope
 Move each module with `git mv` per this placement (doc-1020 Today, checked clean by a layer-check script):
@@ -15,7 +15,7 @@ Move each module with `git mv` per this placement (doc-1020 Today, checked clean
 
 Create the empty `__init__.py` files `starpulse/starpulse/pulls/adapters/__init__.py`, `starpulse/starpulse/pulls/adapters/inbound/__init__.py`, `starpulse/starpulse/pulls/adapters/outbound/__init__.py`, `starpulse/starpulse/pulls/application/__init__.py`, `starpulse/starpulse/pulls/application/commands/__init__.py`, `starpulse/starpulse/pulls/model/__init__.py`. Rewrite every import of the old paths
 in `starpulse/starpulse`, `starpulse/tests` and `starpulse/pyproject.toml` contract lines. Add the `pulls-layers`
-contract. Rewrite the docs' module paths (edit Trantor docs at their `/home/adinb/trantor-docs/` path). Leave `pulls/pulls.py` as a re-exporting module (`from starpulse.pulls.<new path> import *` plus its `__all__`) for Trantor's direct import (D5 expand); T10 deletes it.
+contract. Rewrite the docs' module paths (edit Example docs at their `/home/adinb/example-docs/` path). Leave `pulls/pulls.py` as a re-exporting module (`from starpulse.pulls.<new path> import *` plus its `__all__`) for Example's direct import (D5 expand); T10 deletes it.
 
 
 ## Constraints
@@ -25,7 +25,7 @@ nearest outer layer that passes, and the PR body lists each such move (D2). This
 in StarPulse's `pulls` or the import-linter block runs beside it.
 
 ## Stop Conditions
-A placement that passes no layer, a cycle `lint-imports` reports that a move cannot break, or a Trantor import of a
+A placement that passes no layer, a cycle `lint-imports` reports that a move cannot break, or a Example import of a
 moved path not named in doc-1020 Today: stop and comment on the task.
 
 ## ADR Needed

@@ -7,7 +7,7 @@ title: "StarPulse gitlink promotes one green SHA"
 
 ## Outcome
 
-A starpulse merge reaches trantor main within 30 min of its CI going green, through a bump PR that is never force-pushed and whose Validate is never cancelled; Renovate no longer manages starpulse
+A starpulse merge reaches example main within 30 min of its CI going green, through a bump PR that is never force-pushed and whose Validate is never cancelled; Renovate no longer manages starpulse
 
 ## Spec
 

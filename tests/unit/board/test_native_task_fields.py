@@ -14,7 +14,7 @@ from starpulse.board.model.seam import Board
 
 FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "native_board"
 STATUSES = ["Ready", "In Progress", "Waiting", "Needs attention", "Review", "Done"]
-#: Real trantor task files: a Done task with every field, one in `completed/`, a Waiting one with Start Criteria and
+#: Real example task files: a Done task with every field, one in `completed/`, a Waiting one with Start Criteria and
 #: a bare one with no references, documentation, modified files, plan or notes.
 TASKS = ["TASK-2521", "TASK-2529", "TASK-3201", "TASK-1566"]
 #: A record field the editor writes as a key of the task's front matter.
@@ -88,11 +88,11 @@ for _field in ("acceptanceCriteria", "definitionOfDone"):
 
 @pytest.fixture
 def served(tmp_path: Path) -> tuple[Board, Path]:
-    """A native board on trantor's lanes whose `tasks/` and `completed/` hold copies of real task files."""
+    """A native board on example's lanes whose `tasks/` and `completed/` hold copies of real task files."""
     root = tmp_path / ".starpulse" / "board"
     root.mkdir(parents=True)
     (root / "config.yml").write_text(
-        yaml.safe_dump({"project_name": "trantor", "statuses": STATUSES, "task_prefix": "task"})
+        yaml.safe_dump({"project_name": "example", "statuses": STATUSES, "task_prefix": "task"})
     )
     for folder in ("tasks", "completed"):
         shutil.copytree(FIXTURE / folder, root / folder)
