@@ -479,7 +479,7 @@ _INTERVALS = """async ([sel, ms]) => {
 }"""
 
 #: Each nav button by the view it opens.
-VIEWS = {"Kanban": "Kanban", "DAGs": "DAGs", "Admin": "Admin", "Star Map": "Star Map"}
+VIEWS = {"Kanban": "Kanban", "Jobs": "Jobs", "Admin": "Admin", "Star Map": "Star Map"}
 
 
 def _nav(title: str) -> str:
@@ -537,7 +537,7 @@ def time_page(
 
         for name, title in VIEWS.items():
             row = Row(f"switch to {name}", "interaction", BUDGET_MS)
-            away = _nav("DAGs" if title == "Kanban" else "Kanban")
+            away = _nav("Jobs" if title == "Kanban" else "Kanban")
             for _ in range(samples):
                 page.evaluate(_CLICK, away)
                 ms = page.evaluate(_CLICK, _nav(title))
