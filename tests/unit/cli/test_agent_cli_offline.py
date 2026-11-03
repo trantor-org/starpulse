@@ -270,6 +270,7 @@ class TestConfigCheck:
             "cursor_context": {"limit_tokens": 150000, "window_tokens": 200000, "wrapup_s": 600.0},
             "claude_code": None,
             "github": None,
+            "sweeper": {"interval_s": 3600.0, "kinds": [], "housekeeping": []},
         }
 
     def test_a_declared_analytics_table_shows_as_lists_and_pattern_text(
