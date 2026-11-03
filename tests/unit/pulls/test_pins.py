@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import urllib.request
 
 import pytest
 from starpulse.pulls.adapters.outbound.pin_reader import _RETRY_WAIT_S, GitHub
@@ -97,7 +98,7 @@ class Gh:
 
 
 def test_the_pointer_a_parent_merge_pins_is_read_once_and_remembered() -> None:
-    gh = Gh({"repos/trantor-org/trantor/contents/skills?ref=p1": {"sha": NEW_POINTER}})
+    gh = Gh({"/repos/trantor-org/trantor/contents/skills?ref=p1": {"sha": NEW_POINTER}})
     github = GitHub(transport=gh)
 
     assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(2)] == [NEW_POINTER] * 2
@@ -105,7 +106,7 @@ def test_the_pointer_a_parent_merge_pins_is_read_once_and_remembered() -> None:
 
 
 def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypatch: pytest.MonkeyPatch) -> None:
-    gh = Gh({"repos/trantor-org/trantor/commits/HEAD": {"sha": NEW_POINTER}})
+    gh = Gh({"/repos/trantor-org/trantor/commits/HEAD": {"sha": NEW_POINTER}})
     clock = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     github = GitHub(transport=gh)
@@ -119,7 +120,7 @@ def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypa
 
 
 def test_a_failed_read_is_named_by_failing_until_a_later_read_of_it_answers(monkeypatch: pytest.MonkeyPatch) -> None:
-    head, contents = "repos/trantor-org/trantor/commits/HEAD", "repos/trantor-org/trantor/contents/skills?ref=p1"
+    head, contents = "/repos/trantor-org/trantor/commits/HEAD", "/repos/trantor-org/trantor/contents/skills?ref=p1"
     gh = Gh({})
     clock = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
@@ -221,7 +222,7 @@ def test_a_path_a_merge_does_not_pin_is_a_remembered_answer_that_is_never_asked_
     ("status", "contained"), [("ahead", True), ("identical", True), ("behind", False), ("diverged", False)]
 )
 def test_a_pointer_contains_a_merge_when_it_is_that_commit_or_ahead_of_it(status: str, contained: bool) -> None:
-    gh = Gh({f"repos/trantor-org/skills/compare/{CHILD_SHA}...{NEW_POINTER}": {"status": status}})
+    gh = Gh({f"/repos/trantor-org/skills/compare/{CHILD_SHA}...{NEW_POINTER}": {"status": status}})
 
     assert GitHub(transport=gh).reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is contained
 
@@ -286,3 +287,29 @@ def test_a_history_page_says_whether_it_holds_a_merge_or_is_too_short_to_tell(
 )
 def test_a_build_carries_its_commit_in_the_local_part_of_its_version(version: str, commit: str | None) -> None:
     assert build_commit(version) == commit
+
+
+def test_the_reader_requests_urls_under_the_github_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    requested: list[str] = []
+
+    class Answer:
+        status = 200
+
+        def __enter__(self) -> Answer:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"sha": "' + NEW_POINTER.encode() + b'"}'
+
+    def urlopen(request: urllib.request.Request, timeout: float) -> Answer:
+        requested.append(request.full_url)
+        return Answer()
+
+    monkeypatch.setenv("GITHUB_API_URL", "https://api.example.test")
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+
+    assert GitHub().head("trantor-org/trantor") == NEW_POINTER
+    assert requested == ["https://api.example.test/repos/trantor-org/trantor/commits/HEAD"]

@@ -15,9 +15,9 @@ from starpulse.runtime.adapter_kit import task
 from tests.task_actor_kit import CHILD, CHILD_PR, REPOS, Board, pull, running, until
 
 TIP, POINTER = "t" * 40, "d" * 40
-HEAD = "repos/acme/trantor/commits/HEAD"
-AT_TIP = f"repos/acme/trantor/contents/starpulse?ref={TIP}"
-CONTAINS = f"repos/acme/starpulse/compare/{CHILD}...{POINTER}"
+HEAD = "/repos/acme/trantor/commits/HEAD"
+AT_TIP = f"/repos/acme/trantor/contents/starpulse?ref={TIP}"
+CONTAINS = f"/repos/acme/starpulse/compare/{CHILD}...{POINTER}"
 NO_BUMP = "no merged bump pins it"
 
 
