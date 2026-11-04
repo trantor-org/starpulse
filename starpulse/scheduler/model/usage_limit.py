@@ -31,6 +31,8 @@ def until(text: str, now: float) -> float | None:
         hour += 12
     elif meridiem == "am" and hour == 12:
         hour = 0
+    if hour > 23 or minute > 59:
+        return now + FIVE_HOURS
     zone_name = (found[4] or "UTC").strip()
     try:
         zone = ZoneInfo(zone_name)

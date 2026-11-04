@@ -21,3 +21,7 @@ def test_out_of_credits_is_a_limit() -> None:
 
 def test_other_errors_are_not_a_limit() -> None:
     assert until("tmux could not start starpulse-T-1: exit 1", NOW) is None
+
+
+def test_a_reset_clock_out_of_range_pauses_for_five_hours() -> None:
+    assert until("You have hit your usage limit · resets 99:75 (UTC)", NOW) == NOW + 5 * 3600
