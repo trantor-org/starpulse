@@ -1,4 +1,5 @@
-"""The telemetry log over a real event log: what a replay, an outage, a window and a trim do to what is read."""
+"""The telemetry log over a real event log: what a publish stores in `starpulse_signals`, and what a replay, an outage
+and a row an older or newer producer wrote do to what is read back."""
 
 import json
 import re
@@ -14,7 +15,8 @@ from starpulse.contracts.analytics import Analytics, Labeller
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.adapters.inbound.claude_code import ClaudeCodeAdapter, handler, publisher
 from starpulse.harness_telemetry.adapters.inbound.telemetry import CLAUDE_CODE, Signal, TelemetryLog, signals
-from starpulse.views.application.queries.responses import cells_response
+from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable
+from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 
 from tests.integration.harness_telemetry.test_intent_classification import answer, stub
 from tests.unit.harness_telemetry.test_telemetry import claude, export
@@ -28,73 +30,34 @@ def log_at(tmp_path: Path) -> EventLog:
     return EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
 
 
-def test_what_is_published_reads_back_equal_and_in_order(tmp_path: Path) -> None:
-    telemetry = TelemetryLog(log_at(tmp_path))
+def read(log: EventLog) -> list[Signal]:
+    """Every stored signal, a session at a time, each session oldest first."""
+    return [s for session in SignalFolds(log, None, None).sessions() for s in session]
+
+
+def test_what_is_published_reads_back_equal_and_oldest_first(tmp_path: Path) -> None:
+    log = log_at(tmp_path)
     found = [signal(1, 100.0), signal(2, 50.0), signal(3, 200.0)]
 
-    telemetry.publish(found)
+    TelemetryLog(log).publish(found)
 
-    assert telemetry.read() == found
+    assert read(log) == [found[1], found[0], found[2]]
 
 
 def test_a_replayed_signal_is_not_added_twice(tmp_path: Path) -> None:
-    telemetry = TelemetryLog(log_at(tmp_path))
+    log = log_at(tmp_path)
+    telemetry = TelemetryLog(log)
 
     telemetry.publish([signal(1, 100.0)])
     telemetry.publish([signal(1, 100.0), signal(2, 101.0)])
 
-    assert [s.key for s in telemetry.read()] == ["k1", "k2"]
+    assert [s.key for s in read(log)] == ["k1", "k2"]
 
 
 def test_a_second_reader_of_the_same_database_sees_what_the_first_published(tmp_path: Path) -> None:
     TelemetryLog(log_at(tmp_path)).publish([signal(1, 100.0)])
 
-    assert [s.key for s in TelemetryLog(log_at(tmp_path)).read()] == ["k1"]
-
-
-def test_a_read_returns_only_the_signals_from_the_window_on_and_a_later_publish_joins_them(tmp_path: Path) -> None:
-    telemetry = TelemetryLog(log_at(tmp_path))
-    telemetry.publish([signal(1, 100.0), signal(2, 200.0)])
-    assert [s.key for s in telemetry.read(150.0)] == ["k2"]
-
-    telemetry.publish([signal(3, 300.0)])
-
-    assert [s.key for s in telemetry.read(150.0)] == ["k2", "k3"]
-
-
-def test_signals_older_than_the_hold_before_the_newest_are_dropped(tmp_path: Path) -> None:
-    telemetry = TelemetryLog(log_at(tmp_path), keep=100.0)
-
-    telemetry.publish([signal(1, 100.0), signal(2, 250.0), signal(3, 300.0)])
-
-    assert [s.key for s in telemetry.read()] == ["k2", "k3"]
-
-
-def test_the_default_hold_keeps_a_signal_a_whole_default_window_older_than_the_newest(tmp_path: Path) -> None:
-    """The default `hours` is 168: a window the history must cover, so the hold reaches past it (live: a 7 d hold
-    left the oldest signal inside the window and `cells` answered 400)."""
-    now = 1_000_000_000.0
-    week = 168 * 3600.0
-    telemetry = TelemetryLog(log_at(tmp_path))
-    telemetry.publish([signal(1, now - week - 3600.0), signal(2, now - 3600.0), signal(3, now)])
-
-    body, status = cells_response(telemetry, {"hours": ["168"]}, None, dict, now)
-
-    assert (status, [s.key for s in telemetry.read()]) == (200, ["k1", "k2", "k3"])
-
-
-def test_reads_share_one_hydrated_snapshot_and_a_later_publish_adds_only_its_own_signals(tmp_path: Path) -> None:
-    """Analytics requests overlap: each read must hold references to one snapshot, not its own copy of the stream
-    (live: 424k Signals, ~0.55 GB per in-flight request when every read re-hydrated)."""
-    telemetry = TelemetryLog(log_at(tmp_path))
-    telemetry.publish([signal(i, 100.0 + i) for i in range(50)])
-    first = telemetry.read()
-
-    telemetry.publish([signal(50, 150.0)])
-    second = telemetry.read()
-
-    assert [s.key for s in second] == [f"k{i}" for i in range(51)]
-    assert all(a is b for a, b in zip(first, second))
+    assert [s.key for s in read(log_at(tmp_path))] == ["k1"]
 
 
 def test_publishing_to_a_database_that_cannot_be_opened_drops_the_signals_without_raising(tmp_path: Path) -> None:
@@ -105,19 +68,19 @@ def test_publishing_to_a_database_that_cannot_be_opened_drops_the_signals_withou
 
 def test_a_signal_a_newer_producer_wrote_with_a_field_this_version_lacks_is_still_read(tmp_path: Path) -> None:
     log = log_at(tmp_path)
-    log.publish(TelemetryLog.STREAM, {**asdict(signal(1, 100.0)), "from_the_future": 1}, event_id="k1")
+    SignalTable(log.engine).insert([{**asdict(signal(1, 100.0)), "from_the_future": 1}])
 
-    assert [s.key for s in TelemetryLog(log).read()] == ["k1"]
+    assert [s.key for s in read(log)] == ["k1"]
 
 
 def test_a_codex_signal_stored_before_the_uncaptured_mark_existed_reads_as_uncaptured(tmp_path: Path) -> None:
     log = log_at(tmp_path)
     old = {k: v for k, v in asdict(signal(1, 100.0)).items() if k not in {"captured", "agent"}}
-    log.publish(TelemetryLog.STREAM, {**old, "harness": "codex"}, event_id="k1")
+    SignalTable(log.engine).insert([{**old, "harness": "codex"}])
 
-    (read,) = TelemetryLog(log).read()
+    (found,) = read(log)
 
-    assert read.captured is False
+    assert found.captured is False
 
 
 def test_a_prompts_text_is_in_no_stored_row_while_its_turn_carries_an_origin_and_the_labellers_intent(
@@ -160,82 +123,18 @@ def test_a_prompts_text_is_in_no_stored_row_while_its_turn_carries_an_origin_and
     assert [r["state"] for r in seen] == [f"please look at {sentinel}"]
     stored = "\n".join(sqlite3.connect(tmp_path / "events.sqlite").iterdump())
     assert sentinel not in stored
-    prompts = [s for s in TelemetryLog(log).read() if s.kind == "prompt"]
+    prompts = [s for s in read(log) if s.kind == "prompt"]
     assert [(s.turn, s.detail, s.label) for s in prompts] == [("p1", "human", "request"), ("p2", "injected", "")]
 
 
 def test_a_shell_tool_signal_reads_back_marked_when_its_stored_command_writes_a_file(tmp_path: Path) -> None:
-    telemetry = TelemetryLog(log_at(tmp_path))
+    log = log_at(tmp_path)
     bash = {"name": "Bash"}
     stored = [
         Signal(CLAUDE_CODE, "s", "tool", 1.0, "w", command="echo x > a.txt", **bash),
         Signal(CLAUDE_CODE, "s", "tool", 2.0, "r", command="rg -n x", **bash),
         Signal(CLAUDE_CODE, "s", "tool", 3.0, "e", name="Edit"),
     ]
-    telemetry.publish(stored)
+    TelemetryLog(log).publish(stored)
 
-    assert {s.key: s.shell_write for s in telemetry.read()} == {"w": True, "r": False, "e": False}
-
-
-def test_a_read_with_nothing_new_looks_at_each_held_signal_once_to_apply_its_window(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Live: 1.1M held signals were re-pruned (newest, floor, rebuild) on every analytics request, ~20% of the
-    server's busy samples; the hold only changes when a poll brings signals."""
-    telemetry = TelemetryLog(log_at(tmp_path))
-    telemetry.publish([signal(i, 100.0 + i) for i in range(50)])
-    telemetry.read()
-    looked = []
-    slot = Signal.time  # a slotted field: the class holds its member descriptor
-    monkeypatch.setattr(Signal, "time", property(lambda self: looked.append(1) or slot.__get__(self)))
-
-    telemetry.read(120.0)
-
-    assert len(looked) <= 50
-
-
-class _Visited(list):
-    """A held list that counts the entries a read visits one by one: the cost of a read, not its answer."""
-
-    visits = 0
-
-    def __iter__(self):
-        for entry in list.__iter__(self):
-            _Visited.visits += 1
-            yield entry
-
-
-class _NoNewRows:
-    """A Loki store with nothing new since the log was built, so the held list is the test's own."""
-
-    def pages(self, stamp: float):
-        return iter(())
-
-
-def held_log(n: int) -> TelemetryLog:
-    telemetry = TelemetryLog(None, loki=_NoNewRows())  # type: ignore[arg-type]
-    telemetry._held = _Visited((float(i), i, signal(i, float(i))) for i in range(n))  # type: ignore[attr-defined]
-    telemetry._arrived = n  # type: ignore[attr-defined]
-    telemetry._keys = {f"k{i}" for i in range(n)}  # type: ignore[attr-defined]
-    return telemetry
-
-
-def test_a_read_of_a_late_window_of_a_long_held_log_reads_only_the_window() -> None:
-    telemetry = held_log(100_000)
-    _Visited.visits = 0
-
-    got = telemetry.read(99_990.0)
-
-    assert [s.key for s in got] == [f"k{n}" for n in range(99_990, 100_000)]
-    assert _Visited.visits < 100
-
-
-def test_a_window_reports_the_history_start_without_a_scan() -> None:
-    telemetry = held_log(100_000)
-    _Visited.visits = 0
-
-    start, got = telemetry.held_from(99_990.0)
-
-    assert start == 0.0
-    assert len(got) == 10
-    assert _Visited.visits < 100
+    assert {s.key: s.shell_write for s in read(log)} == {"w": True, "r": False, "e": False}

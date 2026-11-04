@@ -5,10 +5,9 @@ import shutil
 from pathlib import Path
 
 from starpulse.contracts.analytics import Analytics
-from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog
 from starpulse.harness_telemetry.adapters.outbound.cursor import ingest
 
+from tests.folded_telemetry import FoldedTelemetry
 from tests.unit.harness_telemetry.test_cursor import ANALYTICS, KEYS, SESSION, TRANSCRIPT
 
 NOW = 1_800_000_000.0
@@ -21,8 +20,8 @@ def projects(tmp_path: Path, age_hours: float) -> Path:
     return tmp_path / "projects"
 
 
-def telemetry_at(tmp_path: Path) -> TelemetryLog:
-    return TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+def telemetry_at(tmp_path: Path) -> FoldedTelemetry:
+    return FoldedTelemetry(tmp_path, KEYS, ANALYTICS)
 
 
 def test_a_transcript_read_twice_is_stored_once(tmp_path: Path) -> None:
@@ -33,7 +32,7 @@ def test_a_transcript_read_twice_is_stored_once(tmp_path: Path) -> None:
     assert ingest(root, telemetry, keys=KEYS, analytics=ANALYTICS, now=NOW) == 1
 
     assert stored
-    assert len(TelemetryLog(telemetry._log).read()) == len(stored)
+    assert len(telemetry_at(tmp_path).read()) == len(stored)
 
 
 def test_a_transcript_older_than_the_window_is_not_read(tmp_path: Path) -> None:

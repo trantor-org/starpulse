@@ -28,7 +28,6 @@ from starpulse.board.adapters.lane_sweep import LaneSweep
 from starpulse.board.claim_refusals import CLAIMS_STREAM
 from starpulse.event_log import lane_events, verdict_events
 from starpulse.event_log.conformance_monitor import Conformance
-from starpulse.harness_telemetry.adapters.inbound.telemetry import telemetry_log
 from starpulse.pulls.adapters.inbound.delivery import (
     Projected,
     follow_saves,
@@ -48,6 +47,7 @@ from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, 
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.outbound.gc_pauses import install as collect_on_a_timer
 from starpulse.views.adapters.outbound.take_over import command_take_over
+from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.application.queries.answers import Answers
 from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
@@ -179,6 +179,9 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     lane_sweep = LaneSweep(feed, board)
     lane_stop = StopEvent()
     lane_sweep.start(lane_stop)
+    # the analytics routes read the per-session folds of the signal table; this thread keeps them current
+    signal_folds = SignalFolds(log, feed.keys, config.analytics)
+    threading.Thread(target=signal_folds.follow, args=(stop,), name="signal-folds", daemon=True).start()
     # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks; an opt-in
     # worker's instance also shows the page whether that worker is beating
@@ -211,7 +214,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         scheduler=scheduler_runtime,
         contract=_cached(lambda: host.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
         pulls=pulls,
-        telemetry=telemetry_log(config.telemetry_loki_url, log),
+        telemetry=signal_folds,
         search=search,
         analytics=config.analytics,
         answers=Answers(log.engine),

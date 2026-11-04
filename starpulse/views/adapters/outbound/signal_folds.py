@@ -12,7 +12,8 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import Callable, Mapping
+import threading
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -115,9 +116,11 @@ class SignalFolds:
             self._events.set_setting(CURSOR, min([reached, *(row - 1 for row in failed)]))
         return folded
 
-    def window(self, since: float) -> dict[str, list[Any]]:
-        """Each view's per-session results for the sessions that have a signal at or after `since`, oldest first, to
-        combine. A session that began before `since` is folded again from its signals inside the window."""
+    def window(self, since: float, views: Iterable[str] = tuple(VIEWS)) -> dict[str, list[Any]]:
+        """The per-session results of the `views` for the sessions that have a signal at or after `since`, oldest
+        first, to combine; no other view's rows are read. A session that began before `since` is folded again from its
+        signals inside the window."""
+        wanted = tuple(views)
         with self._engine.connect() as db:
             rows = db.execute(
                 select(
@@ -127,10 +130,14 @@ class SignalFolds:
                     signal_folds.c.first_at,
                     signal_folds.c.result,
                 )
-                .where(signal_folds.c.basis == self.basis, signal_folds.c.last_at >= since)
+                .where(
+                    signal_folds.c.view.in_(wanted),
+                    signal_folds.c.basis == self.basis,
+                    signal_folds.c.last_at >= since,
+                )
                 .order_by(signal_folds.c.first_at, signal_folds.c.harness, signal_folds.c.session)
             ).all()
-        answer: dict[str, list[Any]] = {view: [] for view in VIEWS}
+        answer: dict[str, list[Any]] = {view: [] for view in wanted}
         began = {(row.harness, row.session): row.first_at for row in rows}
         partial = [key for key, first_at in began.items() if first_at < since]
         for row in rows:
@@ -138,9 +145,36 @@ class SignalFolds:
                 answer[row.view].append(row.result)
         for harness, session in partial:
             found = self._load(harness, session, since)[1]
-            for view, fold in VIEWS.items():
-                answer[view].append(fold(found, self._keys, self._analytics))
+            for view in wanted:
+                answer[view].append(VIEWS[view](found, self._keys, self._analytics))
         return answer
+
+    def oldest(self) -> float | None:
+        """The time of the oldest signal in the table, None when it is empty: the history the views can answer."""
+        with self._engine.connect() as db:
+            return db.execute(select(func.min(signals.c.time))).scalar_one()
+
+    def sessions(self, since: float = 0.0) -> Iterator[list[Signal]]:
+        """The signals at or after `since` of each session that has one, a session at a time, oldest first, so a
+        caller holds one session's signals at once."""
+        with self._engine.connect() as db:
+            keys = db.execute(
+                select(signals.c.harness, signals.c.session)
+                .where(signals.c.time >= since)
+                .distinct()
+                .order_by(signals.c.harness, signals.c.session)
+            ).all()
+        for harness, session in keys:
+            yield self._load(harness, session, since)[1]
+
+    def follow(self, stop: threading.Event, interval: float = 5.0) -> None:
+        """Run `catch_up` every `interval` seconds until `stop` is set; a pass that raises is logged and tried again."""
+        while not stop.is_set():
+            try:
+                self.catch_up()
+            except Exception:
+                log.exception("signal fold catch-up failed")
+            stop.wait(interval)
 
     def _current(self, harness: str, session: str) -> int:
         """The rowid every view of the session is folded through under the current basis, 0 when one is missing."""

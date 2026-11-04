@@ -14,12 +14,12 @@ import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
-from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import signals
 from starpulse.runtime.adapter_kit import serve, url
-from starpulse.views.application.queries.answers import Answers
 from starpulse.views.adapters.inbound.page_server import PageServer
+from starpulse.views.application.queries.answers import Answers
 
+from tests.folded_telemetry import FoldedTelemetry
 from tests.machines import MACHINES, ROLES
 from tests.unit.flow_metrics.test_flow import EXECUTE_8, WORK_STEPS, completed
 from tests.unit.harness_telemetry.test_telemetry import FIXTURES
@@ -41,7 +41,7 @@ def _get(server: PageServer, route: str, query: str = "") -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
-def _published(telemetry: TelemetryLog) -> TelemetryLog:
+def _published(telemetry: FoldedTelemetry) -> FoldedTelemetry:
     for name in ("claude_code/otlp.ndjson", "codex/otlp.ndjson"):
         for line in (FIXTURES / name).read_text().splitlines():
             telemetry.publish(signals(json.loads(line)))
@@ -50,7 +50,7 @@ def _published(telemetry: TelemetryLog) -> TelemetryLog:
 
 @pytest.fixture
 def server(tmp_path: Path) -> Iterator[PageServer]:
-    telemetry = _published(TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")))
+    telemetry = _published(FoldedTelemetry(tmp_path, KEYS))
     with serve(
         tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW
     ) as server:
@@ -88,15 +88,15 @@ def test_an_instance_that_receives_no_telemetry_cannot_report(tmp_path: Path, ro
 
 
 def test_cost_to_go_is_served_per_state_with_the_times_the_state_was_left(tmp_path: Path) -> None:
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     runs = [("read", "edit", "test"), ("edit", "test"), ("edit", "edit", "test"), ("edit", "test", "read")]
+    analytics = Analytics(
+        completion_skill="completing-tasks", stop_activities=frozenset({"Skill"}), skill_machines=(WORK_STEPS,)
+    )
+    telemetry = FoldedTelemetry(tmp_path, KEYS, analytics)
     for n, calls in enumerate(runs, 1):
         telemetry.publish(completed(n, *calls))
     feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
     feed.titled = lambda: {f"TASK-{n}": EXECUTE_8 for n in range(1, 5)}  # type: ignore[method-assign]
-    analytics = Analytics(
-        completion_skill="completing-tasks", stop_activities=frozenset({"Skill"}), skill_machines=(WORK_STEPS,)
-    )
     with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: 4600.0, analytics=analytics) as server:
         status, body = _get(server, "cost-to-go", "?hours=1")
 
@@ -120,8 +120,8 @@ def test_cost_to_go_is_empty_inside_the_history_and_refused_past_it(server: Page
 def test_a_restarted_instance_answers_a_report_from_the_saved_answer_before_it_reads_any_telemetry(
     tmp_path: Path,
 ) -> None:
-    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    telemetry = _published(TelemetryLog(log))
+    telemetry = _published(FoldedTelemetry(tmp_path, KEYS))
+    log = telemetry.events
     first = Answers(log.engine)
     feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
     with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: NOW, answers=first) as server:
@@ -137,9 +137,8 @@ def test_a_restarted_instance_answers_a_report_from_the_saved_answer_before_it_r
 
 def test_a_window_past_the_history_is_refused_while_a_fold_of_another_query_runs(tmp_path: Path) -> None:
     """TASK-11099: a refusal needs no fold, so it never queues behind the one fold at a time that a refold holds."""
-    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    telemetry = _published(TelemetryLog(log))
-    answers = Answers(log.engine)
+    telemetry = _published(FoldedTelemetry(tmp_path, KEYS))
+    answers = Answers(telemetry.events.engine)
     folding, release = threading.Event(), threading.Event()
 
     def refold() -> tuple[bytes, int]:
@@ -164,7 +163,8 @@ def test_a_window_past_the_history_is_refused_while_a_fold_of_another_query_runs
 
 
 def test_estimates_carry_each_completed_tasks_label_beside_its_measured_effort(tmp_path: Path) -> None:
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    analytics = Analytics(completion_skill="completing-tasks", size_bands=((1, 2, 5.0), (3, 10, 5.0), (8, 100, 50.0)))
+    telemetry = FoldedTelemetry(tmp_path, KEYS, analytics)
     for n in (1, 2):
         telemetry.publish(completed(n, "read", "edit", "test"))
     feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
@@ -173,7 +173,6 @@ def test_estimates_carry_each_completed_tasks_label_beside_its_measured_effort(t
         "TASK-1": {"labels": ["kind-execute", "size-8"], "milestone": "m-305", "profile": profile},
         "TASK-2": {"labels": ["kind-execute", "size-1"], "milestone": "m-9", "profile": profile},
     }
-    analytics = Analytics(completion_skill="completing-tasks", size_bands=((1, 2, 5.0), (3, 10, 5.0), (8, 100, 50.0)))
     with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: 4600.0, analytics=analytics) as server:
         every = _get(server, "estimates", "?hours=1")
         one = _get(server, "estimates", "?hours=1&milestone=m-305")

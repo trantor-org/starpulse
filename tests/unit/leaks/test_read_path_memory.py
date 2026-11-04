@@ -1,13 +1,12 @@
-"""The server's read paths hold a bounded heap: reading every board task, every cited pull request and the whole
-telemetry history, again and again, leaves the traced heap within a budget, so a cache that grows with what it has read
-fails here before it wedges the live server (TASK-10294: 8.9 GB against a 8 GB `MemoryHigh`)."""
+"""The server's read paths hold a bounded heap: reading every board task, every cited pull request and the analytics
+routes over the signal table's folds, again and again, leaves the traced heap within a budget and no `Signal` live, so
+a cache that grows with what it has read fails here before it wedges the live server (TASK-10294: 8.9 GB against a 8 GB `MemoryHigh`)."""
 
 from __future__ import annotations
 
 import gc
-import json
 import os
-import sys
+import re
 import tracemalloc
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -18,8 +17,14 @@ import pytest
 import yaml
 from sqlalchemy import create_engine
 from starpulse.board.adapters.native import board
+from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.signals import Signal
+from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.adapters.inbound.telemetry import TelemetryLog
+from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable
 from starpulse.pulls.adapters.outbound.pulls import PullStore
+from starpulse.views.adapters.outbound.signal_folds import SignalFolds
+from starpulse.views.application.queries.responses import sessions_response, steps_response
 
 MB = 1024 * 1024
 PASSES = 3  # the first read fills a cache, the next two show whether it keeps growing
@@ -33,8 +38,8 @@ PULL_DETAIL = 8_000
 REPO = "acme/widgets"
 
 SIGNALS = 6_000
-#: The free-threaded build's objects are larger, so the same signals hold ~3% more bytes.
-SIGNAL_BYTES = 900 if sys._is_gil_enabled() else 1000  # what one held signal may cost, of the ~3.7 KB the live server paid for each
+NOW = 2_000_000.0
+KEYS = TaskKeys(key=re.compile(r"TASK-\d+"), branch=re.compile(r"task-(\d+)"), key_format="TASK-{}")
 
 
 MACHINE = """\
@@ -132,59 +137,42 @@ def test_reading_every_cited_pull_request_again_and_again_holds_the_heap_under_i
     assert held < 5, f"{held:.1f} MB of {PULLS} closed pull requests stay held after {PASSES} passes"
 
 
-class _History:
-    """A Loki that serves `SIGNALS` stored lines, whole through `fetch` or in pages through `pages`."""
-
-    def fetch(self, after: int) -> list[tuple[int, dict[str, Any]]]:
-        return [row for page in self.pages(after) for row in page]
-
-    def pages(self, after: int) -> Iterator[list[tuple[int, dict[str, Any]]]]:
-        for start in range(0, SIGNALS, 2000):
-            yield [(n, self._row(n)) for n in range(start, min(start + 2000, SIGNALS))]
-
-    @staticmethod
-    def _row(n: int) -> dict[str, Any]:
-        return json.loads(
-            json.dumps(  # a row decoded from a line, as Loki gives it: its strings are its own objects
-                {
-                    "harness": "claude-code",
-                    "session": f"{n // 200:08x}-0000-4000-8000-000000000000",
-                    "kind": "tool",
-                    "time": 1_700_000_000.0 + n,
-                    "key": f"claude-code:{n // 200:08x}-0000-4000-8000-000000000000:tool_result:{n}:2026-10-30T18:00:00",
-                    "name": "Bash",
-                    "model": "claude-opus-4-5",
-                    "effort": "high",
-                    "ok": True,
-                    "origin": "main",
-                    "agent": "",
-                    "command": "ls",
-                    "captured": True,
-                    "detail": "",
-                    "seconds": 0.5,
-                    "input": 10,
-                    "output": 20,
-                    "cache_read": 30,
-                    "cache_write": 40,
-                    "reasoning": 0,
-                    "cost": 0.01,
-                    "activities": ["read", "write"],
-                    "reads": [f"/srv/trantor/file-{n % 50}.py"],
-                    "shell_write": False,
-                    "writes": [],
-                    "turn": f"turn-{n // 20}",
-                    "label": "",
-                    "eval": "",
-                }
-            )
-        )
+def _row(n: int) -> dict[str, Any]:
+    session = f"{n // 200:08x}-0000-4000-8000-000000000000"
+    return {
+        "harness": "claude-code",
+        "session": session,
+        "kind": "tool",
+        "time": NOW - SIGNALS + n,
+        "key": f"claude-code:{session}:tool_result:{n}:2026-10-30T18:00:00",
+        "name": "Bash",
+        "model": "claude-opus-4-5",
+        "ok": True,
+        "command": "ls",
+        "seconds": 0.5,
+        "activities": ["read", "write"],
+        "reads": [f"/srv/trantor/file-{n % 50}.py"],
+    }
 
 
-def test_the_held_telemetry_history_costs_a_bounded_number_of_bytes_a_signal() -> None:
-    log = TelemetryLog(None, keep=1e12, loki=_History())  # type: ignore[arg-type]
+def _live_signals() -> int:
+    gc.collect()
+    return sum(isinstance(o, Signal) for o in gc.get_objects())
 
-    with traced() as grown:
-        assert len(log.read()) == SIGNALS
-        held = grown()
 
-    assert held * MB / SIGNALS < SIGNAL_BYTES, f"{held * MB / SIGNALS:.0f} B a held signal"
+def test_a_route_request_leaves_no_signal_live_and_the_log_holds_no_signal_collection(tmp_path: Path) -> None:
+    events = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    SignalTable(events.engine).insert(_row(n) for n in range(SIGNALS))
+    folds = SignalFolds(events, KEYS, None)
+    folds.catch_up()
+    before = _live_signals()
+
+    body, status = steps_response(folds, {"hours": ["1"]}, KEYS, NOW)
+    sessions, sessions_status = sessions_response(folds, {"hours": ["1"]}, KEYS, NOW, None)
+
+    assert (status, sessions_status) == (200, 200)
+    assert body
+    assert sessions
+    assert _live_signals() == before == 0
+    held = vars(TelemetryLog(events)).values()
+    assert not [value for value in held if isinstance(value, (list, set, frozenset, dict))]

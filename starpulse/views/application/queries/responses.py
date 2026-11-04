@@ -17,12 +17,11 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.api.dto.health import SessionStep
 from starpulse.flow_metrics.model import analytics
-from starpulse.flow_metrics.model.cells import cell_report, estimate_report, transition_cost
-from starpulse.flow_metrics.model.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
+from starpulse.flow_metrics.model.cells import cell_report, combine_cost, estimate_report
+from starpulse.flow_metrics.model.flow import combine_cost_to_go, combine_diff, combine_edges, combine_stages
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
-from starpulse.flow_metrics.model.session_health import by_session, session_health, slice_health
-from starpulse.flow_metrics.model.steps import fold_steps
-from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, TelemetryLog
+from starpulse.flow_metrics.model.session_health import combine_health, slice_health
+from starpulse.flow_metrics.model.steps import combine_steps
 from starpulse.machine_engine.model.stays import lane_stays
 from starpulse.views.model.encoding import encode, encode_rows
 
@@ -33,6 +32,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.board_feed import BoardFeed
     from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.pulls.adapters.outbound.pulls import PullStore
+    from starpulse.views.ports.signal_folds import SignalFoldReader
 
 
 #: The most rows `/api/ledger/<event>` and `/api/machines` serve at once.
@@ -258,44 +258,58 @@ def health_response(
     return encode("health", health), 200
 
 
-def refuses_at_once(telemetry: TelemetryLog | None, query: dict[str, list[str]], now: float, span: int = 1) -> bool:
+def refuses_at_once(telemetry: SignalFoldReader | None, query: dict[str, list[str]], now: float, span: int = 1) -> bool:
     """Whether a telemetry report of the last `span` x `hours` answers with a refusal that needs no fold: an `hours`
-    that is no positive number, no telemetry, or a window longer than the history (`_held_signals`)."""
+    that is no positive number, no telemetry, or a window longer than the history (`_held_folds`)."""
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None or telemetry is None:
         return True
     try:
-        start, _ = telemetry.held_from(now)
+        oldest = telemetry.oldest()
     except Exception:  # the event log's database is unreachable: the fold answers 503
         return False
-    return window * span * 3600 > _history_s(start, now)
+    return window * span * 3600 > _history_s(oldest, now)
 
 
-def _history_s(start: float | None, now: float) -> float:
-    """The seconds of history a log holds as of `now`, `start` the time of its oldest signal (none: it holds none)."""
-    return now - (now if start is None else start)
+def _history_s(oldest: float | None, now: float) -> float:
+    """The seconds of history the table holds as of `now`, `oldest` the time of its oldest signal (none: it holds none)."""
+    return now - (now if oldest is None else oldest)
 
 
-def _held_signals(
-    telemetry: TelemetryLog, window: float, kind: str, now: float, label: str
-) -> list[Signal] | tuple[bytes, int]:
-    """The signals from the last `window` hours as of `now`, or the 503 response for a log that cannot be read.
+#: The views each kind-and-size route combines; a route reads no other view's rows.
+_ROUTE_VIEWS = {
+    "transitions": ("cost",),
+    "cells": ("health",),
+    "estimates": ("health",),
+    "graph": ("runs",),
+    "stages": ("runs",),
+    "diff": ("runs", "health"),
+    "cost_to_go": ("runs", "health"),
+}
 
-    The oldest signal the log holds is where its history begins: a window that starts before it is 400 with the
+
+def _held_folds(
+    telemetry: SignalFoldReader, window: float, kind: str, now: float, label: str, views: tuple[str, ...] = ()
+) -> dict[str, list[Any]] | tuple[bytes, int]:
+    """The per-session fold results of the `views` for the last `window` hours as of `now`, or the 503 response for a
+    database that cannot be read.
+
+    The oldest signal the table holds is where its history begins: a window that starts before it is 400 with the
     history's length (`history_s`), never answered with its missing hours as empty, as `level_response` refuses one."""
     try:
-        start, held = telemetry.held_from(now - window * 3600)
+        oldest = telemetry.oldest()
+        history = _history_s(oldest, now)
+        held = None if window * 3600 > history else telemetry.window(now - window * 3600, views)
     except Exception as exc:  # the event log's database is unreachable
-        logger.warning("%s: telemetry unreadable: %s", label, exc)
+        logger.warning("%s: signal table unreadable: %s", label, exc)
         return _error("the telemetry log cannot be read"), 503
-    history = _history_s(start, now)
-    if window * 3600 > history:
+    if held is None:
         return encode(kind, {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
     return held
 
 
 def sessions_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     now: float,
@@ -309,16 +323,16 @@ def sessions_response(
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot report session health"), 501
-    found = _held_signals(telemetry, window, "sessions", now, "sessions")
-    if isinstance(found, tuple):
-        return found
-    rows = session_health(found, keys, analytics)
+    held = _held_folds(telemetry, window, "sessions", now, "sessions", ("health",))
+    if isinstance(held, tuple):
+        return held
+    rows = combine_health(held["health"])
     body = {"now": now, "window_s": window * 3600, "sessions": rows, "slices": slice_health(rows)}
     return encode("sessions", body), 200
 
 
 def steps_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     now: float,
@@ -332,28 +346,24 @@ def steps_response(
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot report session steps"), 501
-    found = _held_signals(telemetry, window, "session_steps", now, "steps")
-    if isinstance(found, tuple):
-        return found
-    rows = (
-        ((row["at"], row["harness"], row["session"]), row)
-        for group in by_session(found)
-        for row in fold_steps(group, keys, analytics)
-    )
+    held = _held_folds(telemetry, window, "session_steps", now, "steps", ("steps",))
+    if isinstance(held, tuple):
+        return held
+    rows = (((row["at"], row["harness"], row["session"]), row) for row in combine_steps(held["steps"]))
     head = {"now": now, "window_s": window * 3600}
     return encode_rows("session_steps", head, "steps", SessionStep, rows), 200
 
 
 def _kind_size_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     now: float,
     label: str,
-    report: Callable[[list[Signal], float], list[dict[str, Any]]],
+    report: Callable[[dict[str, list[Any]], float], list[dict[str, Any]]],
     span: int = 1,
 ) -> tuple[bytes, int]:
     """The body and status for a report by kind and size of the signals from the last `span` x `hours` (default 168
-    each) as of `now`, keyed `label`: `{now, window_s, <label>: report(signals, since)}`, `since` the start of the
+    each) as of `now`, keyed `label`: `{now, window_s, <label>: report(folds, since)}`, `since` the start of the
     last `hours`. An instance that receives no harness telemetry is 501, a log that cannot be read 503, and a window
     longer than the telemetry history 400 with `history_s`."""
     window = _hours(query, "hours", _HEALTH_HOURS)
@@ -361,14 +371,14 @@ def _kind_size_response(
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error(f"this instance receives no harness telemetry, so it cannot report {label}"), 501
-    found = _held_signals(telemetry, window * span, label, now, label)
-    if isinstance(found, tuple):
-        return found
-    return encode(label, {"now": now, "window_s": window * 3600, label: report(found, now - window * 3600)}), 200
+    held = _held_folds(telemetry, window * span, label, now, label, _ROUTE_VIEWS[label])
+    if isinstance(held, tuple):
+        return held
+    return encode(label, {"now": now, "window_s": window * 3600, label: report(held, now - window * 3600)}), 200
 
 
 def transitions_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -378,12 +388,12 @@ def transitions_response(
     """The body and status for `/api/analytics/transitions`: the cost of each skill within each kind and size
     (`cells.transition_cost`) over the last `hours`; refusals as `steps_response`."""
     return _kind_size_response(
-        telemetry, query, now, "transitions", lambda found, _: transition_cost(found, keys, titled(), analytics)
+        telemetry, query, now, "transitions", lambda held, _: combine_cost(held["cost"], titled())
     )
 
 
 def cells_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -397,12 +407,12 @@ def cells_response(
         query,
         now,
         "cells",
-        lambda found, _: cell_report(slice_health(session_health(found, keys, analytics)), titled()),
+        lambda held, _: cell_report(slice_health(combine_health(held["health"])), titled()),
     )
 
 
 def estimates_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -419,14 +429,14 @@ def estimates_response(
         query,
         now,
         "estimates",
-        lambda found, _: estimate_report(
-            slice_health(session_health(found, keys, analytics)), titled(), bands, milestone
+        lambda held, _: estimate_report(
+            slice_health(combine_health(held["health"])), titled(), bands, milestone
         ),
     )
 
 
 def graph_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -436,12 +446,12 @@ def graph_response(
     """The body and status for `/api/analytics/graph`: the branching directly-follows graph of each transition
     (`flow.directly_follows`) over the last `hours`; refusals as `steps_response`."""
     return _kind_size_response(
-        telemetry, query, now, "graph", lambda found, _: directly_follows(found, keys, titled(), analytics)
+        telemetry, query, now, "graph", lambda held, _: combine_edges(held["runs"], titled(), analytics)
     )
 
 
 def stages_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -455,13 +465,13 @@ def stages_response(
         query,
         now,
         "stages",
-        lambda found, since: sub_stages(found, keys, titled(), analytics, since=since),
+        lambda held, since: combine_stages(held["runs"], titled(), analytics, since=since),
         span=2,
     )
 
 
 def diff_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -471,12 +481,12 @@ def diff_response(
     """The body and status for `/api/analytics/diff`: each transition's reference run against its slowest clean run
     (`flow.fast_slow_diff`) over the last `hours`; refusals as `steps_response`."""
     return _kind_size_response(
-        telemetry, query, now, "diff", lambda found, _: fast_slow_diff(found, keys, titled(), analytics)
+        telemetry, query, now, "diff", lambda held, _: combine_diff(held["runs"], combine_health(held["health"]), titled(), analytics)
     )
 
 
 def cost_to_go_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -486,5 +496,5 @@ def cost_to_go_response(
     """The body and status for `/api/analytics/cost-to-go`: the expected agent steps to a run's end from each
     skill-machine state (`flow.cost_to_go`) over the last `hours`; refusals as `steps_response`."""
     return _kind_size_response(
-        telemetry, query, now, "cost_to_go", lambda found, _: cost_to_go(found, keys, titled(), analytics)
+        telemetry, query, now, "cost_to_go", lambda held, _: combine_cost_to_go(held["runs"], combine_health(held["health"]), titled(), analytics)
     )

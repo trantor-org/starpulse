@@ -1,7 +1,7 @@
 """The signal store: `starpulse_signals` in the history database, one row per signal key.
 
 `insert` ignores a key the table holds, so an export replayed, a copy rerun, and two writers racing on one signal each
-leave one row. Nothing reads the table yet (the adapters and views move in later slices).
+leave one row. The adapters write it alone and the views read it through `SignalFolds`.
 """
 
 from __future__ import annotations

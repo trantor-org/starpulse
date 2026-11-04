@@ -1,6 +1,6 @@
 """`starpulse copy-signals [--days N]`: the signals Loki holds into `starpulse_signals`, each key once.
 
-Until the adapters write the table, a signal lives in Loki's `starpulse-signals` stream. This copies the last `--days`
+The adapters write the table alone; a signal from before the cutover lives in Loki's `starpulse-signals` stream. This copies the last `--days`
 (default 8) of signals, by signal time, that the table lacks; a rerun finds every key present and inserts nothing. The
 summary is one JSON line on stdout.
 """

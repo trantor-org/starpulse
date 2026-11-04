@@ -13,12 +13,13 @@ import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
-from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, signals
 from starpulse.runtime.adapter_kit import serve, url
+from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.adapters.inbound.page_server import PageServer
 
 from starpulse import sessions
+from tests.folded_telemetry import FoldedTelemetry
 from tests.machines import MACHINES, ROLES
 from tests.unit.harness_telemetry.test_telemetry import FIXTURES
 
@@ -39,19 +40,19 @@ def _get(server: PageServer, query: str = "") -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
-def publish_recorded(telemetry: TelemetryLog) -> None:
+def publish_recorded(telemetry: FoldedTelemetry) -> None:
     for name in ("claude_code/otlp.ndjson", "codex/otlp.ndjson"):
         for line in (FIXTURES / name).read_text().splitlines():
             telemetry.publish(signals(json.loads(line)))
 
 
 @pytest.fixture
-def telemetry(tmp_path: Path) -> TelemetryLog:
-    return TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+def telemetry(tmp_path: Path) -> FoldedTelemetry:
+    return FoldedTelemetry(tmp_path, KEYS)
 
 
 @pytest.fixture
-def server(tmp_path: Path, telemetry: TelemetryLog) -> Iterator[PageServer]:
+def server(tmp_path: Path, telemetry: FoldedTelemetry) -> Iterator[PageServer]:
     publish_recorded(telemetry)
     with serve(
         tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW
@@ -83,7 +84,7 @@ def test_the_window_defaults_to_a_week_which_a_short_history_refuses_and_leaves_
 
 
 def test_a_signal_published_after_the_view_was_first_read_shows_in_the_next_read(
-    server: PageServer, telemetry: TelemetryLog
+    server: PageServer, telemetry: FoldedTelemetry
 ) -> None:
     before = len(_get(server, "?hours=1.06")[1]["sessions"])
     payload = {
@@ -113,7 +114,7 @@ def test_a_signal_published_after_the_view_was_first_read_shows_in_the_next_read
     assert len(_get(server, "?hours=1.06")[1]["sessions"]) == before + 1
 
 
-def test_republishing_an_export_does_not_count_it_twice(server: PageServer, telemetry: TelemetryLog) -> None:
+def test_republishing_an_export_does_not_count_it_twice(server: PageServer, telemetry: FoldedTelemetry) -> None:
     before = _get(server, "?hours=1.06")[1]
     publish_recorded(telemetry)
 
@@ -135,7 +136,7 @@ def test_an_instance_that_receives_no_telemetry_cannot_report_session_health(tmp
 
 
 def test_a_session_that_loaded_the_completion_skill_then_delivered_is_complete_by_the_servers_analytics(
-    tmp_path: Path, telemetry: TelemetryLog
+    tmp_path: Path, telemetry: FoldedTelemetry
 ) -> None:
     def at(kind: str, offset: float, **fields: object) -> Signal:
         return Signal("claude-code", "done", kind, NOW - 3600 + offset, f"done:{kind}:{offset}", **fields)  # type: ignore[arg-type]
@@ -151,17 +152,21 @@ def test_a_session_that_loaded_the_completion_skill_then_delivered_is_complete_b
         ]
     )
     declared = Analytics(completion_skill="completing-tasks")
+    folded = SignalFolds(telemetry.events, KEYS, declared)
+    folded.catch_up()
 
     with serve(
         tmp_path,
         BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS),
-        telemetry=telemetry,
+        telemetry=folded,
         analytics=declared,
         clock=lambda: NOW,
     ) as live:
         _, body = _get(live, "?hours=1")
+    bare_folds = SignalFolds(telemetry.events, KEYS, None)
+    bare_folds.catch_up()
     with serve(
-        tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW
+        tmp_path, BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS), telemetry=bare_folds, clock=lambda: NOW
     ) as bare:
         _, undeclared = _get(bare, "?hours=1")
 
@@ -186,7 +191,7 @@ def test_a_window_longer_than_the_telemetry_history_is_refused_with_the_history_
 
 
 def test_the_public_module_gives_the_rows_the_route_serves_for_the_same_exports(
-    server: PageServer, telemetry: TelemetryLog
+    server: PageServer, telemetry: FoldedTelemetry
 ) -> None:
     """Over a window that is the whole telemetry history, so the route leaves out no record the exports carry."""
     history = NOW - min(s.time for s in telemetry.read())

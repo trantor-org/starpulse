@@ -188,7 +188,7 @@ class Config:
     event_log_archive_dir: str = _DEFAULTS.event_log_archive_dir
     """Where `serve` writes the event log rows it prunes, one gzip JSONL file per UTC day, before it deletes them; a relative path is beside the config."""
     telemetry_loki_url: str | None = None
-    """The Loki base URL the harness adapters push telemetry signals to and the analytics views read; unset, the signals go to the event log."""
+    """The Loki base URL `copy-signals` reads the old signal stream from, to fill `starpulse_signals` at the cutover."""
     repos: tuple[Repo, ...] = ()
     """The repositories whose merges apply through the parent's pin bump (`[[repos]]`)."""
     ci: tuple[str, ...] = ()

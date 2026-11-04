@@ -23,7 +23,7 @@ from starpulse.contracts.analytics import Analytics, SkillLoad
 from starpulse.contracts.signals import Signal
 from starpulse.flow_metrics.model.session_health import attributed, grouped, session_kind
 
-__all__ = ["Case", "Missed", "cases", "missed_loads"]
+__all__ = ["Case", "Missed", "case_order", "cases", "missed_loads"]
 
 #: Components of an area: `lib/store` for `lib/store/src/x.py`.
 _AREA_DEPTH = 2
@@ -54,6 +54,11 @@ class Missed:
     skill: str
     performed: tuple[Case, ...]
     missed: tuple[Case, ...]
+
+
+def case_order(case: Case) -> tuple[float, str, str, str]:
+    """The sort key of cases: oldest first, then by harness, session and task."""
+    return case.last_seen, case.harness, case.session, case.task or ""
 
 
 def _roots(roots: Sequence[str]) -> list[re.Pattern[str]]:
@@ -117,7 +122,7 @@ def cases(
                     labels=tuple(entry.get("labels") or ()),
                 )
             )
-    return sorted(built, key=lambda c: (c.last_seen, c.harness, c.session, c.task or ""))
+    return sorted(built, key=case_order)
 
 
 def _performs(case: Case, trigger: SkillLoad) -> bool:

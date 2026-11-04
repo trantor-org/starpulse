@@ -275,9 +275,8 @@ class ConfigFile(_Table):
     telemetry_loki_url: str | None = Field(
         default=None,
         description=(
-            "The Loki base URL the harness adapters push each telemetry signal to, one log line per signal in "
-            '`{job="starpulse-signals"}`, and the analytics views read back. Unset, the signals go to the event log. '
-            "Give the stream its own Loki `retention_stream` rule to keep it as long as the event log."
+            "The Loki base URL `copy-signals` reads the old signal stream from, to fill `starpulse_signals` at the "
+            "cutover; the adapters write the table alone."
         ),
     )
     slow_read_seconds: float = Field(
