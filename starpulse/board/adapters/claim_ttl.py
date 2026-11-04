@@ -63,8 +63,10 @@ def transcript_halt(root: Path, session: str, tail: int = 64 * 1024) -> tuple[fl
     if path is None:
         return None
     with path.open("rb") as transcript:
-        transcript.seek(max(0, path.stat().st_size - tail))
-        lines = transcript.read().decode(errors="replace").splitlines()[1:]
+        start = max(0, path.stat().st_size - tail)
+        transcript.seek(start)
+        lines = transcript.read().decode(errors="replace").splitlines()
+    lines = lines[1:] if start else lines  # a read from mid-file opens on a partial line
     for line in reversed(lines):
         try:
             entry = json.loads(line)
