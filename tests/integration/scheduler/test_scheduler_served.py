@@ -27,8 +27,9 @@ from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.model.sampler import PERIOD
 from starpulse.sessions.adapters.outbound.session_start import starter
 
-#: How long a test waits for the loop: far under the sampler's period, which is the bound the spec names.
-DEADLINE_S = 10.0
+#: How long a test waits for the loop: half the sampler's period, so a loaded host (load 58-75 missed 10 s) still
+#: passes while a start that waited for the loop's timer instead of the move's event (a full period) still fails.
+DEADLINE_S = PERIOD / 2
 IDLE_HOST = {"cpu": 1.0, "memory": 1.0}
 
 
