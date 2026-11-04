@@ -147,3 +147,55 @@ def test_keep_warm_rebuilds_a_changed_feed_until_stopped() -> None:
 
     assert snapshots.build()[0].rev == feed.rev
     assert not thread.is_alive()
+
+
+def slow_builds(snapshots: Snapshots, clock: Clock, seconds: float) -> None:
+    take = snapshots.take
+
+    def slow():
+        clock.now += seconds
+        return take()
+
+    snapshots.take = slow  # type: ignore[method-assign]
+
+
+def test_a_slow_build_stretches_the_warmer_to_a_fifth_of_a_core() -> None:
+    _, snapshots, clock = warm()
+    slow_builds(snapshots, clock, 3.0)
+    snapshots.build()
+    waits = []
+
+    class Stop:
+        def wait(self, seconds: float) -> bool:
+            waits.append(seconds)
+            return True
+
+    snapshots.keep_warm(Stop())  # type: ignore[arg-type]
+
+    assert waits == [4 * 3.0]
+
+
+def test_a_fast_build_keeps_the_configured_refresh() -> None:
+    _, snapshots, clock = warm()
+    slow_builds(snapshots, clock, 0.1)
+    snapshots.build()
+    waits = []
+
+    class Stop:
+        def wait(self, seconds: float) -> bool:
+            waits.append(seconds)
+            return True
+
+    snapshots.keep_warm(Stop())  # type: ignore[arg-type]
+
+    assert waits == [REFRESH_S]
+
+
+def test_the_warm_snapshot_stays_current_for_two_stretched_intervals() -> None:
+    feed, snapshots, clock = warm()
+    slow_builds(snapshots, clock, 3.0)
+    first = snapshots.build()[1]
+    feed.put(task("PROJ-1", "In Progress"))
+    clock.now += 2 * 4 * 3.0 - 3.0 - 1  # the warm one is dated from before its 3 s build
+
+    assert snapshots.build()[1] is first
