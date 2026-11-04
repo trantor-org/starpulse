@@ -85,6 +85,7 @@ def test_the_board_reads_its_roles_from_the_machine_it_was_given(
         "ready": "todo",
         "waiting": "parked",
         "review": "checking",
+        "verifying": None,
         "attention": "on_me",
         "proposed": None,
         "startable": ["on_me", "parked", "todo"],
