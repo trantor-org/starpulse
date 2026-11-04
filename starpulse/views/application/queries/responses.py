@@ -394,7 +394,7 @@ def transitions_response(
 
 
 def spend_response(
-    telemetry: TelemetryLog | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -402,10 +402,18 @@ def spend_response(
     analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/spend`: each task's tokens by phase (`spend.spend_report`) over the
-    last `hours`; refusals as `steps_response`."""
-    return _kind_size_response(
-        telemetry, query, now, "spend", lambda found, _: spend_report(found, keys, titled(), analytics)
-    )
+    last `hours`, read from the window's sessions; refusals as `steps_response`."""
+    window = _hours(query, "hours", _HEALTH_HOURS)
+    if window is None:
+        return _error("hours must be a positive number"), 400
+    if telemetry is None:
+        return _error("this instance receives no harness telemetry, so it cannot report spend"), 501
+    held = _held_folds(telemetry, window, "spend", now, "spend")
+    if isinstance(held, tuple):
+        return held
+    found = [signal for group in telemetry.sessions(now - window * 3600) for signal in group]
+    report = spend_report(found, keys, titled(), analytics)
+    return encode("spend", {"now": now, "window_s": window * 3600, "spend": report}), 200
 
 
 def cells_response(
