@@ -124,6 +124,22 @@ def test_pull_facts_count_commits_after_the_last_ready_event_and_hours_to_merge(
     assert pull_facts(_transport("2026-01-01T22:00:00Z"), "o/r", 7) == PullFacts(1, 12.0)
 
 
+def test_pull_never_a_draft_counts_every_commit_made_before_it_was_opened() -> None:
+    answers = {
+        "/repos/o/r/pulls/7": {"merged_at": "2026-01-01T22:00:00Z", "created_at": "2026-01-01T10:00:00Z"},
+        "/repos/o/r/issues/7/events?per_page=100": {"items": []},
+        "/repos/o/r/pulls/7/commits?per_page=100": {
+            "items": [
+                {"commit": {"committer": {"date": "2026-01-01T09:00:00Z"}}},
+                {"commit": {"committer": {"date": "2026-01-01T09:30:00Z"}}},
+            ]
+        },
+    }
+    transport = lambda method, path, body: (200, answers[path])
+
+    assert pull_facts(transport, "o/r", 7) == PullFacts(2, 12.0)
+
+
 def test_unmerged_pull_has_no_facts() -> None:
     assert pull_facts(_transport(None), "o/r", 7) is None
 
