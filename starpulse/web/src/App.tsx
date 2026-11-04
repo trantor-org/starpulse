@@ -143,20 +143,14 @@ export function App() {
     // a booted renderer outlives the page's tree: it was started before this mounted and is never stopped by it
     const r = held?.renderer ?? makeRenderer(canvas.current!, store, { tip: tip.current!, panel: panel.current! }, new URLSearchParams(location.search).has("demo"), admin.get);
     renderer.current = r;
-    // the In Progress sun is the Suns lenses drill-in of its first task, never the machine ledger; with no task in progress there is no sun to drill into
-    r.intercept((p) => {
-      const { cards, roles } = store.get();
-      const lane = roles.working, first = lane ? cards.find((c) => c.lane === lane) : undefined;
-      if (!lane || !first || pathKey(p) !== pathKey([...BOARD, { kind: "state", id: lane }])) return false;
-      openDrill(first.id);
-      return true;
-    });
+    // the In Progress sun is the Suns lenses drill-in of its first task, never the machine ledger: the renderer refuses that level and asks here
+    r.onDrill(openDrill);
     if (!held) r.start();
     // times are written at the source, so a new clock is a new subtitle and feed
     const unsubscribe = admin.subscribe(() => r.refresh());
     return () => {
       unsubscribe();
-      r.intercept(null);
+      r.onDrill(null);
       if (!held) r.stop();
     };
   }, [held, store, admin, openDrill]);
