@@ -35,7 +35,7 @@ TOOL_OTHER = "tool_other"
 # A heredoc: its `<<TAG` line, its body, and the line that ends it (the end of the command when unterminated, which
 # a shell accepts).
 _HEREDOC = re.compile(
-    r"(?P<head><<-?[ \t]*(?P<quote>['\"]?)(?P<tag>\w+)(?P=quote)[^\n]*\n)(?P<body>.*?)(?P<end>^[ \t]*(?P=tag)[ \t]*$|\Z)",
+    r"(?P<head>(?<!<)<<(?!<)-?[ \t]*(?P<quote>['\"]?)(?P<tag>[A-Za-z_]\w*)(?P=quote)[^\n]*\n)(?P<body>.*?)(?P<end>^[ \t]*(?P=tag)[ \t]*$|\Z)",
     re.DOTALL | re.MULTILINE,
 )
 # A shell word (quoted runs, escapes and command substitutions glued into one), a redirect, or an operator that ends a
