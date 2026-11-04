@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskView } from "./TaskView";
-import { props, record } from "../../tests/taskViewFixtures";
+import { props, record, task } from "../../tests/taskViewFixtures";
 
 const render = vi.fn(async (id: string) => ({ svg: `<svg data-id="${id}"></svg>` }));
 vi.mock("mermaid", () => ({ default: { initialize: vi.fn(), render } }));
@@ -39,6 +39,13 @@ describe("the task view's Docs", () => {
   });
   const rows = (host: HTMLElement) => [...host.querySelectorAll<HTMLAnchorElement>(".tvrail .doc")];
   const press = async (el: Element) => { await act(async () => { el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })); }); };
+
+  it("reads no doc or milestone while the task's record is still being read, so the record read has the connection", async () => {
+    await mount({ record: undefined, task });
+    const urls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url));
+
+    expect(urls.filter((u) => u.startsWith("/api/docs") || u.startsWith("/api/milestones"))).toEqual([]);
+  });
 
   it("lists the milestone, its spec and the linked doc in the rail", async () => {
     const host = await mount();

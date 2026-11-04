@@ -4,7 +4,7 @@ import { demoServer, type DemoServerHandle } from "../demo/host";
 import { playLink } from "../demo/linkDemo";
 import type { SchedulerStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
 import { browserCache, type SnapshotCache } from "./savedSnapshot";
-import { keep } from "./same";
+import { keep, same } from "./same";
 
 export { embedded } from "../demo/host";
 
@@ -52,6 +52,9 @@ export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   if (delta.kind === "ledgers") return { ...snap, mergeStrip: keep(snap.mergeStrip, delta.mergeStrip), mergePins: keep(snap.mergePins, delta.mergePins) };
   if (delta.kind === "claim") return { ...snap, claims: { ...snap.claims, [delta.task]: { reason: delta.reason, at: delta.at } } };
   if (delta.kind === "move") {
+    // the server sends a move twice, and a harness, build or deliver place again whenever its session writes, often with nothing new: that is no change, so the page keeps its snapshot and draws nothing
+    const held = snap.flows.find((flow) => flow.name === delta.machine)?.agents.find((a) => a.id === delta.id);
+    if (same(held, delta.agent)) return snap;
     const flows = snap.flows.map((flow) => {
       if (flow.name !== delta.machine) return flow;
       const at = flow.agents.findIndex((a) => a.id === delta.id);
@@ -186,7 +189,9 @@ export function openStream(
 
   const fold = (delta: Delta) => {
     if (!state) return; // a delta means nothing before the snapshot it extends
-    state = applyDelta(state, delta);
+    const next = applyDelta(state, delta);
+    if (next === state) return;
+    state = next;
     hand(delta.kind);
   };
 

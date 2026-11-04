@@ -5,17 +5,21 @@ import { docLinks, fetchDoc, fetchDocs, fetchMilestone, type DocLink, type DocSu
 
 type Loaded = { milestone: MilestoneDoc | null; docs: DocSummary[] };
 
-/** The Docs rows for `record` and the milestone they open, read once the task has a milestone or a linked doc; a read the board refuses leaves its rows closed. */
-export function useDocs(record: Pick<TaskRecord, "milestone" | "documentation">): { links: DocLink[]; milestone: MilestoneDoc | null } {
+/**
+ * The Docs rows for `record` and the milestone they open, read once the task has a milestone or a linked doc and `settled` says its own
+ * record has arrived, so the 150 KB docs list never shares the connection with the record read a click is waiting on; a read the board
+ * refuses leaves its rows closed.
+ */
+export function useDocs(record: Pick<TaskRecord, "milestone" | "documentation">, settled: boolean): { links: DocLink[]; milestone: MilestoneDoc | null } {
   const [loaded, setLoaded] = useState<Loaded>({ milestone: null, docs: [] });
   const { milestone } = record;
   const linked = Boolean(record.documentation?.length);
   useEffect(() => {
-    if (!milestone && !linked) return;
+    if (!settled || (!milestone && !linked)) return;
     let live = true;
     void Promise.all([milestone ? fetchMilestone(milestone) : null, fetchDocs()]).then(([found, docs]) => live && setLoaded({ milestone: found, docs }));
     return () => { live = false; };
-  }, [milestone, linked]);
+  }, [milestone, linked, settled]);
   return { links: docLinks(record, loaded.milestone, loaded.docs), milestone: loaded.milestone };
 }
 

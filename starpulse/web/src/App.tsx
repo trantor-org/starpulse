@@ -2,7 +2,7 @@
 // the right rail (recent moves on top, the legend at the bottom), and the
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/viewPrefs";
 import { AdminStore } from "./features/admin/adminPrefs";
 import { applyTheme } from "./features/admin/theme/apply";
@@ -21,7 +21,7 @@ import { useBoardDrawn } from "./shared/boardDrawn";
 import { Leaderboard } from "./features/kanban/Leaderboard";
 import { recent } from "./features/kanban/kanbanModel";
 import { MoveStore, postMove } from "./features/kanban/move";
-import { AdminPage, Dags, Kanban, Proposals, prefetchViews } from "./lazyViews";
+import { AdminPage, Dags, Kanban, Proposals, SunsDrillIn, prefetchViews } from "./lazyViews";
 import { onPhone, retired, shownView, viewOf, viewSearch, type ViewName } from "./shared/nav";
 import { usePhone } from "./shared/usePhone";
 import { renderer as makeRenderer } from "./render/renderer";
@@ -31,8 +31,6 @@ import { search, type Target } from "./features/level/search";
 import { StartStore, fetchHarnesses, postStart, profilesOf } from "./features/kanban/start";
 import { proposedOf } from "./features/proposals/proposalsModel";
 
-/** The In Progress drill-in; loaded only when `?drill=TASK-N` opens it. */
-const SunsDrillIn = lazy(() => import("./features/level/SunsDrillIn").then((m) => ({ default: m.SunsDrillIn })));
 
 /** Keep page-wide React reconciliation outside the two-frame reveal and a rapid follow-up switch. */
 const REVEAL_SETTLE_FRAMES = 8;

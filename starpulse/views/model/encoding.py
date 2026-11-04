@@ -63,9 +63,12 @@ def _dump_all(
 
 #: The fields of a Board task the page reads from `/api/task/<id>` when it opens one, so a snapshot leaves them out.
 _TASK_DETAIL = ("description", "criteria", "definition_of_done", "moves")
-#: What an In Progress task's card keeps: its live description, criteria and Definition of Done, which the page
-#: shows without a fetch.
+#: What an active task's card keeps: its description, criteria and Definition of Done, which the page shows in the
+#: first frame of the task view without a fetch.
 _LIVE_DETAIL = ("moves",)
+#: The states whose cards keep that detail: the tasks an operator opens. The rest (waiting, proposed, done, archived)
+#: are most of the board and read `/api/task/<id>` on open.
+_ACTIVE_STATES = frozenset({"ready", "in_progress", "review", "needs_attention", "verifying"})
 
 
 def _move_set_key(moves: dict[str, Any]) -> str:
@@ -74,9 +77,9 @@ def _move_set_key(moves: dict[str, Any]) -> str:
 
 
 def _slim_task(task: dict[str, Any]) -> dict[str, Any]:
-    """A Board task without its detail, naming its moves' set in `move_set`; an In Progress task keeps its description
+    """A Board task without its detail, naming its moves' set in `move_set`; an active task keeps its description
     and criteria."""
-    left_out = _LIVE_DETAIL if task.get("state") == "in_progress" else _TASK_DETAIL
+    left_out = _LIVE_DETAIL if task.get("state") in _ACTIVE_STATES else _TASK_DETAIL
     slim = {key: value for key, value in task.items() if key not in left_out}
     if task.get("moves"):
         slim["move_set"] = _move_set_key(task["moves"])
@@ -126,7 +129,7 @@ def full_snapshot(data: Any) -> Any:
 
 def slim_snapshot(data: Any) -> Any:
     """`data` as the page is sent it: each Board task without its description, criteria and moves (it reads them
-    from `/api/task/<id>` on open, and the moves through the `move_sets` table; an In Progress task keeps its
+    from `/api/task/<id>` on open, and the moves through the `move_sets` table; an active task keeps its
     description and criteria), only the recent settled tasks, and
     each milestone's completed count. A verb or a held stream reads the whole of `data`, never this."""
     flows = data["flows"]

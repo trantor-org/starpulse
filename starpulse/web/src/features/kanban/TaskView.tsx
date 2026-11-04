@@ -327,7 +327,7 @@ export function TaskView(p: TaskViewProps) {
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
   const [reading, setReading] = useState<{ task: string; doc: DocLink } | null>(null);
-  const docs = useDocs(opened);
+  const docs = useDocs(opened, Boolean(p.record || p.readNote));
   const readDoc = reading?.task === p.task.id ? reading.doc : null;
   const names = p.names ?? {};
   const { roles } = p;

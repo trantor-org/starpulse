@@ -168,6 +168,14 @@ describe("applyDelta", () => {
     expect(s.claims).toEqual({ "TASK-D1": { reason: "old", at: 5 } });
   });
 
+  it("returns the very snapshot for a move that repeats the place a task already holds, so the page draws nothing", () => {
+    const s = board([agent("PROJ-1", "in_progress")]);
+    s.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [agent("PROJ-1", "worktree_ready")] });
+
+    expect(applyDelta(s, { kind: "move", machine: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "worktree_ready") })).toBe(s);
+    expect(applyDelta(s, { kind: "move", machine: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "pushed") })).not.toBe(s);
+  });
+
   it("places a task on the machine a move names, replacing the place it held there, and leaves the Board and the other machines alone", () => {
     const s = board([agent("PROJ-1", "in_progress")]);
     s.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [agent("PROJ-1", "worktree_ready")] });

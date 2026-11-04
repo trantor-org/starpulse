@@ -16,7 +16,7 @@ def _feed(*tasks: tuple[str, str]) -> BoardFeed:
     return feed
 
 
-def test_an_in_progress_card_keeps_its_description_and_criteria_and_another_card_leaves_them_out() -> None:
+def test_an_active_card_keeps_its_description_and_criteria_and_a_done_card_leaves_them_out() -> None:
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(
         task(
@@ -30,7 +30,7 @@ def test_an_in_progress_card_keeps_its_description_and_criteria_and_another_card
     feed.put(
         task(
             "PROJ-2",
-            "To Do",
+            "Done",
             description="About PROJ-2",
             acceptance_criteria=("Checks it",),
             acceptance_checked=(False,),
@@ -43,6 +43,14 @@ def test_an_in_progress_card_keeps_its_description_and_criteria_and_another_card
     assert cards["PROJ-1"]["description"] == "About PROJ-1"
     assert cards["PROJ-1"]["criteria"] == [{"text": "Checks it", "checked": False}]
     assert "description" not in cards["PROJ-2"] and "criteria" not in cards["PROJ-2"]
+
+
+def test_a_ready_card_keeps_its_description_so_the_task_view_draws_it_in_the_first_frame() -> None:
+    feed = _feed(("PROJ-1", "Ready"))
+
+    card = json.loads(encode_snapshot(feed.snapshot(), {}))["flows"][0]["agents"][0]
+
+    assert card["description"] == "About PROJ-1"
 
 
 def test_the_snapshot_encodes_to_the_bytes_the_slimmed_encode_makes() -> None:
