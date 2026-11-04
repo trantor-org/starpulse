@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 from starpulse.board.adapters.native import board
-from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, board_moves, canonical_key, upstream_keys
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask
 from starpulse.runtime.server import history_response
@@ -155,3 +155,8 @@ def test_canonical_task_key_is_the_spelling_the_history_is_asked_under() -> None
 
     assert status == 200
     assert json.loads(body)["path"] == [{"at": 1.0, "from": None, "to": "TASK-7"}]
+
+
+def test_canonical_key_respells_a_prefix_that_contains_a_dash() -> None:
+    assert canonical_key("my-task", "MY-TASK-3") == "my-task-3"
+    assert canonical_key("my-task", "other-3") == "other-3"

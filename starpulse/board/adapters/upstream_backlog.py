@@ -122,8 +122,9 @@ def upstream_keys(prefix: str = DEFAULT_PREFIX, proposal_prefix: str = "") -> Ta
 
 def canonical_key(prefix: str, key: str) -> str:
     """`key` with its prefix spelled as the configured `prefix` is (`task-45` is `TASK-45` for `TASK`); a key of another prefix is as written."""
-    head, dash, rest = key.partition("-")
-    return f"{prefix}-{rest}" if dash and head.casefold() == prefix.casefold() else key
+    size = len(prefix)
+    matches = key[size : size + 1] == "-" and key[:size].casefold() == prefix.casefold()
+    return f"{prefix}{key[size:]}" if matches else key
 
 
 def _when(value: object) -> float | None:
