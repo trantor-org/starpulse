@@ -264,7 +264,8 @@ body:has(#sd) #crumb { visibility: hidden; }
 #kb .rg[data-type=initial] { --rc: var(--ready); } #kb .rg[data-type=resting] { --rc: var(--run); } #kb .rg[data-type=waiting_on_fact] { --rc: var(--slate); }
 #kb .rg[data-type=waiting_on_person] { --rc: var(--fail); } #kb .rg[data-type=final] { --rc: var(--ok); }
 
-#kb #cols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); gap: 10px; padding-bottom: 16px; }
+
+#kb #cols { --lane-w: 475px; flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--cols, 6), var(--lane-w)); gap: 10px; padding-bottom: 16px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 #kb .col { min-height: 0; display: flex; flex-direction: column; border-radius: 10px; background: color-mix(in srgb, var(--slate) 3.5%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 8%, transparent); }
 #kb .col h2 { margin: 0; flex: none; display: flex; align-items: baseline; gap: 8px; padding: 12px 12px 10px; font-size: calc(11px * var(--fs)); font-weight: 500; letter-spacing: .2em;
   text-transform: uppercase; color: var(--slate); border-bottom: 1px solid color-mix(in srgb, var(--slate) 8%, transparent); }
