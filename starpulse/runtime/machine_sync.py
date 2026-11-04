@@ -71,7 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path)
     args = parser.parse_args(argv)
     try:
-        sync_definitions(load(discover(args.config)), args.config.parent if args.config else Path.cwd())
+        path = discover(args.config)
+        sync_definitions(load(path), path.parent if path else Path.cwd())
     except StrandedTasks as exc:
         print(exc, file=sys.stderr)
         return STRANDED

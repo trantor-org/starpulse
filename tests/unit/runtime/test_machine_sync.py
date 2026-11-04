@@ -205,3 +205,24 @@ def test_serve_start_still_exits_on_a_definition_the_registry_refuses_for_anothe
         admit_at_start(argparse.ArgumentParser(), args)
 
     assert raised.value.code == 1
+
+
+def test_a_symlinked_config_found_from_the_working_directory_syncs_beside_its_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from starpulse.runtime.machine_sync import main  # noqa: PLC0415 - the entry point under test
+
+    target = tmp_path / "target"
+    target.mkdir()
+    path = target / "starpulse.toml"
+    path.write_text(f'database_url = "sqlite:///{target / "events.sqlite"}"\n[board]\nmachine = "board.yaml"\n')
+    _write(target, "board.yaml", BOARD)
+    migrate_config_store(path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "starpulse.toml").symlink_to(path)
+    monkeypatch.chdir(elsewhere)
+
+    assert main([]) == 0
+    registry, _ = _registry(Config(tracker_url=None, mode="ic", runs=(), database_url=f"sqlite:///{target / 'events.sqlite'}"))
+    assert registry.active_hash("board")
