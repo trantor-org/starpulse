@@ -8,7 +8,7 @@ import pytest
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
-from starpulse.board.model import rules
+from starpulse.board.model import readable, rules
 from starpulse.event_log.event_log import EventLog
 
 from tests.unit.board.test_native import native_root, write_task
@@ -231,3 +231,10 @@ def test_a_board_written_section_is_neither_judged_nor_a_reason_to_refuse_an_old
     for extra in (GOOD + "\n" + criteria + attention, GOOD + "\n" + attention + criteria, attention + criteria + GOOD):
         assert verdict(extra, template) == ""
     assert verdict(GOOD + "\n" + attention) != ""
+
+
+def test_a_blast_radius_threshold_of_zero_is_kept_not_replaced_by_the_default() -> None:
+    radius = {**TEMPLATE["blast_radius"], "stop_at": 0, "rollback_at": 0}
+    template = readable.parse({**TEMPLATE, "blast_radius": radius}, "guard")
+    assert template.blast_radius is not None
+    assert (template.blast_radius.stop_at, template.blast_radius.rollback_at) == (0, 0)
