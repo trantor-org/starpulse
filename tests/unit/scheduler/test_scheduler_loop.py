@@ -20,6 +20,7 @@ from starpulse.scheduler.adapters.loop import (
     SESSIONS_FULL_BACKOFF_MAX,
     SETTLE_REFUSED,
     START_BACKOFF,
+    START_BACKOFF_MAX,
     START_HALT,
     Loop,
 )
@@ -1283,3 +1284,16 @@ def test_gate_history_is_short_and_skips_an_unchanged_reading(tmp_path: Path) ->
         rig.loop.tick()
 
     assert len(rig.loop.gate_history()) == 100
+
+
+def test_the_backoff_stays_at_its_cap_after_1024_failures_and_refusals(rig: Rig) -> None:
+    rig.loop._failed["T-1"] = (1023, 0.0)
+    rig.loop._full = (1023, 0.0)
+
+    rig.loop._back_off("T-1", rig.now)
+    rig.loop._note_full(rig.now, "")
+    rig.loop._back_off("T-1", rig.now)
+    rig.loop._note_full(rig.now, "")
+
+    assert rig.loop._failed["T-1"] == (1025, rig.now + START_BACKOFF_MAX)
+    assert rig.loop._full == (1025, rig.now + SESSIONS_FULL_BACKOFF_MAX)
