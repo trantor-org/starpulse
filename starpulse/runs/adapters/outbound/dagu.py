@@ -826,8 +826,9 @@ class DaguRuns:
             if listed_at < self._listed_at:
                 return  # a listing that began later was merged while this one was read
             self._listed_at = listed_at
+            held = self._dags
             self._dags = {
-                dag["name"]: dag if self._streamed.get(dag["name"], -math.inf) < listed_at else self._dags[dag["name"]]
+                dag["name"]: dag if self._streamed.get(dag["name"], -math.inf) < listed_at else held.get(dag["name"], dag)
                 for dag in listed
             }
             self._sink.set_dags(list(self._dags.values()), None, pools, cpu=cpu)

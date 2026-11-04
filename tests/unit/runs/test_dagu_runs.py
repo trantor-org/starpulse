@@ -222,6 +222,20 @@ def test_an_entry_from_before_the_listing_is_already_in_it_and_changes_nothing()
     assert changes.empty()
 
 
+def test_a_dag_that_returns_after_a_listing_dropped_it_merges_without_a_keyerror() -> None:
+    steps = {"d1": ["a"], "d2": ["b"]}
+    with dagu(steps) as (base_url, _):
+        feed, runs, _ = follow(base_url)
+        runs.handle_entry(*run_entry("StepStarted", "d1", "r1", "running", at=LISTED_AT + 1))
+        del steps["d1"]
+        runs.reconcile()
+
+        steps["d1"] = ["a"]
+        runs.reconcile()
+
+    assert dag(feed, "d1")["name"] == "ci/d1"
+
+
 def test_a_malformed_entry_is_dropped() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
