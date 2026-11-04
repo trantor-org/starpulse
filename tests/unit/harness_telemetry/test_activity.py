@@ -1,7 +1,7 @@
 """A tool call lifted to activities: a closed vocabulary that carries no argument, so a trace recurs across sessions."""
 
 import pytest
-from starpulse.harness_telemetry.model.activity import activities, paths, writes_file
+from starpulse.harness_telemetry.model.activity import activities, elide_heredocs, paths, writes_file
 
 
 def shell(command: str) -> list[str]:
@@ -121,3 +121,10 @@ def test_a_shell_command_that_writes_a_file_is_a_write(command: str) -> None:
 )
 def test_a_shell_command_that_only_reads_is_not_a_write(command: str) -> None:
     assert not writes_file(command)
+
+
+@pytest.mark.parametrize("operator", ["<<<", "1 << 3"])
+def test_a_here_string_or_shift_is_not_a_heredoc(operator: str) -> None:
+    command = f"cat {operator} 3\necho hi > out.txt\n"
+
+    assert elide_heredocs(command) == command
