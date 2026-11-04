@@ -35,7 +35,7 @@ class QuietHours:
 
 def _clock(value: object, key: str) -> str:
     try:
-        if isinstance(value, str) and len(value) == 5:
+        if isinstance(value, str) and len(value) == 5 and value[2] == ":":
             time.fromisoformat(value)
             return value
     except ValueError:
