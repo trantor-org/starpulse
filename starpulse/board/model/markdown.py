@@ -34,6 +34,7 @@ _TEXT = {
 }
 #: The checklist sections: items as `- [ ] #N text`.
 _CHECKLISTS = {"acceptanceCriteria": "Acceptance Criteria", "definitionOfDone": "Definition of Done"}
+_OWN = {*_TEXT.values(), *_CHECKLISTS.values()}
 _STATUS = "Status"
 _ITEM = re.compile(r"^- \[([ xX])\](?: #(\d+))? ?(.*)$")
 _LINE = re.compile(r"^- ([^:]+): ?(.*)$")
@@ -60,16 +61,21 @@ def render(record: Record) -> str:
 
 
 def _sections(text: str) -> tuple[str, dict[str, str]]:
-    """The head above the first `## ` heading and each section's body by heading; a repeated heading is refused."""
+    """The head above the first `## ` heading and each section's body by heading; a repeated heading is refused.
+
+    A `## ` line that is no Task heading inside a text section is that section's own text (a description's sub-heading).
+    """
     head: list[str] = []
     sections: dict[str, list[str]] = {}
     into = head
+    in_text = False
     for line in text.splitlines():
-        if line.startswith("## "):
-            heading = line[3:].strip()
+        heading = line[3:].strip()
+        if line.startswith("## ") and not (in_text and heading not in _OWN):
             if heading in sections:
                 raise MarkdownRefusedError(f"the section '{heading}' appears twice")
             into = sections[heading] = []
+            in_text = heading in _TEXT.values()
         else:
             into.append(line)
     return "\n".join(head), {heading: "\n".join(body).strip("\n") for heading, body in sections.items()}
