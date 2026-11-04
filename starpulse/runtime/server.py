@@ -458,8 +458,9 @@ def keep_polling(
             logger.exception("pull requests: the poller crashed; restarting in %.0fs", delay)
         finally:
             running.clear()
+        ran = time.monotonic() - started
         stop.wait(delay)
-        delay = delay_s[0] if time.monotonic() - started >= longest else min(delay * 2, longest)
+        delay = delay_s[0] if ran >= longest else min(delay * 2, longest)
 
 
 def start_delivery(

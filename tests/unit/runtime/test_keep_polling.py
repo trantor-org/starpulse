@@ -69,3 +69,22 @@ def test_a_poller_that_returns_is_not_started_again() -> None:
     server.keep_polling(Sync(), threading.Event(), threading.Event(), DELAYS)  # type: ignore[arg-type]
 
     assert runs == [1]
+
+
+def test_a_poller_that_crashes_at_once_every_time_stays_at_the_longest_delay_once_it_reaches_it() -> None:
+    waits: list[float] = []
+
+    class Stop(threading.Event):
+        def wait(self, timeout: float | None = None) -> bool:
+            waits.append(timeout or 0.0)
+            if len(waits) == 6:
+                self.set()
+            return super().wait(timeout)
+
+    class Sync:
+        def run_forever(self) -> None:
+            raise RuntimeError("crash on start")
+
+    server.keep_polling(Sync(), Stop(), threading.Event(), (0.01, 0.03))  # type: ignore[arg-type]
+
+    assert waits == [0.01, 0.02, 0.03, 0.03, 0.03, 0.03]
