@@ -469,3 +469,15 @@ class TestFeedStrip:
             ("audit", "audit", NOW - 4000),
             ("fix", "audit", NOW - 800),
         ]
+
+
+class TestNoBoardSubmachine:
+    def test_a_machine_a_declared_submachine_has_no_parent_when_the_board_has_no_submachine(self) -> None:
+        flows = [
+            {"name": "a", "machine": _machine("x", "y", submachines=[_link("x", "b", "a")]), "agents": []},
+            {"name": "b", "machine": _machine("p", "q"), "agents": []},
+        ]
+
+        derived = derive(flows, NOW)
+
+        assert derived["b"]["parent"] is None
