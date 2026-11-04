@@ -38,11 +38,11 @@ def test_the_release_rule_names_the_repository_the_running_build_comes_from(tmp_
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        (f'{REPOS}\n[release]\nsettle = "merged"\n', "settle must be pin-bump or release"),
-        ('[release]\nsettle = "release"\n', "settle = release needs a repo"),
-        (f'{REPOS}\n[release]\nsettle = "pin-bump"\nrepo = "starpulse"\n', "repo is only for settle = release"),
-        ('[release]\nwhen = "now"\n', "the .release. table takes only settle and repo"),
-        ('[release]\nsettle = "pin-bump"\n', "settle = pin-bump needs a .\\[repos\\]. entry"),
+        (f'{REPOS}\n[release]\nsettle = "merged"\n', "release.settle: Input should be 'pin-bump' or 'release'"),
+        ('[release]\nsettle = "release"\n', 'release: settle = "release" needs repo'),
+        (f'{REPOS}\n[release]\nsettle = "pin-bump"\nrepo = "starpulse"\n', 'release: repo is only for settle = "release"'),
+        ('[release]\nwhen = "now"\n', "release.when: Extra inputs are not permitted"),
+        ('[release]\nsettle = "pin-bump"\n', "release: settle = pin-bump needs a \\[\\[repos\\]\\] entry"),
     ],
 )
 def test_a_release_table_the_server_cannot_apply_is_refused(tmp_path: Path, text: str, message: str) -> None:

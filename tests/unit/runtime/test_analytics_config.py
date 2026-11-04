@@ -135,7 +135,7 @@ def test_a_labeller_with_only_its_required_keys_takes_the_default_timeout(tmp_pa
 @pytest.mark.parametrize(
     ("table", "refusal"),
     [
-        ('analytics = "x"', "analytics must be an [analytics] table"),
+        ('analytics = "x"', "analytics: Input should be a valid dictionary"),
         ("[analytics]\nroot = []", "analytics: unknown key(s) root"),
         ("[analytics]\nlabeller = 1", "analytics.labeller must be a [analytics.labeller] table"),
         ('[analytics.labeller]\nmodel = "m"', "analytics.labeller needs url"),

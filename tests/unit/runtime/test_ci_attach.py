@@ -45,5 +45,5 @@ def test_a_ci_table_that_is_not_a_list_of_state_names_is_refused(tmp_path: Path,
     path = tmp_path / "starpulse.toml"
     path.write_text(table)
 
-    with pytest.raises(ConfigError, match=r"^ci: "):
+    with pytest.raises(ConfigError, match=r"^ci\."):
         load(path)

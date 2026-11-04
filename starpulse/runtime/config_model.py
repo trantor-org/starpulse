@@ -3,14 +3,17 @@
 `config.load` takes its key sets and defaults from these models, and `config_reference` renders the settings reference
 in `docs/serving.md` from their JSON Schema, so a key added here shows up in the doc and a key the doc names is a key
 the loader accepts. A table another module parses (`[board]`, `[scheduler]`, ...) is a free-form mapping here, with a
-description that says where its keys are documented. The loader's checks stay in `config.load`, which words each refusal
-for the operator; the constraints below describe them.
+description that says where its keys are documented. The loader validates the file against these models, strictly (no
+coercion), and refuses the first violation as one line naming its key; a check that needs an import or a file stays in
+`config.load`.
 """
 
+from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
+from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
 from starpulse.views.ports.services import SLOW_READ_S
 
 #: An environment variable's name: the setting holds the name, never the value.
@@ -21,11 +24,30 @@ EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
 #: background context as a thread.
 WORKER_MEMORY_MB = {"api": (4096, 8192), "contexts": (1536, 3072)}
 
+#: The per-context `[worker_memory]` keys `serve` once took, one for each child it supervised.
+_RETIRED_MEMORY = frozenset({"pulls", "scheduler", "runs", "flow-metrics", "search", "board", *ADAPTER_CONTEXTS})
+
+#: A phase id in a `[sequences]` table: lowercase words joined by `_` or `-`.
+PhaseId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*([_-][a-z0-9]+)*$")]
+#: A non-empty text item of a list.
+Text = Annotated[str, StringConstraints(min_length=1)]
+
+
+def _repeated(names: list[str]) -> str | None:
+    """The first name listed more than once, or None."""
+    return next((name for at, name in enumerate(names) if name in names[:at]), None)
+
+
+def memory_limit(context: str, table: "MemoryFile") -> tuple[int, int]:
+    """The (soft, hard) megabytes `table` sets over the packaged limit of its context."""
+    soft, hard = WORKER_MEMORY_MB[context]
+    return (soft if table.soft_mb is None else table.soft_mb, hard if table.hard_mb is None else table.hard_mb)
+
 
 class _Table(BaseModel):
-    """A config table: a key it does not declare is refused."""
+    """A config table: a key it does not declare is refused, and a value of the wrong type is not coerced to it."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
 class CommitFile(_Table):
@@ -86,6 +108,18 @@ class RunsInstanceFile(_Table):
         ),
     )
 
+    @model_validator(mode="after")
+    def _workflows_once(self) -> "RunsInstanceFile":
+        for domain, value in self.domains.items():
+            if isinstance(value, dict):
+                workflows = [w for ws in value.values() for w in ws]
+                if repeated := _repeated(workflows):
+                    raise ValueError(
+                        f"runs instance {self.name}: workflow {repeated!r} listed twice (duplicate) in the processes "
+                        f"under {domain!r}"
+                    )
+        return self
+
 
 class ProducerFile(_Table):
     """One `[[producers]]` table."""
@@ -113,6 +147,13 @@ class ProducerFile(_Table):
         ),
     )
 
+    @field_validator("machines", "actors")
+    @classmethod
+    def _named(cls, names: list[str]) -> list[str]:
+        if not names or not all(names):
+            raise ValueError("must be a non-empty list of text")
+        return names
+
 
 class RepoFile(_Table):
     """One `[[repos]]` table."""
@@ -128,6 +169,13 @@ class RepoFile(_Table):
         min_length=1, description="Where the parent holds the repository as a submodule: relative, inside the parent."
     )
     applied_by: Literal["pin-bump"] = Field(description="How its merges are applied; only `pin-bump`.")
+
+    @field_validator("path")
+    @classmethod
+    def _inside_parent(cls, path: str) -> str:
+        if PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
+            raise ValueError("path must be a relative path inside the parent repository")
+        return path
 
 
 class MemoryFile(_Table):
@@ -161,13 +209,21 @@ class ReleaseFile(_Table):
         default=None, description='`settle = "release"` only: the repository the running build is released from.'
     )
 
+    @model_validator(mode="after")
+    def _repo_fits_settle(self) -> "ReleaseFile":
+        if self.settle == "release" and not self.repo:
+            raise ValueError('settle = "release" needs repo, the repository the running build comes from')
+        if self.repo is not None and self.settle != "release":
+            raise ValueError('repo is only for settle = "release"')
+        return self
+
 
 class CiFile(_Table):
     """The `[ci]` table."""
 
     model_config = ConfigDict(title="[ci]")
 
-    states: list[str] = Field(
+    states: list[Text] = Field(
         min_length=1,
         description=(
             "The Board state ids the shipped `ci` machine is attached to as a sub-flow; one the Board lacks is "
@@ -247,6 +303,16 @@ class ConfigFile(_Table):
             + "."
         ),
     )
+    @field_validator("worker_memory", mode="before")
+    @classmethod
+    def _no_retired_child(cls, memory: Any) -> Any:
+        if isinstance(memory, dict) and (retired := sorted(memory.keys() & _RETIRED_MEMORY)):
+            raise ValueError(
+                f"{retired[0]} no longer has a process of its own; set [worker_memory.contexts], the limit of the one "
+                "process that runs every background context"
+            )
+        return memory
+
     mode: Literal["ic"] = Field(default="ic", description="`ic`, the one value: one person on one machine.")
     host: str = Field(
         default="127.0.0.1",
@@ -317,7 +383,7 @@ class ConfigFile(_Table):
             "or naming an unset variable, leaves both as they were. The value is the name, never the token."
         ),
     )
-    take_over_command: list[str] | None = Field(
+    take_over_command: list[Text] | None = Field(
         default=None,
         min_length=1,
         description=(
@@ -376,7 +442,7 @@ class ConfigFile(_Table):
     project: dict[str, Any] | None = Field(
         default=None, description="The project's own command line for each step a shipped skill names."
     )
-    sequences: dict[str, list[str]] | None = Field(
+    sequences: dict[str, Annotated[list[PhaseId], Field(min_length=1)]] | None = Field(
         default=None,
         description=(
             "The phases a task goes through, in order, keyed by task type (`story`, `bug`), with `default` for a "
@@ -390,6 +456,10 @@ class ConfigFile(_Table):
     claude_code: dict[str, Any] | None = Field(
         default=None,
         description="Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).",
+    )
+    github: dict[str, Any] | None = Field(
+        default=None,
+        description="Runs the GitHub intake listener in the `contexts` child (see docs/sources.md).",
     )
     github: dict[str, Any] | None = Field(
         default=None,
@@ -408,3 +478,43 @@ class ConfigFile(_Table):
         deprecated=True,
         description="Retired: the read model is the only board reader; accepted so a config that still names it loads.",
     )
+
+    @field_validator("board")
+    @classmethod
+    def _actor_takes_only_repo(cls, board: dict[str, Any]) -> dict[str, Any]:
+        actor = board.get("actor")
+        if "actor" in board and not isinstance(actor, dict):
+            raise ValueError("actor must be a [board.actor] table")
+        if actor:
+            unknown = sorted(actor.keys() - {"repo"})
+            if unknown:
+                raise ValueError(f"the [board.actor] table takes only repo, not {', '.join(unknown)}")
+            if not isinstance(actor.get("repo", ""), str):
+                raise ValueError("repo must be text")
+        return board
+
+    @model_validator(mode="after")
+    def _tables_agree(self) -> "ConfigFile":
+        if dup := _repeated([run.name for run in self.runs]):
+            raise ValueError(f"runs instance {dup} is configured twice")
+        if dup := _repeated([repo.name for repo in self.repos]):
+            raise ValueError(f"repos entry {dup} is configured twice")
+        if dup := _repeated([producer.name for producer in self.producers]):
+            raise ValueError(f"producer {dup} is configured twice")
+        for at, producer in enumerate(self.producers):
+            if shared := next((p for p in self.producers[:at] if p.token_env == producer.token_env), None):
+                raise ValueError(
+                    f"producers {shared.name} and {producer.name} share token_env {producer.token_env}; each needs its own token"
+                )
+        if (self.tls_cert is None) != (self.tls_key is None):
+            raise ValueError("tls_cert and tls_key are set together")
+        if self.release is not None and self.release.settle == "pin-bump" and not self.repos:
+            raise ValueError("release: settle = pin-bump needs a [[repos]] entry to say which repositories the parent pins")
+        for context, table in self.worker_memory.items():
+            soft, hard = memory_limit(context, table)
+            if soft >= hard:
+                raise ValueError(f"worker_memory.{context}: soft_mb must be below hard_mb")
+        for kind, phases in (self.sequences or {}).items():
+            if dup := _repeated(phases):
+                raise ValueError(f"sequences: {kind}: {dup} is listed twice")
+        return self

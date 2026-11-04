@@ -360,7 +360,7 @@ class TestConfigCheck:
 
         assert code == 1
         assert document["unknown_keys"] == []
-        assert "team" in document["errors"][0]
+        assert document["errors"][0] == "mode: Input should be 'ic'"
 
 
 DIAGRAM = "stateDiagram-v2\n    [*] --> open\n    open --> closed : Close it\n    closed --> [*]\n"
