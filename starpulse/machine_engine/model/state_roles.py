@@ -51,7 +51,7 @@ class StateRoles:
 
     def wire(self) -> dict[str, str | list[str] | None]:
         """The roles as the snapshot sends them, for a client that holds no machine to read them from."""
-        points = ("initial", "final", "done", "working", "ready", "waiting", "review", "attention", "proposed")
+        points = ("initial", "final", "done", "working", "ready", "waiting", "review", "verifying", "attention", "proposed")
         named = {point: getattr(self, point) for point in points}
         return {**named, "startable": sorted(self.startable), "lanes": list(self.lanes)}
 
@@ -88,6 +88,12 @@ class StateRoles:
         return next(
             (state for state, role in self.roles.items() if role == "resting" and state not in self.rests), None
         )
+
+    @property
+    def verifying(self) -> str | None:
+        """Where a merged task rests while its post-merge QA runs: the resting State after the working one that `rests` omits."""
+        resting = [state for state, role in self.roles.items() if role == "resting" and state not in self.rests]
+        return resting[1] if len(resting) > 1 else None
 
     @property
     def ready(self) -> str | None:

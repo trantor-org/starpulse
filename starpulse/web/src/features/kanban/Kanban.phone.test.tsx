@@ -50,7 +50,7 @@ describe("the Kanban lane strip", () => {
     show(board(cards));
 
     expect(tabs().map((t) => [t.dataset.lane, t.querySelector(".c")?.textContent])).toEqual([
-      ["ready", "2"], ["waiting", "0"], ["in_progress", "1"], ["review", "1"], ["needs_attention", "0"], ["done", "0"],
+      ["ready", "2"], ["waiting", "0"], ["in_progress", "1"], ["review", "1"], ["verifying", "0"], ["needs_attention", "0"], ["done", "0"],
     ]);
   });
 

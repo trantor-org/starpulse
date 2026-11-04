@@ -76,3 +76,27 @@ def test_the_sweep_flags_a_wait_nothing_can_end_once_and_leaves_every_other_task
     assert "TASK-404" in flagged["TASK-5"]
     assert len(board.comments()) == 2
     assert board.moved() == []
+
+
+#: The kit's roles with the resting Verifying lane after the working one, where a merged task's post-merge QA runs.
+QA_ROLES = StateRoles(
+    {**ROLES.roles, "in_progress": "resting", "verifying": "resting"}, WAITS, ("done",)
+)
+
+
+def test_the_sweep_wakes_a_verifying_task_again_until_the_lane_releases_it(store: PullStore, stop: threading.Event) -> None:
+    board = Board(BoardFeed(roles=QA_ROLES), task("TASK-1", "Verifying"), task("TASK-2", "In Progress"))
+    woken: list[str] = []
+    running(board, store, stop, sweep_s=0.01, rewake_s=0.05, verifying=woken.append)
+
+    assert until(lambda: woken.count("TASK-1") >= 3)
+    assert "TASK-2" not in woken
+
+
+def test_the_sweep_leaves_a_verifying_task_alone_for_a_whole_rewake_period(store: PullStore, stop: threading.Event) -> None:
+    board = Board(BoardFeed(roles=QA_ROLES), task("TASK-1", "Verifying"))
+    woken: list[str] = []
+    running(board, store, stop, sweep_s=0.01, rewake_s=3600, verifying=woken.append)
+
+    assert until(lambda: woken == ["TASK-1"])
+    assert not until(lambda: len(woken) > 1, within=0.3)
