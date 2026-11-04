@@ -45,6 +45,8 @@ def test_a_tool_whose_name_is_not_a_name_is_tool_other() -> None:
         ("cd /r && echo hi && sleep 1", []),
         ("for f in *.md; do make fmt; done", ["make fmt"]),
         ("cat <<EOF\ngit push\nEOF", ["shell_read"]),
+        ("> out make test", ["make test"]),
+        ("2>err make test 2>&1", ["make test"]),
     ],
 )
 def test_a_shell_call_is_each_statements_leading_command(command: str, expected: list[str]) -> None:

@@ -120,13 +120,18 @@ def _shell(command: str) -> Iterator[str]:
 def _statements(command: str) -> Iterator[list[str]]:
     """Each statement's leading pipeline command, as unquoted words."""
     current: list[str] = []
-    piped = False
+    piped = target = False
     for token in _TOKEN.finditer(command):
         if token["op"] == "|":
             piped = True
         elif token["op"]:
             yield current
-            current, piped = [], False
+            current, piped, target = [], False, False
+        elif token["redirect"]:
+            # `> out` names a file in the next word; `2>&1` carries its descriptor and names none.
+            target = token["redirect"][-1] in "<>&"
+        elif target:
+            target = False
         elif token["word"] and not piped:
             current.append(_UNQUOTE.sub(lambda m: m[1] or m[2] or m[3] or "", token["word"]))
     yield current
