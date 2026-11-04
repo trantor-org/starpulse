@@ -35,14 +35,23 @@ def local_midnight(now: float) -> float:
 class ViewMethods:
     def cold_page(self, before: float | None, limit: int) -> tuple[list[dict], bool]:
         """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
-        older ones remain."""
+        older ones remain. The page ends after the last stub sharing its final timestamp, so the next page's
+        `entered < before` skips none."""
         if self._read_model is not None:
-            page = self._read_model.archived(before, limit + 1)
-            return [_cold_stub(item) for item in page[:limit]], len(page) > limit
-        with self._lock:
-            cold = sorted((a for a in self._open.values() if is_cold(a)), key=lambda a: a["entered"], reverse=True)
-        older = [a for a in cold if before is None or a["entered"] < before]
-        return older[:limit], len(older) > limit
+            size = limit + 1
+            while True:
+                rows = [_cold_stub(item) for item in self._read_model.archived(before, size)]
+                if len(rows) < size or rows[-1]["entered"] != rows[limit - 1]["entered"]:
+                    break
+                size *= 2
+        else:
+            with self._lock:
+                cold = sorted((a for a in self._open.values() if is_cold(a)), key=lambda a: a["entered"], reverse=True)
+            rows = [a for a in cold if before is None or a["entered"] < before]
+        end = limit
+        while end < len(rows) and rows[end]["entered"] == rows[limit - 1]["entered"]:
+            end += 1
+        return rows[:end], len(rows) > end
 
     def _hot(self) -> list[dict]:
         """Every open task but the cold done ones; the caller holds the lock."""
