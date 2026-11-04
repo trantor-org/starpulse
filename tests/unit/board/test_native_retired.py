@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from starpulse.board.adapters.native import board
@@ -32,6 +33,11 @@ def started(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Board, Pat
     return built, tmp_path
 
 
+def _listed(answer: tuple[int, dict[str, Any]]) -> tuple[int, dict[str, Any]]:
+    status, body = answer
+    return status, {**body, "tasks": list(body["tasks"])} if "tasks" in body else body
+
+
 def _path(base: Path, task: str = "task-5", folder: str = "tasks") -> Path:
     return native_root(base) / folder / f"{task} - Title.md"
 
@@ -47,10 +53,10 @@ def test_a_retired_done_task_leaves_the_board_and_its_file_is_kept_byte_for_byte
 
     assert written.ok, written.output
     assert not _path(base).exists()
-    assert built.retired("task-5", "") == [{"task": "task-5", "name": "task-5 - Title.md", "text": text}]
-    assert built.retired("TASK-5", "") == built.retired("task-5", "")
-    assert built.retired("", "") == built.retired("task-5", "")
-    assert built.retired("task-6", "") == []
+    assert list(built.retired("task-5", "")) == [{"task": "task-5", "name": "task-5 - Title.md", "text": text}]
+    assert list(built.retired("TASK-5", "")) == list(built.retired("task-5", ""))
+    assert list(built.retired("", "")) == list(built.retired("task-5", ""))
+    assert list(built.retired("task-6", "")) == []
 
 
 def test_a_retired_task_may_come_from_completed_or_the_archive_whatever_its_status(
@@ -66,7 +72,7 @@ def test_a_retired_task_may_come_from_completed_or_the_archive_whatever_its_stat
     assert built.retire("task-5").ok
     assert built.retire("task-6").ok
 
-    assert [row["task"] for row in built.retired("", "")] == ["task-5", "task-6"]
+    assert [row["task"] for row in list(built.retired("", ""))] == ["task-5", "task-6"]
     assert list(native_root(base).glob("**/*.md")) == []
 
 
@@ -79,7 +85,7 @@ def test_retiring_an_open_or_unknown_task_is_refused_and_keeps_its_file(started:
     assert not built.retire("task-404").ok
 
     assert open_task.is_file()
-    assert built.retired("", "") == []
+    assert list(built.retired("", "")) == []
 
 
 def test_retiring_a_task_whose_number_is_kept_with_other_text_is_refused_and_keeps_its_file(
@@ -95,7 +101,7 @@ def test_retiring_a_task_whose_number_is_kept_with_other_text_is_refused_and_kee
 
     assert not refused.ok and "task-5" in refused.output
     assert rewritten.is_file()
-    assert [row["text"] for row in built.retired("task-5", "")] == [kept]
+    assert [row["text"] for row in list(built.retired("task-5", ""))] == [kept]
 
 
 def test_a_board_that_has_not_started_keeps_no_retired_tasks(tmp_path: Path) -> None:
@@ -104,7 +110,7 @@ def test_a_board_that_has_not_started_keeps_no_retired_tasks(tmp_path: Path) -> 
     assert built.retire is not None and built.retired is not None
 
     assert not built.retire("task-5").ok
-    assert built.retired("", "") == []
+    assert list(built.retired("", "")) == []
     assert _path(tmp_path).is_file()
 
 
@@ -118,7 +124,7 @@ def test_a_restore_returns_a_retired_task_to_tasks_unchanged(started: tuple[Boar
 
     assert restored.ok, restored.output
     assert _path(base).read_bytes() == before
-    assert built.retired("task-5", "") == []
+    assert list(built.retired("task-5", "")) == []
 
 
 def test_a_restore_of_a_retired_task_never_replaces_a_file_and_keeps_the_row(started: tuple[Board, Path]) -> None:
@@ -130,7 +136,7 @@ def test_a_restore_of_a_retired_task_never_replaces_a_file_and_keeps_the_row(sta
 
     assert not built.restore("task-5").ok
 
-    assert len(built.retired("task-5", "")) == 1
+    assert len(list(built.retired("task-5", ""))) == 1
 
 
 def test_a_new_task_numbers_past_the_retired_tasks(started: tuple[Board, Path]) -> None:
@@ -165,7 +171,7 @@ def test_an_imported_retired_task_is_kept_and_the_same_import_again_is_accepted(
     again = built.import_retired("task-3 - Old.md", text)
 
     assert (first.ok, first.output, again.ok) == (True, "task-3", True)
-    assert built.retired("task-3", "") == [{"task": "task-3", "name": "task-3 - Old.md", "text": text}]
+    assert list(built.retired("task-3", "")) == [{"task": "task-3", "name": "task-3 - Old.md", "text": text}]
 
 
 @pytest.mark.parametrize(
@@ -187,7 +193,7 @@ def test_an_import_of_a_retired_task_is_refused_when_it_conflicts_or_names_no_ta
 
     assert not built.import_retired(name, text).ok
 
-    assert [row["task"] for row in built.retired("", "")] == ["task-3"]
+    assert [row["task"] for row in list(built.retired("", ""))] == ["task-3"]
 
 
 LAN = "192.168.0.42"
@@ -228,9 +234,9 @@ def test_the_retired_route_reads_one_or_every_retired_task(started: tuple[Board,
     assert built.retire is not None and built.retire("task-5").ok
     row = {"task": "task-5", "name": "task-5 - Title.md", "text": text}
 
-    assert writes.retired_list(built, "") == (200, {"tasks": [row]})
-    assert writes.retired_list(built, "task-5") == (200, {"tasks": [row]})
-    assert writes.retired_list(built, "task-6") == (200, {"tasks": []})
+    assert _listed(writes.retired_list(built, "")) == (200, {"tasks": [row]})
+    assert _listed(writes.retired_list(built, "task-5")) == (200, {"tasks": [row]})
+    assert _listed(writes.retired_list(built, "task-6")) == (200, {"tasks": []})
 
 
 def test_the_retired_import_route_answers_the_task_and_refuses_a_conflict(started: tuple[Board, Path]) -> None:
@@ -249,7 +255,7 @@ def test_the_retired_import_route_answers_the_task_and_refuses_a_conflict(starte
 @pytest.mark.parametrize("board_without", [None, Board(machines=lambda qualify, workflows: {}, start=lambda *_: None)])
 def test_the_retired_routes_on_a_board_that_keeps_no_retired_tasks_are_404(board_without: Board | None) -> None:
     assert writes.retire_task(LAN, _raw(task="task-5"), board_without)[0] == 404
-    assert writes.retired_list(board_without, "")[0] == 404
+    assert _listed(writes.retired_list(board_without, ""))[0] == 404
     assert writes.import_retired(LAN, _raw(name="task-3.md", text="---\nid: task-3\n---\n"), board_without)[0] == 404
 
 
@@ -350,9 +356,9 @@ def test_retired_filters_by_the_milestone_in_the_front_matter(started: tuple[Boa
     for task in ("task-5", "task-6", "task-7", "task-8"):
         assert built.retire(task).ok
 
-    assert [row["task"] for row in built.retired("", "m-1")] == ["task-6"]
-    assert [row["task"] for row in built.retired("", "")] == ["task-5", "task-6", "task-7", "task-8"]
-    assert built.retired("task-7", "m-1") == []
+    assert [row["task"] for row in list(built.retired("", "m-1"))] == ["task-6"]
+    assert [row["task"] for row in list(built.retired("", ""))] == ["task-5", "task-6", "task-7", "task-8"]
+    assert list(built.retired("task-7", "m-1")) == []
 
 
 def test_the_retired_route_projects_dependencies_without_name_or_text(started: tuple[Board, Path]) -> None:
@@ -362,13 +368,13 @@ def test_the_retired_route_projects_dependencies_without_name_or_text(started: t
     assert writes.import_retired(LAN, _raw(name="task-3.md", text=linked), built)[0] == 200
     assert writes.import_retired(LAN, _raw(name="task-4.md", text=bare), built)[0] == 200
 
-    assert writes.retired_list(built, "", fields="dependencies") == (
+    assert _listed(writes.retired_list(built, "", fields="dependencies")) == (
         200,
         {"tasks": [{"task": "task-3", "dependencies": ["TASK-1", "TASK-2"]}, {"task": "task-4", "dependencies": []}]},
     )
-    assert writes.retired_list(built, "task-3", fields="dependencies") == (
+    assert _listed(writes.retired_list(built, "task-3", fields="dependencies")) == (
         200,
         {"tasks": [{"task": "task-3", "dependencies": ["TASK-1", "TASK-2"]}]},
     )
-    assert writes.retired_list(built, "", fields="")[1]["tasks"][0].keys() == {"task", "name", "text"}
-    assert writes.retired_list(built, "", fields="name")[0] == 400
+    assert _listed(writes.retired_list(built, "", fields=""))[1]["tasks"][0].keys() == {"task", "name", "text"}
+    assert _listed(writes.retired_list(built, "", fields="name"))[0] == 400

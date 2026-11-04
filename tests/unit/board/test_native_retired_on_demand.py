@@ -119,3 +119,14 @@ def test_a_projection_keeps_what_it_maps_each_text_to_never_the_texts(
     assert [value for _, value in projected] == [len(text) for text in seen]
     assert built.retired_projected(length, "TASK-5", "") == projected[:1]
     assert not any(_holds(projected, text) for text in seen)
+
+
+def test_the_whole_retired_read_is_a_lazy_iterator_never_a_list_of_every_text(
+    started: tuple[Board, UpstreamBacklog], tmp_path: Path
+) -> None:
+    built, _ = started
+    assert built.retired is not None
+
+    rows = built.retired("", "")
+
+    assert iter(rows) is rows
