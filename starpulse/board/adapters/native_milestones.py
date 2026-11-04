@@ -137,6 +137,33 @@ def _render(milestone: str, title: str, sections: Mapping[str, str]) -> str:
     )
 
 
+def _with_title(text: str, title: str) -> str:
+    """`text` with its front matter's `title:` line set to `title`, every other front-matter line kept."""
+    end = text.find("\n---", 4)
+    line = f"title: {json.dumps(title, ensure_ascii=False)}"
+    head, rest = text[:end], text[end:]
+    replaced, count = re.subn(r"^title:.*$", lambda _: line, head, count=1, flags=re.M)
+    return (replaced if count else f"{head}\n{line}") + rest
+
+
+def _with_section(text: str, name: str, content: str) -> str:
+    """`text` with the section `## name` set to `content` in place (the copy a read sees: the last), or removed when empty."""
+    description = _DESCRIPTION.search(text)
+    if description is None:
+        text = f"{text.rstrip()}\n\n## Description\n"
+        description = _DESCRIPTION.search(text)
+    headings = list(_HEADING.finditer(text, description.end()))
+    named = [i for i, heading in enumerate(headings) if heading[1] == name]
+    if not named:
+        return f"{text.rstrip()}\n\n## {name}\n\n{content}\n" if content else text
+    heading = headings[named[-1]]
+    following = headings[named[-1] + 1].start() if named[-1] + 1 < len(headings) else len(text)
+    if not content:
+        return text[: heading.start()] + text[following:]
+    tail = "\n\n" if following < len(text) else "\n"
+    return f"{text[: heading.end()]}\n\n{content}{tail}{text[following:]}"
+
+
 def _write(path: Path, text: str) -> None:
     # Unique per write, so concurrent writers never share a scratch file; not a `.md` file, so a scan never reads it half written.
     scratch = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
@@ -183,13 +210,14 @@ def creator(root: Path) -> MilestoneCreator:
 def editor(root: Path) -> MilestoneEditor:
     """A board writer that applies every change to a milestone's file in one write, or refuses the whole edit.
 
-    A changed title renames the file to its new slug; the id never changes.
+    A changed title renames the file to its new slug; the id never changes. Only the named title line and sections are
+    rewritten, in place: every other front-matter key, prose and repeated section stays as it was.
     """
 
     def edit(milestone: str, changes: Mapping[str, Any], /) -> Written:
         if (found := _find(root, milestone)) is None:
             return Written(False, f"{milestone} has no milestone file in {root / 'milestones'}")
-        path, frontmatter, body = found
+        path, frontmatter, _ = found
         try:
             if unknown := sorted(changes.keys() - _DETAILS - {"title"}):
                 raise ValueError(f"{unknown[0]} is not an editable field")
@@ -198,15 +226,16 @@ def editor(root: Path) -> MilestoneEditor:
                 if not isinstance(changes["title"], str) or not changes["title"].strip():
                     raise ValueError("title must be text that is not blank")
                 title = changes["title"].strip()
-            sections = _sections(_description(body))
-            for name, field in _ORDER:
-                if field in changes:
-                    sections[name] = _text(field, changes[field])
-        except ValueError as refusal:  # raised before any file is written, so a refusal writes nothing
+            details = {name: _text(field, changes[field]) for name, field in _ORDER if field in changes}
+            text = path.read_text().replace("\r\n", "\n")
+        except (ValueError, OSError) as refusal:  # raised before any file is written, so a refusal writes nothing
             return Written(False, f"{milestone}: {refusal}")
         target = path.with_name(f"{milestone} - {_slug(title)}.md")
         try:
-            _write(target, _render(milestone, title, sections))
+            text = _with_title(text, title) if "title" in changes else text
+            for name, content in details.items():
+                text = _with_section(text, name, content)
+            _write(target, text)
             if target != path:
                 path.unlink()
         except OSError as error:

@@ -119,6 +119,25 @@ def test_native_milestone_edit_replaces_only_the_given_sections_and_keeps_the_re
     assert "## Notes\n\nkept\n" in after
 
 
+def test_native_milestone_edit_keeps_extra_front_matter_intro_prose_and_a_repeated_section(tmp_path: Path) -> None:
+    built = native.board({}, tmp_path)
+    milestones = tmp_path / ".starpulse" / "board" / "milestones"
+    milestones.mkdir()
+    path = milestones / "m-0 - first.md"
+    path.write_text(
+        '---\nid: m-0\ntitle: "First"\nowner: adin\n---\n\n## Description\n\nIntro prose.\n\n'
+        "## Notes\n\nfirst copy\n\n## Outcome\n\nold\n\n## Notes\n\nsecond copy\n"
+    )
+
+    assert built.edit_milestone is not None
+    assert built.edit_milestone("m-0", {"outcome": "x"}).ok
+
+    assert path.read_text() == (
+        '---\nid: m-0\ntitle: "First"\nowner: adin\n---\n\n## Description\n\nIntro prose.\n\n'
+        "## Notes\n\nfirst copy\n\n## Outcome\n\nx\n\n## Notes\n\nsecond copy\n"
+    )
+
+
 def test_native_milestone_edit_that_changes_nothing_leaves_the_real_file_identical(served: tuple[Board, Path]) -> None:
     built, milestones = served
     before = (milestones / REAL).read_bytes()
