@@ -32,12 +32,26 @@ import re
 from bisect import bisect_right
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from functools import lru_cache
 
 from starpulse.board.model.commit_keys import CommitKeys
+from starpulse.contracts.stamps import epoch_of
 
-__all__ = ["MERGE_EVENT", "NEXT", "PAGE", "STRIP_BUCKET", "Occurrence", "build", "page", "pair", "pull_occurrences", "reruns", "strip"]
+_epoch = lru_cache(maxsize=65536)(epoch_of)  # every rebuild reads the same run and pull timestamps again
+
+__all__ = [
+    "MERGE_EVENT",
+    "NEXT",
+    "PAGE",
+    "STRIP_BUCKET",
+    "Occurrence",
+    "build",
+    "page",
+    "pair",
+    "pull_occurrences",
+    "reruns",
+    "strip",
+]
 
 #: The Board event whose occurrences are pull request merges; every other event's are tasks entering a lane.
 MERGE_EVENT = "MERGED"
@@ -69,11 +83,6 @@ class Occurrence:
     """For a child merge, the key of the parent merge whose pin bump includes it; none while no bump has."""
 
 
-@lru_cache(maxsize=65536)  # every rebuild reads the same run and pull timestamps again
-def _epoch(iso: str) -> float:
-    return datetime.fromisoformat(iso).timestamp()
-
-
 def pull_occurrences(pulls: Mapping[str, Sequence[Mapping]]) -> list[Occurrence]:
     """One occurrence per merged pull request that carries its merge commit, with every task that cites it.
 
@@ -102,7 +111,11 @@ def _names(value: str, sha: str) -> bool:
 def _keyed(occurrences: Sequence[Occurrence], value: str, by_sha: bool) -> Occurrence | None:
     """The newest occurrence a run parameter's `value` names: a commit for merges, a task for the rest."""
     return next(
-        (o for o in reversed(occurrences) if (o.sha is not None and _names(value, o.sha)) or (not by_sha and value in o.tasks)),
+        (
+            o
+            for o in reversed(occurrences)
+            if (o.sha is not None and _names(value, o.sha)) or (not by_sha and value in o.tasks)
+        ),
         None,
     )
 
@@ -139,7 +152,9 @@ def _matches(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: C
         if value is None:
             reached = bisect_right(ats, start)  # the occurrences at or before the run's start
             match = ordered[reached - 1] if reached else None
-            ambiguous = max(0, reached - 1 - bisect_right(ats, previous))  # those before the match, after the previous run
+            ambiguous = max(
+                0, reached - 1 - bisect_right(ats, previous)
+            )  # those before the match, after the previous run
         else:
             match = _keyed(ordered, value, by_sha)
         previous = start
@@ -149,7 +164,10 @@ def _matches(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: C
 
 
 def pair(
-    occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: CommitKeys | None, matches: list[tuple] | None = None
+    occurrences: Sequence[Occurrence],
+    runs: Sequence[Mapping],
+    keys: CommitKeys | None,
+    matches: list[tuple] | None = None,
 ) -> dict[str, dict]:
     """Each occurrence's run of one workflow, by occurrence key.
 
@@ -185,7 +203,12 @@ def _covers(failed: Occurrence, forced: Mapping, ordered: Sequence[Occurrence], 
 
 
 def _resolution(
-    failed: Occurrence, began: float, timed: Sequence[tuple[float, Mapping]], rule: str, keys: CommitKeys | None, ordered: Sequence[Occurrence]
+    failed: Occurrence,
+    began: float,
+    timed: Sequence[tuple[float, Mapping]],
+    rule: str,
+    keys: CommitKeys | None,
+    ordered: Sequence[Occurrence],
 ) -> dict | None:
     """The first successful run after the one that failed at `began` that the cue's `rule` accepts, as `{runId, at}`, else None.
 

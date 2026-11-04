@@ -29,12 +29,12 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.stamps import epoch_of
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
@@ -64,10 +64,6 @@ REVIEWER = "copilot-pull-request-reviewer[bot]"
 _PASSING = frozenset({"success", "neutral", "skipped"})
 
 
-def _epoch(stamp: str) -> float:
-    return datetime.fromisoformat(stamp).timestamp()
-
-
 @dataclass(frozen=True)
 class GitHubAdapter:
     """Maps one pull request's recorded GitHub data onto `MachineEvent` dicts for `keys`' task scheme.
@@ -92,7 +88,7 @@ class GitHubAdapter:
                 "task": task,
                 "run": None if task else pr,
                 "actor": actor,
-                "time": _epoch(stamp),
+                "time": epoch_of(stamp),
             }
 
         events = [event("github-pull-request", "PR_OPENED", pull["user"]["login"], pull["created_at"], "")]

@@ -12,7 +12,6 @@ from starpulse.cli.demo import (
     SEED_ROLES,
     STATIC,
     TITLES,
-    _iso,
     _seed,
     _seed_ci,
     _send_back,
@@ -26,6 +25,7 @@ from starpulse.cli.demo import (
 )
 from starpulse.contracts.adapters import SCHEMAS, Dag, Pool
 from starpulse.contracts.api.dto.snapshot import Snapshot
+from starpulse.contracts.stamps import iso_utc
 from starpulse.pulls.model.ci import CI_MACHINES
 
 SECRET = "Rotate the router admin password"
@@ -485,10 +485,14 @@ def test_the_seeded_board_has_a_review_task_with_two_pulls_and_a_task_holding_th
     assert [a["state"] for a in held] == ["waiting"] * 3
 
 
-def test_scrub_drops_live_runs_and_seeds_an_in_progress_task_with_a_retried_run_and_a_ready_task_with_a_queued_one() -> None:
+def test_scrub_drops_live_runs_and_seeds_an_in_progress_task_with_a_retried_run_and_a_ready_task_with_a_queued_one() -> (
+    None
+):
     live = _live()
     live["flows"][0]["agents"][0]["runs"] = [{"url": "http://dagu.lan/r", "status": "failed", "startedAt": ""}]
-    live["flows"][0]["agents"].append({**live["flows"][0]["agents"][0], "id": "PROJ-2202", "state": "ready", "runs": []})
+    live["flows"][0]["agents"].append(
+        {**live["flows"][0]["agents"][0], "id": "PROJ-2202", "state": "ready", "runs": []}
+    )
 
     demo = scrub(live)
 
@@ -496,9 +500,9 @@ def test_scrub_drops_live_runs_and_seeds_an_in_progress_task_with_a_retried_run_
     ran = sorted((a for a in board if a.get("runs")), key=lambda a: a["state"] != "ready")
     assert [a["state"] for a in ran] == ["ready", "in_progress"]
     queued, runs = ran[0]["runs"], ran[1]["runs"]
-    assert [r["status"] for r in queued] == ["queued"] and queued[0]["startedAt"] < _iso(live["now"])
+    assert [r["status"] for r in queued] == ["queued"] and queued[0]["startedAt"] < iso_utc(live["now"])
     assert [r["status"] for r in runs] == ["failed", "succeeded"] and {r["url"] for r in runs + queued} == {"#"}
-    assert runs[0]["startedAt"] < runs[1]["startedAt"] < _iso(live["now"])
+    assert runs[0]["startedAt"] < runs[1]["startedAt"] < iso_utc(live["now"])
     assert "dagu.lan" not in json.dumps(demo)
 
 
@@ -569,7 +573,16 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
     demo = scrub(live)
 
     board = demo["flows"][0]["agents"]
-    assert {a["state"] for a in board} == {"proposed", "ready", "waiting", "in_progress", "review", "verifying", "needs_attention", "done"}
+    assert {a["state"] for a in board} == {
+        "proposed",
+        "ready",
+        "waiting",
+        "in_progress",
+        "review",
+        "verifying",
+        "needs_attention",
+        "done",
+    }
     assert len({a["milestone"] for a in board}) >= 3  # two milestones and the tasks with none
     assert board[0] == {
         "id": "DEMO-1",

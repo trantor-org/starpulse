@@ -20,9 +20,9 @@ import itertools
 import json
 import re
 import urllib.request
-from datetime import UTC, datetime
 from pathlib import Path
 
+from starpulse.contracts.stamps import iso_utc
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import board_machine
 
@@ -170,10 +170,6 @@ def _as_github(dags: list[dict]) -> list[dict]:
     return [{**d, "steps": steps} if d["name"] in github else d for d in dags]
 
 
-def _iso(at: float) -> str:
-    return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
@@ -200,8 +196,8 @@ def _finished(domains: list[dict], deliver: str, prefix: str, now: float) -> tup
                     "name": name,
                     "status": "failed" if failed else "succeeded",
                     "runId": f"finished-demo-{k}",
-                    "startedAt": _iso(end - 240),
-                    "finishedAt": _iso(end),
+                    "startedAt": iso_utc(end - 240),
+                    "finishedAt": iso_utc(end),
                     "steps": [
                         {
                             "name": s,
@@ -245,9 +241,9 @@ def _seed_fanout(domains: list[dict], dags: list[dict], now: float) -> tuple[lis
         {
             "runId": f"deliver-agent-demo-{n}",
             "status": "running",
-            "startedAt": _iso(now - seconds - 150),
+            "startedAt": iso_utc(now - seconds - 150),
             "step": step,
-            "stepStartedAt": _iso(now - seconds),
+            "stepStartedAt": iso_utc(now - seconds),
             "steps": statuses(step),
         }
         for n, (step, seconds) in enumerate(SEEDED_RUNS, 1)
@@ -321,8 +317,8 @@ def _seed_catalog(domains: list[dict], dags: list[dict], now: float) -> tuple[li
                 "name": name,
                 "status": status,
                 "runId": f"catalog-demo-{n}",
-                "startedAt": _iso(now - 3600 * (n + 1)) if ran else "",
-                "finishedAt": _iso(now - 3600 * (n + 1) + 90) if ran else "",
+                "startedAt": iso_utc(now - 3600 * (n + 1)) if ran else "",
+                "finishedAt": iso_utc(now - 3600 * (n + 1) + 90) if ran else "",
                 "steps": steps,
                 "pool": f"{name.rpartition('/')[0]}/default" if "/" in name else "default",
                 "schedule": [],
@@ -422,7 +418,17 @@ SEED_SETTLED = [("archived", 4200, "")]
 DAY_S = 86400
 #: How many more tasks fill each lane of a Board machine that draws its own main line, so the demo has a working
 #: team's scale; the day's settled tasks it adds, by where they settled.
-FILL = {"new": 40, "proposed": 97, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "verifying": 3, "needs_attention": 3, "done": 20}
+FILL = {
+    "new": 40,
+    "proposed": 97,
+    "ready": 35,
+    "waiting": 55,
+    "in_progress": 5,
+    "review": 4,
+    "verifying": 3,
+    "needs_attention": 3,
+    "done": 20,
+}
 FILL_SETTLED = {"archived": 2}
 #: Every how many filled Done tasks one entered Done over a day before the capture, which the page no longer draws.
 DONE_STALE_EVERY = 6
@@ -726,13 +732,13 @@ def _seed_task_runs(flows: list[dict], working_state: str, ready_state: str, now
     working = next((a for a in board["agents"] if a["state"] == working_state), None)
     if working is not None:
         working["runs"] = [
-            {"url": "#", "status": "failed", "startedAt": _iso(now - 7200)},
-            {"url": "#", "status": "succeeded", "startedAt": _iso(now - 3600)},
+            {"url": "#", "status": "failed", "startedAt": iso_utc(now - 7200)},
+            {"url": "#", "status": "succeeded", "startedAt": iso_utc(now - 3600)},
         ]
     readies = [a for a in board["agents"] if a["state"] == ready_state]
     if readies:
         ready = max(readies, key=_drawn_first)
-        ready["runs"] = [{"url": "#", "status": "queued", "startedAt": _iso(now - 120)}]
+        ready["runs"] = [{"url": "#", "status": "queued", "startedAt": iso_utc(now - 120)}]
 
 
 def _drawn_first(agent: dict) -> tuple[int, float, int]:
