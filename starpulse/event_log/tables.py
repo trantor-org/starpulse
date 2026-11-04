@@ -184,6 +184,7 @@ pull_requests = Table(
     Column("detail", JSON, nullable=True),
     Column("head_ref", String),
     Column("unresolved", JSON),
+    Column("title", String),
     PrimaryKeyConstraint("repo", "number"),
     Index("ix_starpulse_pull_requests_state", "state", "repo"),
 )

@@ -33,7 +33,7 @@ _FIELDS = {
     "fetched_at": "fetchedAt",
 }
 #: The names of columns an older refresh did not fill: a record may lack them, and is served with them null.
-_LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads"}
+_LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads", "title": "title"}
 
 
 #: How long after its last update a closed or merged pull request stays in memory: about 250 a day, 12 KB each.
