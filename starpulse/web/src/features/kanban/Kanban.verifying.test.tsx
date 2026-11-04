@@ -6,7 +6,7 @@ import { Kanban } from "./Kanban";
 import type { HudState } from "../../render/hud";
 import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 
-const ROLES = { ...LIFECYCLE_ROLES, verifying: "verifying" };
+const ROLES = { ...LIFECYCLE_ROLES, verifying: "verifying", lanes: ["ready", "waiting", "in_progress", "review", "verifying", "needs_attention", "done"] };
 import type { KanbanTask } from "./kanbanModel";
 import { MoveStore } from "./move";
 import { StartStore } from "./start";

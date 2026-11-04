@@ -25,8 +25,8 @@ describe("the columns", () => {
   });
 
   it("draw the verifying State the machine names between Review and Needs attention, so Review holds only review tasks", () => {
-    const roles = { ...LIFECYCLE_ROLES, verifying: "verifying" };
     const names = { ...NAMES, verifying: "Verifying" };
+    const roles = { ...LIFECYCLE_ROLES, verifying: "verifying", lanes: ["ready", "waiting", "in_progress", "review", "verifying", "needs_attention", "done"] };
     const v = layout([task("PROJ-1", "review"), task("PROJ-2", "verifying"), task("PROJ-3", "verifying")], names, roles, NO_PREFS, NOW);
 
     expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Verifying", "Needs attention", "Done"]);
