@@ -251,8 +251,8 @@ NO_UI = 3
 #: The hosts a public demo may link to: XML namespaces, the mockup's web font and React's error decoder.
 DEMO_URL_HOSTS = frozenset({"www.w3.org", "fonts.googleapis.com", "fonts.gstatic.com", "react.dev", "example.com"})
 #: Single URLs a bundled library prints on another host, allowed without allowing the host: the Kanban nickname
-#: library's migration-guide link in its error text.
-DEMO_URLS = ("https://github.com/andreasonny83/unique-names-generator",)
+#: library's migration-guide link in its error text, and the markdown renderer's report-a-bug link.
+DEMO_URLS = ("https://github.com/andreasonny83/unique-names-generator", "https://github.com/markedjs/marked")
 #: Identifiers the scrub must have removed, by the name a refusal gives them. The scrub's own synthetic UUIDs
 #: (`starpulse.cli.demo`) are `<n>-0000-4000-8000-000000000000`, so only those pass.
 LEAK_PATTERNS = {
