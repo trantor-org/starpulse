@@ -6,7 +6,7 @@ import type { ClaimRelease, Move, Pull, Rating, Roles, TrailStep } from "../../a
 import { ago } from "../../shared/clock";
 import { sessionNickname } from "./nickname";
 
-/** The States the machine gives a lifecycle role, keyed by role, in column order. The creation and final States have left the lanes. */
+/** The States the machine gives a lifecycle role, keyed by role: what stacking, the unheld chip, the Done cutoff and a lane's tone read. Which lanes are drawn is `roles.lanes`, never this. */
 const lifecycleStates = ({ ready, waiting, working, review, attention, done }: Roles) => ({ ready, waiting, working, review, attention, done });
 
 /** The role a State plays in the lifecycle columns, when it plays one. */
@@ -16,11 +16,9 @@ export const roleOf = (roles: Roles, state: string): string | undefined => Objec
 export const recent = (tasks: KanbanTask[], now: number, roles: Roles): KanbanTask[] =>
   tasks.filter((t) => t.lane !== roles.done || !t.entered || t.entered >= midnight(new Date(now * 1000)));
 
-/** The lanes drawn as columns: the machine's lifecycle States in order when it names a ready State (trantor's lifecycle), else the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses); none before the lanes are known. */
-export const columnsOf = (names: Record<string, string>, roles: Roles): string[] => {
-  const states = new Set(Object.values(lifecycleStates(roles)).filter((s): s is string => !!s));
-  return roles.ready ? [...states] : Object.keys(names).filter((s) => s !== roles.proposed);
-};
+/** The lanes drawn as columns: the snapshot's open lanes in the machine's order when it names a ready State (trantor's lifecycle), else the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses); none before the lanes are known. */
+export const columnsOf = (names: Record<string, string>, roles: Roles): string[] =>
+  roles.ready ? roles.lanes ?? [] : Object.keys(names).filter((s) => s !== roles.proposed);
 
 export interface KanbanTask {
   id: string;

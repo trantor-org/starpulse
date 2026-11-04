@@ -2725,6 +2725,10 @@ export interface Roles {
    */
   initial?: string | null;
   /**
+   * The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial, final and proposed.
+   */
+  lanes?: string[];
+  /**
    * Where a task waits, off the lanes, until it is promoted.
    */
   proposed?: string | null;

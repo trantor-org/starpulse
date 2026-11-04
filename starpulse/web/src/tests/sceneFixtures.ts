@@ -26,7 +26,7 @@ export const savedBoardSky = (W: number, H: number, patch: (snap: Snapshot) => v
       transitions: SAVED_TRANSITIONS.map(([source, target]) => ({ source, target, event: `${source}_${target}` })),
       mainLine: ["new", "ready", "in_progress", "review", "done"],
     } }],
-    dags: [], domains: [], settled: {}, error: null, now: 1000, roles: LIFECYCLE_ROLES,
+    dags: [], domains: [], settled: {}, error: null, now: 1000, roles: { ...LIFECYCLE_ROLES, lanes: [] }, // the scenes draw whatever States their own machine lists
   };
   patch(snap);
   const S = merge(snap), moves = new Moves();

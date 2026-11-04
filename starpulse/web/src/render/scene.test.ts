@@ -136,6 +136,18 @@ const withTasks = (sky: ReturnType<typeof boardSky>, counts: Record<string, numb
 const cue = (dagName: string, event: string, state: string): Cue => ({ dag: dagName, event, state, on: "each merge" });
 const edgeOf = (scene: Scene, event: string) => scene.bEdges.find((e) => e.event === event)!;
 
+describe("the Board's open suns", () => {
+  it("are the lanes the snapshot lists, beside its starting and terminal States", () => {
+    const sky = boardSky();
+    sky.S.flows.board.machine.states.find((s) => s.id === "done")!.final = true;
+    sky.S.roles = { ...sky.S.roles, lanes: ["ready", "done"] };
+    const scene = build(sky, { kind: "board" });
+
+    expect(Object.keys(scene.galaxies)).toContain("ready");
+    expect(Object.keys(scene.galaxies)).not.toContain("review");
+  });
+});
+
 describe("a starting or terminal Board state", () => {
   const today = () => {
     const sky = boardSky();

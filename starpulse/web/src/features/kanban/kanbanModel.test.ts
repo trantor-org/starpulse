@@ -34,6 +34,14 @@ describe("the columns", () => {
     expect(assigneeOptions([task("TASK-1", "to_do")], columnsOf(native, {}))).toEqual([{ value: "", count: 1 }]);
   });
 
+  it("are the lanes the snapshot lists in its order, so a State only the machine names, such as Verifying, is drawn", () => {
+    const lanes = ["ready", "waiting", "in_progress", "review", "verifying", "needs_attention", "done"];
+    const names = Object.fromEntries(lanes.map((id) => [id, id]));
+
+    expect(columnsOf(names, { ...LIFECYCLE_ROLES, lanes })).toEqual(lanes);
+    expect(layout([task("TASK-1", "verifying")], names, { ...LIFECYCLE_ROLES, lanes }, NO_PREFS, NOW).columns.map((c) => [c.id, c.count])).toContainEqual(["verifying", 1]);
+  });
+
   it("never include the proposed State, which waits off the board until it is promoted", () => {
     const names = { proposed: "Proposed", to_do: "To Do", done: "Done" };
 

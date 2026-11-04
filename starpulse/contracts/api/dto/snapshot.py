@@ -37,6 +37,10 @@ class Roles(_Api):
     attention: str | None = Field(default=None, description="Where a task waits on a person.")
     proposed: str | None = Field(default=None, description="Where a task waits, off the lanes, until it is promoted.")
     startable: list[str] = Field(default_factory=list, description="The States a session starts a task from.")
+    lanes: list[str] = Field(
+        default_factory=list,
+        description="The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial, final and proposed.",
+    )
 
 
 class Claim(_Api):

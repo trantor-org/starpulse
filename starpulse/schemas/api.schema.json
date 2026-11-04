@@ -6252,6 +6252,13 @@
           "default": null,
           "description": "Where a task starts."
         },
+        "lanes": {
+          "description": "The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial, final and proposed.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "proposed": {
           "anyOf": [
             {

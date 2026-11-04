@@ -52,13 +52,20 @@ class StateRoles:
     def wire(self) -> dict[str, str | list[str] | None]:
         """The roles as the snapshot sends them, for a client that holds no machine to read them from."""
         points = ("initial", "final", "done", "working", "ready", "waiting", "review", "attention", "proposed")
-        return {**{point: getattr(self, point) for point in points}, "startable": sorted(self.startable)}
+        named = {point: getattr(self, point) for point in points}
+        return {**named, "startable": sorted(self.startable), "lanes": list(self.lanes)}
 
     def _first(self, role: str) -> str | None:
         return next((state for state, declared in self.roles.items() if declared == role), None)
 
     def _waiting_on(self, fact: str) -> str | None:
         return next((state for state, facts in self.waits.items() if fact in facts), None)
+
+    @property
+    def lanes(self) -> tuple[str, ...]:
+        """The open lanes a view draws, in the order the machine lists them: every State but the initial, final and proposed."""
+        off = ("initial", "final", "proposed")
+        return tuple(state for state, role in self.roles.items() if role not in off)
 
     @property
     def initial(self) -> str | None:

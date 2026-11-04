@@ -30,6 +30,20 @@ def test_a_machine_with_renamed_states_answers_each_lifecycle_point_by_its_role(
     assert getattr(renamed(), point) == state
 
 
+def test_the_lanes_are_every_state_but_the_initial_final_and_proposed_in_the_order_the_machine_lists_them() -> None:
+    assert renamed().lanes == ("todo", "parked", "doing", "checking", "on_me", "shipped")
+
+
+def test_a_state_added_only_to_the_machine_file_becomes_a_lane_where_it_is_listed(tmp_path: Path) -> None:
+    text = (FIXTURES / "renamed-board.yaml").read_text().replace("  on_me:", "  extra: {role: resting}\n  on_me:", 1)
+    text = text.replace("  ARCHIVE:", "  QA: [{from: checking, to: extra}, {from: extra, to: shipped}]\n  ARCHIVE:", 1)
+    machine = tmp_path / "board.yaml"
+    machine.write_text(text)
+    roles = StateRoles.of_machine(load_machine(machine))
+    assert roles.lanes == ("todo", "parked", "doing", "checking", "extra", "on_me", "shipped")
+    assert roles.wire()["lanes"] == list(roles.lanes)
+
+
 def test_the_startable_states_are_the_ones_waiting_on_a_start_fact_or_a_person_and_never_the_review_wait() -> None:
     assert renamed().startable == frozenset({"todo", "parked", "on_me"})
 

@@ -822,7 +822,9 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   };
   function buildBoard() {
     // The Board's places come from its machine and its declared main line: the columns it draws when no tiers are configured.
-    const states = board.machine.states, transitions = board.machine.transitions;
+    // Its suns are the snapshot's open lanes beside the starting and terminal States, which the lanes leave out.
+    const lanes = S.roles.lanes?.length ? new Set(S.roles.lanes) : null;
+    const states = board.machine.states.filter((s) => !lanes || lanes.has(s.id) || entry(s) || s.final), transitions = board.machine.transitions;
     const BP = boardPlaces(states, transitions, board.machine.mainLine ?? undefined);
     const byState: Record<string, RawTask[]> = {};
     // an entry state (the initial one, or Proposed) orbits no task, as each is drawn where it went or tallied; a terminal state orbits those that
