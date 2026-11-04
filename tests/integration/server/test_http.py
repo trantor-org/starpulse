@@ -466,6 +466,18 @@ def test_an_operator_move_into_in_progress_starts_a_session_on_the_tasks_own_pro
     assert started == [("PROJ-3", "claude", "interactive")]
 
 
+def test_an_operator_move_of_a_task_with_the_released_assignee_starts_a_session(tmp_path: Path) -> None:
+    started: list[tuple[str, str, str]] = []
+    feed = BoardFeed(roles=ROLES)
+    moves = {"in_progress": Move(allowed=True)}
+    feed.put(task("PROJ-3", "Ready", profile="@agent-deep-high", assignee="released", moves=moves))
+    with _starting_server(tmp_path, feed, started) as server:
+        dragged = _post_move(server, {"task": "PROJ-3", "to": "in_progress", "actor": "operator"})
+
+    assert dragged == (200, {"task": "PROJ-3", "to": "in_progress", "url": "https://claude.ai/code/session_01"})
+    assert started == [("PROJ-3", "claude", "interactive")]
+
+
 def test_a_move_into_in_progress_starts_nothing_unless_the_operator_made_it_on_an_unheld_task(tmp_path: Path) -> None:
     started: list[tuple[str, str, str]] = []
     feed = BoardFeed(roles=ROLES)

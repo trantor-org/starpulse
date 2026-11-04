@@ -89,7 +89,7 @@ def _move_one(
 
 def _dragged_unheld(feed: BoardFeed, agent: dict, column: str, who: Who) -> bool:
     """Whether the operator moved a task no session holds into the working state: the move that starts its session."""
-    return who.actor == OPERATOR and column == feed.roles.working and not agent.get("assignee")
+    return who.actor == OPERATOR and column == feed.roles.working and agent.get("assignee") in (None, "", _RELEASED_ASSIGNEE)
 
 
 def column_status(column: str) -> str:
