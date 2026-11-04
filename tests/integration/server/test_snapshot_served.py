@@ -98,7 +98,7 @@ def test_the_full_view_sends_a_pull_request_without_the_fields_the_feed_keeps_fo
     assert "files" not in sent
 
 
-def test_each_page_that_asks_takes_the_snapshot_afresh(tmp_path: Path, builds: Counter[int]) -> None:
+def test_pages_that_ask_at_one_revision_share_one_snapshot_take(tmp_path: Path, builds: Counter[int]) -> None:
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1"))
     with _serve(tmp_path, feed) as server:
@@ -109,7 +109,7 @@ def test_each_page_that_asks_takes_the_snapshot_afresh(tmp_path: Path, builds: C
             with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
                 _next_event(resp)
 
-    assert builds[id(feed)] - started == 8
+    assert builds[id(feed)] - started == 1
 
 
 def test_a_change_is_in_the_next_snapshot_served(tmp_path: Path, builds: Counter[int]) -> None:

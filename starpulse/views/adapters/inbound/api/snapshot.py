@@ -16,7 +16,7 @@ from starlette.responses import Response
 from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, StreamRoute
 from starpulse.views.adapters.inbound.api.streams import streaming
-from starpulse.views.model.encoding import encode, full_snapshot
+from starpulse.views.model.encoding import encode
 
 if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
@@ -35,7 +35,7 @@ def body(request: Request) -> Response:
 def snapshot(request: Request) -> Response:
     snapshots = seams(request).snapshots
     if query(request).get("view") == ["full"]:
-        return answer(request, encode("snapshot", full_snapshot(snapshots.take().snapshot)))
+        return answer(request, snapshots.full())
     return answer(request, snapshots.build()[1])
 
 

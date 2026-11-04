@@ -17,7 +17,7 @@ from typing import Any, NamedTuple
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.views.adapters.inbound.compression import Encoded
-from starpulse.views.model.encoding import encode_snapshot
+from starpulse.views.model.encoding import encode, encode_snapshot, full_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,10 @@ class Snapshots:
         #: The newest snapshot built, when `refresh_s` > 0; builds run one at a time under `_building`.
         self._warm: _Warm | None = None
         self._building = threading.Lock()
+        #: The newest `take`, when the clock's seconds it was taken, and the full body made from it; both under `_taking`.
+        self._taken: tuple[float, Served] | None = None
+        self._full: tuple[Served, bytes] | None = None
+        self._taking = threading.Lock()
         self._keys = itertools.count()
 
     @property
@@ -62,8 +66,29 @@ class Snapshots:
         return self._feed.rev
 
     def take(self) -> Served:
-        """The snapshot as of now, unencoded."""
-        return Served(*self._feed.snapshot_at())
+        """The snapshot as of now, unencoded: the one taken at this feed revision under `IDLE_REFRESH_S` ago, so
+        callers that arrive together share one build rather than queue for the feed lock a build each."""
+        if (held := self._held_take()) is not None:
+            return held
+        with self._taking:
+            if (held := self._held_take()) is None:
+                held = Served(*self._feed.snapshot_at())
+                self._taken = (self._clock(), held)
+            return held
+
+    def full(self) -> bytes:
+        """The body of `?view=full` for the snapshot `take` serves, encoded once however many requests ask."""
+        served = self.take()
+        with self._taking:
+            if self._full is None or self._full[0] is not served:
+                self._full = (served, encode("snapshot", full_snapshot(served.snapshot)))
+            return self._full[1]
+
+    def _held_take(self) -> Served | None:
+        taken = self._taken
+        if taken is not None and taken[1].rev == self._feed.rev and self._clock() - taken[0] < IDLE_REFRESH_S:
+            return taken[1]
+        return None
 
     def build(self) -> tuple[Served, Encoded]:
         """The snapshot with its body and gzip: the warm one while it is current, else one built now."""
