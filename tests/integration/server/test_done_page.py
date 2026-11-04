@@ -56,6 +56,19 @@ def test_done_page_lists_the_cold_done_tasks_newest_first_a_page_at_a_time(tmp_p
     }
 
 
+def test_done_page_keeps_cold_tasks_sharing_a_timestamp_together(tmp_path: Path) -> None:
+    feed = BoardFeed(clock=lambda: NOW)
+    feed.expect("0-0")
+    for n in (1, 2, 3):
+        feed.put(task(f"PROJ-{n}", "Done", observed_at=NOW - 2 * DAY_S))
+    with serve(tmp_path, feed, bare_board(read=RECORDS.get)) as server:
+        _, first = _get(server, "?limit=2")
+        _, rest = _get(server, f"?limit=2&before={first['tasks'][-1]['entered']}")
+
+    assert {t["id"] for t in first["tasks"] + rest["tasks"]} == {"PROJ-1", "PROJ-2", "PROJ-3"}
+    assert first["more"] is False and rest["tasks"] == []
+
+
 def test_done_page_is_404_for_a_board_that_cannot_read_a_task_and_400_for_a_bad_query(tmp_path: Path) -> None:
     with serve(tmp_path, _feed()) as server:
         unreadable = _get(server, "")[0]

@@ -7,12 +7,13 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, update
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.view import board_columns
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.readmodel.tables import tasks
 from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import board_machine
@@ -94,6 +95,20 @@ def test_the_snapshot_lists_no_archived_task_and_the_archive_is_paged(engine: En
     rest, more = feed.cold_page(first[-1]["entered"], 10)
     assert {agent["id"] for agent in first + rest} == {f"TASK-{n}" for n in range(1, 6)}
     assert not more
+
+
+def test_the_archive_page_keeps_stubs_sharing_a_timestamp_together(engine: Engine) -> None:
+    for number in range(1, 4):
+        _append(engine, number, "Done", archived=True)
+    feed = _feed(engine)
+    with engine.begin() as connection:
+        connection.execute(update(tasks).values(updated_at=100.0))
+
+    first, more = feed.cold_page(None, 2)
+    rest, rest_more = feed.cold_page(first[-1]["entered"], 2)
+
+    assert {agent["id"] for agent in first + rest} == {"TASK-1", "TASK-2", "TASK-3"}
+    assert not (more or rest_more)
 
 
 def test_a_task_is_read_from_the_read_model_not_held(engine: Engine) -> None:
