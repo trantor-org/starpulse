@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
 
@@ -73,13 +74,21 @@ async def task(request: Request) -> Response:
     return on_loop(request, lambda: _resident_task(request)) or await on_worker(request, lambda: _stored_task(request))
 
 
+#: The one thread that builds the body of every retired task: a free-threaded thread keeps the heap pages of what it
+#: built, so a dump built on whichever request thread took it left each of 40 concurrent requests' pages held (9 GB).
+_WHOLE_DUMP = ThreadPoolExecutor(1, thread_name_prefix="retired-dump")
+
+
 @reading
 def retired(request: Request) -> Response:
     asked = query(request)
-    status, body = retired_list(
-        seams(request).board, asked.get("task", [""])[0], asked.get("milestone", [""])[0], asked.get("fields", [""])[0]
-    )
-    return answer(request, encode("retired", body), status)
+    task, milestone, fields = (asked.get(name, [""])[0] for name in ("task", "milestone", "fields"))
+
+    def build() -> Response:
+        status, body = retired_list(seams(request).board, task, milestone, fields)
+        return answer(request, encode("retired", body), status)
+
+    return build() if task or fields else _WHOLE_DUMP.submit(build).result()
 
 
 def routes(api: Api) -> list[ApiRoute]:
