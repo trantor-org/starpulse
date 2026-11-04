@@ -623,3 +623,18 @@ def test_the_loops_next_pass_admits_against_a_changed_limit_with_no_restart(tmp_
 
     _put(runtime, {"cpuLimit": None})
     assert runtime.loop.tick() == ["T-4"]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"sessionCap": 0}, {"sessionCap": -1}, {"cpuLimit": 0}, {"cpuLimit": 101}, {"memoryLimit": 150}, {"harness": " "}],
+)
+def test_a_put_with_an_invalid_cap_or_limit_saves_nothing_else(tmp_path: Path, bad: dict) -> None:
+    runtime = _runtime(tmp_path)
+    window = {"start": "22:00", "end": "07:00", "timezone": "America/Phoenix"}
+
+    status, _ = _put(runtime, {"harness": "cursor", "quietHours": window, **bad})
+
+    assert status == 400
+    assert runtime.harness.get() == "claude"
+    assert runtime.quiet_hours.get() is None

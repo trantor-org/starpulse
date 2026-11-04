@@ -53,12 +53,12 @@ def _put_scheduler(request: SchedulerRequest, runtime: Runtime | Remote) -> tupl
     named = request.model_fields_set
     if not named or ("enabled" in named and request.enabled is None):
         return 400, {"error": _SCHEDULER_USAGE}
-    try:
-        if "harness" in named:
-            runtime.set_harness(request.harness)
+    try:  # the request model has refused every other bad value, so only a quiet-hours window can fail here, first
         if "quietHours" in named:
             quiet = request.quietHours
             runtime.set_quiet_hours(None if quiet is None else quiet.model_dump())
+        if "harness" in named:
+            runtime.set_harness(request.harness)
         if "sessionCap" in named:
             runtime.set_session_cap(request.sessionCap)
         if limits := {name: getattr(request, field) for field, name in _LIMIT_FIELDS.items() if field in named}:

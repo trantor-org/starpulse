@@ -6810,10 +6810,16 @@
         "cpuLimit": {
           "anyOf": [
             {
-              "type": "integer"
-            },
-            {
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "gt": 0,
+              "le": 100
             },
             {
               "type": "null"
@@ -6836,6 +6842,7 @@
         "harness": {
           "anyOf": [
             {
+              "minLength": 1,
               "type": "string"
             },
             {
@@ -6847,10 +6854,16 @@
         "memoryLimit": {
           "anyOf": [
             {
-              "type": "integer"
-            },
-            {
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "gt": 0,
+              "le": 100
             },
             {
               "type": "null"
@@ -6873,6 +6886,7 @@
         "sessionCap": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "type": "integer"
             },
             {
