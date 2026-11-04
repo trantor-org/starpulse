@@ -32,7 +32,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.board_feed import BoardFeed
     from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.pulls.adapters.outbound.pulls import PullStore
-    from starpulse.views.adapters.outbound.signal_folds import SignalFolds
+    from starpulse.views.ports.signal_folds import SignalFoldReader
 
 
 #: The most rows `/api/ledger/<event>` and `/api/machines` serve at once.
@@ -258,7 +258,7 @@ def health_response(
     return encode("health", health), 200
 
 
-def refuses_at_once(telemetry: SignalFolds | None, query: dict[str, list[str]], now: float, span: int = 1) -> bool:
+def refuses_at_once(telemetry: SignalFoldReader | None, query: dict[str, list[str]], now: float, span: int = 1) -> bool:
     """Whether a telemetry report of the last `span` x `hours` answers with a refusal that needs no fold: an `hours`
     that is no positive number, no telemetry, or a window longer than the history (`_held_folds`)."""
     window = _hours(query, "hours", _HEALTH_HOURS)
@@ -289,7 +289,7 @@ _ROUTE_VIEWS = {
 
 
 def _held_folds(
-    telemetry: SignalFolds, window: float, kind: str, now: float, label: str, views: tuple[str, ...] = ()
+    telemetry: SignalFoldReader, window: float, kind: str, now: float, label: str, views: tuple[str, ...] = ()
 ) -> dict[str, list[Any]] | tuple[bytes, int]:
     """The per-session fold results of the `views` for the last `window` hours as of `now`, or the 503 response for a
     database that cannot be read.
@@ -309,7 +309,7 @@ def _held_folds(
 
 
 def sessions_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     now: float,
@@ -332,7 +332,7 @@ def sessions_response(
 
 
 def steps_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     now: float,
@@ -355,7 +355,7 @@ def steps_response(
 
 
 def _kind_size_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     now: float,
     label: str,
@@ -378,7 +378,7 @@ def _kind_size_response(
 
 
 def transitions_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -393,7 +393,7 @@ def transitions_response(
 
 
 def cells_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -412,7 +412,7 @@ def cells_response(
 
 
 def estimates_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -436,7 +436,7 @@ def estimates_response(
 
 
 def graph_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -451,7 +451,7 @@ def graph_response(
 
 
 def stages_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -471,7 +471,7 @@ def stages_response(
 
 
 def diff_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -486,7 +486,7 @@ def diff_response(
 
 
 def cost_to_go_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],

@@ -14,13 +14,14 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.api.registry import BODIES, RESPONSES
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, TelemetryLog, signals
+from starpulse.harness_telemetry.adapters.inbound.telemetry import Signal, signals
 from starpulse.runtime.adapter_kit import serve, task, url
 from starpulse.scheduler.adapters.runtime import build
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.views.adapters.inbound.page_server import PageServer
 
 from tests.fake_board import bare_board
+from tests.folded_telemetry import FoldedTelemetry
 from tests.machines import MACHINES, ROLES
 from tests.unit.board.test_board_feed import _paged_feed
 from tests.unit.flow_metrics.test_analytics import NOW, ROWS
@@ -64,7 +65,7 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PageServer]:
         probe=lambda: {"cpu": 10.0, "memory": 20.0},
     )
     runtime.sampler.sample()
-    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    telemetry = FoldedTelemetry(tmp_path, None)
     recorded = [
         sg
         for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines()

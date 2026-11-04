@@ -16,7 +16,7 @@ from starpulse.views.application.queries.responses import _HEALTH_HOURS, _error,
 from starpulse.views.model.encoding import encode
 
 if TYPE_CHECKING:
-    from starpulse.views.adapters.outbound.signal_folds import SignalFolds
+    from starpulse.views.ports.signal_folds import SignalFoldReader
 
 #: What `/api/analytics/missed-loads` lists per skill, and `/api/analytics/trace-clusters` samples per cluster.
 _LISTED = 5
@@ -41,7 +41,7 @@ def _case_ref(case: Case) -> dict[str, Any]:
 
 
 def _telemetry_cases(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     window: float,
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -67,7 +67,7 @@ def _telemetry_cases(
 
 
 def missed_loads_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
@@ -148,7 +148,7 @@ def _cluster_view(cluster: Cluster, analytics: Analytics, outliers: int) -> dict
 
 
 def trace_clusters_response(
-    telemetry: SignalFolds | None,
+    telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],

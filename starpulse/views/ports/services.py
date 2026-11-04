@@ -15,7 +15,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
     from starpulse.scheduler.adapters.remote import Remote
     from starpulse.scheduler.adapters.runtime import Runtime
-    from starpulse.views.adapters.outbound.signal_folds import SignalFolds
+    from starpulse.views.ports.signal_folds import SignalFoldReader
 
 
 class KeptAnswers(Protocol):
@@ -47,7 +47,7 @@ class Services:
     scheduler: Runtime | Remote | None = None
     contract: Callable[[], dict[str, Any]] | None = None
     pulls: PullStore | None = None
-    telemetry: SignalFolds | None = None
+    telemetry: SignalFoldReader | None = None
     search: SearchIndex | None = None
     analytics: Analytics | None = None
     #: Keeps the telemetry analytics' answers past a restart so a read never waits on a fold; None folds per request.
