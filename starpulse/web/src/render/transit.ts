@@ -337,7 +337,7 @@ function spot(sc: Scene, nodes: Map<string, Node>, k: string): Node | undefined 
 /** Each branch drawn at least `min` of the way out to where it stops (by default all the way), with its own line from its landing (or the hub) to its last station:
  *  what the overlap check measures. Siblings share the station they open from, so a ring-2 line starts past it. */
 export const branchLines = (min = 1) =>
-  [...branches.values()].filter((b) => b.ext >= min * b.to - 1e-9 && (b.to > 0 || !min) && b.route.length).map((b) => ({ key: b.key, sun: b.sun, ring: b.ring, parent: b.parent, th: +b.th.toFixed(3), lane: b.lane, dir: b.dir, n: b.steps.length, pj: b.pj, loose: b.loose, ext: b.ext, leaving: b.leaving, pts: b.route.slice(b.own + (b.parent ? 1 : 0)) }));
+  [...branches.values()].filter((b) => b.ext >= min * b.to - 1e-9 && (b.to > 0 || !min) && b.route.length).map((b) => ({ key: b.key, sun: b.sun, ring: b.ring, parent: b.parent, th: +b.th.toFixed(3), lane: b.lane, dir: b.dir, n: b.steps.length, pj: b.pj, loose: b.loose, ext: b.ext, leaving: b.leaving, skill: b.skill, pts: b.route.slice(b.own + (b.parent ? 1 : 0)) }));
 /** How far `p` sits from the segment a–b. */
 function seg(p: Pt, a: Pt, b: Pt) {
   const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy, u = l ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l)) : 0;

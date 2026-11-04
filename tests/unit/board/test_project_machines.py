@@ -79,6 +79,7 @@ def test_a_state_that_opens_a_sibling_machine_draws_the_link_with_the_event_each
             "exits": {"shipped": "to_done"},
             "parent": "board",
             "when": "a PR is open",
+            "skill": "",
         }
     ]
     assert "submachines" not in machines["in-progress"]

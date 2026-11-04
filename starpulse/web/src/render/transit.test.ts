@@ -65,6 +65,14 @@ describe("placeBranches", { timeout: 60_000 }, () => {
       }
   });
 
+  it("labels a phase branch with the skill its machine runs, as the kanban card does", () => {
+    const scene = mock(), line = T.branchLines().find((l) => l.ring === 1)!;
+    expect(line.skill).toBeUndefined();
+    for (const k of scene.tasks) if (k.h?.ring1 && `${(k.host as Galaxy).id}|${k.h.machine}` === line.key) k.h.skill = "tdd";
+    T.placeBranches(scene, 9.1);
+    expect(T.branchLines().find((l) => l.key === line.key)!.skill).toBe("tdd");
+  });
+
   it("grows no branch into the room of a line still drawn while it leaves the sky", () => {
     const scene = mock(), line = T.branchLines().find((l) => l.ring === 1)!, st = stationsOf(line)[0];
     const riders = scene.tasks.filter((k) => k.h?.ring1 && `${(k.host as Galaxy).id}|${k.h.machine}` === line.key);
