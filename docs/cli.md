@@ -224,7 +224,7 @@ exactly one state, beside which the page draws the cue; a file with no block has
 the one `[board] machine` names: each other file is a flow named by its file stem, drawn
 with the same writer check as the Board's (`refuse_unlisted` against the configured workflows). A file may declare how
 the page draws it: `tiers` (state ids per stage), `main_line` (the Board's axis; its lanes in order when absent) and
-`rests` (states drawn final though an event leaves them); `submachines` (`{state, machine, exits, routes, when}`, `machine` a sibling's
+`rests` (states drawn final though an event leaves them); `submachines` (`{state, machine, skill, exits, routes, when}`, `skill` the skill a session runs while the inner machine does, which the Kanban card and the Star Map branch name and the machine's own name when absent; `machine` a sibling's
 file stem, `exits` mapping each of its final states to the event of this machine that leaves `state`, and `routes`
 mapping a phase state to the event that leaves `state` toward it when the task type's `[sequences]` entry (see
 [serving](serving.md)) lists that phase next, the exit's own event otherwise); and

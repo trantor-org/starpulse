@@ -162,7 +162,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
         </div>
       ) : live && (
         <div className={`mach${now - live.at < HOT_S ? " hot" : ""}`}>
-          <span className={["p", live.source && "mapped", live.machine === "ci" && ciTone(live.state) !== "phase" && ciTone(live.state)].filter(Boolean).join(" ")} title={live.source ? `mapped from ${live.source}` : undefined} /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
+          <span className={["p", live.source && "mapped", live.machine === "ci" && ciTone(live.state) !== "phase" && ciTone(live.state)].filter(Boolean).join(" ")} title={live.source ? `mapped from ${live.source}` : undefined} /><b>{live.machine}</b>{live.skill && <span className="s skill" title="The skill this phase runs">· {live.skill}</span>}<span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
         </div>
       )}
       {!compact && (

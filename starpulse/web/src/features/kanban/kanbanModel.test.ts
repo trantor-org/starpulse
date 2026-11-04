@@ -201,6 +201,18 @@ describe("the cards drawn from a snapshot", () => {
     expect(live(snapshot())!.source).toBeUndefined();
   });
 
+  it("name the skill the machine's submachine link declares on the live line, and none when the link names none", () => {
+    const link = { state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" };
+    const snap = snapshot();
+    snap.flows[0].machine = { states: [], transitions: [], submachines: [{ ...link, skill: "review-fix" }] } as never;
+    const live = (s: Snapshot) => kanbanTasks(merge(s)).find((t) => t.id === "PROJ-1")!.live;
+
+    expect(live(snap)).toMatchObject({ machine: "in-progress", skill: "review-fix" });
+    snap.flows[0].machine = { states: [], transitions: [], submachines: [{ ...link, skill: "" }] } as never;
+    expect(live(snap)!.skill).toBeUndefined();
+    expect(live(snapshot())!.skill).toBeUndefined();
+  });
+
   it("carry the verdict on each column the task may move to, and none for a task the snapshot gives none", () => {
     const moves = { review: { allowed: false, reason: "no render approval", skill: "designing-ui" }, ready: { allowed: true, reason: "", skill: "" } };
     const snap = snapshot();

@@ -1,5 +1,6 @@
 // The Kanban view's model: the Board's open tasks laid out as columns of milestone buckets. Pure, so the view only draws it.
 import { midnight, type Sky } from "../../render/sky";
+import { skillOf } from "../../render/skills";
 import type { TaskRecord } from "./taskViewModel";
 import type { Option } from "../../shared/ChoiceMenu";
 import type { ClaimRelease, Move, Pull, Rating, Roles, TrailStep } from "../../api";
@@ -42,7 +43,7 @@ export interface KanbanTask {
   acceptanceCriteria?: { n: number; text: string; checked: boolean }[];
   definitionOfDone?: { n: number; text: string; checked: boolean }[];
   /** The lifecycle machine that last placed the task, the state it left it in and when (epoch seconds). */
-  live: { machine: string; state: string; at: number; source?: string | null } | null;
+  live: { machine: string; state: string; at: number; source?: string | null; skill?: string } | null;
   /** The first `readable` guard rule the description breaks, empty when it reads well: the card draws the legacy-format badge for a non-empty one, the dialog none. */
   readable?: string;
   /** The pass/fail verdict on the task, drawn in the task view only; absent when it was never rated or the rating was cleared. */
@@ -388,7 +389,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
     return {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", profile: a.profile ?? "", dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), runs: a.runs ?? [], description: a.description ?? "",
-      live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
+      live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source, skill: skillOf(sky.flows, latest.flow) } : null,
       released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, claimExpiresAt: a.claim_expires_at ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       rating: sky.ratings?.[a.id],

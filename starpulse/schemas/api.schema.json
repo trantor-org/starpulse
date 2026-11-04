@@ -8478,6 +8478,11 @@
           "description": "Inner event to the Board event it fires; empty when the link routes none.",
           "type": "object"
         },
+        "skill": {
+          "default": "",
+          "description": "The skill a session runs while the inner machine does; empty when the link names none.",
+          "type": "string"
+        },
         "state": {
           "type": "string"
         },

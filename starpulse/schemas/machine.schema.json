@@ -182,7 +182,8 @@
           "propertyNames": {"$ref": "#/$defs/identifier"},
           "additionalProperties": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
         },
-        "when": {"description": "What has to hold for the inner machine to run under the state.", "type": "string"}
+        "when": {"description": "What has to hold for the inner machine to run under the state.", "type": "string"},
+        "skill": {"description": "The skill a session runs while the inner machine does, which the kanban card and the Star Map branch name; the machine's own name when absent.", "type": "string", "minLength": 1}
       }
     },
     "launch": {
