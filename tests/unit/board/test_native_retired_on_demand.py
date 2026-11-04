@@ -97,3 +97,25 @@ def test_an_unstarted_board_reads_no_retired_text() -> None:
 
     assert retired.changes()(force=True) is None
     assert list(retired.texts()) == []
+
+
+def test_a_projection_keeps_what_it_maps_each_text_to_never_the_texts(
+    started: tuple[Board, UpstreamBacklog], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, _ = started
+    assert built.retire is not None and built.retired_projected is not None
+    monkeypatch.setattr(native, "_RETIRED_PAGE", 1)
+    for task in ("task-6", "task-5"):
+        built.retire(task)
+    seen: list[str] = []
+
+    def length(text: str) -> int:
+        seen.append(text)
+        return len(text)
+
+    projected = built.retired_projected(length, "", "")
+
+    assert [task for task, _ in projected] == ["task-5", "task-6"]
+    assert [value for _, value in projected] == [len(text) for text in seen]
+    assert built.retired_projected(length, "TASK-5", "") == projected[:1]
+    assert not any(_holds(projected, text) for text in seen)

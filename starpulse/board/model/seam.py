@@ -48,6 +48,7 @@ __all__ = [
     "MoveWriter",
     "OPERATOR",
     "RetiredImporter",
+    "RetiredProjector",
     "RetiredReader",
     "TaskArchiver",
     "TaskCompleter",
@@ -146,6 +147,9 @@ TaskRetirer = Callable[[str], Written]
 #: The retired task `task` as `[{task, name, text}]` (id, file name and file text), empty when it is not retired; a blank
 #: `task` reads every retired task, by id.
 RetiredReader = Callable[[str, str], list[Mapping[str, str]]]
+#: `(project, task, milestone)` as `[(id, project(text))]` over the same retired tasks `RetiredReader` reads, the texts
+#: read a page at a time and dropped once projected, so a caller wanting only what `project` keeps holds no text.
+RetiredProjector = Callable[[Callable[[str], Any], str, str], list[tuple[str, Any]]]
 #: Keep the file `name` with `text`, retired elsewhere, among the retired tasks; a successful `Written.output` is the
 #: task's id. Text that names no task id, a name that is no plain file name, a task on the board, or a task retired with
 #: other text is refused; the same task with the same text is accepted again.
@@ -245,6 +249,8 @@ class Board:
     """Takes a finished task off the board into its retired tasks; None refuses every retire."""
     retired: RetiredReader | None = None
     """Reads the retired tasks; None when the board keeps none."""
+    retired_projected: RetiredProjector | None = None
+    """Reads the retired tasks through a projection of each text; None when the board keeps none."""
     import_retired: RetiredImporter | None = None
     """Keeps a task retired elsewhere among the retired tasks; None refuses every import."""
     reconcile: Callable[[str], bool] | None = None

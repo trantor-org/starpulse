@@ -369,12 +369,15 @@ def retired_list(board: Board | None, task: str, milestone: str = "", fields: st
     dependencies} alone, the ids its file lists. Reading is not LAN-limited."""
     if board is None or board.retired is None:
         return 404, {"error": "this board keeps no retired tasks"}
-    rows = board.retired(task, milestone)
-    if not fields:
-        return 200, {"tasks": rows}
-    if fields != "dependencies":
+    if fields not in ("", "dependencies"):
         return 400, {"error": f"fields {fields!r} is not a retired projection; use dependencies"}
-    return 200, {"tasks": [{"task": row["task"], "dependencies": dependencies(row["text"])} for row in rows]}
+    if not fields:
+        return 200, {"tasks": board.retired(task, milestone)}
+    if board.retired_projected is None:
+        edges = [(row["task"], dependencies(row["text"])) for row in board.retired(task, milestone)]
+    else:
+        edges = board.retired_projected(dependencies, task, milestone)
+    return 200, {"tasks": [{"task": id_, "dependencies": found} for id_, found in edges]}
 
 
 @with_request(RetiredImportRequest, "Importing a retired task")

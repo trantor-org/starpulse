@@ -66,6 +66,7 @@ from starpulse.board.model.seam import (
     Board,
     MoveWriter,
     RetiredImporter,
+    RetiredProjector,
     RetiredReader,
     TaskArchiver,
     TaskCompleter,
@@ -896,18 +897,34 @@ class _Retired:
     def rows(self, task: str = "", milestone: str = "") -> list[dict[str, str]]:
         """The retired task `task` as `[{task, name, text}]`, empty when it is not retired; every one, by id, for "".
         A `milestone` keeps only the tasks whose front matter names it."""
-        if self.engine is None:
-            return []
-        query = select(retired_tasks.c.task, retired_tasks.c.name, retired_tasks.c.text).order_by(retired_tasks.c.task)
-        if task:
-            query = query.where(func.lower(retired_tasks.c.task) == task.lower())
-        if milestone:  # the text search narrows the rows; the front matter decides
-            query = query.where(retired_tasks.c.text.contains(milestone))
-        with self.engine.connect() as db:
-            rows = [dict(row._mapping) for row in db.execute(query)]
-        if not milestone:
-            return rows
-        return [row for row in rows if str(_split_record(row["text"])[0].get("milestone") or "").strip() == milestone]
+        return list(self._each(task, milestone))
+
+    def projected(self, project: Callable[[str], Any], task: str = "", milestone: str = "") -> list[tuple[str, Any]]:
+        """`rows` as `[(id, project(text))]`: only what `project` keeps outlives its page."""
+        return [(row["task"], project(row["text"])) for row in self._each(task, milestone)]
+
+    def _each(self, task: str, milestone: str) -> Iterator[dict[str, str]]:
+        """The rows `rows` answers, by id, a page of them at a time."""
+        after = ""
+        while self.engine is not None:
+            query = (
+                select(retired_tasks.c.task, retired_tasks.c.name, retired_tasks.c.text)
+                .where(retired_tasks.c.task > after)
+                .order_by(retired_tasks.c.task)
+                .limit(_RETIRED_PAGE)
+            )
+            if task:
+                query = query.where(func.lower(retired_tasks.c.task) == task.lower())
+            if milestone:  # the text search narrows the rows; the front matter decides
+                query = query.where(retired_tasks.c.text.contains(milestone))
+            with self.engine.connect() as db:
+                page = [dict(row._mapping) for row in db.execute(query)]
+            for row in page:
+                if not milestone or str(_split_record(row["text"])[0].get("milestone") or "").strip() == milestone:
+                    yield row
+            if len(page) < _RETIRED_PAGE:
+                return
+            after = page[-1]["task"]
 
     def aliases(self) -> list[str]:
         """The ids the retired tasks answer to besides their own: those their `aliases` front matter lists."""
@@ -1523,6 +1540,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
                 "complete": _completer(root, config.statuses, roles),
                 "retire": _retirer(root, retired, roles),
                 "retired": _retired_reader(retired),
+                "retired_projected": retired.projected,
                 "import_retired": _importer(root, retired),
                 "docs": native_docs.lister(root),
                 "read_doc": native_docs.reader(root),
