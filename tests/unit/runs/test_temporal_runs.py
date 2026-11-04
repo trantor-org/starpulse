@@ -182,6 +182,18 @@ def test_a_failed_workflow_is_a_recent_run_with_its_activity_attempt_and_failure
     assert Dag.model_validate(dag)
 
 
+def test_a_continued_as_new_run_succeeded_and_its_history_is_not_read() -> None:
+    continued = execution(
+        "TASK-10301", "run-4", "task_phases", "CONTINUED_AS_NEW", "2026-10-31T10:00:00Z", "2026-10-31T10:05:00Z"
+    )
+    fake = server(listed={"running": [], "failed": [], "closed": [continued]})
+
+    dag = by_name(listing(fake))["task_phases"]
+
+    assert [(r["runId"], r["status"]) for r in dag["recent"]] == [("run-4", "succeeded")]
+    assert not any("history-reverse" in call for call in fake.calls)
+
+
 def test_a_closed_run_is_read_once_across_polls() -> None:
     fake = server()
     poller = temporal.Poller(Sink(), fake, BASE)
