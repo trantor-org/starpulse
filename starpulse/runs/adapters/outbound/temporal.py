@@ -42,6 +42,7 @@ _TASK = re.compile(r"TASK-\d+", re.IGNORECASE)
 _STATUS: dict[str, RunStatus] = {
     "RUNNING": "running",
     "COMPLETED": "succeeded",
+    "CONTINUED_AS_NEW": "succeeded",
     "FAILED": "failed",
     "TIMED_OUT": "failed",
     "TERMINATED": "aborted",
