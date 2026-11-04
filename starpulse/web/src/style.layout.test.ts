@@ -174,3 +174,32 @@ describe("the Kanban Start session dialog at phone width", () => {
     expect(rule("#kbm .ask .afoot :is(.cancel, .manual, .startbtn)")).toContain("white-space: nowrap");
   });
 });
+
+describe("the Kanban board's lane width", () => {
+  const px = (value: string | undefined) => Number(value?.replace("px", ""));
+  const sidePx = Number(/--nav: (\d+)px/.exec(css)?.[1]) + 20 + Number(/--rail: (\d+)px/.exec(css)?.[1]) + 20;
+  const lane = px(/#kb #cols \{[^}]*--lane-w: (\d+px)/.exec(css)?.[1]);
+  const gap = px(/#kb #cols \{[^}]*gap: (\d+px)/.exec(css)?.[1]);
+  const board = (viewport: number) => viewport - sidePx;
+  const need = (lanes: number) => lanes * lane + (lanes - 1) * gap;
+  const sixLaneWidthAt = (viewport: number) => (board(viewport) - 5 * gap) / 6;
+
+  it("sizes every lane at the fixed --lane-w, whatever the lane count or viewport", () => {
+    expect(rule("#kb #cols")).toContain("grid-template-columns: repeat(var(--cols, 6), var(--lane-w))");
+    expect(rule("#kb #cols")).not.toContain("1fr");
+  });
+
+  it("scrolls the board sideways at 1280px, where six lanes of the fixed width do not fit", () => {
+    expect(need(6)).toBeGreaterThan(board(1280));
+    expect(rule("#kb #cols")).toContain("overflow-x: auto");
+  });
+
+  it("makes the fixed width the width six lanes get at 3440px", () => {
+    expect(lane).toBe(sixLaneWidthAt(3440));
+  });
+
+  it("fits six lanes at 3440px with no scrollbar and scrolls once a seventh joins", () => {
+    expect(need(6)).toBeLessThanOrEqual(board(3440));
+    expect(need(7)).toBeGreaterThan(board(3440));
+  });
+});

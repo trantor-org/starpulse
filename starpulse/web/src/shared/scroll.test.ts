@@ -9,16 +9,19 @@ const scrolls = (body: string) => /overflow(-[xy])?\s*:\s*(auto|scroll)/.test(bo
 const CHART = "#kbm .dgm .chart";
 /** The In Progress drill-in's board: its phase columns need 800px, so on a phone it scrolls inside its region rather than draw overlapping. */
 const DRILL_BOARD = "#sd .sd-body";
+/** The Kanban board: its lanes keep one fixed width, so it scrolls sideways once they outgrow the viewport. */
+const KANBAN_BOARD = "#kb #cols";
 
 describe("the page's scrolling boxes", () => {
-  it("never scroll sideways, the open DAG's chart included, whose drawing fits its box", () => {
-    const sideways = rules.filter((r) => /overflow-x\s*:\s*(auto|scroll)/.test(r.body));
+  it("never scroll sideways but the Kanban board, the open DAG's chart included, whose drawing fits its box", () => {
+    const sideways = rules.filter((r) => /overflow-x\s*:\s*(auto|scroll)/.test(r.body) && r.sel !== KANBAN_BOARD);
     expect(sideways.map((r) => r.sel)).toEqual([]);
+    expect(rules.find((r) => r.sel === KANBAN_BOARD)?.body).toMatch(/overflow-x:\s*auto/);
     expect(css).toMatch(/#kbm \.dgm \.chart svg \{[^}]*max-width:\s*100%/);
   });
 
   it("scroll in one rule only: vertically, never sideways, with the Kanban columns' thin scrollbar", () => {
-    const scrolling = rules.filter((r) => scrolls(r.body) && r.sel !== CHART && r.sel !== DRILL_BOARD);
+    const scrolling = rules.filter((r) => scrolls(r.body) && r.sel !== CHART && r.sel !== DRILL_BOARD && r.sel !== KANBAN_BOARD);
     expect(scrolling.map((r) => r.sel)).toHaveLength(1);
     const [rule] = scrolling;
     expect(rule.body).toMatch(/overflow-x:\s*hidden/);
