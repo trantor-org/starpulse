@@ -163,6 +163,18 @@ def test_a_cued_dag_whose_commit_key_it_declares_passes() -> None:
     assert check(report, "cue:nightly/backup")["status"] == "pass"
 
 
+@pytest.mark.parametrize("dag", ["backup", "other/backup"])
+def test_a_listed_cue_with_no_configured_instance_fails_its_check_and_the_rest_still_run(dag: str) -> None:
+    listed = {**cued({**CUE, "dag": dag}), "dags": [{"name": dag}, {"name": "nightly/backup"}]}
+
+    report = doctor.run_checks(listed, contract(CommitKeys(after="AFTER")), FakeHost().probes(), "s")
+
+    assert report["ok"] is False
+    assert check(report, f"cue:{dag}")["status"] == "fail"
+    assert f"no configured runs instance for {dag}" in check(report, f"cue:{dag}")["reason"]
+    assert check(report, "server")["status"] == "pass"
+
+
 def test_a_cue_naming_a_dag_the_instance_does_not_list_fails() -> None:
     report = doctor.run_checks(
         cued({**CUE, "dag": "nightly/gone"}), contract(CommitKeys(after="AFTER")), FakeHost().probes(), "s"

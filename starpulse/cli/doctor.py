@@ -132,7 +132,9 @@ def _cue(cue: dict[str, Any], listed: set[str], instances: dict[str, RunsInstanc
     name = f"cue:{dag}"
     if dag not in listed:
         return _result(name, False, f"no configured instance lists {dag}")
-    instance = instances[dag.partition("/")[0]]
+    instance = instances.get(dag.partition("/")[0])
+    if instance is None:
+        return _result(name, False, f"no configured runs instance for {dag}; its name is the part before the first /")
     keys = instance.commit
     if keys is None or keys.after is None:
         return _warn(name, f"{dag} has no [runs.commit] after key, so its runs are time-inferred against merges")
