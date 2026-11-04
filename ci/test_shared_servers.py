@@ -57,3 +57,25 @@ def test_a_server_that_only_answered_reads_is_left_as_it_is(tmp_path):
     host.renew()
 
     assert [path.name for path in root.iterdir()] == ["kept"]
+
+
+class _Target:
+    value = "real"
+
+
+def _patching(label: str):
+    def build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(_Target, "value", label)
+        yield "http://127.0.0.1:1"
+
+    return build
+
+
+def test_closing_servers_that_patch_one_attribute_restores_the_original(tmp_path_factory):
+    hosts = shared_servers._Hosts(tmp_path_factory)
+    hosts.url("first", _patching("first"), {})
+    hosts.url("second", _patching("second"), {})
+
+    hosts.close()
+
+    assert _Target.value == "real"
