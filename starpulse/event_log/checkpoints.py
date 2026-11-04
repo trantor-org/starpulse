@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import Connection, Engine, delete, select
+from sqlalchemy import Connection, Engine, delete, func, select
 from sqlalchemy.dialects import sqlite
 
 from starpulse.event_log.tables import checkpoints
@@ -38,7 +38,8 @@ class Checkpoints:
     def save(self, name: str, position: int, model: BaseModel | None = None, *, conn: Connection | None = None) -> None:
         """Keep `position` (and `model`, the state a reader built up to it) as `name`'s checkpoint, in place of the last.
 
-        A name ending `@<hash>` also removes the checkpoints saved under the same base with another hash: a projection
+        A name ending `@<hash>` also removes the checkpoints saved under the same base with another hash (not those of a
+        longer base such as `<base>@x@<hash>`): a projection
         change saved under a new name, and the old row would otherwise stay forever. `conn` joins the caller's
         transaction; without it the save commits on its own.
         """
@@ -61,5 +62,8 @@ class Checkpoints:
         )
         base, at, _ = name.rpartition("@")
         if at:
-            superseded = checkpoints.c.name.startswith(base + at, autoescape=True) & (checkpoints.c.name != name)
+            prefix = base + at
+            same_base = checkpoints.c.name.startswith(prefix, autoescape=True)
+            bare_hash = func.instr(func.substr(checkpoints.c.name, len(prefix) + 1), at) == 0  # `a@b@h` is base `a@b`
+            superseded = same_base & bare_hash & (checkpoints.c.name != name)
             conn.execute(delete(checkpoints).where(superseded))

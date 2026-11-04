@@ -76,3 +76,11 @@ def test_a_snapshot_saved_under_a_new_hash_removes_the_one_under_the_old_hash(ch
         9,
         4,
     ]
+
+
+def test_saving_a_hashed_name_keeps_a_checkpoint_whose_base_extends_it_with_another_at(checkpoints: Checkpoints) -> None:
+    checkpoints.save("a@b@h1", 5)
+
+    checkpoints.save("a@h2", 7)
+
+    assert checkpoints.load("a@b@h1") == (5, None)
