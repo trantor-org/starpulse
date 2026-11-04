@@ -500,3 +500,9 @@ def test_a_released_claim_is_not_taken_back_from_the_session_that_holds_the_task
     sweep(built, store, held, ttl=1800, now=released_at + 60, activity=lambda _s, _t: released_at + 30)
 
     assert store.head("task", "task-5") == head
+
+
+def test_a_transcript_shorter_than_the_tail_reads_its_first_turn(tmp_path: Path) -> None:
+    _transcript(tmp_path / "projects", _turn("assistant", 1_700_000_000, HALT, halt=True))
+
+    assert transcript_halt(tmp_path / "projects", "session-1") == (1_700_000_000, HALT)
