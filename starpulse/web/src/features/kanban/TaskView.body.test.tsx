@@ -22,7 +22,7 @@ describe("task dialog body", () => {
   it("draws a PROP-N proposal id as a link that opens that task", () => {
     const html = draw({ record: { ...record, description: "Promoted from PROP-7." } });
 
-    expect(html).toContain('<a class="tl" href="?view=kanban&amp;task=PROP-7">PROP-7</a>');
+    expect(html).toMatch(/<a [^>]*href="\?view=kanban&amp;task=PROP-7"[^>]*data-task="PROP-7"[^>]*>PROP-7<\/a>/);
   });
 
   it("draws inline code, bold and links in the description, plan, notes and a criterion", () => {

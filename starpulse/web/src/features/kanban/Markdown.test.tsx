@@ -21,14 +21,15 @@ describe("Md", () => {
     const open = vi.fn();
     const host = document.createElement("div");
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => createRoot(host).render(<Md text={"see TASK-12 and `TASK-13`"} open={open} />));
+    await act(async () => createRoot(host).render(<Md text={"see TASK-12, PROP-4 and `TASK-13`"} open={open} />));
     const link = host.querySelector<HTMLAnchorElement>("a.tl")!;
     const click = new MouseEvent("click", { bubbles: true, cancelable: true });
     link.dispatchEvent(click);
 
     expect(link.textContent).toBe("TASK-12");
     expect(link.getAttribute("href")).toBe("?view=kanban&task=TASK-12");
-    expect(host.querySelectorAll("a.tl")).toHaveLength(1);
+    expect(host.querySelectorAll("a.tl")).toHaveLength(2);
+    expect(texts(host, "a.tl")).toEqual(["TASK-12", "PROP-4"]);
     expect(click.defaultPrevented).toBe(true);
     expect(open).toHaveBeenCalledWith("TASK-12");
   });

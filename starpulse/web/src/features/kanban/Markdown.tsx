@@ -64,12 +64,12 @@ function Section({ name, gist, children, open }: { name: string; gist: string; c
   );
 }
 
-/** A TASK-N id in running text as a link the dialog opens (`Md` handles the click). */
+/** A TASK-N or PROP-N id in running text as a link the dialog opens (`Md` handles the click). */
 const taskLink = {
   name: "task",
   level: "inline" as const,
-  start: (src: string) => src.search(/TASK-\d+/),
-  tokenizer: (src: string) => { const id = /^TASK-\d+/.exec(src)?.[0]; return id ? { type: "task", raw: id, id } : undefined; },
+  start: (src: string) => src.search(/(?:TASK|PROP)-\d+/),
+  tokenizer: (src: string) => { const id = /^(?:TASK|PROP)-\d+/.exec(src)?.[0]; return id ? { type: "task", raw: id, id } : undefined; },
   renderer: ({ id }: { id?: string }) => `<a class="tl" href="?view=kanban&task=${id}" data-task="${id}">${id}</a>`,
 };
 
