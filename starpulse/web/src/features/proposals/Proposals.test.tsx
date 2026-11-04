@@ -104,3 +104,110 @@ describe("the Proposals view", () => {
     expect(row("TASK-3").textContent).toContain("ready needs a profile");
   });
 });
+
+describe("sections, search, grouping and richer cards", () => {
+  const HARNESSES = {
+    tiers: ["standard"],
+    harnesses: [{ name: "claude", label: "Claude", sessions: true, reason: "", tiers: { standard: { model: "sonnet", efforts: ["high"], models: { high: "claude-sonnet-5-5" } } } }],
+  };
+  records["TASK-5"] = {
+    title: "e", profile: "@agent-standard-high", createdBy: "", description: "Cache the build.", priority: "high",
+    comments: [{ created: "", text: "triage verdict: pre-approved: Fits the CI design; no duplicate." }],
+  };
+  records["TASK-6"] = { title: "f", profile: "", createdBy: "", description: "Rename a flag.", priority: "low", comments: [] };
+  const list = [
+    card("TASK-5", "proposed", { title: "Cache CI build", created: 500, labels: ["triage-preapproved", "kind-execute", "size-3"], milestone: "m-7", profile: "@agent-standard-high" }),
+    card("TASK-6", "proposed", { title: "Rename flag", created: 400, labels: ["kind-spike", "size-1"], milestone: "" }),
+  ];
+  const drawAll = () => act(async () => root.render(<Proposals cards={list} roles={roles} profiles={PROFILES} harnesses={HARNESSES} fetcher={fetcher} />));
+  const section = (name: string) => host.querySelector('[data-section="' + name + '"]') as HTMLElement;
+  const type = async (label: string, value: string) => {
+    const input = host.querySelector('[aria-label="' + label + '"]') as HTMLInputElement | HTMLSelectElement;
+    expect(input, label + " control").not.toBeNull();
+    const proto = input instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(proto, "value")?.set?.call(input, value);
+      input.dispatchEvent(new Event(input instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
+    });
+  };
+
+  it("separates the pre-approved proposals from the unapproved with a count each", async () => {
+    await drawAll();
+    expect(section("preapproved").querySelector("[data-task=TASK-5]")).not.toBeNull();
+    expect(section("preapproved").querySelector("[data-task=TASK-6]")).toBeNull();
+    expect(section("unapproved").querySelector("[data-task=TASK-6]")).not.toBeNull();
+    expect(section("preapproved").textContent).toContain("Pre-approved1");
+    expect(section("unapproved").textContent).toContain("Unapproved1");
+  });
+
+  it("shows the id, profile, model, kind, size and the verdict with its reason on a pre-approved card", async () => {
+    await drawAll();
+    const text = row("TASK-5").textContent ?? "";
+    for (const part of ["TASK-5", "@agent-standard-high", "claude-sonnet-5-5", "execute", "3", "Fits the CI design; no duplicate."]) expect(text).toContain(part);
+    expect(row("TASK-6").textContent).toContain("Not triaged");
+  });
+
+  it("filters both sections by the search words", async () => {
+    await drawAll();
+    await type("Search proposals", "cache");
+    expect(host.querySelector("[data-task=TASK-5]")).not.toBeNull();
+    expect(host.querySelector("[data-task=TASK-6]")).toBeNull();
+    await type("Search proposals", "task-6");
+    expect(host.querySelector("[data-task=TASK-5]")).toBeNull();
+    expect(host.querySelector("[data-task=TASK-6]")).not.toBeNull();
+    await type("Search proposals", "nothing matches this");
+    expect(host.textContent).toContain("No proposals match");
+  });
+
+  it("groups each section by milestone, priority or kind", async () => {
+    await drawAll();
+    await type("Group by", "kind");
+    expect([...host.querySelectorAll("h3.grp .lb")].map((h) => h.textContent)).toEqual(["execute", "spike"]);
+    await type("Group by", "milestone");
+    expect([...host.querySelectorAll("h3.grp .lb")].map((h) => h.textContent)).toEqual(["m-7", "No milestone"]);
+    await type("Group by", "priority");
+    await act(async () => {});
+    expect([...host.querySelectorAll("h3.grp .lb")].map((h) => h.textContent)).toEqual(["high", "low"]);
+  });
+
+  it("draws each tier as a labelled row holding a strip of its cards, priority first", async () => {
+    await drawAll();
+    await act(async () => {});
+    const tiers = [...section("preapproved").querySelectorAll(".group")];
+    expect(tiers.map((t) => t.querySelector(".lb")?.textContent)).toEqual(["high"]);
+    expect([...tiers[0].querySelectorAll(".strip > article.prop")].map((a) => a.getAttribute("data-task"))).toEqual(["TASK-5"]);
+    expect(section("unapproved").querySelector(".strip > [data-task=TASK-6]")).not.toBeNull();
+  });
+
+  it("draws the search box in the navigator's slot when it has one and filters from there", async () => {
+    const slot = document.createElement("div");
+    document.body.append(slot);
+    await act(async () => root.render(<Proposals cards={list} roles={roles} profiles={PROFILES} harnesses={HARNESSES} searchSlot={slot} fetcher={fetcher} />));
+    await act(async () => {});
+    expect(host.querySelector('[aria-label="Search proposals"]:not(.mq)')).toBeNull();
+    const input = slot.querySelector('[aria-label="Search proposals"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "cache");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect([...host.querySelectorAll("article.prop")].map((a) => a.getAttribute("data-task"))).toEqual(["TASK-5"]);
+    expect((host.querySelector("input.mq") as HTMLInputElement).value).toBe("cache");
+    slot.remove();
+  });
+
+  it("shows the snapshot's default profile and its model when the task's own record names none", async () => {
+    const defaulted = [card("TASK-6", "proposed", { title: "Rename flag", created: 400, labels: ["kind-spike"], profile: "@agent-standard-high" })];
+    await act(async () => root.render(<Proposals cards={defaulted} roles={roles} profiles={PROFILES} harnesses={HARNESSES} fetcher={fetcher} />));
+    await act(async () => {});
+    expect(row("TASK-6").querySelector(".chip.profile")?.textContent).toBe("@agent-standard-high");
+    expect(row("TASK-6").querySelector(".chip.model")?.textContent).toBe("claude-sonnet-5-5");
+  });
+
+  it("says no profile on a card that has none, with no model", async () => {
+    const bare = [card("TASK-6", "proposed", { title: "Rename flag", created: 400, labels: ["kind-spike"] })];
+    await act(async () => root.render(<Proposals cards={bare} roles={roles} profiles={PROFILES} harnesses={HARNESSES} fetcher={fetcher} />));
+    await act(async () => {});
+    expect(row("TASK-6").querySelector(".chip.profile.none")?.textContent).toBe("no profile");
+    expect(row("TASK-6").querySelector(".chip.model")).toBeNull();
+  });
+});

@@ -70,16 +70,16 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #nav .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); } #nav .dot.off { background: var(--fail); box-shadow: 0 0 8px var(--fail); }
 #nav .dot.wait { background: var(--run); box-shadow: 0 0 8px var(--run); animation: ap-go 1.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { #nav .dot.wait { animation: none; } }
-#q, #kbq, #dgq { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: color-mix(in srgb, var(--slate) 6%, transparent);
+#q, #kbq, #dgq, #ppq { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: color-mix(in srgb, var(--slate) 6%, transparent);
   font-size: calc(12px * var(--fs)); color: var(--ink); }
-#q:focus, #kbq:focus, #dgq:focus { border-color: var(--agent); }
+#q:focus, #kbq:focus, #dgq:focus, #ppq:focus { border-color: var(--agent); }
 /* The Star Map entry's orbit icon draws in place of the ring every other node keeps. */
 .node .g.orbit { border: 0; border-radius: 0; width: 14px; height: 14px; display: grid; place-items: center; }
 .node .g.orbit svg { display: block; }
 /* One ✕ per search at the input's right end, scaled with the text; the browser's own cancel button would draw a second. */
 .has-x { position: relative; }
-#q, #kbq, #dgq { padding-right: calc(24px * var(--fs)); }
-#q::-webkit-search-cancel-button, #kbq::-webkit-search-cancel-button, #dgq::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+#q, #kbq, #dgq, #ppq { padding-right: calc(24px * var(--fs)); }
+#q::-webkit-search-cancel-button, #kbq::-webkit-search-cancel-button, #dgq::-webkit-search-cancel-button, #ppq::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
 .sx { all: unset; box-sizing: border-box; position: absolute; z-index: 1; top: 50%; right: 5px; transform: translateY(-50%); display: grid; place-items: center;
   width: calc(18px * var(--fs)); height: calc(18px * var(--fs)); border-radius: 4px; color: var(--muted); font-size: calc(11px * var(--fs)); line-height: 1; }
 .sx:hover, .sx:focus-visible { color: var(--ink); background: color-mix(in srgb, var(--slate) 14%, transparent); }
@@ -764,21 +764,47 @@ body.dragging, body.dragging * { user-select: none; }
 #admin header .count { font-size: calc(11px * var(--fs)); color: var(--muted); }
 #admin .grid { display: grid; grid-template-columns: minmax(420px, 640px) minmax(280px, 1fr); gap: 20px; align-items: start; padding-bottom: 24px; }
 /* Proposals: the tasks agents proposed, one card each, with the decision at the foot. */
-#proposals { position: fixed; z-index: 3; top: 0; bottom: 0; left: calc(var(--nav) + 20px); right: calc(var(--rail) + 20px); font-size: calc(12px * var(--fs)); color: var(--ink); }
-#proposals .hd { display: flex; align-items: center; gap: 14px; height: 64px; }
-#proposals .ttl { font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
+#proposals { position: fixed; z-index: 3; top: 0; bottom: 0; left: calc(var(--nav) + 20px); right: calc(var(--rail) + 20px); font-size: calc(12px * var(--fs)); color: var(--ink); padding-bottom: 24px; }
+#proposals .hd { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; min-height: 64px; }
+#proposals .ttl { margin: 0; font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
+#proposals .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+#proposals .tools select { margin-right: 0; }
+#proposals input[type=search] { box-sizing: border-box; width: calc(240px * var(--fs)); max-width: 100%; height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: transparent; color: var(--ink); font: inherit; }
+#proposals .chip.profile.none { color: var(--muted); font-style: italic; }
+@media (min-width: 901px) { #proposals input.mq { display: none; } }
+#proposals input[type=search]:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
+#proposals .sec { margin: 0 0 22px; }
+#proposals .sh { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
+#proposals .sh h2 { margin: 0; font-size: calc(12px * var(--fs)); font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-2); }
+#proposals .sec.preapproved .sh h2 { color: var(--ok); }
+#proposals .group { display: grid; grid-template-columns: minmax(84px, 120px) minmax(0, 1fr); gap: 0 16px; padding: 12px 0; border-top: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); }
+#proposals .group.flat { grid-template-columns: minmax(0, 1fr); }
+#proposals .grp { margin: 0; font-size: calc(11px * var(--fs)); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; }
+#proposals .grp .ct { margin-left: 6px; }
 #proposals .ct, #proposals .none { font-size: calc(11px * var(--fs)); color: var(--muted); }
-#proposals .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 14px; align-items: start; }
-#proposals .prop { box-sizing: border-box; padding: 12px 16px; border-radius: 10px; background: color-mix(in srgb, var(--surface) 85%, transparent);
+#proposals .strip { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; min-width: 0; padding-bottom: 6px; }
+#proposals .strip > .prop { flex: 0 1 360px; max-width: 100%; }
+@media (max-width: 719px) { #proposals .group { grid-template-columns: minmax(0, 1fr); gap: 8px 0; } }
+#proposals .prop { box-sizing: border-box; min-width: 0; overflow-wrap: anywhere; padding: 12px 16px; border-radius: 10px; background: color-mix(in srgb, var(--surface) 85%, transparent);
   border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
-#proposals .prop h2 { margin: 0 0 6px; font-size: calc(13px * var(--fs)); font-weight: 500; }
+#proposals .prop h4 { margin: 0 0 6px; font-size: calc(13px * var(--fs)); font-weight: 500; }
 #proposals .prop .id { margin-right: 6px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11px * var(--fs)); color: var(--slate); }
+#proposals .prop.ok { border-color: color-mix(in srgb, var(--ok) 40%, transparent); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--ok) 70%, transparent); }
+#proposals .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+#proposals .chip { padding: 1px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); font-size: calc(10.5px * var(--fs)); color: var(--ink-3); }
+#proposals .chip.profile, #proposals .chip.model { font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--ink-2); }
+#proposals .chip.pri.high { color: var(--fail); border-color: color-mix(in srgb, var(--fail) 40%, transparent); }
+#proposals .verdict { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; background: color-mix(in srgb, var(--slate) 7%, transparent); color: var(--muted); }
+#proposals .verdict.ok { background: color-mix(in srgb, var(--ok) 9%, transparent); color: var(--ink-2); }
+#proposals .vd { font-weight: 600; letter-spacing: .06em; text-transform: uppercase; font-size: calc(10.5px * var(--fs)); }
+#proposals .verdict.ok .vd { color: var(--ok); }
 #proposals .why { margin: 0 0 10px; color: var(--ink-2); white-space: pre-wrap; }
 #proposals dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 12px; }
 #proposals dt { color: var(--muted); } #proposals dd { margin: 0; color: var(--ink-2); }
-#proposals .act { display: flex; align-items: center; gap: 8px; }
+#proposals .act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#proposals .act select { min-width: 0; flex: 0 1 auto; }
 #proposals select { height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: transparent; color: var(--ink); font: inherit; margin-right: auto; }
-#proposals .btn { all: unset; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); color: var(--ink-3); font-size: calc(11.5px * var(--fs)); cursor: pointer; }
+#proposals .btn { all: unset; white-space: nowrap; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); color: var(--ink-3); font-size: calc(11.5px * var(--fs)); cursor: pointer; }
 #proposals .btn:hover { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 50%, transparent); }
 #proposals .btn.go { border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, transparent); }
 #proposals .btn[disabled] { opacity: .45; cursor: default; }
@@ -1147,7 +1173,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 @property --pnav { syntax: "<length>"; inherits: true; initial-value: 0px; }
 @media (max-width: 900px) {
   :root { --pm: 12px; --pnav: calc(38px + 16px * var(--fs)); }
-  :is(#kb, #dg, #admin) { left: var(--pm); right: var(--pm); bottom: var(--pnav); }
+  :is(#kb, #dg, #admin, #proposals) { left: var(--pm); right: var(--pm); bottom: var(--pnav); }
   :is(#kb, #dg, #admin) header { height: auto; min-height: 52px; flex-wrap: wrap; gap: 2px 12px; padding: 8px 0; box-sizing: border-box; }
   :is(#kb, #nav, #dg) .menu { min-width: min(240px, calc(100vw - 2 * var(--pm))); max-width: calc(100vw - 2 * var(--pm)); }
   /* the Star Map's detail panel takes the side margins, starts below the breadcrumb and ends above the bar */

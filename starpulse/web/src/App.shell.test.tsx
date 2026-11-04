@@ -73,6 +73,18 @@ describe("the page's first tree", () => {
     expect(location.search).not.toContain("drill");
   });
 
+  it("gives the Proposals view's search the navigator's left panel", async () => {
+    history.replaceState(null, "", "/?view=proposals");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(url === "/api/harnesses" ? '{"tiers":[],"harnesses":[]}' : "{}", { status: 200 })));
+    act(() => root.render(<App />));
+    act(() => held.store!.set({ tree: { states: ["Proposed"], subs: {}, children: {} }, roles: { proposed: "Proposed" }, cards: [] }));
+    frame();
+    await act(async () => void (await import("./features/proposals/Proposals")));
+    const box = () => host.querySelector('#nav input[aria-label="Search proposals"]');
+    await act(async () => vi.waitFor(() => expect(box()).not.toBeNull(), { timeout: 5000 }));
+    expect(host.querySelector('#proposals input[aria-label="Search proposals"]:not(.mq)')).toBeNull();
+  });
+
   it("offers no create command on an empty board that cannot create a task", () => {
     act(() => root.render(<App />));
     // a Backlog.md or Jira board: `task create` is refused and the Kanban draws no New task
