@@ -176,8 +176,8 @@ class RecordProjection:
             found = self._store.find(repo=repo, number=number, detailed=True)
             if found and at < found[0]["fetchedAt"]:
                 continue  # the record already holds what a later event or read says
-            if found and name in _MOVES_HEAD:
-                moved.append((repo, number))
+            if not found and name in _DELTAS or found and name in _MOVES_HEAD:
+                moved.append((repo, number))  # a record the events open holds no files until GitHub is read
             if name not in _DELTAS:
                 continue
             record = found[0] if found else _opened(repo, number, self._body(key), at)

@@ -293,6 +293,18 @@ def _job(job: str = "test", result: str = "succeeded", head: str = "a" * 40, at:
     return Entry(1, "ci:jobs", f"{job}-{head}-{at}", fields, at)
 
 
+def test_an_event_that_opens_a_record_asks_for_a_read_of_github() -> None:
+    feed = BoardFeed()
+    feed.put(task("PROJ-1", "In Progress", references=[URL]))
+    store = PullStore(create_engine("sqlite://"))
+    asked: list[tuple[str, int]] = []
+    projection = RecordProjection(store, feed, refresh=lambda repo, number: asked.append((repo, number)))
+
+    projection.handle(_entry(*OPEN))
+
+    assert asked == [PULL]
+
+
 def test_a_job_result_sets_the_head_and_the_result_of_that_check() -> None:
     projection, store, _ = _projection()
     projection.handle(_entry(*OPEN, at=T0))
