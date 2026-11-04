@@ -136,3 +136,23 @@ def test_check_over_https_takes_any_certificate(table, log, tmp_path, monkeypatc
     monkeypatch.setattr(fresh_serve.urllib.request, "urlopen", urlopen)
     assert check(8766, 100, {"pulls", "board", "api"}, log, "https") is None
     assert seen == {"url": "https://127.0.0.1:8766/", "verify": ssl.CERT_NONE}
+
+
+class _BoundedTable(dict):
+    """Raises when a walk looks up more pids than the table holds, instead of looping forever."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.lookups = 0
+
+    def __getitem__(self, pid):
+        self.lookups += 1
+        assert self.lookups <= len(self), "walk revisits a pid"
+        return super().__getitem__(pid)
+
+
+def test_descends_from_stops_on_a_self_parented_pid():
+    table = _BoundedTable({0: (0, "S"), 5: (1, "S"), 1: (1, "S")})
+    assert fresh_serve.descends_from(0, 99, table) is False
+    table.lookups = 0
+    assert fresh_serve.descends_from(5, 99, table) is False

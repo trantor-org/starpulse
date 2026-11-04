@@ -38,7 +38,9 @@ def process_table() -> dict[int, tuple[int, str]]:
 
 
 def descends_from(pid: int, ancestor: int, table: dict[int, tuple[int, str]]) -> bool:
-    while pid in table and pid != ancestor:
+    seen: set[int] = set()
+    while pid in table and pid != ancestor and pid not in seen:
+        seen.add(pid)
         pid = table[pid][0]
     return pid == ancestor
 
