@@ -351,7 +351,7 @@ def test_a_full_session_limit_ends_the_pass_and_backs_off_the_whole_queue(rig: R
 def test_a_start_that_cannot_work_until_the_host_is_fixed_halts_admission_and_is_raised_once(
     rig: Rig, caplog: pytest.LogCaptureFixture
 ) -> None:
-    path = "/srv/trantor/releases/abc/.venv/bin/starpulse"
+    path = "/srv/example/releases/abc/.venv/bin/starpulse"
     rig.limit = f"T-1 could not be read: the starpulse binary is missing: {path}"
     rig.put("T-1")
     rig.put("T-2")
@@ -496,7 +496,7 @@ def test_a_session_idle_past_the_limit_with_its_task_open_is_settled_once_with_a
     assert [run.outcome for run in rig.ledger.runs("T-1")] == ["needs_attention"]
 
 
-#: The guards trantor declares on a move to Needs attention: a reason that names another task, and one with no question.
+#: The guards example declares on a move to Needs attention: a reason that names another task, and one with no question.
 ATTENTION_GUARDS = rules.load(
     [
         {

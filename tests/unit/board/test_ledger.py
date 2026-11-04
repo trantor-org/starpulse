@@ -28,7 +28,7 @@ def t(seconds: float) -> float:
 
 
 def merge(sha: str, at: float, *tasks: str) -> Occurrence:
-    return Occurrence(key=sha, at=t(at), tasks=tasks, sha=sha, pr={"repo": "trantor", "number": 1, "url": "u"})
+    return Occurrence(key=sha, at=t(at), tasks=tasks, sha=sha, pr={"repo": "example", "number": 1, "url": "u"})
 
 
 def run(run_id: str, start: float, params: Mapping[str, str] | None = None, **fields: object) -> dict:
@@ -164,7 +164,7 @@ def test_a_pull_request_merged_in_the_window_is_a_merge_occurrence_carrying_its_
     pulls = {
         "TASK-1": [
             {
-                "url": "https://github.com/o/trantor/pull/7",
+                "url": "https://github.com/o/example/pull/7",
                 "merged": True,
                 "merge_sha": SHA_A,
                 "merged_at": "2026-10-07T00:01:00Z",
@@ -172,12 +172,12 @@ def test_a_pull_request_merged_in_the_window_is_a_merge_occurrence_carrying_its_
         ],
         "TASK-2": [
             {
-                "url": "https://github.com/o/trantor/pull/7",
+                "url": "https://github.com/o/example/pull/7",
                 "merged": True,
                 "merge_sha": SHA_A,
                 "merged_at": "2026-10-07T00:01:00Z",
             },
-            {"url": "https://github.com/o/trantor/pull/8", "merged": False, "merge_sha": None, "merged_at": None},
+            {"url": "https://github.com/o/example/pull/8", "merged": False, "merge_sha": None, "merged_at": None},
         ],
     }
 
@@ -185,7 +185,7 @@ def test_a_pull_request_merged_in_the_window_is_a_merge_occurrence_carrying_its_
 
     assert occurrence.sha == SHA_A
     assert occurrence.tasks == ("TASK-1", "TASK-2")
-    assert occurrence.pr == {"repo": "trantor", "number": 7, "url": "https://github.com/o/trantor/pull/7"}
+    assert occurrence.pr == {"repo": "example", "number": 7, "url": "https://github.com/o/example/pull/7"}
     assert occurrence.at == t(60)
 
 
@@ -407,7 +407,7 @@ def test_a_merge_with_no_pin_bump_yet_is_a_child_and_unapplied() -> None:
 
 
 def test_a_merge_the_parent_does_not_pin_is_not_a_child() -> None:
-    url = "https://github.com/o/trantor/pull/7"
+    url = "https://github.com/o/example/pull/7"
     pulls = {"TASK-1": [{"url": url, "merged": True, "merge_sha": SHA_A, "merged_at": BASE.isoformat()}]}
 
     (occurrence,) = pull_occurrences(pulls)

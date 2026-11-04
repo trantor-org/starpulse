@@ -169,7 +169,7 @@ class _History:
                     "reasoning": 0,
                     "cost": 0.01,
                     "activities": ["read", "write"],
-                    "reads": [f"/srv/trantor/file-{n % 50}.py"],
+                    "reads": [f"/srv/example/file-{n % 50}.py"],
                     "shell_write": False,
                     "writes": [],
                     "turn": f"turn-{n // 20}",

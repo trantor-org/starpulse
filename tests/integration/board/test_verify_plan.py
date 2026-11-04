@@ -28,7 +28,7 @@ def served(tmp_path: Path) -> tuple[Board, Path]:
     root = tmp_path / ".starpulse" / "board"
     (root / "tasks").mkdir(parents=True)
     (root / "config.yml").write_text(
-        yaml.safe_dump({"project_name": "trantor", "statuses": STATUSES, "task_prefix": "task"})
+        yaml.safe_dump({"project_name": "example", "statuses": STATUSES, "task_prefix": "task"})
     )
     path = root / "tasks" / "task-1 - Plan-it.md"
     path.write_text(TASK)

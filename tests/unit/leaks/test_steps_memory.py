@@ -65,7 +65,7 @@ def _signals(count: int) -> list[Signal]:
                     time=at + 0.1,
                     key=f"t{n}",
                     name="Bash",
-                    command=f"git -C /srv/trantor status --short {n}",
+                    command=f"git -C /srv/example status --short {n}",
                     activities=("shell",),
                     seconds=0.2,
                 )

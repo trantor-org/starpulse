@@ -44,7 +44,7 @@ flow view machine namespace hash drift
 
 ## Duplicate Resolution
 
-Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2420, TASK-2430 are the m-80 retro, sibling core slices, or shipped trantor-only flow-view work (TASK-2356 is trantor's /api/history over its own machine events), none covering this slice's package scope.
+Distinct scope: the only candidate is TASK-2433, the slicing task that created this slice. Also distinct: TASK-2420, TASK-2430 are the m-80 retro, sibling core slices, or shipped example-only flow-view work (TASK-2356 is example's /api/history over its own machine events), none covering this slice's package scope.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -68,13 +68,13 @@ Distinct scope: the only candidate is TASK-2433, the slicing task that created t
 2. RED/GREEN: starpulse/machine_namespace.py (core-side, pure, not public surface). A compiled definition reduces to a sorted set of facts (states, flattened transitions with guards and actions, bindings, writers, one-level flows inlined); its sha256 is the hash, so key, state, event and from-list order never change it, and the facts' set difference is the diff.
 3. Machines are namespaced <repo>/<machine>; merge() groups sources by machine name, merges those whose hash equals the baseline (most repos, ties to the smallest hash), and returns a Drift record (namespaced id, both hashes, added/removed facts) for each other source, kept out of the merged graph.
 4. Tests: AC1 equal YAML merge; one-transition change splits and records drift with both hashes and diff. AC2 reordering keys/states/events/from-lists keeps the hash. Plus guard, flow-child, tie-break and duplicate-source cases.
-5. README/docs current-state edit if the surface needs it; lint gates; child PR in trantor-org/starpulse; trantor gitlink bump is Renovate's.
+5. README/docs current-state edit if the surface needs it; lint gates; child PR in trantor-org/starpulse; example gitlink bump is Renovate's.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Package work ships as a PR in trantor-org/starpulse (child); the trantor gitlink bump is Renovate's, never committed here (completing-tasks, edited submodule). ADR decision: none needed; H6 of doc-82 and the Flow View Core ADR (Drift is drawn, not merged) cover it. Not persisting drift: the ACs ask for records returned by the merge; the core slices that register sources own storage.
+Package work ships as a PR in trantor-org/starpulse (child); the example gitlink bump is Renovate's, never committed here (completing-tasks, edited submodule). ADR decision: none needed; H6 of doc-82 and the Flow View Core ADR (Drift is drawn, not merged) cover it. Not persisting drift: the ACs ask for records returned by the merge; the core slices that register sources own storage.
 
 **Assignee:** 8844d581-ad5d-4caa-9ad4-d6b7c9e4fadf
 <!-- SECTION:NOTES:END -->
@@ -94,7 +94,7 @@ created: 2026-10-06 22:11
 
 created: 2026-10-06 22:18
 ---
-Verified AC #1: `uv run --project /home/adinb/trantor/.claude/worktrees/task-2521-namespace-machines/.tmp/starpulse --all-extras pytest /home/adinb/trantor/.claude/worktrees/task-2521-namespace-machines/.tmp/starpulse/tests/unit/test_machine_namespace.py -q -k 'TestMergingAcrossRepositories'` exited 0
+Verified AC #1: `uv run --project /home/adinb/example/.claude/worktrees/task-2521-namespace-machines/.tmp/starpulse --all-extras pytest /home/adinb/example/.claude/worktrees/task-2521-namespace-machines/.tmp/starpulse/tests/unit/test_machine_namespace.py -q -k 'TestMergingAcrossRepositories'` exited 0
 
 ```
 .....                                                                    [100%]
@@ -104,7 +104,7 @@ Verified AC #1: `uv run --project /home/adinb/trantor/.claude/worktrees/task-252
 
 created: 2026-10-06 22:18
 ---
-Verified AC #2: `uv run --project /home/adinb/trantor/.claude/worktrees/task-2521-namespace-machines/.tmp/starpulse --all-extras pytest /home/adinb/trantor/.claude/worktrees/task-2521-namespace-machines/.tmp/starpulse/tests/unit/test_machine_namespace.py -q -k 'TestTheDefinitionHash'` exited 0
+Verified AC #2: `uv run --project /home/adinb/example/.claude/worktrees/task-2521-namespace-machines/.tmp/starpulse --all-extras pytest /home/adinb/example/.claude/worktrees/task-2521-namespace-machines/.tmp/starpulse/tests/unit/test_machine_namespace.py -q -k 'TestTheDefinitionHash'` exited 0
 
 ```
 ......                                                                   [100%]
@@ -114,7 +114,7 @@ Verified AC #2: `uv run --project /home/adinb/trantor/.claude/worktrees/task-252
 
 created: 2026-10-06 22:27
 ---
-Child PR trantor-org/starpulse#64 (no trantor tracked change; gitlink bump is Renovate's). RED/GREEN in test_machine_namespace.py: hash order-invariance and merge/drift. Full starpulse suite 1429 passed; ruff check clean; PR CI python/ic/web/build green, mergeable CLEAN, 0 review threads. No docs or ADR owed: module is internal and unwired. Orphan walk: nothing removed; new module has no consumer yet (later core slices).
+Child PR trantor-org/starpulse#64 (no example tracked change; gitlink bump is Renovate's). RED/GREEN in test_machine_namespace.py: hash order-invariance and merge/drift. Full starpulse suite 1429 passed; ruff check clean; PR CI python/ic/web/build green, mergeable CLEAN, 0 review threads. No docs or ADR owed: module is internal and unwired. Orphan walk: nothing removed; new module has no consumer yet (later core slices).
 ---
 
 created: 2026-10-06 22:28

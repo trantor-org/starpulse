@@ -329,7 +329,7 @@ def test_post_run_answers_404_for_an_adapter_without_start_and_a_run_id_for_a_ru
 
 
 def test_a_dag_absent_from_the_configs_run_safe_list_answers_404_on_post(tmp_path: Path) -> None:
-    """`whole-repo-gate` is a DAG trantor runs, so only the config can be what refuses it here."""
+    """`whole-repo-gate` is a DAG example runs, so only the config can be what refuses it here."""
     with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}, run_safe=frozenset({"dagu/nightly"})) as server:
         request = urllib.request.Request(
             _url(server, "/api/run/dagu/whole-repo-gate"),

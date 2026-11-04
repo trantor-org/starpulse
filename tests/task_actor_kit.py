@@ -16,9 +16,9 @@ from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.pulls.model.pins import Repo
 from starpulse.runtime.adapter_kit import task
 
-PR_ONE = "https://github.com/acme/trantor/pull/1"
-PR_TWO = "https://github.com/acme/trantor/pull/2"
-PR_THREE = "https://github.com/acme/trantor/pull/3"
+PR_ONE = "https://github.com/acme/example/pull/1"
+PR_TWO = "https://github.com/acme/example/pull/2"
+PR_THREE = "https://github.com/acme/example/pull/3"
 SHA = "a" * 40
 WAITS = {
     "in_progress": {"pr_ready": "REVIEW"},
@@ -81,7 +81,7 @@ class Pins:
     """The parent's pointer reads: `main`'s bump pins `CHILD` at `starpulse`; a child contains a commit it equals."""
 
     def pointer(self, repo: str, sha: str, path: str) -> str | None:
-        return CHILD if (repo, sha, path) == ("acme/trantor", PARENT, "starpulse") else None
+        return CHILD if (repo, sha, path) == ("acme/example", PARENT, "starpulse") else None
 
     def reaches(self, repo: str, sha: str, pointer: str) -> bool:
         return sha == pointer
@@ -145,7 +145,7 @@ def pull(
     number: int,
     *,
     state: str,
-    repo: str = "acme/trantor",
+    repo: str = "acme/example",
     sha: str = SHA,
     files: Sequence[str] = (),
     branch: str = "",

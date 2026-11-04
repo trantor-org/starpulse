@@ -17,7 +17,7 @@ dependencies:
 documentation:
   - >-
     backlog/docs/specs/doc-116 -
-    Trantors-board-moves-from-backlog-to-StarPulses-native-board.md
+    Example-board-moves-from-backlog-to-StarPulses-native-board.md
 priority: high
 type: task
 ordinal: 3240000
@@ -26,7 +26,7 @@ ordinal: 3240000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Spec doc-116 D3. Replace the 13 task call sites in `lib/backlog_workflow/tasks.py` that run `paths.BACKLOG_BIN` (task edit/create/list/view/complete/archive and comments) with StarPulse's declared native-board writers and reader, against the existing `backlog/` root (same file format, so no storage move yet). Output shapes `bin/backlog_task.py` prints stay the same. Starts once the starpulse gitlink contains P3. Cites ADRs: Trantor Keeps Its Board on StarPulse's Native Markdown Board; Trantor Consumes StarPulse Through the Contract an Installed User Has; Board Writers Enforce Declared Machine Guards.
+Spec doc-116 D3. Replace the 13 task call sites in `lib/backlog_workflow/tasks.py` that run `paths.BACKLOG_BIN` (task edit/create/list/view/complete/archive and comments) with StarPulse's declared native-board writers and reader, against the existing `backlog/` root (same file format, so no storage move yet). Output shapes `bin/backlog_task.py` prints stay the same. Starts once the starpulse gitlink contains P3. Cites ADRs: Example Keeps Its Board on StarPulse's Native Markdown Board; Example Consumes StarPulse Through the Contract an Installed User Has; Board Writers Enforce Declared Machine Guards.
 
 ## Duplicate Search
 
@@ -41,7 +41,7 @@ No candidate moves the board CLI's writes off the backlog binary. TASK-1124 (Don
 <!-- AC:BEGIN -->
 - [ ] #1 No task call site runs the backlog binary: `! grep -nE 'BACKLOG_BIN\), "task"' lib/backlog_workflow/tasks.py`
 - [ ] #2 `uv run pytest lib/backlog_workflow` passes
-- [ ] #3 Trantor's starpulse import check passes: `make lint`
+- [ ] #3 Example's starpulse import check passes: `make lint`
 - [ ] #4 A create, edit, complete and archive on a skill-eval mock board round-trip through `bin/backlog_task.py`: `uv run pytest lib/backlog_workflow -k native_writes`
 <!-- AC:END -->
 

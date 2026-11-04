@@ -15,7 +15,7 @@ from starpulse.runtime.config import load
 
 from tests.unit.board.test_native import write_task
 
-PULL = "https://github.com/acme/trantor/pull/7"
+PULL = "https://github.com/acme/example/pull/7"
 
 
 def test_a_worker_reads_the_tasks_and_their_prs_from_the_read_model(tmp_path: Path) -> None:

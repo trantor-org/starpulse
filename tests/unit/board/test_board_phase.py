@@ -119,8 +119,8 @@ def test_a_task_whose_phase_is_parked_reads_in_the_waiting_lane_and_not_the_in_p
 
 
 def _review_snapshot(checks: str, *, merged: bool = False) -> dict[str, Any]:
-    url = "https://github.com/acme/trantor/pull/7"
-    pull = {"url": url, "repo": "acme/trantor", "number": 7, "checks": checks, "merged": merged, "closed": False}
+    url = "https://github.com/acme/example/pull/7"
+    pull = {"url": url, "repo": "acme/example", "number": 7, "checks": checks, "merged": merged, "closed": False}
     agent = _agent("T-1", "in_progress", prs=[url], moves={"review": {"allowed": True}, "ready": {"allowed": True}})
     return {"flows": [{"name": "board", "agents": [agent], "machine": {}}], "pulls": {"T-1": [pull]}, "settled": {},
             "roles": ROLES.wire()}
@@ -133,7 +133,7 @@ def test_the_review_move_is_refused_while_a_cited_pr_has_checks_that_are_not_gre
     view = task_view(snapshot["flows"][0]["agents"][0], snapshot, set())
 
     assert view["moves"]["review"]["allowed"] is False
-    assert f"acme/trantor#7 has {said}" in view["moves"]["review"]["reason"]
+    assert f"acme/example#7 has {said}" in view["moves"]["review"]["reason"]
     assert view["moves"]["ready"]["allowed"] is True
 
 

@@ -1520,7 +1520,7 @@ APPLIED = Past(
     "r1",
     started_at=f"{_D}T23:00:00Z",
     finished_at=f"{_D}T23:01:00Z",
-    params=f'REPOSITORY=trantor-org/trantor AFTER={"a" * 40} NOTE="two words"',
+    params=f'REPOSITORY=acme/example AFTER={"a" * 40} NOTE="two words"',
     nodes=(("validate", "succeeded"), ("deploy", "succeeded")),
 )
 FAILED = Past(
@@ -1550,7 +1550,7 @@ def test_a_tied_dag_carries_its_recent_runs_with_params_times_and_per_step_statu
         "status": "succeeded",
         "startedAt": f"{_D}T23:00:00Z",
         "finishedAt": f"{_D}T23:01:00Z",
-        "params": {"REPOSITORY": "trantor-org/trantor", "AFTER": "a" * 40, "NOTE": "two words"},
+        "params": {"REPOSITORY": "acme/example", "AFTER": "a" * 40, "NOTE": "two words"},
         "steps": {"validate": "succeeded", "deploy": "succeeded"},
     }
     assert (runs[1]["status"], runs[1].get("raw"), runs[1]["params"]) == ("failed", None, {})

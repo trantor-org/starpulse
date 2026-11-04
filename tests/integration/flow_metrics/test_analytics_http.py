@@ -147,10 +147,10 @@ def test_recurring_work_is_a_trace_cluster_with_its_skills_and_what_it_missed(se
 def test_a_session_an_eval_run_stamped_is_left_out_of_the_recurring_work(tmp_path: Path) -> None:
     payloads = corpus()
     for payload in payloads[:6]:
-        payload["resourceLogs"][0]["resource"]["attributes"] += _attributes(**{"trantor.eval": "memory-search-judge"})
+        payload["resourceLogs"][0]["resource"]["attributes"] += _attributes(**{"example.eval": "memory-search-judge"})
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     for payload in payloads:
-        telemetry.publish(signals(payload, analytics=replace(ANALYTICS, eval_attribute="trantor.eval")))
+        telemetry.publish(signals(payload, analytics=replace(ANALYTICS, eval_attribute="example.eval")))
     feed = BoardFeed(roles=ROLES, machines=MACHINES, keys=KEYS)
     with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: NOW, analytics=ANALYTICS) as server:
         _, body = _get(server, "/api/analytics/trace-clusters?hours=1&min_sessions=5")

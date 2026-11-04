@@ -263,7 +263,7 @@ def test_a_red_check_demotes_a_review_task_to_needs_attention_with_the_failure_a
     assert until(lambda: board.moved() == [("TASK-1", "needs_attention")])
     _, changes, comment, actor = board.writes[0]
     assert actor == ACTOR
-    assert comment == f"Pull request checks failed: acme/trantor#1 at {HEAD}. {ATTENTION_QUESTION}"
+    assert comment == f"Pull request checks failed: acme/example#1 at {HEAD}. {ATTENTION_QUESTION}"
     assert changes["description"].endswith(f"## Needs attention\n\n{comment}")
 
 
@@ -285,7 +285,7 @@ def test_a_conflicting_or_draft_pull_request_sends_a_review_task_back_and_hands_
     running(board, store, stop, returned=returned.append)
 
     assert until(lambda: board.moved()[:1] == [("TASK-1", "in_progress")])
-    assert board.writes[0][2] == f"{said}: acme/trantor#1 at {HEAD}."
+    assert board.writes[0][2] == f"{said}: acme/example#1 at {HEAD}."
     assert until(lambda: returned == ["TASK-1"])
     assert board.tasks["TASK-1"].lane == "in_progress"
 

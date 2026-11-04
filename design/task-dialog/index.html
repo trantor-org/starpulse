@@ -1382,10 +1382,10 @@ Behavior-preserving: exit codes 0/1/2/75 and output text unchanged. Same shape a
     { id: "c3", kind: "checkpoint", who: "agent", at: "10:28", ac: 3, body: "`rg -c 'next_version(previous, bump_kind' cli.py` = 1; gh create and close both route through `_gh` (cli.py:605)" },
     { id: "c5", kind: "comment", who: "Adin", at: "10:41", body: "Drop AC #4, there is no mutation root for release_workflow. Note it and move on." },
     { id: "c4", kind: "checkpoint", who: "agent", at: "10:53", ac: 2, body: "`cmd_sweep` body 54 lines (ast, excl. def+docstring), ruff C901 max-complexity=10 clean; `cmd_bump` split into `_close_superseded` / `_already_cut` / `_bump_steps`" },
-    { id: "c6", kind: "system", who: "starpulse", at: "10:56", body: "PR [trantor-org/trantor#6039](#) ready, CI green" },
+    { id: "c6", kind: "system", who: "starpulse", at: "10:56", body: "PR [acme/example#6039](#) ready, CI green" },
   ],
   session: { profile: "@agent-fast-high", id: "30d68222-0000-4000-8000-000000000000", url: "#", line: "deliver · 12m ago · 5 steps" },
-  prs: [{ ref: "trantor-org/trantor#6039", url: "#", read: "pass", checks: "checks pass", at: "read 1m ago" }],
+  prs: [{ ref: "acme/example#6039", url: "#", read: "pass", checks: "checks pass", at: "read 1m ago" }],
   ci: null,
   deps: [], blocks: [],
   docs: [["Milestone", "m-321", "Weekly code audit, 2026-10-25", "#"], ["Source", "audit", "Weekly code audit report, 2026-10-25", "#"]],
@@ -1433,7 +1433,7 @@ function taskFor(s) {
   const t = structuredClone(s === "deps-long" || s === "doc" ? T8560 : s === "empty" ? stub(qs.get("task") || "DEMO-8692") : T8624);
   if (s === "pr-unread") {
     t.lane = ["In Progress", "working"]; t.forAge = "31m";
-    t.prs = [{ ref: "trantor-org/trantor#6039", url: "#", read: "unread", checks: "not read yet", at: "opened 40s ago · next read in 20s" },
+    t.prs = [{ ref: "acme/example#6039", url: "#", read: "unread", checks: "not read yet", at: "opened 40s ago · next read in 20s" },
              { ref: "trantor-org/starpulse#412", url: "#", read: "failed", checks: "checks pass", at: "as of 9m ago · last 3 reads failed (rate limited)" }];
     t.activity = t.activity.slice(0, 4);
   }
