@@ -490,9 +490,17 @@ class TaskActor:
             found = self._feed.task(dependency)
             if found and proposed and found["state"] == proposed:
                 reasons.append(f"{dependency} is Proposed until the operator promotes it")
-            elif found is None and not self._cleared(dependency):
+            elif dependency in self._missing(agent):
                 reasons.append(f"{dependency} is not on the board")
         return tuple(reasons)
+
+    def _missing(self, agent: dict[str, Any]) -> tuple[str, ...]:
+        """The dependencies the Board holds in no store: no open task, none done, none archived. Nothing finishes them."""
+        return tuple(
+            dependency
+            for dependency in agent["dependencies"]
+            if self._feed.task(dependency) is None and not self._cleared(dependency)
+        )
 
     def _cleared(self, dependency: str) -> bool:
         """Whether the dependency is done, or archived: its file left the lanes without reaching Done."""
@@ -797,6 +805,8 @@ class TaskActor:
             changes = self._stale(agent) if fact.startswith("deps_done") else {}
             if fact in _ASKS:
                 changes = {"description": section_set(agent["description"], "Needs attention", comment)}
+                if fact == "overdue" and self._missing(agent):
+                    changes["dependencies"] = []  # Needs attention carries none; the reason names them
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes):
                 if self._verifying and fact == "pr_merged_planned":
                     self._woken[name] = self._clock()
@@ -1167,6 +1177,8 @@ class TaskActor:
         The SLE is the latest `expect_by` plus two days, else seven days from entering the lane."""
         if not agent.get("entered"):
             return None
+        if self._missing(agent):
+            return agent["entered"], "a dependency is not on the board"
         if not criteria.authored(agent["description"]) and self._moving(agent):
             return None
         dates = [stamp for stamp in map(_epoch, criteria.expect_dates(agent["description"])) if stamp]
@@ -1188,6 +1200,13 @@ class TaskActor:
         now = self._wall()
         if not deadline or deadline[0] > now:
             return None
+        if missing := self._missing(agent):
+            gone = "; ".join(f"{dependency} is not on the board" for dependency in missing)
+            listed = ", ".join(agent["dependencies"])
+            return deadline[0], (
+                f"{gone}, so nothing releases this task. Its dependencies ({listed}) are cleared with this move. "
+                "Re-park it on the right tasks, or close it?"
+            )
         if self._evaluate is not None and criteria.authored(agent["description"]) and agent["id"] not in self._results:
             return None  # the gate is not read yet: its result derives the task again, and a gate that holds comes first
         gate = [*self._unmet(agent), *(each["id"] for each in criteria.authored(agent["description"]))]
