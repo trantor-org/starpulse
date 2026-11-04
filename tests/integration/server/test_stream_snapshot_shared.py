@@ -16,7 +16,9 @@ from starpulse.views.adapters.inbound.snapshots import Snapshots
 from tests.machines import MACHINES, ROLES
 
 
-def test_a_stream_takes_the_snapshot_on_the_column_views_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_stream_takes_the_snapshot_on_the_column_views_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("starpulse.views.adapters.inbound.api.streams._HELD_SETTLE_S", 0)
     takers: list[str] = []
     take = Snapshots.take
@@ -35,7 +37,10 @@ def test_a_stream_takes_the_snapshot_on_the_column_views_thread(tmp_path: Path, 
             _, document = _next_event(resp)
 
     assert {t["id"] for c in document["columns"] for t in c["tasks"]} == {"PROJ-1", "PROJ-2"}
-    assert takers and all(name.startswith("column-views") for name in takers)
+    # snapshot-warm is the keep-warm loop, which takes snapshots on its own timer and can land in the window; the
+    # invariant is that the stream never takes one on the request thread.
+    stream_takers = [name for name in takers if not name.startswith("snapshot-warm")]
+    assert stream_takers and all(name.startswith("column-views") for name in stream_takers)
 
 
 def test_streams_woken_by_one_change_share_one_snapshot_and_a_change_takes_a_new_one() -> None:
