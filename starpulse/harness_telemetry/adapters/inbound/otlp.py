@@ -191,6 +191,9 @@ def receiver(
                 self._reply(415, b'{"error": "send OTLP as json: set encoding = \\"json\\" on the exporter"}')
                 return
             length = int(self.headers.get("Content-Length") or 0)  # pragma: no mutate: names are case-insensitive
+            if length < 0:
+                self._reply(400)
+                return
             if length > MAX_BODY:
                 self._reply(413)
                 return
