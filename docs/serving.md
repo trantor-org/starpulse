@@ -854,7 +854,8 @@ unlike one an operator opened (an operator's start has no `by`, and the page's `
 `tmux new-session -d -s starpulse-<task> -c <config directory> claude --remote-control <task> "Start <task>"` and needs
 `tmux` and `claude` on `PATH`, so a board with no `[scheduler]` table and no `session_start_url` starts a task out of the
 box. The built-in starter starts only Claude: with another harness selected it refuses the start, naming
-`session_start_url`, and ignores `mode`.
+`session_start_url`, and ignores `mode`. The built-in starter is tmux only and has no multiplexer setting: a board whose sessions run in another
+multiplexer (herdr) sets `session_start_url` to a service that starts them there.
 
 When a run's task leaves the eligible lane and `in_progress`, the loop writes its outcome (the lane it went to), duration and
 peak to the ledger. When the harness session stops while the task is still in those lanes, the run is written as
