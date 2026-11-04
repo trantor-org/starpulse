@@ -72,6 +72,7 @@ PAUSES_KEY = "scheduler.harness_pauses"
 #: Seconds a task whose start failed waits before its first retry; each further failure doubles it, up to `START_BACKOFF_MAX`.
 START_BACKOFF = 30.0
 START_BACKOFF_MAX = 30 * 60.0
+BACKOFF_EXPONENT_MAX = 30  # START_BACKOFF * 2**30 is past both caps; a larger exponent overflows a float at 1024
 #: Seconds a full session-start limit holds the whole queue back: it refuses every task alike, so no task is skipped alone.
 #: The first refusal waits `START_BACKOFF`; each further one doubles it, up to this cap, and a start that lands resets it.
 SESSIONS_FULL_BACKOFF_MAX = 5 * 60.0
@@ -840,11 +841,11 @@ class Loop:
     def _note_full(self, now: float, text: str) -> None:
         refusals = self._full[0] + 1
         self._full_counts = session_counts(text) or self._full_counts
-        self._full = (refusals, now + min(START_BACKOFF * 2 ** (refusals - 1), SESSIONS_FULL_BACKOFF_MAX))
+        self._full = (refusals, now + min(START_BACKOFF * 2 ** min(refusals - 1, BACKOFF_EXPONENT_MAX), SESSIONS_FULL_BACKOFF_MAX))
 
     def _back_off(self, task: str, now: float) -> None:
         failures = self._failed.get(task, (0, 0.0))[0] + 1
-        self._failed[task] = (failures, now + min(START_BACKOFF * 2 ** (failures - 1), START_BACKOFF_MAX))
+        self._failed[task] = (failures, now + min(START_BACKOFF * 2 ** min(failures - 1, BACKOFF_EXPONENT_MAX), START_BACKOFF_MAX))
 
     def _selected_paused(self, now: float) -> str | None:
         """The selected harness when its credit pause is still live; other harnesses keep admitting."""
