@@ -212,6 +212,15 @@ def test_a_body_over_the_size_bound_is_refused_and_one_at_the_bound_is_read(
     assert (at_bound[0], over[0], over[3]) == (200, 413, b"{}")
 
 
+def test_a_negative_length_is_refused_at_once(served: tuple[str, Spy]) -> None:
+    base, spy = served
+
+    status, _, _, body = raw(base, "POST", "/v1/logs", b"{}", {"Content-Type": "application/json", "Content-Length": "-1"})
+
+    assert (status, body) == (400, b"{}")
+    assert spy.seen == []
+
+
 def test_a_body_that_is_not_gzip_but_says_it_is_is_refused(served: tuple[str, Spy]) -> None:
     base, spy = served
 
