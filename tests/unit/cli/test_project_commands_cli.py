@@ -98,6 +98,13 @@ def test_a_literal_brace_in_an_argv_element_exits_2_as_a_usage_error(
     assert "{{" in document["error"]
 
 
+def test_a_string_index_on_a_value_exits_2_as_a_usage_error(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    code, document = _run(capsys, tmp_path, _table(["echo", "{task[x]}"]), ["go", "--task", "T-1"])
+
+    assert code == 2
+    assert document["code"] == "usage"
+
+
 def test_an_unknown_name_in_a_child_worktree_names_the_superproject_that_maps_it(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:

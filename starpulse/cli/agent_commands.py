@@ -34,7 +34,7 @@ class _Values(dict[str, str]):
 def _fill(element: str, values: _Values) -> str:
     try:
         return element.format_map(values)
-    except (ValueError, IndexError, KeyError, AttributeError) as exc:
+    except (ValueError, IndexError, KeyError, AttributeError, TypeError) as exc:
         message = f"{element!r} has a brace that is not a placeholder; write a literal one as {{{{ or }}}}"
         raise CliError("usage", message) from exc
 
