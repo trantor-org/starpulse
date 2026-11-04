@@ -51,7 +51,7 @@ class StateRoles:
 
     def wire(self) -> dict[str, str | list[str] | None]:
         """The roles as the snapshot sends them, for a client that holds no machine to read them from."""
-        points = ("initial", "final", "done", "working", "ready", "waiting", "review", "attention", "proposed")
+        points = ("initial", "final", "done", "working", "ready", "waiting", "review", "verifying", "attention", "proposed")
         named = {point: getattr(self, point) for point in points}
         return {**named, "startable": sorted(self.startable), "lanes": list(self.lanes)}
 
@@ -83,11 +83,18 @@ class StateRoles:
         return self.rests[0] if self.rests else self.final
 
     @property
+    def _resting(self) -> list[str]:
+        return [state for state, role in self.roles.items() if role == "resting" and state not in self.rests]
+
+    @property
     def working(self) -> str | None:
         """Where a session works a task: the first resting State that is not where the lifecycle ends."""
-        return next(
-            (state for state, role in self.roles.items() if role == "resting" and state not in self.rests), None
-        )
+        return next(iter(self._resting), None)
+
+    @property
+    def verifying(self) -> str | None:
+        """Where a merged task rests while its post-merge QA runs: the resting State that follows the working one."""
+        return next(iter(self._resting[1:]), None)
 
     @property
     def ready(self) -> str | None:

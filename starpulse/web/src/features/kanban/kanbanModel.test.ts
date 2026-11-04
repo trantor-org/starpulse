@@ -24,6 +24,17 @@ describe("the columns", () => {
     expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0]);
   });
 
+  it("draw the verifying State the machine names between Review and Needs attention, so Review holds only review tasks", () => {
+    const roles = { ...LIFECYCLE_ROLES, verifying: "verifying" };
+    const names = { ...NAMES, verifying: "Verifying" };
+    const v = layout([task("PROJ-1", "review"), task("PROJ-2", "verifying"), task("PROJ-3", "verifying")], names, roles, NO_PREFS, NOW);
+
+    expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Verifying", "Needs attention", "Done"]);
+    expect(column(v, "review").buckets.flatMap((b) => b.tasks.map((t) => t.id))).toEqual(["PROJ-1"]);
+    expect(column(v, "verifying").count).toBe(2);
+    expect(column(v, "verifying").role).toBe("verifying");
+  });
+
   it("are the board's own lanes in order when it has no ready lane, so a native board's first-lane task is drawn", () => {
     const native = { to_do: "To Do", in_progress: "In Progress", done: "Done" };
     const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, {}, NO_PREFS, NOW);

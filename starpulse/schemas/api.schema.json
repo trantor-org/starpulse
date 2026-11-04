@@ -6302,6 +6302,18 @@
           },
           "type": "array"
         },
+        "verifying": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where a merged task rests while its post-merge QA runs."
+        },
         "waiting": {
           "anyOf": [
             {
