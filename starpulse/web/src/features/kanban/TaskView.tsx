@@ -298,7 +298,7 @@ function MoveMenu({ items, disabled, move }: { items: { to: string; text: string
 
 const fromSnapshot = (task: KanbanTask): TaskRecord => ({
   title: task.title, profile: task.profile ?? "", priority: "", labels: task.labels, milestone: task.milestone,
-  dependencies: task.dependencies, description: task.description.split("\n## ")[0], plan: "", notes: "",
+  dependencies: task.dependencies, description: task.description, plan: "", notes: "",
   acceptanceCriteria: task.acceptanceCriteria ?? [], definitionOfDone: task.definitionOfDone ?? [],
 });
 const priorityValue = (value: string) => PRIORITIES.find((v) => v.toLowerCase() === value.toLowerCase()) ?? value;
@@ -327,7 +327,7 @@ export function TaskView(p: TaskViewProps) {
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
   const [reading, setReading] = useState<{ task: string; doc: DocLink } | null>(null);
-  const docs = useDocs(opened);
+  const docs = useDocs(opened, Boolean(p.record || p.readNote));
   const readDoc = reading?.task === p.task.id ? reading.doc : null;
   const names = p.names ?? {};
   const { roles } = p;

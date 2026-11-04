@@ -69,7 +69,7 @@ def test_snapshot_slim_leaves_a_flow_agents_description_and_criteria_to_the_task
     assert all("description" not in a and "criteria" not in a for a in agents)
 
 
-def test_snapshot_slim_encodes_definition_of_done_and_keeps_it_only_on_an_in_progress_task() -> None:
+def test_snapshot_slim_encodes_definition_of_done_and_keeps_it_only_on_an_active_task() -> None:
     feed = _feed()
     feed.put(task("PROJ-11", "In Progress", moves=OPEN))
     data = feed.snapshot()

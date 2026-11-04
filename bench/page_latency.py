@@ -60,6 +60,9 @@ DROPPED_MS = 1.5 * FRAME_BUDGET_MS
 LONG_TASK_MS = 50.0
 #: The pointer's rest on a card before it clicks: a viewer's hand slows onto a target before pressing it.
 HOVER_MS = 150
+#: The budget of a cold click on a modal's trigger, with no hover or press before it: from the click to the frame after the
+#: dialog has drawn whole (the ADR's 50 ms holds for a hovered click, which a read-ahead has already served).
+COLD_OPEN_MS = 500.0
 #: The `--viewer` scope's CPU weight, against the default 100 of every other unit on the host.
 VIEWER_CPU_WEIGHT = 10_000
 #: Set inside the `--viewer` scope, so the bench enters it once.
@@ -463,6 +466,45 @@ _OPEN = """async (id) => {
   });
   return { ms: (await window.__sp.twoFrames()) - s, ahead };
 }"""
+#: Click the trigger `[selector, text, dialog, nth]` names (the `nth` visible `selector` match whose text holds `text`, wrapping) with no hover or press before
+#: it, and resolve with the ms from the click to the second frame after the dialog `[dialog]` draws outside any `[inert]` with no
+#: `aria-busy=true`; null when the page has no such trigger.
+_COLD = """async ([selector, text, dialog, nth]) => {
+  const found = [...document.querySelectorAll(selector)].filter((e) => e.checkVisibility() && !e.disabled && e.textContent.includes(text));
+  const el = found[nth % found.length];
+  if (!el) return null;
+  const drawn = () => [...document.querySelectorAll(dialog)].some((d) => !d.closest("[inert]") && d.getAttribute("aria-busy") !== "true");
+  const s = performance.now();
+  el.click();
+  await new Promise((resolve) => {
+    const seen = new MutationObserver(() => drawn() && done());
+    const cap = setTimeout(() => done(), 30000);
+    const done = () => { seen.disconnect(); clearTimeout(cap); resolve(); };
+    if (drawn()) return done();
+    seen.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-busy", "inert"] });
+  });
+  return (await window.__sp.twoFrames()) - s;
+}"""
+#: The modals a cold click opens, each as `(name, view, trigger selector, trigger text, dialog selector, search, close)`. Each sample takes the next
+#: match, so a Task view opens a task the page holds no record of yet. `search` is the `(input selector, text)` typed first (the Star Map opens
+#: the In Progress drill-in from a search hit, as its sun does); `close` is the control that ends it, Escape when empty.
+COLD_MODALS = (
+    ("Task view", "Kanban", "#cols .card[data-id]", "", '[aria-label^="TASK-"]', None, ""),
+    ("New task", "Kanban", "button", "New task", '[aria-label="New task"]', None, ""),
+    ("Connect a tracker", "Admin", "button.btn", "Connect a tracker", '[aria-label="Connect a tracker"]', None, ""),
+    ("Start-session confirm", "Kanban", 'button[aria-label^="Start TASK-"]', "", '[aria-label^="Start TASK-"]', None, ""),
+    ("DAG modal", "Jobs", ".drow[data-dag]", "", ".dgm", None, ""),
+    ("Admin theme confirm", "Admin", "button.tile.add", "Import scheme", '[aria-label="Import a color scheme"]', None, "button.x"),
+    (
+        "In Progress drill-in",
+        "Star Map",
+        '#nav button.node.hit[data-kind=state][title="In Progress"]',
+        "",
+        '[aria-label="In Progress drill-in"]',
+        ("#q", "in progress"),
+        'button[aria-label="Back to the Board"]',
+    ),
+)
 #: True once no dialog shows: one drawn ahead of a click waits inert.
 _SHOWN_GONE = """() => ![...document.querySelectorAll("[role=dialog]")].some((d) => !d.closest("[inert]"))"""
 #: The ms between frames for `ms` after clicking `sel`: what an animation it starts looks like.
@@ -578,6 +620,28 @@ def time_page(
             page.wait_for_function(_SHOWN_GONE, timeout=10_000)
         modal.note += f"; {ahead} of {len(modal.samples)} drawn ahead"
         rows.append(modal)
+
+        for name, view, selector, text, dialog, search, close in COLD_MODALS:
+            cold = Row(f"cold-click {name}", "interaction", COLD_OPEN_MS, note="click with no hover, to the frame after it drew whole")
+            page.evaluate(_CLICK, _nav(view))
+            page.wait_for_function(f"() => !document.querySelector('[data-view={'constellation' if view == 'Star Map' else view.lower()}]')?.hasAttribute('inert')", timeout=10_000)
+            page.wait_for_timeout(1500)  # the view's own first draw settles before the click, as the Star Map rows wait
+            if search:
+                page.fill(*search)
+            page.mouse.move(0, 0)
+            for nth in range(samples):
+                ms = page.evaluate(_COLD, [selector, text, dialog, nth])
+                if ms is None:
+                    break
+                cold.samples.append(ms)
+                if close:
+                    page.click(f"{dialog} {close}")
+                else:
+                    page.keyboard.press("Escape")
+                page.wait_for_function(_SHOWN_GONE, timeout=10_000)
+            cold.note = cold.note if cold.samples else "trigger not found"
+            cold.judged = bool(cold.samples)
+            rows.append(cold)
 
         fly = Row("Star Map fly-to start", "interaction", BUDGET_MS, note="click on Star Map while it shows")
         flight = Row(

@@ -32,7 +32,7 @@ const record: TaskRecord = {
   acceptanceCriteria: [], definitionOfDone: [], session: "",
 };
 
-let host: HTMLDivElement, root: Root, fetched: string[];
+let host: HTMLDivElement, root: Root, fetched: string[], histories: string[];
 const cardOf = (id: string) => host.querySelector<HTMLElement>(`#cols .card[data-id="${id}"]`)!;
 const dialog = () => document.querySelector<HTMLElement>("[role=dialog]");
 const settle = () => act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
@@ -45,6 +45,7 @@ beforeEach(() => {
   localStorage.clear();
   history.replaceState(null, "", "/");
   fetched = [];
+  histories = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     if (!url.startsWith("/api/history") && !url.startsWith("/api/analytics")) fetched.push(url);
     return { ok: true, json: async () => ({ record }) };
@@ -69,6 +70,27 @@ describe("opening a task's modal", () => {
     act(() => cardOf("TASK-2").focus());
     await settle();
     expect(fetched).toEqual(["/api/task/TASK-1", "/api/task/TASK-2"]);
+  });
+
+  it("reads the revision count beside the record, not after it", async () => {
+    let land: (v: unknown) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (url.startsWith("/api/history")) {
+        histories.push(url);
+        return Promise.resolve({ ok: true, json: async () => ({ plan_revisions: 2 }) });
+      }
+      fetched.push(url);
+      return new Promise((resolve) => { land = resolve; });
+    }));
+    act(() => cardOf("TASK-3").click());
+    await settle();
+
+    expect(histories).toEqual(["/api/history?task=TASK-3"]);
+    expect(dialog()?.getAttribute("aria-busy")).toBe("true");
+
+    await act(async () => { land({ ok: true, json: async () => ({ record }) }); for (let i = 0; i < 5; i++) await Promise.resolve(); });
+    expect(dialog()?.textContent).toContain("revised 2×");
+    expect(histories).toEqual(["/api/history?task=TASK-3"]);
   });
 
   it("draws the held record's notes at once when it is past the fresh window, then reads it again", async () => {
@@ -229,7 +251,8 @@ describe("opening a task's modal", () => {
   it("draws a rested card's modal before its record lands, and fills it when the record lands after the click", async () => {
     let land: (v: unknown) => void = () => {};
     vi.stubGlobal("fetch", vi.fn((url: string) => {
-      if (!url.startsWith("/api/history")) fetched.push(url);
+      if (url.startsWith("/api/history")) return Promise.resolve({ ok: true, json: async () => ({ plan_revisions: 0 }) });
+      fetched.push(url);
       return new Promise((resolve) => { land = resolve; });
     }));
     hover(cardOf("TASK-1"));

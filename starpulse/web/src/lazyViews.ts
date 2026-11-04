@@ -8,12 +8,15 @@ const load = {
   proposals: () => import("./features/proposals/Proposals"),
   dags: () => import("./features/dags/Dags"),
   admin: () => import("./AdminPage"),
+  drill: () => import("./features/level/SunsDrillIn"),
 };
 
 export const Kanban = lazy(async () => ({ default: (await load.kanban()).Kanban }));
 export const Proposals = lazy(async () => ({ default: (await load.proposals()).Proposals }));
 export const Dags = lazy(async () => ({ default: (await load.dags()).Dags }));
 export const AdminPage = lazy(async () => ({ default: (await load.admin()).AdminPage }));
+/** The In Progress drill-in, prefetched with the views so the first click on the In Progress sun finds it loaded. */
+export const SunsDrillIn = lazy(async () => ({ default: (await load.drill()).SunsDrillIn }));
 
 /** Starts loading every view not loaded yet, when the browser has nothing else to do. Returns the cancel. */
 export function prefetchViews(): () => void {
