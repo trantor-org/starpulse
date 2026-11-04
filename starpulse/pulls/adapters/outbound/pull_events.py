@@ -83,6 +83,7 @@ def _opened(repo: str, number: int, body: str, at: float) -> Record:
         "fetchedAt": at,
         "headRefName": "",
         "unresolvedThreads": None,
+        "title": "",
         "detail": _bare_detail(at),
     }
 

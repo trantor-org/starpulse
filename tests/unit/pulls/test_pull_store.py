@@ -247,6 +247,7 @@ def test_a_record_carries_the_facts_pr_status_prints(store: PullStore) -> None:
             "requiredChecks": [{"name": "lint", "result": "pass"}],
             "threads": 2,
             "unresolvedThreads": [{"id": f"PRRT_4_{index}", "author": "coderabbitai"} for index in (1, 2)],
+            "title": "",
             "headRefName": "claude/task-7-thing",
             "updatedAt": OLD,
             "mergedAt": None,
