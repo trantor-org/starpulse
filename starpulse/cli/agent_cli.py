@@ -555,6 +555,8 @@ def _checked(path: Path) -> dict[str, Any]:
         load_machine(path, Registry(guards=_AnyName(), actions=_AnyName()))
     except MachineDefinitionError as error:
         errors = [{"file": str(error.file or path), "line": error.line, "message": str(error)}]
+    except (AttributeError, TypeError) as error:  # a document that is no mapping, such as an empty file
+        errors = [{"file": str(path), "line": None, "message": f"{path}: not a machine definition ({error})"}]
     else:
         errors = []
     return {"path": str(path), "ok": not errors, "errors": errors}
