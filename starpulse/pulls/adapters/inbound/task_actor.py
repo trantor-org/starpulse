@@ -49,6 +49,7 @@ from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.markdown import section_set
 from starpulse.board.model.seam import FLAGGED, HELD, MERGE_EVIDENCE, TaskCreator, TaskEditor, TaskReader, Written
+from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.pulls.adapters.inbound.unblock import PinGate
 from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
@@ -251,6 +252,8 @@ class TaskActor:
         self._store = store
         self._edit = edit
         self._waits = waits
+        #: The lane that waits on a pull request's end, whatever the board names it.
+        self._review = StateRoles({lane: "waiting_on_fact" for lane in waits}, waits).review
         self._moves = moves
         self._clock = clock
         #: Epoch seconds, which a task's `entered` and `expect_by` are in; `clock` is monotonic and has no date.
@@ -604,7 +607,7 @@ class TaskActor:
             if before is None or before[0] != now[0]:
                 self._tried.pop(name, None)
                 self._sent_back.pop(name, None)
-                if before and before[0] == "review" and now[0] == self._feed.roles.working:
+                if before and before[0] == self._review and now[0] == self._feed.roles.working:
                     self._sent_back[name] = self._heads(agent)
             if before is None or (before[0], before[3]) != (now[0], now[3]):
                 touched |= self._dependents(name)
@@ -706,7 +709,7 @@ class TaskActor:
         """The pull requests whose ends prove a task's work. In Review, a task with no own pull request merged takes
         every cited one: another task's delivery may have superseded its own, which closed unmerged or never existed."""
         own = self._own_prs(agent)
-        if agent["state"] != "review":
+        if agent["state"] != self._review:
             return own
         if any((record := self._record(url)) and record["state"] == "MERGED" for url in own):
             return own
