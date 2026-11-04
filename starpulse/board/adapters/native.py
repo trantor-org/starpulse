@@ -21,7 +21,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -897,13 +897,13 @@ class _Retired:
     def rows(self, task: str = "", milestone: str = "") -> list[dict[str, str]]:
         """The retired task `task` as `[{task, name, text}]`, empty when it is not retired; every one, by id, for "".
         A `milestone` keeps only the tasks whose front matter names it."""
-        return list(self._each(task, milestone))
+        return list(self.each(task, milestone))
 
     def projected(self, project: Callable[[str], Any], task: str = "", milestone: str = "") -> list[tuple[str, Any]]:
         """`rows` as `[(id, project(text))]`: only what `project` keeps outlives its page."""
-        return [(row["task"], project(row["text"])) for row in self._each(task, milestone)]
+        return [(row["task"], project(row["text"])) for row in self.each(task, milestone)]
 
-    def _each(self, task: str, milestone: str) -> Iterator[dict[str, str]]:
+    def each(self, task: str, milestone: str) -> Iterator[dict[str, str]]:
         """The rows `rows` answers, by id, a page of them at a time."""
         after = ""
         while self.engine is not None:
@@ -1045,8 +1045,9 @@ def _retirer(root: Path, retired: _Retired, roles: StateRoles) -> TaskRetirer:
 
 
 def _retired_reader(retired: _Retired) -> RetiredReader:
-    def read(task: str, milestone: str, /) -> list[Mapping[str, str]]:
-        return list(retired.rows(task, milestone))
+    def read(task: str, milestone: str, /) -> Iterable[Mapping[str, str]]:
+        rows = retired.each(task, milestone)
+        return list(rows) if task else rows
 
     return read
 

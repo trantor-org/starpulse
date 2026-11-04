@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from operator import itemgetter
 from datetime import datetime, timedelta
 from hashlib import blake2b
+from itertools import batched
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -17,6 +18,9 @@ from starpulse.contracts.api.dto.task import RawTask
 from starpulse.contracts.api.registry import BODIES, EVENTS
 
 _ADAPTERS: dict[int, TypeAdapter[Any]] = {}
+
+#: How many rows `encode_stream` dumps into one chunk.
+_BATCH = 50
 
 
 def encode(kind: str, data: Any) -> bytes:
@@ -34,6 +38,18 @@ def encode_rows(kind: str, data: dict[str, Any], field: str, item: Any, rows: It
     parts.sort(key=itemgetter(0))
     head = encode(kind, {**data, field: []})  # the body with no row, which ends `"field":[]}`
     return b"".join([head[:-2], b",".join(part for _, part in parts), b"]}"])
+
+
+def encode_stream(kind: str, data: dict[str, Any], field: str, item: Any, rows: Iterable[Any]) -> Iterator[bytes]:
+    """`encode(kind, {**data, field: [...]})` as chunks of `_BATCH` rows each, every row validated as `item` and dumped
+    alone, drawn from `rows` only as its chunk is: no more than a batch of rows and their bytes exists at once."""
+    adapter = _adapter(item)
+    head = encode(kind, {**data, field: []})  # the body with no row, which ends `"field":[]}`
+    yield head[:-2]
+    for number, batch in enumerate(batched(rows, _BATCH)):
+        dumped = b",".join(adapter.dump_json(adapter.validate_python(row), by_alias=True, exclude_unset=True) for row in batch)
+        yield dumped if not number else b"," + dumped
+    yield b"]}"
 
 
 def _adapter(annotation: Any) -> TypeAdapter[Any]:

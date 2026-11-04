@@ -365,8 +365,9 @@ def retire_task(request: RetireRequest, board: Board | None) -> tuple[int, dict[
 
 def retired_list(board: Board | None, task: str, milestone: str = "", fields: str = "") -> tuple[int, dict[str, Any]]:
     """The retired task `task` names, or every retired task for a blank one, each {task, name, text}, only those of
-    `milestone` when it is not blank: the HTTP status and JSON body. `fields=dependencies` answers each as {task,
-    dependencies} alone, the ids its file lists. Reading is not LAN-limited."""
+    `milestone` when it is not blank: the HTTP status and JSON body, whose `tasks` for a blank `task` may be an iterator
+    reading a page of rows at a time. `fields=dependencies` answers each as {task, dependencies} alone, the ids its
+    file lists. Reading is not LAN-limited."""
     if board is None or board.retired is None:
         return 404, {"error": "this board keeps no retired tasks"}
     if fields not in ("", "dependencies"):

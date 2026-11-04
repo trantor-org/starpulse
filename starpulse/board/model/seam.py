@@ -10,7 +10,7 @@ The module's `board(settings, base)` returns a `Board`; `settings` is the rest o
 from __future__ import annotations
 
 import importlib
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
@@ -145,8 +145,9 @@ TaskRestorer = Callable[[str], Written]
 #: state, is retired; an open or unknown task, or one whose number is already retired with other text, is refused.
 TaskRetirer = Callable[[str], Written]
 #: The retired task `task` as `[{task, name, text}]` (id, file name and file text), empty when it is not retired; a blank
-#: `task` reads every retired task, by id.
-RetiredReader = Callable[[str, str], list[Mapping[str, str]]]
+#: `task` reads every retired task, by id, as an iterator that reads a page of rows at a time, so a caller encoding the
+#: rows one by one never holds them all.
+RetiredReader = Callable[[str, str], Iterable[Mapping[str, str]]]
 #: `(project, task, milestone)` as `[(id, project(text))]` over the same retired tasks `RetiredReader` reads, the texts
 #: read a page at a time and dropped once projected, so a caller wanting only what `project` keeps holds no text.
 RetiredProjector = Callable[[Callable[[str], Any], str, str], list[tuple[str, Any]]]

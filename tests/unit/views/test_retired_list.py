@@ -2,6 +2,7 @@
 
 import threading
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -14,7 +15,9 @@ from starpulse.views.adapters.inbound.api import metrics
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.asgi_app import PageApp
 from starpulse.views.adapters.inbound.snapshots import Snapshots
+from starpulse.contracts.api.dto.milestones import RetiredTask
 from starpulse.views.application.commands.tasks import retired_list
+from starpulse.views.model.encoding import encode, encode_stream
 from starpulse.views.ports.services import Services
 
 from tests.fake_board import bare_board
@@ -75,3 +78,41 @@ def test_whole_dumps_of_the_retired_tasks_are_built_one_at_a_time_on_one_thread(
     assert statuses == [200] * 6
     assert overlap == 1
     assert len(builders) == 1
+
+
+def _row(n: int) -> dict[str, str]:
+    return {"task": f"TASK-{n}", "name": f"task-{n}.md", "text": f"---\nid: TASK-{n}\n---\n"}
+
+
+def test_the_retired_body_is_encoded_in_chunks_that_pull_rows_only_as_they_go() -> None:
+    pulled: list[int] = []
+
+    def rows() -> Iterator[dict[str, str]]:
+        for n in range(500):
+            pulled.append(n)
+            yield _row(n)
+
+    chunks = encode_stream("retired", {}, "tasks", RetiredTask, rows())
+    first = [next(chunks), next(chunks)]
+
+    assert len(pulled) < 100
+    assert b"".join([*first, *chunks]) == encode("retired", {"tasks": [_row(n) for n in range(500)]})
+
+
+def test_the_whole_retired_dump_answers_a_reader_that_yields_its_rows_lazily(tmp_path: Path) -> None:
+    feed = BoardFeed()
+    log = EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}")
+    routes = Api(
+        feed=feed,
+        history=HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", feed.machines),
+        snapshots=Snapshots(feed),
+        window=HistoryWindow(feed, 6, log),
+        board=bare_board(retired=lambda task, milestone: (_row(n) for n in range(3))),
+        services=Services(slow_read_s=0.0),
+    )
+    app = PageApp(api_routes(routes), metrics.routes, tmp_path, (), seams=routes)
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        answered = client.get("/api/retired")
+
+    assert answered.status_code == 200
+    assert answered.json() == {"tasks": [_row(n) for n in range(3)]}

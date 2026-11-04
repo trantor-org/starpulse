@@ -9,13 +9,16 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 
+from starpulse.contracts.api.dto.milestones import RetiredTask
 from starpulse.contracts.api.dto.requests import StartRequest
 from starpulse.views.adapters.inbound.api.answering import answer, on_loop, on_worker, query, reading, seams
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
@@ -39,7 +42,7 @@ from starpulse.views.application.commands.tasks import (
     task_record,
 )
 from starpulse.views.application.queries.responses import cited_pulls, resident_pulls
-from starpulse.views.model.encoding import encode
+from starpulse.views.model.encoding import encode, encode_stream
 
 if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
@@ -74,9 +77,16 @@ async def task(request: Request) -> Response:
     return on_loop(request, lambda: _resident_task(request)) or await on_worker(request, lambda: _stored_task(request))
 
 
-#: The one thread that builds the body of every retired task: a free-threaded thread keeps the heap pages of what it
+#: The one thread that reads and encodes every retired task: a free-threaded thread keeps the heap pages of what it
 #: built, so a dump built on whichever request thread took it left each of 40 concurrent requests' pages held (9 GB).
 _WHOLE_DUMP = ThreadPoolExecutor(1, thread_name_prefix="retired-dump")
+
+
+async def _on_dump_thread(chunks: Iterator[bytes]) -> AsyncIterator[bytes]:
+    """`chunks`, each drawn on `_WHOLE_DUMP`, so the dump's rows are read and encoded a batch at a time, never whole."""
+    loop = asyncio.get_running_loop()
+    while (chunk := await loop.run_in_executor(_WHOLE_DUMP, next, chunks, None)) is not None:
+        yield chunk
 
 
 @reading
@@ -84,11 +94,15 @@ def retired(request: Request) -> Response:
     asked = query(request)
     task, milestone, fields = (asked.get(name, [""])[0] for name in ("task", "milestone", "fields"))
 
-    def build() -> Response:
-        status, body = retired_list(seams(request).board, task, milestone, fields)
+    board = seams(request).board
+    if task or fields:
+        status, body = retired_list(board, task, milestone, fields)
         return answer(request, encode("retired", body), status)
-
-    return build() if task or fields else _WHOLE_DUMP.submit(build).result()
+    status, body = _WHOLE_DUMP.submit(retired_list, board, task, milestone, fields).result()
+    if status != 200:
+        return answer(request, encode("retired", body), status)
+    chunks = encode_stream("retired", {}, "tasks", RetiredTask, body["tasks"])
+    return StreamingResponse(_on_dump_thread(chunks), media_type="application/json", headers={"cache-control": "no-store"})
 
 
 def routes(api: Api) -> list[ApiRoute]:
