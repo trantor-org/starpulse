@@ -94,3 +94,14 @@ def test_a_state_waiting_only_on_a_merge_with_a_verify_plan_is_the_review_wait()
 
     assert roles.review == "checking"
     assert roles.startable == frozenset({"todo"})
+
+
+def test_the_verifying_state_is_the_resting_state_after_working_that_rests_leaves_out() -> None:
+    roles = StateRoles({"doing": "resting", "qa": "resting", "shipped": "resting"}, {}, ("shipped",))
+
+    assert (roles.working, roles.verifying) == ("doing", "qa")
+    assert roles.wire()["verifying"] == "qa"
+
+
+def test_a_machine_with_one_resting_state_besides_rests_has_no_verifying_state() -> None:
+    assert renamed().verifying is None

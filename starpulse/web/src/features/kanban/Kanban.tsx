@@ -165,6 +165,11 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
           <span className={["p", live.source && "mapped", live.machine === "ci" && ciTone(live.state) !== "phase" && ciTone(live.state)].filter(Boolean).join(" ")} title={live.source ? `mapped from ${live.source}` : undefined} /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
         </div>
       )}
+      {task.lane === roles.verifying && (
+        <div className="mach verifying" title="Merged; its post-merge QA waits on the deploy apply and the pin move">
+          <span className="p" /><b>QA</b><span className="s">· {(task.machines.find((m) => m.machine === "verify")?.state ?? live?.state ?? "merged").replace(/_/g, " ")}</span>
+        </div>
+      )}
       {!compact && (
         <div className="foot">
           {badge}

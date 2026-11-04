@@ -7,7 +7,7 @@ import { ago } from "../../shared/clock";
 import { sessionNickname } from "./nickname";
 
 /** The States the machine gives a lifecycle role, keyed by role: what stacking, the unheld chip, the Done cutoff and a lane's tone read. Which lanes are drawn is `roles.lanes`, never this. */
-const lifecycleStates = ({ ready, waiting, working, review, attention, done }: Roles) => ({ ready, waiting, working, review, attention, done });
+const lifecycleStates = ({ ready, waiting, working, review, verifying, attention, done }: Roles) => ({ ready, waiting, working, review, verifying, attention, done });
 
 /** The role a State plays in the lifecycle columns, when it plays one. */
 export const roleOf = (roles: Roles, state: string): string | undefined => Object.entries(lifecycleStates(roles)).find(([, s]) => s === state)?.[0];
