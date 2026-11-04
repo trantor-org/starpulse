@@ -42,6 +42,14 @@ describe("the columns", () => {
     expect(layout([task("TASK-1", "verifying")], names, { ...LIFECYCLE_ROLES, lanes }, NO_PREFS, NOW).columns.map((c) => [c.id, c.count])).toContainEqual(["verifying", 1]);
   });
 
+  it("are the lifecycle roles' States in role order when the snapshot lists no lanes, so an older server's board is not empty", () => {
+    const { lanes: _lanes, ...older } = LIFECYCLE_ROLES;
+    const names = { new: "New", ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
+
+    expect(columnsOf(names, older)).toEqual(["ready", "waiting", "in_progress", "review", "needs_attention", "done"]);
+    expect(layout([task("TASK-1", "in_progress")], names, older, NO_PREFS, NOW).columns.map((c) => [c.id, c.count])).toContainEqual(["in_progress", 1]);
+  });
+
   it("never include the proposed State, which waits off the board until it is promoted", () => {
     const names = { proposed: "Proposed", to_do: "To Do", done: "Done" };
 
