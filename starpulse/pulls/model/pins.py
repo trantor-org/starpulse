@@ -83,6 +83,10 @@ def link(
     pointer)` says whether commit `pointer` of the child (`owner/name`) contains `sha`.
     """
     pinned = {repo.name: repo.path for repo in repos}
+
+    def path_of(found: re.Match[str]) -> str | None:
+        return pinned.get(f"{found[1]}/{found[2]}") or pinned.get(found[2])
+
     merged = sorted(
         (
             (record["merged_at"], found, record)
@@ -94,10 +98,10 @@ def link(
         ),
         key=lambda item: item[0],
     )
-    parents = [(at, found, record) for at, found, record in merged if found[2] not in pinned]
+    parents = [(at, found, record) for at, found, record in merged if path_of(found) is None]
     out = {url: dict(record) for url, record in pulls.items()}
     for at, found, child in merged:
-        if (path := pinned.get(found[2])) is None:
+        if (path := path_of(found)) is None:
             continue
         applied = None
         for later, parent_found, parent in parents:
