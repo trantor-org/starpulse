@@ -607,6 +607,7 @@ def test_a_scrubbed_demo_carries_no_leak() -> None:
         '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
         '<link href="https://fonts.googleapis.com/css2?family=Inter"> "https://react.dev/errors/"'
         " here: https://github.com/andreasonny83/unique-names-generator#migration-guide"
+        " Please report this to https://github.com/markedjs/marked."
     )
     assert leaks(text) == []
 

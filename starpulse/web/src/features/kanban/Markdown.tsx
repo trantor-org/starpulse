@@ -1,7 +1,9 @@
 // The task dialog's Markdown: a task's sections and a doc's body, drawn from the blocks `markdown` reads.
+import DOMPurify from "dompurify";
+import { Marked, type Token } from "marked";
 import { createContext, useContext, useState } from "react";
 import { Diagram } from "./Diagram";
-import { markdown, opensByDefault, preview, repoPath, sections, type Block } from "./taskViewModel";
+import { CRITERIA_POINTER, opensByDefault, repoPath } from "./taskViewModel";
 
 /** Text with each TASK-N or PROP-N id drawn as a link that opens that task in this dialog. */
 export function Linked({ text, open }: { text: string; open: (id: string) => void }) {
@@ -49,9 +51,8 @@ function keepSection(name: string, open: boolean) {
 }
 
 /** One `##` section as a toggle row (open or closed as the reader last left it) over its blocks; a closed one shows a one-line preview. */
-function Section({ name, blocks, children, open }: { name: string; blocks: Block[]; children: React.ReactNode; open: (id: string) => void }) {
+function Section({ name, gist, children, open }: { name: string; gist: string; children: React.ReactNode; open: (id: string) => void }) {
   const [shown, setShown] = useState(() => storedSections()[name] ?? opensByDefault(name));
-  const gist = preview(blocks);
   return (
     <details className="dsec" data-section={name} open={shown} onToggle={(e) => {
       const now = e.currentTarget.open;
@@ -63,32 +64,63 @@ function Section({ name, blocks, children, open }: { name: string; blocks: Block
   );
 }
 
-/** A section's description, plan or notes as Markdown blocks; with `diagrams`, a mermaid fence draws as the diagram it describes (a task's own text keeps it as code); with `folds`, each `##` heading is a collapsible section in a capped pane. */
+/** A TASK-N or PROP-N id in running text as a link the dialog opens (`Md` handles the click). */
+const taskLink = {
+  name: "task",
+  level: "inline" as const,
+  start: (src: string) => src.search(/(?:TASK|PROP)-\d+/),
+  tokenizer: (src: string) => { const id = /^(?:TASK|PROP)-\d+/.exec(src)?.[0]; return id ? { type: "task", raw: id, id } : undefined; },
+  renderer: ({ id }: { id?: string }) => `<a class="tl" href="?view=kanban&task=${id}" data-task="${id}">${id}</a>`,
+};
+
+/** marked set to draw the dialog's elements: `##` as h4, a fence as a labelled figure, an outside link in a new tab, and a file path in code as a link into `base`. */
+const converter = (base: string | null) => new Marked({
+  extensions: [taskLink],
+  renderer: {
+    heading({ tokens }) { return `<h4>${this.parser.parseInline(tokens)}</h4>`; },
+    code({ text, lang }) { return `<figure class="fence"><span class="lang">${lang || "text"}</span><pre>${text.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre></figure>`; },
+    link({ href, tokens }) { return `<a href="${href}" target="_blank" rel="noopener">${this.parser.parseInline(tokens)} ↗</a>`; },
+    codespan({ text }) {
+      const path = repoPath(text);
+      return `<code>${path && base ? `<a class="rp" href="${base}/blob/main/${path}" target="_blank" rel="noopener">${path}</a>` : path ?? text}</code>`;
+    },
+  },
+});
+
+const textOf = (el: Element) => (el.textContent ?? "").replace(/\s+/g, " ").trim();
+
+/** A section's description, plan or notes as Markdown; with `diagrams`, a mermaid fence draws as the diagram it describes (a task's own text keeps it as code); with `folds`, each `##` heading is a collapsible section in a capped pane; with `drawn`, the `start_criteria` block is a pointer to the rail. */
 export function Md({ text, className = "md", drawn = false, diagrams = false, folds = false, open }: { text: string; className?: string; drawn?: boolean; diagrams?: boolean; folds?: boolean; open: (id: string) => void }) {
-  const at = (t: string) => <Inline text={t} open={open} />;
-  const items = (list: string[]) => list.map((t, i) => <li key={i}>{at(t)}</li>);
-  const draw = (blocks: Block[]) => blocks.map((b, i) => {
-    if (b.kind === "table") return (
-      <div key={i} className="tbl"><table>
-        <thead><tr>{b.head.map((c, j) => <th key={j} className={b.right[j] ? "r" : undefined}>{at(c)}</th>)}</tr></thead>
-        <tbody>{b.rows.map((row, j) => <tr key={j}>{row.map((c, k) => <td key={k} className={b.right[k] ? "r" : undefined}>{at(c)}</td>)}</tr>)}</tbody>
-      </table></div>
-    );
-    if (b.kind === "list") {
-      const List = b.ordered ? "ol" : "ul";
-      return <List key={i}>{b.items.map((item, j) => {
-        const Sub = item.sub?.ordered ? "ol" : "ul";
-        return <li key={j}>{at(item.text)}{item.sub && <Sub>{items(item.sub.items)}</Sub>}</li>;
-      })}</List>;
+  const marked = converter(useContext(RepoBase));
+  const html = (tokens: Token[]) => DOMPurify.sanitize(marked.parser(tokens), { ADD_ATTR: ["target"] }).replace(/<table>[\s\S]*?<\/table>/g, '<div class="tbl">$&</div>').replace(/ align="right"/g, ' class="r"');
+  const draw = (tokens: Token[]) => {
+    const out: React.ReactNode[] = [];
+    let run: Token[] = [];
+    const flush = () => { if (run.length) out.push(<div key={out.length} dangerouslySetInnerHTML={{ __html: html(run) }} />); run = []; };
+    for (const t of tokens) {
+      if (diagrams && t.type === "code" && t.lang === "mermaid") { flush(); out.push(<Diagram key={out.length} source={t.text} />); } else run.push(t);
     }
-    if (b.kind === "h") return <h4 key={i}>{at(b.text)}</h4>;
-    if (b.kind === "pre" && diagrams && b.lang === "mermaid") return <Diagram key={i} source={b.text} />;
-    if (b.kind === "pre") return <figure key={i} className="fence"><span className="lang">{b.lang || "text"}</span><pre>{b.text}</pre></figure>;
-    return <p key={i} className={b.kind === "moved" ? "moved" : undefined}>{at(b.text)}</p>;
-  });
-  const blocks = markdown(text, drawn);
-  if (!folds) return <div className={className}>{draw(blocks)}</div>;
-  return <div className={className + " desc"}>{sections(blocks).map((s, i) => s.name === null
-    ? <div key={i}>{draw(s.blocks)}</div>
-    : <Section key={i + s.name} name={s.name} blocks={s.blocks} open={open}>{draw(s.blocks)}</Section>)}</div>;
+    flush();
+    return out;
+  };
+  const tokens = marked.lexer(text).filter((t) => t.type !== "space").map((t): Token => drawn && t.type === "code" && /^start_criteria:/m.test(t.text)
+    ? { type: "html", raw: t.raw, text: `<p class="moved">${CRITERIA_POINTER}</p>`, block: true, pre: false } : t);
+  const click = (e: React.MouseEvent) => {
+    const id = (e.target as Element).closest<HTMLElement>("a[data-task]")?.dataset.task;
+    if (id) { e.preventDefault(); open(id); }
+  };
+  if (!folds) return <div className={className} onClick={click}>{draw(tokens)}</div>;
+  const parts: { name: string | null; tokens: Token[] }[] = [{ name: null, tokens: [] }];
+  for (const t of tokens) {
+    if (t.type === "heading" && t.depth === 2) parts.push({ name: t.text, tokens: [] }); else parts[parts.length - 1].tokens.push(t);
+  }
+  const gist = (blocks: Token[]) => {
+    const first = blocks.find((t) => t.type !== "code");
+    const body = new DOMParser().parseFromString(first ? html([first]) : "", "text/html").body;
+    const cells = [...body.querySelectorAll(":scope > :is(ul, ol) > li, th")];
+    return cells.length ? cells.map(textOf).join(" · ") : textOf(body);
+  };
+  return <div className={className + " desc"} onClick={click}>{parts.filter((s) => s.name !== null || s.tokens.length).map((s, i) => s.name === null
+    ? <div key={i}>{draw(s.tokens)}</div>
+    : <Section key={i + s.name} name={s.name} gist={gist(s.tokens)} open={open}>{draw(s.tokens)}</Section>)}</div>;
 }

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import description from "./fixtures/task-9251.md?raw";
 import type { KanbanTask } from "./kanbanModel";
-import { changedFields, ciHistory, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, editKey, fetchRecord, labelRuleError, markdown, menuKey, repoBase, repoPath, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
+import { changedFields, ciHistory, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, editKey, fetchRecord, labelRuleError, menuKey, repoBase, repoPath, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -280,57 +279,6 @@ describe("the Move to menu's keyboard", () => {
 
   it("leaves a menu with no items closed", () => {
     expect(menuKey(closed, "ArrowDown", []).state.open).toBe(false);
-  });
-});
-
-describe("markdown", () => {
-  it("keeps a fenced block whole across its blank lines and a paragraph's line breaks", () => {
-    expect(markdown("one\ntwo\n\n## Head\n\n```yaml\na: 1\n\nb: 2\n```\nafter")).toEqual([
-      { kind: "p", text: "one\ntwo" }, { kind: "h", text: "Head" }, { kind: "pre", lang: "yaml", text: "a: 1\n\nb: 2" }, { kind: "p", text: "after" },
-    ]);
-  });
-
-  it("closes an unterminated fence at the end and draws nothing for an empty description", () => {
-    expect(markdown("```\nopen")).toEqual([{ kind: "pre", lang: "", text: "open" }]);
-    expect(markdown("")).toEqual([]);
-  });
-
-  it("reads a GFM table's header, alignment and rows, and ends it at the first line without a pipe", () => {
-    expect(markdown("| a | b |\n|:-- | --: |\n| 1 | 2 |\n| 3 | 4 |\nafter")).toEqual([
-      { kind: "table", head: ["a", "b"], right: [false, true], rows: [["1", "2"], ["3", "4"]] },
-      { kind: "p", text: "after" },
-    ]);
-  });
-
-  it("reads bullet and numbered lists, keeping an indented continuation line with its item", () => {
-    expect(markdown("Intro\n- one\n* two\n\n1. first\n   more\n2) second")).toEqual([
-      { kind: "p", text: "Intro" },
-      { kind: "list", ordered: false, items: [{ text: "one" }, { text: "two" }] },
-      { kind: "list", ordered: true, items: [{ text: "first more" }, { text: "second" }] },
-    ]);
-  });
-
-  it("nests a list one level and flattens anything deeper into that level", () => {
-    expect(markdown("1. step\n   - a\n   - b\n     - deep\n2. next\n  1. sub")).toEqual([
-      { kind: "list", ordered: true, items: [
-        { text: "step", sub: { ordered: false, items: ["a", "b", "deep"] } },
-        { text: "next", sub: { ordered: true, items: ["sub"] } },
-      ] },
-    ]);
-  });
-
-  it("keeps one list across a blank line between its items, and ends it at other text", () => {
-    expect(markdown("- a\n\n- b\n\nafter")).toEqual([
-      { kind: "list", ordered: false, items: [{ text: "a" }, { text: "b" }] },
-      { kind: "p", text: "after" },
-    ]);
-  });
-
-  it("reads TASK-9251's description as lists under Scope and the plan", () => {
-    const blocks = markdown(description);
-    const lists = blocks.filter((b) => b.kind === "list");
-
-    expect(lists.map((b) => b.kind === "list" && [b.ordered, b.items.length])).toEqual([[false, 4], [true, 5]]);
   });
 });
 

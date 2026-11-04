@@ -28,7 +28,7 @@ describe("the task dialog's description", () => {
   it("draws a nested list inside its item", () => {
     const html = draw({ record: { ...record, description: "## Scope\n\n1. step\n   - a `b`\n   - c" } });
 
-    expect(html).toContain("<ol><li>step<ul><li>a <code>b</code></li><li>c</li></ul></li></ol>");
+    expect(html.replace(/\s*\n\s*/g, "")).toContain("<ol><li>step<ul><li>a <code>b</code></li><li>c</li></ul></li></ol>");
   });
 
   it("caps the pane and makes each heading a toggle, with Outcome, Why and Scope open and the rest closed", () => {
