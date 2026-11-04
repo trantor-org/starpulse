@@ -298,3 +298,15 @@ def test_the_default_transport_gets_each_endpoint_as_a_path_with_a_leading_slash
 
     assert len(gh.asked) == 3
     assert all(path.startswith("/repos/") for path in gh.asked)
+
+
+def test_a_child_declared_under_its_owner_and_name_is_applied_and_is_not_a_parent() -> None:
+    child_url, child = pull("skills", 7, CHILD_SHA, "2026-10-07T10:00:00Z")
+    records = pulls((child_url, child), pull("trantor", 2, "p2" * 20, "2026-10-07T11:00:00Z"))
+    git = Git({"p2" * 20: NEW_POINTER}, {NEW_POINTER: {CHILD_SHA}})
+    declared = (Repo(name="trantor-org/skills", path="skills", applied_by="pin-bump"),)
+
+    out = link(records, declared, git.pointer, git.reaches)
+
+    assert out[child_url]["applied_by"] == "p2" * 20
+    assert all(repo != "trantor-org/skills" for repo, _, _ in git.asked)
