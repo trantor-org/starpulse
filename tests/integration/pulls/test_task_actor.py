@@ -1445,3 +1445,33 @@ def test_a_move_that_stays_locked_leaves_the_task_in_its_lane_without_a_needs_at
     assert until(lambda: "database is locked" in caplog.text)  # logged
     assert board.writes == []  # no Needs attention write
     assert board.tasks["TASK-3"].lane == "waiting"
+
+
+def test_a_waiting_task_whose_dependency_the_board_holds_in_no_store_moves_to_needs_attention_naming_it(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Waiting", dependencies=("TASK-99",), observed_at=NOW - DAY))
+
+    overdue(board, stop, store)
+
+    assert until(lambda: board.moved() == [("TASK-1", "needs_attention")])
+    changes = board.writes[-1][1]
+    reason = changes["description"]
+    assert changes["dependencies"] == []
+    assert "TASK-99 is not on the board" in reason
+    assert reason.rstrip().endswith("?")
+
+
+def test_a_dependency_done_or_still_open_does_not_park_its_waiting_task(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(
+        BoardFeed(),
+        task("TASK-1", "Waiting", dependencies=("TASK-2", "TASK-3"), observed_at=NOW - DAY),
+        task("TASK-2", "Done"),
+        task("TASK-3", "In Progress"),
+    )
+
+    overdue(board, stop, store)
+
+    assert not until(lambda: "needs_attention" in [lane for _, lane in board.moved()], within=0.3)
