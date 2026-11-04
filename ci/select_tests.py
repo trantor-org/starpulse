@@ -313,16 +313,17 @@ def _route(
     while pending:
         path = pending.pop()
         covered |= _guards(path)
+        lint_only = path == "pyproject.toml" and _only_lint_tables(root, pyproject_before)
+        if not lint_only and any(fnmatch(path, pattern) for pattern in FULL_SUITE):
+            return None  # read by every test, so the map's record of who ran it cannot narrow it
         if path in covering:  # the map names the tests that ran it; the rules below are for what it never saw
             covered |= covering[path] | set(SUBPROCESS_IMPORTERS.get(path, ()))
             if Path(path).name.startswith("test_") and path.endswith(".py"):
                 covered.add(path)  # a changed test file selects itself
             continue
-        if path == "pyproject.toml" and _only_lint_tables(root, pyproject_before):
+        if lint_only:
             pending.extend(READERS[path])
             continue
-        if any(fnmatch(path, pattern) for pattern in FULL_SUITE):
-            return None
         if any(fnmatch(path, pattern) for pattern in INERT):
             continue
         if fnmatch(path, WORKFLOWS):
