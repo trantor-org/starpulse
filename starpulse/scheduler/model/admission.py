@@ -19,6 +19,7 @@ again, with that task's demand in them, before deciding the next.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
@@ -254,7 +255,7 @@ def decide(
         decision = Decision(
             task["id"], blocked_by is None, blocked_by, need, depths[task["id"]], p_goal, score, priority, weight, overfit=overfit
         )
-        share = max(need[name] / limits[name] for name in DIMENSIONS)
+        share = max(need[name] / limits[name] if limits[name] else math.inf for name in DIMENSIONS)
         values[decision.task] = decision.weight * decision.depth * (p_goal if score is None else score) / share
         keys[decision.task] = _enforced_key(task, dependents.get(decision.task, 0), decision)
         decisions.append(decision)

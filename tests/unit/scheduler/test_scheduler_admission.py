@@ -184,6 +184,12 @@ def test_only_workable_tasks_in_the_eligible_lane_are_decided(ledger: Ledger) ->
     assert [d.task for d in _decide(tasks, ledger)] == ["OK"]
 
 
+def test_a_zero_sessions_limit_refuses_the_task_instead_of_dividing_by_zero(ledger: Ledger) -> None:
+    readings = [Reading(name, 0, 0 if name == "sessions" else POLICY.limits[name]) for name in DIMENSIONS]
+    [decision] = decide([_task()], "ready", readings, POLICY, {}, ledger)
+    assert (decision.admitted, decision.blocked_by) == (False, "sessions")
+
+
 def test_a_refused_task_has_no_rank_and_follows_the_admitted(ledger: Ledger) -> None:
     tasks = [_task("HUGE", size=40), _task("SMALL", size=1)]  # 40 points x 2 is 80 percent of CPU; 70 are left
 
