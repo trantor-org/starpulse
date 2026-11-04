@@ -126,7 +126,7 @@ def _open_criterion(feed: BoardFeed, need: str) -> None:
     """Refuse the dependency need `TASK-N#K` unless the task has a criterion K that is not yet checked."""
     name, _, number = need.partition("#")
     criteria = (feed.task(name) or {}).get("criteria", [])
-    if not (number.isdigit() and 0 < int(number) <= len(criteria)):
+    if not (number.isascii() and number.isdigit() and 0 < int(number) <= len(criteria)):
         raise _RefusalError(409, {"error": f"{name} has no criterion #{number} to wait for"})
     if criteria[int(number) - 1]["checked"]:
         raise _RefusalError(
