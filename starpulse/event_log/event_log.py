@@ -104,10 +104,16 @@ def _watch_commits(
     version = None
     connection = None
     healthy = True
+    woken = False
     while (owner := log()) is not None:
         try:
             if connection is None:
                 connection = sqlite3.connect(database, timeout=_SQLITE_BUSY_TIMEOUT, isolation_level=None)
+            elif woken:
+                # The watch fires on the write to the `-wal` file, before the writer publishes the commit in the shared
+                # index (a memory-mapped write the watch cannot see): taking the write lock waits for that commit to end.
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute("ROLLBACK")
             current = connection.execute("PRAGMA data_version").fetchone()[0]
             if version is not None and current != version:
                 owner._wake()
@@ -122,6 +128,7 @@ def _watch_commits(
         blocked = selector.select(None if watch is not None and healthy else fallback)
         if any(key.fd == ended for key, _ in blocked):
             break
+        woken = watch is not None
         if watch is not None:
             watch.drain()
     if connection is not None:
