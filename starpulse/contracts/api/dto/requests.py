@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, Field, StrictFloat, StrictInt, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    Field,
+    StrictFloat,
+    StrictInt,
+    StringConstraints,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from starpulse.contracts.api._base import _Request
 from starpulse.contracts.api.dto.scheduler import QuietHours
@@ -340,17 +349,22 @@ class SchedulerRequest(_Request):
     selected harness's session cap and/or the cpu and memory limits."""
 
     enabled: bool | None = None
-    harness: str | None = None
+    harness: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None = None
     quietHours: QuietHours | None = None
     sessionCap: StrictInt | None = Field(
         default=None,
+        gt=0,
         description="The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it.",
     )
     cpuLimit: StrictInt | StrictFloat | None = Field(
         default=None,
+        gt=0,
+        le=100,
         description="The cpu limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it.",
     )
     memoryLimit: StrictInt | StrictFloat | None = Field(
         default=None,
+        gt=0,
+        le=100,
         description="The memory limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it.",
     )
