@@ -97,7 +97,7 @@ class Gh:
 
 
 def test_the_pointer_a_parent_merge_pins_is_read_once_and_remembered() -> None:
-    gh = Gh({"repos/trantor-org/trantor/contents/skills?ref=p1": {"sha": NEW_POINTER}})
+    gh = Gh({"/repos/trantor-org/trantor/contents/skills?ref=p1": {"sha": NEW_POINTER}})
     github = GitHub(transport=gh)
 
     assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(2)] == [NEW_POINTER] * 2
@@ -105,7 +105,7 @@ def test_the_pointer_a_parent_merge_pins_is_read_once_and_remembered() -> None:
 
 
 def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypatch: pytest.MonkeyPatch) -> None:
-    gh = Gh({"repos/trantor-org/trantor/commits/HEAD": {"sha": NEW_POINTER}})
+    gh = Gh({"/repos/trantor-org/trantor/commits/HEAD": {"sha": NEW_POINTER}})
     clock = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     github = GitHub(transport=gh)
@@ -119,7 +119,7 @@ def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypa
 
 
 def test_a_failed_read_is_named_by_failing_until_a_later_read_of_it_answers(monkeypatch: pytest.MonkeyPatch) -> None:
-    head, contents = "repos/trantor-org/trantor/commits/HEAD", "repos/trantor-org/trantor/contents/skills?ref=p1"
+    head, contents = "/repos/trantor-org/trantor/commits/HEAD", "/repos/trantor-org/trantor/contents/skills?ref=p1"
     gh = Gh({})
     clock = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
@@ -221,7 +221,7 @@ def test_a_path_a_merge_does_not_pin_is_a_remembered_answer_that_is_never_asked_
     ("status", "contained"), [("ahead", True), ("identical", True), ("behind", False), ("diverged", False)]
 )
 def test_a_pointer_contains_a_merge_when_it_is_that_commit_or_ahead_of_it(status: str, contained: bool) -> None:
-    gh = Gh({f"repos/trantor-org/skills/compare/{CHILD_SHA}...{NEW_POINTER}": {"status": status}})
+    gh = Gh({f"/repos/trantor-org/skills/compare/{CHILD_SHA}...{NEW_POINTER}": {"status": status}})
 
     assert GitHub(transport=gh).reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is contained
 
@@ -286,3 +286,15 @@ def test_a_history_page_says_whether_it_holds_a_merge_or_is_too_short_to_tell(
 )
 def test_a_build_carries_its_commit_in_the_local_part_of_its_version(version: str, commit: str | None) -> None:
     assert build_commit(version) == commit
+
+
+def test_the_default_transport_gets_each_endpoint_as_a_path_with_a_leading_slash() -> None:
+    gh = Gh({})
+    github = GitHub(transport=gh)
+
+    github.pointer("trantor-org/trantor", "p1", "skills")
+    github.head("trantor-org/trantor")
+    github.reaches("trantor-org/skills", NEW_POINTER, CHILD_SHA)
+
+    assert len(gh.asked) == 3
+    assert all(path.startswith("/repos/") for path in gh.asked)

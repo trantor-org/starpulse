@@ -71,7 +71,7 @@ class GitHub:
         self._restored()
         key = (repo, sha, path)
         if key not in self._pointers and self._retry(("pointer", *key)):
-            found = self._read(f"repos/{repo}/contents/{path}?ref={sha}", "sha", missing=_MISSING)
+            found = self._read(f"/repos/{repo}/contents/{path}?ref={sha}", "sha", missing=_MISSING)
             if found:
                 self._pointers[key] = None if found == _MISSING else found
             else:
@@ -82,7 +82,7 @@ class GitHub:
         self._restored()
         key = (repo, sha, pointer)
         if key not in self._reaches and self._retry(("reaches", *key)):
-            status = self._read(f"repos/{repo}/compare/{sha}...{pointer}", "status")
+            status = self._read(f"/repos/{repo}/compare/{sha}...{pointer}", "status")
             if status:
                 self._reaches[key] = status in _CONTAINS
             else:
@@ -94,7 +94,7 @@ class GitHub:
         now = time.monotonic()
         read_at, sha = self._heads.get(repo, (-_HEAD_TTL_S, None))
         if now - read_at >= _HEAD_TTL_S:
-            sha = self._read(f"repos/{repo}/commits/HEAD", "sha")
+            sha = self._read(f"/repos/{repo}/commits/HEAD", "sha")
             self._heads[repo] = (now, sha)
         return sha
 
