@@ -35,8 +35,8 @@ export interface Renderer {
   stop(): void;
   /** Open a level; the old one zooms through (fx, fy). `then` gives the view to land on. */
   go(path: Path, fx?: number, fy?: number, then?: () => View): void;
-  /** A veto over every level the page opens, from a click, the Kanban, a search or the address: when it returns true the page shows its own view instead and the level is not opened. */
-  intercept(veto: ((path: Path) => boolean) | null): void;
+  /** Where the page drills into a task: every path into the Board's working state, from a click, the Kanban, a search, the address or the tab's last level, asks for its first task here instead of opening the level; a request made before this is registered is handed over on registration. */
+  onDrill(drill: ((task: string) => void) | null): void;
   /** Fly back to the level's fit. */
   fitView(): void;
   /** Whether the Star Map is the view showing; while another view hides it, the canvas draws no frame. */

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-// A path the page vetoes is never opened: the click that asked for it is handed to the page, which shows its own view instead.
+// The Board's working state is never opened as a level: every path into it, from a click, the address or the tab's last level, asks the page to drill into its first task instead.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Machine, RawTask, Snapshot } from "../api";
 import { HudStore } from "./hud";
-import { BOARD, type Path } from "./levels";
+import { BOARD } from "./levels";
 import type { Renderer } from "./rendererTypes";
 
 const push = vi.hoisted(() => ({ handlers: null as null | { snapshot: (s: Snapshot) => void; live: (on: boolean) => void } }));
@@ -23,16 +23,21 @@ const machine = (ids: string[]): Machine => ({
   transitions: [],
 });
 const task = (id: string, state: string): RawTask => ({ id, title: id, state, model: "@agent-standard-high", labels: [] });
-const snap = (state: string): Snapshot => ({
-  graphs: ["board"],
-  flows: [{ name: "board", agents: [task("TASK-1", state)], machine: machine(["ready", "in_progress", "review"]) }],
+/** A Board whose In Progress state opens the in-progress machine, holding one task per given state. */
+const snap = (...states: string[]): Snapshot => ({
+  graphs: ["board", "in-progress"],
+  flows: [
+    { name: "board", agents: states.map((s, i) => task("TASK-" + (i + 1), s)), machine: { ...machine(["ready", "in_progress", "review"]), submachines: [{ state: "in_progress", machine: "in-progress", when: "" }] } },
+    { name: "in-progress", parent: null, agents: [], machine: machine(["build", "deliver"]) },
+  ],
+  roles: { working: "in_progress", ready: "ready" },
   dags: [],
   domains: [],
   cues: [],
   settled: {},
   error: null,
   now: 1_700_000_000,
-});
+}) as Snapshot;
 
 /** Canvas 2D that accepts every call the Board's layout and frames make. */
 function stubContext(cv: HTMLCanvasElement) {
@@ -51,8 +56,9 @@ function stubContext(cv: HTMLCanvasElement) {
 }
 
 const IN_PROGRESS = [...BOARD, { kind: "state", id: "in_progress" } as const];
+const REVIEW = [...BOARD, { kind: "state", id: "review" } as const];
 
-describe("a vetoed path", () => {
+describe("the working state", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     push.handlers = null;
@@ -63,6 +69,7 @@ describe("a vetoed path", () => {
     vi.stubGlobal("innerWidth", 1400);
     vi.stubGlobal("innerHeight", 900);
     localStorage.clear();
+    history.replaceState(null, "", "/");
     vi.resetModules();
   });
   afterEach(() => {
@@ -70,9 +77,10 @@ describe("a vetoed path", () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     document.body.innerHTML = "";
+    history.replaceState(null, "", "/");
   });
 
-  async function open(beforeSnapshot?: (r: Renderer) => void) {
+  async function open(board: Snapshot, beforeSnapshot?: (r: Renderer) => void) {
     const { renderer } = await import("./renderer");
     const cv = document.getElementById("c") as HTMLCanvasElement;
     stubContext(cv);
@@ -81,42 +89,64 @@ describe("a vetoed path", () => {
     beforeSnapshot?.(r);
     r.start();
     await vi.advanceTimersByTimeAsync(0);
-    push.handlers!.snapshot(snap("in_progress"));
+    push.handlers!.snapshot(board);
     await vi.advanceTimersByTimeAsync(200);
     return { r, hud };
   }
 
-  it("opens the level when nothing vetoes it", async () => {
-    const { r, hud } = await open();
+  it("asks the page to drill into the lane's first board task instead of opening the level", async () => {
+    const drills: string[] = [];
+    const { r, hud } = await open(snap("ready", "in_progress", "in_progress"), (x) => x.onDrill((id) => drills.push(id)));
     r.go(IN_PROGRESS);
-    expect(hud.get().path).toEqual(IN_PROGRESS);
-    r.stop();
-  });
-
-  it("hands the path to the veto and stays on the level showing", async () => {
-    const seen: Path[] = [];
-    const { r, hud } = await open();
-    r.intercept((p) => (seen.push(p), true));
-    r.go(IN_PROGRESS);
-    expect(seen).toEqual([IN_PROGRESS]);
+    expect(drills).toEqual(["TASK-2"]);
     expect(hud.get().path).toEqual(BOARD);
     r.stop();
   });
 
-  it("opens a path the veto lets through", async () => {
-    const { r, hud } = await open();
-    r.intercept(() => false);
+  it("stays where it is when no task is in the lane", async () => {
+    const drills: string[] = [];
+    const { r, hud } = await open(snap("ready", "review"), (x) => x.onDrill((id) => drills.push(id)));
+    r.go(REVIEW);
     r.go(IN_PROGRESS);
-    expect(hud.get().path).toEqual(IN_PROGRESS);
+    expect(drills).toEqual([]);
+    expect(hud.get().path).toEqual(REVIEW);
     r.stop();
   });
 
-  it("starts on the Board when the level the tab last showed is vetoed", async () => {
+  it("opens every other level as before", async () => {
+    const { r, hud } = await open(snap("in_progress"), (x) => x.onDrill(() => {}));
+    r.go(REVIEW);
+    expect(hud.get().path).toEqual(REVIEW);
+    r.stop();
+  });
+
+  it("holds a drill asked for before the page registers and hands it over on registration", async () => {
+    const { r, hud } = await open(snap("in_progress"));
+    r.go(IN_PROGRESS);
+    expect(hud.get().path).toEqual(BOARD);
+    const drills: string[] = [];
+    r.onDrill((id) => drills.push(id));
+    expect(drills).toEqual(["TASK-1"]);
+    r.stop();
+  });
+
+  it("starts on the Board and drills when the tab last showed the working state, even with the page registering after the first snapshot", async () => {
     localStorage.setItem("fv.path", JSON.stringify(IN_PROGRESS));
-    const seen: Path[] = [];
-    const { hud, r } = await open((x) => x.intercept((p) => (seen.push(p), true)));
-    expect(seen).toEqual([IN_PROGRESS]);
+    const { hud, r } = await open(snap("in_progress"));
     expect(hud.get().path).toEqual(BOARD);
+    expect(JSON.parse(localStorage.getItem("fv.path")!)).toEqual(BOARD);
+    const drills: string[] = [];
+    r.onDrill((id) => drills.push(id));
+    expect(drills).toEqual(["TASK-1"]);
+    r.stop();
+  });
+
+  it.each(["/?open=in-progress", "/flow/in-progress"])("starts on the Board and drills for the deep link %s", async (address) => {
+    history.replaceState(null, "", address);
+    const drills: string[] = [];
+    const { hud, r } = await open(snap("in_progress"), (x) => x.onDrill((id) => drills.push(id)));
+    expect(hud.get().path).toEqual(BOARD);
+    expect(drills).toEqual(["TASK-1"]);
     r.stop();
   });
 });
