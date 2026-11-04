@@ -298,55 +298,25 @@ reads each skill's directory where it sits, so the machine beside `SKILL.md` is 
 step.
 The `starpulse-board` mod ([trantor-org/starpulse-board](https://github.com/trantor-org/starpulse-board), `/plugin marketplace add trantor-org/starpulse-board`, then `/plugin install starpulse-board@starpulse-board`)
 runs `starpulse board --assignee <session id>` when a session starts, after each tool call and after each turn, so a
-task claimed mid-turn shows before the turn ends. It draws each task that session holds as one row above the prompt in
-StarPulse's palette: lane icon, ID, the title (or the reason a Needs attention task waits on the operator, or what a
-Waiting task waits on), a bar of checked acceptance criteria with `k/n`, the lane, and the PR with its check state. A
-server that serves no checked state draws the criteria count without a bar. Details opens a pane with the criteria
-ticked off, the assignee and the PR; ✕ hides the band until its Show button or `/board`. The Claude Desktop (SSH) row is one
-`Svg` and the terminal row is Ink text. Icons are Nerd Font v3 glyphs; the `glyphs` plugin option (`nerd`, the default, or `plain`) sets
-the plain Unicode characters instead, for a terminal without a Nerd Font, since a terminal cannot report its font. The band
-draws no fill. The Board and Sessions panes' root Box is filled black (`#000000`) down the dock body's rows (`scroll.bodyRows`) to cover the grey the dock paints
-behind every pane cell. The dock's tab strip, left border and bottom row are Claude Code's `composerSidebarBackground`, grey in the dark theme; the plugin's
-`custom:starpulse-board:black-dock` theme (`themes/black-dock.json`) is the dark theme with that key black. No other element sets a background and every Button is `plain`. The `Svg` pulses the lane dot of an In Progress task and a running check, and
-stops under the system's reduced-motion setting; the terminal row does not animate. `/board` lists the tasks with
+task claimed mid-turn shows before the turn ends. It opens no pane: the band above the prompt is the whole mod, in the
+terminal and in Claude Desktop. It draws the held task's lane icon, ID, title (or the reason a Needs attention task waits
+on the operator, or what a Waiting task waits on), a bar with one segment per checked acceptance criterion and `k/n`, the
+delivery phases and substates the board serves, the pull request's checks, threads and freshness, and the session's cost,
+turns and tokens, in StarPulse's palette. A server that serves no checked state draws the criteria count without a bar.
+The head row carries a fold arrow, and on Desktop the PR number as a link; with no held task the band stays on and says
+so. The terminal draws the same facts in cells. Icons are Nerd Font v3 glyphs; the `glyphs` plugin option (`nerd`, the default, or `plain`) sets
+the plain Unicode characters instead, for a terminal without a Nerd Font. `/board` lists the held tasks with
 their titles. It reads only the `starpulse` CLI, retrying `~/.local/bin/starpulse` when the one on `PATH` fails or is missing, so it
 shows no tasks when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
 
-Below the tasks one button counts every other Claude Code session on the host by status (`2 working · 5 idle`, each with its status icon), from
-the registry each session writes under `~/.claude/sessions/`, reread every 5 seconds without waiting on `starpulse
-board`. On the first list the dock opens by itself, without the keys, on a fullscreen terminal of 144 columns or more:
-the Sessions pane, one row per session with its status, when the list holds a session, then the Board pane, so the
-Board is the tab on show. Until the first prompt, the first pane another plugin opens is followed by the Board closing
-and reopening, so the Board stays on show. Pressing the count opens Sessions with the keys in the pane. Sessions shows only in the dock: placed inline
-(outside the fullscreen layout, or narrower than the dock) it closes itself. The pane lists only the sessions it can
-switch to: each one running in a tmux pane (as a StarPulse Start session does, in tmux session `task-<N>`) is a button
-that runs `tmux switch-client` to it, and this session is listed too. A background (`claude --bg`) session or one the
-desktop app started has no tmux pane and is left out. Switching needs the session showing the pane to run inside a tmux
-client; otherwise the press shows a toast.
+The band starts, switches to and focuses no session, so it names no multiplexer: a session starts through the board's
+Start button (`POST /api/start`), which reaches the scheduler's starter (`session_start_url`, else the built-in tmux
+starter; see [serving.md](serving.md)), and the task modal names the claiming session by its Claude session id and link. A fleet on
+another multiplexer (herdr) therefore changes nothing here.
 
-The pane groups rows as Active and Archived (Archived folded by default); Active holds working and idle sessions
-together, told apart by the status icon. Each row draws the status icon, the name, a `you`
-marker on this session, the task it holds as a lane-coloured chip, the age and an archive icon. `n` starts a new tmux
-session running `claude` in the workspace and switches to it; `f` filters by name, tmux session or task, and the status
-chips (working, idle, archived) combine as OR; `a` archives the focused row, killing its tmux session (this session
-first starts and switches to a fresh one). Archived sessions persist in the plugin's store and resume with
-`claude --resume <id>` in a new tmux session at their recorded directory.
-
-Besides opening at session start, a Board button beside the count, and `/kanban`, open the Board pane with the keys: the
-board as a kanban, docked as its own tab and, like Sessions, closing itself when placed inline. Its header names the open-task count beside a refresh
-button. It stacks the open lanes (In Progress, Review, Needs attention, Ready, Waiting), each a header with the lane's
-icon and colour, its count and a rule, that folds and unfolds the lane; Ready and Waiting start folded. A task is a row of
-its ID, its title (or the reason a Needs attention task waits, or what a Waiting task waits on), a four-cell bar of
-checked criteria and its PR's check icon; titles truncate first on a narrow dock, then the bar. Each task is a button
-that picks it: the row opens to the full title, the assignee, the criteria count, the PR and its checks, and its actions. Start session, on a Ready, Waiting or Needs attention task, posts
-`/api/start` with the task's assignee and harness `claude`, then runs `tmux switch-client` to `task-<N>` (outside a tmux
-client, a toast names the `tmux attach` command). Go to session, on any other lane, switches to the task assignee's live
-session, or toasts that it has none. A `→ <lane>` button, coloured by the target lane, for each move the board lists posts `/api/move`; a refused move
-shows the server's reason as a toast and leaves the board as read. While the pane is open it follows `GET /api/lanes?state=<lane>…`
-(one `state` per open lane), an event stream like `/api/held`: the server sends the lanes as a `lanes` event on connect and again only
-when they change, and the pane redraws from it with no `starpulse` run and no timer. Each held task carries `skill` (`{name, states, current, next}`: the skill machine its phase holds it in, its state ids in order, the state it holds, and its `next` edge; `null` off the In Progress phases) and `interactive` (true once an accepted `POST /api/take-over` flipped it; `false` before). A held or lanes stream wakes only for a change to a task it shows, to a task one of those waits on, or to one that moves into its view, and the streams a change wakes read one build of the columns, so a change costs the board once, not once per open stream. A docked pane that `/kanban` did not open, such as
-one left in the dock across `/clear`, starts the stream when it draws. Closing the pane, or placing it inline, ends the
-stream; a stream that drops is retried with backoff while the pane stays open. The refresh button still rereads the board once.
+The server streams the same facts to a mod: `GET /api/lanes?state=<lane>…` (one `state` per open lane) and `/api/held` are
+event streams. The server sends the lanes as a `lanes` event on connect and again only
+when they change. Each held task carries `skill` (`{name, states, current, next}`: the skill machine its phase holds it in, its state ids in order, the state it holds, and its `next` edge; `null` off the In Progress phases) and `interactive` (true once an accepted `POST /api/take-over` flipped it; `false` before). A held or lanes stream wakes only for a change to a task it shows, to a task one of those waits on, or to one that moves into its view, and the streams a change wakes read one build of the columns, so a change costs the board once, not once per open stream.
 
 ## The pull-request store
 
