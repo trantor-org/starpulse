@@ -22,6 +22,14 @@ describe("the task view while its record is read", () => {
     expect(skeletons(html)).toEqual(["Implementation plan", "Notes"]);
   });
 
+  it("draws every section of the snapshot's description before the record arrives, not only the lead-in", () => {
+    const html = draw({ record: undefined, task: { ...task, description: "The lead-in.\n\n## Why\n\nThe reason it matters.\n\n## Scope\n\nThe scope line." } });
+
+    expect(html).toContain("The lead-in.");
+    expect(html).toContain("The reason it matters.");
+    expect(html).toContain("The scope line.");
+  });
+
   it("draws a skeleton in AC, DoD, plan and notes while the record read is pending, never a dash", () => {
     const html = draw({ record: undefined });
 

@@ -340,12 +340,7 @@ function Modal({ task, tasks, records, stack, names, roles, marks, now, profiles
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [revisions, setRevisions] = useState(0);
-  useEffect(() => {
-    let current = true;
-    const read = record?.plan.trim() ? fetchRevisions(task.id) : Promise.resolve(0);
-    void read.then((n) => current && setRevisions(n));
-    return () => { current = false; };
-  }, [task.id, record]);
+  const [saves, setSaves] = useState(0);
   useEffect(() => {
     let current = true;
     // the read ahead is awaited even once it has landed, since it may have landed after this render initialized `record`;
@@ -357,6 +352,12 @@ function Modal({ task, tasks, records, stack, names, roles, marks, now, profiles
     });
     return () => { current = false; };
   }, [held, task.id, attempt]);
+  // the revision count is read beside the record, not after it, and again once a save may have rewritten the plan
+  useEffect(() => {
+    let current = true;
+    void fetchRevisions(task.id).then((n) => current && setRevisions(n));
+    return () => { current = false; };
+  }, [task.id, saves]);
   return (
       <TaskView task={task} tasks={tasks} record={record} revisions={revisions} stack={stack} lane={names[task.lane] ?? task.lane} names={names} roles={roles} now={now} open={open}
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
@@ -364,7 +365,7 @@ function Modal({ task, tasks, records, stack, names, roles, marks, now, profiles
         startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
         readNote={failed && <div className="editrefusal" role="alert"><b>The full record could not be read.</b> <button className="hidebtn" onClick={() => { setFailed(false); setAttempt((n) => n + 1); }}>Retry</button></div>}
         close={close} hide={hide} archive={archive} constellation={constellation} move={move} start={start}
-        onSaved={(next) => { setRecord(next); saved(next); }} />
+        onSaved={(next) => { setRecord(next); setSaves((n) => n + 1); saved(next); }} />
   );
 }
 
