@@ -16,8 +16,8 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.harness_telemetry.adapters.inbound.telemetry import signals
 from starpulse.runtime.adapter_kit import serve, url
-from starpulse.views.application.queries.answers import Answers
 from starpulse.views.adapters.inbound.page_server import PageServer
+from starpulse.views.application.queries.answers import Answers
 
 from tests.folded_telemetry import FoldedTelemetry
 from tests.machines import MACHINES, ROLES
@@ -137,9 +137,8 @@ def test_a_restarted_instance_answers_a_report_from_the_saved_answer_before_it_r
 
 def test_a_window_past_the_history_is_refused_while_a_fold_of_another_query_runs(tmp_path: Path) -> None:
     """TASK-11099: a refusal needs no fold, so it never queues behind the one fold at a time that a refold holds."""
-    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    telemetry = _published(TelemetryLog(log))
-    answers = Answers(log.engine)
+    telemetry = _published(FoldedTelemetry(tmp_path, KEYS))
+    answers = Answers(telemetry.events.engine)
     folding, release = threading.Event(), threading.Event()
 
     def refold() -> tuple[bytes, int]:
