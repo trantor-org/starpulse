@@ -11,6 +11,7 @@ import time
 import pytest
 from starpulse.board.model.adapter_types import BUILT_IN, module_name
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.adapters.outbound import systemd
 from starpulse.runtime.adapter_kit import RunsAdapterKit
 
@@ -344,7 +345,7 @@ def test_feed_queues_the_changes_of_watched_units_only() -> None:
 
 
 def run_serve(timers: systemd.Timers, events: queue.Queue, **intervals: float) -> threading.Thread:
-    stop = threading.Event()
+    stop = StopEvent()
     thread = threading.Thread(
         target=systemd.serve, args=(timers, events, stop), kwargs={"healthy": lambda: True, **intervals}, daemon=True
     )
@@ -427,7 +428,7 @@ def test_a_dead_monitor_falls_back_to_the_short_listing_interval() -> None:
     timers = systemd.Timers(sink, fake, "a")
     timers.read()
     fire(fake, "a.service")
-    stop = threading.Event()
+    stop = StopEvent()
     thread = threading.Thread(
         target=systemd.serve,
         args=(timers, queue.Queue(), stop),

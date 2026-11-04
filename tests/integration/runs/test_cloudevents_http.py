@@ -17,6 +17,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineDeltas
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 from starpulse.machine_engine.model.transitions import board_machine
@@ -100,7 +101,7 @@ def _feed(tmp_path: Path) -> MachineFeed:
 def stack(tmp_path: Path) -> Iterator[Stack]:
     machine = _feed(tmp_path)
     log, feed = machine.log, machine.feed
-    stop = threading.Event()
+    stop = StopEvent()
     deltas = MachineDeltas(feed, ReadModel(log.engine))
 
     def fold() -> None:

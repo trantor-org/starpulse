@@ -24,6 +24,7 @@ from typing import Any
 from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
+from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.config import Config
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,7 @@ class _Refusing(argparse.ArgumentParser):
 class _SharedBoard:
     """The one board and feed of the process: the Board context's when it runs here, otherwise built on first use."""
 
-    def __init__(self, names: Sequence[str], build: Callable[[], tuple[Any, Any]], stop: threading.Event) -> None:
+    def __init__(self, names: Sequence[str], build: Callable[[], tuple[Any, Any]], stop: StopEvent) -> None:
         self._owned = "board" in names
         self._build = build
         self._stop = stop
@@ -106,7 +107,7 @@ class _SharedStore:
 
 
 def default_starters(
-    config: Config, path: Path | None, base: Path, log: EventLog, names: Sequence[str], stop: threading.Event
+    config: Config, path: Path | None, base: Path, log: EventLog, names: Sequence[str], stop: StopEvent
 ) -> dict[str, Starter]:
     """The starter of each context in `names`, all over `log` and one board. Raises `ValueError` for a name that is no
     context or a `[[runs]]` instance whose adapter the config cannot load."""
@@ -214,7 +215,7 @@ def default_starters(
 def _keep(
     name: str,
     starter: Starter,
-    stop: threading.Event,
+    stop: StopEvent,
     reloads: dict[str, Callable[[], None]],
     stops: dict[str, threading.Event],
     backoff: tuple[float, float],
@@ -223,7 +224,7 @@ def _keep(
     thread until the process stops. A failed start's stop event is set, so what it began before raising ends."""
     wait = backoff[0]
     while not stop.is_set():
-        own = threading.Event()
+        own = StopEvent()
         stops[name] = own
         try:
             reloads[name] = starter(own)
@@ -244,7 +245,7 @@ def run_contexts(
     config: Config,
     path: Path | None,
     names: Sequence[str],
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     base: Path | None = None,
     starters: Mapping[str, Starter] | None = None,

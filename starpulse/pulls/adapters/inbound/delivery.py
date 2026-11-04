@@ -23,6 +23,8 @@ import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from starpulse.event_log.wake import StopEvent
+
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import Entry, EventLog
     from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -41,13 +43,11 @@ METRICS_S = 15.0
 #: Seconds between the poller's beats, and how old its last beat may be before `serve` calls it down.
 BEAT_S = 15.0
 DOWN_S = 60.0
-#: Seconds an idle tail waits for an append from another process.
-POLL_S = 1.0
 
 
-def _follow(name: str, log: EventLog, stream: str, after: int, handle: Callable[[Entry], None], stop: threading.Event):
+def _follow(name: str, log: EventLog, stream: str, after: int, handle: Callable[[Entry], None], stop: StopEvent):
 
-    tail = log.tail(stream, after=after, interval=POLL_S)
+    tail = log.tail(stream, after=after)
     thread = threading.Thread(target=tail.run, args=(handle, stop), name=name, daemon=True)
     thread.start()
     return thread
@@ -98,9 +98,9 @@ class Projected:
             if all(isinstance(pull, dict) and "repo" in pull for pull in records):
                 self._feed.set_pulls(body["pulls"], body["answers"])
 
-    def follow(self, stop: threading.Event) -> threading.Thread:
+    def follow(self, stop: StopEvent) -> threading.Thread:
         """Apply the kept projection now, then each one announced after, on a thread until `stop`."""
-        thread = self._log.follow_state(PROJECTION, self.apply, stop, interval=POLL_S, thread_name="pull-projected")
+        thread = self._log.follow_state(PROJECTION, self.apply, stop, thread_name="pull-projected")
         self.apply()
         return thread
 
@@ -110,7 +110,7 @@ def announce_saves(store: PullStore, log: EventLog) -> None:
     store.subscribe_saves(lambda keys: log.publish(SAVED_STREAM, {"keys": json.dumps(keys)}))
 
 
-def follow_saves(store: PullStore, log: EventLog, stop: threading.Event, after: int) -> threading.Thread:
+def follow_saves(store: PullStore, log: EventLog, stop: StopEvent, after: int) -> threading.Thread:
     """Refresh `store` with the records of each save announced past `after`, on a thread until `stop`. `after` is read
     before the store loads, so a save between the load and the follow is not missed."""
 
@@ -133,7 +133,7 @@ def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable
     return request
 
 
-def follow_refreshes(log: EventLog, request: Callable[[str, int], Any], stop: threading.Event) -> threading.Thread:
+def follow_refreshes(log: EventLog, request: Callable[[str, int], Any], stop: StopEvent) -> threading.Thread:
     """Hand each refresh asked from now on to `request` (the pull sync's), on a thread until `stop`. A request asked
     since the last poller's beat went unserved while no worker ran, so those replay: a restart must not drop the
     close of a pull request that landed in the gap."""
@@ -152,7 +152,7 @@ def follow_events(
     log: EventLog,
     feed: Any,
     handlers: Mapping[str, Callable[[Entry], None]],
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     resume: bool = False,
 ) -> list[threading.Thread]:
@@ -194,8 +194,8 @@ def follow_events(
     threads = []
     for stream, handle in handlers.items():
         lock = threading.Lock()
-        live = Tail.live(log, stream, interval=POLL_S)
-        replay = Kept(log, stream, after=int(cursors.get(stream) or 0), interval=POLL_S)
+        live = Tail.live(log, stream)
+        replay = Kept(log, stream, after=int(cursors.get(stream) or 0))
         for kind, tail in (("replay", replay), ("live", live)):
             name = f"pull-events-{stream}-{kind}"
             threads.append(threading.Thread(target=run, args=(stream, handle, lock, tail), name=name, daemon=True))
@@ -212,7 +212,7 @@ def publish_metrics(log: EventLog, text: str) -> None:
         logger.warning("pulls: the metrics were not kept", exc_info=True)
 
 
-def keep_metrics(log: EventLog, exposition: Callable[[], str], stop: threading.Event) -> threading.Thread:
+def keep_metrics(log: EventLog, exposition: Callable[[], str], stop: StopEvent) -> threading.Thread:
     """Write `exposition()` to the log every `METRICS_S` on a thread until `stop`."""
 
     def run() -> None:
@@ -226,7 +226,7 @@ def keep_metrics(log: EventLog, exposition: Callable[[], str], stop: threading.E
 
 
 def keep_beating(
-    log: EventLog, running: threading.Event, stop: threading.Event, clock: Callable[[], float] = time.time
+    log: EventLog, running: threading.Event, stop: StopEvent, clock: Callable[[], float] = time.time
 ) -> threading.Thread:
     """Write the time to the log every `BEAT_S` while `running` is set, on a thread until `stop`: the poller's beat."""
 

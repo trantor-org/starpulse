@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import functools
 import logging
-import threading
 from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -19,6 +18,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.harness_telemetry.adapters.inbound.telemetry import KEEP_S
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
@@ -143,23 +143,23 @@ def assemble(
     return board, feed
 
 
-def worker_board(config: Config, base: Path, log: EventLog, stop: threading.Event) -> tuple[Board, BoardFeed]:
+def worker_board(config: Config, base: Path, log: EventLog, stop: StopEvent) -> tuple[Board, BoardFeed]:
     """The board and feed of a worker beside `serve`: the feed reads the read model the Board child folds, and the board
     is attached to `log`, so its writes append the History events that read model folds.
     Raises ValueError as `assemble` does."""
     board, feed, _ = _read_model_board(config, base, log)
-    read_model_follow.follow(None, feed, stop)
+    read_model_follow.follow(None, feed, stop, log)
     return board, feed
 
 
-def scheduler_board(config: Config, base: Path, log: EventLog, stop: threading.Event) -> tuple[Board, BoardFeed]:
+def scheduler_board(config: Config, base: Path, log: EventLog, stop: StopEvent) -> tuple[Board, BoardFeed]:
     """The board and feed of the Scheduler: every question is answered from the read model and nothing is folded here.
     Its change deltas are polled from the read model by `scheduler.adapters.changes`, which ends with `stop`.
     Raises ValueError as `assemble` does."""
     from starpulse.scheduler.adapters.changes import follow_changes
 
     board, feed, model = _read_model_board(config, base, log)
-    follow_changes(feed, MachineDeltas(feed, model), stop)
+    follow_changes(feed, MachineDeltas(feed, model), stop, log)
     return board, feed
 
 

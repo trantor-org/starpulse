@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from starpulse.board.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
 from starpulse.contracts.adapters import LAST_OUTCOMES, RunStatus
 from starpulse.contracts.stamps import iso_utc
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.model import run_events
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
@@ -200,7 +201,7 @@ class PushRuns:
             return
         self._saved = seen
 
-    def keep_saved(self, stop: threading.Event, interval: float = SAVE_INTERVAL) -> None:
+    def keep_saved(self, stop: StopEvent, interval: float = SAVE_INTERVAL) -> None:
         """Save every `interval` seconds, and once more when `stop` is set."""
         while not stop.wait(interval):
             self.save()

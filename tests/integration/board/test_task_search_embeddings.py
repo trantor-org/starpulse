@@ -16,6 +16,7 @@ from starpulse.board.adapters import search as search_module
 from starpulse.board.adapters.search import EmbeddingError, SearchIndex
 from starpulse.board.model.search_config import Search
 from starpulse.contracts.adapters import BoardTask
+from starpulse.event_log.wake import StopEvent
 
 
 def _task(task_id: str, **fields: object) -> BoardTask:
@@ -297,7 +298,7 @@ def test_the_keeping_loop_catches_the_vectors_up_until_it_is_stopped(
     monkeypatch.setattr(search_module, "_POLL", 0.01)
     index = _open(engine, Search(endpoint.url, "m"))
     _board(index)
-    stop = threading.Event()
+    stop = StopEvent()
     thread = threading.Thread(target=index.keep_embedding, args=(stop,), daemon=True)
     thread.start()
 

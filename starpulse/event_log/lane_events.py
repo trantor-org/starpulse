@@ -17,6 +17,8 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, Any
 
+from starpulse.event_log.wake import StopEvent
+
 if TYPE_CHECKING:
     from starpulse.contracts import BoardTask
     from starpulse.event_log.event_log import Entry, EventLog
@@ -87,7 +89,7 @@ class Unattributed:
         name = UNATTRIBUTED_METRIC
         return f"# HELP {name} {UNATTRIBUTED_HELP}\n# TYPE {name} counter\n{name} {self.count()}\n"
 
-    def follow(self, log: EventLog, stop: threading.Event) -> threading.Thread:
+    def follow(self, log: EventLog, stop: StopEvent) -> threading.Thread:
         """Count the entries `log` takes from now on, on a thread until `stop`."""
         from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
         tail = Tail.live(log, STREAM)

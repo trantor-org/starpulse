@@ -22,6 +22,7 @@ from starpulse.board.adapters.search import SearchIndex
 from starpulse.board.bin.blocks import BoardConfig, search_built_blocks
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
+from starpulse.event_log.wake import StopEvent
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ def start(
     path: Path | None,
     base: Path,
     log: EventLog | None,
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     load: Callable[[Path | None], BoardConfig],
 ) -> Callable[[], None]:
@@ -76,7 +77,7 @@ def main(
     except (OSError, ValueError) as exc:
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
-    stop = threading.Event()
+    stop = StopEvent()
     log = EventLog(database_url(config.database_url, base)) if config.search.embeddings_url else None
     try:
         reload_config = start(config, path, base, log, stop, load=load)

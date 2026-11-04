@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, event, select, text, update
 from starpulse.event_log.event_log import Entry, EventLog, Tail
 from starpulse.event_log.migrate import migrate
 from starpulse.event_log.tables import events, gaps
+from starpulse.event_log.wake import StopEvent
 
 import starpulse
 
@@ -83,9 +84,9 @@ def test_a_running_tail_hands_over_what_another_process_appends(
         seen.append(entry)
         arrived.set()
 
-    stop = threading.Event()
+    stop = StopEvent()
     reader = threading.Thread(
-        target=Tail.replay(EventLog(database_url), "machine:events", interval=0.05).run, args=(handle, stop)
+        target=Tail.replay(EventLog(database_url), "machine:events").run, args=(handle, stop)
     )
     reader.start()
     try:
@@ -159,3 +160,37 @@ def test_no_reader_outside_the_event_log_constructs_a_tail_itself() -> None:
     constructed = {name: _tail_constructions(root / name) for name in _FORMER_TAIL_CALLERS}
 
     assert {name: lines for name, lines in constructed.items() if lines} == {}
+
+
+def test_a_commit_by_another_process_wakes_a_running_tail_that_waits_on_no_timer(
+    database_url: str, processes: ProcessPoolExecutor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = create_engine(database_url)
+    migrate(engine)
+    engine.dispose()
+    log = EventLog(database_url)
+    timeouts: list[float | None] = []
+    wait = threading.Condition.wait
+
+    def spied(self: threading.Condition, timeout: float | None = None) -> bool:
+        if self is log._appended:
+            timeouts.append(timeout)
+        return wait(self, timeout)
+
+    monkeypatch.setattr(threading.Condition, "wait", spied)
+    arrived = threading.Event()
+    stop = StopEvent()
+    reader = threading.Thread(
+        target=Tail.replay(log, "machine:events").run, args=(lambda entry: arrived.set(), stop), daemon=True
+    )
+    reader.start()
+    try:
+        processes.submit(_append, database_url, "LATER").result()
+        assert arrived.wait(timeout=5)
+    finally:
+        stop.set()
+        reader.join(timeout=5)
+
+    assert not reader.is_alive()
+    assert timeouts
+    assert set(timeouts) == {None}

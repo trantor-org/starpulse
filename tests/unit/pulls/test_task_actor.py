@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
+from starpulse.event_log.wake import StopEvent
 from starpulse.board.board_feed import BoardFeed
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR, ATTENTION_QUESTION, LINT_REFUSED, REGATE
 from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -20,8 +21,8 @@ def store(tmp_path: Path) -> PullStore:
 
 
 @pytest.fixture
-def stop() -> Iterator[threading.Event]:
-    event = threading.Event()
+def stop() -> Iterator[StopEvent]:
+    event = StopEvent()
     yield event
     event.set()
 

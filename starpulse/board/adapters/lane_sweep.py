@@ -16,6 +16,7 @@ import threading
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Protocol
 
+from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:
@@ -78,7 +79,7 @@ class LaneSweep:
             )
         return f"# HELP {METRIC} {HELP}\n# TYPE {METRIC} gauge\n{series}"
 
-    def start(self, stopped: threading.Event) -> None:
+    def start(self, stopped: StopEvent) -> None:
         """Sweep on a daemon thread every `INTERVAL` seconds until `stopped` is set."""
 
         def run() -> None:

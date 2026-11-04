@@ -15,14 +15,13 @@ The scheduler worker (`starpulse worker scheduler`) runs the sampler and the dis
 from __future__ import annotations
 
 import logging
-import threading
 import time
 from collections.abc import Callable, Mapping
-from pathlib import Path
 from typing import Any
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.scheduler.model.capacity_limits import CapacityLimitSetting
 from starpulse.scheduler.model.config import served
 from starpulse.scheduler.model.harness_setting import HarnessSetting
@@ -34,8 +33,6 @@ logger = logging.getLogger(__name__)
 
 STATUS = "scheduler.status"
 WAKE = "scheduler.wake"
-#: Seconds an idle tail waits for an append from the other process.
-POLL_S = 0.5
 
 
 def publisher(log: EventLog, feed: BoardFeed) -> Callable[[str, dict[str, Any]], None]:
@@ -60,20 +57,20 @@ def _kept(log: EventLog) -> dict[str, Any]:
     return status if isinstance(status, dict) else {}
 
 
-def follow_status(log: EventLog, feed: BoardFeed, stop: threading.Event) -> None:
+def follow_status(log: EventLog, feed: BoardFeed, stop: StopEvent) -> None:
     """Publish the worker's kept status to `feed` now, and each one it announces after, on a thread until `stop`."""
 
     def apply() -> None:
         if status := _kept(log):
             feed.publish("scheduler", status)
 
-    log.follow_state(STATUS, apply, stop, interval=POLL_S, thread_name="scheduler-status")
+    log.follow_state(STATUS, apply, stop, thread_name="scheduler-status")
     apply()
 
 
-def follow_wakes(log: EventLog, wake: Callable[[], None], stop: threading.Event) -> None:
+def follow_wakes(log: EventLog, wake: Callable[[], None], stop: StopEvent) -> None:
     """Call `wake` for each setting `serve` writes from now on, on a thread until `stop`."""
-    log.follow_state(WAKE, wake, stop, interval=POLL_S, thread_name="scheduler-wakes")
+    log.follow_state(WAKE, wake, stop, thread_name="scheduler-wakes")
 
 
 class Remote:

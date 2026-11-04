@@ -21,6 +21,7 @@ from starpulse.board.board_feed import follow
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.store import EventStore
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.application.commands.run_streams import RunStreams, record_run_streams
 from starpulse.runs.application.queries.projection import Publisher
 from starpulse.runs.application.queries.push_runs import PUSHED_INSTANCE, PushRuns
@@ -48,7 +49,7 @@ def start(
     path: Path | None,
     base: Path,
     log: EventLog,
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     load: Callable[[Path | None], RunsConfig],
     adapters: Any,
@@ -93,7 +94,7 @@ def main(
     base = args.config.parent if args.config else Path.cwd()
     adapters = opt_in.followed_by(run_adapters(parser, config), None)
     log = EventLog(database_url(config.database_url, base))
-    stop = threading.Event()
+    stop = StopEvent()
     try:
         reload_config = start(
             config,

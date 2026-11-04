@@ -13,6 +13,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.scheduler.adapters.runtime import build
 from starpulse.scheduler.model.config import Scheduler
@@ -45,7 +46,7 @@ def test_a_task_entering_ready_after_an_empty_pick_is_the_served_next_pick(tmp_p
     runtime.wire_status(feed.publish)
     runtime.sampler.sample()
     assert runtime.served_status()["next"] is None
-    stop = threading.Event()
+    stop = StopEvent()
     thread = threading.Thread(target=runtime.loop.run_forever, args=(stop,), daemon=True)
     thread.start()
     try:

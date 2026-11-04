@@ -18,6 +18,7 @@ from typing import Any
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.application.queries.projection import Publisher
 from starpulse.runs.bin.blocks import RunsConfig
 from starpulse.runs.bin.runs_worker import reload
@@ -29,7 +30,7 @@ def start(
     path: Path | None,
     base: Path,
     log: EventLog,
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     load: Callable[[Path | None], RunsConfig],
     adapters: Any,
@@ -66,7 +67,7 @@ def main(
     base = args.config.parent if args.config else Path.cwd()
     adapters = opt_in.followed_by(run_adapters(parser, config), context)
     log = EventLog(database_url(config.database_url, base))
-    stop = threading.Event()
+    stop = StopEvent()
     try:
         reload_config = start(config, path, base, log, stop, load=load, adapters=adapters, worker_board=worker_board)
     except ValueError as exc:

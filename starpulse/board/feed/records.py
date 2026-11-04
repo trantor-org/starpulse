@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board import criteria
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log import lane_events, rating_events
+from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.stays import LaneRow
 from starpulse.machine_engine.model.transitions import lane_id
 
@@ -49,7 +50,7 @@ class RecordsMixin:
         with self._lock:
             return self._kept
 
-    def keep_saved(self, stop: threading.Event, interval: float = SAVE_INTERVAL) -> None:
+    def keep_saved(self, stop: StopEvent, interval: float = SAVE_INTERVAL) -> None:
         """Save every `interval` seconds, and once more when `stop` is set."""
         while not stop.wait(interval):
             self.save()

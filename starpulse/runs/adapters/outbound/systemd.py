@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 
 from starpulse.contracts.adapters import RunsSink, RunStatus
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 
 #: `systemctl`'s arguments (`--user` first for the user manager) to its standard output; a failing call raises `OSError`.
 Systemctl = Callable[[list[str]], str]
@@ -206,7 +207,7 @@ def feed(user: bool, lines: Iterable[str], events: queue.Queue, watched: Callabl
 def serve(
     timers: Timers,
     events: queue.Queue,
-    stop: threading.Event,
+    stop: StopEvent,
     healthy: Callable[[], bool],
     backstop: float = BACKSTOP_INTERVAL,
     fallback: float = RECONCILE_INTERVAL,
@@ -283,6 +284,6 @@ def follow(url: str, runs: RunsSink, log: EventLog) -> None:  # pragma: no mutat
 
     def run() -> None:
         timers.read()
-        serve(timers, events, threading.Event(), lambda: not down)
+        serve(timers, events, StopEvent(), lambda: not down)
 
     threading.Thread(target=run, name="systemd-runs", daemon=True).start()

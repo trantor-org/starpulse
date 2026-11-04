@@ -11,6 +11,7 @@ import pytest
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.contracts.adapters import Dag
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runs.application.queries.push_runs import PUSHED_INSTANCE, PushedRunsSnapshot, PushRuns
 from starpulse.runs.model import run_events
@@ -295,9 +296,9 @@ def test_pushed_runs_fed_from_the_event_log_draw_the_workflow_with_its_learned_s
     log.publish(run_events.STREAM, fields("StepStarted", "running", step="load", depends=["fetch"]))
     feed = BoardFeed()
     runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", {}))
-    stop = threading.Event()
+    stop = StopEvent()
 
-    follow(runs, log, run_events.STREAM, runs.handle_entry, stop=stop, interval=0.01)
+    follow(runs, log, run_events.STREAM, runs.handle_entry, stop=stop)
     deadline = time.monotonic() + 5
     while not feed.snapshot()["dags"] or edges(drawn(feed)) != {"fetch": [], "load": ["fetch"]}:
         assert time.monotonic() < deadline, "the replayed entries never drew the workflow"
@@ -392,18 +393,18 @@ def test_a_restarted_reader_resumes_from_its_saved_state_and_reads_only_the_entr
     log.publish(run_events.STREAM, fields("StepStarted", "running"))
     log.publish(run_events.STREAM, fields("StepStarted", "running", step="load", depends=["fetch"]))
     log.publish(run_events.STREAM, fields("StepFinished", "succeeded"))
-    first, stop = BoardFeed(), threading.Event()
+    first, stop = BoardFeed(), StopEvent()
     runs = PushRuns(first.runs(PUSHED_INSTANCE), HistoryStore(history, {}))
-    follow(runs, log, run_events.STREAM, runs.handle_entry, stop=stop, interval=0.01)
+    follow(runs, log, run_events.STREAM, runs.handle_entry, stop=stop)
     _wait_until(lambda: first.snapshot()["dags"] and drawn(first)["status"] == "succeeded")
     stop.set()
     _wait_until(lambda: log.checkpoints.load(run_events.STREAM)[0] == 3)
     log.publish(run_events.STREAM, fields("StepStarted", "running", run="r2", at=START + 60))
 
     handled: list[str] = []
-    second, stop = BoardFeed(), threading.Event()
+    second, stop = BoardFeed(), StopEvent()
     restarted = _Spy(second.runs(PUSHED_INSTANCE), HistoryStore(history, {}), handled=handled)
-    follow(restarted, log, run_events.STREAM, restarted.handle_entry, stop=stop, interval=0.01)
+    follow(restarted, log, run_events.STREAM, restarted.handle_entry, stop=stop)
     _wait_until(lambda: second.snapshot()["dags"] and drawn(second)["runId"] == "r2")
     stop.set()
 
@@ -420,9 +421,9 @@ def test_a_restart_with_nothing_new_draws_the_saved_workflows_without_reading_an
     first.save()
 
     handled: list[str] = []
-    feed, stop = BoardFeed(), threading.Event()
+    feed, stop = BoardFeed(), StopEvent()
     restarted = _Spy(feed.runs(PUSHED_INSTANCE), None, handled=handled)
-    follow(restarted, log, run_events.STREAM, restarted.handle_entry, stop=stop, interval=0.01)
+    follow(restarted, log, run_events.STREAM, restarted.handle_entry, stop=stop)
     _wait_until(lambda: feed.snapshot()["dags"])
     stop.set()
 

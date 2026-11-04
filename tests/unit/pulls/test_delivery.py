@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.inbound import delivery
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.views.adapters.inbound.api.pulls import PullReads
@@ -38,8 +39,8 @@ def log(tmp_path: Path) -> EventLog:
 
 
 @pytest.fixture
-def stop() -> Iterator[threading.Event]:
-    event = threading.Event()
+def stop() -> Iterator[StopEvent]:
+    event = StopEvent()
     yield event
     event.set()
 
@@ -194,7 +195,7 @@ def test_an_entry_appended_after_the_start_is_handed_over_before_the_replay_of_t
 def _follow_until_kept(log: EventLog, resume: bool, handled: int = 0) -> list:
     """Follow `machine:events` as one worker run does, until it has handled `handled` entries and kept the cursor at the log's head."""
     seen: list = []
-    stop = threading.Event()
+    stop = StopEvent()
     delivery.follow_events(log, Feed(), {"machine:events": lambda entry: seen.append(entry.fields["n"])}, stop, resume=resume)
     deadline = time.monotonic() + WAIT_S
     while len(seen) < handled or (log.state(delivery.CURSOR)[1] or {}).get("machine:events") != log.head():

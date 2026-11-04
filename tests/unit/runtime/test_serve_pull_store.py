@@ -66,7 +66,7 @@ def test_a_worker_whose_start_is_refused_stops_the_follower_it_started(
 ) -> None:
     monkeypatch.setattr(fake_board, "BUILT", [])
     stops: list[threading.Event] = []
-    monkeypatch.setattr(read_model_follow, "follow", lambda projector, feed, stop: stops.append(stop))
+    monkeypatch.setattr(read_model_follow, "follow", lambda projector, feed, stop, log: stops.append(stop))
     monkeypatch.setattr(server.shutil, "which", lambda name: f"/usr/bin/{name}")
     config = tmp_path / "starpulse.toml"
     config.write_text('[release]\n[board]\ntype = "tests.fake_board"\nlanes = ["open", "shut"]\n[board.actor]\n')

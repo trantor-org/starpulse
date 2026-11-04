@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.scheduler.model.sampler import Crossing, Reading, Sampler
 from starpulse.scheduler.model.state import SchedulerState
 
@@ -121,7 +122,7 @@ def test_a_probe_that_fails_keeps_the_last_readings_and_the_next_sample_goes_on(
 
 def test_run_forever_samples_until_stopped() -> None:
     rig = Rig()
-    stop = threading.Event()
+    stop = StopEvent()
     calls = []
 
     def probe() -> dict[str, float]:

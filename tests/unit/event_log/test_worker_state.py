@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 
 
 @pytest.fixture
@@ -35,14 +36,14 @@ def test_an_entry_is_merged_without_dropping_the_others(log: EventLog) -> None:
 def test_following_applies_each_write_after_the_call_and_not_the_state_already_kept(log: EventLog) -> None:
     log.put_state("status", {"n": 0})
     applied = threading.Event()
-    stop = threading.Event()
+    stop = StopEvent()
     calls: list[int] = []
 
     def apply() -> None:
         calls.append(log.state("status")[0])
         applied.set()
 
-    thread = log.follow_state("status", apply, stop, interval=0.05, thread_name="test-follow")
+    thread = log.follow_state("status", apply, stop, thread_name="test-follow")
     time.sleep(0.2)
     assert calls == []
 

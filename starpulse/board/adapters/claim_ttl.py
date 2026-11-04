@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
@@ -30,6 +29,7 @@ from starpulse.board.adapters.running_workflows import DEFAULT_QUERY, running_ta
 from starpulse.board.adapters.session_activity import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS
 from starpulse.board.model.seam import Board
 from starpulse.event_log.store import EventStore, NewEvent, StoredEvent
+from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:
@@ -231,7 +231,7 @@ def start(
     query = str(settings.get("workflows_query", DEFAULT_QUERY))
     seen: dict[str, float] = {}
 
-    def run(stop: threading.Event) -> None:
+    def run(stop: StopEvent) -> None:
         while not stop.wait(min(60.0, ttl / 6)):
             expiries: dict[str, float] = {}
             try:

@@ -31,6 +31,7 @@ from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore
+from starpulse.event_log.wake import StopEvent
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ def start_writers(
     feed: BoardFeed,
     store: WriterStore,
     evaluate: Callable[[str, str], list[dict]] | None,
-    stop: threading.Event,
+    stop: StopEvent,
     live: bool = True,
     log: EventLog | None = None,
 ) -> threading.Thread:
@@ -83,7 +84,6 @@ def start_writers(
 RUNS_STREAM = "runs:events"
 ENDED = frozenset({"succeeded", "failed", "aborted", "skipped"})
 PULL_REQUEST_MACHINE = "github-pull-request"
-EVENT_POLL_S = 0.5
 
 
 def criteria_topic(entry: Entry) -> str | None:
@@ -101,7 +101,7 @@ def follow_criteria_events(
     feed: BoardFeed,
     evaluate: Callable[[str, str], list[dict]] | None,
     log: EventLog,
-    stop: threading.Event,
+    stop: StopEvent,
 ) -> threading.Thread | None:
     """Evaluate the Start Criteria again within seconds of the event they await, so they poll only as a net. Each run
     that ends or pull request that merges after this call invalidates the results that name it and wakes `feed`'s
@@ -113,7 +113,7 @@ def follow_criteria_events(
         if (topic := criteria_topic(entry)) and evaluate.invalidate(topic):
             feed.evaluate_criteria()
 
-    tail = Tail.live(log, RUNS_STREAM, streams=[RUNS_STREAM, MACHINE_STREAM], interval=EVENT_POLL_S)
+    tail = Tail.live(log, RUNS_STREAM, streams=[RUNS_STREAM, MACHINE_STREAM])
     thread = threading.Thread(target=tail.run, args=(handle, stop), name="board-criteria-events", daemon=True)
     thread.start()
     return thread
@@ -124,7 +124,7 @@ def start(
     path: Path | None,
     base: Path,
     log: EventLog,
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     load: Callable[[Path | None], BoardConfig],
     assemble: Callable[..., tuple[Board, BoardFeed]],
@@ -145,7 +145,7 @@ def start(
         board.attach(log)  # the sweep's releases append the History events the read model folds
     if board.sweep is not None:
         board.sweep(feed, log, store.save_claim_expiries)
-    follow(Projector(log.engine, EventStore(log.engine), log=log, drawn=feed.machines, keys=board.keys), feed, stop)
+    follow(Projector(log.engine, EventStore(log.engine), log=log, drawn=feed.machines, keys=board.keys), feed, stop, log)
     if ready is not None:
         ready(board, feed)
     return lambda: reload(path, config, load)
@@ -172,7 +172,7 @@ def main(
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
     log = EventLog(database_url(config.database_url, base))
-    stop = threading.Event()
+    stop = StopEvent()
     try:
         reload_config = start(
             config, path, base, log, stop, load=load, assemble=assemble, history_store=history_store, follow=follow

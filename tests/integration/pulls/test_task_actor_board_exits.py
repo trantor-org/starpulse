@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
+from starpulse.event_log.wake import StopEvent
 from starpulse.board.machine_tasks import MachineDeltas
 from starpulse.contracts.adapters import BoardTask, MachineEvent
 from starpulse.event_log.readmodel.read_model import ReadModel
@@ -57,8 +58,8 @@ def store(tmp_path: Path) -> PullStore:
 
 
 @pytest.fixture
-def stop() -> Iterator[threading.Event]:
-    event = threading.Event()
+def stop() -> Iterator[StopEvent]:
+    event = StopEvent()
     yield event
     event.set()
 

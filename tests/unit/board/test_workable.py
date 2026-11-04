@@ -8,6 +8,7 @@ import pytest
 from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 
 from tests.machines import ROLES
@@ -332,7 +333,7 @@ def test_a_feed_following_the_store_adopts_what_another_process_dated_without_ev
     feed = _live(now)
     feed.put(_task("PROJ-1", "waiting", description=BLOCK))
     store = Shared()
-    stopped = threading.Event()
+    stopped = StopEvent()
     stopped.set()  # one pass, then it ends
     feed.follow_criteria(store, stopped)
     assert _agent(feed, "PROJ-1")["workable"] is False
@@ -361,7 +362,7 @@ def test_a_feed_following_a_store_that_is_down_keeps_what_it_held() -> None:
     feed.put(_task("PROJ-1", "waiting", description=BLOCK))
     store = Shared()
     store.met = {"PROJ-1": 500.0}
-    stopped = threading.Event()
+    stopped = StopEvent()
     stopped.set()
     feed.follow_criteria(store, stopped)
 

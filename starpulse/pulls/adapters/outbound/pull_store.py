@@ -17,6 +17,7 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.board_feed import BoardFeed
+from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, GhUnavailableError, query_github
 from starpulse.pulls.model.pins import Repo
 
@@ -148,7 +149,7 @@ class PullSync:
         graphql: Callable[[str, str], dict] = query_github,
         clock: Callable[[], float] = time.time,
         project: Callable[[], None] | None = None,
-        stop: threading.Event | None = None,
+        stop: StopEvent | None = None,
     ) -> None:
         self._store = store
         self._feed = feed
@@ -156,7 +157,7 @@ class PullSync:
         self._graphql = graphql
         self._clock = clock
         self._project = project
-        self._stop = stop or threading.Event()
+        self._stop = stop or StopEvent()
         self._requests: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
         self._wake = threading.Event()
         self._projection = threading.Event()

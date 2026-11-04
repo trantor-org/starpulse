@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.runtime import server
 from starpulse.runtime.assembly import assemble, history_store
 from starpulse.runtime.config import load
@@ -117,7 +118,7 @@ def _served(base: Path, config_text: str = "") -> Iterator[tuple[BoardFeed, Runt
     history = history_store(config, base, feed.machines)
     log = EventLog(f"sqlite:///{base / 'events.sqlite'}")
     board.start(feed, "test", log)
-    stop = threading.Event()
+    stop = StopEvent()
     before = set(threading.enumerate())
     runtime = start_scheduler(
         config,

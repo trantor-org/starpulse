@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
+from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.inbound.task_actor import TaskActor
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import serve, url
@@ -35,7 +36,7 @@ def test_metrics_serves_the_projection_and_handoff_histograms_of_a_real_actor(tm
     store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
     actor = TaskActor(feed, store, lambda *args, **kwargs: None, WAITS, MOVES)
     actor.timed_projection(lambda: None)()
-    stop = threading.Event()
+    stop = StopEvent()
     actor.start(stop)
     assert actor.ready.wait(WITHIN_S)
     actor.store_changed()

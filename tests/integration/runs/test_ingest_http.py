@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.adapters.inbound.cloudevents import SINGLE, CloudEventsIngest
 from starpulse.runs.adapters.inbound.ingest import MAX_BATCH_BODY
 from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
@@ -83,8 +84,8 @@ def stack(tmp_path: Path) -> Iterator[Stack]:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed()
     pushed = PushRuns(feed.runs(PUSHED_INSTANCE), None)
-    stop = threading.Event()
-    follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop, interval=0.01)
+    stop = StopEvent()
+    follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop)
     events = CloudEventsIngest({p.name: p for p in PRODUCERS}, TOKENS, log, {})
     with serve(tmp_path, feed, events=events) as server:
         yield Stack(server, feed, log)
@@ -201,8 +202,8 @@ def test_a_producer_from_the_documented_config_draws_its_pushed_run_with_no_run_
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed(domains=config.qualified_domains(), run_safe=config.qualified_run_safe())
     pushed = PushRuns(feed.runs(PUSHED_INSTANCE), None)
-    stop = threading.Event()
-    follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop, interval=0.01)
+    stop = StopEvent()
+    follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop)
     tokens = ingest_tokens(config.producers, {"CRON_INGEST_TOKEN": "cron-secret"})
     events = CloudEventsIngest({p.name: p for p in config.producers}, tokens, log, {})
 

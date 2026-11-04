@@ -12,6 +12,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.snapshot import BoardSnapshot
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.server import serve_until_stopped
 
 STREAM = "board:tasks"
@@ -206,7 +207,7 @@ def test_a_feed_kept_saved_writes_on_each_interval_and_once_more_when_stopped() 
     store = _Store()
     feed = _feed_with_tasks()
     feed.resume(store, STREAM, lambda cursor: False)
-    stop = threading.Event()
+    stop = StopEvent()
     saver = threading.Thread(target=feed.keep_saved, args=(stop, 0.01))
     saver.start()
     while store.writes < 1:

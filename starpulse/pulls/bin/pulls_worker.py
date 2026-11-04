@@ -20,6 +20,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
+from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.inbound.delivery import (
     Projected,
     Publisher,
@@ -54,7 +55,7 @@ class Delivery:
         self._config = config
         self._built = (board, feed, log, pulls, pins)
         self._start_delivery = start_delivery
-        self._stop = threading.Event()
+        self._stop = StopEvent()
         #: Whether the replay resumes after the cursor the replays before kept (`follow_events`).
         self._resume = resume
 
@@ -62,7 +63,7 @@ class Delivery:
         """Start the loops of the running config, each ending when `stop` is called. Raises `ValueError` as
         `start_delivery` does."""
         board, feed, log, pulls, pins = self._built
-        self._stop = stop = threading.Event()
+        self._stop = stop = StopEvent()
         try:
             actor, sync = self._start_delivery(
                 self._config,
@@ -120,7 +121,7 @@ def start(
     path: Path | None,
     base: Path,
     log: EventLog,
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     load: Callable[[Path | None], PullsConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
@@ -163,7 +164,7 @@ def main(
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
     log = EventLog(database_url(config.database_url, base))
-    stop = threading.Event()
+    stop = StopEvent()
     try:
         reload_config = start(
             config,

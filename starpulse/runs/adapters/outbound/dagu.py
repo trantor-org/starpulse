@@ -31,7 +31,7 @@ from typing import Any, get_args
 from starpulse.contracts.adapters import LAST_OUTCOMES, RunsSink, RunStatus, StartFailedError
 from starpulse.contracts.stamps import iso_utc
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.model import run_events
 
 #: Seconds between two listings of a followed Dagu instance.
@@ -964,7 +964,7 @@ def rerun(url: str) -> Callable[[str, Mapping[str, str]], str]:
     return rerunner(connect(url))
 
 
-def _refresh_stats_forever(url: str, stats: dict, stop: threading.Event) -> None:
+def _refresh_stats_forever(url: str, stats: dict, stop: StopEvent) -> None:
     """Read the run statistics of Dagu's DAGs every `RECONCILE_INTERVAL` seconds until `stop`; a read that fails is tried again after `STATS_TTL`."""
     tried: dict = {}
     while True:
@@ -976,7 +976,7 @@ def _refresh_stats_forever(url: str, stats: dict, stop: threading.Event) -> None
             return
 
 
-def _reconcile_forever(runs: DaguRuns, stop: threading.Event) -> None:
+def _reconcile_forever(runs: DaguRuns, stop: StopEvent) -> None:
     """List Dagu every `RECONCILE_INTERVAL` seconds until `stop`, so runs show with no `handler_on` hooks publishing them."""
     while True:
         runs.reconcile()
@@ -989,8 +989,7 @@ def follow(
     runs: RunsSink,
     log: EventLog,
     *,
-    interval: float = DEFAULT_POLL_INTERVAL,
-    stop: threading.Event | None = None,
+    stop: StopEvent | None = None,
 ) -> None:
     """Read the Dagu instance at `url` into `runs`: its listing, then each run entry appended since the log's head.
 
@@ -1001,7 +1000,7 @@ def follow(
     reads the DAGs' run statistics apart from the listing (`refresh_stats`), which serves them as they are read. The
     threads end when `stop` is set; the server passes none and they run for the process's life.
     """
-    stop = stop or threading.Event()
+    stop = stop or StopEvent()
     tied = lambda: getattr(runs, "tied", frozenset())  # noqa: E731
     finished: dict = {}
     graphs: dict = {}
@@ -1016,7 +1015,7 @@ def follow(
     )
 
     def read() -> None:
-        tail = Tail.live(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed
+        tail = Tail.live(log, run_events.STREAM)  # before the listing: what it holds is not replayed
         reader.reconcile()
         tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), stop)
 
