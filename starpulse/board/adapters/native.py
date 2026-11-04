@@ -663,9 +663,10 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
         if not frontmatter["profile"][0]:
             del frontmatter["profile"]
     elif field == "status":
-        if lane_id(_text(field, value)) not in spelled:
+        lane = lane_id(_text(field, value))
+        if lane not in spelled:
             raise ValueError(f"{value!r} is not a status of this board: {', '.join(spelled.values())}")
-        frontmatter["status"] = spelled[lane_id(value)]
+        frontmatter["status"] = spelled[lane]
     elif field in _LISTS:
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise ValueError(f"{field} must be a list of text")

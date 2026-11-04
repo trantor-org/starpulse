@@ -238,6 +238,15 @@ def test_field_round_trip_spells_a_status_as_the_lane_does(served: tuple[Board, 
     assert _split(_file(root, "TASK-3201").read_text())[0]["status"] == "Needs attention"
 
 
+def test_field_round_trip_strips_a_status_before_spelling_it(served: tuple[Board, Path]) -> None:
+    built, root = served
+    assert built.edit is not None
+
+    assert built.edit("TASK-3201", {"status": " Done "}, "").ok
+
+    assert _split(_file(root, "TASK-3201").read_text())[0]["status"] == "Done"
+
+
 def test_field_round_trip_refuses_a_non_text_list_item_and_writes_nothing(served: tuple[Board, Path]) -> None:
     built, root = served
     assert built.edit is not None
