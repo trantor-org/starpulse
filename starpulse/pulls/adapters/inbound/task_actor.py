@@ -94,6 +94,8 @@ SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0
 _POLL_S = 0.5
 #: Seconds between two sweeps of the Waiting lane, which derive each task there again and flag the ones nothing releases.
 SWEEP_S = 300.0
+#: Seconds between two wakes of a task that rests in Verifying: a holder that was reaped or stalled runs its QA again.
+REWAKE_S = 3600.0
 #: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
 _DAY_S = 86_400.0
 #: Seconds to wait before each retry of a write that found the board database locked.
@@ -237,6 +239,7 @@ class TaskActor:
         unfinished: Callable[[str], Sequence[str]] | None = None,
         create: TaskCreator | None = None,
         sweep_s: float = SWEEP_S,
+        rewake_s: float = REWAKE_S,
     ) -> None:
         self._read = read
         self._create = create
@@ -275,6 +278,9 @@ class TaskActor:
         self._verifying = verifying
         self._fresh_s = fresh_s
         self._sweep_s = sweep_s
+        self._rewake_s = rewake_s
+        #: When the `verifying` hook last told each Verifying task's holder to run its post-merge QA.
+        self._woken: dict[str, float] = {}
         #: The lanes that wait on their tasks' dependencies, which the sweep derives again.
         self._sweep_lanes = {lane for lane, facts in waits.items() if "deps_done" in facts}
         #: The lanes that wait on a task's Start Criteria.
@@ -450,6 +456,24 @@ class TaskActor:
                 agent = self._feed.task(name)
                 if agent and agent["state"] in self._sweep_lanes and (reasons := self._stuck(agent)):
                     self._note_hold(agent, reasons, FLAGGED)
+        self._rewake()
+
+    def _rewake(self) -> None:
+        """Run the `verifying` hook again for each task still resting in Verifying `rewake_s` after its last wake, so a
+        holder whose session was reaped or stalled runs its post-merge QA until a verdict moves the task out. A hook
+        runs outside the lock, which it may hold for seconds."""
+        lane = self._feed.roles.verifying
+        if not (self._verifying and lane):
+            return
+        now = self._clock()
+        due = [
+            agent["id"]
+            for agent in self._feed.open_tasks()
+            if agent["state"] == lane and now - self._woken.get(agent["id"], -self._rewake_s) >= self._rewake_s
+        ]
+        for name in due:
+            self._woken[name] = now
+            self._notice(self._verifying, name, "is in post-merge QA with no verdict but its holder was not told")
 
     def _stuck(self, agent: dict[str, Any]) -> tuple[str, ...]:
         """The dependencies that will not finish on their own: the Board holds no such task, or it is Proposed until the
@@ -641,7 +665,11 @@ class TaskActor:
             event = self._exit_event(links, phase, task) if phase else None
             if phase and event and self._exited.get((parent, task)) != (phase["state"], phase["steps"], event):
                 self._exited[parent, task] = (phase["state"], phase["steps"], event)
-                self._advance(parent, task, event)
+                target = self._moves.get((phase["state"], event)) if parent == BOARD else None
+                if target:  # the Board's lane is the task's status: the exit is that write, not an event beside it
+                    self._write(task, target, f"{phase['state']} phase exited on {event}", self._clock(), phase["state"])
+                else:
+                    self._advance(parent, task, event)
 
     def _phase(self, parent: str, task: str) -> dict[str, Any] | None:
         """The phase `task` is in under lifecycle machine `parent`: the machine's placement, or the Board's lane, whose
@@ -760,6 +788,7 @@ class TaskActor:
                 changes = {"description": section_set(agent["description"], "Needs attention", comment)}
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes):
                 if self._verifying and fact == "pr_merged_planned":
+                    self._woken[name] = self._clock()
                     self._notice(self._verifying, name, "entered post-merge QA but its holder was not told")
                 return
 

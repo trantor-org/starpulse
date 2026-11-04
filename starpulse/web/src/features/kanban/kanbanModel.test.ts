@@ -7,7 +7,7 @@ import type { TaskRecord } from "./taskViewModel";
 import { sessionNickname } from "./nickname";
 import type { Pull, RawTask, Snapshot } from "../../api";
 
-const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
+const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", verifying: "Verifying", needs_attention: "Needs attention", done: "Done" };
 const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): KanbanTask => ({
   id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered, created: null, workableSince: null, machines: [],
 });
@@ -17,11 +17,18 @@ const column = (v: ReturnType<typeof view>, id: string) => v.columns.find((c) =>
 const headers = (v: ReturnType<typeof view>, id: string) => column(v, id).buckets.map((b) => b.milestone);
 
 describe("the columns", () => {
-  it("are the six Board states in order, named by the machine, and draw no other lane", () => {
+  it("are the seven Board states in order, named by the machine, and draw no other lane", () => {
     const v = view([task("PROJ-1", "new"), task("PROJ-2", "ready")]);
 
-    expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Needs attention", "Done"]);
-    expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0]);
+    expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Verifying", "Needs attention", "Done"]);
+    expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it("draw a task resting in Verifying, which a merged task with post-merge QA items waits in", () => {
+    const v = view([task("PROJ-1", "verifying")]);
+
+    expect(column(v, "verifying").count).toBe(1);
+    expect(v.shown).toBe(1);
   });
 
   it("are the board's own lanes in order when it has no ready lane, so a native board's first-lane task is drawn", () => {
@@ -99,7 +106,7 @@ describe("hiding", () => {
 
     expect(headers(v, "ready")).toEqual(["m-9"]);
     expect(column(v, "in_progress").buckets).toEqual([]);
-    expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 1]);
+    expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0, 1]);
     expect([v.open, v.done, v.shown, v.total]).toEqual([1, 1, 2, 5]);
   });
 

@@ -2745,6 +2745,10 @@ export interface Roles {
    */
   startable?: string[];
   /**
+   * Where a merged task rests while its post-merge QA runs.
+   */
+  verifying?: string | null;
+  /**
    * Where a task waits on its Start Criteria or dependencies.
    */
   waiting?: string | null;
