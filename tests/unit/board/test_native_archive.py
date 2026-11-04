@@ -103,3 +103,14 @@ def test_an_archive_records_the_release_of_a_waiting_dependent_in_its_history(tm
 
     row = replay(EventStore(log.engine).read("task", "task-7"))
     assert (row["dependencies"], row["state"]) == ([], "Ready")
+
+
+def test_an_archive_records_no_history_for_a_done_dependent_it_left_alone(tmp_path: Path) -> None:
+    built = _board(tmp_path)
+    write_task(tmp_path, "task-8", "Done", dependencies="[task-5]")
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    built.attach(log)
+
+    assert built.archive("task-5", "").ok
+
+    assert not EventStore(log.engine).read("task", "task-8")
