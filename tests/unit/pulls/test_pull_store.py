@@ -51,6 +51,7 @@ class Github:
         behind: int | None = None,
         branch: str = "claude/task-7-thing",
         author: str | None = "coderabbitai",
+        queued: bool = False,
     ) -> None:
         """A PR; `checks` maps each required check to its conclusion, or to IN_PROGRESS while it runs. Each of its
         `threads` (resolved or not) opens with a comment by `author`, None for a deleted account."""
@@ -66,6 +67,7 @@ class Github:
             "behind": behind,
             "branch": branch,
             "author": author,
+            "queued": queued,
         }
 
     def _node(self, number: int) -> dict:
@@ -84,6 +86,7 @@ class Github:
             "number": number,
             "state": pull["state"],
             "isDraft": False,
+            "isInMergeQueue": pull["queued"],
             "mergeable": "MERGEABLE",
             "baseRefName": "main",
             "headRefName": pull["branch"],
@@ -257,6 +260,19 @@ def test_a_record_carries_the_facts_pr_status_prints(store: PullStore) -> None:
     ]
 
 
+def test_a_record_says_whether_its_pr_waits_in_the_merge_queue(store: PullStore) -> None:
+    github = Github()
+    github.add(4, queued=True)
+    github.add(5)
+
+    _read(store, github, 100.0)
+
+    (queued,) = store.find(number=4, detailed=True)
+    (waiting,) = store.find(number=5, detailed=True)
+    assert (queued["detail"]["queued"], waiting["detail"]["queued"]) == (True, False)
+    assert "isInMergeQueue" in github.queries[0]
+
+
 def test_a_pr_with_more_files_than_the_read_returns_records_its_files_as_unknown(store: PullStore) -> None:
     github = Github()
     github.add(6, files=("a.py",), total_files=101)
@@ -278,6 +294,7 @@ def test_a_merged_prs_record_keeps_what_the_task_consumers_read_beside_the_serve
         "mergedAt": NEW,
         "mergeSha": f"{5:040x}"[::-1],
         "behindMain": 3,
+        "queued": False,
         "files": ["a.py", "b.py"],
         "ci": {
             "createdAt": OLD,

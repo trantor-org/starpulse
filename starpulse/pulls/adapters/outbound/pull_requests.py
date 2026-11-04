@@ -160,6 +160,7 @@ class PullRequests:
                 "merged": record["state"] == "MERGED",
                 "closed": record["state"] == "CLOSED",
                 "conflicting": record["state"] == "OPEN" and record["mergeable"] == "CONFLICTING",
+                "queued": record["state"] == "OPEN" and bool(record["detail"].get("queued")),
                 "merge_sha": record["detail"]["mergeSha"],
                 "merged_at": record["detail"]["mergedAt"],
                 "files": record["detail"]["files"],

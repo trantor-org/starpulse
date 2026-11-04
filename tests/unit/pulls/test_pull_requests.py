@@ -64,6 +64,7 @@ def _stored(
     files: tuple[str, ...] = (),
     behind: int | None = None,
     ci: dict | None = None,
+    queued: bool = False,
     repo: str = "acme/widgets",
 ) -> dict:
     """A record as the PR store holds it, with the detail the per-task state reads."""
@@ -87,6 +88,7 @@ def _stored(
             "mergedAt": merged_at,
             "mergeSha": merge_sha,
             "behindMain": behind,
+            "queued": queued,
             "files": list(files),
             "ci": ci or _ci(merged_at=merged_at),
         },
@@ -100,6 +102,7 @@ def _record(
     merged: bool = False,
     closed: bool = False,
     conflicting: bool = False,
+    queued: bool = False,
     threads: int = 0,
     stale: bool = False,
     merge_sha: str | None = None,
@@ -117,6 +120,7 @@ def _record(
         "merged": merged,
         "closed": closed,
         "conflicting": conflicting,
+        "queued": queued,
         "merge_sha": merge_sha,
         "merged_at": merged_at,
         "files": files or [],
@@ -446,3 +450,18 @@ def test_old_ci_jobs_stream_rows_still_read_dual_read(store: PullStore) -> None:
     (record,) = store.find("acme/widgets", 1750)
     assert record["headRefOid"] == SHA
     assert record["requiredChecks"] == [{"name": "lint", "result": "pass"}, {"name": "test", "result": "failing"}]
+
+
+def test_an_open_pr_in_the_merge_queue_is_queued_and_a_record_saved_before_the_flag_existed_is_not(
+    store: PullStore,
+) -> None:
+    old = _stored(1751)
+    del old["detail"]["queued"]
+    store.save([_stored(1750, queued=True), old, _stored(1752, state="MERGED", queued=True)])
+    feed = _feed(proj_7=[FIRST, SECOND, f"{REPO}/1752"])
+
+    PullRequests(feed, store).refresh()
+
+    assert _pulls(feed) == {
+        "PROJ-7": [_record(1750, "pass", queued=True), _record(1751, "pass"), _record(1752, "pass", merged=True)]
+    }
