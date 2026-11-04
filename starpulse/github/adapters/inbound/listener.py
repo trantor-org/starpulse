@@ -17,7 +17,9 @@ from typing import Any
 
 from starpulse.github.adapters.outbound import verdicts as metrics
 from starpulse.github.adapters.outbound.inbox import Migrate, SqlInbox
+from starpulse.github.adapters.outbound.queue import SqlQueue
 from starpulse.github.model.delivery import UNVERIFIED, Delivery, Refusal, admit, declared_length
+from starpulse.github.model.events import CONSUMER
 from starpulse.github.model.github_config import GitHub
 from starpulse.github.ports.inbox import Inbox, InboxError
 
@@ -96,10 +98,13 @@ def _handler(
     return Intake
 
 
-def bind(settings: GitHub, secret: bytes, inbox: Inbox) -> ThreadingHTTPServer:
-    """The listener on `settings`' address, signed with `secret` and saving to `inbox`. Raises `OSError` for an address that
-    cannot be bound."""
-    return ThreadingHTTPServer((settings.host, settings.port), _handler(settings, secret, inbox, metrics.Verdicts()))
+def bind(
+    settings: GitHub, secret: bytes, inbox: Inbox, dead_counts: Callable[[], dict[str, int]] | None = None
+) -> ThreadingHTTPServer:
+    """The listener on `settings`' address, signed with `secret` and saving to `inbox`, its `/metrics` counting the dead
+    deliveries `dead_counts` reads. Raises `OSError` for an address that cannot be bound."""
+    verdicts = metrics.Verdicts(dead_counts)
+    return ThreadingHTTPServer((settings.host, settings.port), _handler(settings, secret, inbox, verdicts))
 
 
 def start(config: Any, base: Path, stop: threading.Event, migrate: Migrate) -> Callable[[], None]:
@@ -117,7 +122,7 @@ def start(config: Any, base: Path, stop: threading.Event, migrate: Migrate) -> C
         raise ValueError(f"github: the environment variable {settings.secret_env} holds no webhook secret")
     inbox = SqlInbox(settings.database_url or f"sqlite:///{(base / INBOX_FILE).resolve()}", migrate)
     try:
-        server = bind(settings, secret.encode(), inbox)
+        server = bind(settings, secret.encode(), inbox, SqlQueue(inbox.engine, CONSUMER).dead_counts)
     except OSError:
         inbox.engine.dispose()  # the `contexts` process retries `start`, which opens a new inbox
         raise

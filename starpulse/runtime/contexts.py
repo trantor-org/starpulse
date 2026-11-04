@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -48,7 +49,12 @@ def contexts_of(config: Config) -> list[str]:
     from starpulse.runtime.supervisor import adapter_contexts
 
     kept = [c for c in BACKGROUND_CONTEXTS if c != "search" or config.search.embeddings_url]
-    receivers = [name for name, table in (("claude-code", config.claude_code), ("github", config.github)) if table]
+    github_events = config.github and any(producer.name == "github" for producer in config.producers)
+    receivers = [
+        name
+        for name, table in (("claude-code", config.claude_code), ("github", config.github), ("github-events", github_events))
+        if table
+    ]
     return [*kept, *adapter_contexts(config), *receivers]
 
 
@@ -104,6 +110,17 @@ class _SharedStore:
             if self._store is None:
                 self._store = self._build(config, base, machines)
             return self._store
+
+
+class _PullLinks:
+    """The task a pull request is linked to: the unarchived task whose references hold its URL."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def task_for(self, repository: str, number: int) -> str | None:
+        cited = self._model.citing(f"https://github.com/{repository}/pull/{number}")
+        return cited[0] if cited else None
 
 
 def default_starters(
@@ -202,9 +219,25 @@ def default_starters(
 
         return listener.start(config, base, own, migrate_chain)
 
+    def github_events(own: threading.Event) -> Callable[[], None]:
+        from starpulse.event_log.migrate import migrate_chain
+        from starpulse.event_log.readmodel.read_model import ReadModel
+        from starpulse.github.adapters.inbound import consumer
+        from starpulse.github.adapters.outbound.ingest import HttpIngest
+
+        producer = next((p for p in config.producers if p.name == "github"), None)
+        token = os.environ.get(producer.token_env, "") if producer else ""
+        if not token:
+            raise ValueError("github-events: the producer github holds no token in the environment")
+        server = os.environ.get("STARPULSE_WRITE_URL") or f"http://127.0.0.1:{config.port}"
+        return consumer.start(
+            config, base, own, migrate_chain, HttpIngest(server, token), _PullLinks(ReadModel(log.engine))
+        )
+
     known: dict[str, Starter] = {
         "board": board, "pulls": pulls, "scheduler": scheduler, "runs": runs, "flow-metrics": flow_metrics,
-        "search": search, "sweeper": sweeper, "claude-code": claude_code, "github": github, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
+        "search": search, "sweeper": sweeper, "claude-code": claude_code, "github": github,
+        "github-events": github_events, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
     }  # fmt: skip
     unknown = [name for name in names if name not in known]
     if unknown:
