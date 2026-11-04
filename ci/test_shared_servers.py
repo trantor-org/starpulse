@@ -57,3 +57,27 @@ def test_a_server_that_only_answered_reads_is_left_as_it_is(tmp_path):
     host.renew()
 
     assert [path.name for path in root.iterdir()] == ["kept"]
+
+
+class _Subject:
+    """What two servers' builders patch, as `UpstreamBacklog.start` is patched by `lifecycled` and `held`."""
+
+    start = "original"
+
+
+def _patching(value: str):
+    def builder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(_Subject, "start", value)
+        yield "http://127.0.0.1:1"
+
+    return builder
+
+
+def test_closing_the_servers_of_a_module_restores_what_their_builders_patched(tmp_path_factory):
+    hosts = shared_servers._Hosts(tmp_path_factory)
+    hosts.url("first", _patching("first"), {})
+    hosts.url("second", _patching("second"), {})  # saw the first's patch as the original
+
+    hosts.close()
+
+    assert _Subject.start == "original"

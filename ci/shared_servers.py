@@ -89,7 +89,9 @@ class _Hosts:
             host.renew()
 
     def close(self) -> None:
-        for host in self.by_name.values():
+        """Last built, first closed: a builder's patch saw the earlier ones' as the original, so closing in build order
+        would put the first's patch back last and leave it installed for every later module on the worker."""
+        for host in reversed(self.by_name.values()):
             host.stack.close()
 
 
