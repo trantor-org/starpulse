@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tomllib
 from pathlib import Path
 
 import canary_smoke
@@ -203,3 +204,9 @@ def test_step_checks_passes_each_command_the_url_and_stops_at_the_first_failure(
 
 def test_step_checks_passes_with_no_command(tmp_path: Path) -> None:
     assert canary_smoke.step_checks([], "http://127.0.0.1:1", {}, tmp_path) is None
+
+
+def test_render_config_sets_the_top_level_database_url_when_the_config_ends_in_a_table(tmp_path: Path) -> None:
+    rendered = tomllib.loads(render_config('[[producers]]\nname = "a"\n', tmp_path / "x.db"))
+    assert rendered["database_url"] == f"sqlite:///{tmp_path / 'x.db'}"
+    assert "database_url" not in rendered["producers"][0]
