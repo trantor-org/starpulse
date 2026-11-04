@@ -136,7 +136,7 @@ def pull_facts(transport: Transport, repo: str, number: int) -> PullFacts | None
     readied = [e["created_at"] for e in events if e["event"] == "ready_for_review"]
     ready = _time(readied[-1] if readied else pull["created_at"])
     commits = get(transport, f"/repos/{repo}/pulls/{number}/commits?per_page=100")["items"]
-    after = sum(_time(c["commit"]["committer"]["date"]) > ready for c in commits)
+    after = sum(_time(c["commit"]["committer"]["date"]) > ready for c in commits) if readied else len(commits)
     return PullFacts(after, (_time(pull["merged_at"]) - ready).total_seconds() / 3600)
 
 
