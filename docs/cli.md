@@ -183,6 +183,11 @@ the step made, a key being the command the server's redactor left, else the tool
 `GET /api/analytics/cells[?hours=N]`, each with the window and refusals of `analytics steps`. They place a task by its
 board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither report, and neither ranks a Codex or Cursor step.
 
+`analytics spend` reads `GET /api/analytics/spend[?hours=N]` with the window and refusals of `analytics steps`: each task's
+tokens by phase (`claim`, `implement`, `qa`, `deliver`, `review_fix`), their weighted total `wte`, peak context,
+compactions and models, with the task's total against its kind and size `norm_wte` and `above_norm`. A task with no
+labels is listed with no norm; [Connect sources](sources.md#report-each-tasks-spend-by-phase) defines the phases.
+
 `analytics estimates` reads `GET /api/analytics/estimates[?hours=N][&milestone=m-N]`: one row per completed task with a
 `kind-<kind>` and `size-<n>` label, its label, kind and profile beside its measured `steps` (a subagent's included) and
 `active_minutes` (agent seconds plus the operator's wait). `effort_size` is the smallest size whose p90 steps and

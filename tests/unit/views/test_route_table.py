@@ -43,6 +43,7 @@ _TABLE = [
     ("/api/analytics/sessions", _READ),
     ("/api/analytics/steps", _READ),
     ("/api/analytics/transitions", _READ),
+    ("/api/analytics/spend", _READ),
     ("/api/analytics/cells", _READ),
     ("/api/analytics/estimates", _READ),
     ("/api/analytics/graph", _READ),

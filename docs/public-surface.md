@@ -38,6 +38,9 @@ internal and can change in any release.
   skill within a kind and size of task, and the median steps per clean completion of each kind and size (see
   [Connect sources](sources.md#price-each-transition-and-report-each-cell)), and `starpulse analytics transitions|cells
   [--hours]` that read them.
+- `GET /api/analytics/spend` and its body in `api.schema.json`: each task's tokens by phase, weighted total and norm flag
+  (see [Connect sources](sources.md#report-each-tasks-spend-by-phase)), and `starpulse analytics spend [--hours]` that
+  reads it.
 - `GET /api/analytics/estimates` and its body in `api.schema.json`: each completed task's size, kind and profile beside
   its measured steps, active minutes and effort size step, and `starpulse analytics estimates [--hours] [--milestone]`
   that reads it.

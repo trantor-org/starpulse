@@ -182,7 +182,7 @@ describe("the task view's right rail", () => {
   it("draws Status, Pull requests, Dependencies, Docs and Details in that order, each heading with its count", () => {
     const html = draw({ tasks: many });
 
-    expect(headings(html)).toEqual(["Status", "Session", "Pull requests", "Dependencies", "Docs", "Details"]);
+    expect(headings(html)).toEqual(["Status", "Session", "Pull requests", "Spend", "Dependencies", "Docs", "Details"]);
     expect(rows(html, "Pull requests")).toContain('<span class="n">1</span>');
     expect(rows(html, "Dependencies")).toContain('<span class="n">9</span>');
     expect(rows(html, "Status")).not.toContain('class="n"');

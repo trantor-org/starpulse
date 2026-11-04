@@ -447,6 +447,17 @@ body:has(#sd) #crumb { visibility: hidden; }
 #kbm .tvrail .props td { padding: 3px 10px 3px 0; vertical-align: top; }
 #kbm .tvrail .props td:first-child { width: calc(74px * var(--fs)); color: var(--muted); white-space: nowrap; }
 #kbm .tvrail .none { color: var(--faint); }
+/* Spend (rail): the task's weighted tokens by phase; a bar per phase, scaled to the largest, with steps, compactions and models under it. */
+#kbm .tvrail .spend { display: flex; flex-direction: column; gap: 8px; }
+#kbm .tvrail .spend-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+#kbm .tvrail .spend-total .big { font-size: calc(12.5px * var(--fs)); color: var(--ink-hi); }
+#kbm .tvrail .spend-flag { font-size: calc(11px * var(--fs)); color: var(--run-text); border: 1px solid color-mix(in srgb, var(--run) 45%, transparent); border-radius: 4px; padding: 0 5px; }
+#kbm .tvrail .spend-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ph v" "bar bar" "sub sub"; gap: 2px 8px; }
+#kbm .tvrail .spend-row .ph { grid-area: ph; font-size: calc(11.5px * var(--fs)); color: var(--ink-3); }
+#kbm .tvrail .spend-row .v { grid-area: v; font-size: calc(11.5px * var(--fs)); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+#kbm .tvrail .spend-row .bar { grid-area: bar; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+#kbm .tvrail .spend-row .bar i { display: block; height: 100%; background: var(--slate); }
+#kbm .tvrail .spend-row .sub { grid-area: sub; font-size: calc(11px * var(--fs)); color: var(--ink-3); overflow-wrap: anywhere; }
 #kbm .tvrail .rs .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #kbm .tvlane.sm { padding: 0 8px; }
 #kbm .tvrail .rs .row .tvlane { font-size: calc(12px * var(--fs)); padding: 2px 10px; }

@@ -41,6 +41,7 @@ STEP_KEYS = ("now", "window_s", "steps")
 
 
 TRANSITION_KEYS = ("now", "window_s", "transitions")
+SPEND_KEYS = ("now", "window_s", "spend")
 
 
 CELL_KEYS = ("now", "window_s", "cells")

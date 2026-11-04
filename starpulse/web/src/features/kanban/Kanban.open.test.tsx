@@ -46,7 +46,7 @@ beforeEach(() => {
   history.replaceState(null, "", "/");
   fetched = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    if (!url.startsWith("/api/history")) fetched.push(url);
+    if (!url.startsWith("/api/history") && !url.startsWith("/api/analytics")) fetched.push(url);
     return { ok: true, json: async () => ({ record }) };
   }));
   host = document.body.appendChild(document.createElement("div"));

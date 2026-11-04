@@ -10,6 +10,7 @@ import { columnsOf } from "../features/kanban/kanbanModel";
 import type { LaneStep } from "../features/level/trace";
 import type { FlowSnapshot, LedgerRow, Machine, RawTask, Roles, Snapshot } from "../api";
 import { criteriaBlock, demoCriteria } from "./demoCriteria";
+import { demoSpend } from "./demoSpend";
 import type { TaskRecord } from "../features/kanban/taskViewModel";
 import { demoServer as installed, embedded, setDemoServer } from "./host";
 
@@ -231,6 +232,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/rating": (server, _path, _query, init) => server.rate(String(init?.body ?? "{}")),
   "/api/scheduler": (server, _path, _query, init) => server.scheduler(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/harnesses": () => json(HARNESSES),
+  "/api/analytics": (server, path) => (path === "/api/analytics/spend" ? json(demoSpend(server.snapshot)) : json({ error: `This demo does not serve ${path}.` }, 404)),
   "/api/milestones": (_server, path) => json({ milestone: demoMilestone(decodeURIComponent(path.slice("/api/milestones/".length))) }),
   "/api/docs": (_server, path) => {
     const id = decodeURIComponent(path.slice("/api/docs/".length));

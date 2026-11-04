@@ -96,6 +96,7 @@ from starpulse.contracts.api.dto.transitions import (
     Estimates,
     FlowGraph,
     RunDiffs,
+    Spend,
     SubStages,
     Transitions,
 )
@@ -123,6 +124,7 @@ class ApiContract(_Api):
     sessions: Sessions
     sessionSteps: SessionSteps
     transitions: Transitions
+    spend: Spend
     cells: Cells
     estimates: Estimates
     graph: FlowGraph

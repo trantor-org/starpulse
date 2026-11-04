@@ -21,6 +21,7 @@ from starpulse.flow_metrics.model.cells import cell_report, combine_cost, estima
 from starpulse.flow_metrics.model.flow import combine_cost_to_go, combine_diff, combine_edges, combine_stages
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
 from starpulse.flow_metrics.model.session_health import combine_health, slice_health
+from starpulse.flow_metrics.model.spend import spend_report
 from starpulse.flow_metrics.model.steps import combine_steps
 from starpulse.machine_engine.model.stays import lane_stays
 from starpulse.views.model.encoding import encode, encode_rows
@@ -390,6 +391,29 @@ def transitions_response(
     return _kind_size_response(
         telemetry, query, now, "transitions", lambda held, _: combine_cost(held["cost"], titled())
     )
+
+
+def spend_response(
+    telemetry: SignalFoldReader | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    now: float,
+    analytics: Analytics | None = None,
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/spend`: each task's tokens by phase (`spend.spend_report`) over the
+    last `hours`, read from the window's sessions; refusals as `steps_response`."""
+    window = _hours(query, "hours", _HEALTH_HOURS)
+    if window is None:
+        return _error("hours must be a positive number"), 400
+    if telemetry is None:
+        return _error("this instance receives no harness telemetry, so it cannot report spend"), 501
+    held = _held_folds(telemetry, window, "spend", now, "spend")
+    if isinstance(held, tuple):
+        return held
+    found = [signal for group in telemetry.sessions(now - window * 3600) for signal in group]
+    report = spend_report(found, keys, titled(), analytics)
+    return encode("spend", {"now": now, "window_s": window * 3600, "spend": report}), 200
 
 
 def cells_response(

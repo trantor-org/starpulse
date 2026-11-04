@@ -188,3 +188,17 @@ def test_estimates_carry_each_completed_tasks_label_beside_its_measured_effort(t
         "TASK-2": (4, 0.0, 3, 1),
     }
     assert [r["task"] for r in one[1]["estimates"]] == ["TASK-1"]
+
+
+def test_the_spend_report_lists_each_tasks_phases_with_no_norm_for_an_unlabelled_task(server: PageServer) -> None:
+    status, body = _get(server, "spend", "?hours=1.06")
+
+    (row,) = body["spend"]
+    assert (status, body["now"], body["window_s"]) == (200, NOW, 1.06 * 3600)
+    assert (row["task"], row["phase"], row["steps"], row["kind"], row["size"]) == ("TASK-1", "implement", 3, None, None)
+    assert (row["wte"], row["task_wte"], row["norm_wte"], row["above_norm"]) == (
+        pytest.approx(50645.95),
+        pytest.approx(50645.95),
+        None,
+        False,
+    )

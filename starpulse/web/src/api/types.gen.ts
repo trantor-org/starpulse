@@ -97,6 +97,7 @@ export interface ApiContract {
   sessionSteps: SessionSteps;
   sessions: Sessions;
   snapshot: Snapshot;
+  spend: Spend;
   stages: SubStages;
   taskEventHistory: TaskEventHistory;
   taskRecord: TaskRecord;
@@ -2756,6 +2757,73 @@ export interface Roles {
    * Where a session works a task.
    */
   working?: string | null;
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/analytics/spend`: each task's tokens by phase, oldest task first, Codex left out.
+ */
+export interface Spend {
+  now: number;
+  spend: SpendPhase[];
+  window_s: number;
+  [k: string]: unknown;
+}
+/**
+ * One phase of one task: the tokens its steps burned, and the task's total against its cell's norm.
+ */
+export interface SpendPhase {
+  /**
+   * `task_wte` is over three times `norm_wte`.
+   */
+  above_norm: boolean;
+  cache_read: number;
+  cache_write: number;
+  /**
+   * The compactions that fell in the phase.
+   */
+  compactions: number;
+  first_at: number;
+  input: number;
+  /**
+   * The task's `kind-*` label, without the prefix; null when it has none.
+   */
+  kind: string | null;
+  last_at: number;
+  models: string[];
+  /**
+   * The median `task_wte` of the task's kind and size; null under five tasks in the cell.
+   */
+  norm_wte: number | null;
+  output: number;
+  /**
+   * The most input, cache-read and cache-write tokens one request held.
+   */
+  peak_context: number;
+  /**
+   * `claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.
+   */
+  phase: string;
+  /**
+   * The subagents' share of `steps`.
+   */
+  side_steps: number;
+  /**
+   * The task's `size-*` label; null when it has none.
+   */
+  size: number | null;
+  /**
+   * Model requests, a subagent's included.
+   */
+  steps: number;
+  task: string;
+  /**
+   * `wte` summed over the task's phases.
+   */
+  task_wte: number;
+  /**
+   * Uncached input + 1.25 x cache write + 0.1 x cache read + 5 x output.
+   */
+  wte: number;
   [k: string]: unknown;
 }
 /**
