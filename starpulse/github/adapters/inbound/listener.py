@@ -15,7 +15,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound import verdicts as metrics
 from starpulse.github.adapters.outbound.inbox import Migrate, SqlInbox
 from starpulse.github.model.delivery import UNVERIFIED, Delivery, Refusal, admit, declared_length
@@ -103,7 +102,7 @@ def bind(settings: GitHub, secret: bytes, inbox: Inbox) -> ThreadingHTTPServer:
     return ThreadingHTTPServer((settings.host, settings.port), _handler(settings, secret, inbox, metrics.Verdicts()))
 
 
-def start(config: Any, base: Path, stop: StopEvent, migrate: Migrate) -> Callable[[], None]:
+def start(config: Any, base: Path, stop: threading.Event, migrate: Migrate) -> Callable[[], None]:
     """The `github` context: serve `[github]` on threads until `stop` is set, which closes the listener. `migrate` builds the
     inbox's schema.
 
