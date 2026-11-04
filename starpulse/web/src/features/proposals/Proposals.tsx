@@ -1,9 +1,12 @@
 // The Proposals view: the tasks agents proposed and the operator has not yet decided, in two sections by the triage marker
-// (Pre-approved, then Unapproved), searchable and groupable like the Kanban. Each card shows the title, why, kind, size, profile and
+// (Pre-approved, then Unapproved), each a tier list: one row per priority, milestone or kind, a horizontal strip of cards.
+// Search draws in the navigator's left panel. Each card shows the title, why, kind, size, profile and
 // model, the triage verdict with its reason, filing session and duplicate resolution; Promote moves it to Ready under the chosen
 // profile and Drop archives it. Proposed tasks are drawn here and never on the Kanban.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch } from "../../api/apiFetch";
+import { SearchClear } from "../../shared/SearchClear";
 import type { Roles } from "../../api";
 import type { KanbanTask } from "../kanban/kanbanModel";
 import type { Reply } from "../kanban/move";
@@ -28,6 +31,8 @@ interface Props {
   roles: Roles;
   profiles: string[];
   harnesses?: Harnesses;
+  /** The navigator's search slot: where the search box draws, in the left panel; the view's own header holds it when there is none or the panel is hidden. */
+  searchSlot?: HTMLElement | null;
   fetcher?: typeof apiFetch;
 }
 
@@ -44,7 +49,7 @@ const SECTIONS = [
   { key: "unapproved", title: "Unapproved", empty: "Nothing awaiting triage" },
 ] as const;
 
-export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, fetcher = apiFetch }: Props) {
+export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, searchSlot = null, fetcher = apiFetch }: Props) {
   const proposals = proposedOf(cards, roles);
   const ids = proposals.map((p) => p.id).join(" ");
   const [details, setDetails] = useState<Record<string, Detail>>({});
@@ -52,8 +57,9 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, fe
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [refused, setRefused] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
-  const [by, setBy] = useState<GroupBy>("none");
+  const [by, setBy] = useState<GroupBy>("priority");
   const [sort, setSort] = useState<SortBy>("newest");
+  const searchBox = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -85,7 +91,7 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, fe
   const card = (p: KanbanTask) => {
     const detail = details[p.id];
     const { why, duplicate } = sectionsOf(detail?.description ?? p.description ?? "");
-    const current = detail?.profile ?? p.profile ?? "";
+    const current = detail?.profile || p.profile || "";
     const profile = chosen[p.id] ?? current;
     const options = profile && !profiles.includes(profile) ? [profile, ...profiles] : profiles;
     const model = modelOf(current, harnesses);
@@ -99,7 +105,7 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, fe
           {kind && <span className="chip kind">{kind}</span>}
           {size && <span className="chip size">size {size}</span>}
           {detail?.priority && <span className={`chip pri ${detail.priority}`}>{detail.priority}</span>}
-          {current && <span className="chip profile">{current}</span>}
+          <span className={`chip profile${current ? "" : " none"}`}>{current || "no profile"}</span>
           {model && <span className="chip model">{model}</span>}
         </div>
         <div className={`verdict${isPreapproved(p) ? " ok" : ""}`}>
@@ -129,14 +135,26 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, fe
     );
   };
 
+  const searchInput = (
+    <input type="search" id="ppq" ref={searchBox} aria-label="Search proposals" placeholder="Search title, description, ID" autoComplete="off" spellCheck={false}
+      value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
+  );
+
   return (
     <div id="proposals">
+      {searchSlot && createPortal(
+        <div className="fw">{searchInput}<SearchClear input={searchBox} value={query} clear={() => setQuery("")} /></div>,
+        searchSlot,
+      )}
       <div className="hd">
         <h1 className="ttl">Proposals</h1>
         <span className="ct">{proposals.length}</span>
         <div className="tools">
-          <input type="search" aria-label="Search proposals" placeholder="Search title, description, ID" value={query}
-            onChange={(e) => setQuery(e.target.value)} />
+          {!searchSlot && searchInput}
+          {searchSlot && (
+            <input type="search" className="mq" aria-label="Search proposals" placeholder="Search title, description, ID" autoComplete="off" spellCheck={false}
+              value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
+          )}
           <select aria-label="Group by" value={by} onChange={(e) => setBy(e.target.value as GroupBy)}>
             <option value="none">No grouping</option>
             <option value="milestone">Group by milestone</option>
@@ -159,9 +177,9 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, fe
             <div className="sh"><h2>{title}</h2><span className="ct">{inSection.length}</span></div>
             {inSection.length === 0 && <p className="none">{empty}</p>}
             {groupsOf(inSection, by, sort, details).map((g) => (
-              <div className="group" key={g.label}>
-                {g.label && <h3 className="grp">{g.label}</h3>}
-                <div className="grid">{g.cards.map(card)}</div>
+              <div className={`group${g.label ? "" : " flat"}`} key={g.label}>
+                {g.label && <h3 className="grp"><span className="lb">{g.label}</span><span className="ct">{g.cards.length}</span></h3>}
+                <div className="strip">{g.cards.map(card)}</div>
               </div>
             ))}
           </section>

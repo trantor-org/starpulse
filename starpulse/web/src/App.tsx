@@ -69,6 +69,8 @@ export function App() {
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
   // and the Jobs view's filter draws in the same section, above the run-pressure cards
   const [dgSlot, setDgSlot] = useState<HTMLElement | null>(null);
+  // and the Proposals view's search draws there too
+  const [propSlot, setPropSlot] = useState<HTMLElement | null>(null);
   // and its milestone outline draws in the outline slot below it, where Layers draw on the Star Map
   const [outlineSlot, setOutlineSlot] = useState<HTMLElement | null>(null);
   // and the drill-in's In Progress task list draws in its own section there while it is open
@@ -175,7 +177,7 @@ export function App() {
   return (
     <>
       {!held && <canvas ref={canvas} id="c" />}
-      <Navigator shell={shell} hud={hud} view={view} phone={phone} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
+      <Navigator shell={shell} hud={hud} view={view} phone={phone} slot={setSearchSlot} dgSlot={setDgSlot} propSlot={setPropSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
       {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && hud.capabilities?.create && (
@@ -193,7 +195,7 @@ export function App() {
         </Suspense>
       </Kept>
       <Kept name="proposals" on={view === "proposals"} warm={drawn}>
-        <Suspense fallback={null}><Proposals cards={hud.cards} roles={hud.roles} profiles={view === "proposals" ? profilesOf(started.harnesses) : []} harnesses={started.harnesses} /></Suspense>
+        <Suspense fallback={null}><Proposals cards={hud.cards} roles={hud.roles} profiles={view === "proposals" ? profilesOf(started.harnesses) : []} harnesses={started.harnesses} searchSlot={propSlot} /></Suspense>
       </Kept>
       <Kept name="jobs" on={view === "jobs"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
       <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
@@ -272,8 +274,8 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
   );
 }
 
-function NavigatorBody({ hud, view, phone, slot, dgSlot, outlineSlot, drillSlot, choose, open, spot, selectTask }: {
-  hud: HudState; view: ViewName; phone: boolean; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
+function NavigatorBody({ hud, view, phone, slot, dgSlot, propSlot, outlineSlot, drillSlot, choose, open, spot, selectTask }: {
+  hud: HudState; view: ViewName; phone: boolean; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; propSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
   /** While the drill-in is open, the section its In Progress task list draws in, in place of the view's own lower sections. */
   drillSlot?: ((el: HTMLElement | null) => void) | null;
@@ -352,9 +354,9 @@ function NavigatorBody({ hud, view, phone, slot, dgSlot, outlineSlot, drillSlot,
           <span className="n">{hud.dags.length || ""}</span>
         </button>
       </section>
-      {view !== "admin" && view !== "proposals" && (
+      {view !== "admin" && (
         <section className="away has-x search">
-          {view === "kanban" ? <div key="kb" ref={slot} /> : view === "jobs" ? <div key="dg" ref={dgSlot} /> : <>
+          {view === "kanban" ? <div key="kb" ref={slot} /> : view === "jobs" ? <div key="dg" ref={dgSlot} /> : view === "proposals" ? <div key="pp" ref={propSlot} /> : <>
             <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States and lifecycle machines" aria-label="Search tasks, States and lifecycle machines" autoComplete="off" value={query}
               onChange={(e) => { setQuery(e.target.value); spot(null); }}
               onKeyDown={(e) => {

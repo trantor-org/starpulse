@@ -5,7 +5,7 @@ import type { Roles } from "../../api";
 import type { KanbanTask } from "../kanban/kanbanModel";
 import { postMove, type Reply } from "../kanban/move";
 import type { Harnesses } from "../kanban/start";
-import type { TaskComment } from "../kanban/taskViewModel";
+import { PRIORITIES as KANBAN_PRIORITIES, type TaskComment } from "../kanban/taskViewModel";
 
 /** The label the hourly triage puts on a Proposed task it pre-approved, and the prefix of the comment that records why (TASK-11161). */
 export const PREAPPROVED_LABEL = "triage-preapproved";
@@ -91,7 +91,7 @@ export type GroupBy = "none" | "milestone" | "priority" | "kind";
 export type SortBy = "newest" | "oldest" | "priority";
 export interface Group { label: string; cards: KanbanTask[] }
 
-const PRIORITIES = ["high", "medium", "low"];
+const PRIORITIES = KANBAN_PRIORITIES.map((level) => level.toLowerCase());
 const rank = (priority: string | undefined): number => {
   const at = PRIORITIES.indexOf(priority ?? "");
   return at < 0 ? PRIORITIES.length : at;
