@@ -184,3 +184,18 @@ def test_scores_for_a_repo_filter_return_rows_from_a_server_whose_snapshot_settl
     scored = agent_cli._scores(args, {})
 
     assert [(row["kind"], row["size"], row["n"]) for row in scored["scores"]] == [("execute", 5, 1)]
+
+
+def test_pull_facts_read_every_page_of_events() -> None:
+    noise = [{"event": "labeled", "created_at": "2026-01-01T01:00:00Z"}] * 100
+    ready = [{"event": "ready_for_review", "created_at": "2026-01-01T22:00:00Z"}]
+    answers = {
+        "/repos/o/r/pulls/7": {"merged_at": "2026-01-02T22:00:00Z", "created_at": "2026-01-01T00:00:00Z"},
+        "/repos/o/r/issues/7/events?per_page=100": {"items": noise},
+        "/repos/o/r/issues/7/events?per_page=100&page=2": {"items": ready},
+        "/repos/o/r/pulls/7/commits?per_page=100": {"items": []},
+    }
+
+    facts = pull_facts(lambda method, path, body: (200, answers[path]), "o/r", 7)
+
+    assert facts == PullFacts(0, 24.0)
