@@ -107,6 +107,18 @@ class TestMachineValidate:
         assert error["file"] == str(broken)
         assert "undeclared state 'gone'" in error["message"]
 
+    def test_an_empty_file_is_reported_as_not_a_machine_definition(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        machine = tmp_path / "empty.yaml"
+        machine.write_text("")
+
+        code, document = _run(capsys, ["machine", "validate", str(machine)])
+
+        assert (code, document["ok"]) == (1, False)
+        (error,) = document["machines"][0]["errors"]
+        assert error["file"] == str(machine)
+
     def test_a_yaml_syntax_error_names_its_line(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         machine = tmp_path / "flow.yaml"
         machine.write_text("name: flow\nstates: [unclosed\n")
