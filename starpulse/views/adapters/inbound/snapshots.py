@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 #: The longest (seconds) a warm snapshot is served while the feed has not changed.
 IDLE_REFRESH_S = 30.0
 
+#: The warmer sleeps this many times as long as its last build took, so it holds at most a fifth of a core: on a host
+#: past its CPU a build takes seconds, and rebuilding every `refresh_s` took a quarter of the API worker's CPU.
+WARM_IDLE_PER_BUILD = 4.0
+
 
 class Served(NamedTuple):
     #: The feed revision the snapshot was taken at.
@@ -52,6 +56,8 @@ class Snapshots:
         self._builds = 0
         self._build_s = 0.0
         self._refresh_s = refresh_s
+        #: The seconds between warm builds: `refresh_s`, or longer while a build takes longer than a fifth of it.
+        self._interval_s = refresh_s
         self._clock = clock
         #: The newest snapshot built, when `refresh_s` > 0; builds run one at a time under `_building`.
         self._warm: _Warm | None = None
@@ -110,7 +116,7 @@ class Snapshots:
 
     def keep_warm(self, stop: StopEvent) -> None:
         """Run `refresh` every `refresh_s` until `stop`: the warm snapshot trails the feed by about that long."""
-        while not stop.wait(self._refresh_s):
+        while not stop.wait(self._interval_s):
             try:
                 self.refresh()
             except Exception:
@@ -118,18 +124,19 @@ class Snapshots:
 
     def _current(self) -> _Warm | None:
         """The warm snapshot if it is unchanged since the feed's last publish and under `IDLE_REFRESH_S` old, or
-        under two refreshes old (the warmer is about to replace it)."""
+        under two intervals old (the warmer is about to replace it)."""
         warm = self._warm
         if warm is None:
             return None
         age = self._clock() - warm.at
-        if age <= 2 * self._refresh_s or (warm.served.rev == self._feed.rev and age < IDLE_REFRESH_S):
+        if age <= 2 * self._interval_s or (warm.served.rev == self._feed.rev and age < IDLE_REFRESH_S):
             return warm
         return None
 
     def _store(self) -> _Warm:
         taken = self._clock()
         served, encoded = self._encode()
+        self._interval_s = max(self._refresh_s, WARM_IDLE_PER_BUILD * (self._clock() - taken))
         self._warm = warm = _Warm(taken, served, encoded)
         return warm
 
