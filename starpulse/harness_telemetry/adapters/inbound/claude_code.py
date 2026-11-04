@@ -45,6 +45,7 @@ from starpulse.contracts.signals import Signal
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
+from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.adapters.outbound import step_seconds
 from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
 from starpulse.harness_telemetry.model.harness import HARNESS
@@ -137,7 +138,7 @@ def bind(settings: ClaudeCode, config: Any, log: EventLog) -> ThreadingHTTPServe
     )
 
 
-def start(config: Any, log: EventLog, stop: threading.Event) -> Callable[[], None]:
+def start(config: Any, log: EventLog, stop: StopEvent) -> Callable[[], None]:
     """The `claude-code` context: serve `[claude_code]` on threads until `stop` is set, which closes the listener.
 
     Raises `ValueError` without the table or with a redactor that cannot be loaded, and `OSError` when the address is

@@ -21,6 +21,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import History
 from starpulse.scheduler.adapters.remote import follow_wakes, publisher
 from starpulse.scheduler.adapters.runtime import Runtime
@@ -55,7 +56,7 @@ class Scheduler:
         self._delivered = delivered
         self._built = (base, board, feed, log, history)
         self._probe = probe
-        self._stop = threading.Event()
+        self._stop = StopEvent()
         self._wakes = threading.Event()
         self.runtime: Runtime | None = None
 
@@ -63,7 +64,7 @@ class Scheduler:
         """Start the sampler and the loop of the running config, each ending when `stop` is called, and wake the loop
         for each setting `serve` writes."""
         base, board, feed, log, history = self._built
-        self._stop = stop = threading.Event()
+        self._stop = stop = StopEvent()
         self.runtime = start_scheduler(
             self._config,
             base,
@@ -119,7 +120,7 @@ def start(
     path: Path | None,
     base: Path,
     log: EventLog,
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     load: Callable[[Path | None], SchedulerConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
@@ -171,7 +172,7 @@ def main(
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
     log = EventLog(database_url(config.database_url, base))
-    stop = threading.Event()
+    stop = StopEvent()
     try:
         reload_config = start(
             config,

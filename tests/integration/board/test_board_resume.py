@@ -12,6 +12,7 @@ from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import events
+from starpulse.event_log.wake import StopEvent
 
 STREAM = "board:tasks"
 
@@ -34,8 +35,8 @@ def run() -> Iterator[Callable[[BoardFeed, EventLog], list[str]]]:
             feed.put(BoardTask(id=fields["id"], team="demo", title=fields["id"], lane=fields["lane"]))
             feed.seen(entry_id)
 
-        stops.append(threading.Event())
-        follow(feed, log, STREAM, handle, stop=stops[-1], interval=0.01)
+        stops.append(StopEvent())
+        follow(feed, log, STREAM, handle, stop=stops[-1])
         assert feed.ready.wait(5), "the feed never became ready"
         return handled
 

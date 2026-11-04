@@ -1,6 +1,5 @@
 """The event log's rules on SQLite: fail-open append, replay and resume by cursor, retention and gaps."""
 
-import gc
 import gzip
 import json
 import logging
@@ -15,18 +14,23 @@ import pytest
 from sqlalchemy import create_engine, event, inspect, text, update
 from sqlalchemy.exc import OperationalError
 from starpulse.event_log.event_log import (
-    DEFAULT_POLL_INTERVAL,
     EventLog,
     Tail,
     _sqlite_pragmas,
 )
 from starpulse.event_log.migrate import migrate
 from starpulse.event_log.tables import events
+from starpulse.event_log.wake import StopEvent
 
 
 @pytest.fixture
 def log(tmp_path: Path) -> EventLog:
     return EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+
+
+@pytest.fixture(autouse=True)
+def quick_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("starpulse.event_log.event_log.RETRY_DELAY", 0.01)
 
 
 @pytest.fixture
@@ -234,19 +238,15 @@ def test_a_prune_removes_only_rows_older_than_the_retention(log: EventLog, archi
     assert [e.fields["n"] for e in Tail.replay(log, "a").poll()] == ["new"]
 
 
-def test_a_tail_defaults_to_the_fallback_poll_interval(log: EventLog) -> None:
-    assert Tail.replay(log, "a").interval == DEFAULT_POLL_INTERVAL
-
-
 class _RunningTail:
-    """A tail running on a thread with a long interval, so only a wake-up can deliver an entry in time."""
+    """A tail running on a thread that waits on no timer, so only a wake-up can deliver an entry."""
 
-    def __init__(self, log: EventLog, interval: float = 30.0) -> None:
+    def __init__(self, log: EventLog) -> None:
         self.arrived = threading.Event()
         self.entries: list = []
-        self.stop = threading.Event()
+        self.stop = StopEvent()
         self.first_poll = threading.Event()
-        self.tail = Tail.replay(log, "a", interval=interval)
+        self.tail = Tail.replay(log, "a")
         poll = self.tail.poll
 
         def polled() -> list:
@@ -272,18 +272,16 @@ class _RunningTail:
         self.thread.join(timeout=5)
 
 
-def test_an_append_in_this_process_reaches_a_waiting_tail_before_its_interval(log: EventLog) -> None:
+def test_an_append_in_this_process_reaches_a_waiting_tail(log: EventLog) -> None:
     with _RunningTail(log) as running:
-        started = time.monotonic()
         log.publish("a", {"n": "1"})
 
         assert running.arrived.wait(timeout=2)
-        assert time.monotonic() - started < 2  # the interval is 30 s
 
     assert [e.fields["n"] for e in running.entries] == ["1"]
 
 
-def test_an_append_through_another_connection_reaches_a_waiting_tail_before_its_interval(
+def test_an_append_through_another_connection_reaches_a_waiting_tail(
     log: EventLog, tmp_path: Path
 ) -> None:
     other = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
@@ -295,34 +293,18 @@ def test_an_append_through_another_connection_reaches_a_waiting_tail_before_its_
     assert [e.fields["n"] for e in running.entries] == ["elsewhere"]
 
 
-def test_a_log_dropped_by_its_owner_ends_the_commit_watch_it_started(tmp_path: Path) -> None:
-    before = set(threading.enumerate())
-    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    log.appends  # starts the commit watch
-
-    watches = [t for t in threading.enumerate() if t not in before and t.name == "eventlog-data-version"]
-    assert watches
-
-    del log
-    gc.collect()
-    for watch in watches:
-        watch.join(timeout=2)
-
-    assert not any(watch.is_alive() for watch in watches)
-
-
 def test_a_commit_elsewhere_after_appends_is_read_ends_the_wait_that_follows(log: EventLog, tmp_path: Path) -> None:
     other = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     log.engine
     seen = log.appends
     other.publish("a", {"n": "between"})
 
-    log.wait_for_append(seen, timeout=2, stop=threading.Event())
+    log.wait_for_append(seen, StopEvent())
 
     assert log.appends != seen
 
 
-def test_setting_stop_ends_a_tail_waiting_out_a_long_interval(log: EventLog) -> None:
+def test_setting_stop_ends_a_tail_waiting_for_an_append(log: EventLog) -> None:
     with _RunningTail(log) as running:
         started = time.monotonic()
         running.stop.set()
@@ -332,16 +314,15 @@ def test_setting_stop_ends_a_tail_waiting_out_a_long_interval(log: EventLog) -> 
         assert time.monotonic() - started < 2
 
 
-def test_an_idle_tail_issues_one_log_query_per_interval(log: EventLog) -> None:
+def test_an_idle_tail_issues_no_log_query_while_it_waits(log: EventLog) -> None:
     statements: list[str] = []
     event.listen(log.engine, "before_cursor_execute", lambda _c, _cur, statement, *_a: statements.append(statement))
-    interval, window = 0.3, 1.2
 
-    with _RunningTail(log, interval=interval):
+    with _RunningTail(log):
         statements.clear()
-        time.sleep(window)
+        time.sleep(0.5)
 
-    assert len(statements) <= window / interval + 1
+    assert statements == []
 
 
 @pytest.mark.parametrize("appended", [False, True])
@@ -363,7 +344,7 @@ def test_the_sqlite_log_is_in_wal_mode_so_other_processes_append_while_a_reader_
 def test_run_hands_each_entry_to_the_handler_and_stops_when_asked(log: EventLog) -> None:
     for n in range(3):
         log.publish("a", {"n": str(n)})
-    stop = threading.Event()
+    stop = StopEvent()
     seen: list[int] = []
 
     def handle(entry) -> None:
@@ -371,7 +352,7 @@ def test_run_hands_each_entry_to_the_handler_and_stops_when_asked(log: EventLog)
         if len(seen) == 3:
             stop.set()
 
-    Tail.replay(log, "a", interval=0.01).run(handle, stop)
+    Tail.replay(log, "a").run(handle, stop)
 
     assert seen == [1, 2, 3]
 
@@ -381,7 +362,7 @@ def test_run_keeps_polling_after_a_failed_poll_and_after_a_failing_handler(
 ) -> None:
     log.publish("a", {"n": "1"})
     log.publish("a", {"n": "2"})
-    tail = Tail.replay(log, "a", interval=0.01)
+    tail = Tail.replay(log, "a")
     real_poll = tail.poll
     calls = {"n": 0}
 
@@ -392,7 +373,7 @@ def test_run_keeps_polling_after_a_failed_poll_and_after_a_failing_handler(
         return real_poll()
 
     monkeypatch.setattr(tail, "poll", flaky_poll)
-    stop = threading.Event()
+    stop = StopEvent()
     seen: list[int] = []
 
     def handle(entry) -> None:
@@ -412,7 +393,7 @@ def test_run_logs_one_traceback_per_exception_type_and_counts_the_rest(
     for n in range(5):
         log.publish("a", {"n": str(n)})
     log.publish("a", {"n": "key"})
-    stop = threading.Event()
+    stop = StopEvent()
 
     def handle(entry) -> None:
         if entry.fields["n"] == "key":
@@ -421,7 +402,7 @@ def test_run_logs_one_traceback_per_exception_type_and_counts_the_rest(
         raise ValueError("poison")
 
     with caplog.at_level(logging.WARNING, logger="starpulse.event_log.event_log"):
-        Tail.replay(log, "a", interval=0.01).run(handle, stop)
+        Tail.replay(log, "a").run(handle, stop)
 
     records = [r for r in caplog.records if r.name == "starpulse.event_log.event_log"]
     tracebacks = [r for r in records if r.exc_info]
@@ -432,7 +413,7 @@ def test_run_logs_one_traceback_per_exception_type_and_counts_the_rest(
     assert "ValueError" in summaries[0]
 
 
-class _RecordingStop(threading.Event):
+class _RecordingStop(StopEvent):
     """A stop event whose waits return at once, recording each timeout, and that sets itself after `limit` waits."""
 
     def __init__(self, limit: int) -> None:
@@ -451,7 +432,7 @@ def test_run_backs_off_while_polls_fail_and_warns_once_per_outage(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setattr("starpulse.event_log.event_log.MAX_POLL_BACKOFF", 0.08)
-    tail = Tail.replay(log, "a", interval=0.01)
+    tail = Tail.replay(log, "a")
     outcomes = iter([*[RuntimeError("no such table starpulse_events")] * 6, [], *[RuntimeError("down again")] * 2])
 
     def scripted_poll():
@@ -461,7 +442,7 @@ def test_run_backs_off_while_polls_fail_and_warns_once_per_outage(
         return outcome
 
     monkeypatch.setattr(tail, "poll", scripted_poll)
-    monkeypatch.setattr(log, "wait_for_append", lambda seen, interval, stop: stop.wait(interval))
+    monkeypatch.setattr(log, "wait_for_append", lambda seen, stop: stop.wait(0.01))
     stop = _RecordingStop(limit=9)
 
     with caplog.at_level("INFO", logger="starpulse.event_log.event_log"):
@@ -486,7 +467,7 @@ def test_last_is_the_newest_cursor_of_one_stream_and_none_when_it_has_no_rows(lo
 def test_run_reads_an_entry_again_when_its_handler_fails_with_a_transient_error(log: EventLog) -> None:
     log.publish("a", {"n": "1"})
     log.publish("a", {"n": "2"})
-    stop = threading.Event()
+    stop = StopEvent()
     seen: list[int] = []
 
     def handle(entry) -> None:
@@ -496,7 +477,7 @@ def test_run_reads_an_entry_again_when_its_handler_fails_with_a_transient_error(
         if len(seen) == 3:
             stop.set()
 
-    Tail.replay(log, "a", interval=0.01).run(handle, stop, transient=(OperationalError,))
+    Tail.replay(log, "a").run(handle, stop, transient=(OperationalError,))
 
     assert seen == [1, 2, 2]
 

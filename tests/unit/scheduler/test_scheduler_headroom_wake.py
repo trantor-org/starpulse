@@ -13,6 +13,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.scheduler.adapters.runtime import build
 from starpulse.scheduler.model.config import Scheduler
@@ -57,7 +58,7 @@ def test_a_task_refused_for_headroom_starts_when_a_sample_leaves_room_with_nothi
     runtime.set_enabled(True)
     runtime.sampler.sample()  # the baseline
     _, changes = feed.subscribe()
-    stop = threading.Event()
+    stop = StopEvent()
     thread = threading.Thread(target=runtime.loop.run_forever, args=(stop,), daemon=True)
     thread.start()
     try:

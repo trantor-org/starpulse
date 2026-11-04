@@ -11,6 +11,7 @@ from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.adapter_kit import serve, url
 
 from tests.machines import MACHINES, ROLES
@@ -70,7 +71,7 @@ def test_the_history_the_log_holds_is_counted_per_machine_before_the_first_scrap
     for task in ("T-1", "T-1", "T-3"):
         machine_events.publish("review", "MERGE", actor="a", task=task, log=log)
     monitor = Conformance({"board": BOARD, "review": REVIEW, "idle": REVIEW})
-    stop = threading.Event()
+    stop = StopEvent()
     monitor.follow(log, stop)
     _wait_for(monitor, f'{VIOLATIONS}{{machine="board"}} 1', f'{JUDGED}{{machine="review"}} 3')
 
@@ -103,7 +104,7 @@ def test_follow_returns_before_the_retained_log_is_read_and_counts_it_once_read(
 
     monkeypatch.setattr(Tail, "poll", held_poll)
     monitor = Conformance({"board": BOARD})
-    stop = threading.Event()
+    stop = StopEvent()
     try:
         monitor.follow(log, stop)
         # `follow` returned while the retained log is held unread: the startup does not wait on it
@@ -119,7 +120,7 @@ def test_follow_returns_before_the_retained_log_is_read_and_counts_it_once_read(
 def test_a_move_appended_after_the_scrape_started_is_counted_live(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'ic.sqlite'}")
     monitor = Conformance({"board": BOARD})
-    stop = threading.Event()
+    stop = StopEvent()
     monitor.follow(log, stop)
 
     _lane(log, "T-9", "to_do", 1.0)

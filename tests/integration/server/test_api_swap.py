@@ -11,6 +11,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
+from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.closure import SELF, Reading
 from starpulse.runtime.supervisor import Supervisor
 
@@ -45,7 +46,7 @@ def test_the_swapped_api_child_answers_every_request_made_across_the_swap(
     command = [sys.executable, "-m", "starpulse", "worker", "api", "--config", str(config), "--hours", "6"]
     answered: list[int] = []
     failed: list[BaseException] = []
-    halt = threading.Event()
+    halt = StopEvent()
 
     def get(port: int) -> int:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/snapshot", timeout=60) as resp:

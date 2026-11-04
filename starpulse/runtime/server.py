@@ -198,6 +198,7 @@ from starpulse.board.model.seam import (
 )
 from starpulse.cli import doctor
 from starpulse.event_log import events as machine_events
+from starpulse.event_log.wake import StopEvent
 from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance
 from starpulse.flow_metrics.model.level import Level
@@ -345,7 +346,7 @@ def announce(port: int, hint: str | None) -> None:
         print(hint, flush=True)
 
 
-def scheduler_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog, stop: threading.Event) -> Remote:
+def scheduler_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog, stop: StopEvent) -> Remote:
     """The scheduler `serve` answers `/api/scheduler` from: the `Remote` that reads the status the scheduler worker
     publishes and writes the settings the worker reads. The loop itself runs in that worker, never in `serve`. The status
     follower runs until `stop` is set.
@@ -442,7 +443,7 @@ POLL_RESTART_S = (1.0, 60.0)  # the pull poller's first restart delay after a cr
 
 
 def keep_polling(
-    sync: PullSync, stop: threading.Event, running: threading.Event, delay_s: tuple[float, float] = POLL_RESTART_S
+    sync: PullSync, stop: StopEvent, running: threading.Event, delay_s: tuple[float, float] = POLL_RESTART_S
 ) -> None:
     """Run the pull poller until `stop`, with `running` set while it runs, starting it again after a crash with a delay
     that doubles from `delay_s[0]` to `delay_s[1]`, and logging each crash. A run that lasts the longest delay starts
@@ -470,7 +471,7 @@ def start_delivery(
     log: EventLog,
     pulls: PullStore,
     pins: GitHub,
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     after_project: Callable[[], None] | None = None,
 ) -> tuple[TaskActor | None, PullSync | None]:
@@ -544,7 +545,7 @@ def start_delivery(
 
 
 def _keep_unblocked(
-    unblocker: Unblocker, feed: BoardFeed, stop: threading.Event, interval_s: float = UNBLOCK_S
+    unblocker: Unblocker, feed: BoardFeed, stop: StopEvent, interval_s: float = UNBLOCK_S
 ) -> None:  # pragma: no mutate block
     """Once the Board replay is done, unblock the Waiting tasks whose dependencies merged every `interval_s` seconds
     until `stop`; a failed pass is logged and never ends the loop."""

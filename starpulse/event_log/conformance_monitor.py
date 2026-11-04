@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from starpulse.event_log import events, lane_events
+from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.replay import EventJudge, lane_moves
 from starpulse.machine_engine.model.transitions import tables
 
@@ -76,7 +77,7 @@ class Conformance:
                 )
             )
 
-    def follow(self, log: EventLog, stop: threading.Event) -> list[threading.Thread]:
+    def follow(self, log: EventLog, stop: StopEvent) -> list[threading.Thread]:
         """Read what `log` retains, then follow it, on a thread per stream until `stop`; the thread reads the retained part, so the caller does not wait on a long log."""
         threads = []
         for stream, handle in ((lane_events.STREAM, self.handle_lane), (events.STREAM, self.handle_event)):

@@ -19,6 +19,7 @@ from typing import Protocol
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore, record_machine_events, record_verdicts
 from starpulse.flow_metrics.bin.blocks import FlowMetricsConfig, flow_metrics_built_blocks
 
@@ -49,7 +50,7 @@ def start(
     path: Path | None,
     base: Path,
     log: EventLog,
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     load: Callable[[Path | None], FlowMetricsConfig],
     assemble: Callable[..., tuple[object, Feed]],
@@ -83,7 +84,7 @@ def main(
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
     log = EventLog(database_url(config.database_url, base))
-    stop = threading.Event()
+    stop = StopEvent()
     try:
         reload_config = start(
             config,

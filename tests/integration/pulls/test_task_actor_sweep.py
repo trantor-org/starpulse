@@ -5,6 +5,7 @@ from collections.abc import Iterator
 
 import pytest
 from sqlalchemy import create_engine
+from starpulse.event_log.wake import StopEvent
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import FLAGGED
 from starpulse.machine_engine.model.state_roles import StateRoles
@@ -23,8 +24,8 @@ def store(tmp_path) -> PullStore:
 
 
 @pytest.fixture
-def stop() -> Iterator[threading.Event]:
-    event = threading.Event()
+def stop() -> Iterator[StopEvent]:
+    event = StopEvent()
     yield event
     event.set()
 

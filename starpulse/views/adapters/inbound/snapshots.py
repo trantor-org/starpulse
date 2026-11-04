@@ -16,6 +16,7 @@ from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from starpulse.board.board_feed import BoardFeed
+from starpulse.event_log.wake import StopEvent
 from starpulse.views.adapters.inbound.compression import Encoded
 from starpulse.views.model.encoding import encode, encode_snapshot, full_snapshot
 
@@ -107,7 +108,7 @@ class Snapshots:
             if warm is None or warm.served.rev != self._feed.rev or self._clock() - warm.at >= IDLE_REFRESH_S:
                 self._store()
 
-    def keep_warm(self, stop: threading.Event) -> None:
+    def keep_warm(self, stop: StopEvent) -> None:
         """Run `refresh` every `refresh_s` until `stop`: the warm snapshot trails the feed by about that long."""
         while not stop.wait(self._refresh_s):
             try:

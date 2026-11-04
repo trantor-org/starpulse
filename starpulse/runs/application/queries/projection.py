@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import TypeAdapter, ValidationError
 
 from starpulse.contracts import Dag
+from starpulse.event_log.wake import StopEvent
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
@@ -25,8 +26,6 @@ logger = logging.getLogger(__name__)
 
 PROJECTION = "runs.projection"
 _DAGS = TypeAdapter(list[Dag])
-#: Seconds an idle tail waits for an append from another process.
-POLL_S = 1.0
 #: Seconds between looks at the Liveness of the opt-in workers, which a silent stop gives no announcement of.
 RECHECK_S = 15.0
 
@@ -148,14 +147,14 @@ class Projected:
         problem = self._watched.get(instance)
         return problem() if problem else None
 
-    def follow(self, stop: threading.Event) -> threading.Thread:
+    def follow(self, stop: StopEvent) -> threading.Thread:
         """Apply the kept reports now, then each one announced after, on a thread until `stop`."""
-        thread = self._log.follow_state(PROJECTION, self.apply, stop, interval=POLL_S, thread_name="runs-projected")
+        thread = self._log.follow_state(PROJECTION, self.apply, stop, thread_name="runs-projected")
         self.apply()
         if self._watched:
             threading.Thread(target=self._recheck, args=(stop,), name="runs-liveness", daemon=True).start()
         return thread
 
-    def _recheck(self, stop: threading.Event) -> None:
+    def _recheck(self, stop: StopEvent) -> None:
         while not stop.wait(RECHECK_S):
             self.apply()

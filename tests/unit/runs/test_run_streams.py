@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.store import EventStore
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.adapters.inbound.cloudevents import SINGLE, CloudEventsIngest
 from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
 from starpulse.runs.application.commands.run_streams import RunStreams, record_run_streams
@@ -45,8 +46,8 @@ def ingest(log: EventLog) -> CloudEventsIngest:
 
 
 def _drain(log: EventLog, streams: RunStreams) -> None:
-    stop = threading.Event()
-    reader = threading.Thread(target=record_run_streams, args=(streams, log, stop), kwargs={"interval": 0.01})
+    stop = StopEvent()
+    reader = threading.Thread(target=record_run_streams, args=(streams, log, stop))
     reader.start()
     time.sleep(0.3)
     stop.set()

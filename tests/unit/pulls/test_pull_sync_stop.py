@@ -4,6 +4,7 @@ import threading
 
 from sqlalchemy import create_engine
 from starpulse.board.board_feed import BoardFeed
+from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.outbound.pull_store import PullSync
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime import server
@@ -19,7 +20,7 @@ def _sync(stop: threading.Event, graphql=lambda repo, query: {}) -> PullSync:
 
 
 def test_a_stopped_sync_serves_no_request() -> None:
-    stop = threading.Event()
+    stop = StopEvent()
     stop.set()
     asked: list[str] = []
 
@@ -35,7 +36,7 @@ def test_a_stopped_sync_serves_no_request() -> None:
 
 
 def test_run_forever_returns_once_the_sync_is_stopped() -> None:
-    stop = threading.Event()
+    stop = StopEvent()
     sync = _sync(stop)
     thread = threading.Thread(target=sync.run_forever, daemon=True)
     thread.start()
@@ -47,7 +48,7 @@ def test_run_forever_returns_once_the_sync_is_stopped() -> None:
 
 
 def test_the_unblock_loop_returns_once_it_is_stopped() -> None:
-    stop = threading.Event()
+    stop = StopEvent()
     passes: list[bool] = []
 
     class Unblocker:

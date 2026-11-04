@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from starpulse.event_log.wake import StopEvent
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.board.claim_refusals import CLAIMS_STREAM, ClaimRefusals
 from starpulse.event_log.event_log import EventLog
@@ -24,7 +25,7 @@ def _until(done: Callable[[], bool]) -> None:
 
 @pytest.fixture
 def stop():
-    event = threading.Event()
+    event = StopEvent()
     yield event
     event.set()
 
@@ -37,7 +38,7 @@ def test_a_board_claims_entry_is_the_tasks_claim_with_its_reason_and_time(
     feed = BoardFeed(None, machines=MACHINES)
     refusals = ClaimRefusals(feed)
 
-    follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry, stop=stop, interval=0.01)
+    follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry, stop=stop)
     _until(lambda: "TASK-7" in feed.snapshot()["claims"])
 
     assert feed.snapshot()["claims"] == {"TASK-7": {"reason": "no worktree", "at": 100.5}}

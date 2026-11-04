@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from starpulse.event_log.wake import StopEvent
 from starpulse.board.board_feed import BoardFeed, follow
 from starpulse.board.verdicts import Verdicts
 from starpulse.event_log import verdict_events
@@ -44,7 +45,7 @@ def _until(done: Callable[[], bool]) -> None:
 
 @pytest.fixture
 def stop():
-    event = threading.Event()
+    event = StopEvent()
     yield event
     event.set()
 
@@ -58,10 +59,10 @@ def test_a_posted_verdict_round_trips_through_the_history_store_and_api_events(
     verdicts = Verdicts(feed)
     ingest = CloudEventsIngest({"qa": PRODUCER}, ingest_tokens([PRODUCER], {"QA_TOKEN": "s"}), log, {})
     _post(ingest, "old", "code", 1, "CHANGES", "replayed")  # before the page connects
-    follow(verdicts, log, verdict_events.STREAM, verdicts.handle_entry, stop=stop, interval=0.01)
+    follow(verdicts, log, verdict_events.STREAM, verdicts.handle_entry, stop=stop)
     _until(verdicts.ready.is_set)
     _, changes = feed.subscribe()
-    threading.Thread(target=record_verdicts, args=(store, log, stop), kwargs={"interval": 0.01}, daemon=True).start()
+    threading.Thread(target=record_verdicts, args=(store, log, stop), daemon=True).start()
 
     _post(ingest, "new", "security", 2, "PASS", "no findings")
     kind, data = changes.get(timeout=5)

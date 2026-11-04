@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from starpulse.event_log.wake import StopEvent
 from starpulse.board.board_feed import follow
 from starpulse.event_log.event_log import EventLog
 
@@ -41,7 +42,7 @@ def _until(done: Callable[[], bool]) -> None:
 
 @pytest.fixture
 def stop():
-    event = threading.Event()
+    event = StopEvent()
     yield event
     event.set()
 
@@ -54,7 +55,7 @@ def test_follow_replays_the_retained_stream_in_order_then_reads_what_is_appended
     log.publish(STREAM, {"n": "2"})
     feed, seen = _Feed(), []
 
-    follow(feed, log, STREAM, lambda entry_id, fields: seen.append((entry_id, fields["n"])), stop=stop, interval=0.01)
+    follow(feed, log, STREAM, lambda entry_id, fields: seen.append((entry_id, fields["n"])), stop=stop)
     _until(lambda: len(seen) == 2)
     log.publish(STREAM, {"n": "3"})
     _until(lambda: len(seen) == 3)
@@ -70,7 +71,7 @@ def test_follow_says_the_stream_is_not_reached_then_expects_the_last_entry_of_it
     log.publish("machine:events", {"n": "after it, on another stream"})
     feed = _Feed()
 
-    follow(feed, log, STREAM, lambda *_: None, stop=stop, interval=0.01)
+    follow(feed, log, STREAM, lambda *_: None, stop=stop)
     _until(lambda: len(feed.calls) == 2)
 
     assert feed.calls == [("await", ""), ("expect", str(last))]
@@ -81,7 +82,7 @@ def test_follow_expects_the_empty_position_when_the_log_holds_no_entry_of_it(
 ) -> None:
     feed = _Feed()
 
-    follow(feed, log, STREAM, lambda *_: None, stop=stop, interval=0.01)
+    follow(feed, log, STREAM, lambda *_: None, stop=stop)
     _until(lambda: len(feed.calls) == 2)
 
     assert feed.calls[1] == ("expect", "0")
@@ -102,7 +103,7 @@ def test_follow_keeps_trying_until_the_database_is_reachable(
     monkeypatch.setattr(log, "last", gated)
     feed, seen = _Feed(), []
 
-    follow(feed, log, STREAM, lambda entry_id, fields: seen.append(entry_id), stop=stop, interval=0.01)
+    follow(feed, log, STREAM, lambda entry_id, fields: seen.append(entry_id), stop=stop)
     _until(lambda: len(attempts) >= 3)  # it asked again after each refusal
     assert feed.calls == [("await", "")]
     reachable.set()

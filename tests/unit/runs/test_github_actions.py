@@ -19,10 +19,10 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.runs.adapters.outbound.github_actions import (
     _CONCLUSION,
     _STATUS,
-    _graph,
     RECONCILE_INTERVAL,
     GitHubRuns,
     Repository,
+    _graph,
     declares_dispatch,
     listing,
     start,
@@ -421,7 +421,7 @@ def test_following_a_repository_lists_it_then_moves_a_workflow_by_the_entries_on
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     feed = BoardFeed()
 
-    follow_repository(f"https://github.com/{REPO}", feed.runs("gh"), log, interval=0.01)
+    follow_repository(f"https://github.com/{REPO}", feed.runs("gh"), log)
     wait_until(lambda: feed.snapshot()["dags"])
     served[0] = Recorded(runs={"ci": "ci-success"})
     log.publish(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "1", "succeeded", now=time.time() + 60))
@@ -453,7 +453,7 @@ def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_
         log.publish(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "1", "succeeded", now=1.0))
     feed = BoardFeed()
 
-    follow_repository(f"https://github.com/{REPO}", feed.runs("gh"), log, interval=0.01)
+    follow_repository(f"https://github.com/{REPO}", feed.runs("gh"), log)
     wait_until(lambda: feed.snapshot()["dags"])
     log.publish(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "2", "succeeded", now=time.time() + 60))
     wait_until(lambda: handled)

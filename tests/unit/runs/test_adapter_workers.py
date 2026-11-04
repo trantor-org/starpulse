@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.adapters.outbound import dagu, github_actions, systemd
 from starpulse.runs.application.queries import projection
 from starpulse.runs.model import opt_in
@@ -194,7 +195,7 @@ def test_an_adapter_that_stops_silently_is_flagged_without_any_new_report(
     clock = [NOW]
     opt_in.beat(log, "dagu", lambda: NOW)
     feed = Feed()
-    stop = threading.Event()
+    stop = StopEvent()
     projection.Projected(log, feed, watched={"dagu": opt_in.problem(log, "dagu", lambda: clock[0])}).follow(stop)
 
     clock[0] = NOW + 120

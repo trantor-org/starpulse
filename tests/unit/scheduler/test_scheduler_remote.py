@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.runtime.config import load
 from starpulse.runtime.server import scheduler_remote
@@ -68,7 +69,7 @@ def test_remote_refuses_what_the_runtime_refuses(log: EventLog, tmp_path: Path) 
 
 def test_a_change_through_remote_wakes_the_worker(log: EventLog, tmp_path: Path) -> None:
     woken = threading.Event()
-    stop = threading.Event()
+    stop = StopEvent()
     follow_wakes(log, woken.set, stop)
 
     Remote(log).set_quiet_hours(None)
@@ -80,7 +81,7 @@ def test_a_change_through_remote_wakes_the_worker(log: EventLog, tmp_path: Path)
 def test_the_workers_status_reaches_the_serving_feed_as_an_scheduler_event(log: EventLog) -> None:
     worker_feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
     serving = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
-    stop = threading.Event()
+    stop = StopEvent()
     follow_status(log, serving, stop)
     _, changes = serving.subscribe()
 
@@ -100,7 +101,7 @@ def _next_scheduler(changes: queue.Queue) -> tuple[str, dict]:
 
 def test_a_served_scheduler_leaves_no_status_thread_once_its_stop_is_set(log: EventLog, tmp_path: Path) -> None:
     feed = BoardFeed(roles=ROLES, machines={**MACHINES, **SESSION_MACHINES})
-    stop = threading.Event()
+    stop = StopEvent()
     (tmp_path / "starpulse.toml").write_text("")
     scheduler_remote(load(tmp_path / "starpulse.toml"), tmp_path, feed, log, stop)
     followers = [t for t in threading.enumerate() if t.name == "scheduler-status"]

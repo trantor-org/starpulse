@@ -13,6 +13,8 @@ import threading
 import time
 from collections.abc import Callable, MutableMapping
 
+from starpulse.event_log.wake import StopEvent
+
 #: Set in a supervised child's environment: its stdin is a pipe from `serve`.
 SUPERVISED_ENV = "STARPULSE_SUPERVISED"
 
@@ -125,7 +127,7 @@ def watch_supervisor() -> None:  # pragma: no mutate block — process boundary
         threading.Thread(target=_term_at_eof, daemon=True).start()
 
 
-def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: no mutate block — process boundary
+def hold(stop: StopEvent, reload: Callable[[], None]) -> None:  # pragma: no mutate block — process boundary
     """Block until `SIGTERM`, running `reload` for each `SIGHUP`, one at a time.
 
     The wait is a read of the signal wakeup pipe, not an `Event`: a handler runs between two bytecodes of the main

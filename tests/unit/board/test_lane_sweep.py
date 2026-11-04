@@ -6,6 +6,7 @@ import threading
 
 import pytest
 from starpulse.board.adapters.lane_sweep import LaneSweep, mismatches
+from starpulse.event_log.wake import StopEvent
 
 
 class _Feed:
@@ -66,7 +67,7 @@ def test_a_mismatch_the_reconcile_cleared_raises_no_alert() -> None:
 
 
 def test_the_sweep_thread_ends_when_its_stop_event_is_set() -> None:
-    stopped = threading.Event()
+    stopped = StopEvent()
     LaneSweep(_Feed({}), _Board({})).start(stopped)
     thread = next(live for live in threading.enumerate() if live.name == "lane-sweep")
 

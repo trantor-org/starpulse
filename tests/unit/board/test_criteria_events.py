@@ -12,6 +12,7 @@ from starpulse.board import criteria
 from starpulse.board.bin import board_worker
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.events import STREAM as MACHINE_STREAM
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.model.run_events import STREAM as RUNS_STREAM
 
 WITHIN_S = 5.0
@@ -58,7 +59,7 @@ def watched(tmp_path: Path):
     evaluate = criteria.Evaluator(f"{shlex.quote(sys.executable)} {shlex.quote(str(path))} {{id}}", tmp_path)
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     evaluate("task-7", DESCRIPTION)
-    stop = threading.Event()
+    stop = StopEvent()
     thread = board_worker.follow_criteria_events(Feed(evaluate), evaluate, log, stop)
     runs = tmp_path / "runs.txt"
     yield log, lambda: len(runs.read_text()) if runs.exists() else 0

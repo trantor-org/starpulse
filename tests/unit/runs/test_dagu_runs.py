@@ -20,6 +20,7 @@ import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.adapters.outbound import dagu as dagu_module
 from starpulse.runs.adapters.outbound.dagu import (
     _STATUS,
@@ -833,7 +834,7 @@ def _wait_until(condition, timeout: float = 5.0) -> None:
 @pytest.fixture
 def follow_instance():
     """`dagu.follow` bound to a stop the test ends with; no `dagu-runs*` thread may outlive the test."""
-    stop = threading.Event()
+    stop = StopEvent()
     yield partial(dagu_follow, stop=stop)
     stop.set()
     _wait_until(lambda: not [t for t in threading.enumerate() if t.name.startswith("dagu-runs")])
@@ -847,7 +848,7 @@ def test_following_an_instance_reads_its_listing_into_the_sink_on_daemon_threads
     real_start = threading.Thread.start
     monkeypatch.setattr(threading.Thread, "start", lambda self: (started.append(self), real_start(self))[1])
     with dagu({"d1": ["a"]}) as (base_url, _):
-        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
+        follow_instance(base_url, feed.runs("ci"), log)
         _wait_until(lambda: feed.snapshot()["dags"])
 
     assert [(t.name, t.daemon) for t in started if t.name.startswith("dagu-")] == [
@@ -867,7 +868,7 @@ def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_aga
     monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._refresh_stats_forever", lambda url, stats, stop: None)
     feed = BoardFeed()
     with dagu({"d1": ["a"]}) as (base_url, calls):
-        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
+        follow_instance(base_url, feed.runs("ci"), log)
         _wait_until(lambda: feed.snapshot()["dags"])
 
         _run_event(log, "StepStarted", "running")
@@ -893,7 +894,7 @@ def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_
         _run_event(log, "StepStarted", "running", workflow="d1", at=1.0)
     feed = BoardFeed()
     with dagu({"d1": ["a"], "d2": ["b"]}) as (base_url, _):
-        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
+        follow_instance(base_url, feed.runs("ci"), log)
         _wait_until(lambda: feed.snapshot()["dags"])
         _run_event(log, "StepStarted", "running", workflow="d2")
         _wait_until(lambda: dag(feed, "d2")["status"] == "running")
@@ -912,7 +913,7 @@ def test_a_followed_instance_reads_only_the_named_dag_when_an_entry_names_a_new_
     steps = {"d1": ["a"], "d2": ["b"]}
     feed = BoardFeed()
     with dagu(steps) as (base_url, calls):
-        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
+        follow_instance(base_url, feed.runs("ci"), log)
         _wait_until(lambda: feed.snapshot()["dags"])
         calls.clear()
         steps["d3"] = ["c"]
@@ -1113,7 +1114,7 @@ def test_a_run_that_finishes_on_dagu_shows_within_one_reconcile_interval_with_no
         return dag(feed, "d1")["status"]
 
     with dagu({"d1": ["a"]}, latest=latest) as (base_url, _):
-        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
+        follow_instance(base_url, feed.runs("ci"), log)
         _wait_until(lambda: feed.snapshot()["dags"] and status() == "running")
         latest["statusLabel"] = "succeeded"
         _wait_until(lambda: status() == "succeeded")
@@ -1807,7 +1808,7 @@ def test_a_followed_instance_reads_the_recent_runs_of_the_workflows_its_sink_say
     sink = _Sink()
     sink.tied = frozenset({"apply"})  # type: ignore[attr-defined]
     with dagu({**APPLY, "other": ["a"]}, history=(APPLIED,)) as (base_url, _):
-        follow_instance(base_url, sink, log, interval=0.01)  # type: ignore[arg-type]
+        follow_instance(base_url, sink, log)  # type: ignore[arg-type]
         _wait_until(lambda: sink.dags)
 
     assert [d["name"] for d in sink.dags if "recent" in d] == ["apply"]

@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import logging
 import queue
-import threading
 import time
 from collections import Counter
 from collections.abc import Callable, Mapping
@@ -35,6 +34,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.model.harness import HARNESS
 from starpulse.scheduler.model.admission import (
     REGRESSION,
@@ -346,7 +346,7 @@ class Loop:
             return f"{paused} is paused"
         return None
 
-    def run_forever(self, stop: threading.Event, period: float = PERIOD) -> None:
+    def run_forever(self, stop: StopEvent, period: float = PERIOD) -> None:
         """Tick on each wanted event until `stop` is set, and on `period` seconds without one to settle idle sessions."""
         self._feed.wait_replayed()
         events = self._feed.follow_changes()

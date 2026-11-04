@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.application.queries import projection
 
 DAGS = [
@@ -152,7 +153,7 @@ def test_following_applies_the_kept_report_now_and_each_one_announced_after(log:
     sink = publisher.runs("dagu", Inner())
     sink.set_dags(DAGS, None)
     feed = Feed()
-    stop = threading.Event()
+    stop = StopEvent()
     try:
         projection.Projected(log, feed).follow(stop)
         assert feed.taken.is_set()

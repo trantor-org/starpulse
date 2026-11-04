@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from starpulse.board.feed.shared import BoardStore, logger
-from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.board.board_feed import BoardFeed
@@ -51,7 +51,7 @@ class Resumable(Protocol):
 
     def resume(self, store: BoardStore, stream: str, retained: Callable[[int], bool]) -> int | None: ...
 
-    def keep_saved(self, stop: threading.Event, interval: float = ...) -> None: ...
+    def keep_saved(self, stop: StopEvent, interval: float = ...) -> None: ...
 
 
 def retained(log: EventLog, stream: str) -> Callable[[int], bool]:
@@ -71,8 +71,7 @@ def follow(
     stream: str,
     handle: Callable[[str, dict], None],
     *,
-    stop: threading.Event | None = None,
-    interval: float = DEFAULT_POLL_INTERVAL,
+    stop: StopEvent | None = None,
 ) -> threading.Thread:
     """Read `stream` of the event log into `feed` through `handle(entry_id, fields)` on a daemon thread and return it.
 
@@ -81,10 +80,10 @@ def follow(
     longer covers, the feed replays from the oldest entry the log retains: hourly reconciles keep the latest state
     of every task inside the retention. The feed turns ready once the newest entry `stream` held when it started
     has been read. While the database cannot be reached the feed is not ready and the start retries every
-    `interval`; a later outage is `Tail.run`'s to retry. `stop` ends the reader.
+    `RETRY_DELAY`; a later outage is `Tail.run`'s to retry. `stop` ends the reader.
     """
     feed.await_stream()
-    stop = stop or threading.Event()
+    stop = stop or StopEvent()
 
     def run() -> None:
         after = None
@@ -96,7 +95,7 @@ def follow(
                 break
             except Exception as exc:  # the database is unreachable; the next attempt retries
                 logger.warning("StarPulse: cannot reach the event log for %s, retrying: %s", stream, exc)
-                stop.wait(interval)
+                stop.wait(RETRY_DELAY)
         else:
             return
         feed.expect(str(last or 0))
@@ -104,7 +103,7 @@ def follow(
             threading.Thread(target=feed.keep_saved, args=(stop,), name="board-state", daemon=True).start()
         # no cursor replays the whole retention
 
-        tail = log.tail(stream, after=after, interval=interval)
+        tail = log.tail(stream, after=after)
         tail.run(lambda entry: handle(str(entry.id), entry.fields), stop)
 
     thread = threading.Thread(target=run, name="board-feed", daemon=True)

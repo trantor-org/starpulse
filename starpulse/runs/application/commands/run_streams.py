@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy.exc import OperationalError
 
 from starpulse.event_log.event_log import Entry, EventLog, Tail
-from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.event_log.wake import StopEvent
 from starpulse.event_log.store import EventStore, NewEvent, StaleVersion, StoredEvent
 from starpulse.runs.model import run_events
 
@@ -73,9 +73,7 @@ class RunStreams:
             return True
 
 
-def record_run_streams(
-    streams: RunStreams, log: EventLog, stop: threading.Event, *, interval: float = DEFAULT_POLL_INTERVAL
-) -> None:
+def record_run_streams(streams: RunStreams, log: EventLog, stop: StopEvent) -> None:
     """Copy the log's run entries into `streams` until `stop`, from the oldest the log retains.
 
     A replay repeats nothing: `RunStreams.record` skips an entry the stream holds. A database that cannot be reached is
@@ -85,4 +83,4 @@ def record_run_streams(
     def record(entry: Entry) -> None:
         streams.record(entry.event_id, entry.fields)
 
-    Tail.replay(log, run_events.STREAM, interval=interval).run(record, stop, transient=(OperationalError,))
+    Tail.replay(log, run_events.STREAM).run(record, stop, transient=(OperationalError,))

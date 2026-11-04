@@ -1,21 +1,22 @@
-"""StarPulse's event log: an append-only table in the history store that producers write and readers poll.
+"""StarPulse's event log: an append-only table in the history store that producers write and readers tail.
 
 Every producer on the host appends one row (`EventLog.publish`), which never raises, so reporting an event never
 fails the work that caused it. Every reader keeps its own cursor, the `id` of the last row it passed, and
-polls `id > cursor` (`Tail`); there are no consumer groups. A tail without a cursor replays the retained log, one
+reads `id > cursor` (`Tail`); there are no consumer groups. A tail without a cursor replays the retained log, one
 given a cursor resumes after it, and `EventLog.prune` drops rows older than a retention, which the sweeper runs each pass
 (`runtime.assembly.prune_steps`) after writing each row to its UTC day's gzip JSONL archive file. A cursor below the oldest retained row means rows were pruned unread, which is recorded in
 `starpulse_gaps`.
 
 The database is the history store's: SQLite by default (in WAL mode, so processes on the host append while the
 server reads) or the file a `database_url` names. Delivery is at-least-once within retention, so a handler
-treats `event_id` as its idempotency key. Latency is the poll interval, so a reader polls often (one indexed
-`id > ?` query) and holds no connection, hence no read transaction, between polls: a held SQLite read transaction
-would stop WAL checkpoints and grow the `-wal` file without bound.
+treats `event_id` as its idempotency key. A reader holds no connection, hence no read transaction, between reads: a held
+SQLite read transaction would stop WAL checkpoints and grow the `-wal` file without bound.
 
-A running tail does not sleep out the interval. An append in this process wakes every waiting tail at once, and on
-SQLite so does a commit by another process, seen as a change of `PRAGMA data_version` that one watcher thread per log
-checks (`EventLog.wait_for_append`). The interval is the fallback bound: it recovers a wake-up that went missing.
+A tail sleeps until something wakes it, never on a timer. An append in this process wakes every waiting tail at once,
+and on SQLite so does a commit by another process: one watcher thread per log blocks on a file watch of the store
+(`event_log.watch`: inotify or kqueue) and rereads `PRAGMA data_version` when the watch fires. A `StopEvent` ends the
+wait too (`EventLog.wait_for_append`). A platform with no file watch falls back to waking every `FALLBACK_WAKE_S`, the
+sweeper's interval, and logs once that it has none.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import gzip
 import json
 import logging
 import os
+import selectors
 import sqlite3
 import threading
 import time
@@ -41,18 +43,16 @@ from sqlalchemy.engine import Connection, make_url
 
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.migrate import require_migrated
-from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
 from starpulse.event_log.tables import events, gaps, settings, signal_folds, signals, worker_state
+from starpulse.event_log.wake import FALLBACK_WAKE_S, RETRY_DELAY, StopEvent
+from starpulse.event_log.watch import open_watch
 
 __all__ = ["Entry", "EventLog", "Tail"]
 
 logger = logging.getLogger(__name__)
 
-#: How often the SQLite watcher looks for a commit by another process, in seconds.
-_DATA_VERSION_INTERVAL = 0.25
-
-#: The longest a waiting tail sleeps before it looks at its stop event again, in seconds.
-_STOP_SLICE = 0.5
+#: Set once the process has logged that it has no file watch, so the line appears once however many logs it opens.
+_NO_WATCH_LOGGED = threading.Event()
 
 #: How long SQLite waits on another process's write lock before an append gives up and fails open, in seconds. It
 #: outlasts the multi-second disk stalls of the host's weekly snapshot backup, which held writes past a 5 s wait.
@@ -81,31 +81,62 @@ class Entry(NamedTuple):
     at: float
 
 
-def _watch_data_version(log: weakref.ref[EventLog], database: str, baseline: threading.Event) -> None:
+def _watch_commits(
+    log: weakref.ref[EventLog], database: str, fallback: float, baseline: threading.Event, ended: int
+) -> None:
     """Wake waiters whenever another connection commits to `database`, setting `baseline` after the first read.
-    `PRAGMA data_version` changes only for commits made through other connections, and a connection without a
-    transaction holds no read lock, so this one never stalls a checkpoint.
+    The thread blocks on a file watch of the store (and on `ended`, the read end of the pipe the log's finalizer
+    closes), then rereads `PRAGMA data_version`, which changes only for commits made through other connections. The
+    connection holds no transaction, so it never stalls a checkpoint. Without a file watch, or after a failed read, it
+    waits `fallback` seconds instead and says once that it has no watch.
 
-    The thread holds the log only through `log`, so a log its owner drops ends this thread within one interval; a
-    bound method as the target would keep the log alive for the life of the process."""
+    The thread holds the log only through `log`: a log its owner drops closes the pipe and ends this thread at once;
+    a bound method as the target would keep the log alive for the life of the process."""
+    watch = open_watch(database)
+    selector = selectors.DefaultSelector()
+    selector.register(ended, selectors.EVENT_READ)
+    if watch is None:
+        if not _NO_WATCH_LOGGED.is_set():
+            _NO_WATCH_LOGGED.set()
+            logger.warning("EventLog: no file watch on this platform; waking on commits by other processes every %ss", fallback)
+    else:
+        selector.register(watch.fileno(), selectors.EVENT_READ)
     version = None
     connection = None
+    healthy = True
+    woken = False
     while (owner := log()) is not None:
         try:
             if connection is None:
                 connection = sqlite3.connect(database, timeout=_SQLITE_BUSY_TIMEOUT, isolation_level=None)
+            elif woken:
+                # The watch fires on the write to the `-wal` file, before the writer publishes the commit in the shared
+                # index (a memory-mapped write the watch cannot see): taking the write lock waits for that commit to end.
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute("ROLLBACK")
             current = connection.execute("PRAGMA data_version").fetchone()[0]
             if version is not None and current != version:
                 owner._wake()
-            version = current
-        except sqlite3.Error as exc:  # the file is locked or gone; the interval still delivers
+            version, healthy = current, True
+        except sqlite3.Error as exc:  # the file is locked or gone: wake the readers to look, and look again later
             logger.debug("EventLog: data_version check failed: %s", exc)
-            connection, version = None, None
+            if healthy:
+                owner._wake()
+            connection, version, healthy = None, None, False
         del owner
         baseline.set()
-        time.sleep(_DATA_VERSION_INTERVAL)
+        blocked = selector.select(None if watch is not None and healthy else fallback)
+        if any(key.fd == ended for key, _ in blocked):
+            break
+        woken = watch is not None
+        if watch is not None:
+            watch.drain()
     if connection is not None:
         connection.close()
+    selector.close()
+    os.close(ended)
+    if watch is not None:
+        watch.close()
 
 
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
@@ -126,8 +157,9 @@ class EventLog:
     """The log in one database. Opening it is lazy and retried, so a producer that starts before its database is
     reachable appends once it is."""
 
-    def __init__(self, url: str, *, engine: Engine | None = None) -> None:
+    def __init__(self, url: str, *, engine: Engine | None = None, fallback_interval: float = FALLBACK_WAKE_S) -> None:
         self.url = url
+        self._fallback_interval = fallback_interval
         self._engine = engine
         self._ready = False
         self._lock = threading.Lock()
@@ -223,11 +255,10 @@ class EventLog:
         self._wake()
 
     def follow_state(
-        self, name: str, apply: Callable[[], None], stop: threading.Event, *, interval: float, thread_name: str
+        self, name: str, apply: Callable[[], None], stop: StopEvent, *, thread_name: str
     ) -> threading.Thread:
         """Call `apply` each time the state under `name` is written after this call, on a thread until `stop`. The
-        thread rereads the version when the log is appended to or `interval` seconds pass, so a write by another
-        process on a database that cannot signal one is seen within `interval`."""
+        thread rereads the version when the log is appended to, here or by another process, and sleeps otherwise."""
         seen = self._version_or(name, 0)
 
         def run() -> None:
@@ -237,7 +268,7 @@ class EventLog:
                 if (version := self._version_or(name, seen)) != seen:
                     seen = version
                     apply()
-                self.wait_for_append(appends, interval, stop)
+                self.wait_for_append(appends, stop)
 
         thread = threading.Thread(target=run, name=thread_name, daemon=True)
         thread.start()
@@ -282,16 +313,37 @@ class EventLog:
         self._watch()
         return self._appends
 
-    def wait_for_append(self, seen: int, timeout: float, stop: threading.Event) -> None:
-        """Return when `appends` has moved past `seen`, `stop` is set, or `timeout` seconds have passed.
+    def wait_for_append(self, seen: int, stop: StopEvent) -> None:
+        """Return when `appends` has moved past `seen` or `stop` is set; no timer ends it.
 
         Read `appends` before the poll it precedes, so an append that lands during that poll still ends this wait.
         """
         self._watch()
-        deadline = time.monotonic() + timeout
+        stop.listen(self._notify)  # before the check below, so a stop between the check and the wait is not lost
+        try:
+            with self._appended:
+                while self._appends == seen and not stop.is_set():
+                    self._appended.wait()
+        finally:
+            stop.unlisten(self._notify)
+
+    def run_on_wake(self, stop: StopEvent, step: Callable[[], object], failure: str) -> None:
+        """Run `step` now, then after each append or commit by another process, until `stop`; no timer ends the wait.
+        A step that raises is logged as `failure` and run again after `RETRY_DELAY`. `appends` is read before each
+        step, so a commit that lands during it ends the next wait at once."""
+        while not stop.is_set():
+            seen = self.appends
+            try:
+                step()
+            except Exception:
+                logger.exception(failure)
+                stop.wait(RETRY_DELAY)
+                continue
+            self.wait_for_append(seen, stop)
+
+    def _notify(self) -> None:
         with self._appended:
-            while self._appends == seen and not stop.is_set() and (left := deadline - time.monotonic()) > 0:
-                self._appended.wait(min(left, _STOP_SLICE))
+            self._appended.notify_all()
 
     def _wake(self) -> None:
         with self._appended:
@@ -309,10 +361,12 @@ class EventLog:
         url = make_url(self.url)
         if url.database not in (None, "", ":memory:"):
             baseline = threading.Event()
+            ended, release = os.pipe()
+            weakref.finalize(self, os.close, release)  # the thread sees the pipe end when the log is dropped
             threading.Thread(
-                target=_watch_data_version,
-                args=(weakref.ref(self), url.database, baseline),
-                name="eventlog-data-version",
+                target=_watch_commits,
+                args=(weakref.ref(self), url.database, self._fallback_interval, baseline, ended),
+                name="eventlog-commit-watch",
                 daemon=True,
             ).start()
             baseline.wait(_SQLITE_BUSY_TIMEOUT)
@@ -366,7 +420,7 @@ class EventLog:
 
     def tail(self, stream: str, **kwargs: Any) -> Tail:
         """A `Tail` of `stream` on this log, the one way a reader outside this module comes by one: `kwargs` are the
-        `Tail`'s own (`after`, `interval`, `batch`, `streams`). `Tail.catch_up` reads what is retained, `Tail.run`
+        `Tail`'s own (`after`, `batch`, `streams`). `Tail.catch_up` reads what is retained, `Tail.run`
         follows what is appended."""
         return Tail(self, stream, **kwargs)
 
@@ -412,7 +466,6 @@ class Tail:
         stream: str,
         *,
         after: int | None,
-        interval: float = DEFAULT_POLL_INTERVAL,
         batch: int = 500,
         streams: Sequence[str] | None = None,
     ) -> None:
@@ -420,7 +473,6 @@ class Tail:
         self.stream = stream
         self.streams = tuple(streams or (stream,))
         self.cursor = after
-        self.interval = interval
         self.batch = batch
         self._traced: set[type[Exception]] = set()  # exception types whose traceback `run` has logged
         self._suppressed: Counter[type[Exception]] = Counter()  # repeats since the last summary
@@ -498,19 +550,19 @@ class Tail:
     def run(
         self,
         handle: Callable[[Entry], None],
-        stop: threading.Event,
+        stop: StopEvent,
         transient: tuple[type[BaseException], ...] = (),
     ) -> None:
-        """Poll until `stop` is set, passing each entry to `handle`. Between polls an idle tail waits for an append
-        (`EventLog.wait_for_append`), so `interval` bounds the wait rather than setting it.
+        """Read until `stop` is set, passing each entry to `handle`. Between reads an idle tail waits for an append
+        (`EventLog.wait_for_append`), which no timer ends.
 
-        A poll that fails (the database went away) is retried after `interval`, then after twice that for each further
+        A read that fails (the database went away) is retried after `RETRY_DELAY`, then after twice that for each further
         failure up to `MAX_POLL_BACKOFF`. The outage logs one warning, without a trace, and one line when a poll
         succeeds again, so a missing table costs a few lines, not one per poll. A handler that raises is logged
         and the loop goes on with the next entry, so one bad event never stops a reader. Only the first failure of
         each exception type logs a traceback; the repeats are counted in a summary line after each batch. A handler that raises one of
         `transient` (its sink is down, the entry is not bad) is not skipped: the cursor goes back before that entry
-        and the poll after the interval reads it again.
+        and the read after `RETRY_DELAY` reads it again.
         """
         delay = 0.0  # the wait after the last failed poll; 0 while polls succeed
         while not stop.is_set():
@@ -520,7 +572,7 @@ class Tail:
             except Exception as exc:  # the database is unreachable or locked; the next poll retries
                 if not delay:
                     logger.warning("Tail %s: poll failed, backing off until it succeeds: %s", self.stream, exc)
-                delay = min(delay * 2, max(self.interval, MAX_POLL_BACKOFF)) if delay else self.interval
+                delay = min(delay * 2, MAX_POLL_BACKOFF) if delay else RETRY_DELAY
                 stop.wait(delay)
                 continue
             if delay:
@@ -539,9 +591,9 @@ class Tail:
                     self._note_failure(exc, entry)
             self._summarize_failures()
             if retry:
-                stop.wait(self.interval)
+                stop.wait(RETRY_DELAY)
             elif len(entries) < self.batch:
-                self.log.wait_for_append(seen, self.interval, stop)
+                self.log.wait_for_append(seen, stop)
 
 
 def _archive(directory: Path, rows: Sequence[Any]) -> None:

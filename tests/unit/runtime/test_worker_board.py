@@ -9,6 +9,7 @@ from starpulse.board.adapters.task_history import KIND
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
 from starpulse.runtime.assembly import scheduler_board, worker_board
 from starpulse.runtime.config import load
@@ -28,7 +29,7 @@ def test_a_worker_reads_the_tasks_and_their_prs_from_the_read_model(tmp_path: Pa
     cited = NewEvent(type="FieldsEdited", payload={"changes": {"references": [PULL]}}, actor="adin", writer="operator")
     events.append("task", "TASK-1", 0, [created, cited])
     Projector(log.engine, events).catch_up()
-    stop = threading.Event()
+    stop = StopEvent()
 
     _, feed = worker_board(replace(load(None), database_url=url), tmp_path, log, stop)
     stop.set()
@@ -42,7 +43,7 @@ def test_a_read_model_workers_board_write_lands_in_the_task_history_the_read_mod
     log = EventLog(url)
     board({}, tmp_path)  # makes the default lanes
     write_task(tmp_path, "task-1", "Review")
-    stop = threading.Event()
+    stop = StopEvent()
 
     built, _ = worker_board(replace(load(None), database_url=url), tmp_path, log, stop)
     stop.set()
@@ -61,7 +62,7 @@ def test_the_scheduler_board_starts_no_read_model_follow_and_still_reads_the_tas
     )
     events.append("task", "TASK-1", 0, [created])
     Projector(log.engine, events).catch_up()
-    stop = threading.Event()
+    stop = StopEvent()
     followers_before = {t for t in threading.enumerate() if t.name == "read-model-follow"}
 
     _, feed = scheduler_board(replace(load(None), database_url=url), tmp_path, log, stop)

@@ -48,7 +48,7 @@ from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import EventLog, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
-from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 from starpulse.event_log.store import EventStore
 from starpulse.event_log.tables import gaps as _gaps
 from starpulse.event_log.tables import machine_events as _machine_events
@@ -845,43 +845,38 @@ class HistoryStore:
         return events
 
 
-def record_machine_events(
-    store: HistoryStore, log: EventLog, stop: threading.Event, *, interval: float = DEFAULT_POLL_INTERVAL
-) -> None:
+def record_machine_events(store: HistoryStore, log: EventLog, stop: StopEvent) -> None:
     """Copy the log's machine events into `store` until `stop`, resuming after the cursor the store holds.
 
     A store with no cursor replays what the log retains. Each entry is written with its cursor in one transaction,
     so a restart neither skips nor repeats one, and rows pruned unread are a gap (`Tail`). A database that cannot be
     reached is the sink down, not the entry bad, so the entry is read again on the next poll.
     """
-    _copy(store, log, stop, machine_events.STREAM, store.record_machine, interval)
+    _copy(store, log, stop, machine_events.STREAM, store.record_machine)
 
 
-def record_verdicts(
-    store: HistoryStore, log: EventLog, stop: threading.Event, *, interval: float = DEFAULT_POLL_INTERVAL
-) -> None:
+def record_verdicts(store: HistoryStore, log: EventLog, stop: StopEvent) -> None:
     """Copy the log's qa verdicts into `store` until `stop`, as `record_machine_events` does the machine events."""
-    _copy(store, log, stop, verdict_events.STREAM, store.record_verdict, interval)
+    _copy(store, log, stop, verdict_events.STREAM, store.record_verdict)
 
 
 def _copy(
     store: HistoryStore,
     log: EventLog,
-    stop: threading.Event,
+    stop: StopEvent,
     stream: str,
     write: Callable[..., None],
-    interval: float,
 ) -> None:
     while not stop.is_set():
         try:
             after = store.checkpoints.load(stream)[0]
             break
         except OperationalError as exc:
-            logger.warning("history: cannot read the %s cursor, retrying in %ss: %s", stream, interval, exc)
-            stop.wait(interval)
+            logger.warning("history: cannot read the %s cursor, retrying in %ss: %s", stream, RETRY_DELAY, exc)
+            stop.wait(RETRY_DELAY)
     else:
         return
-    log.tail(stream, after=after, interval=interval).run(
+    log.tail(stream, after=after).run(
         lambda entry: write(entry.event_id, entry.fields, cursor=entry.id),
         stop,
         transient=(OperationalError,),

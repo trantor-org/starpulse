@@ -9,6 +9,7 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 
 from tests.machines import MACHINES, ROLES
@@ -36,7 +37,7 @@ def test_every_lane_entry_appended_from_now_on_without_an_actor_is_counted(tmp_p
     log = EventLog(f"sqlite:///{tmp_path / 'ic.sqlite'}")
     task = BoardTask(id="T-1", team="demo", title="t", lane="ready")
     lane_events.append(log, "T-0@ready@1.0", "T-0", "ready", 1.0)  # before the count began
-    stop = threading.Event()
+    stop = StopEvent()
     unattributed = lane_events.Unattributed()
     unattributed.follow(log, stop)
 

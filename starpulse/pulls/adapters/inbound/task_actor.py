@@ -35,7 +35,6 @@ dependency nothing will finish (the board holds no such task, or it is Proposed)
 from __future__ import annotations
 
 import logging
-import queue
 import threading
 import time
 from datetime import UTC, datetime
@@ -49,6 +48,7 @@ from starpulse.board import criteria
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.markdown import section_set
 from starpulse.board.model.seam import FLAGGED, HELD, MERGE_EVIDENCE, TaskCreator, TaskEditor, TaskReader, Written
+from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.pulls.adapters.inbound.unblock import PinGate
 from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record
@@ -90,8 +90,9 @@ PROJECTION_METRIC = "starpulse_task_actor_projection_seconds"
 HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 #: The bounds of the projection and handoff histograms: a pin walk takes seconds, and the 10 s bound is the measure.
 SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
-#: Seconds the event loop waits for a change before it looks at its stop flag.
-_POLL_S = 0.5
+#: Seconds the criteria and deadline loops wait between two looks at the clock; the next slice (TASK-11663) replaces both
+#: with one-shot deadlines.
+_CLOCK_SLICE_S = 0.5
 #: Seconds between two sweeps of the Waiting lane, which derive each task there again and flag the ones nothing releases.
 SWEEP_S = 300.0
 #: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
@@ -369,7 +370,7 @@ class TaskActor:
             ]
         )
 
-    def start(self, stop: threading.Event) -> threading.Thread:
+    def start(self, stop: StopEvent) -> threading.Thread:
         """Follow the feed on a daemon thread until `stop` is set."""
         thread = threading.Thread(target=self._run, args=(stop,), name="task-actor", daemon=True)
         thread.start()
@@ -400,18 +401,23 @@ class TaskActor:
 
         return timed
 
-    def _follow_store(self, stop: threading.Event) -> None:
+    def _follow_store(self, stop: StopEvent) -> None:
         """Re-derive the tasks whose pull requests changed as soon as the store saves, ahead of the projection that
         saved it finishing its pin walk."""
         self.indexed.wait()
-        while not stop.is_set():
-            if not self._saved.wait(_POLL_S):
-                continue
-            self._saved.clear()
-            try:
-                self._store_saved(self._saved_at)
-            except Exception:  # one pass must not end the thread
-                logger.exception("task actor: cannot read the pull request store")
+        stop.listen(self._saved.set)  # a stop wakes the wait below, which then sees it
+        try:
+            while not stop.is_set():
+                self._saved.wait()
+                if stop.is_set():
+                    return
+                self._saved.clear()
+                try:
+                    self._store_saved(self._saved_at)
+                except Exception:  # one pass must not end the thread
+                    logger.exception("task actor: cannot read the pull request store")
+        finally:
+            stop.unlisten(self._saved.set)
 
     def _store_saved(self, saved: float) -> None:
         with self._lock:
@@ -419,7 +425,7 @@ class TaskActor:
             self._handoff.observe(observed - saved)
             self._derive_all(self._read_pulls(), observed)
 
-    def _keep_criteria(self, stop: threading.Event) -> None:
+    def _keep_criteria(self, stop: StopEvent) -> None:
         """Evaluate each gated task whose result is missing or stale, and re-derive it when the result changed."""
         self.ready.wait()
         while not stop.is_set():
@@ -427,9 +433,9 @@ class TaskActor:
                 self._evaluate_due()
             except Exception:  # one pass must not end the thread
                 logger.exception("task actor: cannot evaluate Start Criteria")
-            stop.wait(min(self._fresh_s / 2, _POLL_S))
+            stop.wait(min(self._fresh_s / 2, _CLOCK_SLICE_S))
 
-    def _keep_sweeping(self, stop: threading.Event) -> None:
+    def _keep_sweeping(self, stop: StopEvent) -> None:
         """Sweep the Waiting lane every `sweep_s`, so a fact that changed with no event to carry it still releases the task."""
         self.ready.wait()  # the first derive just read every task
         while not stop.wait(self._sweep_s):
@@ -468,7 +474,7 @@ class TaskActor:
         """Whether the dependency is done, or archived: its file left the lanes without reaching Done."""
         return self._feed.is_done(dependency) or self._feed.is_archived(dependency)
 
-    def _keep_deadlines(self, stop: threading.Event) -> None:
+    def _keep_deadlines(self, stop: StopEvent) -> None:
         """Derive each armed task again at its own deadline, so a Waiting task goes overdue with no event to wake it."""
         self.ready.wait()
         while not stop.is_set():
@@ -483,7 +489,7 @@ class TaskActor:
             except Exception:  # one pass must not end the thread
                 logger.exception("task actor: cannot derive the overdue tasks")
                 ahead = None
-            stop.wait(_POLL_S if ahead is None else max(0.0, min(ahead - self._wall(), _POLL_S)))
+            stop.wait(_CLOCK_SLICE_S if ahead is None else max(0.0, min(ahead - self._wall(), _CLOCK_SLICE_S)))
 
     def _evaluate_due(self) -> None:
         gated = {
@@ -526,7 +532,7 @@ class TaskActor:
                 self._derive(name, observed)
             self._count_error_passes(name, evaluated)
 
-    def _run(self, stop: threading.Event) -> None:
+    def _run(self, stop: StopEvent) -> None:
         self._feed.wait_replayed()
         changes = self._feed.follow_changes()
         with self._lock:
@@ -544,17 +550,22 @@ class TaskActor:
                 for placed in tasks if parent == BOARD else self._feed.machine_tasks(parent):
                     self._exit_phase(placed["id"])
         self.ready.set()
-        while not stop.is_set():
-            try:
-                kind, data = changes.get(timeout=_POLL_S)
-            except queue.Empty:
-                continue
-            if kind in ("task", "move"):
-                handle = self._changed if kind == "task" else self._moved
-                try:
-                    handle(data)
-                except Exception:  # one change must not end the actor
-                    logger.exception("task actor: cannot handle the change of %s", data.get("id"))
+
+        def stopped() -> None:
+            changes.put(("stop", {}))  # a stop wakes the wait below, which then sees it
+
+        stop.listen(stopped)
+        try:
+            while not stop.is_set():
+                kind, data = changes.get()
+                if kind in ("task", "move"):
+                    handle = self._changed if kind == "task" else self._moved
+                    try:
+                        handle(data)
+                    except Exception:  # one change must not end the actor
+                        logger.exception("task actor: cannot handle the change of %s", data.get("id"))
+        finally:
+            stop.unlisten(stopped)
 
     def _drop_stale_result(self, name: str, agent: dict[str, Any]) -> None:
         """Forget the last evaluation of a task that left the gated lanes or was gated on other criteria: the sweep

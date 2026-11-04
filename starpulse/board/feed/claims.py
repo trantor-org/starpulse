@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import threading
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
 from starpulse.board import criteria
+from starpulse.event_log.wake import StopEvent
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     pass
@@ -64,14 +64,14 @@ class ClaimMethods:
             except Exception as exc:  # the store is down; the pass stands and the next change saves it
                 logger.warning("StarPulse: cannot save when Start Criteria were met: %s", exc)
 
-    def keep_criteria(self, stop: threading.Event, interval: float = CRITERIA_INTERVAL) -> None:
+    def keep_criteria(self, stop: StopEvent, interval: float = CRITERIA_INTERVAL) -> None:
         """Evaluate now and then every `interval` seconds until `stop` is set."""
         while True:
             self.evaluate_criteria()
             if stop.wait(interval):
                 return
 
-    def follow_criteria(self, store: CriteriaStore, stop: threading.Event, interval: float = CRITERIA_INTERVAL) -> None:
+    def follow_criteria(self, store: CriteriaStore, stop: StopEvent, interval: float = CRITERIA_INTERVAL) -> None:
         """Adopt, every `interval` seconds until `stop` is set, when `store` says each task's Start Criteria were met,
         as the process that evaluates them keeps it there; this feed evaluates nothing. A store that cannot be read
         leaves what the feed held. The first pass assesses every open task, as `track_criteria` does."""
@@ -92,7 +92,7 @@ class ClaimMethods:
             if stop.wait(interval):
                 return
 
-    def follow_expiries(self, store: ExpiriesStore, stop: threading.Event, interval: float = CRITERIA_INTERVAL) -> None:
+    def follow_expiries(self, store: ExpiriesStore, stop: StopEvent, interval: float = CRITERIA_INTERVAL) -> None:
         """Adopt, every `interval` seconds until `stop` is set, the claim expiries the board worker's sweep saved, as
         `follow_criteria` adopts the dates. A store that cannot be read leaves what the feed held."""
         while True:

@@ -8,12 +8,14 @@ one `move` delta for each row folded past it, so an open stream hears a machine 
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING
 
 from starpulse.board.board_feed import BoardFeed
 from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.wake import StopEvent
 
-#: How often the API child asks the table for rows folded since its cursor.
-POLL_S = 0.5
+if TYPE_CHECKING:
+    from starpulse.event_log.event_log import EventLog
 
 
 class MachineDeltas:
@@ -33,14 +35,13 @@ class MachineDeltas:
             self._seq = seq
         return len(changes)
 
-    def follow(self, stop: threading.Event, interval: float = POLL_S) -> threading.Thread:
-        """Publish changes on a thread until `stop`."""
-
-        def run() -> None:
-            while not stop.is_set():
-                self.publish_changes()
-                stop.wait(interval)
-
-        thread = threading.Thread(target=run, name="machine-deltas", daemon=True)
+    def follow(self, stop: StopEvent, log: EventLog) -> threading.Thread:
+        """Publish changes on a thread, on each wake of `log`, until `stop`."""
+        thread = threading.Thread(
+            target=log.run_on_wake,
+            args=(stop, self.publish_changes, "machine deltas: the pass failed"),
+            name="machine-deltas",
+            daemon=True,
+        )
         thread.start()
         return thread

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
+from starpulse.event_log.wake import StopEvent
 from starpulse.event_log import events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.store import EventStore, NewEvent, metadata
@@ -256,8 +257,8 @@ def log(store: HistoryStore) -> EventLog:
 
 
 @pytest.fixture
-def stop() -> Iterator[threading.Event]:
-    event = threading.Event()
+def stop() -> Iterator[StopEvent]:
+    event = StopEvent()
     yield event
     event.set()
 
@@ -269,9 +270,9 @@ def _until(done: Callable[[], bool]) -> None:
         time.sleep(0.01)
 
 
-def _record(store: HistoryStore, log: EventLog, stop: threading.Event) -> threading.Thread:
+def _record(store: HistoryStore, log: EventLog, stop: StopEvent) -> threading.Thread:
     thread = threading.Thread(
-        target=record_machine_events, args=(store, log, stop), kwargs={"interval": 0.01}, daemon=True
+        target=record_machine_events, args=(store, log, stop), daemon=True
     )
     thread.start()
     return thread

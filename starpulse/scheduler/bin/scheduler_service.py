@@ -17,6 +17,7 @@ from starpulse.board.adapters.claim_ttl import DEFAULT_TRANSCRIPTS
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import History
 from starpulse.flow_metrics.model.level import Level
 from starpulse.scheduler.adapters.runtime import Runtime
@@ -38,7 +39,7 @@ def start_scheduler(
     history: History,
     log: EventLog,
     level: Level | None,
-    stop: threading.Event,
+    stop: StopEvent,
     probe: Callable[[], Mapping[str, float]] | None = None,
     publish: Callable[[str, dict[str, Any]], None] | None = None,
     *,

@@ -9,6 +9,7 @@ import pytest
 from starpulse.board.bin import board_worker
 from starpulse.board.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime import worker
 
@@ -40,7 +41,7 @@ def _eventually(ready: Callable[[], object]) -> bool:
 
 @pytest.fixture
 def stop():
-    stopping = threading.Event()
+    stopping = StopEvent()
     yield stopping
     stopping.set()
 

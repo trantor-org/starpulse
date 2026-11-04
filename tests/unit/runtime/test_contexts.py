@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
 from starpulse.runtime.config import load
 from starpulse.runtime.contexts import _SharedStore, contexts_of, run_contexts
@@ -172,7 +173,7 @@ def test_a_context_that_never_starts_leaves_no_reload_to_run(process: Callable[.
 def test_the_default_starters_fold_the_board_once_for_every_context(tmp_path: Path) -> None:
     config = tmp_path / "starpulse.toml"
     config.write_text('[board]\ntype = "tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n')
-    stop = threading.Event()
+    stop = StopEvent()
     held = threading.Event()
     before = folds()
 

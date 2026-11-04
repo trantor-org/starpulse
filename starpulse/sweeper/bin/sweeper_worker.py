@@ -17,6 +17,7 @@ from pathlib import Path
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
+from starpulse.event_log.wake import StopEvent
 from starpulse.sweeper.bin.blocks import SweeperBlocks as SweeperConfig
 from starpulse.sweeper.bin.blocks import sweeper_built_blocks
 from starpulse.sweeper.commands import CommandHousekeeping, CommandKind
@@ -45,7 +46,7 @@ def reload(path: Path | None, config: SweeperConfig, load: Callable[[Path | None
 
 def _loop(
     log: EventLog, lease: Lease, kinds: Sequence[Kind], housekeeping: Sequence[Housekeeping], interval_s: float,
-    stop: threading.Event,
+    stop: StopEvent,
 ) -> None:  # fmt: skip
     """Pass now and then every `interval_s` until `stop`, keeping the metrics after each; the lease is released at the end."""
     metrics = Metrics([kind.name for kind in kinds])
@@ -63,7 +64,7 @@ def start(
     path: Path | None,
     base: Path,
     log: EventLog,
-    stop: threading.Event,
+    stop: StopEvent,
     *,
     load: Callable[[Path | None], SweeperConfig],
     prune: Sequence[Housekeeping],
@@ -106,7 +107,7 @@ def main(
         parser.exit(1, f"{path}: {exc}\n")
     base = args.config.parent if args.config else Path.cwd()
     log = EventLog(database_url(config.database_url, base))
-    stop = threading.Event()
+    stop = StopEvent()
     try:
         reload_config = start(config, path, base, log, stop, load=load, prune=prune(log, config, base))
     except LeaseHeld as exc:

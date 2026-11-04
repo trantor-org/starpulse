@@ -33,6 +33,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from starpulse.board.model.search_config import Search
 from starpulse.contracts.adapters import BoardTask
+from starpulse.event_log.wake import StopEvent
 
 logger = logging.getLogger(__name__)
 
@@ -461,7 +462,7 @@ class SearchIndex:
                 break
         return stored
 
-    def keep_embedding(self, stop: threading.Event) -> None:
+    def keep_embedding(self, stop: StopEvent) -> None:
         """Run `embed_pending` every few seconds until `stop` is set; a failed pass is logged and retried later."""
         delay = _POLL
         while not stop.wait(delay):

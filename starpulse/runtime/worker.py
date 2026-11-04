@@ -22,6 +22,7 @@ import os
 import threading
 from pathlib import Path
 
+from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.server import listen_options
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ def main(argv: list[str] | None = None) -> None:
         try:
             config = load(path)
             base = args.config.parent if args.config else Path.cwd()
-            return run_contexts(config, path, contexts_of(config), threading.Event(), base=base)
+            return run_contexts(config, path, contexts_of(config), StopEvent(), base=base)
         except (OSError, ValueError) as exc:
             parser.exit(1, f"{path}: {exc}\n")
     if args.context == "scheduler":

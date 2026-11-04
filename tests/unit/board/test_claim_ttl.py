@@ -21,6 +21,7 @@ from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import last_run_event
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.assembly import assemble
 from starpulse.runtime.config import load
@@ -236,7 +237,7 @@ def test_serve_follows_the_claim_expiry_the_sweep_pass_saved(served, tmp_path: P
     assert sweep(built, store, _scanned(tmp_path, feed), ttl=1800, now=claimed + 1, expiries=expiries) == []
     history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", {})
     history.save_claim_expiries(expiries)
-    stopped = threading.Event()
+    stopped = StopEvent()
     stopped.set()  # one pass, then it ends
 
     feed.follow_expiries(history, stopped)
@@ -257,7 +258,7 @@ def test_the_board_sweep_saves_its_pass_expiry_that_serve_follows(served, tmp_pa
     passes[-1](SimpleNamespace(wait=lambda _timeout: next(waits)))
 
     assert history.claim_expiries() == {"task-5": claimed + 1800}
-    stopped = threading.Event()
+    stopped = StopEvent()
     stopped.set()
     feed.follow_expiries(history, stopped)
     assert feed.task("task-5")["claim_expires_at"] == claimed + 1800

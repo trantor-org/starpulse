@@ -22,6 +22,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from starpulse.event_log.wake import StopEvent
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.adapters.lane_sweep import LaneSweep
 from starpulse.board.claim_refusals import CLAIMS_STREAM
@@ -136,26 +137,26 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     feed.record_ratings(log)
     # `starpulse worker board` dates when each task's Start Criteria were met; this process rereads the dates it keeps.
     threading.Thread(
-        target=feed.follow_criteria, args=(store, threading.Event()), name="criteria-follow", daemon=True
+        target=feed.follow_criteria, args=(store, StopEvent()), name="criteria-follow", daemon=True
     ).start()
     # the board worker sweeps and saves each pass's expiries; serve follows them
     threading.Thread(
-        target=feed.follow_expiries, args=(store, threading.Event()), name="expiries-follow", daemon=True
+        target=feed.follow_expiries, args=(store, StopEvent()), name="expiries-follow", daemon=True
     ).start()
     feed.read_lanes(store.lane_rows)
     # the instance indexes its board for search
     search = SearchIndex.open(log.engine, config.search)
     if search is not None:
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
-    stop = threading.Event()
+    stop = StopEvent()
     if board.attach is not None:
         board.attach(log)
     projector = Projector(log.engine, EventStore(log.engine), search)
     projector.catch_up()
     feed.follow_read_model()
     feed.ready.set()
-    host.follow_read_model(projector, feed, stop)
-    MachineDeltas(feed, model).follow(stop)
+    host.follow_read_model(projector, feed, stop, log)
+    MachineDeltas(feed, model).follow(stop, log)
     refusals = ClaimRefusals(feed)
     follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry)
     verdicts = Verdicts(feed)
@@ -176,7 +177,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     conformance.follow(log, stop)
     # a task whose file lane differs from the board's is reconciled, and exported if it stays so
     lane_sweep = LaneSweep(feed, board)
-    lane_stop = threading.Event()
+    lane_stop = StopEvent()
     lane_sweep.start(lane_stop)
     # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks; an opt-in
@@ -189,7 +190,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     if refresh_token:
         pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
     host.announce(port, feed.snapshot()["hint"])
-    scheduler_stop = threading.Event()
+    scheduler_stop = StopEvent()
     scheduler_runtime = host.scheduler_remote(config, base, feed, log, scheduler_stop)
     from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
 

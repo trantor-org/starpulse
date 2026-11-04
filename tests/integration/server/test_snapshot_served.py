@@ -17,6 +17,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.adapter_kit import next_event as _next_event
 from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import task
@@ -131,7 +132,7 @@ def test_a_connecting_page_neither_misses_nor_repeats_a_change(tmp_path: Path) -
     feed.put(task("PROJ-0"))
     seen: set[str] = set()
     repeats: list[str] = []
-    stop = threading.Event()
+    stop = StopEvent()
 
     def writer() -> None:
         n = 0

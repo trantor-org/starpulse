@@ -11,6 +11,8 @@ import threading
 import time
 from typing import Any
 
+from starpulse.event_log.wake import StopEvent
+
 #: Between two timed collections. Cyclic garbage waits at most this long; one pause of a few seconds in this span
 #: reaches about 1% of requests.
 COLLECT_EVERY_S = 300.0
@@ -61,7 +63,7 @@ def first_collection_delay_s(interval_s: float, pid: int) -> float:
     return interval_s * ((pid * _GOLDEN) % 1.0)
 
 
-def install(stop: threading.Event, interval_s: float = COLLECT_EVERY_S, pauses: GcPauses = PAUSES) -> threading.Thread:
+def install(stop: StopEvent, interval_s: float = COLLECT_EVERY_S, pauses: GcPauses = PAUSES) -> threading.Thread:
     """Turn automatic collection off, time every collection into `pauses`, and collect each `interval_s` (first after a per-worker phase) until `stop`."""
     gc.callbacks.append(pauses.callback)
     gc.disable()

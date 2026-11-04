@@ -4,6 +4,7 @@ import json
 import threading
 
 from starpulse.board.board_feed import BoardFeed
+from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.adapter_kit import task
 from starpulse.views.adapters.inbound.snapshots import IDLE_REFRESH_S, Snapshots
 
@@ -133,7 +134,7 @@ def test_keep_warm_rebuilds_a_changed_feed_until_stopped() -> None:
     feed.put(task("PROJ-1", "To Do"))
     snapshots = Snapshots(feed, refresh_s=0.01)
     snapshots.build()
-    stop = threading.Event()
+    stop = StopEvent()
     thread = threading.Thread(target=snapshots.keep_warm, args=(stop,), daemon=True)
     thread.start()
     feed.put(task("PROJ-1", "In Progress"))

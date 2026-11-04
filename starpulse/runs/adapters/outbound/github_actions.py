@@ -22,7 +22,7 @@ import yaml
 
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 from starpulse.event_log.event_log import EventLog, Tail
-from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
+from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound.rest import GitHubError, Transport, connect, get, repo_of
 from starpulse.runs.model import run_events
 
@@ -386,7 +386,7 @@ def _reconcile_forever(runs: GitHubRuns) -> None:
         time.sleep(RECONCILE_INTERVAL)
 
 
-def follow(url: str, runs: RunsSink, log: EventLog, *, interval: float = DEFAULT_POLL_INTERVAL) -> None:
+def follow(url: str, runs: RunsSink, log: EventLog) -> None:
     """Read the repository at `url` into `runs`: its listing, then each run entry appended since the log's head.
 
     The head is read before the listing, so an entry the listing may not hold is still read and the retained ones,
@@ -398,9 +398,9 @@ def follow(url: str, runs: RunsSink, log: EventLog, *, interval: float = DEFAULT
     reader = GitHubRuns(runs, Repository(transport, repo))
 
     def read() -> None:
-        tail = Tail.live(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed
+        tail = Tail.live(log, run_events.STREAM)  # before the listing: what it holds is not replayed
         reader.reconcile()
-        tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), threading.Event())
+        tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), StopEvent())
 
     threading.Thread(target=read, name="github-runs", daemon=True).start()
     threading.Thread(target=_reconcile_forever, args=(reader,), name="github-runs-reconcile", daemon=True).start()

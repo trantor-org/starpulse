@@ -1,15 +1,14 @@
-"""Poll the read model for the Scheduler's change deltas: the task and move events its loop wakes on, without folding a board."""
+"""Follow the read model for the Scheduler's change deltas: the task and move events its loop wakes on, without folding a board."""
 
 from __future__ import annotations
 
-import logging
 import threading
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-logger = logging.getLogger(__name__)
+from starpulse.event_log.wake import StopEvent
 
-#: Seconds between two polls of the read model.
-POLL_S = 0.5
+if TYPE_CHECKING:
+    from starpulse.event_log.event_log import EventLog
 
 
 class _Feed(Protocol):
@@ -20,19 +19,19 @@ class _Moves(Protocol):
     def publish_changes(self) -> int: ...
 
 
-def follow_changes(feed: _Feed, moves: _Moves, stop: threading.Event, interval_s: float = POLL_S) -> threading.Thread:
-    """Run `feed.follow_read_model` and `moves.publish_changes` every `interval_s` on a daemon thread until `stop`; a pass
-    that raises is logged and the next one runs."""
+def follow_changes(feed: _Feed, moves: _Moves, stop: StopEvent, log: EventLog) -> threading.Thread:
+    """Run `feed.follow_read_model` and `moves.publish_changes` on each wake of `log` on a daemon thread until `stop`; a
+    pass that raises is logged and run again."""
 
-    def run() -> None:
-        while not stop.is_set():
-            try:
-                feed.follow_read_model()
-                moves.publish_changes()
-            except Exception:
-                logger.exception("scheduler: the change poll failed")
-            stop.wait(interval_s)
+    def pass_() -> None:
+        feed.follow_read_model()
+        moves.publish_changes()
 
-    thread = threading.Thread(target=run, name="scheduler-changes", daemon=True)
+    thread = threading.Thread(
+        target=log.run_on_wake,
+        args=(stop, pass_, "scheduler: the change poll failed"),
+        name="scheduler-changes",
+        daemon=True,
+    )
     thread.start()
     return thread
