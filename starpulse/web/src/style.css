@@ -575,7 +575,7 @@ body:has(#sd) #crumb { visibility: hidden; }
 #kbm .tv .md details.dsec > summary:focus-visible { outline: 2px solid var(--ready); outline-offset: 2px; border-radius: 4px; }
 #kbm .tv .md details.dsec > summary .pv { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--muted); }
 #kbm .tv .md details.dsec[open] > summary .pv { display: none; }
-#kbm .tv .md details.dsec > .db { padding: 0 0 4px 1.5em; } #kbm .tv .md details.dsec > .db > :last-child { margin-bottom: 0; }
+#kbm .tv .md details.dsec > .db { padding: 0 0 4px 1.5em; } #kbm .tv .md details.dsec > .db > :last-child, #kbm .tv .md details.dsec > .db > :last-child > :last-child { margin-bottom: 0; }
 #kbm .tv .md ul, #kbm .tv .md ol { margin: 0 0 10px; padding-left: 1.4em; }
 #kbm .tv .md li { margin: 0 0 3px; }
 #kbm .tv .md li > :is(ul, ol) { margin: 3px 0 0; }

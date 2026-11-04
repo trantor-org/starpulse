@@ -16,7 +16,7 @@ describe("task dialog body", () => {
     expect(html).toContain('<th class="r">Size</th>');
     expect(html).toContain("<td>Lane</td>");
     expect(html).toContain("<pre>a: 1</pre>");
-    expect(html).toContain('<a class="tl" href="?view=kanban&amp;task=TASK-1">TASK-1</a>');
+    expect(html).toMatch(/<a [^>]*data-task="TASK-1"[^>]*>TASK-1<\/a>/);
   });
 
   it("draws a PROP-N proposal id as a link that opens that task", () => {
