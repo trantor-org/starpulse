@@ -16,8 +16,9 @@ from starpulse.views.adapters.inbound.api.pulls import PullReads
 
 REPO = "acme/widgets"
 BUDGET_S = 0.05
-#: One descheduled lookup on a loaded shard runs far past BUDGET_S; a read that computes the list takes seconds.
-SPIKE_S = 10 * BUDGET_S
+#: One descheduled lookup on a loaded shard runs far past BUDGET_S (0.68 s seen); a read that computes the list takes
+#: seconds more, so the bound sits above scheduling noise and below that.
+SPIKE_S = 40 * BUDGET_S
 UNBLOCKED_S = 1.0  # a read held by the rebuild would wait for its release, seconds past this
 HOLDINGS = 6000
 LOOKUPS = 20

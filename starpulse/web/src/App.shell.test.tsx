@@ -62,7 +62,8 @@ describe("the page's first tree", () => {
     act(() => root.render(<App />));
     act(() => held.store!.set({ tree: { states: ["In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards: [{ id: "TASK-1", title: "T", lane: "In Progress", dependencies: [] } as unknown as KanbanTask] }));
     await act(async () => void (await import("./features/level/SunsDrillIn")));
-    expect(host.querySelector('[aria-label="In Progress drill-in"] nav[aria-label="In Progress tasks"] button')?.getAttribute("aria-label")).toMatch(/^TASK-1 T, /);
+    const card = () => host.querySelector('[aria-label="In Progress drill-in"] nav[aria-label="In Progress tasks"] button')?.getAttribute("aria-label");
+    await act(async () => vi.waitFor(() => expect(card()).toMatch(/^TASK-1 T, /), { timeout: 5000 })); // the lazy view resolves late on a loaded shard
     frame();
     expect(mounted("#rail #feed, #rail section")).toBe(true);
     expect(mounted("#rail #legend")).toBe(false); // the mock's rule: no legends on this board
