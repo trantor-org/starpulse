@@ -305,3 +305,11 @@ def test_an_index_made_before_comments_is_rebuilt_with_the_column(engine) -> Non
     opened.index(_task("PROJ-1", comments="needle"))
 
     assert _found(opened, "needle") == ["PROJ-1"]
+
+
+def test_a_query_matching_only_the_task_id_names_the_task_field(index: SearchIndex) -> None:
+    index.index(_task("PROJ-45", title="Rotate keys"))
+
+    [hit] = index.search("PROJ-45")
+
+    assert hit["field"] == "task"
