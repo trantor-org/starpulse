@@ -106,10 +106,11 @@ def _graph(definition: dict, ran: list[dict]) -> list[dict]:
     """
     jobs = _jobs(definition)
     named = {key: name for key, name, _ in jobs}
+    declared = set(named) | set(named.values())
     steps: list[dict] = []
     taken: set[int] = set()
     for key, name, needs in jobs:
-        mine = [j for j in ran if j["name"] in (name, key) or j["name"].startswith(f"{name} (")]
+        mine = [j for j in ran if j["name"] in (name, key) or (j["name"] not in declared and j["name"].startswith(f"{name} ("))]
         taken.update(j["id"] for j in mine)
         steps.extend(_job_steps(name, [named.get(n, n) for n in needs], mine))
     for job in ran:

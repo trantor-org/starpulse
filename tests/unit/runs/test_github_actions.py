@@ -19,6 +19,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.runs.adapters.outbound.github_actions import (
     _CONCLUSION,
     _STATUS,
+    _graph,
     RECONCILE_INTERVAL,
     GitHubRuns,
     Repository,
@@ -125,6 +126,13 @@ def test_a_jobs_run_steps_follow_it_in_order_named_for_their_job() -> None:
 
 def job(name: str, status: str, conclusion: str | None = None, *, job_id: int = 1) -> dict:
     return {"id": job_id, "name": name, "status": status, "conclusion": conclusion, "steps": []}
+
+
+def test_a_job_declared_as_test_lint_is_not_counted_under_job_test() -> None:
+    definition = {"jobs": {"test": {"runs-on": "x"}, "lint": {"name": "test (lint)", "runs-on": "x"}}}
+    ran = [job("test", "completed", "success", job_id=1), job("test (lint)", "completed", "failure", job_id=2)]
+    steps = {s["name"]: s["status"] for s in _graph(definition, ran)}
+    assert (steps["test"], steps["test (lint)"]) == ("succeeded", "failed")
 
 
 def serving_jobs(*jobs: dict) -> dict:
