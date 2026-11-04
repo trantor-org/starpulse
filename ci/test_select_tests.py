@@ -378,9 +378,9 @@ def test_a_new_test_file_the_map_never_saw_selects_itself(repo):
     assert select(repo, [new], mapped(**{TEST_LEAF: [LEAF]})) == Selection([new])
 
 
-def test_a_mapped_conftest_selects_its_tests_instead_of_the_full_suite(repo):
+def test_a_mapped_conftest_runs_the_full_suite(repo):
     conftest = "tests/conftest.py"
-    assert select(repo, [conftest], mapped(**{TEST_LEAF: [LEAF, conftest]})) == Selection([TEST_LEAF])
+    assert select(repo, [conftest], mapped(**{TEST_LEAF: [LEAF, conftest]})) == FULL
     assert select(repo, [conftest], mapped(**{TEST_LEAF: [LEAF]})) == FULL
 
 
