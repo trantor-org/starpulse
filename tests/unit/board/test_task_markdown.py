@@ -80,3 +80,9 @@ def test_an_untouched_rendering_of_an_int_priority_imports_as_no_change(served) 
     record = {**served[0].read("task-5"), "priority": 2}
 
     assert imported(render(record), record) == {}
+
+
+def test_a_description_with_a_sub_heading_round_trips(served) -> None:  # noqa: F811
+    record = {**served[0].read("task-5"), "description": "Intro\n\n## Sub\n\nmore"}
+
+    assert imported(render(record), record) == {}
