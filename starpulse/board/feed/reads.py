@@ -51,7 +51,8 @@ class ReadMethods:
             return None
         ready = task_id in self._read_model.ready(row["state"], self._roles.done)  # type: ignore[union-attr]
         return self._expiring(
-            summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row)), self._default_profiles) | read_model_detail(row, self._roles.attention)
+            summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row)), self._default_profiles)
+            | read_model_detail(row, self._roles.attention)
         )
 
     def follow_read_model(self, limit: int = 1000) -> int:
@@ -181,12 +182,6 @@ class ReadMethods:
         """Say the stream has not been reached yet, so a page shows that instead of an empty Board."""
         with self._lock:
             self._awaiting = True
-
-    def await_machines(self) -> None:
-        """Say the machine events are being replayed, so the snapshot reads until `machines_read`: a page told it
-        draws nothing from the phase flows the replay has not filled."""
-        with self._lock:
-            self._machines_reading = True
 
     def machines_read(self) -> None:
         """Say the machine events replay has placed every task."""

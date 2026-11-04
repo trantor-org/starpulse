@@ -15,13 +15,13 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any, ClassVar, Protocol, get_args
 
 from pydantic import BaseModel
 
 from starpulse.board.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
 from starpulse.contracts.adapters import LAST_OUTCOMES, RunStatus
+from starpulse.contracts.stamps import iso_utc
 from starpulse.runs.model import run_events
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
@@ -82,10 +82,6 @@ def _decode(fields: dict) -> _Entry | None:
         return None
     well_formed = depends is None or isinstance(depends, list) and all(isinstance(d, str) for d in depends)
     return entry if entry.event in run_events.EVENTS and entry.status in get_args(RunStatus) and well_formed else None
-
-
-def _iso(at: float) -> str:
-    return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 #: The statuses of a step that is not over.
@@ -225,12 +221,12 @@ class PushRuns:
             self._dags[entry.key] = (dag or _dag(entry.key, {})) | {
                 "status": entry.status,
                 "runId": entry.run_id,
-                "startedAt": _iso(entry.at),
+                "startedAt": iso_utc(entry.at),
                 "finishedAt": "",
                 "steps": steps,
             }
         elif dag is not None and dag["runId"] == entry.run_id:
-            self._dags[entry.key] = dag | {"status": entry.status, "finishedAt": _iso(entry.at)}
+            self._dags[entry.key] = dag | {"status": entry.status, "finishedAt": iso_utc(entry.at)}
         else:
             return False  # the end of a run that is no longer the one drawn
         return True

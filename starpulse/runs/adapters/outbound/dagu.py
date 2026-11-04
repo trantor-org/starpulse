@@ -24,11 +24,12 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any, get_args
 
 from starpulse.contracts.adapters import LAST_OUTCOMES, RunsSink, RunStatus, StartFailedError
+from starpulse.contracts.stamps import iso_utc
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.polling import DEFAULT_POLL_INTERVAL
 from starpulse.runs.model import run_events
@@ -714,10 +715,6 @@ def _decode(fields: dict) -> _Run | None:
     return run if well_formed else None
 
 
-def _iso(at: float) -> str:
-    return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _stepped(dag: dict, run: _Run) -> dict | None:
     """`dag` with the step `run` reports moved in the run it names, or None when that run is neither active nor the latest.
 
@@ -730,7 +727,7 @@ def _stepped(dag: dict, run: _Run) -> dict | None:
     moved = dag
     if mine is not None:
         if run.status == "running":
-            step, since = run.step, _iso(run.at)
+            step, since = run.step, iso_utc(run.at)
         elif mine["step"] == run.step:
             step, since = "", ""
         else:
@@ -750,7 +747,7 @@ def _patched(recent: list[dict], run: _Run) -> list[dict]:
             if run.step:
                 entry = {**entry, "steps": entry["steps"] | {run.step: run.status}}
             elif run.event != "StepStarted":
-                entry = _restated(entry, run.status) | {"finishedAt": _iso(run.at)}
+                entry = _restated(entry, run.status) | {"finishedAt": iso_utc(run.at)}
         out.append(entry)
     return out
 
@@ -764,7 +761,7 @@ def _begun(recent: list[dict], run: _Run) -> list[dict]:
         "task": _task_of(run.run_id),
         "url": "",
         "status": "running",
-        "startedAt": _iso(run.at),
+        "startedAt": iso_utc(run.at),
         "finishedAt": "",
         "params": {},
         "steps": {},
@@ -908,14 +905,14 @@ def _begin_move(
     begun = {
         "runId": run.run_id,
         "status": "running",
-        "startedAt": _iso(run.at),
+        "startedAt": iso_utc(run.at),
         "step": "",
         "stepStartedAt": "",
         "steps": {step["name"]: "not_started" for step in dag["steps"]},
     }
     moved = _restated(dag, "running") | {
         "runId": run.run_id,
-        "startedAt": _iso(run.at),
+        "startedAt": iso_utc(run.at),
         "finishedAt": "",
         "steps": [_restated(step, "not_started") for step in dag["steps"]],
         "active": [*others, begun],
@@ -930,7 +927,7 @@ def _finish_move(
     listed = reader._listed(run.dag)
     fresh = listed.get("recent") if listed else None
     moved = _restated(dag, run.status) | {
-        "finishedAt": _iso(run.at),
+        "finishedAt": iso_utc(run.at),
         "steps": listed["steps"] if listed else dag["steps"],
         "active": others,
     }

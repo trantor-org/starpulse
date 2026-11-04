@@ -23,9 +23,9 @@ changed files.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from starpulse.contracts.stamps import iso_utc
 from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -46,13 +46,9 @@ REOPENING = (GITHUB_MACHINE, "PR_REOPENED")
 Record = dict[str, Any]
 
 
-def _iso(at: float) -> str:
-    return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _bare_detail(at: float) -> Record:
     """What the Board reads of a record that no read of GitHub made: nothing known of files or the merge commit."""
-    stamp = _iso(at)
+    stamp = iso_utc(at)
     ci = {"createdAt": stamp, "mergeable": "UNKNOWN", "merged": False, "mergedAt": None}
     return {
         "mergedAt": None,
@@ -77,7 +73,7 @@ def _opened(repo: str, number: int, body: str, at: float) -> Record:
         "checks": "none",
         "requiredChecks": [],
         "threads": 0,
-        "updatedAt": _iso(at),
+        "updatedAt": iso_utc(at),
         "mergedAt": None,
         "mergeSha": None,
         "fetchedAt": at,
@@ -90,7 +86,7 @@ def _opened(repo: str, number: int, body: str, at: float) -> Record:
 
 def _closed(state: str) -> Callable[[Record, Mapping[str, Any], float], Record]:
     def delta(record: Record, _fields: Mapping[str, Any], at: float) -> Record:
-        stamp = _iso(at) if state == "MERGED" else None
+        stamp = iso_utc(at) if state == "MERGED" else None
         detail = record["detail"] or _bare_detail(at)
         ci = detail["ci"] | {"merged": state == "MERGED", "mergedAt": stamp}
         return {"state": state, "mergedAt": stamp, "detail": detail | {"mergedAt": stamp, "ci": ci}}
@@ -181,7 +177,7 @@ class RecordProjection:
             if name not in _DELTAS:
                 continue
             record = found[0] if found else _opened(repo, number, self._body(key), at)
-            patched = record | _DELTAS[name](record, fields, at) | {"fetchedAt": at, "updatedAt": _iso(at)}
+            patched = record | _DELTAS[name](record, fields, at) | {"fetchedAt": at, "updatedAt": iso_utc(at)}
             if not found or patched != record:
                 saved.append(patched)
         if saved:

@@ -16,9 +16,9 @@ import logging
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING
 
+from starpulse.contracts.stamps import epoch_of
 from starpulse.event_log import events
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -73,10 +73,6 @@ class Step:
     at: float
 
 
-def _epoch(text: str) -> float:
-    return datetime.fromisoformat(text).timestamp()
-
-
 def _ran(suite: dict) -> bool:
     """False for an app's suite GitHub holds QUEUED for good: no workflow run backs it, so no check will report."""
     return suite["status"] == "COMPLETED" or bool(suite.get("workflowRun"))
@@ -91,25 +87,25 @@ def parse(url: str, node: dict) -> PullHistory:
             Suite(
                 done=suite["status"] == "COMPLETED",
                 conclusion=suite["conclusion"],
-                updated=_epoch(suite["updatedAt"]),
+                updated=epoch_of(suite["updatedAt"]),
                 attempt=(suite.get("workflowRun") or {}).get("runAttempt", 1),
             )
             for suite in commit["checkSuites"]["nodes"]
             if _ran(suite)
         )
         if suites:  # a push the checks saw; a commit that started none was not a head
-            started = min(_epoch(suite["createdAt"]) for suite in commit["checkSuites"]["nodes"])
+            started = min(epoch_of(suite["createdAt"]) for suite in commit["checkSuites"]["nodes"])
             heads[commit["oid"]] = Head(commit["oid"], started, False, suites)
     for push in node.get("timelineItems", {}).get("nodes", []):
-        oid, at = push["afterCommit"]["oid"], _epoch(push["createdAt"])
+        oid, at = push["afterCommit"]["oid"], epoch_of(push["createdAt"])
         known = heads.get(oid)
         heads[oid] = Head(oid, at, True, known.suites if known else ())
     return PullHistory(
         url=url,
-        opened=_epoch(node["createdAt"]),
+        opened=epoch_of(node["createdAt"]),
         heads=tuple(sorted(heads.values(), key=lambda head: head.at)),
         conflicting=node.get("mergeable") == "CONFLICTING" and not node.get("merged"),
-        merged_at=_epoch(node["mergedAt"]) if node.get("mergedAt") else None,
+        merged_at=epoch_of(node["mergedAt"]) if node.get("mergedAt") else None,
     )
 
 
