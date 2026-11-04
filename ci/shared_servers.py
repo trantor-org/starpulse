@@ -31,8 +31,11 @@ _HOSTING: ContextVar[Any] = ContextVar("hosting", default=None)  # the `_Hosted`
 class _Hosted:
     """One shared server: built when first asked for, built again, on its port and in its directory, after a write."""
 
-    def __init__(self, root: Path, original: Callable[..., Any], shared: dict[str, Any]) -> None:
+    def __init__(
+        self, root: Path, original: Callable[..., Any], shared: dict[str, Any], patch: pytest.MonkeyPatch | None = None
+    ) -> None:
         self.root = root
+        self.patch = patch or pytest.MonkeyPatch()
         self.build = contextmanager(original)
         self.params = tuple(inspect.signature(original).parameters)
         self.shared = shared
@@ -54,8 +57,7 @@ class _Hosted:
     def start(self) -> None:
         self.wrote = False
         self.stack = ExitStack()
-        patch = self.stack.enter_context(pytest.MonkeyPatch.context())
-        given = {"tmp_path": self.root, "monkeypatch": patch, **self.shared}
+        given = {"tmp_path": self.root, "monkeypatch": self.patch, **self.shared}
         token = _HOSTING.set(self)
         try:
             self.url = self.stack.enter_context(self.build(**{name: given[name] for name in self.params}))
@@ -77,10 +79,13 @@ class _Hosts:
     def __init__(self, factory: pytest.TempPathFactory) -> None:
         self.factory = factory
         self.by_name: dict[str, _Hosted] = {}
+        # One patch for every host: a context per host restored a later host's saved lambda over the real attribute
+        # when they closed in build order, and left it patched for the rest of the worker.
+        self.patch = pytest.MonkeyPatch()
 
     def url(self, name: str, original: Callable[..., Any], shared: dict[str, Any]) -> str:
         if name not in self.by_name:
-            host = self.by_name[name] = _Hosted(self.factory.mktemp(name), original, shared)
+            host = self.by_name[name] = _Hosted(self.factory.mktemp(name), original, shared, self.patch)
             host.start()
         return self.by_name[name].url
 
@@ -91,6 +96,7 @@ class _Hosts:
     def close(self) -> None:
         for host in self.by_name.values():
             host.stack.close()
+        self.patch.undo()
 
 
 def _wrapped(fixture: Any) -> Callable[..., Any]:
