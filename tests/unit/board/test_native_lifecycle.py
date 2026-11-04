@@ -305,7 +305,12 @@ def test_parking_on_an_open_criterion_of_a_task_records_the_need_beside_the_depe
 
 @pytest.mark.parametrize(
     ("need", "why"),
-    [("task-2#3", "has no criterion #3"), ("task-2#x", "has no criterion #x"), ("task-2#1", "already checked")],
+    [
+        ("task-2#3", "has no criterion #3"),
+        ("task-2#x", "has no criterion #x"),
+        ("task-2#\u00b2", "has no criterion #\u00b2"),
+        ("task-2#1", "already checked"),
+    ],
 )
 def test_parking_on_a_criterion_that_is_absent_or_checked_is_refused_and_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, need: str, why: str
