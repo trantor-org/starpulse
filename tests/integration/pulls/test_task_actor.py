@@ -212,6 +212,24 @@ def test_a_review_task_citing_only_another_tasks_merged_pr_closes_and_one_citing
     assert [name for name, _ in board.comments()] == []
 
 
+def test_a_task_in_a_review_lane_named_qa_citing_only_another_tasks_merged_pr_closes(
+    store: PullStore, stop: threading.Event
+) -> None:
+    def renamed(lane: str) -> str:
+        return "qa" if lane == "review" else lane
+
+    waits = {renamed(lane): facts for lane, facts in WAITS.items()}
+    moves = {(renamed(lane), event): to for (lane, event), to in MOVES.items()}
+    board = Board(BoardFeed(), task("TASK-1", "QA", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop, waits, moves)
+    store.save([pull(1, state="MERGED", branch="claude/task-9-other")])
+
+    actor.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+
+
 def test_a_review_check_task_citing_only_other_tasks_prs_closes_and_a_feature_task_doing_so_stays(
     store: PullStore, stop: threading.Event
 ) -> None:
