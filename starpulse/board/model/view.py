@@ -7,8 +7,6 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
-from starpulse.contracts.adapters import Move
-
 #: Who `task move` moves as: the machine YAML's writers say which moves an agent may make.
 AGENT = "agent"
 
@@ -19,6 +17,8 @@ def board_flow(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """The verdict on each column as the agent meets it: a move the board machine leaves to others is refused."""
+    from starpulse.contracts.adapters import Move  # pydantic models cost ~0.25 CPU-s, so only a move verdict pays them
+
     return {
         column: Move.model_validate(raw).for_actor(AGENT).model_dump(include={"allowed", "reason", "skill"})
         for column, raw in agent["moves"].items()
