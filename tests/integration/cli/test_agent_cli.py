@@ -29,6 +29,9 @@ from starpulse.cli import agent_wire, doctor, skill_install
 from starpulse.contracts.adapters import MachineEvent, Move, TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.projector import Projector
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.harness_telemetry.adapters.inbound.telemetry import signals
 from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -2677,6 +2680,45 @@ def test_task_show_reads_a_cold_done_task_whole_from_the_board_and_a_dependent_n
     )
     assert cold["criteria"] == [{"text": "ships", "checked": True}]
     assert dependent["waiting_on"] == []
+
+
+@pytest.mark.parametrize(("event", "lane"), [("Done", "done"), ("Archived", "archived")])
+def test_task_show_closed_task_off_the_snapshot_reads_its_record_and_an_unknown_one_is_not_found(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], event: str, lane: str
+) -> None:
+    engine = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").engine
+    store = EventStore(engine)
+    store.append("task", "PROJ-9", 0, [NewEvent("TaskCreated", {"title": "Old", "state": "Done"}, "adin", "operator")])
+    if event == "Archived":
+        store.append("task", "PROJ-9", 1, [NewEvent("Archived", {}, "adin", "operator")])
+    Projector(engine, store).catch_up()
+    tomorrow = time.time() + 86_400  # the Done task is past its day, so the snapshot holds none of it
+    record = {
+        "title": "Old work",
+        "type": "story",
+        "profile": "@agent-a",
+        "labels": [],
+        "milestone": "",
+        "dependencies": [],
+        "description": "Long ago.",
+        "acceptanceCriteria": [],
+    }
+    feed = BoardFeed(roles=ROLES, machines=MACHINES, read_model=ReadModel(engine), clock=lambda: tomorrow)
+    live, archive = ({}, {"PROJ-9": record}) if lane == "archived" else ({"PROJ-9": record}, {})
+
+    with _serve(tmp_path, feed, bare_board(read=live.get, read_archived=archive.get)) as server:
+        code, shown = _run(capsys, ["task", "show", "PROJ-9", "--server", _url(server, "")])
+        missing, refused = _run(capsys, ["task", "show", "PROJ-404", "--server", _url(server, "")])
+    engine.dispose()
+
+    assert (code, shown["id"], shown["lane"], shown["title"], shown["description"]) == (
+        0,
+        "PROJ-9",
+        lane,
+        "Old work",
+        "Long ago.",
+    )
+    assert (missing, refused["code"]) == (4, "not_found")
 
 
 def test_board_milestone_lists_the_done_tasks_past_their_hot_day(

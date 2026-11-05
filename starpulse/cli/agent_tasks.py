@@ -26,6 +26,7 @@ from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
 from starpulse.cli import agent_wire
 from starpulse.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS, RELEASE_KEYS
+from starpulse.event_log.lane_events import ARCHIVED
 
 #: What a task route's 404 says when the board has no such task, as opposed to a board that cannot read or write tasks.
 _TASK_MISSING = ("is not on the board", "has no record to read")
@@ -146,7 +147,7 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             ((key, value) for key, value in snapshot["settled"].items() if key.casefold() == wanted), (None, None)
         )
         if settled is None:
-            raise agent_wire.CliError("not_found", f"{args.task} is not on the board")
+            return _show_cold(agent_wire.server_url(args.server, environ), args.task, snapshot)
         # A settled task has left the lanes, and the snapshot keeps only where it settled.
         agent = {
             "id": settled_id,
@@ -165,11 +166,15 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
 
 
 def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
-    """A done task past its hot day, whole: the snapshot holds only its id, so its record is read from the board."""
+    """A closed task, whole: a done task past its hot day or one off the snapshot, Done or archived, whose record is
+    read from the board; a task the board has no record of is not on it."""
     status, document = agent_wire.get(base, f"/api/task/{urllib.parse.quote(task_id, safe='')}")
+    if status == 404:
+        raise agent_wire.CliError("not_found", f"{task_id} is not on the board")
     if status != 200:
         raise agent_wire.CliError("unavailable", f"{base} answered {status} for the record of {task_id}")
-    agent = cold_agent(task_id, document["record"], roles_of(snapshot).done)
+    state = ARCHIVED if document.get("archived") else roles_of(snapshot).done
+    agent = cold_agent(task_id, document["record"], state)
     return _described(task_view(agent, snapshot), agent["description"], base)
 
 

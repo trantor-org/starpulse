@@ -176,7 +176,7 @@ _Held = tuple[Path, tuple[int, int], dict[str, Any]]
 #: The record `_reader` last built for each task of a board, so a repeat read of a file not written since neither finds
 #: nor parses it again. A record is kept only once its file is `_SETTLED_NS` old: a later write within the clock's tick
 #: could leave the same stamp. Callers add fields to the copy `read` returns, never to a list or dict inside it.
-_RECORDS: dict[tuple[Path, str], _Held] = {}
+_RECORDS: dict[tuple[Path, tuple[str, ...], str], _Held] = {}
 
 #: How many records `_RECORDS` keeps: the least recently built is dropped first, so a board of any size holds a fixed
 #: number of parsed task files.
@@ -457,17 +457,22 @@ def _session(notes: str, comments: list[dict[str, str]]) -> str:
     return links[-1] if links else ""
 
 
-def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]], done: str | None = None) -> TaskReader:
-    """A board reader: the record of the task's file, keyed by the fields the task view draws and edits.
+def _reader(
+    root: Path,
+    evaluate: Callable[[str, str], list[dict[str, Any]]],
+    done: str | None = None,
+    folders: tuple[str, ...] = ("tasks", "completed"),
+) -> TaskReader:
+    """A board reader: the record of the task's file under `folders`, keyed by the fields the task view draws and edits.
 
     `start_criteria` is the description's Start Criteria, each with the result `evaluate` gives it; a Done task's is empty."""
 
     def read(task: str, /) -> dict[str, Any] | None:
-        key = (root, task.casefold())
+        key = (root, folders, task.casefold())
         held = _RECORDS.get(key)
         if held is None or not _unchanged(held):
             try:
-                if (path := _find(root, task)) is None:
+                if (path := _find(root, task, folders)) is None:
                     return None
                 held = (path, _stamp(path), _record_of(path.read_text(), task, _no_criteria))
             except OSError:
@@ -1526,6 +1531,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
                 "read": _reader(
                     root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate, roles.done
                 ),
+                "read_archived": _reader(root, _no_criteria, roles.done, ("archive/tasks",)),
                 "evaluate": evaluate,
                 "holds": _holds(settings.get("holds"), base),
                 "unfinished": _holds(settings.get("unfinished"), base),

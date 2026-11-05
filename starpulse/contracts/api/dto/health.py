@@ -193,6 +193,7 @@ class SessionStep(_Api):
     task: str | None
     at: float = Field(description="When the request was logged, in epoch seconds.")
     model: str
+    effort: str = Field("", description="The reasoning effort the request ran at; empty when the harness gives none.")
     origin: Literal["main", "side", "auxiliary"]
     skill: str = Field(
         description="The skill most recently loaded in the session, counting this step's own; `none` before any."

@@ -44,7 +44,16 @@ from starpulse.contracts.signals import CLAUDE_CODE, Signal
 from starpulse.flow_metrics.model.session_health import by_session
 from starpulse.flow_metrics.model.steps import session_owned
 
-__all__ = ["MIN_N", "cell_of", "cell_report", "combine_cost", "estimate_report", "fold_cost", "transition_cost"]
+__all__ = [
+    "MIN_N",
+    "cell_of",
+    "cell_report",
+    "combine_cost",
+    "estimate_report",
+    "fold_cost",
+    "profile_of",
+    "transition_cost",
+]
 
 #: Clean completions a cell needs to report.
 MIN_N = 5
@@ -98,6 +107,11 @@ def cell_of(tasks: Mapping[str, Mapping[str, Any]], task: str | None) -> tuple[s
     labels = tasks.get(task or "", {}).get("labels") or ()
     kind, size = _label(labels, "kind-"), _label(labels, "size-")
     return (kind, int(size)) if kind and size and size.isdigit() else None
+
+
+def profile_of(model: str, effort: str) -> str:
+    """The profile a session ran as, `<model>-<effort>`, each `unknown` when unrecorded."""
+    return f"{model or 'unknown'}-{effort or 'unknown'}"
 
 
 SizeBand = tuple[int, int, float]

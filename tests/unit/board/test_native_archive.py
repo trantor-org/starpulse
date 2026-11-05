@@ -103,3 +103,13 @@ def test_an_archive_records_the_release_of_a_waiting_dependent_in_its_history(tm
 
     row = replay(EventStore(log.engine).read("task", "task-7"))
     assert (row["dependencies"], row["state"]) == ([], "Ready")
+
+
+def test_an_archived_task_is_read_from_the_archive_by_read_archived_alone(tmp_path: Path) -> None:
+    built = _board(tmp_path)
+    assert built.archive("task-5", "obsolete").ok
+
+    record = built.read_archived("task-5")
+
+    assert record is not None and record["title"] == "Title"
+    assert built.read("task-5") is None

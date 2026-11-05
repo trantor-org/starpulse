@@ -49,6 +49,7 @@ def _step(task: str | None, s: Signal) -> dict[str, Any]:
         "task": task,
         "at": s.time,
         "model": s.model,
+        "effort": s.effort,
         "origin": s.origin,
         "skill": NO_SKILL,
         "activities": [],

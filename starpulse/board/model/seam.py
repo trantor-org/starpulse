@@ -234,6 +234,8 @@ class Board:
     """What the page says the Board is read from until the adapter is ready."""
     read: TaskReader | None = None
     """Reads a task's full record when the page opens it; None leaves the page with the snapshot's fields."""
+    read_archived: TaskReader | None = None
+    """Reads an archived task's full record, which `read` never finds; None leaves an archived task unread."""
     edit: TaskEditor | None = None
     """Saves the page's edits to a task in one write; None refuses every edit. Needs `read`, which it is checked against."""
     archive: TaskArchiver | None = None

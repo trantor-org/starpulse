@@ -62,12 +62,12 @@ def _resident_task(request: Request) -> Response | None:
         return None
     if (cited := resident_pulls(api.services.pulls, record.get("references", []))) is None:
         return None
-    return _answer_task(request, 200, {"task": name, "record": record}, cited)
+    return _answer_task(request, 200, {"task": name, "record": record, "archived": False}, cited)
 
 
 def _stored_task(request: Request) -> Response:
     api = seams(request)
-    status, body = task_record(api.feed, api.board.read, request.path_params["id"])
+    status, body = task_record(api.feed, api.board.read, request.path_params["id"], api.board.read_archived)
     cited = cited_pulls(api.services.pulls, body["record"].get("references", [])) if status == 200 else []
     return _answer_task(request, status, body, cited)
 

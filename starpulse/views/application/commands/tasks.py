@@ -63,19 +63,24 @@ _REF = "ref:"  # a dependency naming a sibling in the same batch create by its `
 _VERDICTS = {"pass": "PASS", "miss": "MISS"}
 
 
-def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[int, dict[str, Any]]:
+def task_record(
+    feed: BoardFeed, read: TaskReader | None, task: str, read_archived: TaskReader | None = None
+) -> tuple[int, dict[str, Any]]:
     """The full record of `task` from the board's reader: the HTTP status and JSON body.
 
     The record is keyed by the task's editable fields, which the snapshot's small entry does not carry; the page
-    opens it with this and sends it back as the `base` of an edit. Reading is not LAN-limited, like the snapshot.
+    opens it with this and sends it back as the `base` of an edit. Reading is not LAN-limited, like the snapshot. An
+    archived task is read through `read_archived`, its body `archived`, so a closed task stays readable.
     """
     if read is None:
         return 404, {"error": "this board cannot read a task's full record"}
-    if not is_held(feed, task):
+    archived = read_archived is not None and not is_held(feed, task) and feed.is_archived(task)
+    if not archived and not is_held(feed, task):
         return not_held(feed, task)
-    if (record := read(task)) is None:
+    reader = read_archived if archived and read_archived is not None else read
+    if (record := reader(task)) is None:
         return 404, {"error": f"{task} has no record to read"}
-    return 200, {"task": task, "record": record}
+    return 200, {"task": task, "record": record, "archived": archived}
 
 
 #: The edit change that adds a line to the task's notes rather than setting a record field.

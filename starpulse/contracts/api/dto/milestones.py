@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import Field
+
 from starpulse.contracts.api._base import _Api
 
 
@@ -12,6 +14,7 @@ class TaskRecord(_Api):
 
     task: str
     record: dict[str, Any]
+    archived: bool = Field(False, description="The task was archived: read from the archive, off the board's lanes.")
 
 
 class MilestoneRecord(_Api):

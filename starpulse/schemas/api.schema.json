@@ -7396,6 +7396,11 @@
           "description": "False for a harness the steps-per-completion ledger does not cover (Codex).",
           "type": "boolean"
         },
+        "effort": {
+          "default": "",
+          "description": "The reasoning effort the request ran at; empty when the harness gives none.",
+          "type": "string"
+        },
         "eval": {
           "description": "The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.",
           "type": "string"
@@ -8160,6 +8165,11 @@
           "description": "`claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.",
           "type": "string"
         },
+        "profile": {
+          "default": "",
+          "description": "`<model>-<effort>` of the phase's first main-thread step, each `unknown` when unrecorded.",
+          "type": "string"
+        },
         "side_steps": {
           "description": "The subagents' share of `steps`.",
           "type": "integer"
@@ -8757,6 +8767,11 @@
     "TaskRecord": {
       "description": "`GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.",
       "properties": {
+        "archived": {
+          "default": false,
+          "description": "The task was archived: read from the archive, off the board's lanes.",
+          "type": "boolean"
+        },
         "record": {
           "additionalProperties": true,
           "type": "object"
