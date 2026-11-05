@@ -185,6 +185,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._open: dict[str, dict] = {}
         #: Each key a placed task was known by before, to the key it holds now.
         self._aliases: dict[str, str] = {}
+        #: Each placed task's id to the ids it answered to before it was renamed.
+        self._renamed: dict[str, tuple[str, ...]] = {}
         self._settled: dict[str, dict] = {}
         #: Every placed task's assignee, a settled one's included, so a machine still drawing it keeps its colour.
         self._assignees: dict[str, str] = {}

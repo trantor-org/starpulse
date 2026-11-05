@@ -119,6 +119,7 @@ class RecordsMixin:
         if self._keys is not None and not self._keys.matches(task.id):
             return
         self._aliases.update(dict.fromkeys(task.aliases, task.id))
+        self._renamed[task.id] = task.aliases
         with self.recording:
             change = self._place(task)
             if self._search is not None:

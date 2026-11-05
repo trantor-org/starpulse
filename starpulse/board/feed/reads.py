@@ -27,11 +27,17 @@ class ReadMethods:
         It takes no lock, so opening a task never waits on the feed: one dict read is atomic, and a placed task's
         entry is replaced, never changed in place.
         """
-        task_id = self._aliases.get(task_id, task_id)
         if self._read_model is not None:
-            return self._read_model_agent(task_id)
+            return self._read_model_agent(self._keyed(task_id))
+        task_id = self._aliases.get(task_id, task_id)
         agent = self.held(task_id)
         return None if agent is not None and is_cold(agent) else agent
+
+    def _keyed(self, task_id: str) -> str:
+        """The key the read model holds `task_id` under: its own, else the id it was renamed to, else one it was renamed
+        from. A task renamed on disk keeps its old row until its stream is rewritten, so both spellings must find it."""
+        candidates = (task_id, self._aliases.get(task_id), *self._renamed.get(task_id, ()))
+        return next((key for key in candidates if key and self._read_model.task(key) is not None), task_id)  # type: ignore[union-attr]
 
     def _read_model_moves(self, summary: Mapping[str, Any]) -> dict:
         """The moves a read-model Task offers: the Board machine's out of its lane, a done Task's reopen among them."""
@@ -68,9 +74,9 @@ class ReadMethods:
 
     def held(self, task_id: str) -> dict | None:
         """The open Board task as `task` has it, or its cold stub (`is_cold`) when it is done and entered before local midnight."""
-        task_id = self._aliases.get(task_id, task_id)
         if self._read_model is not None:
-            return self._read_model_agent(task_id)
+            return self._read_model_agent(self._keyed(task_id))
+        task_id = self._aliases.get(task_id, task_id)
         return self._open.get(task_id) or self._open.get(self._keys.canonical(task_id) if self._keys else task_id)
 
     def is_resident(self, task_id: str) -> bool:
@@ -84,14 +90,14 @@ class ReadMethods:
         """Whether `held` finds the task, without building the moves and standing verdicts (one read of the task's file
         for each lane) that its answer carries."""
         if self._read_model is not None:
-            row = self._read_model.task(task_id)
+            row = self._read_model.task(self._keyed(task_id))
             return row is not None and not row["archived"]
         return self.held(task_id) is not None
 
     def cited(self, task_id: str) -> list[str]:
         """The pull request links the task cites, open or settled; none for a task the Board does not hold."""
         if self._read_model is not None:
-            row = self._read_model.task(task_id)
+            row = self._read_model.task(self._keyed(task_id))
             return [] if row is None else pull_links(row["references"])
         with self._lock:
             return list(self._cited.get(task_id, ()))
@@ -104,7 +110,7 @@ class ReadMethods:
     def is_done(self, task_id: str) -> bool:
         """Whether the task is done: completed, or in the done lane; a task the Board does not hold is not."""
         if self._read_model is not None:
-            row = self._read_model.task(task_id)
+            row = self._read_model.task(self._keyed(task_id))
             return row is not None and lane_id(row["state"]) in done_lanes(self._roles.done)
         with self._lock:
             return self._done_at(task_id) is not None
@@ -112,7 +118,7 @@ class ReadMethods:
     def is_archived(self, task_id: str) -> bool:
         """Whether the Board holds the task as archived: its file left the lanes by archive, so it never reaches Done."""
         if self._read_model is not None:
-            row = self._read_model.task(task_id)
+            row = self._read_model.task(self._keyed(task_id))
             return row is not None and bool(row["archived"])
         with self._lock:
             settled = self._settled.get(task_id)
