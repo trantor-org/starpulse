@@ -1,7 +1,12 @@
 """The cell score: ADR weights with missing parts renormalized, per kind x size cell and profile."""
 
+import argparse
+from pathlib import Path
+
 import pytest
+from starpulse.cli import agent_cli, agent_wire
 from starpulse.flow_metrics.model.scores import PullFacts, merged_pulls, pull_facts, score_cells, task_score
+from starpulse.github.adapters.outbound import rest
 
 LABELS = {"labels": ["kind-execute", "size-5"]}
 
@@ -153,3 +158,29 @@ def test_merged_pulls_map_tasks_named_in_titles_to_merged_pull_numbers() -> None
     ]
     transport = lambda method, path, body: (200, {"items": listed})
     assert merged_pulls(transport, "o/r") == {"TASK-5": 9}
+
+
+def test_scores_for_a_repo_filter_return_rows_from_a_server_whose_snapshot_settles_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    window = {"now": 1.0, "window_s": 3600.0}
+    routes = {
+        "/api/analytics/sessions": {**window, "slices": [slice_("TASK-5")]},
+        "/api/analytics/estimates": {**window, "estimates": [{"task": "TASK-5", "kind": "execute", "size": 5}]},
+    }
+    github = {
+        "/repos/o/r/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1": {
+            "items": [{"number": 7, "title": "feat(TASK-5): add", "merged_at": "2026-01-01T22:00:00Z"}]
+        }
+    }
+    pulls = _transport("2026-01-01T22:00:00Z")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(agent_wire, "get", lambda base, path, timeout=10.0: (200, routes[path.split("?")[0]]))
+    monkeypatch.setattr(agent_wire, "get_snapshot", lambda base: {"settled": {}})
+    transport = lambda method, path, body: (200, github[path]) if path in github else pulls(method, path, body)
+    monkeypatch.setattr(rest, "connect", lambda token: transport)
+    args = argparse.Namespace(server=None, hours=192.0, repo="o/r", config=None)
+
+    scored = agent_cli._scores(args, {})
+
+    assert [(row["kind"], row["size"], row["n"]) for row in scored["scores"]] == [("execute", 5, 1)]

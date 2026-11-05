@@ -416,7 +416,7 @@ def _estimates(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str
 
 def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The score of each kind x size cell and profile over `--hours` (`level.scores`): the completed slices of
-    `/api/analytics/sessions`, the labels of the snapshot's settled tasks and, for each task's merged pull request in
+    `/api/analytics/sessions`, the kind and size `/api/analytics/estimates` reads for each and, for each task's merged pull request in
     `--repo`, the commits after it was ready and its time to merge from GitHub; refusals as `analytics transitions`. `verdicts` judges each cell's other profiles against its busiest
     (`level.verdicts`)."""
     from starpulse.contracts.analytics import Analytics  # noqa: PLC0415 - import cost, paid on first use
@@ -434,8 +434,9 @@ def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     from starpulse.runtime.config import discover, load  # noqa: PLC0415 - import cost, paid on first use
 
     window = _window_read(args, environ, "/api/analytics/sessions", ("now", "window_s", "slices"))
-    settled = agent_wire.get_snapshot(agent_wire.server_url(args.server, environ))["settled"]
-    tasks = {task: {"labels": found.get("labels", [])} for task, found in settled.items()}
+    # The snapshot holds no settled task once a read model serves it; the server's estimates join every task's labels.
+    estimates = _window_read(args, environ, "/api/analytics/estimates", ESTIMATE_KEYS)["estimates"]
+    tasks = {row["task"]: {"labels": [f"kind-{row['kind']}", f"size-{row['size']}"]} for row in estimates}
     path = discover(args.config)
     try:
         analytics = load(path).analytics if path else Analytics()
