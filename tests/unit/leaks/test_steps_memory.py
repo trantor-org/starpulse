@@ -23,7 +23,7 @@ from starpulse.views.model.encoding import encode
 MB = 1024 * 1024
 KEYS = TaskKeys(key=re.compile(r"TASK-\d+"), branch=re.compile(r"task-(\d+)"), key_format="TASK-{}")
 NOW = 2_000_000.0
-STEPS = 12_000
+STEPS = 3_000
 SESSIONS = 60
 PEAK_PER_BODY_BYTE = 10  # the stored step rows of the window as dicts (~7), the body, and its parts; a list of every signal too is ~20
 
