@@ -20,7 +20,7 @@ from typing import Any
 
 import yaml
 
-from starpulse.board.adapters.session_activity import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS, holder_activity
+from starpulse.board.adapters.session_activity import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS, holder_activity, same_holder
 from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
 from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
@@ -73,7 +73,7 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
             and (not args.type or agent.get("type", "") == args.type)
             and (not args.label or args.label in agent["labels"])
             and (not profile or agent["model"] == profile)
-            and (not session or agent.get("assignee", "") == session)
+            and (not session or same_holder(agent.get("assignee"), session))
         )
 
     board = board_columns(snapshot, kept, args.state)

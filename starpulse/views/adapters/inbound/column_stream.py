@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from starpulse.board.adapters.session_activity import same_holder
 from starpulse.board.model.view import board_columns
 from starpulse.views.adapters.inbound.snapshots import Served, Snapshots
 
@@ -96,7 +97,7 @@ def column_view(columns: list[dict[str, Any]], assignee: str | None, states: Seq
     """The columns of `states` (all when none), each with the tasks `assignee` holds (every task when None)."""
     return {
         "columns": [
-            {**column, "tasks": [t for t in column["tasks"] if assignee is None or t["assignee"] == assignee]}
+            {**column, "tasks": [t for t in column["tasks"] if assignee is None or same_holder(t["assignee"], assignee)]}
             for column in columns
             if not states or column["state"] in states
         ]
@@ -115,7 +116,7 @@ class Interest:
         self._states = states
 
     def _shows(self, agent: dict[str, Any]) -> bool:
-        return (self._assignee is None or agent.get("assignee", "") == self._assignee) and (
+        return (self._assignee is None or same_holder(agent.get("assignee"), self._assignee)) and (
             not self._states or agent["state"] in self._states
         )
 

@@ -298,7 +298,7 @@ reads each skill's directory where it sits, so the machine beside `SKILL.md` is 
 step.
 The `starpulse-board` mod ([trantor-org/starpulse-board](https://github.com/trantor-org/starpulse-board), `/plugin marketplace add trantor-org/starpulse-board`, then `/plugin install starpulse-board@starpulse-board`)
 runs `starpulse board --assignee <session id>` when a session starts, after each tool call and after each turn, so a
-task claimed mid-turn shows before the turn ends. It opens no pane: the band above the prompt is the whole mod, in the
+task claimed mid-turn shows before the turn ends. `--assignee` and `/api/held` match a session by any name a claim can carry: its local Claude id, its bridge id (`session_x`, `cse_x`) or its Remote Control URL, the bridge the session's transcript names under `[board] transcripts`. It opens no pane: the band above the prompt is the whole mod, in the
 terminal and in Claude Desktop. It draws the held task's lane icon, ID, title (or the reason a Needs attention task waits
 on the operator, or what a Waiting task waits on), a bar with one segment per checked acceptance criterion and `k/n`, the
 delivery phases and substates the board serves, the pull request's checks, threads and freshness, and the session's cost,

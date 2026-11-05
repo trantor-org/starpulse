@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-__all__ = ["DEFAULT_SESSIONS", "DEFAULT_TRANSCRIPTS", "holder_activity", "session_activity"]
+__all__ = ["DEFAULT_SESSIONS", "DEFAULT_TRANSCRIPTS", "holder_activity", "holder_key", "same_holder", "session_activity"]
 
 DEFAULT_TRANSCRIPTS = "~/.claude/projects"
 """Where Claude Code writes each session's transcript, read for a terminal halt: `[board] transcripts`."""
@@ -24,6 +24,10 @@ TURNS = frozenset({"user", "assistant"})
 TURN_END = "turn_duration"
 INTERRUPT = "[Request interrupted"
 SESSION_ID = re.compile(r"[\w-]+")
+BRIDGE_ID = re.compile(r"(?:https?://\S+/)?(?:session|cse)_(\w+)/?")
+BRIDGE_FIELD = re.compile(r'"bridgeSessionId"\s*:\s*"([^"]+)"')
+HEAD_BYTES = 16 * 1024
+_BRIDGES: dict[tuple[Path, str], str] = {}
 
 
 def _seconds(stamp: str) -> float:
@@ -96,3 +100,33 @@ def holder_activity(transcripts: Path, sessions: Path, assignee: str, *, now: fl
     """`session_activity` of the session holding a task, whether its assignee is the local session id or the claude.ai
     URL of its bridge; None when the holder is not a running session with a transcript."""
     return session_activity(transcripts, _local_id(sessions, assignee), now=now)
+
+
+def _bridge_of(transcripts: Path, session: str) -> str:
+    """The bridge key a local session's transcript names in its first lines (a `bridge-session` entry); empty when it
+    has no transcript or no bridge. A found key is kept, a miss is not: the transcript may not be written yet."""
+    if (found := _BRIDGES.get((transcripts, session))) is not None:
+        return found
+    path = next(transcripts.glob(f"*/{session}.jsonl"), None) if SESSION_ID.fullmatch(session) else None
+    if path is None:
+        return ""
+    with path.open("rb") as transcript:
+        field = BRIDGE_FIELD.search(transcript.read(HEAD_BYTES).decode(errors="replace"))
+    bridge = BRIDGE_ID.fullmatch(field[1]) if field else None
+    if bridge:
+        _BRIDGES[transcripts, session] = bridge[1]
+    return bridge[1] if bridge else ""
+
+
+def holder_key(assignee: str, transcripts: Path | None = None) -> str:
+    """One identity for a session however a claim names it: its local Claude UUID, its bridge id (`session_x`,
+    `cse_x`) or its Remote Control URL. A UUID whose transcript names no bridge is its own key."""
+    if bridge := BRIDGE_ID.fullmatch(assignee):
+        return bridge[1]
+    return _bridge_of(transcripts or Path(DEFAULT_TRANSCRIPTS).expanduser(), assignee) or assignee
+
+
+def same_holder(held: str | None, wanted: str, transcripts: Path | None = None) -> bool:
+    """Whether the assignee `held` and the session `wanted` name one session, in any of its forms."""
+    held = held or ""
+    return held == wanted or (bool(held) and holder_key(held, transcripts) == holder_key(wanted, transcripts))
