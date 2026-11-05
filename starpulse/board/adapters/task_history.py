@@ -242,11 +242,14 @@ class TaskHistory:
         """A verb that appends the Events bringing a task's History to its file, whatever left them apart; whether any were needed.
 
         A file edited by a write that recorded nothing (an archive's unlink, before it named its dependents) leaves the read model
-        in the old state, and the board draws the read model. The next write heals it through `_held`; this heals it without one."""
+        in the old state, and the board draws the read model. The next write heals it through `_held`; this heals it without one.
+        A task with no file but a History (a rename made while the server was stopped) is archived; one with neither is no task."""
 
         def run(task: str) -> bool:
             record = read(task)
-            return record is not None and self._append(task, record, record, RECONCILER, "")
+            if record is None and not (self._store and self._store.head(KIND, task)):
+                return False
+            return self._append(task, record, record, RECONCILER, "")
 
         return run
 

@@ -32,6 +32,8 @@ INTERVAL = 60.0
 class _Feed(Protocol):
     def open_tasks(self) -> list[dict]: ...
 
+    def alias(self, alias: str, task: str) -> None: ...
+
 
 def mismatches(
     agents: Iterable[Mapping[str, Any]], read: Callable[[str], Mapping[str, Any] | None]
@@ -52,10 +54,28 @@ class LaneSweep:
     def __init__(self, feed: _Feed, board: Board) -> None:
         self._feed, self._board = feed, board
         self._seen: set[str] = set()
+        self._absent: set[str] = set()
         self._persisting: dict[str, tuple[str, str]] = {}
         self._lock = threading.Lock()
 
+    def _place(self) -> None:
+        """Bring the read model to the files where a rename left them apart: a listed file it lacks is reconciled, which
+        seeds its History, and each alias a file lists answers its id; an open task whose file is absent on two passes in
+        a row is reconciled, which archives it. With no files listed nothing is judged absent."""
+        files = list(self._board.files()) if self._board.files is not None and self._board.reconcile else []
+        known = {agent["id"] for agent in self._feed.open_tasks()}
+        for task, aliases in files:
+            if task not in known:
+                self._board.reconcile(task)
+            for alias in aliases:
+                self._feed.alias(alias, task)
+        absent = {task for task in known if files and self._board.read(task) is None}
+        for task in absent & self._absent:
+            self._board.reconcile(task)
+        self._absent = absent
+
     def sweep(self) -> None:
+        self._place()
         found = mismatches(self._feed.open_tasks(), self._board.read)
         for task in found:
             if self._board.reconcile is not None:

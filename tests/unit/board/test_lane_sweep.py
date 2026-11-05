@@ -19,10 +19,12 @@ class _Feed:
 
 class _Board:
     def __init__(self, files: dict[str, str]) -> None:
-        self.files, self.reconciled = files, []
+        self.statuses, self.reconciled = files, []
 
     def read(self, task: str) -> dict | None:
-        return {"status": self.files[task]} if task in self.files else None
+        return {"status": self.statuses[task]} if task in self.statuses else None
+
+    files = None
 
     def reconcile(self, task: str) -> bool:
         self.reconciled.append(task)
@@ -75,3 +77,53 @@ def test_the_sweep_thread_ends_when_its_stop_event_is_set() -> None:
     thread.join(5)
 
     assert not thread.is_alive()
+
+
+class _PlacingFeed(_Feed):
+    def __init__(self, states: dict[str, str]) -> None:
+        super().__init__(states)
+        self.aliases: dict[str, str] = {}
+
+    def alias(self, alias: str, task: str) -> None:
+        self.aliases[alias] = task
+
+
+class _PlacingBoard(_Board):
+    def __init__(self, files: dict[str, str], listed: list[tuple[str, list[str]]]) -> None:
+        super().__init__(files)
+        self.listed = listed
+
+    def files(self) -> list[tuple[str, list[str]]]:
+        return self.listed
+
+
+def test_a_file_the_read_model_lacks_is_reconciled_and_its_aliases_answer_its_id() -> None:
+    feed = _PlacingFeed({"TASK-1": "ready"})
+    board = _PlacingBoard({"TASK-1": "Ready", "PROP-2": "Proposed"}, [("TASK-1", []), ("PROP-2", ["TASK-9"])])
+
+    LaneSweep(feed, board).sweep()
+
+    assert board.reconciled == ["PROP-2"]
+    assert feed.aliases == {"TASK-9": "PROP-2"}
+
+
+def test_an_open_task_with_no_file_is_reconciled_when_a_second_pass_finds_it_still_absent() -> None:
+    feed = _PlacingFeed({"TASK-1": "ready", "TASK-9": "proposed"})
+    board = _PlacingBoard({"TASK-1": "Ready"}, [("TASK-1", [])])
+    sweep = LaneSweep(feed, board)
+
+    sweep.sweep()
+    assert board.reconciled == []
+    sweep.sweep()
+    assert board.reconciled == ["TASK-9"]
+
+
+def test_no_listed_files_leaves_every_open_task_alone() -> None:
+    feed = _PlacingFeed({"TASK-1": "ready"})
+    board = _PlacingBoard({}, [])
+    sweep = LaneSweep(feed, board)
+
+    sweep.sweep()
+    sweep.sweep()
+
+    assert board.reconciled == []
