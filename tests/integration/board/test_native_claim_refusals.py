@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.claim_refusals import CLAIMS_STREAM, ClaimRefusals
+from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM, ClaimRefusals
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog, Tail
 

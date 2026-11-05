@@ -88,7 +88,7 @@ type = "layers"
 # Four tiers, each importing only the tiers below it and `contracts`. Features on one `|` line are independent; a line
 # of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): the `runtime` composition root
 # builds every context and starts its `bin` workers, `views` draws the contexts for people, `pulls` reads GitHub Actions runs from `runs`,
-# `scheduler` samples the board feed and the harness machine, the Board (model, adapters and feed) sits under the
+# `scheduler` samples the board feed and the harness machine, the Board (model, application queries, adapters and bin; the feed is in its model) sits under the
 # features that read it, and the
 # history store in `flow_metrics` reads `machine_engine`.
 layers = [
@@ -201,9 +201,9 @@ forbidden_modules = [
 
 [[tool.importlinter.contracts]]
 id = "board-layers"
-name = "Board's model imports no adapter"
+name = "Board's model imports no application query or adapter"
 type = "layers"
-layers = ["starpulse.board.adapters", "starpulse.board.model"]
+layers = ["starpulse.board.bin", "starpulse.board.adapters", "starpulse.board.application.queries", "starpulse.board.model"]
 
 [[tool.importlinter.contracts]]
 id = "runs-layers"

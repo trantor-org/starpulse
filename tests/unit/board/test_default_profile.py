@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from starpulse.board.feed.shared import summary_agent
+from starpulse.board.model.feed.shared import summary_agent
 
 DEFAULTS = {"execute": {"2": "@agent-standard-medium"}, "spike": {"2": "@agent-deep-low"}}
 ROW = {

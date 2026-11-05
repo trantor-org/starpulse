@@ -92,9 +92,9 @@ def test_a_changed_test_file_selects_itself(repo):
 
 CONTRACT_TEST = "tests/unit/contracts/test_raw_task_feed_row.py"
 CONTRACT_PRODUCERS = [
-    "starpulse/board/feed/views.py",
-    "starpulse/board/feed/reads.py",
-    "starpulse/board/feed/shared.py",
+    "starpulse/board/model/feed/views.py",
+    "starpulse/board/model/feed/reads.py",
+    "starpulse/board/model/feed/shared.py",
     "starpulse/contracts/api/dto/task.py",
     "starpulse/contracts/api/dto/machine.py",
 ]

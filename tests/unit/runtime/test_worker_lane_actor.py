@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.event_log import lane_events
 from starpulse.event_log.event_log import EventLog, Tail

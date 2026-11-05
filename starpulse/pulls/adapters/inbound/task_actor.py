@@ -44,8 +44,8 @@ from collections.abc import Callable, Mapping, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board import criteria
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model import criteria
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.markdown import section_set
 from starpulse.board.model.seam import FLAGGED, HELD, MERGE_EVIDENCE, TaskCreator, TaskEditor, TaskReader, Written
 from starpulse.event_log.wake import StopEvent

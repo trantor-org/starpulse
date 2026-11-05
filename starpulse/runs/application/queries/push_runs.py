@@ -19,7 +19,7 @@ from typing import Any, ClassVar, Protocol, get_args
 
 from pydantic import BaseModel
 
-from starpulse.board.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
+from starpulse.board.model.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
 from starpulse.contracts.adapters import LAST_OUTCOMES, RunStatus
 from starpulse.contracts.stamps import iso_utc
 from starpulse.event_log.wake import StopEvent

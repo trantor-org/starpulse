@@ -7,7 +7,7 @@ from pathlib import Path
 
 from starlette.routing import BaseRoute, Mount, Route
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.views.adapters.inbound.asgi_app import PageApp, page_app

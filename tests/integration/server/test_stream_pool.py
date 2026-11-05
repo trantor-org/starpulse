@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import next_event, serve, url
 from starpulse.views.adapters.inbound import asgi_app

@@ -24,7 +24,7 @@ from starpulse.board.adapters.upstream_backlog import (
     read_config,
     upstream_keys,
 )
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask, Move
 from starpulse.event_log.event_log import EventLog
 from starpulse.machine_engine.model.machine_definition import Writer

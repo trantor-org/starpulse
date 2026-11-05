@@ -49,7 +49,7 @@ from starpulse.views.ports.services import Services
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starlette.types import ASGIApp, Receive, Scope, Send
 
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.flow_metrics.adapters.outbound.history import History
 
 

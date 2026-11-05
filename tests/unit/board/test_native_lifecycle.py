@@ -7,11 +7,11 @@ from typing import Any
 
 import pytest
 import yaml
-from starpulse.board import criteria
+from starpulse.board.model import criteria
 from starpulse.board.adapters import claim_ttl
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
 from starpulse.views.application.commands.lifecycle import park_task, review_task

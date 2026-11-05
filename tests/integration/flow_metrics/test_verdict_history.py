@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 from starpulse.event_log.wake import StopEvent
-from starpulse.board.board_feed import BoardFeed, follow
-from starpulse.board.verdicts import Verdicts
+from starpulse.board.model.board_feed import BoardFeed, follow
+from starpulse.board.model.verdicts import Verdicts
 from starpulse.event_log import verdict_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore, record_verdicts

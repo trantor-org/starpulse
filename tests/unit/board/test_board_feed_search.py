@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 from starpulse.board.adapters.search import SearchIndex
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 
 

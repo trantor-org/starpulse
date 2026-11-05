@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.event_log.wake import StopEvent
-from starpulse.board.board_feed import follow
+from starpulse.board.model.board_feed import follow
 from starpulse.event_log.event_log import EventLog
 
 STREAM = "backlog:projection"

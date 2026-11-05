@@ -29,7 +29,7 @@ from starpulse.contracts.stamps import iso_utc
 from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import Entry
     from starpulse.pulls.adapters.outbound.pulls import PullStore
 

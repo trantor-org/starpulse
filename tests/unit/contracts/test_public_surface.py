@@ -246,7 +246,7 @@ def test_a_stray_root_module_or_package_is_found(tmp_path: Path) -> None:
 
 
 def test_the_board_feed_logs_under_its_module_path() -> None:
-    assert importlib.import_module("starpulse.board.board_feed").logger.name == "starpulse.board.board_feed"
+    assert importlib.import_module("starpulse.board.model.board_feed").logger.name == "starpulse.board.model.board_feed"
 
 
 #: Test directories under a tier that name no top-level package: the `leaks` gate that measures memory across every

@@ -3,7 +3,7 @@
 import json
 import threading
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.adapter_kit import task
 from starpulse.views.adapters.inbound.snapshots import IDLE_REFRESH_S, Snapshots

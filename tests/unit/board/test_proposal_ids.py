@@ -7,7 +7,7 @@ import pytest
 import yaml
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 

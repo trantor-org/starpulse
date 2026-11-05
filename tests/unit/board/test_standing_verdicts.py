@@ -9,7 +9,7 @@ import pytest
 import yaml
 from sqlalchemy import Engine
 from starpulse.board.adapters import native
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model import rules
 from starpulse.contracts.adapters import Move
 from starpulse.event_log.event_log import EventLog

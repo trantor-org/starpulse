@@ -3,7 +3,7 @@
 import threading
 
 from sqlalchemy import create_engine
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.outbound.pull_store import PullSync
 from starpulse.pulls.adapters.outbound.pulls import PullStore

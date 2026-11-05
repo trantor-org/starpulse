@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
-from starpulse.board import criteria
+from starpulse.board.model import criteria
 from starpulse.board.model.markdown import needs_attention_reason
 from starpulse.contracts.adapters import BoardTask
 from starpulse.machine_engine.model.machine_definition import Writer
@@ -33,7 +33,7 @@ FEED_EVENT_RESEND = {
 }
 
 # The feed's name, not this module's: operators and a host project's tests filter the feed's records by it.
-logger = logging.getLogger("starpulse.board.board_feed")
+logger = logging.getLogger("starpulse.board.model.board_feed")
 
 _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 

@@ -32,7 +32,7 @@ import yaml
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.engine import Engine
 
-from starpulse.board import criteria
+from starpulse.board.model import criteria
 from starpulse.board.adapters import native_docs, native_milestones
 from starpulse.board.adapters.task_history import TaskHistory, revises_plan
 from starpulse.board.adapters.upstream_backlog import (
@@ -83,7 +83,7 @@ from starpulse.event_log.tables import pull_requests, retired_tasks
 from starpulse.machine_engine.model.state_roles import StateRoles
 
 if TYPE_CHECKING:
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
 
 #: Where the board lives, relative to the config's directory (or the working directory without a config).
@@ -1128,7 +1128,7 @@ class _Claims:
     def refused(self, task: str, actor: str, reason: str) -> None:
         """Append the refusal of `actor`'s claim of `task` with its `reason` and the time, fail-open."""
         if self.log is not None:
-            from starpulse.board.claim_refusals import CLAIMS_STREAM  # noqa: PLC0415 - loading a board loads no feed
+            from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM  # noqa: PLC0415 - loading a board loads no feed
 
             self.log.publish(CLAIMS_STREAM, {"task": task, "actor": actor, "reason": reason, "time": time.time()})
 

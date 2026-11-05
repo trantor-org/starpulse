@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 

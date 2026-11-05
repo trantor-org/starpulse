@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.ledger import PAGE
+from starpulse.board.model.ledger import PAGE
 from starpulse.board.model.seam import (
     TaskReader,
 )
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.views.ports.signal_folds import SignalFoldReader

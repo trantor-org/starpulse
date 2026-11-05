@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES

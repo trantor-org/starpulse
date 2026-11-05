@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ValidationError
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import (
     AGENT,
     ANONYMOUS,

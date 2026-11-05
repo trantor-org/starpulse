@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.wake import StopEvent
 from starpulse.views.adapters.inbound.compression import Encoded
 from starpulse.views.model.encoding import encode, encode_snapshot, full_snapshot

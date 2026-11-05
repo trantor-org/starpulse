@@ -11,7 +11,7 @@ from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     pass
-from starpulse.board.feed.shared import (
+from starpulse.board.model.feed.shared import (
     is_cold,
     pull_links,
     read_model_detail,

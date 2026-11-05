@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.wake import StopEvent
 

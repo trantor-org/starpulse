@@ -18,7 +18,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.application.commands.ci_trail import PullHistory, parse
 from starpulse.pulls.model.pins import Pins, Repo, link

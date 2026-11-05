@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 from starpulse.event_log.wake import StopEvent
-from starpulse.board.board_feed import BoardFeed, follow
-from starpulse.board.claim_refusals import CLAIMS_STREAM, ClaimRefusals
+from starpulse.board.model.board_feed import BoardFeed, follow
+from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM, ClaimRefusals
 from starpulse.event_log.event_log import EventLog
 
 from tests.machines import MACHINES

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log import events
 from starpulse.event_log.event_log import Entry, EventLog, Tail
 from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES

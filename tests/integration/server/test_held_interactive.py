@@ -6,7 +6,7 @@ import json
 import urllib.request
 from pathlib import Path
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import next_event as _next_event
 from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import task

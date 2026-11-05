@@ -6,7 +6,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance

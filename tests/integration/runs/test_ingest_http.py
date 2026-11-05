@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from starpulse.board.board_feed import BoardFeed, follow
+from starpulse.board.model.board_feed import BoardFeed, follow
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.wake import StopEvent
 from starpulse.runs.adapters.inbound.cloudevents import SINGLE, CloudEventsIngest

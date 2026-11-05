@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from starpulse.board import criteria
+from starpulse.board.model import criteria
 from starpulse.board.adapters import native
 from starpulse.board.model.seam import Board, TaskReader
 

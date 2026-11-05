@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.cli import agent_cli as cli
 from starpulse.cli import doctor

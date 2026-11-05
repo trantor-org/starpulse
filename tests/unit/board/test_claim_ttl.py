@@ -16,7 +16,7 @@ from starpulse.board.adapters import claim_ttl
 from starpulse.board.adapters.claim_ttl import live_session, sweep, transcript_halt
 from starpulse.board.adapters.running_workflows import running_tasks
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import last_run_event

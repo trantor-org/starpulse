@@ -192,7 +192,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse.board.claim_refusals import CLAIMS_STREAM
+from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM
 from starpulse.board.model.seam import (
     Board,
 )
@@ -255,7 +255,7 @@ _STATIC = _HERE / "static"
 
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
     from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -685,10 +685,10 @@ def stay_until_stopped() -> None:  # pragma: no mutate block — process boundar
 DATABASE_STACK = (
     "starpulse.event_log.event_log",
     "starpulse.flow_metrics.adapters.outbound.history",
-    "starpulse.board.board_feed",
-    "starpulse.board.claim_refusals",
-    "starpulse.board.verdicts",
-    "starpulse.board.machine_tasks",
+    "starpulse.board.model.board_feed",
+    "starpulse.board.application.queries.claim_refusals",
+    "starpulse.board.model.verdicts",
+    "starpulse.board.application.queries.machine_tasks",
     "starpulse.board.adapters.search",
     "starpulse.pulls.adapters.outbound.pulls",
     "starpulse.runtime.assembly",

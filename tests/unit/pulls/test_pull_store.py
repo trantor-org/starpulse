@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.event_log import Entry
 from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
 from starpulse.pulls.adapters.outbound.pull_requests import query_github

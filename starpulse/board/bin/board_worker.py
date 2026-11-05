@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Protocol
 
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
-from starpulse.board.board_feed import BoardFeed, CriteriaStore, ExpiriesStore, LaneRecorder
-from starpulse.board.criteria import Evaluator
+from starpulse.board.model.board_feed import BoardFeed, CriteriaStore, ExpiriesStore, LaneRecorder
+from starpulse.board.model.criteria import Evaluator
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import Entry, EventLog, Tail
 from starpulse.event_log.events import STREAM as MACHINE_STREAM

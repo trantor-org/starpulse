@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from starpulse.board.adapters import jira
 from starpulse.board.adapters.jira import JiraProject, board
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "jira"

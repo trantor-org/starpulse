@@ -19,8 +19,8 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board import criteria
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model import criteria
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import TaskEditor
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, delivers

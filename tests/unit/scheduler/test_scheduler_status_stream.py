@@ -6,7 +6,7 @@ import json
 import queue
 from pathlib import Path
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.event_log.event_log import EventLog
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
