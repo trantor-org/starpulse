@@ -35,7 +35,7 @@ def _selection(number: int) -> str:
     """The alias reading PR `number`: its facts, its required checks at the head commit and its review threads."""
     return f"""
   p{number}: pullRequest(number: {number}) {{
-    number state isDraft mergeable baseRefName headRefName headRefOid title body updatedAt createdAt mergedAt
+    number state isDraft isInMergeQueue mergeable baseRefName headRefName headRefOid title body updatedAt createdAt mergedAt
     mergeCommit {{ oid }}
     files(first: 100) {{ totalCount nodes {{ path }} }}
     headRef {{ compare(headRef: "main") {{ aheadBy }} }}
@@ -114,6 +114,7 @@ def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
             "mergedAt": node["mergedAt"],
             "mergeSha": (node["mergeCommit"] or {}).get("oid"),
             "behindMain": ((node["headRef"] or {}).get("compare") or {}).get("aheadBy"),
+            "queued": bool(node.get("isInMergeQueue")),
             "files": _paths(node["files"]),
             "ci": {  # the parts of the node `ci_trail.parse` reads
                 "createdAt": node["createdAt"],

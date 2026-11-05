@@ -472,15 +472,16 @@ def test_the_seeded_board_has_a_done_chain_for_the_kanban_stack() -> None:
     assert all(a["state"] == "done" and a["milestone"] == chain[0]["milestone"] for a in chain)
 
 
-def test_the_seeded_board_has_a_review_task_with_two_pulls_and_a_task_holding_three_others() -> None:
+def test_the_seeded_board_has_a_review_task_with_three_pulls_one_queued_and_a_task_holding_three_others() -> None:
     live = _live()
     live["flows"][0]["agents"] = []
 
     demo = scrub(live)
 
     board = demo["flows"][0]["agents"]
-    assert board[20]["state"] == "review" and len(demo["pulls"][board[20]["id"]]) == 2
-    assert len({p["number"] for p in demo["pulls"][board[20]["id"]]}) == 2
+    assert board[20]["state"] == "review" and len(demo["pulls"][board[20]["id"]]) == 3
+    assert len({p["number"] for p in demo["pulls"][board[20]["id"]]}) == 3
+    assert [p["queued"] for p in demo["pulls"][board[20]["id"]]] == [False, False, True]
     held = [a for a in board if board[6]["id"] in a["dependencies"]]
     assert [a["state"] for a in held] == ["waiting"] * 3
 
@@ -516,8 +517,8 @@ def test_scrub_seeds_one_ci_agent_per_task_with_pull_requests_walking_the_machin
     flow = next(f for f in demo["flows"] if f["name"] == "ci")
     ci = {a["task"]: a for a in flow["agents"]}
     assert set(ci) == set(demo["pulls"])  # a task with no pull request is in no ci agent
-    two = ci["DEMO-21"]  # a Review task with a merged pull request, then an open one
-    assert [s["event"] for s in two["trail"]].count("PR_OPENED") == 2 and two["state"] == "passing"
+    three = ci["DEMO-21"]  # a Review task with a merged pull request, an open one, then a queued one
+    assert [s["event"] for s in three["trail"]].count("PR_OPENED") == 3 and three["state"] == "passing"
     assert ci["DEMO-8"]["state"] == "failing" and ci["DEMO-8"]["trail"][-1]["event"] == "CHECKS_FAILED"
     next_state = {(t["source"], t["event"]): t["target"] for t in flow["machine"]["transitions"]}
     for agent in ci.values():
@@ -615,6 +616,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
             "merged": False,
             "threads": 2,
             "behind_main": 6,
+            "queued": False,
             "stale": False,
         }
     ]

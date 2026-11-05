@@ -40,27 +40,27 @@ const profileColor = (a: string) => (/deep/.test(a) ? "var(--agent)" : /standard
 const shortProfile = (a: string) => sessionNickname(a) ?? a.replace(/^@agent-/, "").replace(/^@/, "");
 /** A card draws this many PR chips; the rest fold into one `+N` chip whose hover lists them. */
 const SHOWN_PRS = 3;
-const checksClass = (p: Pull) => (p.merged ? "merged" : p.closed ? "closed" : p.checks === "failing" ? "fail" : p.checks);
+const checksClass = (p: Pull) => (p.merged ? "merged" : p.closed ? "closed" : p.queued ? "queued" : p.checks === "failing" ? "fail" : p.checks);
 const pullClass = (p: Pull) => `${checksClass(p)}${p.conflicting && !p.merged && !p.closed ? " conflict" : ""}`;
 const pullState = (p: Pull) =>
-  [p.merged ? "merged" : p.closed ? "closed" : `checks ${p.checks}`, p.conflicting && !p.merged && !p.closed && "merge conflict", p.threads && `${p.threads} open review threads`]
+  [p.merged ? "merged" : p.closed ? "closed" : p.queued ? `queued, checks ${p.checks}` : `checks ${p.checks}`, p.conflicting && !p.merged && !p.closed && "merge conflict", p.threads && `${p.threads} open review threads`]
     .filter(Boolean).join(", ") + (p.stale ? " (not read yet)" : "");
 /** The `+N` chip's state: the worst among the PRs it hides, so a failure or conflict past the third still shows. */
-const RANK = ["fail", "pending", "pass", "none", "merged", "closed"];
+const RANK = ["fail", "pending", "queued", "pass", "none", "merged", "closed"];
 const worstClass = (pulls: Pull[]) => {
   const worst = pulls.map(checksClass).sort((a, b) => RANK.indexOf(a) - RANK.indexOf(b))[0];
   return `${worst}${pulls.some((p) => p.conflicting && !p.merged && !p.closed) ? " conflict" : ""}`;
 };
 
-/** Each pull request's chip; its checks dot only when the card's machine line is not CI, since a CI line carries the state. */
-function PullChips({ pulls, ci }: { pulls: Pull[]; ci: boolean }) {
+/** Each pull request's chip, its state dot always drawn: the card's CI line says the CI machine's state, not the PR's merge, queue or conflict. */
+function PullChips({ pulls }: { pulls: Pull[] }) {
   if (!pulls.length) return null;
   const rest = pulls.slice(SHOWN_PRS);
   return (
     <span className="prs">
       {pulls.slice(0, SHOWN_PRS).map((p) => (
         <span key={p.url} className={`pr ${pullClass(p)}`} title={`#${p.number} ${pullState(p)}`}>
-          {!ci && <i />}#{p.number}
+          <i />#{p.number}
           {p.threads > 0 && <span className="th"> ⌁{p.threads}</span>}
         </span>
       ))}
@@ -142,7 +142,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
-        <span className="id">{task.id}</span><PullChips pulls={task.prs} ci={task.live?.machine === "ci"} />{compact && badge}
+        <span className="id">{task.id}</span><PullChips pulls={task.prs} />{compact && badge}
       </div>
       {links && links.length > 0 && <div className={`uw${finished ? " dn" : ""}`}><span className="nw">{finished ? "✓ unblocked" : "⧗ waits on"}</span>{" "}{links.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>

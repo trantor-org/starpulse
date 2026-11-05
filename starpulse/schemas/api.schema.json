@@ -4843,6 +4843,11 @@
         "number": {
           "type": "integer"
         },
+        "queued": {
+          "default": false,
+          "description": "The open PR waits in its base branch's merge queue.",
+          "type": "boolean"
+        },
         "repo": {
           "description": "The `org/repo` the PR belongs to; a number alone repeats across repositories.",
           "type": "string"

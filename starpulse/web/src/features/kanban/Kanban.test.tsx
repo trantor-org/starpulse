@@ -86,6 +86,14 @@ describe("a Kanban card's pull request chips", () => {
     expect(failing[0].title).toContain("checks failing");
   });
 
+  it("draws a queued PR as queued, ahead of its checks, and names it in the hover", () => {
+    const queued = chips(drawPulls([pull(1, { queued: true }), pull(2, { queued: true, checks: "failing" }), pull(3, { queued: true, merged: true })]));
+
+    expect(queued.map((c) => c.cls.split(" ")[0])).toEqual(["queued", "queued", "merged"]);
+    expect(queued[0].title).toContain("queued");
+    expect(queued[2].title).not.toContain("queued");
+  });
+
   it("marks the +N chip with the worst state among the PRs it hides, so a failure past the third is never lost", () => {
     const drawn = chips(drawPulls([pull(1), pull(2), pull(3), pull(4, { merged: true }), pull(5, { checks: "failing", conflicting: true })]));
 
@@ -134,8 +142,8 @@ describe("a Kanban card's pull request chip", () => {
   const chip = (machines: KanbanTask["machines"], live: KanbanTask["live"]) =>
     renderToStaticMarkup(<Card task={{ ...task, prs: [pull], machines, live }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />).match(/<span class="pr[^"]*"[^>]*>[\s\S]*?<\/span>/)?.[0] ?? "";
 
-  it("leaves the status dot to the machine line when the card's line is the CI machine", () => {
-    expect(chip([ci], { machine: "ci", state: "merged", at: 100 })).not.toContain("<i>");
+  it("keeps its status dot when the card's line is the CI machine, so a merged, queued or failing PR never reads as a plain chip", () => {
+    expect(chip([ci], { machine: "ci", state: "merged", at: 100 })).toContain("<i>");
   });
 
   it("draws its own status dot when the card's line is another machine, though CI is recorded", () => {

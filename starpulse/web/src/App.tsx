@@ -408,7 +408,7 @@ function RailBody({ hud, view, legend = true, ...feed }: { hud: HudState; view: 
         {view === "jobs" ? <DagLegend /> : view === "kanban" ? (
           <>
             <span><i style={{ background: "var(--ok)" }} />checks pass</span><span><i style={{ background: "var(--fail)" }} />failing</span><span><i style={{ background: "var(--run)" }} />pending</span><br />
-            <span><i style={{ background: "var(--agent)" }} />merged</span><span><span style={{ color: "var(--run)" }}>⌁ n</span> review threads</span><br />
+            <span><i style={{ background: "var(--agent)" }} />merged</span><span><i style={{ background: "var(--waits)" }} />queued</span><span><span style={{ color: "var(--run)" }}>⌁ n</span> review threads</span><br />
             <span><i style={{ background: "var(--agent)", boxShadow: "0 0 6px var(--agent)" }} />on a machine</span><span><i style={{ background: "var(--ready)", boxShadow: "0 0 6px var(--ready)" }} />on a mapped machine</span><span><i style={{ background: "var(--run)", boxShadow: "0 0 6px var(--run)" }} />moved now</span><br />
             <span><span style={{ color: "var(--run)" }}>⧗ n</span> open dependencies</span><span><span style={{ color: "var(--hold)" }}>⛓ n</span> Waiting tasks it holds</span><br />
             <span>hover a card:</span><span><i style={{ border: "1px solid var(--hold)", background: "none", boxSizing: "border-box" }} />holds</span><span><i style={{ border: "1px solid var(--waits)", background: "none", boxSizing: "border-box" }} />waits on</span>

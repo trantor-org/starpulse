@@ -1165,6 +1165,10 @@ export interface Pull {
   merged_at: string | null;
   number: number;
   /**
+   * The open PR waits in its base branch's merge queue.
+   */
+  queued?: boolean;
+  /**
    * The `org/repo` the PR belongs to; a number alone repeats across repositories.
    */
   repo: string;
