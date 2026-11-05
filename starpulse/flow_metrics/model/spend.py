@@ -67,8 +67,11 @@ def _compactions(found: Iterable[Signal], keys: TaskKeys | None, analytics: Anal
     return times
 
 
-def _phase(step: dict[str, Any], editing: bool) -> str:
-    return _SKILL_PHASE.get(step["skill"]) or ("implement" if editing else "claim")
+def _phase(o: Owned, editing: bool) -> str:
+    skill = o.step["skill"]
+    if skill == "deliver" and _edits(o):
+        return "implement"
+    return _SKILL_PHASE.get(skill) or ("implement" if editing else "claim")
 
 
 def _phases(steps: list[Owned]) -> list[tuple[str, Owned]]:
@@ -77,7 +80,7 @@ def _phases(steps: list[Owned]) -> list[tuple[str, Owned]]:
     for o in steps:
         if _edits(o):
             first_edit.setdefault(o.step["task"], o.step["at"])
-    return [(_phase(o.step, o.step["at"] >= first_edit.get(o.step["task"], 0)), o) for o in steps]
+    return [(_phase(o, o.step["at"] >= first_edit.get(o.step["task"], 0)), o) for o in steps]
 
 
 def _row(task: str, phase: str) -> dict[str, Any]:

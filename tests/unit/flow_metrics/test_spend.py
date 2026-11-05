@@ -61,6 +61,22 @@ def test_a_task_reports_one_row_per_phase_in_order_with_weighted_tokens_models_a
     assert all(r["task_wte"] == sum(p["wte"] for p in rows) for r in rows)
 
 
+def test_an_edit_under_deliver_bills_implement_and_the_steps_around_it_stay_deliver() -> None:
+    s, branch = "s7", "claude/task-7-x"
+    signals = [
+        sig("prompt", 0, s, branch=branch, turn="p1", detail="human"),
+        sig("skill", 1, s, branch=branch, name="deliver", turn="p1"),
+        request(2, 7, output=10),
+        request(3, 7, output=10),
+        sig("tool", 3, s, branch=branch, name="Edit", turn="p1"),
+        request(4, 7, output=10),
+    ]
+
+    rows = spend_report(signals, KEYS, {"TASK-7": {"labels": EXECUTE_3}}, ANALYTICS)
+
+    assert {r["phase"]: r["steps"] for r in rows} == {"deliver": 2, "implement": 1}
+
+
 def test_a_task_far_above_its_cells_median_is_flagged_and_a_cell_under_five_tasks_has_no_norm() -> None:
     tasks = {f"TASK-{n}": {"labels": EXECUTE_3} for n in range(1, 8)}
     found = [s for n in range(1, 7) for s in lifecycle(n)] + lifecycle(7, extra=100_000)
