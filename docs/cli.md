@@ -112,7 +112,7 @@ lists exactly the verbs there are.
 | `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network, as JSON with no foreign `Origin` (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
 | `analytics health` | `--hours`, `--stuck-hours` | `now`, `window_s`, `stuck_after_s`, `states`, `throughput`, `stuck` and `warnings`, below |
-| `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number or is longer than the telemetry history exits 1 and a server that receives no telemetry exits 3 |
+| `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, effort, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number or is longer than the telemetry history exits 1 and a server that receives no telemetry exits 3 |
 | `analytics transitions` | `--hours` | `now`, `window_s` and `transitions`, each `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`, below; refusals as `analytics steps` |
 | `analytics cells` | `--hours` | `now`, `window_s` and `cells`, each `{kind, size, n, completions, clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, below; refusals as `analytics steps` |
 | `analytics estimates` | `--hours`, `--milestone` | `now`, `window_s` and `estimates`, each `{task, milestone, kind, size, profile, steps, active_minutes, effort_size, effort_size_step}`, below; refusals as `analytics steps` |
@@ -185,7 +185,7 @@ board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither r
 
 `analytics spend` reads `GET /api/analytics/spend[?hours=N]` with the window and refusals of `analytics steps`: each task's
 tokens by phase (`claim`, `implement`, `qa`, `deliver`, `review_fix`), their weighted total `wte`, peak context,
-compactions and models, with the task's total against its kind and size `norm_wte` and `above_norm`. A task with no
+compactions, models and `profile` (`<model>-<effort>` of its first main-thread step), with the task's total against its kind and size `norm_wte` and `above_norm`. A task with no
 labels is listed with no norm; [Connect sources](sources.md#report-each-tasks-spend-by-phase) defines the phases.
 
 `analytics estimates` reads `GET /api/analytics/estimates[?hours=N][&milestone=m-N]`: one row per completed task with a

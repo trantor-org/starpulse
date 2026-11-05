@@ -90,3 +90,21 @@ def test_two_phases_of_a_task_starting_at_the_same_instant_still_take_its_compac
 
     assert sorted(r["phase"] for r in rows) == ["deliver", "qa"]
     assert sum(r["compactions"] for r in rows) == 1
+
+
+def test_each_row_carries_the_row_profile_of_its_first_main_thread_step() -> None:
+    branch = "claude/task-1-x"
+    found = [
+        sig("request", 1, "s1", branch=branch, model="opus", effort="high", turn="p1", input=10),
+        sig("request", 2, "s1", branch=branch, model="opus", effort="low", turn="p1", input=10),
+        sig("skill", 3, "s1", branch=branch, name="qa", turn="p1"),
+        sig("request", 3, "s1", branch=branch, model="haiku", effort="", origin="side", turn="p1", input=10),
+        sig("request", 4, "s1", branch=branch, model="sonnet", effort="medium", turn="p1", input=10),
+    ]
+
+    rows = spend_report(found, KEYS, {"TASK-1": {"labels": EXECUTE_3}}, ANALYTICS)
+
+    assert [(r["phase"], r["profile"]) for r in rows] == [("implement", "opus-high"), ("qa", "sonnet-medium")]
+
+    side_only = spend_report(found[2:4], KEYS, {}, ANALYTICS)
+    assert [r["profile"] for r in side_only] == ["haiku-unknown"]

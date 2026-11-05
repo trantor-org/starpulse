@@ -228,7 +228,7 @@ def test_a_task_the_feed_holds_is_read_without_a_worker_thread(tmp_path: Path) -
 
     response = _task_client(tmp_path, bare_board(read=read), Services()).get("/api/task/PROJ-3")
 
-    assert (response.status_code, response.json()) == (200, {"task": "PROJ-3", "record": {"title": "t"}})
+    assert (response.status_code, response.json()) == (200, {"task": "PROJ-3", "record": {"title": "t"}, "archived": False})
     assert [_worker(name) for name in readers] == [False]
 
 

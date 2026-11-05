@@ -148,8 +148,9 @@ it was and whether to count it, and a third holds a command:
 
 `GET /api/analytics/steps[?hours=N]` (168 hours by default) lists every model request of the window, oldest first, so a
 reader can charge tokens to the skill in force and the work done. The body is `{now, window_s, steps}`; a step is
-`{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, counts and names only:
+`{harness, session, task, at, model, effort, origin, skill, activities, keys, tokens, captured}`, counts and names only:
 
+- `effort` is the reasoning effort the request ran at, empty when the harness gives none.
 - `task` is the one the session's rows name for that request; `origin` is `main`, `side` (a subagent) or `auxiliary`.
   For Claude Code a request's `query_source` of `""`, `sdk`, `repl_main_thread` or `repl_main_thread:` plus any suffix
   (`repl_main_thread:outputStyle:custom`, which the main thread carries under a custom output style) is `main`;
@@ -246,6 +247,8 @@ Cursor left out, by task then the phase's first step. Its columns:
 - `peak_context`: the most input, cache-read and cache-write tokens one request held. `compactions`: the compactions
   that fell in the phase, a compaction counted to the phase of the step before it.
 - `models`, `first_at`, `last_at`: the models used and the epoch seconds of the phase's first and last step.
+- `profile`: `<model>-<effort>` of the phase's first main-thread step (its first step when a subagent made every
+  step), each `unknown` when the harness recorded none; the key per-profile norms group by.
 - `task_wte`: `wte` over the task's phases in the window. `norm_wte`: the median `task_wte` of the tasks of its kind and
   size, null under 5 tasks in the cell. `above_norm`: `task_wte` is over 3 times `norm_wte`.
 

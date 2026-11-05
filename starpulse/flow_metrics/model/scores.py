@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Any
 
 from starpulse.contracts.signals import CLAUDE_CODE
-from starpulse.flow_metrics.model.cells import cell_of
+from starpulse.flow_metrics.model.cells import cell_of, profile_of
 from starpulse.github.adapters.outbound.rest import Transport, get
 
 __all__ = ["WEIGHTS", "PullFacts", "cell_task_scores", "merged_pulls", "pull_facts", "score_cells", "task_score"]
@@ -68,7 +68,7 @@ def _parts(slice_: Mapping[str, Any], facts: PullFacts | None, ratings: Mapping[
 
 def _profile(slice_: Mapping[str, Any]) -> str:
     models, efforts = slice_["models"], slice_["efforts"]
-    return f"{models[0] if models else 'unknown'}-{efforts[0] if efforts else 'unknown'}"
+    return profile_of(models[0] if models else "", efforts[0] if efforts else "")
 
 
 def _counted(

@@ -76,7 +76,7 @@ def test_the_record_carries_the_plan_notes_and_checks_the_snapshot_entry_lacks(f
 
     assert entry is not None and not {"plan", "notes", "acceptanceCriteria"} & entry.keys()
     assert "kept in the file only" not in json.dumps(feed.snapshot())
-    assert (status, body) == (200, {"task": "PROJ-3", "record": RECORD})
+    assert (status, body) == (200, {"task": "PROJ-3", "record": RECORD, "archived": False})
 
 
 def test_a_task_the_board_does_not_hold_has_no_record(file: _File) -> None:

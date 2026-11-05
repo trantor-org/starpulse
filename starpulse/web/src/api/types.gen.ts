@@ -2365,6 +2365,10 @@ export interface SessionStep {
    */
   captured: boolean;
   /**
+   * The reasoning effort the request ran at; empty when the harness gives none.
+   */
+  effort?: string;
+  /**
    * The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.
    */
   eval: string;
@@ -2804,6 +2808,10 @@ export interface SpendPhase {
    */
   phase: string;
   /**
+   * `<model>-<effort>` of the phase's first main-thread step, each `unknown` when unrecorded.
+   */
+  profile?: string;
+  /**
    * The subagents' share of `steps`.
    */
   side_steps: number;
@@ -2882,6 +2890,10 @@ export interface MachineEvent {
  * `GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.
  */
 export interface TaskRecord {
+  /**
+   * The task was archived: read from the archive, off the board's lanes.
+   */
+  archived?: boolean;
   record: {
     [k: string]: unknown;
   };

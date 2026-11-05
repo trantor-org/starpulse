@@ -49,6 +49,9 @@ class SpendPhase(_Api):
     peak_context: int = Field(description="The most input, cache-read and cache-write tokens one request held.")
     compactions: int = Field(description="The compactions that fell in the phase.")
     models: list[str]
+    profile: str = Field(
+        "", description="`<model>-<effort>` of the phase's first main-thread step, each `unknown` when unrecorded."
+    )
     first_at: float
     last_at: float
     task_wte: float = Field(description="`wte` summed over the task's phases.")

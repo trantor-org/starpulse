@@ -9,6 +9,9 @@ split the two.
 `wte` weighs a step's tokens as the provider prices them against one uncached input token: a cache write 1.25, a
 cache read 0.1, an output token 5. `task_wte` sums a task's phases. A cell (kind x size) of at least `MIN_N` tasks
 has a `norm_wte`, the median `task_wte`, and a task over `FLAG_RATIO` times it is `above_norm`.
+
+A row's `profile` is the `<model>-<effort>` of its first main-thread step, so a subagent's model does not stand for
+the session's; a row of subagent steps alone takes its first step's.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from typing import Any
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import Signal
-from starpulse.flow_metrics.model.cells import MIN_N, cell_of
+from starpulse.flow_metrics.model.cells import MIN_N, cell_of, profile_of
 from starpulse.flow_metrics.model.session_health import attributed, by_session, session_signals
 from starpulse.flow_metrics.model.steps import Owned, session_owned
 
@@ -88,6 +91,7 @@ def _row(task: str, phase: str) -> dict[str, Any]:
         "peak_context": 0,
         "compactions": 0,
         "models": set(),
+        "profile": "",
     }
 
 
@@ -101,9 +105,11 @@ def spend_report(
     docstring."""
     signals = list(found)
     rows: dict[tuple[str, str], dict[str, Any]] = {}
+    main_profiled: set[tuple[str, str]] = set()
     for phase, o in _phases(_owned_steps(signals, keys, analytics)):
         step = o.step
-        row = rows.setdefault((step["task"], phase), _row(step["task"], phase))
+        key = (step["task"], phase)
+        row = rows.setdefault(key, _row(step["task"], phase))
         tokens = step["tokens"]
         row["steps"] += 1
         row["side_steps"] += step["origin"] == "side"
@@ -112,6 +118,10 @@ def spend_report(
         row["wte"] += _wte(tokens)
         row["peak_context"] = max(row["peak_context"], tokens["input"] + tokens["cache_read"] + tokens["cache_write"])
         row["models"].add(step["model"])
+        if key not in main_profiled and (step["origin"] == "main" or not row["profile"]):
+            row["profile"] = profile_of(step["model"], step["effort"])
+            if step["origin"] == "main":
+                main_profiled.add(key)
         row.setdefault("first_at", step["at"])
         row["last_at"] = step["at"]
     for task, times in _compactions(signals, keys, analytics).items():

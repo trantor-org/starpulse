@@ -560,7 +560,7 @@ def test_a_task_is_read_edited_and_archived_through_the_server(tmp_path: Path) -
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(_url(server, "/api/edit"), timeout=5)
 
-    assert opened == {"task": "PROJ-3", "record": {"title": "t", "plan": "1. do it"}}
+    assert opened == {"task": "PROJ-3", "record": {"title": "t", "plan": "1. do it"}, "archived": False}
     assert stale[0] == 409
     assert stale[1]["stale"] == ["plan"]
     assert saved == (200, {"task": "PROJ-3", "changed": ["title"]})
