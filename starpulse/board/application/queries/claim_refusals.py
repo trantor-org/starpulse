@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from starpulse.board.board_feed import BoardFeed, entry_position
+from starpulse.board.model.board_feed import BoardFeed, entry_position
 
 CLAIMS_STREAM = "board:claims"  # the native board writer appends it; the contract scan counts only `STREAM` producers
 

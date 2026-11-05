@@ -8,7 +8,7 @@ import pytest
 import yaml
 from starpulse.board.adapters.native import board
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask
 from starpulse.runtime.server import history_response
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
 from starpulse.pulls.adapters.outbound.pull_store import PullSync, refresh_pull
 from starpulse.pulls.adapters.outbound.pulls import PullStore

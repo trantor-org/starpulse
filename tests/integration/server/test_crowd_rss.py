@@ -18,7 +18,7 @@ from multiprocessing.connection import Connection
 from pathlib import Path
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import serve, task
 
 from tests.machines import MACHINES, ROLES

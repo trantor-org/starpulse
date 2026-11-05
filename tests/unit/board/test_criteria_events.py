@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from starpulse.board import criteria
+from starpulse.board.model import criteria
 from starpulse.board.bin import board_worker
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.events import STREAM as MACHINE_STREAM

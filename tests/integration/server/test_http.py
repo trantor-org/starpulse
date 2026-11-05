@@ -10,8 +10,8 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineDeltas
+from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import MachineEvent, Move

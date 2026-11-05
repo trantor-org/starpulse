@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import Move
 from starpulse.runtime.adapter_kit import task

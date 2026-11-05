@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     pass
-from starpulse.board.feed.follow import InstanceRuns
-from starpulse.board.feed.shared import (
+from starpulse.board.model.feed.follow import InstanceRuns
+from starpulse.board.model.feed.shared import (
     PUSHED_INSTANCE,
     is_cold,
 )

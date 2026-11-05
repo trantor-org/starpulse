@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import url as _url
 from starpulse.views.adapters.inbound.page_server import PageServer
@@ -34,7 +34,7 @@ def test_a_head_of_a_read_is_the_headers_of_its_get_and_no_body(
     server: PageServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Each request takes its own snapshot and a snapshot carries its `now`, whose digits vary its length.
-    monkeypatch.setattr("starpulse.board.feed.views.time.time", lambda: 1_700_000_000.0)
+    monkeypatch.setattr("starpulse.board.model.feed.views.time.time", lambda: 1_700_000_000.0)
     got = _ask(server, "/api/snapshot")
     head = _ask(server, "/api/snapshot", "HEAD")
 

@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import TypeAdapter
 from starpulse.board.adapters import native
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.cli import agent_cli as cli
 from starpulse.contracts.api.registry import RESPONSES

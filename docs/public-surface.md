@@ -117,7 +117,7 @@ is public for the names listed here:
 
 ### Moved in 0.y
 
-Release 0.y deleted the top-level facade modules and the `_internal` package; a context's package is its public path. Update each import as the table says. `python -m starpulse.claude_code`, `python -m starpulse.cursor` and `python -m starpulse.cursor_context` are now `python -m starpulse.runtime.claude_code`, `.cursor` and `.cursor_context`. The `starpulse.board_feed` logger is now `starpulse.board.board_feed`. `python -m starpulse.mermaid_import` is `python -m starpulse.machine_engine.adapters.mermaid_import`.
+Release 0.y deleted the top-level facade modules and the `_internal` package; a context's package is its public path. Update each import as the table says. `python -m starpulse.claude_code`, `python -m starpulse.cursor` and `python -m starpulse.cursor_context` are now `python -m starpulse.runtime.claude_code`, `.cursor` and `.cursor_context`. The `starpulse.board_feed` logger is now `starpulse.board.model.board_feed`. `python -m starpulse.mermaid_import` is `python -m starpulse.machine_engine.adapters.mermaid_import`.
 
 | Old path | New path |
 | --- | --- |

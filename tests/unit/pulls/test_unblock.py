@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import create_engine
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.pulls.adapters.inbound.unblock import Unblocker
 from starpulse.pulls.adapters.outbound import github

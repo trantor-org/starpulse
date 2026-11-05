@@ -10,7 +10,7 @@ import pytest
 from pydantic import TypeAdapter
 from sqlalchemy import create_engine
 from starpulse.board.adapters.search import SearchIndex
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.api.registry import BODIES, RESPONSES
 from starpulse.event_log.event_log import EventLog
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore

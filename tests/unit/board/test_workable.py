@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from starpulse.board import criteria
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model import criteria
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore

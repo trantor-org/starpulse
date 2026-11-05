@@ -56,9 +56,9 @@ SUBPROCESS_IMPORTERS = {
 }
 
 #: Source paths and the contract test that pins their output to a DTO. No import or coverage line joins the producers in
-#: `starpulse/board/feed/` (`views.py`, `reads.py`) to `RawTask`, so a change there would pass without it.
+#: `starpulse/board/model/feed/` (`views.py`, `reads.py`) to `RawTask`, so a change there would pass without it.
 CONTRACT_GUARDS = {
-    "starpulse/board/feed/*": ("tests/unit/contracts/test_raw_task_feed_row.py",),
+    "starpulse/board/model/feed/*": ("tests/unit/contracts/test_raw_task_feed_row.py",),
     "starpulse/contracts/api/dto/*": ("tests/unit/contracts/test_raw_task_feed_row.py",),
 }
 

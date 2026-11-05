@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from http.client import HTTPResponse
 from pathlib import Path
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import serve as _serve
 from starpulse.runtime.adapter_kit import task
 from starpulse.runtime.adapter_kit import url as _url

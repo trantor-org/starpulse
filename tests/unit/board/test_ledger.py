@@ -13,8 +13,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from starpulse.board import ledger
-from starpulse.board.ledger import Occurrence, _matches, build, page, pair, pull_occurrences, reruns, strip
+from starpulse.board.model import ledger
+from starpulse.board.model.ledger import Occurrence, _matches, build, page, pair, pull_occurrences, reruns, strip
 from starpulse.board.model.commit_keys import CommitKeys
 
 KEYS = CommitKeys(after="AFTER", before="BEFORE", force="FORCE", task="TASK")

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 from starpulse.event_log.wake import StopEvent
-from starpulse.board.machine_tasks import MachineDeltas
+from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.contracts.adapters import BoardTask, MachineEvent
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.machine_engine.adapters.machine_loader import load_machine

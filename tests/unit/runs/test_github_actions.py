@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
 from starpulse.event_log.event_log import EventLog
 from starpulse.runs.adapters.outbound.github_actions import (

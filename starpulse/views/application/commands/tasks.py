@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.adapters.upstream_backlog import dependencies
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model import post_merge_checks
 from starpulse.board.model.seam import (
     Board,

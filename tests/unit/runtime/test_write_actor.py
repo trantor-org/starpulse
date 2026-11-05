@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import Move
 from starpulse.event_log import lane_events

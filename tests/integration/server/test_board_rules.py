@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 import yaml
 from starpulse.board.adapters import native
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.cli import agent_cli as cli
 from starpulse.contracts.adapters import Move, Verdict
 from starpulse.runtime.adapter_kit import serve, task, url

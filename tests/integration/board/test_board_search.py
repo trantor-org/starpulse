@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, event
 from starpulse.board.adapters import native, upstream_backlog
 from starpulse.board.adapters.search import SearchIndex
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 
 from tests.integration.board.test_jira import project, recorded_site, serve
 

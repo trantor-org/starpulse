@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import Move
 from starpulse.event_log.event_log import EventLog

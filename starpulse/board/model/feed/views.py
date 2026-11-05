@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.ledger import (
+from starpulse.board.model.ledger import (
     PAGE,
 )
 from starpulse.machine_engine.model.machine_ties import derive, entries
@@ -16,8 +16,8 @@ from starpulse.machine_engine.model.snapshot import declared
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     pass
-from starpulse.board.feed.follow import _ledger_changes
-from starpulse.board.feed.shared import (
+from starpulse.board.model.feed.follow import _ledger_changes
+from starpulse.board.model.feed.shared import (
     FEED_EVENT_RESEND,
     LEDGER_WINDOW,
     _cold_stub,

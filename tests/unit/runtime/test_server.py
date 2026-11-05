@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import update
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.model.seam import MoveWriter, Written
 from starpulse.contracts.adapters import Move, StartFailedError

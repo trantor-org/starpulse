@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
-from starpulse.board import criteria
+from starpulse.board.model import criteria
 from starpulse.event_log.wake import StopEvent
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     pass
-from starpulse.board.feed.shared import (
+from starpulse.board.model.feed.shared import (
     CRITERIA_INTERVAL,
     CriteriaStore,
     ExpiriesStore,

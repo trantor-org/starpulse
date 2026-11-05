@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.board.bin import board_worker
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore

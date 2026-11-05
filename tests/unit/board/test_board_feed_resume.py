@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ValidationError
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.snapshot import BoardSnapshot
+from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.model.snapshot import BoardSnapshot
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent
@@ -71,7 +71,7 @@ def test_a_saved_board_restores_its_tasks_assignees_and_cursor_and_is_ready_at_t
 
 
 def _start_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
-    return [r.getMessage() for r in caplog.records if r.name == "starpulse.board.board_feed"]
+    return [r.getMessage() for r in caplog.records if r.name == "starpulse.board.model.board_feed"]
 
 
 def test_a_start_with_saved_state_logs_the_cursor_it_resumes_after(caplog: pytest.LogCaptureFixture) -> None:
@@ -81,7 +81,7 @@ def test_a_start_with_saved_state_logs_the_cursor_it_resumes_after(caplog: pytes
     first.save()
     caplog.clear()
 
-    with caplog.at_level(logging.INFO, logger="starpulse.board.board_feed"):
+    with caplog.at_level(logging.INFO, logger="starpulse.board.model.board_feed"):
         _resumed(store)
 
     assert _start_lines(caplog) == ["StarPulse: resuming after 7"]
@@ -98,7 +98,7 @@ def test_a_start_with_saved_state_logs_the_cursor_it_resumes_after(caplog: pytes
 def test_a_start_without_usable_state_logs_why_it_replays(
     caplog: pytest.LogCaptureFixture, store: _Store, retained: bool, reason: str
 ) -> None:
-    with caplog.at_level(logging.INFO, logger="starpulse.board.board_feed"):
+    with caplog.at_level(logging.INFO, logger="starpulse.board.model.board_feed"):
         _resumed(store, retained)
 
     assert _start_lines(caplog) == [f"StarPulse: replaying: {reason}"]
@@ -254,7 +254,7 @@ def test_a_saved_board_of_another_schema_version_is_replayed(
     monkeypatch.setattr(BoardSnapshot, "SCHEMA_VERSION", BoardSnapshot.SCHEMA_VERSION + 1)
     caplog.clear()
 
-    with caplog.at_level(logging.INFO, logger="starpulse.board.board_feed"):
+    with caplog.at_level(logging.INFO, logger="starpulse.board.model.board_feed"):
         feed, cursor = _resumed(checkpoints)
 
     assert (cursor, feed.snapshot()["flows"][0]["agents"], _start_lines(caplog)) == (
@@ -276,7 +276,7 @@ def test_a_saved_board_whose_pulls_lack_repo_is_replayed(
         first.save()
     caplog.clear()
 
-    with caplog.at_level(logging.INFO, logger="starpulse.board.board_feed"):
+    with caplog.at_level(logging.INFO, logger="starpulse.board.model.board_feed"):
         feed, cursor = _resumed(checkpoints)
 
     assert (cursor, feed.snapshot()["pulls"], _start_lines(caplog)) == (

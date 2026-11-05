@@ -6,8 +6,8 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.criteria import authored
+from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.model.criteria import authored
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import BoardTask
 from starpulse.machine_engine.model.state_roles import StateRoles

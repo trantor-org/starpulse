@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board import criteria
+from starpulse.board.model import criteria
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log import lane_events, rating_events
 from starpulse.event_log.wake import StopEvent
@@ -15,7 +15,7 @@ from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
-from starpulse.board.feed.shared import (
+from starpulse.board.model.feed.shared import (
     SAVE_INTERVAL,
     LaneRecorder,
     TaskIndex,

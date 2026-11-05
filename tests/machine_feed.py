@@ -4,7 +4,7 @@ into `starpulse_machine_tasks`, and the feed reads the rows per request."""
 from collections.abc import Mapping
 from pathlib import Path
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.adapters import MachineEvent, TaskKeys
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog

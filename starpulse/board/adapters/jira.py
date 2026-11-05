@@ -34,7 +34,7 @@ from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import board_moves, lane_id
 
 if TYPE_CHECKING:
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)

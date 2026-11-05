@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import Engine, update
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.view import board_columns
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.projector import Projector

@@ -4,7 +4,7 @@ import json
 import urllib.request
 from pathlib import Path
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.cli.doctor import contract
 from starpulse.pulls.model.pins import Repo
 from starpulse.runs.model.config import RunsInstance

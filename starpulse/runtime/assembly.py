@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Engine
 
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineDeltas
+from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.board.model.seam import Board
 from starpulse.board.model.seam import load as load_board
 from starpulse.event_log.event_log import EventLog

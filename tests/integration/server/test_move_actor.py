@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from starpulse.board.adapters import native
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.cli import agent_cli as cli
 from starpulse.contracts import LaneEvent
 from starpulse.contracts.adapters import Move

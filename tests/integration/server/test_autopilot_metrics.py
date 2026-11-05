@@ -5,7 +5,7 @@ from __future__ import annotations
 import urllib.request
 from pathlib import Path
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.runtime.adapter_kit import serve, url
 from starpulse.scheduler.adapters.exposition import autopilot_exposition

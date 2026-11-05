@@ -13,7 +13,7 @@ import yaml
 from pydantic import TypeAdapter
 from starpulse.board.adapters import native, native_docs
 from starpulse.board.adapters.upstream_backlog import _split
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.cli import agent_cli as cli
 from starpulse.contracts.api.registry import RESPONSES

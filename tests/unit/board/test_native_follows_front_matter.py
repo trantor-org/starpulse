@@ -4,7 +4,7 @@ from pathlib import Path
 
 from starpulse.board.adapters import native
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog, _split
-from starpulse.board.feed.shared import task_agent
+from starpulse.board.model.feed.shared import task_agent
 from starpulse.contracts.api.dto.task import RawTask
 
 

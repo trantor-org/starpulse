@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 from starpulse.event_log.wake import StopEvent
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR, ATTENTION_QUESTION, LINT_REFUSED, REGATE
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.adapter_kit import task

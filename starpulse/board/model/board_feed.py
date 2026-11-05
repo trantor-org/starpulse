@@ -15,7 +15,7 @@ from collections import deque
 from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from starpulse.board import criteria
+from starpulse.board.model import criteria
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log import lane_events, rating_events
@@ -27,14 +27,14 @@ from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_m
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
     from starpulse.event_log.readmodel.read_model import ReadModel
-from starpulse.board.feed.claims import ClaimMethods
-from starpulse.board.feed.follow import Followed, InstanceRuns, Resumable, follow, retained
-from starpulse.board.feed.ledgers import LedgerMethods
-from starpulse.board.feed.lifecycle import LifecycleMixin
-from starpulse.board.feed.reads import ReadMethods
-from starpulse.board.feed.records import RecordsMixin
-from starpulse.board.feed.runs import RunMethods
-from starpulse.board.feed.shared import (
+from starpulse.board.model.feed.claims import ClaimMethods
+from starpulse.board.model.feed.follow import Followed, InstanceRuns, Resumable, follow, retained
+from starpulse.board.model.feed.ledgers import LedgerMethods
+from starpulse.board.model.feed.lifecycle import LifecycleMixin
+from starpulse.board.model.feed.reads import ReadMethods
+from starpulse.board.model.feed.records import RecordsMixin
+from starpulse.board.model.feed.runs import RunMethods
+from starpulse.board.model.feed.shared import (
     _SENT_LOG,
     FEED_EVENT_RESEND,
     PUSHED_INSTANCE,
@@ -48,7 +48,7 @@ from starpulse.board.feed.shared import (
     logger,
     read_model_lane_moves,
 )
-from starpulse.board.feed.views import ViewMethods
+from starpulse.board.model.feed.views import ViewMethods
 
 __all__ = [
     "BoardFeed",

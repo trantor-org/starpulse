@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from starpulse.board import criteria
+from starpulse.board.model import criteria
 from starpulse.board.adapters import native
 
 

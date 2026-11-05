@@ -3,7 +3,7 @@ and moves only."""
 
 from datetime import datetime
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask, Move
 
 DAY_S = 86400.0

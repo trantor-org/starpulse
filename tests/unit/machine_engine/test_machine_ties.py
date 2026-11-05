@@ -15,7 +15,7 @@ IP = "delivery"
 
 @pytest.fixture(autouse=True)
 def _now(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse.board.board_feed.time.time", lambda: NOW)
+    monkeypatch.setattr("starpulse.board.model.board_feed.time.time", lambda: NOW)
 
 
 def _machine(*states: str, submachines: list[dict] | None = None, **extra: object) -> dict:

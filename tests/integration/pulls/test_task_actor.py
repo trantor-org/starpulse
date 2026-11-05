@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 from starpulse.event_log.wake import StopEvent
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineDeltas
+from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.contracts.adapters import BoardTask, MachineEvent
 from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.readmodel.projector import Projector

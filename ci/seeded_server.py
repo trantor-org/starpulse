@@ -33,7 +33,7 @@ from pathlib import Path
 from sqlalchemy import Engine, create_engine, event, insert
 from starpulse.board.adapters import native
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.event_log import EventLog

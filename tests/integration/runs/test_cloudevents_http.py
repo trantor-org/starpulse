@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.machine_tasks import MachineDeltas
+from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.wake import StopEvent
