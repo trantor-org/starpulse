@@ -153,6 +153,7 @@ def test_deltas_since_a_cursor_come_in_change_order_with_archived_tasks_and_page
     "statement",
     [
         queries.snapshot("done", 0.0),
+        queries.citing("https://github.com/acme/widgets/pull/7"),
         queries.live_criteria("done", 0.0),
         queries.held_states(),
         queries.milestone_done("done", 0.0),
@@ -160,7 +161,7 @@ def test_deltas_since_a_cursor_come_in_change_order_with_archived_tasks_and_page
         queries.ready("Ready", "done"),
         queries.since(10, 100),
     ],
-    ids=["snapshot", "live-criteria", "held-states", "milestone-done", "by-field", "ready", "since"],
+    ids=["snapshot", "citing", "live-criteria", "held-states", "milestone-done", "by-field", "ready", "since"],
 )
 def test_every_query_reads_through_an_index_and_never_scans_the_table(board, statement: Select) -> None:
     engine, _, _ = board
@@ -176,3 +177,15 @@ def test_the_live_queries_use_partial_indexes_so_archived_tasks_cost_nothing(boa
     assert any("ix_starpulse_tasks_live_set" in line for line in _plan(engine, queries.snapshot("done", 0.0)))
     assert any("ix_starpulse_tasks_field_area" in line for line in _plan(engine, queries.with_field("field_area", "x")))
     assert any("ix_starpulse_tasks_seq" in line for line in _plan(engine, queries.since(10, 100)))
+
+
+def test_citing_finds_the_unarchived_tasks_that_reference_a_pull_request_exactly(board) -> None:
+    engine, store, model = board
+    pull = "https://github.com/acme/widgets/pull/7"
+    _add(store, "TASK-1", _new("TaskCreated", title="one", state="Ready", references=[pull]))
+    _add(store, "TASK-2", _new("TaskCreated", title="two", state="Ready", references=[pull + "/"]))
+    _add(store, "TASK-3", _new("TaskCreated", title="three", state="Ready", references=[pull + "0"]))
+    _add(store, "TASK-4", _new("TaskCreated", title="four", state="Ready", references=[pull]), _new("Archived"))
+    _project(engine, store)
+
+    assert model.citing(pull) == ["TASK-1", "TASK-2"]

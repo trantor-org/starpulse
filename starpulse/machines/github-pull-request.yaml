@@ -32,6 +32,12 @@ events:
     - {from: checks_failed, to: checks_failed}
     - {from: checks_passed, to: checks_passed}
 writers:
+  PR_OPENED: [{actor: github, trigger: "the events consumer, from a saved GitHub pull_request opened delivery"}]
+  PR_MERGED: [{actor: github, trigger: "the events consumer, from a saved GitHub pull_request closed as merged delivery"}]
+  PR_CLOSED: [{actor: github, trigger: "the events consumer, from a saved GitHub pull_request closed delivery"}]
+  PR_REOPENED: [{actor: github, trigger: "the events consumer, from a saved GitHub pull_request reopened delivery"}]
+  CHECKS_PASSED: [{actor: github, trigger: "the events consumer, from a saved GitHub check_suite success delivery"}]
+  CHECKS_FAILED: [{actor: github, trigger: "the events consumer, from a saved GitHub check_suite or check_run failure delivery"}]
   CONFLICTED: [{actor: ci, trigger: "the pre-push hook on a task branch and main-follow, from a local git merge-tree"}]
   MERGEABLE: [{actor: ci, trigger: "the pre-push hook on a task branch and main-follow, from a local git merge-tree"}]
   THREADS_CHANGED:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, and_, column, exists, false, func, or_, select, true
+from sqlalchemy import ColumnElement, Select, String, and_, cast, column, exists, false, func, or_, select, true
 
 from starpulse.event_log.lane_events import done_lanes
 from starpulse.event_log.readmodel.tables import criteria, tasks
@@ -47,6 +47,14 @@ def live(done: str, since: float) -> ColumnElement[bool]:
 def held_states() -> Select[Any]:
     """The states unarchived Tasks hold, Done ones of any age included."""
     return select(tasks.c.state).where(tasks.c.archived == false()).distinct()
+
+
+def citing(url: str) -> Select[Any]:
+    """The unarchived Tasks whose references hold the link `url`, with or without a trailing slash, in id order: a walk
+    of the live index, bounded by the live board."""
+    references = cast(tasks.c.references, String)
+    cited = or_(references.contains(f'"{url}"', autoescape=True), references.contains(f'"{url}/"', autoescape=True))
+    return select(tasks.c.id).where(tasks.c.archived == false(), cited).order_by(tasks.c.id)
 
 
 def milestone_done(done: str, since: float) -> Select[Any]:

@@ -55,6 +55,10 @@ class ReadModel:
             raise KeyError(name)
         return self._ids(queries.with_field(field.column, value))
 
+    def citing(self, url: str) -> list[str]:
+        """The ids of unarchived Tasks whose references hold the link `url`, in id order."""
+        return self._ids(queries.citing(url))
+
     def held_states(self) -> set[str]:
         """The states unarchived Tasks hold, Done ones of any age included."""
         return set(self._ids(queries.held_states()))

@@ -401,6 +401,30 @@ verdicts `accepted`, `duplicate`, `bad_signature`, `oversize`, `ignored`, `forei
 and `error`. It shares the listener's port without authentication: keep `host` on loopback, or have the proxy that
 faces GitHub forward only `POST`.
 
+### Turn saved deliveries into machine events
+
+With a `[github]` table and a `[[producers]]` entry named `github` (`token_env`, `machines = ["github-pull-request"]`,
+`actors = ["github"]`), `serve` also runs the `github-events` context: the `events` consumer, which reads the inbox and
+posts one CloudEvent per pull request fact to `/api/machine-events` (`STARPULSE_WRITE_URL`, else
+`http://127.0.0.1:<port>`) as the `github` actor. Without the entry or its token in the environment the context is
+absent or fails to start, and the inbox keeps every delivery.
+
+1. Each consumer keeps its own state per delivery in `github_inbox_state`: `pending`, `done`, `skipped` or `dead`.
+2. `pull_request` opened, reopened, closed and merged give `PR_OPENED`, `PR_REOPENED`, `PR_CLOSED` and `PR_MERGED`;
+   `check_suite` completed gives `CHECKS_PASSED` or `CHECKS_FAILED`, and a failed `check_run` gives `CHECKS_FAILED`. The
+   event id is a SHA-256 over repository, number, event type and the head or merge SHA (the check suite id for
+   `CHECKS_*`), so a repeated fact collapses on the ingest. The subject is the unarchived task whose references hold
+   the pull request URL.
+3. A failed attempt waits `min(2**attempts, 300)` seconds. A 400, 403 or 413 answer is `dead` at once, and so is the
+   tenth failure. A pull request with no linked task is retried the same way, then `skipped` as `no-task`; a bot's
+   pull request is skipped as `no-task` at once.
+4. Done and skipped rows are purged after 7 days, with the inbox rows no consumer still needs.
+5. `starpulse github requeue|dismiss <delivery_id> [--config]` settles a dead row: `requeue` makes it pending with its
+   attempts spent anew, `dismiss` skips it and keeps its last error. A row that is not dead exits 1.
+
+The listener's `/metrics` also serves `starpulse_github_dead_rows{consumer}`, the dead rows each consumer holds until
+`requeue` or `dismiss` clears them.
+
 ## Report runs from any scheduler
 
 A cron line, a systemd unit, an engine that can only send webhooks (Cronicle, Rundeck, a GitHub `workflow_run` relay) or
