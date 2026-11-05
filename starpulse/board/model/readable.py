@@ -116,12 +116,14 @@ def parse(spec: Mapping[str, Any], where: str) -> Template:
     if "blast_radius" in spec:
         here = f"{where}.blast_radius"
         table = _table(spec["blast_radius"], _RADIUS_KEYS, here)
+        stop_at = _count(table, "stop_at", here, 0)
+        rollback_at = _count(table, "rollback_at", here, 0)
         radius = BlastRadius(
             _text(table, "heading", here),
             _text(table, "stops", here),
             _text(table, "rollback", here),
-            _count(table, "stop_at", here, 0) or 3,
-            _count(table, "rollback_at", here, 0) or 2,
+            3 if stop_at is None else stop_at,
+            2 if rollback_at is None else rollback_at,
         )
     written = spec.get("board_written", [])
     if not isinstance(written, list) or not all(isinstance(name, str) and name for name in written):
