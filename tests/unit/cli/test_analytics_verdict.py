@@ -31,9 +31,9 @@ def scored(monkeypatch: pytest.MonkeyPatch) -> None:
     slices += [_slice(f"TASK-{10 + n}", "low", n % 2) for n in range(6)]
     slices += [_slice(f"TASK-{20 + n}", "minimal", 8 + n % 2) for n in range(6)]
     window = {"now": 1.0, "window_s": 3600.0, "slices": slices}
-    settled = {s["task"]: {"labels": ["kind-execute", "size-3"]} for s in slices}
-    monkeypatch.setattr(cli, "_window_read", lambda args, environ, route, keys, params=None: window)
-    monkeypatch.setattr(agent_wire, "get_snapshot", lambda base: {"settled": settled})
+    estimates = {"estimates": [{"task": s["task"], "kind": "execute", "size": 3} for s in slices]}
+    reads = {"/api/analytics/sessions": window, "/api/analytics/estimates": estimates}
+    monkeypatch.setattr(cli, "_window_read", lambda args, environ, route, keys, params=None: reads[route])
     monkeypatch.setattr(github, "connect", lambda token: lambda method, path, body: (200, {"items": []}))
 
 
