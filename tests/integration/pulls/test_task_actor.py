@@ -168,6 +168,58 @@ def test_a_review_task_whose_every_pr_closed_unmerged_moves_to_needs_attention_w
     assert reason.rstrip().endswith("?")
 
 
+ASK = f"Every pull request it cites closed unmerged: acme/trantor#1 closed ({PR_ONE}). Close it as superseded, or redeliver it?"
+
+
+def _asked_then(*later: str) -> Callable[[str], dict]:
+    """A board read whose task carries the actor's ask and then each `later` comment, oldest first."""
+    comments = [{"author": ACTOR, "text": ASK}, *({"author": "agent", "text": text} for text in later)]
+    return lambda name: {"comments": comments}
+
+
+def _closed_review_board(
+    store: PullStore, stop: threading.Event, read: Callable[[str], dict]
+) -> Board:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    waits = {**WAITS, "review": {"pr_merged": "MERGED", "pr_closed_unmerged": "ABANDONED"}}
+    moves = {**MOVES, ("review", "ABANDONED"): "needs_attention"}
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop, waits, moves, read=read)
+    store.save([pull(1, state="CLOSED")])
+    actor.pulls_changed()
+    return board
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "**Operator answer relayed by grok session `grok-1`** (source: grok-chat). The operator's answer, verbatim:\n\n> close it",
+        "Operator answer (claude:s1#t1): close it as superseded",
+    ],
+)
+def test_a_closed_unmerged_review_task_whose_ask_was_answered_is_not_parked_with_the_same_ask_again(
+    store: PullStore, stop: threading.Event, answer: str
+) -> None:
+    board = _closed_review_board(store, stop, _asked_then(answer))
+
+    time.sleep(0.3)
+    assert board.moved() == []
+
+
+def test_a_closed_unmerged_review_task_is_parked_again_when_its_ask_is_unanswered_or_the_answer_preceded_it(
+    store: PullStore, stop: threading.Event
+) -> None:
+    comments = [
+        {"author": "agent", "text": "Operator answer (claude:s1#t0): an earlier ask's answer"},
+        {"author": ACTOR, "text": ASK},
+        {"author": "agent", "text": "Assumption: rebasing"},
+    ]
+
+    board = _closed_review_board(store, stop, lambda name: {"comments": comments})
+
+    assert until(lambda: board.moved() == [("TASK-1", "needs_attention")])
+
+
 def test_a_review_task_with_every_criterion_checked_whose_every_pr_closed_unmerged_closes_done(
     store: PullStore, stop: threading.Event
 ) -> None:
