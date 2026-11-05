@@ -35,6 +35,7 @@ dependency nothing will finish (the board holds no such task, or it is Proposed)
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from datetime import UTC, datetime
@@ -105,6 +106,8 @@ LOCK_BACKOFF_S = (0.1, 0.4, 1.6)
 #: The facts whose event parks a task in Needs attention: the comment is also its `## Needs attention` reason, a question.
 _ASKS = ("overdue", "pr_closed_unmerged", "pr_failing")
 _SLE_DAYS, _GRACE_DAYS = 7, 2
+#: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
+_ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")
 #: Start Criteria evaluated at once: each is a subprocess, so the pass is bounded rather than one thread per gated task.
 _EVALUATIONS = 8
 
@@ -798,6 +801,8 @@ class TaskActor:
             if held is None:
                 continue
             evidence, comment = held
+            if fact in _ASKS and self._answered(agent, comment):
+                continue
             sent = (agent["state"], event, evidence)
             if self._tried.get(name) == sent:
                 continue
@@ -812,6 +817,21 @@ class TaskActor:
                     self._woken[name] = self._clock()
                     self._notice(self._verifying, name, "entered post-merge QA but its holder was not told")
                 return
+
+    def _answered(self, agent: dict[str, Any], ask: str) -> bool:
+        """Whether the operator already answered this very ask: an `Operator answer` comment follows the last time the
+        task carried `ask`, so parking the task on it again would put the question to them twice. A new ask (another
+        pull request, another reason) is a new question."""
+        if self._read is None:
+            return False
+        try:
+            comments = (self._read(agent["id"]) or {}).get("comments") or []
+        except Exception as error:
+            logger.warning("task actor: cannot read the comments of %s: %s", agent["id"], error)
+            return False
+        texts = [str(comment.get("text") or "") for comment in comments]
+        asked = [index for index, text in enumerate(texts) if text.strip() == ask.strip()]
+        return bool(asked) and any(_ANSWER_COMMENT.match(text) for text in texts[asked[-1] + 1 :])
 
     def _write(
         self, name: str, target: str, comment: str, observed: float, source: str, stale: Mapping[str, Any] = {}
