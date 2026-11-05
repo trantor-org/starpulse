@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from starpulse.board.adapters.session_activity import holder_activity, session_activity
+from starpulse.board.adapters.session_activity import holder_activity, holder_key, same_holder, session_activity
 
 SESSION = "19311184-276e-4c7a-9bee-c2605b06f1d1"
 NOW = datetime(2026, 11, 3, 21, 0, tzinfo=UTC).timestamp()
@@ -134,3 +134,47 @@ def test_a_url_assignee_no_running_session_names_has_no_activity(tmp_path: Path)
         holder_activity(tmp_path / "projects", tmp_path / "sessions", "https://claude.ai/code/session_01GONE", now=NOW)
         is None
     )
+
+
+BRIDGE = "01DTu8XJxdtoSs93ZhuGrRHa"
+URL = f"https://claude.ai/code/session_{BRIDGE}"
+
+
+def _bridged(root: Path, session: str = SESSION, bridge: str = f"cse_{BRIDGE}") -> None:
+    folder = root / "-home-adinb-trantor"
+    folder.mkdir(parents=True, exist_ok=True)
+    head = [{"type": "mode", "sessionId": session}, {"type": "bridge-session", "sessionId": session, "bridgeSessionId": bridge}]
+    entries = [*head, _turn("20:00:00.000", "assistant")]
+    (folder / f"{session}.jsonl").write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
+
+
+@pytest.mark.parametrize("claim", [URL, f"session_{BRIDGE}", f"cse_{BRIDGE}", f"{URL}/"])
+def test_a_local_uuid_and_every_form_of_its_bridge_name_one_holder(tmp_path: Path, claim: str) -> None:
+    _bridged(tmp_path)
+
+    assert same_holder(claim, SESSION, tmp_path)
+    assert same_holder(SESSION, claim, tmp_path)
+
+
+def test_another_sessions_bridge_is_not_the_holder(tmp_path: Path) -> None:
+    _bridged(tmp_path)
+
+    assert not same_holder("https://claude.ai/code/session_01OtherBridge", SESSION, tmp_path)
+    assert not same_holder("", SESSION, tmp_path)
+    assert not same_holder(None, SESSION, tmp_path)
+
+
+def test_a_uuid_with_no_bridge_or_no_transcript_is_its_own_key(tmp_path: Path) -> None:
+    _write(tmp_path, _turn("20:00:00.000", "assistant"))
+
+    assert holder_key(SESSION, tmp_path) == SESSION
+    assert holder_key("no-such-session", tmp_path) == "no-such-session"
+    assert not same_holder(URL, SESSION, tmp_path)
+
+
+def test_a_transcript_written_after_a_miss_is_found_on_the_next_lookup(tmp_path: Path) -> None:
+    assert not same_holder(URL, SESSION, tmp_path)
+
+    _bridged(tmp_path)
+
+    assert same_holder(URL, SESSION, tmp_path)
