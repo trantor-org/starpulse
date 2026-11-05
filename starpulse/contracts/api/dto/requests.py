@@ -16,6 +16,7 @@ from pydantic import (
 )
 
 from starpulse.contracts.api._base import _Request
+from starpulse.contracts.tiers import TIERS
 from starpulse.contracts.api.dto.scheduler import QuietHours
 
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
@@ -25,6 +26,7 @@ CREATE_TEXT = (
     "priority",
     "impact",
     "urgency",
+    "tier",
     "milestone",
     "profile",
     "assignee",
@@ -194,6 +196,7 @@ class CreateSpec(_Request):
     priority: str | None = None
     impact: str | None = None
     urgency: str | None = None
+    tier: str | None = None
     milestone: str | None = None
     profile: str | None = None
     assignee: str | None = None
@@ -224,6 +227,13 @@ class CreateSpec(_Request):
     def _known_priority(cls, value: str | None) -> str | None:
         if value and value.lower() not in _PRIORITIES:
             raise ValueError("must be high, medium or low")
+        return value and value.lower()
+
+    @field_validator("tier")
+    @classmethod
+    def _known_tier(cls, value: str | None) -> str | None:
+        if value and value.lower() not in TIERS:
+            raise ValueError(f"must be one of {', '.join(TIERS)}")
         return value and value.lower()
 
     @field_validator(*CREATE_LISTS)

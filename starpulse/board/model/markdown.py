@@ -18,6 +18,7 @@ _LINES = {
     "priority": "Priority",
     "impact": "Impact",
     "urgency": "Urgency",
+    "tier": "Tier",
     "milestone": "Milestone",
     "labels": "Labels",
     "dependencies": "Dependencies",

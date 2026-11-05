@@ -57,7 +57,7 @@ _OWN = {
 }
 _LISTS = ("labels", "dependencies", "references", "documentation", "modifiedFiles")
 #: The record's keys the fold keeps in `meta`.
-_META = ("profile", "impact", "urgency", "start_criteria", "source")
+_META = ("profile", "impact", "urgency", "tier", "start_criteria", "source")
 #: The record's criteria lists, by the kind the fold keeps them under.
 _KINDS = {"ac": "acceptanceCriteria", "dod": "definitionOfDone"}
 

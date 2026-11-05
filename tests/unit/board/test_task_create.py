@@ -117,6 +117,7 @@ def test_a_title_with_a_path_separator_still_makes_one_file_inside_tasks(
 _DETAILS = {
     "description": "Explain the three lanes.\nThen the toolbar.",
     "priority": "High",
+    "tier": "Bug",
     "labels": ["docs", "ui"],
     "milestone": "m-1",
     "profile": "@agent-fast-low",
@@ -146,6 +147,7 @@ def test_a_create_writes_every_detail_as_backlog_markdown_and_the_next_scan_read
         "milestone": "m-1",
         "dependencies": ["task-1"],
         "priority": "high",
+        "tier": "bug",
         "created_by": "anonymous",
     }
     assert (
@@ -155,9 +157,10 @@ def test_a_create_writes_every_detail_as_backlog_markdown_and_the_next_scan_read
     UpstreamBacklog(tmp_path / ".starpulse" / "board", feed.put).scan()
     flow, _harness = feed.snapshot()["flows"]
     agent = next(agent for agent in flow["agents"] if agent["id"] == "task-2")
-    assert {key: agent[key] for key in ("state", "model", "labels", "milestone", "dependencies", "description")} == {
+    assert {key: agent[key] for key in ("state", "model", "tier", "labels", "milestone", "dependencies", "description")} == {
         "state": "to_do",
         "model": "@agent-fast-low",
+        "tier": "bug",
         "labels": ["docs", "ui"],
         "milestone": "m-1",
         "dependencies": ["task-1"],

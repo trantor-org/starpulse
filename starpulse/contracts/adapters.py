@@ -16,9 +16,12 @@ from typing import Any, Literal, Protocol, Self
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from starpulse.contracts.task_keys import TaskKeys
+from starpulse.contracts.tiers import DEFAULT_TIER, TIERS, Tier
 
 __all__ = [
     "CONTRACTS",
+    "DEFAULT_TIER",
+    "TIERS",
     "EVENT_STREAMS",
     "LAST_OUTCOMES",
     "SCHEMAS",
@@ -148,6 +151,10 @@ class BoardTask(_Contract):
     urgency: str = Field(
         default="",
         description="How soon the work matters (`low`, `medium` or `high`); empty when the board keeps none.",
+    )
+    tier: Tier = Field(
+        default=DEFAULT_TIER,
+        description="The tier the scheduler admits the task by (`regression`, `bug`, `leverage`, `standard` or `decide`); `standard` when the board keeps none.",
     )
     adr_needed: str = Field(default="", description="Why the task needs an ADR; empty when it needs none.")
     duplicate_search: str = Field(default="", description="The queries the task's duplicate search ran; empty when none.")

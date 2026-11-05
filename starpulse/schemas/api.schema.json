@@ -1196,6 +1196,17 @@
           ],
           "default": null
         },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "title": {
           "anyOf": [
             {
@@ -1487,6 +1498,17 @@
           "default": null
         },
         "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tier": {
           "anyOf": [
             {
               "type": "string"
@@ -5604,6 +5626,18 @@
           ],
           "default": null,
           "description": "A machine's task: the id of the Backlog task its events name."
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A Board task's tier (regression, bug, leverage, standard or decide); absent on a row an adapter does not tier."
         },
         "title": {
           "type": "string"

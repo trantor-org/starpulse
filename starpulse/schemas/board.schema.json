@@ -220,6 +220,19 @@
       "title": "Urgency",
       "type": "string"
     },
+    "tier": {
+      "default": "standard",
+      "description": "The tier the scheduler admits the task by (`regression`, `bug`, `leverage`, `standard` or `decide`); `standard` when the board keeps none.",
+      "enum": [
+        "regression",
+        "bug",
+        "leverage",
+        "standard",
+        "decide"
+      ],
+      "title": "Tier",
+      "type": "string"
+    },
     "adr_needed": {
       "default": "",
       "description": "Why the task needs an ADR; empty when it needs none.",

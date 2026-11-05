@@ -401,6 +401,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "milestone": "m-3",
             "impact": "",
             "urgency": "",
+            "tier": "standard",
             "adr_needed": "",
             "duplicate_search": "",
             "duplicate_resolution": "",
@@ -421,6 +422,20 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
         }
     ]
     assert changes.get_nowait()[0] == "task"
+
+
+def test_a_board_task_s_feed_row_carries_its_tier_and_an_unset_one_is_standard() -> None:
+    feed = BoardFeed(roles=ROLES)
+
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready", tier="bug"))
+    feed.put(BoardTask(id="PROJ-2", team="demo", title="t", lane="ready"))
+
+    assert {agent["id"]: agent["tier"] for agent in _agents(feed)} == {"PROJ-1": "bug", "PROJ-2": "standard"}
+
+
+def test_a_board_task_refuses_a_tier_the_board_does_not_name() -> None:
+    with pytest.raises(ValueError, match="tier"):
+        BoardTask(id="PROJ-1", team="demo", title="t", lane="ready", tier="urgent")
 
 
 def test_a_task_that_changed_lane_carries_the_lane_it_left_until_it_changes_again() -> None:

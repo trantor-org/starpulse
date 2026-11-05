@@ -160,7 +160,7 @@ RetiredImporter = Callable[[str, str], Written]
 TaskCompleter = Callable[[str], Written]
 class TaskCreator(Protocol):
     """Create a task with this title and details in the starting lane. `details` holds only the fields the page filled
-    (`description`, `priority`, `impact`, `urgency`, `labels`, `milestone`, `assignee`, `dependencies`,
+    (`description`, `priority`, `impact`, `urgency`, `tier`, `labels`, `milestone`, `assignee`, `dependencies`,
     `acceptanceCriteria`); a caller in the same process may pass any other field `TaskEditor` sets. A successful
     `Written.output` is the new task's id."""
 

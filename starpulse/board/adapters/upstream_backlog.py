@@ -36,6 +36,7 @@ from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.markdown import needs_attention_reason
 from starpulse.board.model.seam import Board, MoveWriter, Written
 from starpulse.contracts.task_keys import TaskKeys
+from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 
@@ -375,6 +376,7 @@ class UpstreamBacklog:
 
         criteria = _criteria(body)
         dependencies = _strings(frontmatter.get("dependencies"))
+        tier = str(frontmatter.get("tier") or "").strip().lower()
         return BoardTask(
             id=task_id,
             title=title,
@@ -391,6 +393,7 @@ class UpstreamBacklog:
             labels=_strings(frontmatter.get("labels")),
             impact=str(frontmatter.get("impact") or "").strip().lower(),
             urgency=str(frontmatter.get("urgency") or "").strip().lower(),
+            tier=tier if tier in TIERS else DEFAULT_TIER,
             adr_needed=str(frontmatter.get("adr_needed") or "").strip(),
             duplicate_search=str(frontmatter.get("duplicate_search") or "").strip(),
             duplicate_resolution=str(frontmatter.get("duplicate_resolution") or "").strip(),

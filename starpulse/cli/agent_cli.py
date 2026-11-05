@@ -964,6 +964,9 @@ def _parser() -> argparse.ArgumentParser:
     edit.add_argument("--impact", help="how much the work matters, `high`, `medium` or `low`; blank removes it")
     edit.add_argument("--urgency", help="how soon the work matters, `high`, `medium` or `low`; blank removes it")
     edit.add_argument(
+        "--tier", help="`regression`, `bug`, `leverage`, `standard` or `decide`; blank returns it to the default"
+    )
+    edit.add_argument(
         "--profile", "--assignee", dest="profile", help="the agent profile it is routed to (`@agent-standard-high`); blank clears"
     )
     edit.add_argument("--milestone", help="the milestone's id; blank removes it")
