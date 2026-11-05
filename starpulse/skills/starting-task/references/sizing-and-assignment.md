@@ -25,7 +25,8 @@ that names no mechanism off its cheapest profile.
 ## Sizes
 
 Sizes are `size-1`, `size-2`, `size-3`, `size-5`, `size-8` (Fibonacci points). Start from the
-scope, then step up one value per aggravating driver: the cause or approach is unknown; it
+scope, then step up one value per aggravating driver: the cause or approach is unknown (never
+for `kind-diagnose`, whose cause is unknown by definition and which ran under execute at sizes 3 and 5); it
 touches live state, a migration or a shared interface; it spans two repositories merged in
 order (package, then the pin that consumes it); or its criteria depend on an external system.
 An `Operator approved the render` criterion is one driver at most.
@@ -40,6 +41,20 @@ An `Operator approved the render` criterion is one driver at most.
 
 A deletion-only change is sized by subsystems, not files. A docstring-only rewrite in one
 repository is size 3.
+
+### Calibrated against measured spend
+
+A size label is a forecast of measured spend: within a kind, each size's median task spend
+should sit about 1.5 to 2.5 times the size below it. Check it against the project's per-kind,
+per-size spend norms (`starpulse analytics spend`); a cell whose median falls to or below the
+size under it means the rubric is sizing work into that cell that does not spend like it.
+A cell with fewer than 10 tasks is too thin to move the rubric.
+
+The rules below the table carry that calibration. In one 192-hour window (1,286 tasks), execute
+medians rose 0.33, 0.50, 1.22 and 2.32 M weighted tokens from size 1 to 5, but size 8 fell to
+2.03 M; diagnose fell from 0.99 M at size 3 to 0.69 M at size 5; decide stayed flat from size
+3 to 5 (0.90 and 0.94 M); and tasks run mostly as UI design render loops, labelled size 1 to 5,
+had a 3.1 M median, the top of the execute range.
 
 ## Size one task
 
@@ -67,8 +82,9 @@ repository is size 3.
      two-repository driver.
    - Size a sweep from a count of the sites it will touch (a `rg` count), not from its brief.
      The file count includes tests, docs and package registration. A slice that adds a new
-     package or a new live consumer starts at 8: execute slices sized 3-5 for such work landed
-     20-33 files.
+     package or a new live consumer starts at 5 and reaches 8 only through a driver: execute
+     slices sized 3-5 for such work landed 20-33 files, but size-8 execute work spent less than
+     size 5.
    - A migration that rewrites existing tests counts each rewritten test file and takes the
      migration driver. A planned pure move (no behavior change, destinations and import
      rewrites already listed) in one repository is size 3 whatever its file count, or 5 when
@@ -78,13 +94,18 @@ repository is size 3.
      contention. A move within one module whose tests share one context steps down one.
    - A fix that adds a migration or touches two production files takes the fix-scope step;
      count test files and every patched module.
-   - A `kind-decide` task that runs a full mockup interview with the operator is size 8
-     whatever its scope and is never split for reaching 13: review rounds run at the
-     operator's pace.
+   - A UI design task, one that renders a canvas or mockup for the operator to review round
+     by round, is `kind-decide` size 8 whatever its scope and is never split for reaching 13:
+     its render loops spend like size 8 (a size-1 one ran 25 times its cell's norm), and
+     review rounds run at the operator's pace.
+   - Any other `kind-decide` task whose output is documents (a decision record, a skill, a
+     policy or a plan) stops at size 3 by scope however many files it edits; only a driver
+     lifts it further.
    - A `kind-diagnose` task whose gate is a multi-hour end-to-end run that stops at the first
      failure steps up one size, and each further fault the run uncovers is forked unless it
      blocks the gate.
-   - A cutover slice that rewires a live caller and retires the old path starts at 8.
+   - A cutover slice that rewires a live caller and retires the old path starts at 5, its
+     live-state driver included.
    - Forecast compaction last: a task whose scope, once the drivers are counted, runs past
      about 70 agent steps or reads large outputs (logs, a corpus scan, a full test run) is
      forecast to compact. Step it up one size; at slicing, split it instead when a seam keeps
@@ -119,7 +140,7 @@ Do the steps above for every slice before proposing the cohort, then:
    that reached 13, then cut it along a seam that leaves each part independently verifiable,
    re-size the parts, and repeat until none reaches 13. A size 13 is refused. A
    slice expected past the size-8 p90 is split before filing the same way, even at
-   size 8 or below. A mockup-interview task stays one size-8 slice. A slice forecast to compact is split the same
+   size 8 or below. A UI design task stays one size-8 slice. A slice forecast to compact is split the same
    way when a seam exists, else stepped up, except a planned mechanical migration.
    Size a mutation-kill slice by the source and test files it touches, not its survivor count,
    and cap it at about one module or ~15 functions.
