@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.scheduler.model.sampler import Crossing, Reading, Sampler
 from starpulse.scheduler.model.state import SchedulerState
 
@@ -153,3 +155,18 @@ def test_a_listener_that_raises_neither_stops_the_sampler_nor_hides_the_crossing
 
     assert heard == ["cpu", "memory"]
     assert rig.sampler.readings()[0][0].use == 90.0
+
+
+def test_setting_stop_ends_a_sampler_waiting_for_a_pressure_trigger() -> None:
+    rig = Rig()
+    stop = StopEvent()
+    ended = threading.Event()
+
+    def run() -> None:
+        rig.sampler.run_forever(stop, threading.Event())
+        ended.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    stop.set()
+
+    assert ended.wait(5.0)

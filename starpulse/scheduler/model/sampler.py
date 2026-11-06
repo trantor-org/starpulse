@@ -12,6 +12,7 @@ import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from starpulse.event_log.wake import StopEvent
 from starpulse.scheduler.model.config import DIMENSIONS
 
 logger = logging.getLogger(__name__)
@@ -102,11 +103,15 @@ class Sampler:
                 except Exception:  # a listener's bug must not stop the sampler or hide the next crossing
                     logger.exception("StarPulse: a scheduler capacity listener failed")
 
-    def run_forever(self, stop: threading.Event, wake: threading.Event) -> None:
+    def run_forever(self, stop: StopEvent, wake: threading.Event) -> None:
         """Sample now, then once each time `wake` is set (a pressure trigger fired) until `stop` is set; never on a timer."""
-        self.sample()
-        while not stop.is_set():
-            wake.wait()
-            wake.clear()
-            if not stop.is_set():
-                self.sample()
+        stop.listen(wake.set)
+        try:
+            self.sample()
+            while not stop.is_set():
+                wake.wait()
+                wake.clear()
+                if not stop.is_set():
+                    self.sample()
+        finally:
+            stop.unlisten(wake.set)
