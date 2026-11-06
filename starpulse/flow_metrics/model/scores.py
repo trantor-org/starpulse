@@ -126,16 +126,28 @@ def _time(stamp: str) -> datetime:
     return datetime.fromisoformat(stamp.replace("Z", "+00:00"))
 
 
+def _all_items(transport: Transport, path: str) -> list[dict]:
+    """Every item of a paginated list endpoint: `path` is the first page of 100, later pages add `&page=N`."""
+    items: list[dict] = []
+    page = 1
+    while True:
+        batch = get(transport, path if page == 1 else f"{path}&page={page}")["items"]
+        items.extend(batch)
+        if len(batch) < 100:
+            return items
+        page += 1
+
+
 def pull_facts(transport: Transport, repo: str, number: int) -> PullFacts | None:
     """The facts of merged pull request `number`: commits dated after it was last marked ready for review (all of
     them when it never was a draft) and hours from that moment to its merge. None while it is unmerged."""
     pull = get(transport, f"/repos/{repo}/pulls/{number}")
     if not pull.get("merged_at"):
         return None
-    events = get(transport, f"/repos/{repo}/issues/{number}/events?per_page=100")["items"]
+    events = _all_items(transport, f"/repos/{repo}/issues/{number}/events?per_page=100")
     readied = [e["created_at"] for e in events if e["event"] == "ready_for_review"]
     ready = _time(readied[-1] if readied else pull["created_at"])
-    commits = get(transport, f"/repos/{repo}/pulls/{number}/commits?per_page=100")["items"]
+    commits = _all_items(transport, f"/repos/{repo}/pulls/{number}/commits?per_page=100")
     after = sum(_time(c["commit"]["committer"]["date"]) > ready for c in commits) if readied else len(commits)
     return PullFacts(after, (_time(pull["merged_at"]) - ready).total_seconds() / 3600)
 
