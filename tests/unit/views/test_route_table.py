@@ -38,6 +38,7 @@ _TABLE = [
     ("/api/history", _READ),
     ("/api/history-window", _READ),
     ("/api/history-window", ("DELETE", "PUT")),
+    ("/api/breaking-changes", _READ),
     # analytics
     ("/api/analytics/health", _READ),
     ("/api/analytics/sessions", _READ),

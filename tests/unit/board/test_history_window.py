@@ -224,6 +224,9 @@ def test_a_history_with_lane_rows_and_no_gaps_can_feed_the_ledger_but_not_answer
         def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
             return []
 
+        def breaking_changes(self, *, open_only: bool = False) -> list[dict]:
+            return []
+
     assert isinstance(LanesOnly(), LaneHistory)
     assert not isinstance(LanesOnly(), HealthHistory)
     assert not isinstance(object(), LaneHistory)

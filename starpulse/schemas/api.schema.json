@@ -291,6 +291,127 @@
       "title": "Bottleneck",
       "type": "object"
     },
+    "BreakingChange": {
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "detections": {
+          "items": {
+            "$ref": "#/$defs/BreakingDetection"
+          },
+          "type": "array"
+        },
+        "first_seen": {
+          "type": "number"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "postmortem_task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "commit",
+        "first_seen",
+        "detections"
+      ],
+      "title": "BreakingChange",
+      "type": "object"
+    },
+    "BreakingChanges": {
+      "description": "`GET /api/breaking-changes[?open=1]`: each commit once, oldest first; `open=1` keeps those with no postmortem.",
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/BreakingChange"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "changes"
+      ],
+      "title": "BreakingChanges",
+      "type": "object"
+    },
+    "BreakingDetection": {
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "detector": {
+          "type": "string"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "detector",
+        "at"
+      ],
+      "title": "BreakingDetection",
+      "type": "object"
+    },
     "BuildEvent": {
       "description": "The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,\nwhich names every chunk it loads by its digest. A page that holds another build than the one it is named is out of date.",
       "properties": {
@@ -9763,6 +9884,9 @@
       },
       "type": "array"
     },
+    "breakingChanges": {
+      "$ref": "#/$defs/BreakingChanges"
+    },
     "build": {
       "$ref": "#/$defs/BuildEvent"
     },
@@ -10000,6 +10124,7 @@
     "laneHistory",
     "machineHistory",
     "taskEventHistory",
+    "breakingChanges",
     "pulls",
     "searchResults",
     "health",

@@ -1,0 +1,107 @@
+{
+  "additionalProperties": false,
+  "description": "One `breaking-change:events` entry: a detector naming a commit that broke the default branch, or the postmortem\nthat closes the commit's row. Detector and outcome are the producer's own strings.",
+  "properties": {
+    "event": {
+      "description": "Which of the two it is.",
+      "enum": [
+        "BreakingChangeRecorded",
+        "BreakingChangePostmortemed"
+      ],
+      "title": "Event",
+      "type": "string"
+    },
+    "commit": {
+      "description": "The merge commit that broke the branch.",
+      "minLength": 1,
+      "title": "Commit",
+      "type": "string"
+    },
+    "time": {
+      "description": "When it was recorded, in epoch seconds.",
+      "minimum": 0,
+      "title": "Time",
+      "type": "number"
+    },
+    "source": {
+      "default": "",
+      "description": "The producer that posted it through the CloudEvents ingest.",
+      "title": "Source",
+      "type": "string"
+    },
+    "detector": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "What saw it; required to record a break.",
+      "title": "Detector"
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "How the break ended, such as `revert-opened`.",
+      "title": "Outcome"
+    },
+    "pr": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The pull request that merged the commit.",
+      "title": "Pr"
+    },
+    "task": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The task of the commit; on a postmortem, the postmortem task.",
+      "title": "Task"
+    },
+    "evidence": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "A link that shows the break.",
+      "title": "Evidence"
+    }
+  },
+  "required": [
+    "event",
+    "commit",
+    "time"
+  ],
+  "title": "BreakingChangeEvent",
+  "type": "object"
+}

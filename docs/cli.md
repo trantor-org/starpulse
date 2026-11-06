@@ -18,6 +18,7 @@ starpulse task profile PROJ-45 @agent-standard-high  # route it to an agent prof
 starpulse task archive PROJ-45 --reason "superseded"  # archive it from any lane, with the reason as a comment
 starpulse task verdict PROJ-45 live pass --evidence "up=1"  # record a post-merge check's verdict on its task
 starpulse task miss PROJ-45 live --title "Repair live"  # file the fix and record the MISS verdict, both or neither
+starpulse breaking-change list --open          # commits that broke the default branch with no postmortem yet, each with its detections
 starpulse task restore PROJ-45                   # return an archived task to the board, unchanged
 starpulse task retire PROJ-45                    # take a finished task off the board into the history store
 starpulse task retired PROJ-45                   # read a retired task's file name and text back

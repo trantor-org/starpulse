@@ -38,6 +38,7 @@ export interface ApiContract {
     | StaleEdit
     | WindowTooLong
   )[];
+  breakingChanges: BreakingChanges;
   build: BuildEvent;
   cells: Cells;
   contractReport: ContractReport;
@@ -292,6 +293,30 @@ export interface StaleEdit {
 export interface WindowTooLong {
   error: string;
   history_s: number;
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/breaking-changes[?open=1]`: each commit once, oldest first; `open=1` keeps those with no postmortem.
+ */
+export interface BreakingChanges {
+  changes: BreakingChange[];
+  [k: string]: unknown;
+}
+export interface BreakingChange {
+  commit: string;
+  detections: BreakingDetection[];
+  first_seen: number;
+  outcome?: string | null;
+  postmortem_task?: string | null;
+  pr?: number | null;
+  task?: string | null;
+  [k: string]: unknown;
+}
+export interface BreakingDetection {
+  at: number;
+  detector: string;
+  evidence?: string | null;
+  outcome?: string | null;
   [k: string]: unknown;
 }
 /**
