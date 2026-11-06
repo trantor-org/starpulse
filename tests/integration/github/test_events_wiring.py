@@ -47,6 +47,36 @@ def test_the_events_context_refuses_to_start_without_the_producer_token(
         start["github-events"](stop)
 
 
+def test_the_events_context_reconciles_at_start_only_with_a_reconcile_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from starpulse.github.adapters.inbound import consumer
+    from starpulse.github.adapters.outbound.rest import Reply
+
+    monkeypatch.setenv("GH_APP", "app-token")
+    asked: list[str] = []
+    reached = threading.Event()
+
+    def connect(token):  # noqa: ANN001, ANN202
+        def client(method: str, path: str, etag: str | None) -> Reply:
+            asked.append(f"{token()} {method} {path}")
+            reached.set()
+            return Reply(200, {"items": []})
+
+        return client
+
+    monkeypatch.setattr(consumer, "connect_client", connect)
+    table = dataclasses.replace(_config(tmp_path, producers=()).github, reconcile_token_env="GH_APP", reconcile_interval_s=3600)
+    stop = threading.Event()
+    consumer.start(
+        dataclasses.replace(load(None), github=table), tmp_path, stop, migrate_chain, ingest=object(), links=object()  # type: ignore[arg-type]
+    )
+
+    assert reached.wait(10)
+    stop.set()
+    assert asked[0] == "app-token GET /app/hook/deliveries?per_page=100"
+
+
 @pytest.fixture
 def dead(tmp_path: Path) -> Path:
     config = tmp_path / "starpulse.toml"

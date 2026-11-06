@@ -10,15 +10,20 @@ once when the ingest refuses the event for good.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from starpulse.github.adapters.inbound import reconcile
 from starpulse.github.adapters.inbound.listener import INBOX_FILE
+from starpulse.github.adapters.outbound.cursors import SqlCursors
 from starpulse.github.adapters.outbound.inbox import Migrate, SqlInbox
 from starpulse.github.adapters.outbound.queue import SqlQueue
+from starpulse.github.adapters.outbound.reconciled import Reconciled
+from starpulse.github.adapters.outbound.rest import connect_client
 from starpulse.github.model.events import CONSUMER, REFUSED, cloudevent, facts_of, run_event_of
 from starpulse.github.ports.events import Entry, Ingest, Links, Queue
 
@@ -97,8 +102,12 @@ def start(
     """The `github-events` context: consume the inbox `[github]` names on a thread until `stop` is set. The listener's
     container holds no producer token, so this runs apart from it, over the same inbox, with the `ingest` that holds it.
 
+    With `[github] reconcile_token_env` it also reconciles the inbox against GitHub on a thread of its own, at start and
+    every `reconcile_interval_s`, so a slow GitHub never holds the consumer.
+
     Returns the context's reload, which has nothing to re-read."""
     inbox, queue = open_queue(config, base, migrate)
+    settings = config.github
 
     def work() -> None:
         try:
@@ -106,5 +115,16 @@ def start(
         finally:
             inbox.engine.dispose()
 
+    def reconciles() -> None:
+        client = connect_client(lambda: os.environ.get(settings.reconcile_token_env or ""))
+        cursors, counted = SqlCursors(inbox.engine), Reconciled()
+        reconcile.run(
+            lambda: reconcile.reconcile(client, inbox, cursors, settings, counted, time.time),
+            stop,
+            settings.reconcile_interval_s,
+        )
+
     threading.Thread(target=work, name="github-events", daemon=True).start()
+    if settings.reconcile_token_env:
+        threading.Thread(target=reconciles, name="github-reconcile", daemon=True).start()
     return lambda: None
