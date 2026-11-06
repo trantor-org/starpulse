@@ -114,6 +114,10 @@ class RecordsMixin:
         """Read the Ledger's lane moves through `lane_rows` (`LaneHistory.lane_rows`)."""
         self._lane_rows = lane_rows
 
+    def alias(self, alias: str, task: str) -> None:
+        """Answer `alias` with the task `task`, for a board that draws the read model, which holds no aliases."""
+        self._aliases[alias] = task
+
     def put(self, task: BoardTask) -> None:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
         if self._keys is not None and not self._keys.matches(task.id):
