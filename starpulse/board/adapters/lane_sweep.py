@@ -62,14 +62,17 @@ class LaneSweep:
         """Bring the read model to the files where a rename left them apart: a listed file it lacks is reconciled, which
         seeds its History, and each alias a file lists answers its id; an open task whose file is absent on two passes in
         a row is reconciled, which archives it. With no files listed nothing is judged absent."""
-        files = list(self._board.files()) if self._board.files is not None and self._board.reconcile else []
+        files = list(self._board.files()) if self._board.files is not None else []
+        if not files:
+            self._absent = set()
+            return
         known = {agent["id"] for agent in self._feed.open_tasks()}
         for task, aliases in files:
             if task not in known:
                 self._board.reconcile(task)
             for alias in aliases:
                 self._feed.alias(alias, task)
-        absent = {task for task in known if files and self._board.read(task) is None}
+        absent = {task for task in known if self._board.read(task) is None}
         for task in absent & self._absent:
             self._board.reconcile(task)
         self._absent = absent

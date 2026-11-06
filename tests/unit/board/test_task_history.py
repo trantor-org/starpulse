@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from starpulse.board.adapters.lane_sweep import LaneSweep
 from starpulse.board.adapters.task_history import WRITER, _events
 from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
 from starpulse.board.board_feed import BoardFeed
@@ -386,3 +387,16 @@ def test_reconciling_a_file_without_history_seeds_it_and_the_board_lists_its_ali
     assert ("prop-6", ["TASK-9"]) in list(built.files())
     assert built.reconcile("prop-6") is True
     assert _types(store, "prop-6") == ["TaskImported"]
+
+
+def test_a_promoted_proposals_old_id_resolves_through_the_feed_alias_lookup(served, tmp_path: Path) -> None:
+    built, feed, store, log = served
+    tasks = tmp_path / ".starpulse" / "board" / "tasks"
+    (tasks / "prop-6 - Later.md").write_text(FILE.replace("id: task-5", "id: prop-6\naliases:\n  - TASK-9"))
+
+    LaneSweep(feed, built).sweep()
+    Projector(log.engine, store).catch_up()
+    feed._read_model = ReadModel(log.engine)
+
+    assert feed.task("prop-6")["id"] == "prop-6"
+    assert feed.task("TASK-9") == feed.task("prop-6")

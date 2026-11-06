@@ -6,7 +6,14 @@ import threading
 
 import pytest
 from starpulse.board.adapters.lane_sweep import LaneSweep, mismatches
+from starpulse.board.adapters.upstream_backlog import UpstreamBacklog
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.projector import Projector
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore
 from starpulse.event_log.wake import StopEvent
+from starpulse.runtime.assembly import assemble
+from starpulse.runtime.config import load
 
 
 class _Feed:
@@ -127,3 +134,19 @@ def test_no_listed_files_leaves_every_open_task_alone() -> None:
     sweep.sweep()
 
     assert board.reconciled == []
+
+
+def test_the_real_feed_answers_a_renamed_proposal_by_its_prop_id_and_its_old_task_id(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
+    built, feed = assemble(load(None), tmp_path, None, ())
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    built.start(feed, "test", log)
+    file = "---\nid: prop-84\ntitle: Renamed\nstatus: Proposed\naliases:\n  - TASK-10987\n---\n"
+    (tmp_path / ".starpulse" / "board" / "tasks" / "prop-84 - Renamed.md").write_text(file)
+
+    LaneSweep(feed, built).sweep()
+    Projector(log.engine, EventStore(log.engine)).catch_up()
+    feed._read_model = ReadModel(log.engine)
+
+    assert feed.task("prop-84")["id"] == "prop-84"
+    assert feed.task("TASK-10987") == feed.task("prop-84")
