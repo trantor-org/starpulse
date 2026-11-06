@@ -12,7 +12,7 @@ import { sessionNickname } from "./nickname";
 import { SpendRail } from "./spend";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
-  LABEL_FIELDS, LABEL_RULE, repoBase, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem, unlistedPulls,
+  LABEL_FIELDS, LABEL_RULE, repoBase, SECTION_NAMES, TIERS, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem, unlistedPulls,
   type ActivityEvent, type CiPull, type DepRow, type DocLink, type Item, type LabelField, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskViewModel";
 
@@ -297,11 +297,10 @@ function MoveMenu({ items, disabled, move }: { items: { to: string; text: string
 }
 
 const fromSnapshot = (task: KanbanTask): TaskRecord => ({
-  title: task.title, profile: task.profile ?? "", priority: "", labels: task.labels, milestone: task.milestone,
+  title: task.title, profile: task.profile ?? "", priority: "", tier: "", labels: task.labels, milestone: task.milestone,
   dependencies: task.dependencies, description: task.description, plan: "", notes: "",
   acceptanceCriteria: task.acceptanceCriteria ?? [], definitionOfDone: task.definitionOfDone ?? [],
 });
-const priorityValue = (value: string) => PRIORITIES.find((v) => v.toLowerCase() === value.toLowerCase()) ?? value;
 
 const CHECKLIST_FIELDS = ["acceptanceCriteria", "definitionOfDone"] as const;
 const unnumbered = (r: TaskRecord) => CHECKLIST_FIELDS.some((field) => r[field].some((item) => !item.n));
@@ -663,7 +662,7 @@ export function TaskView(p: TaskViewProps) {
                   {row("size", live ? field("size", LABEL_FIELDS.size) : fields.size ? <span className="sz">{fields.size}</span> : "—")}
                   {row("area", live ? field("area", areas) : fields.area || "—")}
                   {(live || fields.mode) && row("mode", live ? field("mode", LABEL_FIELDS.mode) : fields.mode)}
-                  {row("priority", live ? <Select {...fp("priority", "details")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /> : priorityValue(draft.priority) || "—")}
+                  {row("tier", live ? <Select {...fp("tier", "details")} label="Tier" value={draft.tier || "standard"} options={TIERS} onChange={(value) => change("tier", value)} /> : draft.tier || "standard")}
                   {row("profile", live ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...(draft.profile && !p.profiles.includes(draft.profile) ? [...p.profiles, draft.profile] : p.profiles).map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—")}
                   {!live && draft.type && row("type", draft.type)}
                   {row("labels", live ? <>

@@ -54,11 +54,9 @@ describe("the task view in read mode", () => {
     expect(draw({ capabilities: undefined })).not.toContain("Archive…");
   });
 
-  it("selects the priority's own option when the board stores it in lower case", () => {
-    const html = draw({ record: { ...record, priority: "high" }, initialEditing: "details" });
-
-    expect(html).toContain('<option value="High" selected="">High</option>');
-    expect(html).not.toContain('<option value="high"');
+  it("selects the tier's own option, and standard when the task names none", () => {
+    expect(draw({ record: { ...record, tier: "bug" }, initialEditing: "details" })).toContain('<option value="bug" selected="">bug</option>');
+    expect(draw({ record: { ...record, tier: "" }, initialEditing: "details" })).toContain('<option value="standard" selected="">standard</option>');
   });
 
   it("falls back to the snapshot's fields until the record arrives", () => {
@@ -148,7 +146,7 @@ describe("the task view's body", () => {
     const rail = html.slice(html.indexOf('class="tvcol tvrail"'));
 
     for (const text of ["Description", "Acceptance criteria", "1/2", "Implementation plan", "<li>Write the test</li>", "Notes", "Checked against the live config"]) expect(left, text).toContain(text);
-    for (const text of ["Pull requests", "priority"]) expect(rail, text).toContain(text);
+    for (const text of ["Pull requests", "tier"]) expect(rail, text).toContain(text);
     expect(left).not.toContain("Pull requests");
   });
 
@@ -359,15 +357,15 @@ describe("the task view's right rail", () => {
   it("draws the details as a read table, and when the task was created", () => {
     const html = rows(draw({ task: { ...task, created: 400 } }), "Details");
 
-    for (const text of ["profile", "@agent-standard-high", "priority", "High", "labels", "milestone", "m-89", "created", "10m ago"]) expect(html, text).toContain(text);
+    for (const text of ["profile", "@agent-standard-high", "tier", "leverage", "labels", "milestone", "m-89", "created", "10m ago"]) expect(html, text).toContain(text);
     expect(html).toContain('<span class="chip">needs-review</span>');
     expect(rows(draw({ task: { ...task, created: null } }), "Details")).toMatch(/created<\/td><td><span class="k">—<\/span>/);
   });
 
-  it("edits kind, size, area, mode, priority, profile and milestone in Details, and leaves Dependencies read-only", () => {
+  it("edits kind, size, area, mode, tier, profile and milestone in Details, and leaves Dependencies read-only", () => {
     const html = draw({ initialEditing: "details", tasks: many });
 
-    expect(rows(html, "Details")).toMatch(/data-field="priority"[\s\S]*data-field="profile"[\s\S]*data-field="milestone"/);
+    expect(rows(html, "Details")).toMatch(/data-field="tier"[\s\S]*data-field="profile"[\s\S]*data-field="milestone"/);
     expect(rows(html, "Dependencies")).not.toContain("data-field");
     expect(rows(html, "Dependencies")).toContain('<span class="id">TASK-1</span>');
   });

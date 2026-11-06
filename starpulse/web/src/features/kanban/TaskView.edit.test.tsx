@@ -141,7 +141,7 @@ describe("editing one section at a time", () => {
     expect(wrote(fetcher).changes).toEqual({ plan: "1. Write the test\n2. Ship it", planReason: "scope grew" });
   });
 
-  it("edits the title and Details with their own bars, Details as kind, size, area, mode, priority, profile and milestone selects", async () => {
+  it("edits the title and Details with their own bars, Details as kind, size, area, mode, tier, profile and milestone selects", async () => {
     const fetcher = stubWriter();
     const host = mount({ profiles: ["@agent-standard-high", "@agent-light-low"], milestones: ["m-89", "m-90"] });
 
@@ -150,7 +150,7 @@ describe("editing one section at a time", () => {
     expect(q(host, ".tvhead")?.textContent).toContain("Ctrl+Enter saves · Esc cancels");
     click(pen(host, "details"));
     expect(open(host)).toHaveLength(1);
-    expect([...host.querySelectorAll(".sec.on select")].map((x) => x.getAttribute("aria-label"))).toEqual(["Kind", "Size", "Area", "Mode", "Priority", "Profile", "Milestone"]);
+    expect([...host.querySelectorAll(".sec.on select")].map((x) => x.getAttribute("aria-label"))).toEqual(["Kind", "Size", "Area", "Mode", "Tier", "Profile", "Milestone"]);
     const milestone = q<HTMLSelectElement>(host, '.sec.on select[aria-label="Milestone"]')!;
     act(() => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(milestone, "m-90"); milestone.dispatchEvent(new Event("change", { bubbles: true })); });
     await key("Enter", { ctrlKey: true });
@@ -159,7 +159,28 @@ describe("editing one section at a time", () => {
     expect(q(host, ".toast")?.textContent).toBe("✓ Saved details");
   });
 
-  const inRail = (host: HTMLElement) => [...host.querySelectorAll(".tvrail .props tr")].map((tr) => [tr.children[0].textContent, tr.children[1].textContent]);
+  it("draws tier in the slot priority had: lowercase options, standard when unset, saved like the other Details selects", async () => {
+    const fetcher = stubWriter();
+    const host = mount({ record: { ...props().record!, tier: "" } });
+    const rows = [...host.querySelectorAll(".tvrail .props tr")].map((tr) => tr.children[0].textContent);
+
+    expect(rows).not.toContain("priority");
+    expect(rows.indexOf("tier")).toBe(rows.indexOf("profile") - 1);
+    expect(inRail(host)).toContainEqual(["tier", "standard"]);
+
+    click(pen(host, "details"));
+    const tier = q<HTMLSelectElement>(host, '.sec.on select[aria-label="Tier"]')!;
+    expect([...tier.options].map((o) => [o.value, o.textContent])).toEqual([
+      ["regression", "regression"], ["bug", "bug"], ["leverage", "leverage"], ["standard", "standard"], ["decide", "decide (leftover only)"],
+    ]);
+    expect(tier.value).toBe("standard");
+    act(() => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(tier, "bug"); tier.dispatchEvent(new Event("change", { bubbles: true })); });
+    await key("Enter", { ctrlKey: true });
+
+    expect(wrote(fetcher).changes).toEqual({ tier: "bug" });
+  });
+
+  const inRail =(host: HTMLElement) => [...host.querySelectorAll(".tvrail .props tr")].map((tr) => [tr.children[0].textContent, tr.children[1].textContent]);
   const typeLabel = (host: HTMLElement, value: string) => {
     const input = q<HTMLInputElement>(host, 'input[aria-label="Add label"]');
     expect(input, "Add label input").toBeTruthy();
@@ -210,7 +231,7 @@ describe("editing one section at a time", () => {
     const host = mount({ record: labelled });
 
     expect(inRail(host)).toEqual([
-      ["kind", "execute"], ["size", "5"], ["area", "starpulse"], ["mode", "attended"], ["priority", "High"],
+      ["kind", "execute"], ["size", "5"], ["area", "starpulse"], ["mode", "attended"], ["tier", "leverage"],
       ["profile", "@agent-standard-high"], ["type", "story"], ["labels", "follow-upneeds-review"], ["milestone", "m-89"], ["created", "15m ago"],
     ]);
     expect([...host.querySelectorAll(".tvrail .props .chip")].map((c) => c.textContent)).toEqual(["follow-up", "needs-review"]);

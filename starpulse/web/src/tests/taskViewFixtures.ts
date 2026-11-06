@@ -13,7 +13,7 @@ export const task: KanbanTask = {
   moves: { in_progress: { allowed: true, reason: "", skill: "" }, review: { allowed: false, reason: "no review yet", skill: "completing-tasks" } },
 };
 export const record: TaskRecord = {
-  title: "Redraw the view", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
+  title: "Redraw the view", profile: "@agent-standard-high", priority: "High", tier: "leverage", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
   description: "the full description", plan: "1. Write the test\n2. Make it pass", notes: "Checked against the live config",
   acceptanceCriteria: [{ n: 1, text: "A Vitest test failed first", checked: true }, { n: 2, text: "make lint-changed passes", checked: false }],
   definitionOfDone: [{ n: 1, text: "The completing-tasks skill was invoked", checked: false }],
