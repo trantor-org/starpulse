@@ -41,6 +41,7 @@ from starpulse.views.application.commands.guard import (
     EDIT_LOCK,
     Who,
     held_task,
+    holder_refusal,
     is_held,
     not_held,
     record_written,
@@ -112,8 +113,10 @@ def edit_task(
     who = who_of(request)
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
-    if held_task(feed, task) is None:
+    if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
+    if "acceptanceCriteria" in changes and (refused := holder_refusal(feed, agent, task, who)) is not None:
+        return refused
     with EDIT_LOCK:
         if (current := read(task)) is None:
             return 404, {"error": f"{task} has no record to read"}

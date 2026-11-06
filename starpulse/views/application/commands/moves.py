@@ -23,7 +23,16 @@ from starpulse.contracts.api.dto.requests import (
     StartRequest,
 )
 from starpulse.harness_telemetry.model.harnesses import Harnesses
-from starpulse.views.application.commands.guard import Who, held_task, not_held, record_written, who_of, with_request
+from starpulse.views.application.commands.guard import (
+    RELEASED_ASSIGNEE,
+    Who,
+    held_task,
+    holder_refusal,
+    not_held,
+    record_written,
+    who_of,
+    with_request,
+)
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     pass
@@ -36,7 +45,6 @@ Starter = Callable[[StartRequest], tuple[int, dict[str, Any]]]
 
 #: Modes `POST /api/start` accepts; `interactive` is the Start-session default.
 _START_MODES = frozenset({"interactive", "headless"})
-_RELEASED_ASSIGNEE = "released"  # the assignee a release leaves; it names no session
 
 
 class _ClaimBody(ClaimRequest):
@@ -89,7 +97,7 @@ def _move_one(
 
 def _dragged_unheld(feed: BoardFeed, agent: dict, column: str, who: Who) -> bool:
     """Whether the operator moved a task no session holds into the working state: the move that starts its session."""
-    return who.actor == OPERATOR and column == feed.roles.working and agent.get("assignee") in (None, "", _RELEASED_ASSIGNEE)
+    return who.actor == OPERATOR and column == feed.roles.working and agent.get("assignee") in (None, "", RELEASED_ASSIGNEE)
 
 
 def column_status(column: str) -> str:
@@ -112,7 +120,7 @@ def _move(
     feed: BoardFeed, agent: dict, task: str, column: str, who: Who, writer: MoveWriter
 ) -> tuple[int, dict[str, str]]:
     """Move the held task `agent` to `column` as `who` through `writer`: the HTTP status and JSON body of the move."""
-    if (refused := move_refusal(agent, task, column, who)) is not None:
+    if (refused := move_refusal(agent, task, column, who) or holder_refusal(feed, agent, task, who)) is not None:
         return refused
     return _write_move(feed, task, column, who, writer)
 
@@ -184,7 +192,7 @@ def release_task(
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     state, holder = agent["state"], agent.get("assignee")
-    if not holder or holder == _RELEASED_ASSIGNEE:
+    if not holder or holder == RELEASED_ASSIGNEE:
         return 409, {"error": f"{task} holds no claim"}
     written = record_written(feed, task, who, lambda: release(task, state, session=holder, actor=who.actor))
     if not written.ok:
@@ -232,7 +240,7 @@ def start_requested(
         return not_held(feed, task)
     startable = feed.roles.startable
     if agent["state"] == feed.roles.working:
-        if (holder := agent.get("assignee")) and holder != _RELEASED_ASSIGNEE:
+        if (holder := agent.get("assignee")) and holder != RELEASED_ASSIGNEE:
             return 409, {
                 "error": f"{task} is held by {holder}: a session starts an In Progress task only once its claim is released"
             }

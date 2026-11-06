@@ -15,7 +15,8 @@ from starpulse.board.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
 from starpulse.views.application.commands.lifecycle import park_task, review_task
-from starpulse.views.application.commands.moves import claim_task, release_task
+from starpulse.views.application.commands.moves import claim_task, move_task, release_task
+from starpulse.views.application.commands.tasks import edit_task
 
 from tests.unit.board.test_native import native_root, write_task
 
@@ -676,3 +677,57 @@ def test_setting_a_tasks_profile_keeps_the_session_that_holds_it(
 
     front = _frontmatter(tmp_path, "task-1")
     assert (front["assignee"], front["profile"]) == ("s-9", ["@agent-standard-high"])
+
+
+def _held_by_s1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[BoardFeed, Board]:
+    feed, built = _lifecycle(tmp_path, monkeypatch, {"task-1": ("Ready", {})})
+    path = next((native_root(tmp_path) / "tasks").glob("task-1 - *.md"))
+    path.write_text(path.read_text() + "\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n- [ ] #1 x\n<!-- AC:END -->\n")
+    assert _claim(feed, built, task="task-1", session="s-1")[0] == 200
+    _scan(tmp_path, feed)
+    return feed, built
+
+
+def _move(feed: BoardFeed, built: Board, **body: object) -> tuple[int, dict[str, Any]]:
+    assert built.writer is not None
+    return move_task(LAN, json.dumps({"task": "task-1", "to": "needs_attention", **body}).encode(), feed, built.writer)
+
+
+def _checkpoint(feed: BoardFeed, built: Board, **body: object) -> tuple[int, dict[str, Any]]:
+    criteria = built.read("task-1")["acceptanceCriteria"]
+    checked = [{**item, "checked": True} for item in criteria]
+    raw = {"task": "task-1", "base": {"acceptanceCriteria": criteria}, "changes": {"acceptanceCriteria": checked}, **body}
+    return edit_task(LAN, json.dumps(raw).encode(), feed, built.read, built.edit)
+
+
+def test_a_move_of_a_task_another_session_holds_is_refused_naming_the_holder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _held_by_s1(tmp_path, monkeypatch)
+
+    status, body = _move(feed, built, session="s-2")
+
+    assert status == 409 and "held by s-1" in body["error"]
+    assert "status: In Progress\n" in _text(tmp_path, "task-1")
+
+
+def test_the_holding_session_and_the_operator_move_the_task_it_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _held_by_s1(tmp_path, monkeypatch)
+
+    assert _move(feed, built, session="s-1")[0] == 200
+    assert "status: Needs attention\n" in _text(tmp_path, "task-1")
+    _scan(tmp_path, feed)
+    assert _move(feed, built, to="in_progress", actor="operator", session="s-2")[0] == 200
+
+
+def test_a_criterion_checkpoint_by_a_session_that_does_not_hold_the_task_is_refused_naming_the_holder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed, built = _held_by_s1(tmp_path, monkeypatch)
+
+    status, body = _checkpoint(feed, built, session="s-2")
+
+    assert status == 409 and "held by s-1" in body["error"]
+    assert _checkpoint(feed, built, session="s-1")[0] == 200
