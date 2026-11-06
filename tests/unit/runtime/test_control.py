@@ -22,7 +22,7 @@ REPORT = {"supervisor": "kept", "children": {"pulls": "kept", "scheduler": "repl
 class FakeSupervisor:
     def __init__(self) -> None:
         self.report: dict[str, Any] = REPORT
-        self.failure: ReloadError | None = None
+        self.failure: Exception | None = None
         self.reloads = 0
         self.reexecuted = False
 
@@ -136,6 +136,19 @@ def test_a_reload_that_fails_exits_two_with_the_reason_and_the_supervisor_keeps_
     assert captured.out == ""
     assert "does not import" in captured.err
     assert not supervisor.reexecuted
+
+
+@pytest.mark.usefixtures("running")
+def test_an_unexpected_error_in_reload_exits_two_not_no_supervisor(
+    config: Path, supervisor: FakeSupervisor, capsys: pytest.CaptureFixture[str]
+) -> None:
+    supervisor.failure = RuntimeError("boom")
+
+    assert control.main(["--config", str(config)]) == 2
+
+    captured = capsys.readouterr()
+    assert "boom" in captured.err
+    assert "no supervisor" not in captured.err
 
 
 def test_a_request_without_the_token_is_refused_and_reloads_nothing(
