@@ -51,6 +51,11 @@ class ReadMethods:
             guarded[lane] = move if refused is None else {**move, **refused}
         return guarded
 
+    def _read_model_readable(self, summary: Mapping[str, Any]) -> dict[str, str]:
+        """The verdict of the board's `readable` rules on an open task's description, which a done task never carries."""
+        done = lane_id(summary["state"]) == lane_id(self._roles.done)
+        return {"readable": "" if done else self._readable(summary, summary["description"])}
+
     def _read_model_agent(self, task_id: str) -> dict | None:
         row = self._read_model.task(task_id)  # type: ignore[union-attr]
         if row is None or row["archived"]:
@@ -59,6 +64,7 @@ class ReadMethods:
         return self._expiring(
             summary_agent(row, ready, self._guarded(task_id, self._read_model_moves(row)), self._default_profiles)
             | read_model_detail(row, self._roles.attention)
+            | self._read_model_readable(row)
         )
 
     def follow_read_model(self, limit: int = 1000) -> int:

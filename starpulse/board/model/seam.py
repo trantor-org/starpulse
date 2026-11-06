@@ -246,6 +246,9 @@ class Board:
     """The update to the move of a task to a lane that the board's rules make for the task as it stands: a refusal, and
     the verdict of each actor a rule exempts (`Move.actors`); None when no rule refuses. None leaves a read-model move
     unjudged."""
+    readable: Callable[[Mapping[str, Any], str], str] | None = None
+    """What the board's `readable` rules find broken in the description of a task, or "" when it reads well; None leaves a
+    read-model card without a verdict."""
     complete: TaskCompleter | None = None
     """Completes a Done task; None refuses every complete."""
     retire: TaskRetirer | None = None
