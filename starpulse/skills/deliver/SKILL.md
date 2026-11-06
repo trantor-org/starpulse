@@ -37,8 +37,11 @@ Done when `starpulse task show PROJ-45` shows the task finalized.
    a submodule ships its PR from the submodule's own task worktree, in the submodule's repository; the parent ships
    no PR and leaves the submodule pin as it is. Stage and commit in that child worktree; run steps 4 and 5 from
    the parent task worktree with `--arg worktree=<child worktree>`, since the child's config maps no phase.
-2. Write the commit message and the PR body to two files outside the tracked tree. The body names the task, what
-   changed, and how each criterion was proven.
+2. Run `starpulse command show deliver`. It prints the `--arg` names the project's deliver command needs and, when
+   the project keeps one, its PR template as `pr_body_template`.
+3. Write the commit message and the PR body to two files outside the tracked tree. The body names the task, what
+   changed, and how each criterion was proven; when `pr_body_template` is printed, it keeps that template's
+   sections, in order, or the delivery refuses it.
 
 Done when the staged diff holds only the task's paths and both files exist.
 

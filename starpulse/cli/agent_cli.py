@@ -1479,8 +1479,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     verdict.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     command = verbs.add_parser("command", description="the project's commands", help="the project's commands")
+    command_verbs = command.add_subparsers(dest="verb", required=True, metavar="verb")
     command_run = leaf(
-        command.add_subparsers(dest="verb", required=True, metavar="verb"),
+        command_verbs,
         "run",
         "run the argv `[project.commands]` maps NAME to, offline, in this directory; its output goes to stderr. "
         "An unknown NAME exits 4 with a `fallback`: do the step as the project's AGENTS.md says",
@@ -1496,6 +1497,18 @@ def _parser() -> argparse.ArgumentParser:
     )
     command_run.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     command_run.add_argument("args", nargs="*", help="after `--`: spliced where the argv has {args}")
+    command_show = leaf(
+        command_verbs,
+        "show",
+        "what `run NAME` needs before you write its files: the `--arg` names its argv holds and, for a step with a "
+        "`{body}`, the project's pull request template. An unknown NAME exits 4 like `run`",
+        _later("starpulse.cli.agent_commands", "show"),
+        ("name", "argv", "args", "invocation", "pr_body_template"),
+        (0, 1, 2, 4),
+        reads_server=False,
+    )
+    command_show.add_argument("name", help="the step's name (`deliver`)")
+    command_show.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(

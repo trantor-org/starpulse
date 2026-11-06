@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import string
 import subprocess
 import time
 from collections.abc import Mapping
@@ -14,6 +15,16 @@ from starpulse.runtime.config import ConfigError, discover, load
 
 #: What a caller does for a step the project has not mapped.
 FALLBACK = "AGENTS.md"
+
+#: Where a repository keeps its pull request template, in the order GitHub looks.
+PR_TEMPLATES = (
+    ".github/pull_request_template.md",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    "docs/pull_request_template.md",
+    "pull_request_template.md",
+)
+#: Filled by the command itself (`--task`, the git toplevel), so a caller names no `--arg` for them.
+_FILLED = {"task", "worktree", "args"}
 
 
 class _Values(dict[str, str]):
@@ -62,17 +73,7 @@ def _superproject_hint(path: Path, name: str) -> str:
 
 def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Run one named command; the child's output streams to stderr and the document is its name, argv, exit and seconds."""
-    path = discover(args.config)
-    try:
-        commands = load(path).project.commands
-    except (ConfigError, OSError, ValueError) as exc:
-        raise CliError("refused", f"config: {exc}") from exc
-    if args.name not in commands:
-        raise CliError(
-            "not_found",
-            f"no [project.commands] entry {args.name}{_superproject_hint(path or Path.cwd() / 'starpulse.toml', args.name)}; do the step as {FALLBACK} says",
-            fallback=FALLBACK,
-        )
+    _, commands = _mapped(args)
     values = _Values()
     if args.task is not None:
         values["task"] = args.task
@@ -93,4 +94,36 @@ def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
         "exit": done.returncode,
         "seconds": round(time.monotonic() - started, 3),
         "ok": done.returncode == 0,
+    }
+
+
+def _mapped(args: argparse.Namespace) -> tuple[Path | None, Mapping[str, tuple[str, ...]]]:
+    path = discover(args.config)
+    try:
+        commands = load(path).project.commands
+    except (ConfigError, OSError, ValueError) as exc:
+        raise CliError("refused", f"config: {exc}") from exc
+    if args.name not in commands:
+        where = _superproject_hint(path or Path.cwd() / "starpulse.toml", args.name)
+        raise CliError("not_found", f"no [project.commands] entry {args.name}{where}; do the step as {FALLBACK} says", fallback=FALLBACK)
+    return path, commands
+
+
+def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """What `run NAME` needs: the `--arg` names its argv holds and, when it takes a `{body}`, the project's PR template."""
+    path, commands = _mapped(args)
+    argv = commands[args.name]
+    fields = [f for element in argv for _, f, _, _ in string.Formatter().parse(element) if f]
+    needed = list(dict.fromkeys(f for f in fields if f not in _FILLED))
+    flags = "".join(f" --arg {name}=<{name}>" for name in needed)
+    task = " --task <TASK>" if "task" in fields else ""
+    root = path.parent if path else Path.cwd()
+    found = next((root / rel for rel in PR_TEMPLATES if "body" in fields and (root / rel).is_file()), None)
+    template = {"path": found.relative_to(root).as_posix(), "text": found.read_text()} if found else None
+    return {
+        "name": args.name,
+        "argv": list(argv),
+        "args": needed,
+        "invocation": f"starpulse command run {args.name}{task}{flags}",
+        "pr_body_template": template,
     }
