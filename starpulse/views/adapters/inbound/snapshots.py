@@ -97,10 +97,15 @@ class Snapshots:
             return taken[1]
         return None
 
-    def build(self) -> tuple[Served, Encoded]:
-        """The snapshot with its body and gzip: the warm one while it is current, else one built now."""
+    def build(self, fresh: bool = False) -> tuple[Served, Encoded]:
+        """The snapshot with its body and gzip: the warm one while it is current, else one built now. `fresh` skips the
+        warm one: an attach whose snapshot the feed log cannot replay needs a newer one."""
         if self._refresh_s <= 0:
             return self._encode()
+        if fresh:
+            with self._building:
+                warm = self._store()
+            return warm.served, warm.encoded
         if (warm := self._current()) is None:
             with self._building:  # requests that find it stale wait for one build and share it
                 if (warm := self._current()) is None:

@@ -152,7 +152,7 @@ class Streams:
         body is read from: a browser reads a long event on its main thread, a fetched body off it."""
         served, encoded = self._snapshots.build()
         while (attached := self._feed.watch_from(served.sent)) is None:
-            served, encoded = self._snapshots.build()
+            served, encoded = self._snapshots.build(fresh=True)
         missed, changes = attached
         key = self._snapshots.hold(encoded) if by_ref else None
         first = f"ref /api/events/body/{key}" if key is not None else encoded.body.decode()
