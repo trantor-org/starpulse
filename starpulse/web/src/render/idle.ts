@@ -16,8 +16,12 @@ export const STILL_MS = 1000;
 /** A requested frame that runs this long late belongs to a window that painted none meanwhile. */
 export const STALL_MS = 3 * STILL_MS;
 
-/** The wait before the next frame: none with motion on or while input is recent, else one idle redraw per `STILL_MS`. */
-export const framePace = (motion: boolean, sinceInput: number): number => (motion || sinceInput < INPUT_MS ? 0 : STILL_MS);
+/** With motion on and a running DAG the only thing moving, the wait between frames, in ms: its pulse needs ~12 fps, not the display's rate. */
+export const RUN_MS = 80;
+
+/** The wait before the next frame: none while input is recent, else `RUN_MS` for a running DAG alone, none for other motion, `STILL_MS` with motion off. */
+export const framePace = (motion: boolean, sinceInput: number, runsOnly = false): number =>
+  sinceInput < INPUT_MS ? 0 : !motion ? STILL_MS : runsOnly ? RUN_MS : 0;
 
 export function frameLoop(opts: {
   draw(now: number): void;
@@ -80,9 +84,13 @@ export interface Motion {
 /** A move travels, then pulses on arrival; one queued for later counts so it plays when due. */
 const MOVE_S = Math.max(TRAVEL + PULSE, FLARE);
 
-/** Whether anything needs the next frame: a task move in flight or queued, a running (in any of its runs) or just-finished DAG, a fly-to, a transition. */
-export function animating(m: Motion): boolean {
-  if (m.flying || m.transitioning) return true;
-  if (m.moves.some((e) => m.now - e.at < MOVE_S)) return true;
-  return m.dags.some((d) => d.status === "running" || d.active?.some((r) => r.status === "running") || m.now - Date.parse(d.finishedAt) / 1000 < FLARE);
-}
+const running = (d: Motion["dags"][number]) => d.status === "running" || !!d.active?.some((r) => r.status === "running");
+
+/** Motion that needs the display's pace: a task move in flight or queued, a just-finished DAG, a fly-to, a transition. */
+const driven = (m: Motion) => m.flying || m.transitioning || m.moves.some((e) => m.now - e.at < MOVE_S) || m.dags.some((d) => m.now - Date.parse(d.finishedAt) / 1000 < FLARE);
+
+/** Whether anything needs the next frame: `driven` motion or a running (in any of its runs) DAG. */
+export const animating = (m: Motion): boolean => driven(m) || m.dags.some(running);
+
+/** Whether a running DAG is all that moves, so its frames may run at `RUN_MS`. */
+export const runsOnly = (m: Motion): boolean => !driven(m) && m.dags.some(running);
