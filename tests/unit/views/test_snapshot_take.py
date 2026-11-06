@@ -4,8 +4,11 @@ feed lock one build each."""
 import json
 import threading
 
+import pytest
+
 from starpulse.board.board_feed import BoardFeed
 from starpulse.runtime.adapter_kit import task
+from starpulse.views.adapters.inbound import snapshots as snapshots_module
 from starpulse.views.adapters.inbound.snapshots import IDLE_REFRESH_S, Snapshots
 
 from tests.machines import MACHINES, ROLES
@@ -109,3 +112,17 @@ def test_the_full_body_serves_the_warm_snapshot_while_the_feed_keeps_changing() 
 
     clock.now += 10
     assert json.loads(snapshots.full())["flows"][0]["agents"][0]["state"] == "in_progress"
+
+
+def test_the_warmer_encodes_the_full_body_so_a_request_serves_it_without_encoding(monkeypatch) -> None:
+    feed, _, clock = counting()
+    snapshots = Snapshots(feed, refresh_s=1.0, clock=clock)
+    snapshots.full()
+    feed.put(task("PROJ-1", "In Progress"))
+    clock.now += 1
+    snapshots.refresh()
+    monkeypatch.setattr(snapshots_module, "encode", lambda *_: pytest.fail("encoded on the request path"))
+
+    body = snapshots.full()
+
+    assert json.loads(body)["flows"][0]["agents"][0]["state"] == "in_progress"

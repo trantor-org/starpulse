@@ -65,6 +65,10 @@ class Snapshots:
         #: The newest `take`, when the clock's seconds it was taken, and the full body made from it; both under `_taking`.
         self._taken: tuple[float, Served] | None = None
         self._full: tuple[Served, bytes] | None = None
+        #: Set by the first warm `full` read: the warmer then encodes the full body for each snapshot it builds.
+        self._full_wanted = False
+        #: When (the clock's seconds) the snapshot `_full` was made from was built.
+        self._full_at = 0.0
         self._taking = threading.Lock()
         self._keys = itertools.count()
 
@@ -84,15 +88,33 @@ class Snapshots:
             return held
 
     def full(self) -> bytes:
-        """The body of `?view=full`, encoded once per snapshot however many requests ask: the warm snapshot while it
-        is current (a feed written to constantly would otherwise rebuild the 2.7 MB body per request), else the one
-        `take` serves."""
-        warm = self._current() if self._refresh_s > 0 else None
-        served = warm.served if warm is not None else self.take()
-        with self._taking:
-            if self._full is None or self._full[0] is not served:
-                self._full = (served, encode("snapshot", full_snapshot(served.snapshot)))
-            return self._full[1]
+        """The body of `?view=full`, encoded once per snapshot however many requests ask. With a warmer the body is
+        encoded off the request path with each warm build, and a request serves the newest one while it is current;
+        only the first request, or one after the warmer stalls, encodes inline."""
+        if self._refresh_s > 0:
+            self._full_wanted = True
+            if (held := self._held_full()) is not None:
+                return held
+            warm = self._current()
+            if warm is not None:
+                return self._encode_full(warm.served, warm.at)
+        return self._encode_full(self.take(), self._clock())
+
+    def _held_full(self) -> bytes | None:
+        full = self._full
+        if full is None:
+            return None
+        age = self._clock() - self._full_at
+        if age <= 2 * self._interval_s or (full[0].rev == self._feed.rev and age < IDLE_REFRESH_S):
+            return full[1]
+        return None
+
+    def _encode_full(self, served: Served, at: float) -> bytes:
+        full = self._full
+        if full is None or full[0] is not served:
+            full = (served, encode("snapshot", full_snapshot(served.snapshot)))
+            self._full, self._full_at = full, at
+        return full[1]
 
     def _held_take(self) -> Served | None:
         taken = self._taken
@@ -120,7 +142,9 @@ class Snapshots:
         with self._building:
             warm = self._warm
             if warm is None or warm.served.rev != self._feed.rev or self._clock() - warm.at >= IDLE_REFRESH_S:
-                self._store()
+                warm = self._store()
+            if self._full_wanted:
+                self._encode_full(warm.served, warm.at)
 
     def keep_warm(self, stop: StopEvent) -> None:
         """Run `refresh` every `refresh_s` until `stop`: the warm snapshot trails the feed by about that long."""
