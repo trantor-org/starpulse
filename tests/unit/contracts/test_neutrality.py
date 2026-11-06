@@ -5,7 +5,7 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parents[3] / "starpulse"
 RUNNER = re.compile(r"\bdagu\b", re.IGNORECASE)
-ADAPTER = {"dagu.py", "adapter_worker.py"}
+ADAPTER = {"dagu.py", "dagu_stream.py", "adapter_worker.py"}
 #: The adapter table and the worker dispatcher, which names the `dagu` context it launches.
 SEAMS = (("board", "model", "adapter_types.py"), ("runtime", "worker.py"))
 
