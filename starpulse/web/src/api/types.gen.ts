@@ -1817,6 +1817,10 @@ export interface Submachine {
   routes?: {
     [k: string]: string;
   };
+  /**
+   * The skill a session runs while the inner machine does; empty when the link names none.
+   */
+  skill?: string;
   state: string;
   /**
    * What has to hold for the inner machine to run under `state`; empty when always.

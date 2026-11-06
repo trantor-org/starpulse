@@ -12,6 +12,7 @@ import { shownRows, type Paging } from "../features/level/machinePaging";
 import { rankRows } from "../features/level/machineRows";
 import { ledgerOf, type Ledger, type Tie } from "../features/level/ledger";
 import type { Viewport } from "../features/level/ledgerScroll";
+import { skillOf } from "./skills";
 import { countText, daily, entry, HOUR, hosted, stale, stateCount, type Move, type Moves, type Sky } from "./sky";
 import { BOARD_COLOR, MUTED, RAMP } from "./palette";
 import { pinsOf } from "../features/level/ledgerPins";
@@ -1084,8 +1085,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
           const q = S.latest[a.id];
           if (!q || a.today) continue;
           const ph = phs.find((p) => q.flow === f0 && p.q.id === q.state), sd = phs.find((p) => p.side.includes(q.flow)), m = S.flows[q.flow]?.machine.states.map((x) => x.id);
-          if (ph) hOf.set(a, { machine: ph.child.machine, steps: ph.steps.map((x) => x.id), j: 0, ring1: true });
-          else if (m) hOf.set(a, { machine: q.flow, steps: m, j: Math.max(0, m.indexOf(q.state)), config: [q.state], ring1: !phs.length || phs.some((p) => p.child.machine === q.flow), side: sd && { machine: sd.child.machine, steps: sd.steps.map((x) => x.id), j: Math.max(0, sd.steps.findIndex((x) => x.id === "pr_opened")) } });
+          if (ph) hOf.set(a, { machine: ph.child.machine, steps: ph.steps.map((x) => x.id), j: 0, ring1: true, skill: skillOf(S.flows, ph.child.machine) });
+          else if (m) hOf.set(a, { machine: q.flow, steps: m, j: Math.max(0, m.indexOf(q.state)), config: [q.state], ring1: !phs.length || phs.some((p) => p.child.machine === q.flow), skill: skillOf(S.flows, q.flow), side: sd && { machine: sd.child.machine, steps: sd.steps.map((x) => x.id), j: Math.max(0, sd.steps.findIndex((x) => x.id === "pr_opened")), skill: skillOf(S.flows, sd.child.machine) } });
         }
       const free = (byState[st.id] || []).filter((a) => !hOf.has(a) && (!a.today || here.includes(a)));
       const fit = pack(free.length, r0, r1, 11, 12, ROOM), ring = free.length ? attach(free, g, r0, fit.gap, fit.ringGap, false) : sized[st.id].r;
