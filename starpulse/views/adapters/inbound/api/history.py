@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from starlette.requests import Request
 from starlette.responses import Response
 
-from starpulse.views.adapters.inbound.api.answering import answer, client, query, reading, seams
+from starpulse.views.adapters.inbound.api.answering import answer, client, on_loop, on_worker, query, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, whole
 from starpulse.views.application.commands.settings import history_window
@@ -29,10 +29,12 @@ def history(request: Request) -> Response:
     return answer(request, *history_response(api.history, query(request), feed.machines.keys(), feed.keys, api.clock))
 
 
-@reading
-def read_window(request: Request) -> Response:
-    status, body = history_window(client(request), "GET", b"", seams(request).window)
-    return answer(request, encode("window", body), status)
+async def read_window(request: Request) -> Response:
+    def read() -> Response:
+        status, body = history_window(client(request), "GET", b"", seams(request).window)
+        return answer(request, encode("window", body), status)
+
+    return on_loop(request, read) or await on_worker(request, read)
 
 
 def routes(api: Api) -> list[ApiRoute]:

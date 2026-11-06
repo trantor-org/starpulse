@@ -232,6 +232,24 @@ def test_a_task_the_feed_holds_is_read_without_a_worker_thread(tmp_path: Path) -
     assert [_worker(name) for name in readers] == [False]
 
 
+def test_the_history_window_is_read_without_a_worker_thread(
+    routes: Api, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    readers: list[str] = []
+    state = routes.window.state
+
+    def spy() -> dict:
+        readers.append(threading.current_thread().name)
+        return state()
+
+    monkeypatch.setattr(routes.window, "state", spy)
+
+    response = client.get("/api/history-window")
+
+    assert (response.status_code, response.json()["hours"]) == (200, 6)
+    assert [_worker(name) for name in readers] == [False]
+
+
 def test_a_task_citing_a_pull_request_only_the_database_holds_reads_it_from_the_database_on_a_worker_each_time(tmp_path: Path) -> None:
     pulls_engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
     PullStore(pulls_engine).save([{**_old_pull(1)}])
