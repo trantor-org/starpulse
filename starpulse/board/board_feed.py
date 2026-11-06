@@ -107,6 +107,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         roles: StateRoles | None = None,
         read_model: ReadModel | None = None,
         standing: Callable[[str, str], Mapping[str, Any] | None] = lambda *_: None,
+        readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
         default_profiles: Mapping[str, Mapping[str, str]] | None = None,
     ) -> None:
         self._hint = hint
@@ -147,6 +148,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._lane_moves = read_model_lane_moves(self._drawn["board"]) if read_model is not None else {}
         #: The update the board's rules make to a task's move to a lane, which a read-model agent's moves carry.
         self._standing = standing
+        #: What the board's `readable` rules find broken in a task's description, which a read-model agent carries.
+        self._readable = readable
         #: The settled states a task's settling is recorded as a move into: archived always, completed where the Board
         #: has that state (a board whose last status is its final one settles there already).
         self._settle_lanes = {lane_events.ARCHIVED} | (

@@ -1629,7 +1629,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "reconcile": history.reconciled(read),
         "files": lambda: [(task, _aliases(frontmatter)) for task, frontmatter in _open_tasks(root, made.roles.done)],
     }
-    return replace(made, start=start, sweep=sweep, attach=attach, standing=_standing(root, guard), **recorded)
+    return replace(made, start=start, sweep=sweep, attach=attach, standing=_standing(root, guard), readable=guard.readable, **recorded)
 
 
 def _standing(root: Path, guard: Guard) -> Callable[[str, str], dict[str, Any] | None]:
