@@ -63,6 +63,10 @@ REPLAY_WAIT_S = 5.0
 RETRY_AFTER_S = 3
 
 
+#: The assignee a release leaves; it names no session.
+RELEASED_ASSIGNEE = "released"
+
+
 def held_task(feed: BoardFeed, task: str) -> dict | None:
     """The open task `task` as the feed holds it (a cold done task as its stub), waiting up to `REPLAY_WAIT_S` for a
     replay that has not placed it.
@@ -166,6 +170,22 @@ def who_of(request: _Writer) -> Who:
     """
     session = (request.session or "").strip()
     return Who((request.actor or (AGENT if session else ANONYMOUS)).strip(), session, (request.harness or "").strip())
+
+
+def holder_refusal(feed: BoardFeed, agent: dict, task: str, who: Who) -> tuple[int, dict[str, str]] | None:
+    """The 409 for an agent session writing a task another session holds In Progress, naming the holder, else None.
+
+    The operator, a workflow and a write that names no session are never refused, nor is a task nobody holds or one
+    resting in another lane, where a handoff is the usual write.
+    """
+    holder = agent.get("assignee") or ""
+    if who.actor != AGENT or not who.session or holder in ("", RELEASED_ASSIGNEE) or agent["state"] != feed.roles.working:
+        return None
+    from starpulse.board.adapters.session_activity import same_holder  # noqa: PLC0415 - the transcript reader loads when a write names a session
+
+    if same_holder(holder, who.session):
+        return None
+    return 409, {"error": f"{task} is held by {holder}, not by this session ({who.session}): only its holder writes it"}
 
 
 def record_written(feed: BoardFeed | None, task: str | None, who: Who, write: Callable[[], Written]) -> Written:
