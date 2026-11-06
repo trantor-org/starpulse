@@ -11,6 +11,7 @@ import weakref
 from collections.abc import Iterator
 
 import pytest
+from starpulse.views.adapters.outbound import gc_pauses
 from starpulse.views.adapters.outbound.gc_pauses import COLLECT_EVERY_S, GcPauses, first_collection_delay_s, install
 
 
@@ -102,3 +103,21 @@ def test_the_timer_waits_its_phase_before_the_first_collection(pauses: GcPauses)
 
     assert waits[0] == first_collection_delay_s(100.0, os.getpid())
     assert waits[1:] == [100.0, 100.0]
+
+
+def test_each_timed_collection_is_followed_by_a_native_heap_trim(pauses: GcPauses) -> None:
+    stop = threading.Event()
+    trimmed = threading.Event()
+
+    timer = install(stop, interval_s=0.01, pauses=pauses, trim=trimmed.set)
+    try:
+        assert trimmed.wait(timeout=5)
+    finally:
+        stop.set()
+        timer.join(timeout=5)
+
+    assert "starpulse_gc_collections_total 0" not in pauses.exposition().splitlines()
+
+
+def test_release_native_heap_returns_without_raising() -> None:
+    gc_pauses.release_native_heap()
