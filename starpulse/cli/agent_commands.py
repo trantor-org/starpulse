@@ -50,7 +50,7 @@ def _superproject_hint(path: Path, name: str) -> str:
     """Where a child worktree's step runs instead: the nearest enclosing checkout whose config maps `name`."""
     path = path.resolve()
     for parent in path.parent.parents:
-        candidate = parent / "starpulse.toml"
+        candidate = (parent / "starpulse.toml").resolve()
         try:
             mapped = candidate.is_file() and name in load(candidate).project.commands
         except ConfigError, OSError, ValueError:
@@ -70,7 +70,7 @@ def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     if args.name not in commands:
         raise CliError(
             "not_found",
-            f"no [project.commands] entry {args.name}{_superproject_hint(path, args.name)}; do the step as {FALLBACK} says",
+            f"no [project.commands] entry {args.name}{_superproject_hint(path or Path.cwd() / 'starpulse.toml', args.name)}; do the step as {FALLBACK} says",
             fallback=FALLBACK,
         )
     values = _Values()
