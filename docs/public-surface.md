@@ -211,6 +211,13 @@ names a session and `anonymous` when it names none, never `operator`, so an unna
 operator's. The write's `board:lanes` row carries all three, and a create stamps `created_by: <harness>:<session>` in
 the task (`anonymous` when it names no session). `POST /api/start` takes an optional `actor` and calls a board writer's
 `assign` with it only when named.
+- The GitHub inbox consumer interface, for a consumer outside the package that drains the durable inbox:
+  `starpulse.github.adapters.outbound.queue`
+  (`SqlQueue(engine, consumer)`, the per-consumer queue over the inbox), `starpulse.github.adapters.outbound.inbox`
+  (the `github_inbox` table and `SqlInbox`) and `starpulse.github.ports.events` (`Entry`, the `delivery` and its
+  `attempts`, and the `Queue` protocol). The method contract: `claim(limit)` returns the due `Entry` list, oldest first;
+  `complete(delivery_id)`, `skip(delivery_id, reason)` and `fail(delivery_id, error, fatal=, exhausted=)` settle one
+  (`fail` returns the new status); `requeue(delivery_id)` and `dismiss(delivery_id)` return whether a row changed.
 
 ## Post-merge checks
 
