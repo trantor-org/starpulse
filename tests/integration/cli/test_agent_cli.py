@@ -1636,6 +1636,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "analytics verdict",
         "command run",
         "command show",
+        "session records",
         "config check",
         "demo",
         "doctor",
@@ -2375,6 +2376,10 @@ CASES = {
     ("command show", 1): ["command", "show", "--config", "{dir}/bad.toml", "pass"],
     ("command show", 2): ["command", "show"],
     ("command show", 4): ["command", "show", "--config", "{dir}/commands.toml", "nope"],
+    ("session records", 0): ["session", "records", "s-1", "--config", "{dir}/ok.toml", "--transcripts", "{dir}/transcripts"],
+    ("session records", 1): ["session", "records", "s-1", "--config", "{dir}/bad.toml"],
+    ("session records", 2): ["session", "records"],
+    ("session records", 4): ["session", "records", "nope", "--config", "{dir}/ok.toml", "--transcripts", "{dir}/transcripts"],
     ("config check", 0): ["config", "check", "--config", "{dir}/ok.toml"],
     ("config check", 1): ["config", "check", "--config", "{dir}/bad.toml"],
     ("config check", 2): ["config", "check", "--nope"],
@@ -2437,6 +2442,8 @@ def _case_files(root: Path) -> Path:
         'missing-binary = ["./no-such-binary"]\n'
     )
     (root / "retired.md").write_text("---\nid: task-3\nstatus: Done\n---\n")
+    (root / "transcripts" / "-p").mkdir(parents=True)
+    (root / "transcripts" / "-p" / "s-1.jsonl").write_text('{"gitBranch": "claude/task-3"}\n')
     (root / "no-id.md").write_text("no front matter\n")
     (root / "flow.mmd").write_text("stateDiagram-v2\n    [*] --> open\n    open --> closed : Close it\n")
     board = {"agents": [{"id": "PROJ-1", "title": "Rotate the secret", "state": "ready"}]}
