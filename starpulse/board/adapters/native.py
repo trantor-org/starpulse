@@ -273,19 +273,33 @@ def _aliases(frontmatter: Mapping[str, Any]) -> list[str]:
 
 
 def _pull_of(retired: _Retired) -> Callable[[str, int], dict[str, Any] | None]:
-    """A lookup of the stored pull request `(repository, number)` as `{draft, checks, body, files}`, None when the store
-    holds none; `files` is None for a record saved before the store kept them. A board that has not started has no store."""
+    """A lookup of the stored pull request `(repository, number)` as `{draft, checks, threads, mergeable, body, files}`,
+    None when the store holds none; `files` is None for a record saved before the store kept them. A board that has not started has no store."""
 
     def read(repo: str, number: int) -> dict[str, Any] | None:
         if retired.engine is None:
             return None
-        columns = (pull_requests.c.is_draft, pull_requests.c.checks, pull_requests.c.body, pull_requests.c.detail)
+        columns = (
+            pull_requests.c.is_draft,
+            pull_requests.c.checks,
+            pull_requests.c.threads,
+            pull_requests.c.mergeable,
+            pull_requests.c.body,
+            pull_requests.c.detail,
+        )
         query = select(*columns).where(pull_requests.c.repo == repo, pull_requests.c.number == number)
         with retired.engine.connect() as db:
             row = db.execute(query).first()
         if row is None:
             return None
-        return {"draft": row.is_draft, "checks": row.checks, "body": row.body, "files": (row.detail or {}).get("files")}
+        return {
+            "draft": row.is_draft,
+            "checks": row.checks,
+            "threads": row.threads,
+            "mergeable": row.mergeable,
+            "body": row.body,
+            "files": (row.detail or {}).get("files"),
+        }
 
     return read
 

@@ -379,7 +379,7 @@ type = "native"
 #   on       = { to = "Done" }                 a write that enters Done (`from = [...]` narrows it to those states)
 #            | { to = "Done", while = true }   ... and a write that leaves the task in Done
 #            | { write = true }                every write, whatever the task's state
-#   require  = one primitive: field, label, section, body, block, dependencies, checklist, readable, pulls_ready, pulls_changed, or all_of, any_of, exactly_one,
+#   require  = one primitive: field, label, section, body, block, dependencies, checklist, readable, pulls_ready, pulls_clear, pulls_changed, or all_of, any_of, exactly_one,
 #              none_of over a list of them
 #   unless_actor = ["dagu/reconciler"]         actors the rule does not judge: operator, agent, <instance>/<workflow>
 # [[board.guards]]
@@ -1021,7 +1021,7 @@ A move from the working lane (the first resting State the lifecycle does not end
 move from Waiting to Ready runs the board's `released` command the same way, so a board can resume the session that
 parked the task. A move whose last event is `DELIVER_FINISHED`, the machine event a delivery run publishes when it
 ends, runs the board's `delivered` command once per run, with `{id}` and `{verdict}` (the event's `verdict` and `step`,
-such as `red test`) replaced, so a board can resume the session that holds the task on the verdict. A move from Review back to the working lane runs the board's `returned` command the same way, so a board can wake the session that delivered a pull request that turned draft or conflicting. A move on a `pr_merged_planned` fact runs the board's `verifying` command the same way, so a board can wake the session that delivered the task to run its post-merge QA. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
+such as `red test`) replaced, so a board can resume the session that holds the task on the verdict. A move from the working lane to Review that the board refuses (an open review thread, a conflict, an unchecked criterion) runs `delivered` once more with `Review refused: <reason>`, until the task's facts change, so the holder is told why a ready pull request did not reach Review. A move from Review back to the working lane runs the board's `returned` command the same way, so a board can wake the session that delivered a pull request that turned draft or conflicting. A move on a `pr_merged_planned` fact runs the board's `verifying` command the same way, so a board can wake the session that delivered the task to run its post-merge QA. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
 check that waits on time after the merge. A command that exits nonzero is logged; the move stands.
 
 A write the board refuses is logged and counted, and is not retried until the task's facts change; checking the last

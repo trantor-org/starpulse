@@ -5,7 +5,7 @@ which writes it judges, `require` is one primitive the task as it will be after 
 is the refusal every writer, the CLI's and the page's, answers with. A primitive is a one-key table naming its kind:
 `{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{body: {...}}`, `{block: {...}}`,
 `{post_merge_checks: {}}`, `{dependencies: {...}}`, `{checklist: {...}}`, `{readable: {...}}`, `{unique: {...}}`,
-`{names_ids: {...}}`, `{pulls_ready: {}}` or `{pulls_changed: {...}}` (these two read the stored pull requests the task's
+`{names_ids: {...}}`, `{pulls_ready: {}}`, `{pulls_clear: {}}` or `{pulls_changed: {...}}` (these three read the stored pull requests the task's
 `references` cite, never GitHub), or a combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives; `{before: <primitive>}` reads
 the task as it was before the write (a create had none, so it holds). A write carries the actor that makes it
 (`operator`, `agent`, or `<instance>/<workflow>` as a machine's `writers` spell it), which `unless_actor` exempts.
@@ -346,6 +346,13 @@ def _pulls_ready(spec: Mapping[str, Any], where: str) -> Primitive:
     )
 
 
+def _pulls_clear(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, set(), where, "pulls_clear")
+    return lambda record: all(
+        pull is not None and not pull["threads"] and pull["mergeable"] == "MERGEABLE" for pull in _pulls(record)
+    )
+
+
 def _pulls_changed(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, {"files", "matches"}, where, "pulls_changed")
     globs = spec.get("files")
@@ -419,6 +426,7 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "names_ids": _names_ids,
     "readable": _readable,
     "pulls_ready": _pulls_ready,
+    "pulls_clear": _pulls_clear,
     "pulls_changed": _pulls_changed,
 }
 _NAMES = ", ".join([*_KINDS, "before", *_COMBINATORS])
