@@ -104,3 +104,19 @@ def test_the_printed_trantor_template_gives_a_body_its_required_sections_and_a_h
 
     assert _sections(document["pr_body_template"]["text"]) == required
     assert _sections(HEADING_FREE) == []
+
+
+def test_a_symlinked_config_finds_the_template_beside_the_link(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "infra").mkdir()
+    (tmp_path / "infra" / "starpulse.toml").write_text(DELIVER)
+    (tmp_path / "starpulse.toml").symlink_to("infra/starpulse.toml")
+    (tmp_path / ".github").mkdir()
+    (tmp_path / ".github" / "pull_request_template.md").write_text(REVIEWER)
+    monkeypatch.chdir(tmp_path)
+
+    code = cli.main(["command", "show", "deliver"], {})
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["pr_body_template"]["text"] == REVIEWER
