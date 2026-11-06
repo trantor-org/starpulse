@@ -46,6 +46,7 @@ class Services:
     events: CloudEventsIngest | None = None
     scheduler: Runtime | Remote | None = None
     contract: Callable[[], dict[str, Any]] | None = None
+    ready: Callable[[], dict[str, Any]] | None = None
     pulls: PullStore | None = None
     telemetry: SignalFoldReader | None = None
     search: SearchIndex | None = None

@@ -14,7 +14,7 @@ from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, M
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
-from starpulse.contracts.api.dto.report import ContractReport
+from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
     ClaimRequest,
@@ -135,6 +135,7 @@ RESPONSES: dict[str, Any] = {
     "/api/harnesses": Harnesses,
     "/api/history-window": WindowState,
     "/api/doctor": ContractReport,
+    "/api/ready": ReadyReport,
     "/api/task/": TaskRecord,
     "/api/milestones": Milestones,
     "/api/milestones/": MilestoneShown,
@@ -208,6 +209,7 @@ BODIES: dict[str, Any] = {
     "window": WindowState | ApiError,
     "scheduler": SchedulerStatus | ApiError,
     "doctor": ContractReport,
+    "ready": ReadyReport,
     "task": TaskRecord | ApiError,
     "move": Moved | MovedEach | SkillRefusal | ApiError,
     "start": Started | SkillRefusal | ApiError,

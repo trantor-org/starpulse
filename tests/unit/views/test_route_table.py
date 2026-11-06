@@ -30,6 +30,7 @@ _TABLE = [
     ("/api/ledger/{rest:path}", _READ),
     # the board's reads
     ("/api/doctor", _READ),
+    ("/api/ready", _READ),
     ("/api/machines", _READ),
     ("/api/done", _READ),
     ("/api/search", _READ),

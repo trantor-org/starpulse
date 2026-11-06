@@ -4,7 +4,8 @@
 `event emit` posts one CloudEvent to the ingest (`starpulse.cli.event`), `github requeue|dismiss` settles a dead GitHub
 delivery (`starpulse.cli.github_inbox`), `connect` writes the
 config's `[board]` for a tracker after checking it answers (`starpulse.cli.connect`), `migrate` brings the store to its
-schema (`starpulse.runtime.store_migrate`), `import-history` adds a
+schema (`starpulse.runtime.store_migrate`), `rehearse` starts `serve` on a copy of a store and waits for `/api/ready`
+(`starpulse.runtime.rehearse`), `import-history` adds a
 board's earlier lane changes to the store (`starpulse.runtime.history_import`), `backfill-telemetry` copies the event
 log's telemetry signals into Loki (`starpulse.runtime.telemetry_backfill`), `copy-signals` copies Loki's signals into
 the signal table (`starpulse.runtime.signal_copy`) and `conform` replays the recorded
@@ -36,6 +37,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "github": _lazy("starpulse.cli.github_inbox"),
     "worker": _lazy("starpulse.runtime.worker"),
     "migrate": _lazy("starpulse.runtime.store_migrate"),
+    "rehearse": _lazy("starpulse.runtime.rehearse"),
     "import-history": _lazy("starpulse.runtime.history_import"),
     "import-board": _lazy("starpulse.runtime.board_import"),
     "conform": _lazy("starpulse.runtime.conform"),

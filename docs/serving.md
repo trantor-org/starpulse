@@ -116,6 +116,10 @@ On Linux `serve` starts one preloaded process before any thread, `python -m star
 
 `[worker_memory.api]` and `[worker_memory.contexts]` override either key for a child (whole megabytes, 1 or more; `soft_mb` below `hard_mb`). An unknown child, an unknown key or a soft limit not below the hard one is refused at load by name, and so is a per-context key from before the contexts shared a process (`[worker_memory.pulls]`, `[worker_memory.scheduler]`, `[worker_memory.dagu]` and the rest): the message names `[worker_memory.contexts]` as the replacement. The `api` child holds the telemetry window and the read model, so its limit is set above the peak the deployment measures; Trantor's `starpulse.toml` does.
 
+`GET /api/ready` is the api child's readiness: each context stamps its start in the `ready` worker state with the boot
+token `serve` handed it (`STARPULSE_BOOT`), so a stamp left by an earlier boot, or copied with a store, never counts.
+`starpulse rehearse` reads it (see the CLI document).
+
 ### The sweeper
 
 `starpulse worker sweeper` (a `ctx-sweeper` thread of the `contexts` child under `serve`) is the one reconciler. It

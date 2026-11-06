@@ -17,7 +17,7 @@ from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, M
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
-from starpulse.contracts.api.dto.report import ContractReport
+from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
     ClaimRequest,
@@ -140,6 +140,7 @@ class ApiContract(_Api):
     windowState: WindowState
     schedulerStatus: SchedulerStatus
     contractReport: ContractReport
+    readyReport: ReadyReport
     taskRecord: TaskRecord
     milestones: Milestones
     milestoneShown: MilestoneShown

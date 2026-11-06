@@ -3,6 +3,7 @@ with the status, headers and body the page reads."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 import threading
@@ -55,6 +56,40 @@ def test_a_read_route_answers_its_body_and_status(client: TestClient) -> None:
     assert response.headers["content-type"] == "application/json"
     assert response.headers["cache-control"] == "no-store"
     assert response.json() == {"ok": True, "checks": []}
+
+
+def test_ready_answers_200_without_a_readiness_seam(client: TestClient) -> None:
+    response = client.get("/api/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"ready": True, "components": {}}
+
+
+def test_ready_answers_200_with_each_component_when_ready(routes: Api, client: TestClient) -> None:
+    body = {"ready": True, "components": {"store": {"ready": True, "detail": "at the schema head"}}}
+    routes.services = dataclasses.replace(routes.services, ready=lambda: body)
+
+    response = client.get("/api/ready")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == body
+
+
+def test_ready_answers_503_naming_the_component_that_is_not_ready(routes: Api, client: TestClient) -> None:
+    body = {
+        "ready": False,
+        "components": {
+            "store": {"ready": False, "detail": "sqlite:///x is not migrated: run `starpulse migrate`"},
+            "board": {"ready": True, "detail": "assembled"},
+        },
+    }
+    routes.services = dataclasses.replace(routes.services, ready=lambda: body)
+
+    response = client.get("/api/ready")
+
+    assert response.status_code == 503
+    assert response.json() == body
 
 
 def test_a_missing_record_answers_its_status(client: TestClient) -> None:

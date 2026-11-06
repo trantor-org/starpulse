@@ -59,7 +59,8 @@ SNAPSHOT_REFRESH_S = 2.0
 @dataclasses.dataclass(frozen=True)
 class Host:
     """What the page needs from `starpulse.runtime`, the composition root that builds it: no context imports `runtime`,
-    so `runtime` passes these in. `probes` is the live health probes, `contract` the doctor's reading of them."""
+    so `runtime` passes these in. `probes` is the live health probes, `contract` the doctor's reading of them, `readiness`
+    the reader of `/api/ready` over the log, the feed and the config."""
 
     config: Callable[..., ApiConfig]
     resolve_listen: Callable[..., None]
@@ -74,6 +75,7 @@ class Host:
     history_store: Callable[..., Any]
     follow_read_model: Callable[..., object]
     contract: Callable[..., Any]
+    readiness: Callable[..., Callable[[], dict[str, Any]]]
     probes: Any
     static: Path
     listen_fd_env: str
@@ -213,6 +215,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         events=cloudevents,
         scheduler=scheduler_runtime,
         contract=_cached(lambda: host.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
+        ready=host.readiness(log, feed, config),
         pulls=pulls,
         telemetry=signal_folds,
         search=search,
