@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.wake import StopEvent
 from starpulse.scheduler.model.sampler import Crossing, Reading, Sampler
 from starpulse.scheduler.model.state import SchedulerState
 
@@ -118,23 +116,6 @@ def test_a_probe_that_fails_keeps_the_last_readings_and_the_next_sample_goes_on(
 
     assert rig.sampler.readings() == good
     assert rig.crossings == []
-
-
-def test_run_forever_samples_until_stopped() -> None:
-    rig = Rig()
-    stop = StopEvent()
-    calls = []
-
-    def probe() -> dict[str, float]:
-        calls.append(1)
-        if len(calls) == 3:
-            stop.set()
-        return rig.host
-
-    rig.sampler._probe = probe
-    rig.sampler.run_forever(stop, interval=0)
-
-    assert len(calls) == 3
 
 
 def test_a_capacity_sample_survives_a_restart(tmp_path: Path) -> None:

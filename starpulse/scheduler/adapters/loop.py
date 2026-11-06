@@ -54,7 +54,7 @@ from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.inputs import STALE_S, points
 from starpulse.scheduler.model.ledger import Ledger, RunRecord
 from starpulse.scheduler.model.quiet_hours import QuietHours
-from starpulse.scheduler.model.sampler import PERIOD, Reading, Sampler
+from starpulse.scheduler.model.sampler import Reading, Sampler
 from starpulse.scheduler.model.start_failure import permanent, session_counts, sessions_full
 from starpulse.scheduler.model.state import START_COOLDOWN, SchedulerState
 from starpulse.scheduler.model.toggle import Toggle
@@ -198,6 +198,7 @@ class Loop:
         self._full_counts: tuple[int, int] = (0, 0)  # the live count and limit the last refusal named
         self._failed: dict[str, tuple[int, float]] = {}  # a task whose start failed: its failures so far, when to retry
         self._events: queue.Queue | None = None
+        self._blocked = False  # the last pass was refused for capacity: only a capacity event retries it
         self._sampled_at: float | None = None  # the sample of the last `scheduler` status the loop was offered
         self._restore()
 
@@ -285,21 +286,27 @@ class Loop:
         Every tool use is a harness move too, so only a stop counts. A tick publishes its status too, over the sample it
         ticked on, so a status wakes the loop once per sample: a start that keeps failing waits for the next sample."""
         if kind == "wake":
-            return True
+            return self._capacity_event()
         if kind == "scheduler":
             fresh = data["sampledAt"] != self._sampled_at
             self._sampled_at = data["sampledAt"]
             return fresh and data["enabled"] and (data.get("next") or {}).get("verdict") == "starting"
         if kind == "task":
+            if data["id"] in self._running:
+                return self._capacity_event()
             agent = data["agent"]
-            return data["id"] in self._running or (agent is not None and self._may_enter(agent))
+            return not self._blocked and agent is not None and self._may_enter(agent)
         if kind == "move":
             if data["machine"] != HARNESS.name:
                 return False
-            if data["agent"]["state"] == "stopped":
-                return True
-            return data["id"] in self._held
+            if data["agent"]["state"] == "stopped" or data["id"] in self._held:
+                return self._capacity_event()
         return False
+
+    def _capacity_event(self) -> bool:
+        """A pressure crossing, a session ending or a run's own change: the one kind of event that retries a capacity refusal."""
+        self._blocked = False
+        return True
 
     def _lanes(self) -> tuple[str, ...]:
         """The lanes a session admits a task from: the eligible lane, then the verify lane when one is configured."""
@@ -346,8 +353,9 @@ class Loop:
             return f"{paused} is paused"
         return None
 
-    def run_forever(self, stop: StopEvent, period: float = PERIOD) -> None:
-        """Tick on each wanted event until `stop` is set, and on `period` seconds without one to settle idle sessions."""
+    def run_forever(self, stop: StopEvent) -> None:
+        """Tick on each wanted event until `stop` is set, and when a deadline falls due: an idle limit, a start backoff or a
+        credit pause ending. A capacity event samples first, so the session and review counts follow the event."""
         self._feed.wait_replayed()
         events = self._feed.follow_changes()
         self._events = events
@@ -355,9 +363,9 @@ class Loop:
             self._safely(self.tick)  # whatever waited before the loop began
             while not stop.is_set():
                 try:
-                    kind, data = events.get(timeout=period)
+                    kind, data = events.get(timeout=self._next_due(self._clock()))
                 except queue.Empty:
-                    self._safely(self.tick, admit=False)
+                    self._safely(self.tick)
                     continue
                 woken = self.wants(kind, data)
                 while True:  # a burst of events is one tick
@@ -367,10 +375,23 @@ class Loop:
                         break
                     woken = self.wants(kind, data) or woken
                 if woken:
+                    self._safely(self._sampler.sample)
                     self._safely(self.tick)
         finally:
             self._events = None
             self._feed.unsubscribe(events)
+
+    def _next_due(self, now: float) -> float | None:
+        """Seconds to the earliest deadline the loop must wake for with no event, or None: a run's idle limit, the end of a
+        sessions-full wait, a failed start's backoff or a credit pause."""
+        limit = self._policy.idle_minutes * 60
+        due = []
+        for task, run in self._running.items():
+            seen = self._feed.machine_task(HARNESS.name, task)
+            due.append(max(run.started_at, seen["active"] if seen else 0.0) + limit + 1.0)
+        due += [at for at in (self._full[1], *(retry for _, retry in self._failed.values())) if at > now]
+        due += [row["until"] for row in self._paused.values() if row["until"] > now]
+        return max(0.0, min(due) - now) if due else None
 
     def needs_operator(self) -> list[dict[str, str]]:
         """The tasks in the eligible lane that ask the operator for a decision, which admission never starts."""
@@ -594,7 +615,14 @@ class Loop:
         live = self._live()
         tasks = [self._candidate(agent, held, live) for agent in self._feed.open_tasks()]
         decisions = decide(
-            tasks, lane or self._lane, readings, self._policy, self._chain(), self._ledger, log=log, p_goals=self._p_goals()
+            tasks,
+            lane or self._lane,
+            readings,
+            self._policy,
+            self._chain(),
+            self._ledger,
+            log=log,
+            p_goals=self._p_goals(),
         )
         if log:
             self._count(decisions)
@@ -696,7 +724,9 @@ class Loop:
     def _block_rows(self, readings: list[Reading], overfit: tuple[str, ...], now: float) -> list[dict[str, Any]]:
         by_name = {reading.name: reading for reading in readings}
         rows: list[dict[str, Any]] = [
-            {"name": name, "use": by_name[name].use, "limit": by_name[name].limit} for name in overfit if name in by_name
+            {"name": name, "use": by_name[name].use, "limit": by_name[name].limit}
+            for name in overfit
+            if name in by_name
         ]
         if self._full[1] > now:
             use, limit = self._full_counts
@@ -768,6 +798,7 @@ class Loop:
             self._note_claim(picked.task, session)
         if last is not None:
             self._record(now, *last)
+            self._blocked = not any(d.admitted for d in last[1]) and bool(last[1] and last[1][0].overfit)
         return started
 
     def _hold(self, task: str) -> None:
@@ -840,12 +871,19 @@ class Loop:
 
     def _note_full(self, now: float, text: str) -> None:
         refusals = self._full[0] + 1
+        self._blocked = True
         self._full_counts = session_counts(text) or self._full_counts
-        self._full = (refusals, now + min(START_BACKOFF * 2 ** min(refusals - 1, BACKOFF_EXPONENT_MAX), SESSIONS_FULL_BACKOFF_MAX))
+        self._full = (
+            refusals,
+            now + min(START_BACKOFF * 2 ** min(refusals - 1, BACKOFF_EXPONENT_MAX), SESSIONS_FULL_BACKOFF_MAX),
+        )
 
     def _back_off(self, task: str, now: float) -> None:
         failures = self._failed.get(task, (0, 0.0))[0] + 1
-        self._failed[task] = (failures, now + min(START_BACKOFF * 2 ** min(failures - 1, BACKOFF_EXPONENT_MAX), START_BACKOFF_MAX))
+        self._failed[task] = (
+            failures,
+            now + min(START_BACKOFF * 2 ** min(failures - 1, BACKOFF_EXPONENT_MAX), START_BACKOFF_MAX),
+        )
 
     def _selected_paused(self, now: float) -> str | None:
         """The selected harness when its credit pause is still live; other harnesses keep admitting."""
