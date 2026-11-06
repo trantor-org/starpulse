@@ -550,6 +550,8 @@ applied_by = "pin-bump"
 # max_body_bytes = 5242880               # a larger body is answered 413 (default 5 MiB)
 # host = "127.0.0.1"                     # the address to bind (default 127.0.0.1)
 # port = 8767                            # the port to bind (default 8767)
+# reconcile_token_env = "GITHUB_APP_TOKEN"  # the environment variable that holds the token the github-events reconcile pass reads GitHub with (unset: no pass)
+# reconcile_interval_s = 600             # seconds between two reconcile passes (default 600)
 ```
 
 ### Runs adapters

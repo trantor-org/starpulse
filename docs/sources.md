@@ -378,7 +378,7 @@ Both answer 501 with no telemetry stream, 503 when it cannot be read, and 400 fo
 
 ## Save GitHub webhook deliveries
 
-A `[github]` table (`secret_env`, `organisation` or `repositories`, `database_url`, `max_body_bytes`, `host`, `port`; see
+A `[github]` table (`secret_env`, `organisation` or `repositories`, `database_url`, `max_body_bytes`, `host`, `port`, `reconcile_token_env`, `reconcile_interval_s`; see
 [Serving](serving.md)) makes `serve` run a listener in the `contexts` child for a GitHub App's webhook. Without the
 table none runs. Point the App's webhook URL at the listener, set its secret in the environment variable `secret_env`
 names, and the listener answers each POST in this order:
@@ -424,6 +424,32 @@ absent or fails to start, and the inbox keeps every delivery.
 
 The listener's `/metrics` also serves `starpulse_github_dead_rows{consumer}`, the dead rows each consumer holds until
 `requeue` or `dismiss` clears them.
+
+### Reconcile the inbox against GitHub
+
+With `reconcile_token_env` in `[github]` (the environment variable that holds a token able to read the App's deliveries
+and redeliver them, and to read the accepted repositories' pull requests and checks), the `github-events` context also
+runs a reconcile pass at start and every `reconcile_interval_s` (default 600). A token that cannot read
+`GET /app/hook/deliveries` makes the delivery half fail each pass, logged; the pull request half still runs.
+
+1. It pages the App's deliveries back from a stored cursor (the newest `delivered_at` it has handled; the first pass
+   reaches back 7 days) and asks GitHub once, with `POST /app/hook/deliveries/{id}/attempts`, to redeliver each GUID
+   with no `github_inbox` row, whatever GitHub shows as its status. A GUID with a redelivery among its attempts is not
+   asked for again. The listener's dedup makes a repeat harmless.
+2. For each accepted repository (the listed ones, and the organisation's unarchived ones) it lists pull requests newest
+   updated first until it reaches its `pulls:<repository>` cursor. Each closed pull request becomes a `pull_request`
+   row with `delivery_id` `reconcile:<repository>:<number>:<sha>` (the merge SHA when merged, else the head SHA), and
+   each finished check suite on the head of a pull request in the list a `check_suite` row with `delivery_id`
+   `reconcile:<repository>:<number>:<head sha>:<suite id>`. Both have `source = 'reconcile'`, are shaped like the webhook body
+   that would have reported them, and travel the consumer path above; a row for a fact a delivery already reported
+   collapses on the event id.
+3. Every list is read with the ETag it last returned (`If-None-Match`): a 304 spends no rate limit and leaves the
+   cursor and the inbox as they were. No call is GraphQL. A cursor and its ETag are saved only after everything they
+   cover was handled, so a pass that failed reads the same place again.
+
+The pass keeps `starpulse_github_redeliveries_total`, `starpulse_github_reconcile_rows_total{kind}` and
+`starpulse_github_reconcile_cursor_lag_seconds{cursor}` (`deliveries`, `pulls:<repository>`) in its process, as
+`Reconciled.exposition()`.
 
 ## Report runs from any scheduler
 
