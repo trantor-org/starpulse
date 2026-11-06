@@ -32,6 +32,7 @@ class _Board:
         return {"status": self.statuses[task]} if task in self.statuses else None
 
     files = None
+    done_files = None
 
     def reconcile(self, task: str) -> bool:
         self.reconciled.append(task)
@@ -201,3 +202,26 @@ def test_a_promoted_proposals_archived_row_does_not_hide_its_new_id(tmp_path, mo
         _catch_up(feed, log)
 
     assert feed.task("PROP-445")["id"] == "TASK-12375"
+
+
+def test_a_promoted_proposals_id_answers_its_task_once_that_task_is_done(tmp_path, monkeypatch) -> None:
+    built, feed, log, tasks = _real_feed(tmp_path, monkeypatch)
+    old = tasks / "prop-24 - Probe.md"
+    old.write_text("---\nid: PROP-24\ntitle: Probe\nstatus: Proposed\n---\n")
+    built.reconcile("PROP-24")
+    _catch_up(feed, log)
+    old.unlink()
+    promoted = tasks / "task-12147 - Probe.md"
+    promoted.write_text("---\nid: TASK-12147\ntitle: Probe\nstatus: Ready\naliases:\n- PROP-24\n---\n")
+    built.reconcile("TASK-12147")
+    _catch_up(feed, log)
+    promoted.write_text("---\nid: TASK-12147\ntitle: Probe\nstatus: Done\naliases:\n- PROP-24\n---\n")
+    built.reconcile("TASK-12147")
+    _catch_up(feed, log)
+    sweep = LaneSweep(feed, built)
+
+    for _ in range(3):
+        sweep.sweep()
+        _catch_up(feed, log)
+
+    assert feed.task("PROP-24")["id"] == "TASK-12147"

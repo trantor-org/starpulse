@@ -838,6 +838,18 @@ def _open_tasks(root: Path, done: str | None) -> Iterator[tuple[str, dict]]:
             yield str(frontmatter.get("id") or path.stem).strip(), frontmatter
 
 
+def _done_tasks(root: Path, done: str | None) -> Iterator[tuple[str, dict]]:
+    """The id and front matter of each task under `tasks/` that is Done, then each under `completed/`, in file order."""
+    for folder in ("tasks", "completed"):
+        for path in sorted((root / folder).glob("*.md")):
+            try:
+                frontmatter, _ = _split(path.read_text())
+            except OSError:
+                continue  # moved or removed while looking
+            if isinstance(frontmatter, dict) and (folder == "completed" or lane_id(str(frontmatter.get("status") or "")) == done):
+                yield str(frontmatter.get("id") or path.stem).strip(), frontmatter
+
+
 def _open_dependents(root: Path, task: str, done: str | None) -> list[str]:
     """Ids of the tasks under `tasks/` that are not Done and list `task` as a dependency, in file order."""
     wanted = task.casefold()
@@ -1644,6 +1656,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "create": history.created(made.create, read),
         "reconcile": history.reconciled(_own(root, read)),
         "files": lambda: [(task, _aliases(frontmatter)) for task, frontmatter in _open_tasks(root, made.roles.done)],
+        "done_files": lambda: [(task, _aliases(frontmatter)) for task, frontmatter in _done_tasks(root, made.roles.done)],
     }
     return replace(made, start=start, sweep=sweep, attach=attach, standing=_standing(root, guard), readable=guard.readable, **recorded)
 

@@ -263,6 +263,8 @@ class Board:
     """Brings a task's History to its file and says whether it had to; None when the board keeps no History."""
     files: Callable[[], Iterable[tuple[str, list[str]]]] | None = None
     """Lists each open task file's id and the aliases it answers to; None when the board keeps no files to list."""
+    done_files: Callable[[], Iterable[tuple[str, list[str]]]] | None = None
+    """Lists each done task file's id and the aliases it answers to, which the board keeps answering; None when the board keeps none."""
     create: TaskCreator | None = None
     """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
     milestones: MilestoneLister | None = None
