@@ -96,7 +96,7 @@ class Github:
             "createdAt": OLD,
             "mergedAt": pull["merged_at"],
             "mergeCommit": {"oid": f"{number:040x}"[::-1]} if pull["state"] == "MERGED" else None,
-            "files": {"totalCount": pull["total_files"], "nodes": [{"path": path} for path in pull["files"]]},
+            "files": self._files(pull, 0),
             "headRef": None if pull["behind"] is None else {"compare": {"aheadBy": pull["behind"]}},
             "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": contexts}}}}]},
             "ciCommits": {"nodes": [{"commit": {"oid": f"{number:040x}", "checkSuites": {"nodes": [SUITE]}}}]},
@@ -113,11 +113,24 @@ class Github:
             },
         }
 
+    @staticmethod
+    def _files(pull: dict, start: int) -> dict:
+        page = pull["files"][start : start + 100]
+        end = start + len(page)
+        return {
+            "totalCount": pull["total_files"],
+            "pageInfo": {"hasNextPage": end < len(pull["files"]), "endCursor": str(end)},
+            "nodes": [{"path": path} for path in page],
+        }
+
     def __call__(self, repo: str, query: str) -> dict:
         assert repo == REPO
         self.queries.append(query)
         answer: dict = {}
         for number in re.findall(r"p(\d+): pullRequest", query):
+            if (after := re.search(r'files\(first: 100, after: "(\d+)"\)', query)) and int(number) in self.pulls:
+                answer[f"p{number}"] = {"files": self._files(self.pulls[int(number)], int(after[1]))}
+                continue
             answer[f"p{number}"] = self._node(int(number)) if int(number) in self.pulls else None
         return answer
 
@@ -271,6 +284,18 @@ def test_a_record_says_whether_its_pr_waits_in_the_merge_queue(store: PullStore)
     (waiting,) = store.find(number=5, detailed=True)
     assert (queued["detail"]["queued"], waiting["detail"]["queued"]) == (True, False)
     assert "isInMergeQueue" in github.queries[0]
+
+
+def test_a_pr_over_100_files_is_recorded_with_every_path_read_a_page_at_a_time(store: PullStore) -> None:
+    github = Github()
+    paths = tuple(f"f{index}.py" for index in range(250))
+    github.add(7, files=paths)
+
+    _read(store, github, 100.0)
+
+    (record,) = store.find(number=7, detailed=True)
+    assert record["detail"]["files"] == list(paths)
+    assert len(github.queries) == 3
 
 
 def test_a_pr_with_more_files_than_the_read_returns_records_its_files_as_unknown(store: PullStore) -> None:

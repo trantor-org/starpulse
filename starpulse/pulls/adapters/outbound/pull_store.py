@@ -37,7 +37,7 @@ def _selection(number: int) -> str:
   p{number}: pullRequest(number: {number}) {{
     number state isDraft isInMergeQueue mergeable baseRefName headRefName headRefOid title body updatedAt createdAt mergedAt
     mergeCommit {{ oid }}
-    files(first: 100) {{ totalCount nodes {{ path }} }}
+    files(first: 100) {{ totalCount pageInfo {{ hasNextPage endCursor }} nodes {{ path }} }}
     headRef {{ compare(headRef: "main") {{ aheadBy }} }}
     ciCommits: commits(last: 100) {{ nodes {{ commit {{ oid
       checkSuites(first: 20) {{ nodes {{ status conclusion createdAt updatedAt workflowRun {{ runAttempt }} }} }} }} }} }}
@@ -70,7 +70,7 @@ def _result(check: dict) -> str:
 
 
 def _paths(files: dict) -> list[str] | None:
-    """The changed paths the read returned, None when the pull request has more than the read's first 100."""
+    """The changed paths the read returned, None when it returned fewer than the pull request's `totalCount`."""
     paths = [file["path"] for file in files["nodes"]]
     return paths if files["totalCount"] <= len(paths) else None
 
@@ -128,12 +128,26 @@ def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
     }
 
 
+def _all_files(repo: str, node: dict, graphql: Callable[[str, str], dict]) -> dict:
+    """`node`'s `files` connection with every later page read, 100 paths per request."""
+    files = node["files"]
+    while files["pageInfo"]["hasNextPage"]:
+        number = node["number"]
+        cursor = files["pageInfo"]["endCursor"]
+        page = graphql(
+            repo, f'query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{ p{number}: pullRequest(number: {number}) {{ files(first: 100, after: "{cursor}") {{ totalCount pageInfo {{ hasNextPage endCursor }} nodes {{ path }} }} }} }} }}'
+        )[f"p{number}"]["files"]
+        files = {**page, "nodes": files["nodes"] + page["nodes"]}
+    return files
+
+
 def refresh_pull(
     repo: str, number: int, store: PullStore, now: float, graphql: Callable[[str, str], dict] = query_github
 ) -> None:
     """Read pull request `number` of `repo` alone, one request, and save its record; a number GitHub has none for
     leaves the store as it was."""
     if node := graphql(repo, _query([number]))[f"p{number}"]:
+        node["files"] = _all_files(repo, node, graphql)
         store.save([_record(repo, node, now)])
 
 
