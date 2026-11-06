@@ -344,11 +344,9 @@ def test_feed_queues_the_changes_of_watched_units_only() -> None:
     assert events.empty()
 
 
-def run_serve(timers: systemd.Timers, events: queue.Queue, **intervals: float) -> threading.Thread:
+def run_serve(timers: systemd.Timers, events: queue.Queue, debounce: float = 0.01) -> threading.Thread:
     stop = StopEvent()
-    thread = threading.Thread(
-        target=systemd.serve, args=(timers, events, stop), kwargs={"healthy": lambda: True, **intervals}, daemon=True
-    )
+    thread = threading.Thread(target=systemd.serve, args=(timers, events, stop, debounce), daemon=True)
     thread.stop = stop  # type: ignore[attr-defined]
     thread.start()
     return thread
@@ -368,11 +366,11 @@ def wait_for(condition, seconds: float = 2.0) -> bool:
     return False
 
 
-def test_a_signal_updates_the_dag_record_without_a_periodic_listing() -> None:
+def test_a_signal_updates_the_dag_record() -> None:
     sink, fake, events = Sink(), host(), queue.Queue()
     timers = systemd.Timers(sink, fake, "a, b")
     timers.read()
-    thread = run_serve(timers, events, backstop=60.0, fallback=60.0, debounce=0.01)
+    thread = run_serve(timers, events)
 
     fire(fake, "a.service")
     events.put((False, "a.service"))
@@ -380,19 +378,6 @@ def test_a_signal_updates_the_dag_record_without_a_periodic_listing() -> None:
     assert wait_for(lambda: started(sink)["a"] == FIRED_ISO)
     finish(thread)
     assert started(sink)["b"] == STARTED_ISO
-
-
-def test_idle_the_adapter_starts_no_systemctl_between_backstop_listings() -> None:
-    sink, fake = Sink(), host()
-    timers = systemd.Timers(sink, fake, "a, b")
-    timers.read()
-    fake.calls.clear()
-    thread = run_serve(timers, queue.Queue(), backstop=60.0, fallback=0.01, debounce=0.01)
-
-    time.sleep(0.3)
-    finish(thread)
-
-    assert fake.calls == []
 
 
 def test_a_burst_of_signals_for_one_timer_is_one_read() -> None:
@@ -403,7 +388,7 @@ def test_a_burst_of_signals_for_one_timer_is_one_read() -> None:
     fire(fake, "a.service")
     for _ in range(4):
         events.put((False, "a.service"))
-    thread = run_serve(timers, events, backstop=60.0, fallback=60.0, debounce=0.1)
+    thread = run_serve(timers, events, debounce=0.1)
 
     assert wait_for(lambda: started(sink)["a"] == FIRED_ISO)
     time.sleep(0.3)
@@ -412,34 +397,18 @@ def test_a_burst_of_signals_for_one_timer_is_one_read() -> None:
     assert len(fake.calls) == 2  # the timer and its service, once
 
 
-def test_the_backstop_lists_every_timer_again_when_it_comes_due() -> None:
-    sink, fake = Sink(), host()
-    timers = systemd.Timers(sink, fake, "a, b")
-    timers.read()
-    fire(fake, "b.service")  # a change whose signal never arrived
-    thread = run_serve(timers, queue.Queue(), backstop=0.05, fallback=60.0, debounce=0.01)
-
-    assert wait_for(lambda: started(sink)["b"] == FIRED_ISO)
-    finish(thread)
-
-
-def test_a_dead_monitor_falls_back_to_the_short_listing_interval() -> None:
+def test_serve_waits_on_its_queue_with_no_timer_and_ends_when_stopped() -> None:
     sink, fake = Sink(), host()
     timers = systemd.Timers(sink, fake, "a")
     timers.read()
-    fire(fake, "a.service")
-    stop = StopEvent()
-    thread = threading.Thread(
-        target=systemd.serve,
-        args=(timers, queue.Queue(), stop),
-        kwargs={"healthy": lambda: False, "backstop": 60.0, "fallback": 0.05, "debounce": 0.01},
-        daemon=True,
-    )
-    thread.start()
+    fake.calls.clear()
+    thread = run_serve(timers, queue.Queue())
 
-    assert wait_for(lambda: started(sink)["a"] == FIRED_ISO)
-    stop.set()
-    thread.join(timeout=2)
+    time.sleep(0.3)
+    finish(thread)
+
+    assert fake.calls == []
+    assert not thread.is_alive()
 
 
 def test_closing_the_monitor_terminates_its_gdbus_child(tmp_path, monkeypatch) -> None:

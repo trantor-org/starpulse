@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 __all__ = [
-    "BUDGET", "CAP", "CONSUMER", "MACHINE", "REFUSED", "RETENTION", "SOURCE", "Fact", "backoff", "cloudevent", "event_id", "facts_of",
+    "BUDGET", "CAP", "CONSUMER", "MACHINE", "REFUSED", "RETENTION", "SOURCE", "Fact", "backoff", "cloudevent", "event_id", "facts_of", "run_event_of",
 ]  # fmt: skip
 
 SOURCE = "github"
@@ -123,3 +123,41 @@ def facts_of(event: str, body: bytes) -> list[Fact]:
     if event in ("check_suite", "check_run"):
         return _checks(repository, event, action, payload)
     return []
+
+
+#: A run's `status` before it completes, and each `conclusion` after, as the runs projection's status.
+_RUN_STATUS = {"requested": "queued", "pending": "queued", "queued": "queued", "waiting": "queued", "in_progress": "running"}
+_RUN_CONCLUSION = {
+    "success": "succeeded", "neutral": "succeeded", "failure": "failed", "timed_out": "failed",
+    "startup_failure": "failed", "cancelled": "aborted", "stale": "aborted", "action_required": "aborted",
+    "skipped": "skipped",
+}  # fmt: skip
+
+
+def run_event_of(event: str, body: bytes) -> dict[str, Any] | None:
+    """The run event a `workflow_run` delivery reports, as the CloudEvent the ingest takes; none for any other delivery,
+    a body that is no run, or a status the projection has no name for. The event id is derived from the run, its attempt
+    and its state, so a redelivery collapses and a re-run is another event."""
+    if event != "workflow_run":
+        return None
+    try:
+        payload = _dict(json.loads(body))
+    except ValueError:
+        return None
+    run = _dict(payload.get("workflow_run"))
+    repository = _text(_dict(payload.get("repository")).get("full_name"))
+    run_id, path, state = _number(run.get("id")), _text(run.get("path")), _text(run.get("status"))
+    conclusion = _text(run.get("conclusion"))
+    done = state == "completed"
+    mapped = (_RUN_CONCLUSION if done else _RUN_STATUS).get(conclusion if done else state)
+    if not (repository and run_id and path and mapped):
+        return None
+    key = "\n".join((repository, str(run_id), str(run.get("run_attempt")), state, conclusion))
+    return {
+        "specversion": "1.0",
+        "id": hashlib.sha256(key.encode()).hexdigest(),
+        "source": SOURCE,
+        "type": "StepFinished" if done else "StepStarted",
+        "subject": str(run_id),
+        "data": {"workflow": path.rsplit("/", 1)[-1], "status": mapped},
+    }

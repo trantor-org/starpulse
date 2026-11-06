@@ -1,4 +1,5 @@
-"""The `events` consumer: each saved delivery that reports a pull request fact becomes one machine event.
+"""The `events` consumer: each saved delivery that reports a pull request fact becomes one machine event, and one that reports a workflow run
+becomes one run event.
 
 `consume` makes one pass over the deliveries due; `run` repeats it on a thread until it is told to stop. A delivery is
 done once the ingest accepts its event (a repeat of the fact is accepted and collapses on the event id), is retried
@@ -18,7 +19,7 @@ from typing import Any
 from starpulse.github.adapters.inbound.listener import INBOX_FILE
 from starpulse.github.adapters.outbound.inbox import Migrate, SqlInbox
 from starpulse.github.adapters.outbound.queue import SqlQueue
-from starpulse.github.model.events import CONSUMER, REFUSED, cloudevent, facts_of
+from starpulse.github.model.events import CONSUMER, REFUSED, cloudevent, facts_of, run_event_of
 from starpulse.github.ports.events import Entry, Ingest, Links, Queue
 
 __all__ = ["consume", "open_queue", "run", "start"]
@@ -30,8 +31,20 @@ _PASS_S = 1.0
 _PURGE_S = 3600.0
 
 
+def _post(queue: Queue, ingest: Ingest, delivery_id: str, events: list[dict[str, Any]]) -> None:
+    for event in events:
+        status = ingest.post(event)
+        if status != 201:
+            queue.fail(delivery_id, f"ingest answered {status}" if status else "ingest unreachable", fatal=status in REFUSED)
+            return
+    queue.complete(delivery_id)
+
+
 def _one(queue: Queue, ingest: Ingest, links: Links, entry: Entry) -> None:
     delivery_id = entry.delivery.delivery_id
+    run = run_event_of(entry.delivery.event, entry.delivery.body)
+    if run is not None:
+        return _post(queue, ingest, delivery_id, [run])
     facts = facts_of(entry.delivery.event, entry.delivery.body)
     if not facts:
         return queue.skip(delivery_id, "no-fact")
@@ -42,13 +55,7 @@ def _one(queue: Queue, ingest: Ingest, links: Links, entry: Entry) -> None:
     if not linked:
         queue.fail(delivery_id, "no-task", exhausted="skipped")
         return
-    for fact, task in linked:
-        status = ingest.post(cloudevent(fact, task))
-        if status == 201:
-            continue
-        queue.fail(delivery_id, f"ingest answered {status}" if status else "ingest unreachable", fatal=status in REFUSED)
-        return
-    queue.complete(delivery_id)
+    _post(queue, ingest, delivery_id, [cloudevent(fact, task) for fact, task in linked])
 
 
 def consume(queue: Queue, ingest: Ingest, links: Links) -> None:

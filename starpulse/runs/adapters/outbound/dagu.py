@@ -32,10 +32,10 @@ from starpulse.contracts.adapters import LAST_OUTCOMES, RunsSink, RunStatus, Sta
 from starpulse.contracts.stamps import iso_utc
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.wake import StopEvent
+from starpulse.runs.adapters.outbound.dagu_stream import follow_stream
+from starpulse.runs.adapters.outbound.resync import follow_resync
 from starpulse.runs.model import run_events
 
-#: Seconds between two listings of a followed Dagu instance.
-RECONCILE_INTERVAL = 30.0
 #: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
 WORKER = "dagu"
 
@@ -955,6 +955,11 @@ _MOVES = {
 }
 
 
+def read(url: str) -> list[dict]:
+    """Every DAG on the instance at `url`, as the sweeper's `runs` kind compares them with the projection."""
+    return dags(url)
+
+
 def start(url: str) -> Callable[[str], str]:
     """The start capability of the Dagu instance at `url`."""
     return starter(connect(url))
@@ -963,26 +968,6 @@ def start(url: str) -> Callable[[str], str]:
 def rerun(url: str) -> Callable[[str, Mapping[str, str]], str]:
     """The rerun capability of the Dagu instance at `url`: start a workflow with parameters."""
     return rerunner(connect(url))
-
-
-def _refresh_stats_forever(url: str, stats: dict, stop: StopEvent) -> None:
-    """Read the run statistics of Dagu's DAGs every `RECONCILE_INTERVAL` seconds until `stop`; a read that fails is tried again after `STATS_TTL`."""
-    tried: dict = {}
-    while True:
-        try:
-            refresh_stats(url, stats, tried=tried)
-        except OSError, ValueError, KeyError, TypeError:  # Dagu unreachable or answering something else
-            pass
-        if stop.wait(RECONCILE_INTERVAL):
-            return
-
-
-def _reconcile_forever(runs: DaguRuns, stop: StopEvent) -> None:
-    """List Dagu every `RECONCILE_INTERVAL` seconds until `stop`, so runs show with no `handler_on` hooks publishing them."""
-    while True:
-        runs.reconcile()
-        if stop.wait(RECONCILE_INTERVAL):
-            return
 
 
 def follow(
@@ -996,10 +981,11 @@ def follow(
 
     The head is read before the listing, so an entry the listing may not hold is still read and the retained ones,
     already in it, are not replayed; an entry stamped before the listing is dropped (`DaguRuns`). The listing
-    repeats every `RECONCILE_INTERVAL` seconds, so runs show with no `handler_on` hooks publishing them. A sink with a `tied`
-    attribute (the workflows a Board event cues or that write one) also gets those workflows' recent runs. A third thread
-    reads the DAGs' run statistics apart from the listing (`refresh_stats`), which serves them as they are read. The
-    threads end when `stop` is set; the server passes none and they run for the process's life.
+    is repeated on each change Dagu streams (`dagu_stream`) and each `runs:resync` entry naming the instance (`resync`), so runs show with no `handler_on` hooks publishing them. A sink with a `tied`
+    attribute (the workflows a Board event cues or that write one) also gets those workflows' recent runs. A listing also
+    starts a thread that reads the DAGs' run statistics apart from it (`refresh_stats`), unless one is running, and
+    the listing serves them as they are read. The threads end when `stop` is set; the server passes none and they run
+    for the process's life.
     """
     stop = stop or StopEvent()
     tied = lambda: getattr(runs, "tied", frozenset())  # noqa: E731
@@ -1021,7 +1007,21 @@ def follow(
         tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), stop)
 
     threading.Thread(target=read, name="dagu-runs", daemon=True).start()
-    threading.Thread(target=_reconcile_forever, args=(reader, stop), name="dagu-runs-reconcile", daemon=True).start()
-    threading.Thread(
-        target=_refresh_stats_forever, args=(url, stats, stop), name="dagu-runs-stats", daemon=True
-    ).start()
+    refreshing = threading.Lock()
+    tried: dict = {}
+
+    def refresh() -> None:
+        try:
+            refresh_stats(url, stats, tried=tried)
+        except OSError, ValueError, KeyError, TypeError:  # Dagu unreachable or answering something else
+            pass
+        finally:
+            refreshing.release()
+
+    def relist() -> None:
+        reader.reconcile()
+        if refreshing.acquire(blocking=False):
+            threading.Thread(target=refresh, name="dagu-runs-stats", daemon=True).start()
+
+    follow_stream(url, relist, stop)
+    follow_resync(log, getattr(runs, "instance", None) or "", relist, stop)

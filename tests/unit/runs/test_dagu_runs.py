@@ -43,6 +43,7 @@ from starpulse.runs.adapters.outbound.dagu import (
 )
 from starpulse.runs.adapters.outbound.dagu import follow as dagu_follow
 from starpulse.runs.model import run_events
+from starpulse.runs.model.run_events import RESYNC
 from starpulse.runtime.adapter_kit import RunsAdapterKit
 
 from tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
@@ -867,8 +868,7 @@ def test_following_an_instance_reads_its_listing_into_the_sink_on_daemon_threads
 
     assert [(t.name, t.daemon) for t in started if t.name.startswith("dagu-")] == [
         ("dagu-runs", True),
-        ("dagu-runs-reconcile", True),
-        ("dagu-runs-stats", True),
+        ("dagu-runs-stream", True),
     ]
     assert [d["name"] for d in feed.snapshot()["dags"]] == ["ci/d1"]
 
@@ -877,9 +877,8 @@ def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_aga
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
     monkeypatch.setattr(
-        "starpulse.runs.adapters.outbound.dagu._reconcile_forever", lambda runs, stop: None
+        "starpulse.runs.adapters.outbound.dagu.follow_stream", lambda url, on_change, stop: None
     )  # only the entries move the DAG
-    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._refresh_stats_forever", lambda url, stats, stop: None)
     feed = BoardFeed()
     with dagu({"d1": ["a"]}) as (base_url, calls):
         follow_instance(base_url, feed.runs("ci"), log)
@@ -896,7 +895,7 @@ def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_aga
 def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_later_one_is_handled(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._reconcile_forever", lambda runs, stop: None)
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu.follow_stream", lambda url, on_change, stop: None)
     handled: list[str] = []
     real_handle = DaguRuns.handle_entry
     monkeypatch.setattr(
@@ -920,10 +919,7 @@ def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_
 def test_a_followed_instance_reads_only_the_named_dag_when_an_entry_names_a_new_one(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr(
-        "starpulse.runs.adapters.outbound.dagu._reconcile_forever", lambda runs, stop: None
-    )  # its listings would skew the count
-    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._refresh_stats_forever", lambda url, stats, stop: None)  # so would its stats
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu.follow_stream", lambda url, on_change, stop: None)  # its listings would skew the count
     steps = {"d1": ["a"], "d2": ["b"]}
     feed = BoardFeed()
     with dagu(steps) as (base_url, calls):
@@ -1117,10 +1113,13 @@ def test_a_start_that_cannot_reach_dagu_raises_with_the_transports_reason() -> N
     assert str(failed.value) == "Dagu unreachable: refused"
 
 
-def test_a_run_that_finishes_on_dagu_shows_within_one_reconcile_interval_with_no_log_entries(
+def test_a_run_that_finishes_on_dagu_shows_on_the_change_dagu_streams_with_no_log_entries(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu.RECONCILE_INTERVAL", 0.05)
+    streamed: list = []
+    monkeypatch.setattr(
+        "starpulse.runs.adapters.outbound.dagu.follow_stream", lambda url, on_change, stop: streamed.append(on_change)
+    )
     feed = BoardFeed()
     latest = {"statusLabel": "running", "dagRunId": "r1"}
 
@@ -1131,7 +1130,36 @@ def test_a_run_that_finishes_on_dagu_shows_within_one_reconcile_interval_with_no
         follow_instance(base_url, feed.runs("ci"), log)
         _wait_until(lambda: feed.snapshot()["dags"] and status() == "running")
         latest["statusLabel"] = "succeeded"
-        _wait_until(lambda: status() == "succeeded")
+        streamed[0]()
+
+        assert status() == "succeeded"
+
+
+class _Named:
+    """A feed's sink with the `instance` the projection's sink has."""
+
+    def __init__(self, inner, instance: str) -> None:
+        self._inner, self.instance = inner, instance
+
+    def __getattr__(self, name: str):
+        return getattr(self._inner, name)
+
+
+def test_a_resync_entry_naming_the_instance_lists_dagu_again_and_one_naming_another_does_not(
+    log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
+) -> None:
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu.follow_stream", lambda url, on_change, stop: None)
+    feed = BoardFeed()
+    latest = {"statusLabel": "running", "dagRunId": "r1"}
+
+    with dagu({"d1": ["a"]}, latest=latest) as (base_url, _):
+        follow_instance(base_url, _Named(feed.runs("ci"), "ci"), log)
+        _wait_until(lambda: feed.snapshot()["dags"])
+        latest["statusLabel"] = "succeeded"
+        log.publish(RESYNC, {"instance": "other"})
+        log.publish(RESYNC, {"instance": "ci"})
+
+        _wait_until(lambda: dag(feed, "d1")["status"] == "succeeded")
 
 
 def test_a_streamed_state_outlives_an_older_listing_and_a_newer_listing_replaces_it() -> None:
@@ -1818,7 +1846,7 @@ def test_a_dag_no_cue_ties_gets_no_recent_runs_from_a_reader_that_ties_none() ->
 def test_a_followed_instance_reads_the_recent_runs_of_the_workflows_its_sink_says_are_tied(
     log: EventLog, monkeypatch: pytest.MonkeyPatch, follow_instance
 ) -> None:
-    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu._reconcile_forever", lambda runs, stop: None)
+    monkeypatch.setattr("starpulse.runs.adapters.outbound.dagu.follow_stream", lambda url, on_change, stop: None)
     sink = _Sink()
     sink.tied = frozenset({"apply"})  # type: ignore[attr-defined]
     with dagu({**APPLY, "other": ["a"]}, history=(APPLIED,)) as (base_url, _):
@@ -2119,7 +2147,7 @@ def test_statistics_dagu_fails_to_give_are_not_asked_for_again_until_the_ttl_pas
     monkeypatch.setattr(dagu_module, "_read_stats", failing)
     now, tried = [0.0], {}
     with dagu({"d": ["a"]}, history=[_past("d", "r1", "succeeded", 100, 50)]) as (base_url, _):
-        for at in (0.0, dagu_module.RECONCILE_INTERVAL, STATS_TTL):
+        for at in (0.0, STATS_TTL / 10, STATS_TTL):
             now[0] = at
             refresh_stats(base_url, {}, clock=lambda: now[0], tried=tried)
 

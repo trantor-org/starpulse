@@ -16,6 +16,8 @@ from __future__ import annotations
 from typing import Any
 
 STREAM = "runs:events"
+#: The stream the sweeper's `runs` kind writes to name an instance (`instance`) whose source differs from the projection.
+RESYNC = "runs:resync"
 #: The Runs glossary's Step events; a run's own entry names no `step`.
 EVENTS = ("StepStarted", "StepFinished")
 

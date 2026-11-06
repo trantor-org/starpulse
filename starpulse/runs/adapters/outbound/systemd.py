@@ -4,8 +4,8 @@
 `systemctl --user`; a name without `.timer` means `<name>.timer`. `Timers.read` reads each timer and its service with
 `systemctl show` into the `runs` contract's `Dag` records. `follow` reads the allowlist once, then re-reads only the timer
 whose unit systemd reports as changed (a D-Bus `PropertiesChanged` signal, watched through one `gdbus monitor` per
-manager) and lists the whole allowlist every `BACKSTOP_INTERVAL` seconds; while a monitor is down it lists every
-`RECONCILE_INTERVAL` seconds instead. The event log is not read. `start` is None, since starting a root unit needs a
+manager); a monitor that exits is started again and its timers read again. A `runs:resync` entry naming the instance
+reads them all again. `start` is None, since starting a root unit needs a
 polkit grant, so a timer has no Run now.
 """
 
@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from starpulse.contracts.adapters import RunsSink, RunStatus
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent
+from starpulse.runs.adapters.outbound.resync import follow_resync
 
 #: `systemctl`'s arguments (`--user` first for the user manager) to its standard output; a failing call raises `OSError`.
 Systemctl = Callable[[list[str]], str]
@@ -118,6 +119,11 @@ def listing(run: Systemctl, url: str) -> list[dict]:
     return [_workflow(run, user, unit) for user, unit in units(url)]
 
 
+def read(url: str) -> list[dict]:
+    """Every timer `url` allowlists, as the sweeper's `runs` kind compares them with the projection."""
+    return listing(systemctl, url)
+
+
 class Timers:
     """The allowlist's workflows as last read, and the units whose change means one of them moved."""
 
@@ -125,7 +131,6 @@ class Timers:
         self.sink, self.run, self.entries = sink, run, units(url)
         self.dags: dict[tuple[bool, str], dict] = {}
         self.owners: dict[tuple[bool, str], tuple[bool, str]] = {}
-        self.ok = False  # whether the last read succeeded; a failed one is retried at the short interval
 
     def owner(self, user: bool, unit: str) -> tuple[bool, str] | None:
         """The allowlisted timer `unit` is, or the service it activates; None for any other unit."""
@@ -141,12 +146,9 @@ class Timers:
                 service = dag["steps"][0]["name"]
                 self.owners.update({(entry_[0], entry_[1]): entry_, (entry_[0], service): entry_})
             self.sink.set_dags([self.dags[e] for e in self.entries if e in self.dags], None)
-            self.ok = True
         except OSError as exc:
-            self.ok = False
             self.sink.set_dags(None, str(exc))
         except (ValueError, KeyError) as exc:  # a timestamp or an answer not in the shape `_workflow` reads
-            self.ok = False
             self.sink.set_dags(None, f"unreadable response ({type(exc).__name__}: {exc})")
 
 
@@ -173,13 +175,12 @@ def start(url: str) -> None:
     return
 
 
-#: Seconds between two listings of the allowlist while a monitor is down; a timer that fired shows at the next.
-RECONCILE_INTERVAL = 30.0
 #: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
 WORKER = "systemd"
 
-#: Seconds between two listings while every monitor is up: the signals carry the changes, this catches a missed one.
-BACKSTOP_INTERVAL = 600.0
+#: Seconds a monitor that died within `QUICK_EXIT` seconds of starting waits before its restart: a restart backoff, not a listing.
+RESTART_BACKOFF = 30.0
+QUICK_EXIT = 1.0
 
 #: Seconds the signals of one change are gathered for; a service start signals its states in quick succession.
 DEBOUNCE = 0.3
@@ -204,41 +205,25 @@ def feed(user: bool, lines: Iterable[str], events: queue.Queue, watched: Callabl
             events.put((user, unit))
 
 
-def serve(
-    timers: Timers,
-    events: queue.Queue,
-    stop: StopEvent,
-    healthy: Callable[[], bool],
-    backstop: float = BACKSTOP_INTERVAL,
-    fallback: float = RECONCILE_INTERVAL,
-    debounce: float = DEBOUNCE,
-) -> None:
-    """Re-read the timers `events` name, once their signals settle, and every timer when the listing falls due: after
-    `backstop` seconds while `healthy()` and the last read succeeded, after `fallback` seconds when not. Nothing runs
-    between those."""
-
-    def next_due() -> float:
-        return time.monotonic() + (backstop if healthy() and timers.ok else fallback)
-
-    due = next_due()
+def serve(timers: Timers, events: queue.Queue, stop: StopEvent, debounce: float = DEBOUNCE) -> None:
+    """Re-read the timers `events` name, once their signals settle, until `stop` is set. It waits on the queue and on
+    nothing else: no listing falls due on a clock."""
+    stop.listen(lambda: events.put(None))
     while not stop.is_set():
-        try:
-            first = events.get(timeout=max(0.0, min(due - time.monotonic(), 0.1)))
-        except queue.Empty:
-            if time.monotonic() >= due:
-                timers.read()
-                due = next_due()
-            continue
+        first = events.get()
+        if first is None:
+            return
         changed = {timers.owner(*first)}
         while True:
             try:
-                changed.add(timers.owner(*events.get(timeout=debounce)))
+                more = events.get(timeout=debounce)
             except queue.Empty:
                 break
+            if more is not None:
+                changed.add(timers.owner(*more))
         changed.discard(None)
         if changed:
             timers.read(changed)
-            due = min(due, next_due())
 
 
 def _die_with_parent() -> None:  # pragma: no mutate block — process boundary
@@ -263,27 +248,38 @@ def monitor(user: bool) -> Iterator[str]:  # pragma: no mutate block — process
     raise OSError(f"gdbus monitor {bus} exited with {process.returncode}")
 
 
-def follow(url: str, runs: RunsSink, log: EventLog) -> None:  # pragma: no mutate block — thread wiring
-    """Show the timers `url` allowlists on `runs`, moved by the signals of their units; the event log is not read."""
+def follow(  # pragma: no mutate block — thread wiring
+    url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None
+) -> None:
+    """Show the timers `url` allowlists on `runs`, moved by the signals of their units. A monitor that exits is started
+    again at once and its timers read again, since a signal may have fallen in the gap; a `runs:resync` entry naming the
+    instance reads them all again. The threads end when `stop` is set; the server passes none."""
+    stop = stop or StopEvent()
     timers = Timers(runs, systemctl, url)
-    down: set[bool] = set()
     events: queue.Queue = queue.Queue()
 
+    def relist(user: bool | None = None) -> None:
+        for entry_ in timers.entries:
+            if user in (None, entry_[0]):
+                events.put(entry_)
+
     def watch(user: bool) -> None:
-        while True:
+        while not stop.is_set():
+            started = time.monotonic()
             try:
-                down.discard(user)
                 feed(user, monitor(user), events, lambda u, n: timers.owner(u, n) is not None)
             except OSError:
                 pass
-            down.add(user)
-            time.sleep(RECONCILE_INTERVAL)
+            relist(user)
+            if time.monotonic() - started < QUICK_EXIT:
+                stop.wait(RESTART_BACKOFF)
 
     for user in {user for user, _ in timers.entries}:
         threading.Thread(target=watch, args=(user,), name=f"systemd-monitor-{user}", daemon=True).start()
 
     def run() -> None:
         timers.read()
-        serve(timers, events, StopEvent(), lambda: not down)
+        serve(timers, events, stop)
 
     threading.Thread(target=run, name="systemd-runs", daemon=True).start()
+    follow_resync(log, getattr(runs, "instance", None) or "", relist, stop)

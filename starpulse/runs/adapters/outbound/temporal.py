@@ -208,6 +208,16 @@ def _failure_of(events: list[dict]) -> dict:
     return details
 
 
+class _Unreported:
+    def set_dags(self, *args: object) -> None:
+        return
+
+
+def read(url: str) -> list[dict]:
+    """The workflows of the server at `url`, as the sweeper's `runs` kind compares them with the projection."""
+    return Poller(_Unreported(), get, url).listing(datetime.now(UTC))
+
+
 def start(url: str) -> None:
     """No start capability: these workflows start from the Board's lifecycle, so a workflow has no Run now."""
     return

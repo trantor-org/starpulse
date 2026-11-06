@@ -19,7 +19,6 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.runs.adapters.outbound.github_actions import (
     _CONCLUSION,
     _STATUS,
-    RECONCILE_INTERVAL,
     GitHubRuns,
     Repository,
     _graph,
@@ -408,9 +407,6 @@ def wait_until(condition, timeout: float = 5.0) -> None:
 def test_following_a_repository_lists_it_then_moves_a_workflow_by_the_entries_on_the_stream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        "starpulse.runs.adapters.outbound.github_actions._reconcile_forever", lambda runs: None
-    )  # only the entries move it
     served = [Recorded()]
     monkeypatch.setattr(
         "starpulse.runs.adapters.outbound.github_actions.connect", lambda token: lambda *call: served[0](*call)
@@ -427,16 +423,12 @@ def test_following_a_repository_lists_it_then_moves_a_workflow_by_the_entries_on
     log.publish(run_events.STREAM, run_events.entry("StepFinished", "ci.yml", "1", "succeeded", now=time.time() + 60))
     wait_until(lambda: next(d for d in feed.snapshot()["dags"] if d["name"] == "gh/ci.yml")["status"] == "succeeded")
 
-    assert [(t.name, t.daemon) for t in started if t.name.startswith("github-")] == [
-        ("github-runs", True),
-        ("github-runs-reconcile", True),
-    ]
+    assert [(t.name, t.daemon) for t in started if t.name.startswith("github-")] == [("github-runs", True)]
 
 
 def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_later_one_is_handled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse.runs.adapters.outbound.github_actions._reconcile_forever", lambda runs: None)
     served = [Recorded(runs={"ci": "ci-success"})]
     monkeypatch.setattr(
         "starpulse.runs.adapters.outbound.github_actions.connect", lambda token: lambda *call: served[0](*call)
@@ -461,15 +453,24 @@ def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_
     assert handled == ["4"]
 
 
-def test_a_repository_where_no_run_changes_costs_at_most_five_calls_a_minute_over_ten_minutes() -> None:
-    quiet = Recorded(runs={"ci": "ci-success"})
-    runs = GitHubRuns(BoardFeed().runs("gh"), Repository(quiet, REPO))
-    runs.reconcile()
-    quiet.calls.clear()
-    passes = int(10 * 60 / RECONCILE_INTERVAL)
-    for _ in range(passes):
-        runs.reconcile()
-    assert len(quiet.calls) <= 5 * 10
+def test_a_resync_the_sweeper_names_for_the_instance_lists_the_repository_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    served = [Recorded()]
+    monkeypatch.setattr(
+        "starpulse.runs.adapters.outbound.github_actions.connect", lambda token: lambda *call: served[0](*call)
+    )
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    feed = BoardFeed()
+    sink = feed.runs("gh")
+    sink.instance = "gh"  # what the worker's publisher carries
+    follow_repository(f"https://github.com/{REPO}", sink, log)
+    wait_until(lambda: feed.snapshot()["dags"])
+
+    served[0] = Recorded(runs={"ci": "ci-success"})
+    log.publish(run_events.RESYNC, {"instance": "gh"})
+
+    wait_until(lambda: next(d for d in feed.snapshot()["dags"] if d["name"] == "gh/ci.yml")["status"] == "succeeded")
 
 
 def test_a_pass_reads_again_only_the_workflows_whose_latest_run_changed_or_has_not_ended() -> None:
