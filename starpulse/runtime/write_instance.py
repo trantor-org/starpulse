@@ -54,13 +54,15 @@ class WriteInstance:
         """Run `starpulse <argv> --server <url>` in this process and answer as a child process would.
 
         A task a verb created is placed on the feed by the adapter's next scan, so a verb that names a task whose file
-        is already on the board is run again until the feed has it.
+        is already on the board is run again until the feed has it. Each retry scans on the caller's thread first, so a
+        polling thread that is starved or has stopped cannot leave the task unplaced.
         """
         deadline = time.monotonic() + PLACED_WITHIN_S
         while True:
             done = self._once(argv)
             if not self._unplaced(done.stdout + done.stderr) or time.monotonic() > deadline:
                 return done
+            self.settle()
             time.sleep(SCAN_INTERVAL_S)
 
     def _once(self, argv: tuple[str, ...]) -> subprocess.CompletedProcess[str]:

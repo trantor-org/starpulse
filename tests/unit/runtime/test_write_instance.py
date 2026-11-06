@@ -3,6 +3,7 @@
 import json
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,17 @@ def test_a_verb_creates_a_task_file_and_a_second_verb_edits_the_task_it_made(tmp
         edited = instance.run("task", "edit", task, "--title", "Second")
     assert (created.returncode, edited.returncode) == (0, 0), (created, edited)
     assert any("Second" in file.read_text() for file in (tmp_path / "board" / "tasks").glob("*.md"))
+
+
+def test_a_verb_naming_a_task_the_polling_thread_never_placed_is_placed_by_the_retry(tmp_path: Path) -> None:
+    _board(tmp_path)
+    with write_instance(tmp_path) as instance:
+        task = json.loads(instance.run("task", "create", "First").stdout)["task"]
+        for backlog in instance.backlogs:
+            backlog.stop()  # a starved or dead polling thread: only a scan the caller runs can place the task now
+        time.sleep(0.2)
+        edited = instance.run("task", "edit", task, "--title", "Second")
+    assert edited.returncode == 0, edited
 
 
 def test_a_verb_the_board_refuses_exits_nonzero_with_the_reason(tmp_path: Path) -> None:
