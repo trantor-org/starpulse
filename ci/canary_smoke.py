@@ -49,7 +49,7 @@ def render_config(config: str, db: Path) -> str:
     line = f'database_url = "sqlite:///{db}"'
     if DATABASE_URL.search(config):
         return DATABASE_URL.sub(lambda _: line, config)
-    return f"{config}\n{line}\n"
+    return f"{line}\n{config}"
 
 
 def anchor_paths(config: str, live: Path, scratch: Path) -> str:
