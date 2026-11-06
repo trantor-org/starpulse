@@ -860,6 +860,8 @@ class TaskActor:
                 self._park(name, written.output)
         elif target == self._feed.roles.done:
             self._hold_done(name, written.output)
+        elif target == self._review and source == self._feed.roles.working:
+            self._hold_review(name, written.output)
         with self._metrics:
             self._refusals += 1
         return False
@@ -876,6 +878,16 @@ class TaskActor:
                 self._delivered(name, f"merged but Done refused: {reason}")
             except Exception:  # the note stands; a board hook is a notice, not part of the write
                 logger.exception("task actor: %s was refused Done but its holder was not told", name)
+
+    def _hold_review(self, name: str, refusal: str) -> None:
+        """Hand a working task's holder the refusal of its move to Review through `delivered`: the move is not tried
+        again until the task's facts change, so without the wake a ready pull request with an open thread sits In
+        Progress with no one told."""
+        if self._delivered:
+            try:
+                self._delivered(name, f"Review refused: {refusal.rstrip('.')}")
+            except Exception:  # a board hook is a notice, not part of the write
+                logger.exception("task actor: %s was refused Review but its holder was not told", name)
 
     def _count_error_passes(self, name: str, evaluated: list[dict[str, Any]]) -> None:
         """Count the passes whose Start Criteria stayed in error; the second in a row re-gates the task."""
