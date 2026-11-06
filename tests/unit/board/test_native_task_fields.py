@@ -295,3 +295,20 @@ def test_native_complete_leaves_a_completed_task_editable(served: tuple[Board, P
 
     assert _split(_file(root, "TASK-2529").read_text())[1].count("Reworded.") == 1
     assert _file(root, "TASK-2529").parent == root / "completed"
+
+
+def test_native_edit_sets_and_clears_the_settled_needs_attention_block(served: tuple[Board, Path]) -> None:
+    built, root = served
+    assert built.read is not None and built.edit is not None
+
+    assert built.edit("TASK-3201", {"needsAttention": "Retry once #1 merges?"}, "").ok
+
+    assert built.read("TASK-3201")["needsAttention"] == "Retry once #1 merges?"
+    assert built.edit("TASK-3201", {"needsAttention": "Retry once #1 merges?\n\nOperator answer: yes"}, "").ok
+    assert built.read("TASK-3201")["needsAttention"].endswith("Operator answer: yes")
+
+    assert built.edit("TASK-3201", {"needsAttention": ""}, "").ok
+
+    text = _file(root, "TASK-3201").read_text()
+    assert built.read("TASK-3201")["needsAttention"] == ""
+    assert "NEEDS_ATTENTION" not in text and "## Needs attention" not in text
