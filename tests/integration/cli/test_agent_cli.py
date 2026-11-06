@@ -2515,6 +2515,7 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
 SKILLS = [
     "authoring-starpulse-machines",
     "deliver",
+    "fix-checks",
     "mitigate",
     "operating-starpulse-board",
     "review-fix",

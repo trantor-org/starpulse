@@ -153,7 +153,7 @@ def test_install_accepts_a_machine_whose_guard_the_adapter_registers_at_runtime(
     assert skills.status(tmp_path, "claude", "demo", source) == "installed"
 
 
-PHASE_SKILLS = ("starting-task", "tdd", "deliver", "review-fix", "mitigate")
+PHASE_SKILLS = ("starting-task", "tdd", "deliver", "review-fix", "mitigate", "fix-checks")
 
 
 def test_the_bundled_task_phase_skills_install_with_their_machines(tmp_path: Path) -> None:

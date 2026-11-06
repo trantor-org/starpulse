@@ -31,7 +31,7 @@ events:
   CI_GREEN:
     - {from: pr_opened, to: ci_green, cite: {skill: deliver, quote: "green: the checks passed; go to step 5."}}
   CI_RED:
-    - {from: pr_opened, to: pr_opened, cite: {skill: deliver, quote: "red: read the failing check, fix the cause in the worktree, rerun the final gates, and deliver again."}}
+    - {from: pr_opened, to: pr_opened, cite: {skill: deliver, quote: "red: invoke the `fix-checks` skill with the failing check names and the run link."}}
   CI_BLOCKED:
     - {from: pr_opened, to: blocked, cite: {skill: deliver, quote: "a task waiting on a person is never left In Progress."}}
   PR_READY:

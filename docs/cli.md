@@ -275,12 +275,13 @@ server with no contract to read answers `{ok: true, checks: []}`.
 work next, why a task cannot move, moving it), `authoring-starpulse-machines` (machine YAML, writers, guards,
 submachines, `machine validate` and `machine import mermaid`), `writing-starpulse-adapters` (the board, machine-events
 and runs contracts, the adapter kit, the CloudEvents ingest) and `setting-up-starpulse` (starting the server, config,
-`doctor`). It also bundles five task phase skills, each with its phase machine: `starting-task` (find or file the task,
+`doctor`). It also bundles six task phase skills, each with its phase machine: `starting-task` (find or file the task,
 claim it, make its worktree), `tdd` (red, green and refactor cycles, criteria checkpoints, docs), `deliver` (final
-gates, commit, push, PR and green checks, or the no-PR finalize), `review-fix` (review threads, conflicts and checks
-until the task moves to review) and `mitigate` (stop a failing service's growing impact, recheck its health, and
+gates, commit, push, PR and green checks, or the no-PR finalize), `review-fix` (review threads and conflicts
+until the task moves to review), `fix-checks` (read a red check's log, fix a branch fault through delivery, or park
+on the owner of a base or flaky fault) and `mitigate` (stop a failing service's growing impact, recheck its health, and
 diagnose only once it is green). They reach a project's own behavior only through StarPulse verbs and
-`starpulse command run` with the `start`, `test`, `check`, `deliver`, `pr-status`, `finalize`, `health`, `snapshot` and
+`starpulse command run` with the `start`, `test`, `check`, `deliver`, `pr-status`, `finalize`, `check-logs`, `health`, `snapshot` and
 `mitigate` commands; a command
 the project does not map exits 4, and the skill does that step as the project's `AGENTS.md` says. `starpulse command show NAME` reads the same table without running it: it prints the `--arg` names the command's argv needs and, for a command with a `{body}`, the project's pull request template (the first of `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/pull_request_template.md`, `pull_request_template.md` beside the config), so the `deliver` skill's body keeps the project's sections on the first attempt. `skills install`
 copies them to `.claude/skills` (`--claude`) or `.agents/skills` (`--codex`) in the working directory, or with `--user`

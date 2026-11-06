@@ -1,6 +1,6 @@
 ---
 name: review-fix
-description: Takes a StarPulse task's ready pull request through its review threads, merge conflicts and checks until nothing actionable remains, then moves the task to review. Use when a task's PR is ready, when review comments, a conflict or a red check arrive on an open task PR, when a person pushes back on a task in review, or when a move to review is refused. Not for the first delivery of a change, and not for merging, which a person does.
+description: Takes a StarPulse task's ready pull request through its review threads and merge conflicts until nothing actionable remains, then moves the task to review. Use when a task's PR is ready, when review comments or a conflict arrive on an open task PR, when a person pushes back on a task in review, or when a move to review is refused. Not for failing checks, which fix-checks answers, not for the first delivery of a change, and not for merging, which a person does.
 machine: machine.yaml
 ---
 
@@ -23,9 +23,9 @@ Done when `starpulse task show PROJ-45` shows the task in progress, or no one pu
 ## 2. Read what the PR needs
 
 Run `starpulse command run pr-status --arg pr=<number>`. It reports merge conflicts, failing checks and unresolved
-review threads.
+review threads. A red check goes to the `fix-checks` skill, not this loop.
 
-Done when you hold the list of conflicts, red checks and open threads, or know it is empty.
+Done when you hold the list of conflicts and open threads, or know it is empty.
 
 ## 3. Answer each finding
 
