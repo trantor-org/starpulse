@@ -60,6 +60,14 @@ describe("the columns", () => {
     expect(layout([task("TASK-1", "verifying")], names, { ...LIFECYCLE_ROLES, lanes }, NO_PREFS, NOW).columns.map((c) => [c.id, c.count])).toContainEqual(["verifying", 1]);
   });
 
+  it("fall back to the machine's lifecycle States when an older server's snapshot has no lanes, so the tasks are still drawn", () => {
+    const { lanes: _lanes, ...roles } = { ...LIFECYCLE_ROLES, lanes: [] as string[] };
+    const v = layout([task("TASK-1", "ready"), task("TASK-2", "done")], NAMES, roles, NO_PREFS, NOW);
+
+    expect(columnsOf(NAMES, roles).length).toBeGreaterThan(0);
+    expect(v.shown).toBe(2);
+  });
+
   it("never include the proposed State, which waits off the board until it is promoted", () => {
     const names = { proposed: "Proposed", to_do: "To Do", done: "Done" };
 
