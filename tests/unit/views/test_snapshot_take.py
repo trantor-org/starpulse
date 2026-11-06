@@ -94,3 +94,18 @@ def test_the_full_body_is_encoded_once_per_snapshot() -> None:
     assert json.loads(first)["flows"][0]["agents"][0]["state"] == "to_do"
     feed.put(task("PROJ-1", "In Progress"))
     assert json.loads(snapshots.full())["flows"][0]["agents"][0]["state"] == "in_progress"
+
+
+def test_the_full_body_serves_the_warm_snapshot_while_the_feed_keeps_changing() -> None:
+    feed, snapshots, clock = counting()
+    snapshots = Snapshots(feed, refresh_s=1.0, clock=clock)
+    snapshots.build()
+    taken = CountingFeed.taken
+
+    feed.put(task("PROJ-1", "In Progress"))
+
+    assert json.loads(snapshots.full())["flows"][0]["agents"][0]["state"] == "to_do"
+    assert CountingFeed.taken == taken
+
+    clock.now += 10
+    assert json.loads(snapshots.full())["flows"][0]["agents"][0]["state"] == "in_progress"
