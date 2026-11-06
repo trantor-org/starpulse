@@ -102,6 +102,7 @@ export interface ApiContract {
   stages: SubStages;
   taskEventHistory: TaskEventHistory;
   taskRecord: TaskRecord;
+  taskRecords: TaskRecords;
   traceClusters: TraceClusters;
   trajectories: Trajectories;
   transitions: Transitions;
@@ -2933,6 +2934,13 @@ export interface TaskRecord {
     [k: string]: unknown;
   };
   task: string;
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/task-records?ids=A,B`: the `TaskRecord` of each named task the board can read, in the order named.
+ */
+export interface TaskRecords {
+  records: TaskRecord[];
   [k: string]: unknown;
 }
 /**

@@ -64,15 +64,18 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, se
   useEffect(() => {
     let live = true;
     const missing = ids.split(" ").filter((id) => id && !details[id]);
-    void (async () => {
-      for (const id of missing) {
-        const detail = await fetcher(`/api/task/${encodeURIComponent(id)}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((body: { record?: Partial<Detail> | null } | null) => detailOf(body?.record))
-          .catch(() => null);
-        if (live && detail) setDetails((d) => ({ ...d, [id]: detail }));
-      }
-    })();
+    if (!missing.length) return undefined;
+    void fetcher(`/api/task-records?ids=${encodeURIComponent(missing.join(","))}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { records?: { task: string; record?: Partial<Detail> | null }[] } | null) => {
+        const read: Record<string, Detail> = {};
+        for (const { task, record } of body?.records ?? []) {
+          const detail = detailOf(record);
+          if (detail) read[task] = detail;
+        }
+        if (live) setDetails((d) => ({ ...d, ...read }));
+      })
+      .catch(() => undefined);
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch for ids that appear, not again for each detail that lands
   }, [ids, fetcher]);

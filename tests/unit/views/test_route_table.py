@@ -55,6 +55,7 @@ _TABLE = [
     ("/api/analytics/trace-clusters", _READ),
     # tasks
     ("/api/task/{id:path}", _READ),
+    ("/api/task-records", _READ),
     ("/api/retired", _READ),
     ("/api/move", ("POST",)),
     ("/api/start", ("POST",)),

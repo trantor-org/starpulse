@@ -232,6 +232,17 @@ def test_a_task_the_feed_holds_is_read_without_a_worker_thread(tmp_path: Path) -
     assert [_worker(name) for name in readers] == [False]
 
 
+def test_one_read_answers_the_records_of_the_tasks_it_names_and_skips_those_it_cannot_read(tmp_path: Path) -> None:
+    client = _task_client(tmp_path, bare_board(read=lambda name: {"title": name}), Services())
+
+    response = client.get("/api/task-records", params={"ids": "PROJ-3,PROJ-404"})
+
+    assert (response.status_code, response.json()) == (
+        200,
+        {"records": [{"task": "PROJ-3", "record": {"title": "PROJ-3"}, "archived": False}]},
+    )
+
+
 def test_the_history_window_is_read_without_a_worker_thread(
     routes: Api, client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

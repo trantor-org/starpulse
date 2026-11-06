@@ -17,6 +17,12 @@ class TaskRecord(_Api):
     archived: bool = Field(False, description="The task was archived: read from the archive, off the board's lanes.")
 
 
+class TaskRecords(_Api):
+    """`GET /api/task-records?ids=A,B`: the `TaskRecord` of each named task the board can read, in the order named."""
+
+    records: list[TaskRecord]
+
+
 class MilestoneRecord(_Api):
     """A milestone as the board's reader gives it: its sections as text and bullet lists, and its whole description."""
 

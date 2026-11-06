@@ -1,6 +1,7 @@
 """Tasks: a task's record and every write that changes one, and the retired tasks.
 
 - `GET /api/task/{id}`: a task's record, with the pull requests it cites; a read that takes long is logged.
+- `GET /api/task-records?ids=A,B`: the records of the tasks named, in one read; a task the board cannot read is left out.
 - `GET /api/retired`: the retired tasks, filtered by `task` and `milestone`, or as `{task, dependencies}` for
   `fields=dependencies`.
 - `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `rating`, `miss`, `restore`, `take-over`, `retire`,
@@ -77,6 +78,22 @@ async def task(request: Request) -> Response:
     return on_loop(request, lambda: _resident_task(request)) or await on_worker(request, lambda: _stored_task(request))
 
 
+def _stored_records(request: Request) -> Response:
+    api = seams(request)
+    records = []
+    for name in query(request).get("ids", [""])[0].split(","):
+        status, body = task_record(api.feed, api.board.read, name, api.board.read_archived)
+        if status == 200:
+            if cited := cited_pulls(api.services.pulls, body["record"].get("references", [])):
+                body["record"]["pulls"] = cited
+            records.append(body)
+    return answer(request, encode("task_records", {"records": records}), 200)
+
+
+async def task_records(request: Request) -> Response:
+    return await on_worker(request, lambda: _stored_records(request))
+
+
 #: The one thread that reads and encodes every retired task: a free-threaded thread keeps the heap pages of what it
 #: built, so a dump built on whichever request thread took it left each of 40 concurrent requests' pages held (9 GB).
 _WHOLE_DUMP = ThreadPoolExecutor(1, thread_name_prefix="retired-dump")
@@ -102,7 +119,9 @@ def retired(request: Request) -> Response:
     if status != 200:
         return answer(request, encode("retired", body), status)
     chunks = encode_stream("retired", {}, "tasks", RetiredTask, body["tasks"])
-    return StreamingResponse(_on_dump_thread(chunks), media_type="application/json", headers={"cache-control": "no-store"})
+    return StreamingResponse(
+        _on_dump_thread(chunks), media_type="application/json", headers={"cache-control": "no-store"}
+    )
 
 
 def routes(api: Api) -> list[ApiRoute]:
@@ -146,6 +165,7 @@ def routes(api: Api) -> list[ApiRoute]:
     }
     return [
         ReadRoute("/task/{id:path}", task, timed),
+        ReadRoute("/task-records", task_records),
         ReadRoute("/retired", retired),
         *(WriteRoute(path, ("POST",), guarded(kind, whole_body(handler))) for path, (handler, kind) in writes.items()),
     ]
