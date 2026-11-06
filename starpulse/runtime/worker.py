@@ -20,7 +20,9 @@ import argparse
 import logging
 import os
 import threading
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.server import listen_options
@@ -49,6 +51,15 @@ def worker_parser() -> argparse.ArgumentParser:
     )
     listen_options(parser)  # read by `api`: where the page listens when `serve` hands it no socket
     return parser
+
+
+def _readiness(log: Any, feed: Any, config: Any) -> Callable[[], dict[str, Any]]:
+    """The reader of `/api/ready` over the contexts `config` makes `serve` supervise and the boot token it handed them."""
+    from starpulse.runtime.contexts import contexts_of  # noqa: PLC0415 - only the api worker pays for it
+    from starpulse.runtime.hold import BOOT_ENV  # noqa: PLC0415
+    from starpulse.runtime.readiness import readiness  # noqa: PLC0415
+
+    return readiness(log, feed, contexts_of(config), os.environ.get(BOOT_ENV))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -81,6 +92,7 @@ def main(argv: list[str] | None = None) -> None:
             history_store=history_store,
             follow_read_model=read_model_follow.follow,
             contract=doctor.contract,
+            readiness=_readiness,
             probes=doctor.LIVE,
             static=server._STATIC,
             listen_fd_env=LISTEN_FD_ENV,

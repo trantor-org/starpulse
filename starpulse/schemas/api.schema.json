@@ -5835,6 +5835,43 @@
       "title": "RawTask",
       "type": "object"
     },
+    "ReadyComponent": {
+      "description": "One part of the server `/api/ready` judges.",
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ready",
+        "detail"
+      ],
+      "title": "ReadyComponent",
+      "type": "object"
+    },
+    "ReadyReport": {
+      "description": "Whether the server can serve the board; `components` names `store`, `board`, `writer` and `contexts`, and the route\nanswers 503 with this body when any is not ready.",
+      "properties": {
+        "components": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ReadyComponent"
+          },
+          "type": "object"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ready",
+        "components"
+      ],
+      "title": "ReadyReport",
+      "type": "object"
+    },
     "RecentRun": {
       "additionalProperties": false,
       "description": "One run of a DAG within the last day, running or over, with the parameters it started with.",
@@ -9997,6 +10034,9 @@
     "pulls": {
       "$ref": "#/$defs/Pulls"
     },
+    "readyReport": {
+      "$ref": "#/$defs/ReadyReport"
+    },
     "requests": {
       "items": {
         "anyOf": [
@@ -10164,6 +10204,7 @@
     "windowState",
     "schedulerStatus",
     "contractReport",
+    "readyReport",
     "taskRecord",
     "taskRecords",
     "milestones",

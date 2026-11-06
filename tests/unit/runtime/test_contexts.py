@@ -234,3 +234,39 @@ def test_every_context_bin_but_the_api_exposes_start(bin_path: Path) -> None:
     module = importlib.import_module(f"starpulse.{bin_path.parent.parent.name}.bin.{bin_path.stem}")
 
     assert callable(getattr(module, "start", None))
+
+
+def test_a_context_reports_its_start_only_once_its_starter_returns() -> None:
+    started: list[str] = []
+    attempts: list[int] = []
+    both = threading.Event()
+
+    def steady(stop: threading.Event) -> Callable[[], None]:
+        return lambda: None
+
+    def flaky(stop: threading.Event) -> Callable[[], None]:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise ValueError("not readable yet")
+        return lambda: None
+
+    def hold(stop: threading.Event, reload: Callable[[], None]) -> None:
+        deadline = time.monotonic() + WAIT_S
+        while len(started) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        both.set()
+
+    run_contexts(
+        load(None),
+        None,
+        ["steady", "flaky"],
+        StopEvent(),
+        starters={"steady": steady, "flaky": flaky},
+        hold=hold,
+        backoff=BACKOFF_S,
+        started=started.append,
+    )
+
+    assert both.is_set()
+    assert sorted(started) == ["flaky", "steady"]
+    assert len(attempts) == 2

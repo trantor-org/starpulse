@@ -26,7 +26,9 @@ from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
-from starpulse.runtime.config import Config
+from starpulse.runtime.config import Config, rehearsing
+from starpulse.runtime.hold import BOOT_ENV
+from starpulse.runtime.readiness import stamp
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +44,18 @@ _JOIN_S = 5.0
 #: The contexts that always run here, in start order; the run Adapters follow them (`adapter_contexts`).
 BACKGROUND_CONTEXTS = ("pulls", "scheduler", "runs", "flow-metrics", "search", "board", "sweeper")
 
+#: The contexts a rehearsal runs: the rest poll a service, start a session or a run, run a declared command or listen on a port.
+REHEARSED_CONTEXTS = ("flow-metrics", "board")
+
 
 def contexts_of(config: Config) -> list[str]:
     """The contexts this process runs for `config`: `BACKGROUND_CONTEXTS`, Search only with an `embeddings_url`, then the
-    run Adapters its `[[runs]]` instances name, then the receivers its `[claude_code]` and `[github]` tables ask for."""
+    run Adapters its `[[runs]]` instances name, then the receivers its `[claude_code]` and `[github]` tables ask for;
+    `REHEARSED_CONTEXTS` alone under a rehearsal."""
     from starpulse.runtime.supervisor import adapter_contexts
 
+    if rehearsing():
+        return list(REHEARSED_CONTEXTS)
     kept = [c for c in BACKGROUND_CONTEXTS if c != "search" or config.search.embeddings_url]
     github_events = config.github and any(producer.name == "github" for producer in config.producers)
     receivers = [
@@ -265,9 +273,11 @@ def _keep(
     reloads: dict[str, Callable[[], None]],
     stops: dict[str, threading.Event],
     backoff: tuple[float, float],
+    started: Callable[[str], None] | None = None,
 ) -> None:
     """Start the context on its own stop event, again after a growing wait each time `starter` raises, then hold the
-    thread until the process stops. A failed start's stop event is set, so what it began before raising ends."""
+    thread until the process stops. A failed start's stop event is set, so what it began before raising ends. `started`
+    is told the name once `starter` returns; a failure of its own is logged, never a failed start."""
     wait = backoff[0]
     while not stop.is_set():
         own = StopEvent()
@@ -282,6 +292,11 @@ def _keep(
             wait = min(wait * 2, backoff[1])
             continue
         logger.info("%s: started", name)
+        if started:
+            try:
+                started(name)
+            except Exception:
+                logger.exception("%s: could not record its start", name)
         stop.wait()
         own.set()
         return
@@ -297,22 +312,30 @@ def run_contexts(
     starters: Mapping[str, Starter] | None = None,
     hold: Callable[[threading.Event, Callable[[], None]], None] | None = None,
     backoff: tuple[float, float] = BACKOFF_S,
+    started: Callable[[str], None] | None = None,
 ) -> None:
     """Run each context of `names` on a `ctx-<name>` thread until `stop` is set, and return once they are told to end.
 
-    `starters` replaces the real starters (tests); `hold` is the wait for `SIGTERM` and `SIGHUP` (`runtime.hold`).
+    `starters` replaces the real starters (tests); `started` is told each context's name as it starts, and without it a
+    `serve` boot token (`hold.BOOT_ENV`) makes each start stamp the event log; `hold` is the wait for `SIGTERM` and `SIGHUP` (`runtime.hold`).
     Raises `ValueError` before any thread starts when a name is no context or a runs adapter cannot load."""
     base = base or (path.parent if path else Path.cwd())
     if starters is None:
         log = EventLog(database_url(config.database_url, base))
         starters = default_starters(config, path, base, log, names, stop)
+        boot = os.environ.get(BOOT_ENV)
+        if started is None and boot:
+
+            def started(name: str) -> None:
+                stamp(log, name, boot)
+
     if hold is None:
         from starpulse.runtime.hold import hold
     reloads: dict[str, Callable[[], None]] = {}
     stops: dict[str, threading.Event] = {}
     threads = [
         threading.Thread(
-            target=_keep, args=(name, starters[name], stop, reloads, stops, backoff), name=f"ctx-{name}", daemon=True
+            target=_keep, args=(name, starters[name], stop, reloads, stops, backoff, started), name=f"ctx-{name}", daemon=True
         )
         for name in names
     ]

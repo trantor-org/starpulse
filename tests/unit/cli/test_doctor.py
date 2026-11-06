@@ -285,3 +285,36 @@ def test_the_default_read_goes_through_the_runs_adapter_to_a_real_dagu() -> None
 
     with pytest.raises(OSError):
         doctor.LIVE.dag_params(RunsInstance("nightly", "dagu", "http://127.0.0.1:9"), "backup")
+
+
+def test_the_ready_check_passes_when_the_server_answers_ready() -> None:
+    ready = {"ready": True, "components": {"store": {"ready": True, "detail": "at the schema head"}}}
+
+    report = doctor.run_checks(snapshot(), CONFIG, FakeHost().probes(), "http://localhost:8766", ready=(200, ready))
+
+    assert check(report, "ready")["status"] == "pass"
+    assert report["ok"] is True
+
+
+def test_the_ready_check_fails_naming_each_component_that_is_not_ready() -> None:
+    ready = {
+        "ready": False,
+        "components": {
+            "store": {"ready": False, "detail": "is not migrated"},
+            "board": {"ready": True, "detail": "assembled"},
+            "contexts": {"ready": False, "detail": "not started: pulls"},
+        },
+    }
+
+    report = doctor.run_checks(snapshot(), CONFIG, FakeHost().probes(), "http://localhost:8766", ready=(503, ready))
+
+    assert report["ok"] is False
+    assert check(report, "ready")["status"] == "fail"
+    assert check(report, "ready")["reason"] == "store: is not migrated; contexts: not started: pulls"
+
+
+def test_the_ready_check_fails_on_a_server_with_no_readiness_route() -> None:
+    report = doctor.run_checks(snapshot(), CONFIG, FakeHost().probes(), "http://localhost:8766", ready=(404, None))
+
+    assert check(report, "ready")["status"] == "fail"
+    assert "404" in check(report, "ready")["reason"]

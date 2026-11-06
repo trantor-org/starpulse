@@ -506,14 +506,15 @@ def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
         config = load(path)
     except (OSError, ValueError) as exc:
         config = f"{path}: {exc}"
-    served = None
+    served = ready = None
     try:
         snapshot: dict[str, Any] | str = agent_wire.get_snapshot(base)
         status, report = agent_wire.get(base, "/api/doctor")
         served = report if status == 200 and isinstance(report, dict) else None
+        ready = agent_wire.get(base, "/api/ready")
     except agent_wire.CliError as exc:
         snapshot = str(exc)
-    return doctor.run_checks(snapshot, config, doctor.LIVE, base, served)
+    return doctor.run_checks(snapshot, config, doctor.LIVE, base, served, ready)
 
 
 def _skills_root(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[str, Path]:

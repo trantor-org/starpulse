@@ -45,6 +45,7 @@ starpulse analytics stages --hours 168           # sub-stages of the stretches n
 starpulse analytics diff --hours 168             # per transition: the reference run against the slowest clean run
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
+starpulse rehearse --config starpulse.toml --database-url copy.sqlite  # start serve on a COPY of the store and wait for /api/ready
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
 starpulse help --agent                           # every verb with its arguments, output keys and exit codes
 ```
@@ -272,6 +273,21 @@ check from `GET /api/doctor`.
 `GET /api/doctor` serves the contract checks and `poller:pulls` as `{ok, checks: [{check, status, reason}]}`, read from
 the server's own snapshot, config and log and held for a minute; the page draws it as the Ledger's doctor banner. A
 server with no contract to read answers `{ok: true, checks: []}`.
+
+`GET /api/ready` answers 200 when the server can serve the board and 503 when it cannot, with the same body:
+`{ready, components: {<name>: {ready, detail}}}`. The components are `store` (the event log is at the schema head),
+`board` (the Board is assembled), `writer` (the Board context, which dates the Start Criteria, has started) and
+`contexts` (every other supervised context has started in this boot). `doctor` adds a `ready` check that fails naming
+each component that is not ready.
+
+`rehearse --config <c> --database-url <copy>` is the dress rehearsal of a release: it migrates the COPY, starts
+`serve` on it at a loopback ephemeral port, polls `/api/ready` and stops the server. It exits 0 when the server was
+ready within `--budget` seconds (default 120) and 1 otherwise, printing the unready components and the end of the
+server's log. The server runs with `STARPULSE_REHEARSE` set: the config drops its TLS, telemetry, session start,
+tokens, take-over command and producers and polls no pull requests, only the `board` and `flow-metrics` contexts run
+(none polls a service, starts a run or session, or listens on a port), pruned rows go to a scratch directory, and no
+control endpoint is published beside the config. A Board that does not assemble against the copy (a lane mismatch)
+fails the rehearsal.
 
 `skills` reads no server. The package bundles four skills about StarPulse itself: `operating-starpulse-board` (what to
 work next, why a task cannot move, moving it), `authoring-starpulse-machines` (machine YAML, writers, guards,

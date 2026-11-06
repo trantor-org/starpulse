@@ -1,6 +1,7 @@
 """What the page asks of the Board and its deployment besides the snapshot.
 
 - `GET /api/doctor`: the contract report.
+- `GET /api/ready`: 200 when the server can serve the board, 503 naming each component that is not ready.
 - `GET /api/machines`, `/api/done`, `/api/search`: the lifecycle machines, the Done lane and a search of the tasks.
 - `GET /api/harnesses`: the harnesses a session may start on.
 """
@@ -21,6 +22,13 @@ from starpulse.views.model.encoding import encode
 def doctor(request: Request) -> Response:
     contract = seams(request).services.contract
     return answer(request, encode("doctor", contract() if contract else {"ok": True, "checks": []}))
+
+
+@reading
+def ready(request: Request) -> Response:
+    report = seams(request).services.ready
+    body = report() if report else {"ready": True, "components": {}}
+    return answer(request, encode("ready", body), 200 if body["ready"] else 503)
 
 
 @reading
@@ -46,6 +54,7 @@ def harnesses(request: Request) -> Response:
 
 routes: list[ApiRoute] = [
     ReadRoute("/doctor", doctor),
+    ReadRoute("/ready", ready),
     ReadRoute("/machines", machines),
     ReadRoute("/done", done),
     ReadRoute("/search", search),

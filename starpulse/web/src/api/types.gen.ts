@@ -63,6 +63,7 @@ export interface ApiContract {
   milestones: Milestones;
   missedLoads: MissedLoads;
   pulls: Pulls;
+  readyReport: ReadyReport;
   requests: (
     | MoveRequest
     | StartRequest
@@ -1987,6 +1988,25 @@ export interface RequiredCheck {
 export interface PullThread {
   author: string | null;
   id: string;
+  [k: string]: unknown;
+}
+/**
+ * Whether the server can serve the board; `components` names `store`, `board`, `writer` and `contexts`, and the route
+ * answers 503 with this body when any is not ready.
+ */
+export interface ReadyReport {
+  components: {
+    [k: string]: ReadyComponent;
+  };
+  ready: boolean;
+  [k: string]: unknown;
+}
+/**
+ * One part of the server `/api/ready` judges.
+ */
+export interface ReadyComponent {
+  detail: string;
+  ready: boolean;
   [k: string]: unknown;
 }
 /**

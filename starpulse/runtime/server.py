@@ -70,6 +70,10 @@ GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for th
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
+GET /api/ready     {ready, components}: 200 when the event log is at the schema head, the Board is assembled and every
+                   context this `serve` supervises has started, else 503 naming each component (`store`, `board`, `writer`,
+                   `contexts`) that is not, each {ready, detail}; reads no task and writes nothing. `starpulse doctor` and
+                   `starpulse rehearse` read it
 GET /api/machines[?open=NAME][&before=T][&limit=N]
                    {open, machines, more}: the next `limit` machines (default 20, at most 100) entered from the machine
                    `open` (default the In Progress machine), newest activity first, each whole as a snapshot `flows`
@@ -186,6 +190,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
@@ -226,9 +231,9 @@ from starpulse.runs.model import opt_in
 from starpulse.runs.model.config import RunsInstance
 from starpulse.runtime import launch
 from starpulse.runtime.closure import CONTEXT_ENTRIES, ENTRIES, Reader
-from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
+from starpulse.runtime.config import Config, ConfigError, discover, load, rehearsing, runs_adapter
 from starpulse.runtime.control import control_file
-from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, adopted_from_env, announce_ready
+from starpulse.runtime.hold import BOOT_ENV, LISTEN_FD_ENV, STATIC_ENV, adopted_from_env, announce_ready
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 from starpulse.runtime.zygote import Forker
 from starpulse.sessions.adapters.outbound.session_start import starter
@@ -707,6 +712,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         listening = inherited_socket(os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
+    os.environ[BOOT_ENV] = uuid.uuid4().hex  # one token per start, which each context stamps once it has started
     os.environ.pop(
         LISTEN_FD_ENV, None
     )  # the workers started below are handed what they hold, not what this process was
@@ -733,7 +739,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         retire=forker.retire,
         read=reader,
         baseline=reader.at_start,
-        control=control_file(args.config),
+        control=None if rehearsing() else control_file(args.config),  # a rehearsal must not replace the live endpoint
         limits=config.worker_memory,
         admit=lambda: admit_definitions(args),
         adopted={"api": adopted} if adopted else None,

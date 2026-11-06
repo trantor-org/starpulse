@@ -36,6 +36,9 @@ LISTEN_FD_ENV = "STARPULSE_LISTEN_FD"
 #: to it when it is about to serve, and `serve` ends the old child on that byte (`announce_ready`).
 READY_FD_ENV = "STARPULSE_READY_FD"
 
+#: Set by `serve` to one token per start before it starts a worker: each context stamps it once started (`readiness`).
+BOOT_ENV = "STARPULSE_BOOT"
+
 #: Set to `<pid>:<descriptor>` by a `serve` that re-executes: the Page API child it started beside the old one, and the
 #: write end of that child's stdin pipe. The next image adopts the child in place of starting its own (`adopted_from_env`).
 ADOPT_ENV = "STARPULSE_ADOPT"

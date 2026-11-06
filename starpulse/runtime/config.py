@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
+import os
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -409,9 +411,45 @@ def _board(table: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return kind, board
 
 
+#: Set to `{"database_url", "archive_dir"}` as JSON by `starpulse rehearse`: every process it starts then loads the config
+#: as `rehearsal` reshapes it.
+REHEARSE_ENV = "STARPULSE_REHEARSE"
+
+#: The keys that reach a service beyond the store or answer on a network address: a rehearsal drops each.
+_OUTBOUND = (
+    "tracker_url",
+    "telemetry_loki_url",
+    "tls_cert",
+    "tls_key",
+    "session_start_url",
+    "refresh_token_env",
+    "github_token_env",
+    "take_over_command",
+    "producers",
+    "claude_code",
+    "github",
+    "search",
+)
+
+
+def rehearsing() -> bool:
+    """Whether this process is a rehearsal's."""
+    return REHEARSE_ENV in os.environ
+
+
+def rehearsal(raw: dict[str, Any], spec: dict[str, str]) -> dict[str, Any]:
+    """`raw` as a rehearsal loads it: the copy of the store in `spec`, its pruned rows archived in `spec`'s scratch
+    directory, and TLS, telemetry, adapters, producers, pull requests and every outbound call off. `repos` and `runs` stay: Board
+    assembly checks the writers and the release against them; `contexts_of` starts no context that reads them out."""
+    kept = {key: value for key, value in raw.items() if key not in _OUTBOUND}
+    return {**kept, "pull_requests": False, "database_url": spec["database_url"], "event_log_archive_dir": spec["archive_dir"]}
+
+
 def load(path: Path | None) -> Config:
-    """The config in `path`, or the defaults when there is none."""
+    """The config in `path`, or the defaults when there is none; under `REHEARSE_ENV` as `rehearsal` reshapes it."""
     raw = tomllib.loads(path.read_text()) if path else {}
+    if spec := os.environ.get(REHEARSE_ENV):
+        raw = rehearsal(raw, json.loads(spec))
     if "triggers" in raw:
         raise ConfigError("[[triggers]] removed in 0.4: start runs from your orchestrator", ["triggers"])
     try:
