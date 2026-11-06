@@ -169,6 +169,8 @@ def _nesting(
     machines: Mapping[str, Any], ip: str | None, leading: Mapping[str, dict | None]
 ) -> dict[str | None, str | None]:
     """Each machine's parent: where its leading tie enters it from, else the In Progress machine; a loop breaks to the latter."""
+    if ip is None:
+        return dict.fromkeys(machines)
     up: dict[str | None, str | None] = {}
     for name in machines:
         origin = (leading.get(name) or {}).get("machine")
