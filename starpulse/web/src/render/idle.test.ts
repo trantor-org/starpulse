@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
-import { INPUT_MS, STILL_MS, animating, frameLoop, framePace, type Motion } from "./idle";
+import { INPUT_MS, RUN_MS, STILL_MS, animating, frameLoop, framePace, runsOnly, type Motion } from "./idle";
 import { FLARE, PULSE, TRAVEL } from "./sky";
 
 /** A frame scheduler the test steps by hand, counting every request. */
@@ -163,10 +163,39 @@ describe("animating", () => {
   });
 });
 
+describe("runsOnly", () => {
+  const rest: Motion = { now: 1000, moves: [], dags: [], flying: false, transitioning: false };
+  const running = { status: "running", finishedAt: "" };
+  const ago = (s: number) => new Date((rest.now - s) * 1000).toISOString();
+
+  it("is true when a running DAG is all that moves", () => {
+    expect(runsOnly({ ...rest, dags: [running] })).toBe(true);
+    expect(runsOnly({ ...rest, dags: [{ status: "succeeded", finishedAt: ago(600), active: [{ status: "running" }] }] })).toBe(true);
+  });
+
+  it("is false for a settled board", () => {
+    expect(runsOnly(rest)).toBe(false);
+  });
+
+  it("is false while a move, a finish flare, a fly-to or a transition also moves", () => {
+    expect(runsOnly({ ...rest, dags: [running], moves: [{ at: rest.now - TRAVEL + 0.1 }] })).toBe(false);
+    expect(runsOnly({ ...rest, dags: [running, { status: "succeeded", finishedAt: ago(FLARE - 0.5) }] })).toBe(false);
+    expect(runsOnly({ ...rest, dags: [running], flying: true })).toBe(false);
+    expect(runsOnly({ ...rest, dags: [running], transitioning: true })).toBe(false);
+  });
+});
+
 describe("framePace", () => {
   it("draws at the display's pace while motion is on, whatever the last input", () => {
     expect(framePace(true, 0)).toBe(0);
     expect(framePace(true, 60_000)).toBe(0);
+  });
+
+  it("settles a running DAG with no recent input to the paced rate, and returns to the display's pace on input", () => {
+    expect(framePace(true, INPUT_MS, true)).toBe(RUN_MS);
+    expect(framePace(true, 60_000, true)).toBe(RUN_MS);
+    expect(framePace(true, INPUT_MS - 1, true)).toBe(0);
+    expect(framePace(false, INPUT_MS, true)).toBe(STILL_MS);
   });
 
   it("slows to one idle redraw a while after the last input when motion is off", () => {

@@ -13,7 +13,7 @@ import { RunEvents } from "../features/fanout/fanoutModel";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { MACHINE, MUTED, token } from "./palette";
 import { DAG_COLOR, drawing, ease, easeO, rgba, type DrawCtx, type Hover, type LTask } from "./draw";
-import { animating, frameLoop, framePace, STALL_MS } from "./idle";
+import { animating, frameLoop, framePace, runsOnly, STALL_MS, type Motion } from "./idle";
 import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
 import { optionalSteps } from "../features/level/ledger";
 import type { DoctorBox, PanelCtx } from "../features/level/ledgerPanel";
@@ -1300,8 +1300,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       heartbeat();
     }
   };
+  const motion = (): Motion => ({ now: T, moves: EVENTS(), dags: S!.dags, flying: !!anim, transitioning: !!trans });
+  /** Eased by the frame itself, whatever the DAGs do. */
+  const easing = () => grown.growing() || !!mled?.sliding || !!foldDrawing?.scrolling() || railMoving || gliding || SIM;
   /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
-  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || !!mled?.sliding || !!foldDrawing?.scrolling() || railMoving || gliding || SIM);
+  const busy = () => !away && !!S && (animating(motion()) || easing());
+  /** A running DAG is all that moves, so its frames wait `RUN_MS` instead of redrawing at the display's rate. */
+  const runsAlone = () => !away && !!S && !easing() && runsOnly(motion());
   /** The loop settled: the feed and moving list get their last write, and the next wake starts the ambient clock afresh. */
   const settle = () => {
     last = 0;
@@ -1309,7 +1314,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   // with Motion off the loop idles at one frame a second, except for a moment after any input
   let lastInput = -Infinity;
-  const loop = frameLoop({ draw: frame, animating: busy, idle: settle, request: (cb) => ((requestedAt = performance.now()), requestAnimationFrame(cb)), pace: () => framePace(prefs().motion, performance.now() - lastInput) });
+  const loop = frameLoop({ draw: frame, animating: busy, idle: settle, request: (cb) => ((requestedAt = performance.now()), requestAnimationFrame(cb)), pace: () => framePace(prefs().motion, performance.now() - lastInput, runsAlone()) });
   /** Every input that can change what the canvas shows wakes it; the handlers run first, so the frame sees their result. */
   const wakers: [EventTarget, string][] = [
     [window, "resize"], [window, "mousemove"], [window, "mouseup"], [window, "keydown"], [document, "visibilitychange"],
