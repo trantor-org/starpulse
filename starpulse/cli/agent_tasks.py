@@ -134,6 +134,14 @@ def _described(view: dict[str, Any], description: str, base: str) -> dict[str, A
     return {**view, "description": linkify(description, base, view["prs"])}
 
 
+def _carrier(base: str, task_id: str) -> str | None:
+    """The id of the task whose file lists `task_id` as an alias (a migrated proposal's old TASK id, a promoted one's
+    PROP id); None when `task_id` is a task's own id or no task carries it."""
+    status, document = agent_wire.get(base, f"/api/task/{urllib.parse.quote(task_id, safe='')}")
+    held = str(document.get("record", {}).get("id") or "") if status == 200 else ""
+    return None if held.casefold() in {"", task_id.casefold()} else held
+
+
 def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     if getattr(args, "markdown", False):
         return {"task": args.task, "markdown": render(_read_record(args, environ))}
@@ -141,6 +149,8 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     wanted = args.task.casefold()
     agents = {agent["id"].casefold(): agent for agent in board_flow(snapshot)["agents"]}
     if (agent := agents.get(wanted)) is None:
+        if carrier := _carrier(agent_wire.server_url(args.server, environ), args.task):
+            return show(argparse.Namespace(**{**vars(args), "task": carrier}), environ)
         cold = next((task for task in snapshot.get("cold_done", ()) if task.casefold() == wanted), None)
         if cold is not None:
             return _show_cold(agent_wire.server_url(args.server, environ), cold, snapshot)

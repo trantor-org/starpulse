@@ -808,6 +808,16 @@ def test_task_show_returns_the_source_key_a_producer_filed_the_task_under(
     assert (filed["source"], unfiled["source"]) == ("audit-signal:disk", "")
 
 
+def test_task_show_answers_the_task_that_carries_an_alias_under_its_own_id(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    renamed = TASK_FILE.replace("id: task-1", "id: task-7\naliases:\n- task-70").replace("Draw the board", "Renamed")
+    with _native_server(tmp_path, ("task-7 - Renamed.md", renamed)) as url:
+        code, doc = _run(capsys, ["task", "show", "task-70", "--server", url])
+
+    assert (code, doc["id"], doc["title"], doc["lane"]) == (0, "task-7", "Renamed", "to_do")
+
+
 def test_a_task_the_board_does_not_hold_is_not_found(base: str, capsys: pytest.CaptureFixture[str]) -> None:
     code, doc = _run(capsys, ["task", "show", "PROJ-99", "--server", base])
 
