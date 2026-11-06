@@ -55,7 +55,8 @@ from starpulse.pulls.adapters.inbound.unblock import PinGate
 from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
 
-if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
+if TYPE_CHECKING:  # annotation only: the pull store and the event log open the database stack
+    from starpulse.event_log.event_log import EventLog
     from starpulse.pulls.adapters.outbound.pulls import PullStore
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,9 @@ LATENCY_METRIC = "starpulse_task_actor_latency_seconds"
 BUCKETS_S = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 PROJECTION_METRIC = "starpulse_task_actor_projection_seconds"
 HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
+#: The worker state holding each sent-back task's hold (task name to the head of each pull request it held on), so a
+#: restart of the actor reads the hold back.
+SENT_BACK = "pulls.sent_back"
 #: The bounds of the projection and handoff histograms: a pin walk takes seconds, and the 10 s bound is the measure.
 SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
 #: Seconds the criteria and deadline loops wait between two looks at the clock; the next slice (TASK-11663) replaces both
@@ -244,6 +248,7 @@ class TaskActor:
         create: TaskCreator | None = None,
         sweep_s: float = SWEEP_S,
         rewake_s: float = REWAKE_S,
+        log: EventLog | None = None,
     ) -> None:
         self._read = read
         self._create = create
@@ -305,7 +310,9 @@ class TaskActor:
         self._pull_states: dict[str, tuple[str, str | None, bool, str, str, str]] = {}
         #: Per task sent back from Review to the working lane, the head of each pull request it cites at that moment: a
         #: ready pull request still on that head is the reviewed work, which `pr_ready` does not send to Review again.
-        self._sent_back: dict[str, dict[str, str]] = {}
+        #: Kept in the `SENT_BACK` worker state of `log`, so a restart of the actor reads it back.
+        self._log = log
+        self._sent_back: dict[str, dict[str, str]] = self._restored_holds()
         #: Tasks whose dependencies are done but wait for a pin bump, and the store revision last read for them.
         self._pin_held: set[str] = set()
         self._store_rev = store.rev
@@ -575,6 +582,7 @@ class TaskActor:
             tasks = self._feed.open_tasks()
             for agent in tasks:
                 self._index(agent)
+            self._drop_holds_outside(tasks)
             self._read_pulls()
         self.indexed.set()
         for name in sorted(agent["id"] for agent in tasks):  # per task, so a store save waits one derivation
@@ -652,9 +660,12 @@ class TaskActor:
                 touched |= self._held
             if before is None or before[0] != now[0]:
                 self._tried.pop(name, None)
-                self._sent_back.pop(name, None)
-                if before and before[0] == self._review and now[0] == self._feed.roles.working:
+                working = self._feed.roles.working
+                if before and before[0] == self._review and now[0] == working:
                     self._sent_back[name] = self._heads(agent)
+                    self._keep_holds()
+                elif (before is not None or now[0] != working) and self._sent_back.pop(name, None) is not None:
+                    self._keep_holds()  # a task first seen outside the working lane keeps no hold from an earlier run
             if before is None or (before[0], before[3]) != (now[0], now[3]):
                 touched |= self._dependents(name)
             self._derive_all(touched, observed)
@@ -716,11 +727,42 @@ class TaskActor:
         following = sequence[sequence.index(link["state"]) + 1 :][:1] if link["state"] in sequence else ()
         return link.get("routes", {}).get(following[0]) if following else None
 
+    def _restored_holds(self) -> dict[str, dict[str, str]]:
+        """The holds the worker state kept, so a restart of the actor keeps each sent-back task's hold."""
+        if self._log is None:
+            return {}
+        try:
+            _, held = self._log.state(SENT_BACK)
+        except Exception:  # the actor runs without the holds a read cannot give: a notice, never a refused start
+            logger.exception("task actor: cannot read the sent-back holds")
+            return {}
+        return dict(held or {})
+
+    def _keep_holds(self) -> None:
+        """Keep the sent-back holds in the worker state, after each change to them."""
+        if self._log is None:
+            return
+        try:
+            self._log.put_state(SENT_BACK, self._sent_back)
+        except Exception:  # the hold stands in memory; a database error is a notice, not part of the derivation
+            logger.exception("task actor: cannot keep the sent-back holds")
+
+    def _drop_holds_outside(self, tasks: Sequence[dict[str, Any]]) -> None:
+        """Drop each restored hold whose task a restart found outside the working lane, as its hold ends there."""
+        working = self._feed.roles.working
+        lanes = {agent["id"]: agent["state"] for agent in tasks}
+        stale = [name for name in self._sent_back if lanes.get(name) != working]
+        for name in stale:
+            del self._sent_back[name]
+        if stale:
+            self._keep_holds()
+
     def _forget(self, name: str) -> None:
         for url in self._seen.pop(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
-        self._sent_back.pop(name, None)
+        if self._sent_back.pop(name, None) is not None:
+            self._keep_holds()
         self._lint_held.pop(name, None)
         self._due.pop(name, None)
         self._dates.pop(name, None)

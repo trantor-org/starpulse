@@ -23,7 +23,7 @@ from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 from starpulse.machine_engine.model.transitions import board_machine
 from starpulse.pulls.adapters.inbound import task_actor
-from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor
+from starpulse.pulls.adapters.inbound.task_actor import ACTOR, SENT_BACK, TaskActor
 from starpulse.pulls.adapters.outbound.pull_events import RecordProjection
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime import server
@@ -554,6 +554,66 @@ def test_a_review_task_sent_back_to_in_progress_stays_while_its_pull_request_kee
     actor.pulls_changed()
 
     assert until(lambda: board.moved() == [("TASK-1", "review")])
+
+
+def test_a_sent_back_task_stays_in_progress_across_an_actor_restart_while_its_pull_request_keeps_the_head(
+    store: PullStore, stop: threading.Event, tmp_path: Path
+) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN") | {"headRefOid": "a" * 40}])
+    actor = running(board, store, stop, log=log)
+    seen = actor.derivations["TASK-1"]
+
+    board.put(task("TASK-1", "In Progress", references=(PR_ONE,)))  # the operator's send-back
+    assert until(lambda: actor.derivations["TASK-1"] > seen)
+    actor.pulls_changed()
+
+    restarted = running(board, store, stop, log=log)  # a new actor over the same store and worker state, derived before ready
+    assert restarted.derivations["TASK-1"] > 0
+    assert board.moved() == []
+
+
+def test_a_sent_back_task_moves_to_review_after_an_actor_restart_once_its_pull_request_takes_a_new_head(
+    store: PullStore, stop: threading.Event, tmp_path: Path
+) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN") | {"headRefOid": "a" * 40}])
+    actor = running(board, store, stop, log=log)
+    seen = actor.derivations["TASK-1"]
+
+    board.put(task("TASK-1", "In Progress", references=(PR_ONE,)))
+    assert until(lambda: actor.derivations["TASK-1"] > seen)
+    actor.pulls_changed()
+
+    restarted = running(board, store, stop, log=log)
+    assert board.moved() == []  # the restored hold keeps the send-back in progress until the head moves
+    store.save([pull(1, state="OPEN") | {"headRefOid": "b" * 40}])  # the session pushes its rework
+    restarted.pulls_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "review")])
+
+
+def test_a_sent_back_hold_ends_once_the_task_reaches_review_again_so_a_restart_keeps_none(
+    store: PullStore, stop: threading.Event, tmp_path: Path
+) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN") | {"headRefOid": "a" * 40}])
+    actor = running(board, store, stop, log=log)
+    seen = actor.derivations["TASK-1"]
+
+    board.put(task("TASK-1", "In Progress", references=(PR_ONE,)))
+    assert until(lambda: actor.derivations["TASK-1"] > seen)
+    assert "TASK-1" in (log.state(SENT_BACK)[1] or {})
+
+    restarted = running(board, store, stop, log=log)
+    seen = restarted.derivations["TASK-1"]
+    board.put(task("TASK-1", "Review", references=(PR_ONE,)))  # the session's review run
+    assert until(lambda: restarted.derivations["TASK-1"] > seen)
+
+    assert "TASK-1" not in (log.state(SENT_BACK)[1] or {})
 
 
 def test_a_waiting_task_moves_to_ready_when_its_last_dependency_enters_done(

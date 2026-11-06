@@ -515,6 +515,7 @@ def start_delivery(
                 machine, event, actor=ACTOR, task=task, log=log
             ),
             sequences=config.sequences,
+            log=log,
         )
         actor.start(stop)
     sync = None
