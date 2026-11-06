@@ -1016,6 +1016,20 @@ def _parser() -> argparse.ArgumentParser:
                 help=f"the number of the {item} it {does}{', renumbering the rest from 1' if verb == 'remove' else ''}; "
                 "repeat for several",
             )
+    edit.add_argument(
+        "--verify-plan",
+        action="append",
+        dest="verify_plan",
+        metavar="N: COMMAND",
+        help="a Verify plan entry to add, as `3: make check`; repeat for several",
+    )
+    edit.add_argument(
+        "--remove-verify-plan",
+        action="append",
+        dest="remove_verify_plan",
+        metavar="N",
+        help="the number of a criterion whose Verify plan entries it drops, before --verify-plan adds; repeat for several",
+    )
     edit.add_argument("--comment", default="", help="a comment to append to the task with the edit")
     edit.add_argument(
         "--base",
