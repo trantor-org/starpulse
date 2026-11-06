@@ -35,9 +35,13 @@ class ReadMethods:
 
     def _keyed(self, task_id: str) -> str:
         """The key the read model holds `task_id` under: its own, else the id it was renamed to, else one it was renamed
-        from. A task renamed on disk keeps its old row until its stream is rewritten, so both spellings must find it."""
+        from. A task renamed on disk keeps its old row until its stream is rewritten, so both spellings must find it; an
+        archived row, a promoted proposal's, yields to the live row the id was renamed to."""
         candidates = (task_id, self._aliases.get(task_id), *self._renamed.get(task_id, ()))
-        return next((key for key in candidates if key and self._read_model.task(key) is not None), task_id)  # type: ignore[union-attr]
+        rows = {key: self._read_model.task(key) for key in candidates if key}  # type: ignore[union-attr]
+        held = [key for key, row in rows.items() if row is not None]
+        live = [key for key in held if not rows[key]["archived"]]
+        return next(iter(live or held), task_id)
 
     def _read_model_moves(self, summary: Mapping[str, Any]) -> dict:
         """The moves a read-model Task offers: the Board machine's out of its lane, a done Task's reopen among them."""

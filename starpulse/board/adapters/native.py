@@ -1640,10 +1640,25 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "complete": history.recorded(made.complete, read),
         "retire": history.recorded(made.retire, read),
         "create": history.created(made.create, read),
-        "reconcile": history.reconciled(read),
+        "reconcile": history.reconciled(_own(root, read)),
         "files": lambda: [(task, _aliases(frontmatter)) for task, frontmatter in _open_tasks(root, made.roles.done)],
     }
     return replace(made, start=start, sweep=sweep, attach=attach, standing=_standing(root, guard), readable=guard.readable, **recorded)
+
+
+def _own(root: Path, read: Callable[[str], Any]) -> Callable[[str], Any]:
+    """`read`, but None for an id only another task's file lists as an alias: that id's task is gone, renamed."""
+
+    def own(task: str) -> Any:
+        path = _find(root, task)
+        try:
+            frontmatter, _ = _split(path.read_text()) if path else ({}, "")
+        except OSError:
+            return None
+        held = str(frontmatter.get("id") or "").strip() or task
+        return read(task) if path and held.casefold() == task.casefold() else None
+
+    return own
 
 
 def _standing(root: Path, guard: Guard) -> Callable[[str, str], dict[str, Any] | None]:

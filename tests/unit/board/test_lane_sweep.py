@@ -150,3 +150,54 @@ def test_the_real_feed_answers_a_renamed_proposal_by_its_prop_id_and_its_old_tas
 
     assert feed.task("prop-84")["id"] == "prop-84"
     assert feed.task("TASK-10987") == feed.task("prop-84")
+
+
+def _real_feed(tmp_path, monkeypatch):
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
+    built, feed = assemble(load(None), tmp_path, None, ())
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    built.start(feed, "test", log)
+    return built, feed, log, tmp_path / ".starpulse" / "board" / "tasks"
+
+
+def _catch_up(feed, log) -> None:
+    Projector(log.engine, EventStore(log.engine)).catch_up()
+    feed._read_model = ReadModel(log.engine)
+
+
+def test_a_migrated_ghost_row_is_archived_so_its_old_id_answers_the_renamed_task(tmp_path, monkeypatch) -> None:
+    built, feed, log, tasks = _real_feed(tmp_path, monkeypatch)
+    ghost = tasks / "task-10987 - Ghost.md"
+    ghost.write_text("---\nid: TASK-10987\ntitle: Ghost\nstatus: Proposed\n---\n")
+    built.reconcile("TASK-10987")
+    _catch_up(feed, log)
+    ghost.unlink()
+    (tasks / "prop-84 - Renamed.md").write_text(
+        "---\nid: PROP-84\ntitle: Renamed\nstatus: Proposed\naliases:\n  - TASK-10987\n---\n"
+    )
+    sweep = LaneSweep(feed, built)
+
+    for _ in range(3):
+        sweep.sweep()
+        _catch_up(feed, log)
+
+    assert feed.task("TASK-10987")["id"] == "PROP-84"
+
+
+def test_a_promoted_proposals_archived_row_does_not_hide_its_new_id(tmp_path, monkeypatch) -> None:
+    built, feed, log, tasks = _real_feed(tmp_path, monkeypatch)
+    old = tasks / "prop-445 - Probe.md"
+    old.write_text("---\nid: PROP-445\ntitle: Probe\nstatus: Proposed\n---\n")
+    built.reconcile("PROP-445")
+    _catch_up(feed, log)
+    old.unlink()
+    (tasks / "task-12375 - Probe.md").write_text(
+        "---\nid: TASK-12375\ntitle: Probe\nstatus: Ready\naliases:\n  - PROP-445\n---\n"
+    )
+    sweep = LaneSweep(feed, built)
+
+    for _ in range(3):
+        sweep.sweep()
+        _catch_up(feed, log)
+
+    assert feed.task("PROP-445")["id"] == "TASK-12375"
