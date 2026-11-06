@@ -171,6 +171,7 @@ class Rig:
         urgency: str = "",
         labels: tuple[str, ...] = (),
         assignee: str = "",
+        tier: str = "",
     ) -> None:
         self.harness.put_task(
             task,
@@ -181,7 +182,7 @@ class Rig:
                 "dependencies": list(deps),
                 "assignee": assignee,
             },
-            meta={"profile": PROFILE, "impact": impact, "urgency": urgency},
+            meta={"profile": PROFILE, "impact": impact, "urgency": urgency, "tier": tier},
         )
 
     def session(self, task: str, event: str = "SESSION_STARTED") -> None:
@@ -752,8 +753,8 @@ def test_next_pick_counts_a_started_run_it_will_not_pick_again(tmp_path: Path) -
 
 
 def test_needs_operator_lists_the_eligible_kind_decide_tasks_the_loop_starts_last(rig: Rig) -> None:
-    rig.put("T-1", labels=("kind-decide",))
-    rig.put("T-2", lane="to_do", labels=("kind-decide",))  # not yet in the eligible lane
+    rig.put("T-1", labels=("kind-decide",), tier="decide")
+    rig.put("T-2", lane="to_do", labels=("kind-decide",), tier="decide")  # not yet in the eligible lane
     rig.put("T-3")
 
     assert rig.loop.needs_operator() == [{"task": "T-1", "title": "T-1"}]
@@ -1158,9 +1159,9 @@ def test_send_back_repick_leaves_a_regression_task_a_live_session_holds(rig: Rig
 
 def test_send_back_repick_starts_the_regression_task_before_a_ready_bug_with_dependents(tmp_path: Path) -> None:
     rig = Rig(tmp_path, limits={"sessions": 1})  # one slot: the first pick is the only start
-    rig.put("BUG", labels=("board-state",))
+    rig.put("BUG", labels=("board-state",), tier="bug")
     rig.put("AFTER", lane="waiting", deps=("BUG",))
-    rig.put("T-1", lane="in_progress", labels=("regression",))
+    rig.put("T-1", lane="in_progress", labels=("regression",), tier="regression")
 
     assert rig.loop.tick() == ["T-1"]
 

@@ -8,3 +8,5 @@ Tier = Literal["regression", "bug", "leverage", "standard", "decide"]
 TIERS: tuple[str, ...] = get_args(Tier)
 #: The tier of a task that names none.
 DEFAULT_TIER: Tier = "standard"
+#: The tiers that take only the room every other tier leaves, and rank after them whatever their position.
+LEFTOVER_TIERS: frozenset[str] = frozenset({"decide"})

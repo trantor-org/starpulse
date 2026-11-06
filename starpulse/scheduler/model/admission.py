@@ -1,13 +1,11 @@
 """Admission: whether a Ready task fits the capacity left, and in what order the tasks that fit go.
 
-A task's demand is priced by what a task of its tier and size has drawn. A `kind-decide` task no open task waits on is
-admitted last: it fits only the room left after every other task that fits, and ranks after them all, so it never takes a
-slot mitigation or bug work needs. One that frees another task ranks and is priced like any task that does. Its session frames the choice and parks for the operator. The tasks that fit rank two ways. The enforced
-order puts first the tasks labelled `regression`, then a bug another open task waits on,
-then the other bugs (type `bug`, or labelled `board-state` or `regression`), then the tasks an open task waits on
-directly (a `kind-decide` one included), then the tasks labelled `throughput`, then those labelled `leverage`, then the rest, a `kind-decide` task nothing
-waits on after them all, and within each the most open tasks waiting on it directly, then the deepest critical path, the heaviest Priority weight and
-the id. The shadow order is `value / dominant share` (Dominant Resource
+A task's demand is priced by what a task of its tier and size has drawn. The tasks that fit rank two ways. The enforced
+order is the task's `tier` field's position in `TIERS`, then the heaviest Priority weight, the most open tasks waiting
+on it directly, the deepest critical path and the id; nothing but the field picks a task's tier, and no dependents lift
+crosses tiers. A task in a `LEFTOVER_TIERS` tier (`decide`) ranks after every other task and is priced against the
+headroom less the demand of every other task admitted, so it takes only the room the others leave. Its session frames the
+choice and parks for the operator. The shadow order is `value / dominant share` (Dominant Resource
 Fairness), where value is that weight times depth times the chance of the goal. The shadow order is only logged beside the enforced one until a calibration
 report earns it the enforced place (`shadow=False`).
 
@@ -25,6 +23,7 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
+from starpulse.contracts.tiers import DEFAULT_TIER, LEFTOVER_TIERS, TIERS
 from starpulse.scheduler.model.config import DIMENSIONS, Scheduler
 from starpulse.scheduler.model.inputs import points
 from starpulse.scheduler.model.ledger import Ledger
@@ -38,10 +37,6 @@ PERCENT_PER_UNIT = 1.0
 NO_PROFILE = "no agent profile"
 #: The label a post-merge QA miss puts on the task it sends back to In Progress: its fix goes before any other work.
 REGRESSION = "regression"
-#: The labels that mark a task a bug whatever its type: a board that shows the wrong state, or a behavior that regressed.
-BUG_LABELS = frozenset({"board-state", REGRESSION})
-#: The label of a task that raises future board throughput: it goes ahead of other work below the bugs and unblockers.
-THROUGHPUT = "throughput"
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +111,9 @@ def needs_operator(task: Mapping[str, Any]) -> bool:
     return "kind-decide" in task["labels"]
 
 
-def _held_back(task: Mapping[str, Any], dependents: int) -> bool:
-    """Whether `task` is a decision that frees no other task, so it goes last and takes only the room others leave."""
-    return needs_operator(task) and dependents == 0
+def _leftover(task: Mapping[str, Any]) -> bool:
+    """Whether `task`'s tier is a leftover one, so it goes last and takes only the room others leave."""
+    return task.get("tier") in LEFTOVER_TIERS
 
 
 def _dependents(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
@@ -131,22 +126,15 @@ def _dependents(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
 
 
 def _enforced_key(task: Mapping[str, Any], dependents: int, decision: Decision) -> tuple[Any, ...]:
-    """Where `task` goes in the enforced order: a `kind-decide` task no open task waits on last, else regressions,
-    blocking bugs, bugs, tasks an open task waits on (a `kind-decide` one included), throughput, leverage, then dependents, depth,
-    weight and id."""
-    bug = task.get("type") == "bug" or not BUG_LABELS.isdisjoint(task["labels"])
-    leverage = "leverage" in task["labels"]
+    """Where `task` goes in the enforced order: a leftover tier last, else its `tier` field's position in `TIERS` (a task
+    with none or an unknown one takes the default tier), then the heaviest weight, dependents, depth and id."""
+    tier = task.get("tier")
     return (
-        _held_back(task, dependents),
-        REGRESSION not in task["labels"],
-        not (bug and dependents > 0),
-        not bug,
-        dependents == 0,
-        THROUGHPUT not in task["labels"],
-        not leverage,
+        _leftover(task),
+        TIERS.index(tier if tier in TIERS else DEFAULT_TIER),
+        -decision.weight,
         -dependents,
         -decision.depth,
-        -decision.weight,
         decision.task,
     )
 
@@ -217,7 +205,7 @@ def decide(
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
     A task whose profile names no tier in the policy's weights is refused `NO_PROFILE`, whatever room is left. A
-    `kind-decide` task is priced against the headroom less the demand of every other task admitted, so it starts only
+    leftover-tier task is priced against the headroom less the demand of every other task admitted, so it starts only
     when nothing else needs the room, and ranks after them.
 
     `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. `chain` is the
@@ -235,19 +223,16 @@ def decide(
     reserved = dict.fromkeys(DIMENSIONS, 0.0)
     workable = [task for task in tasks if task["state"] == lane and task["workable"]]
 
-    def held(task: Mapping[str, Any]) -> bool:
-        return _held_back(task, dependents.get(task["id"], 0))
-
-    for task in sorted(workable, key=held):  # the decisions last, after the room the others take is known
+    for task in sorted(workable, key=_leftover):  # the decisions last, after the room the others take is known
         need = demand(task, policy, ledger)
-        room = {name: headroom[name] - (reserved[name] if held(task) else 0) for name in DIMENSIONS}
+        room = {name: headroom[name] - (reserved[name] if _leftover(task) else 0) for name in DIMENSIONS}
         overfit = tuple(name for name in DIMENSIONS if need[name] > room[name])
         if tier_of(task) not in policy.tier_weights:
             blocked_by: str | None = NO_PROFILE
             overfit = ()
         else:
             blocked_by = overfit[0] if overfit else None
-        if blocked_by is None and not held(task):
+        if blocked_by is None and not _leftover(task):
             reserved = {name: reserved[name] + need[name] for name in DIMENSIONS}
         score = _score(predictor, task)
         p_goal = chances.get(task["id"], lane_p_goal)
