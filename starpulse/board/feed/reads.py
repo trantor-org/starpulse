@@ -53,7 +53,7 @@ class ReadMethods:
 
     def _read_model_readable(self, summary: Mapping[str, Any]) -> dict[str, str]:
         """The verdict of the board's `readable` rules on an open task's description, which a done task never carries."""
-        done = lane_id(summary["state"]) == lane_id(self._roles.done)
+        done = lane_id(summary["state"]) in done_lanes(self._roles.done)
         return {"readable": "" if done else self._readable(summary, summary["description"])}
 
     def _read_model_agent(self, task_id: str) -> dict | None:
