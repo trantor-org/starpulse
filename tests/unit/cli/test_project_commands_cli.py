@@ -117,3 +117,19 @@ def test_an_unknown_name_in_a_child_worktree_names_the_superproject_that_maps_it
     assert code == 4
     assert str(tmp_path) in document["error"]
     assert f"--arg worktree={child}" in document["error"]
+
+
+def test_a_child_worktree_with_no_config_exits_4_naming_the_superproject(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "starpulse.toml").write_text('[project.commands]\ntest = ["true"]\n')
+    child = tmp_path / ".tmp" / "child-task-1"
+    child.mkdir(parents=True)
+    monkeypatch.chdir(child)
+
+    code = cli.main(["command", "run", "test"], {})
+
+    document = json.loads(capsys.readouterr().out)
+    assert code == 4
+    assert str(tmp_path) in document["error"]
+    assert f"--arg worktree={child}" in document["error"]
