@@ -199,6 +199,15 @@ def test_a_post_with_no_length_reads_as_an_empty_body(served: tuple[str, Spy]) -
     assert spy.seen == []
 
 
+def test_a_non_numeric_content_length_is_refused_with_a_400(served: tuple[str, Spy]) -> None:
+    base, spy = served
+
+    status, _, _, body = raw(base, "POST", "/v1/logs", None, {"Content-Type": "application/json", "Content-Length": "abc"})
+
+    assert (status, body) == (400, b"{}")
+    assert spy.seen == []
+
+
 def test_a_body_over_the_size_bound_is_refused_and_one_at_the_bound_is_read(
     served: tuple[str, Spy], monkeypatch: pytest.MonkeyPatch
 ) -> None:

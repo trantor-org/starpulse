@@ -190,7 +190,10 @@ def receiver(
             if "json" not in declared:
                 self._reply(415, b'{"error": "send OTLP as json: set encoding = \\"json\\" on the exporter"}')
                 return
-            length = int(self.headers.get("Content-Length") or 0)  # pragma: no mutate: names are case-insensitive
+            try:
+                length = int(self.headers.get("Content-Length") or 0)  # pragma: no mutate: names are case-insensitive
+            except ValueError:
+                length = -1
             if length < 0:
                 self._reply(400)
                 return
