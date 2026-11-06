@@ -92,3 +92,20 @@ def test_a_proposal_that_holds_a_task_number_keeps_it_on_promote(
     status, body = _promote(feed, built, legacy)
 
     assert (status, body["task"], "was" in body) == (200, legacy, False)
+
+
+@pytest.mark.parametrize("spelling", ["PROP-1", "TASK-77"])
+def test_a_proposal_is_renumbered_whichever_of_its_ids_the_move_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelling: str
+) -> None:
+    feed, built, scanner = _proposals(tmp_path, monkeypatch)
+    proposal = _create(built, scanner, "Idea", "Proposed")
+    file = next((native_root(tmp_path) / "tasks").glob("*.md"))
+    file.write_text(file.read_text().replace(f"id: {proposal}\n", f"id: {proposal}\naliases:\n- TASK-77\n", 1))
+    scanner.scan()
+
+    status, body = _promote(feed, built, spelling)
+    scanner.scan()
+
+    assert (status, body.get("error"), body["task"]) == (200, None, "TASK-78")
+    assert _states(feed) == {"TASK-78": "ready"}

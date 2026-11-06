@@ -101,6 +101,7 @@ def test_a_task_file_reads_as_every_field_the_task_view_draws(tmp_path: Path, mo
     assert built.read is not None
 
     assert built.read("task-5") == {
+        "id": "task-5",
         "title": "Draw the board",
         "type": "",
         "status": "In Progress",
@@ -146,6 +147,7 @@ def test_a_task_file_with_only_front_matter_reads_with_empty_fields(
     assert built.read is not None
 
     assert built.read("task-6") == {
+        "id": "task-6",
         "title": "Bare",
         "type": "",
         "status": "To Do",

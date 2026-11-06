@@ -529,6 +529,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
     description = _description(body)
     notes, comments = _section(_NOTES, body), _comments(body)
     return {
+        "id": str(frontmatter.get("id") or ""),
         "title": str(frontmatter.get("title") or ""),
         "type": str(frontmatter.get("type") or ""),
         "status": str(frontmatter.get("status") or ""),
@@ -1315,7 +1316,8 @@ def _promoter(
         before = read(task)
         written = write(task, status, actor, session) if session else write(task, status, actor)
         in_proposed = before is not None and lane_id(str(before.get("status", ""))) == proposed
-        proposal = in_proposed and task.casefold().startswith(own)
+        held = str(before.get("id") or task) if before is not None else task
+        proposal = in_proposed and held.casefold().startswith(own)
         if not (written.ok and proposal and lane_id(status) not in (proposed, final)):
             return written
         renumbered = renumber(task)
