@@ -25,11 +25,11 @@ from starpulse.runtime.config import load
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.bin.scheduler_service import start_scheduler
 from starpulse.scheduler.model.ledger import Ledger
-from starpulse.scheduler.model.sampler import PERIOD
 from starpulse.sessions.adapters.outbound.session_start import starter
 
-#: How long a test waits for the loop: half the sampler's period, so a loaded host (load 58-75 missed 10 s) still
-#: passes while a start that waited for the loop's timer instead of the move's event (a full period) still fails.
+#: The sampler's former period: a start by the move's event lands well inside it, one that waited on a timer would not.
+PERIOD = 60.0
+#: How long a test waits for the loop: half of it, so a loaded host (load 58-75 missed 10 s) still passes.
 DEADLINE_S = PERIOD / 2
 IDLE_HOST = {"cpu": 1.0, "memory": 1.0}
 
@@ -158,7 +158,7 @@ def test_a_task_moved_into_the_eligible_lane_is_started_within_one_sampler_perio
             _task(tmp_path, "To Do")  # the eligible lane is the board's initial lane
 
             _until(lambda: asked, "the start", state=lambda: _loop_state(feed, runtime))
-            assert time.monotonic() - moved < PERIOD  # by the move's event: the loop's timer is the sampler period
+            assert time.monotonic() - moved < PERIOD  # by the move's event, not a timer
             assert asked == ["/start/task-1?harness=claude&mode=interactive&by=scheduler"]
 
 

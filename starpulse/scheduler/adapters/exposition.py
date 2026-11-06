@@ -6,6 +6,7 @@ wrote there.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -22,6 +23,14 @@ from starpulse.scheduler.model.toggle import KEY as SWITCH_KEY
 def autopilot_log(log: EventLog) -> dict[str, Any]:
     """The decision log the scheduler kept in the store: verdicts per local day, the starts and the first restore."""
     return log.state(DECISION_LOG_KEY)[1] or EMPTY_DECISION_LOG
+
+
+def decision_days(log: EventLog, switched: float) -> int:
+    """Distinct local days from the switch row's day on with a kept admission decision."""
+    if not switched:
+        return 0
+    first = datetime.fromtimestamp(switched).date().isoformat()
+    return sum(1 for day in autopilot_log(log)["days"] if day >= first)
 
 
 def autopilot_exposition(log: EventLog) -> str:
@@ -42,6 +51,9 @@ def autopilot_exposition(log: EventLog) -> str:
             "# HELP starpulse_autopilot_ledger_runs Rows in the StarPulse autopilot run ledger.",
             "# TYPE starpulse_autopilot_ledger_runs gauge",
             f"starpulse_autopilot_ledger_runs {runs}",
+            "# HELP starpulse_autopilot_decision_days Distinct local days with a logged admission decision since the switch row was written.",
+            "# TYPE starpulse_autopilot_decision_days gauge",
+            f"starpulse_autopilot_decision_days {decision_days(log, switched)}",
             "# HELP starpulse_autopilot_decisions_total Admission verdicts the autopilot has logged.",
             "# TYPE starpulse_autopilot_decisions_total counter",
             *(

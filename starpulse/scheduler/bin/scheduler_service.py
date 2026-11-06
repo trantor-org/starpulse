@@ -20,6 +20,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import History
 from starpulse.flow_metrics.model.level import Level
+from starpulse.scheduler.adapters.pressure import watch
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
@@ -111,7 +112,11 @@ def start_scheduler(
         transcript=transcript_written(Path(DEFAULT_TRANSCRIPTS).expanduser()),
     )
     runtime.wire_status(publish or feed.publish)
-    threading.Thread(target=runtime.sampler.run_forever, args=(stop,), name="scheduler-sampler", daemon=True).start()
+    pressure = threading.Event()
+    watch(stop, pressure)
+    threading.Thread(
+        target=runtime.sampler.run_forever, args=(stop, pressure), name="scheduler-sampler", daemon=True
+    ).start()
     if runtime.loop is not None:
         threading.Thread(target=runtime.loop.run_forever, args=(stop,), name="scheduler-loop", daemon=True).start()
     return runtime

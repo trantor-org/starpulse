@@ -120,23 +120,6 @@ def test_a_probe_that_fails_keeps_the_last_readings_and_the_next_sample_goes_on(
     assert rig.crossings == []
 
 
-def test_run_forever_samples_until_stopped() -> None:
-    rig = Rig()
-    stop = StopEvent()
-    calls = []
-
-    def probe() -> dict[str, float]:
-        calls.append(1)
-        if len(calls) == 3:
-            stop.set()
-        return rig.host
-
-    rig.sampler._probe = probe
-    rig.sampler.run_forever(stop, interval=0)
-
-    assert len(calls) == 3
-
-
 def test_a_capacity_sample_survives_a_restart(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
     state = SchedulerState(log)
@@ -172,3 +155,18 @@ def test_a_listener_that_raises_neither_stops_the_sampler_nor_hides_the_crossing
 
     assert heard == ["cpu", "memory"]
     assert rig.sampler.readings()[0][0].use == 90.0
+
+
+def test_setting_stop_ends_a_sampler_waiting_for_a_pressure_trigger() -> None:
+    rig = Rig()
+    stop = StopEvent()
+    ended = threading.Event()
+
+    def run() -> None:
+        rig.sampler.run_forever(stop, threading.Event())
+        ended.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    stop.set()
+
+    assert ended.wait(5.0)

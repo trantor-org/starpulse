@@ -1,8 +1,8 @@
-"""The capacity sampler: each period it reads the four capacity dimensions and says when one crosses its limit.
+"""The capacity sampler: on each pass it reads the four capacity dimensions and says when one crosses its limit.
 
 A dimension's headroom is its limit less its use; it is full once use reaches the limit. The sampler is the scheduler's
-event source for resource changes, not a dispatch timer: `on_crossing` hears a dimension going full and going free
-again, and the first sample is a baseline that says nothing.
+event source for resource changes, woken by a pressure trigger or a capacity event, not a dispatch timer: `on_crossing`
+hears a dimension going full and going free again, and the first sample is a baseline that says nothing.
 """
 
 from __future__ import annotations
@@ -12,12 +12,10 @@ import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from starpulse.event_log.wake import StopEvent
 from starpulse.scheduler.model.config import DIMENSIONS
 
 logger = logging.getLogger(__name__)
-
-#: How often the server samples, in seconds.
-PERIOD = 60.0
 
 
 @dataclass(frozen=True)
@@ -105,8 +103,15 @@ class Sampler:
                 except Exception:  # a listener's bug must not stop the sampler or hide the next crossing
                     logger.exception("StarPulse: a scheduler capacity listener failed")
 
-    def run_forever(self, stop: threading.Event, interval: float = PERIOD) -> None:
-        """Sample now and then every `interval` seconds until `stop` is set."""
-        self.sample()
-        while not stop.wait(interval):
+    def run_forever(self, stop: StopEvent, wake: threading.Event) -> None:
+        """Sample now, then once each time `wake` is set (a pressure trigger fired) until `stop` is set; never on a timer."""
+        stop.listen(wake.set)
+        try:
             self.sample()
+            while not stop.is_set():
+                wake.wait()
+                wake.clear()
+                if not stop.is_set():
+                    self.sample()
+        finally:
+            stop.unlisten(wake.set)
