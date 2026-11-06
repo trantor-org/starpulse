@@ -197,7 +197,7 @@ def _drop_without_comments(connection: Connection) -> None:
 
 def _named(hit: dict) -> dict:
     """`hit` with its `field` column index as the field's name; a match in no one column (-1) is the title's."""
-    hit["field"] = _FIELDS[max(hit["field"], 1)]
+    hit["field"] = _FIELDS[hit["field"] if hit["field"] >= 0 else 1]
     return hit
 
 
