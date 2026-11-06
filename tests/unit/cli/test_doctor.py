@@ -116,6 +116,7 @@ def test_a_failing_check_fails_the_run_and_says_why(
 def test_the_doctor_verb_prints_the_checks_and_exits_1_when_one_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    monkeypatch.chdir(tmp_path)  # the verb reads ./starpulse.toml; the host's must not leak in
     monkeypatch.setattr(doctor, "LIVE", FakeHost(gh_login=False).probes())
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "Ready"))
@@ -131,6 +132,7 @@ def test_the_doctor_verb_prints_the_checks_and_exits_1_when_one_fails(
 def test_the_doctor_verb_exits_0_when_every_check_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    monkeypatch.chdir(tmp_path)  # the verb reads ./starpulse.toml; the host's must not leak in
     monkeypatch.setattr(doctor, "LIVE", FakeHost().probes())
     feed = BoardFeed(roles=ROLES, machines=MACHINES)
     feed.put(task("PROJ-1", "Ready"))
