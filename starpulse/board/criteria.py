@@ -74,6 +74,11 @@ def authored(description: str) -> list[dict[str, Any]]:
     return found
 
 
+def _events(on: Any) -> list[str]:
+    """The event names a refresh hint's `on` lists; a single name is a one-item list, never a string to search in."""
+    return [on] if isinstance(on, str) else list(on or ())
+
+
 def _outcome(
     status: str,
     observed: Any = None,
@@ -182,7 +187,7 @@ class Evaluator:
                 key
                 for key, (_, results, _) in self._cache.items()
                 if any(
-                    event in (hint.get("on") or ())
+                    event in _events(hint.get("on"))
                     for result in results
                     if isinstance(hint := result.get("refresh"), dict)
                 )

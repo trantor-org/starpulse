@@ -404,3 +404,11 @@ def test_a_task_whose_evaluation_failed_is_not_run_again_after_the_ordinary_cach
     read("task-7")
 
     assert runs.read_text() == "x"
+
+
+def test_a_single_event_name_is_invalidated_only_by_that_exact_event(tmp_path: Path) -> None:
+    evaluate = criteria.Evaluator(_script(tmp_path, _hinted("run:build-all")), tmp_path)  # type: ignore[arg-type]
+    evaluate("task-7", NIGHTLY)
+
+    assert evaluate.invalidate("run:build") is False
+    assert evaluate.invalidate("run:build-all") is True
