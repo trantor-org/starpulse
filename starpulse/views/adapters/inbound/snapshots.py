@@ -84,8 +84,11 @@ class Snapshots:
             return held
 
     def full(self) -> bytes:
-        """The body of `?view=full` for the snapshot `take` serves, encoded once however many requests ask."""
-        served = self.take()
+        """The body of `?view=full`, encoded once per snapshot however many requests ask: the warm snapshot while it
+        is current (a feed written to constantly would otherwise rebuild the 2.7 MB body per request), else the one
+        `take` serves."""
+        warm = self._current() if self._refresh_s > 0 else None
+        served = warm.served if warm is not None else self.take()
         with self._taking:
             if self._full is None or self._full[0] is not served:
                 self._full = (served, encode("snapshot", full_snapshot(served.snapshot)))
