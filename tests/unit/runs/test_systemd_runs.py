@@ -7,6 +7,7 @@ import queue
 import re
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from starpulse.board.model.adapter_types import BUILT_IN, module_name
@@ -425,3 +426,35 @@ def test_closing_the_monitor_terminates_its_gdbus_child(tmp_path, monkeypatch) -
 
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
+
+
+def test_the_monitor_child_ends_with_the_thread_that_spawned_it(tmp_path, monkeypatch) -> None:
+    pidfile = tmp_path / "pid"
+    fake = tmp_path / "gdbus"
+    fake.write_text(f"#!/bin/sh\necho {'$' * 2} > {pidfile}\necho line\nexec sleep 60\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:/usr/bin:/bin")
+    kept = []
+
+    def spawn() -> None:
+        lines = systemd.monitor(user=False)
+        next(lines)
+        kept.append(lines)
+
+    thread = threading.Thread(target=spawn)
+    thread.start()
+    thread.join()
+    pid = int(pidfile.read_text())
+
+    def gone() -> bool:
+        try:
+            return Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()[0] == "Z"
+        except FileNotFoundError:
+            return True
+
+    deadline = time.monotonic() + 5
+    while not gone() and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    assert gone()
+    assert "preexec_fn" not in Path(systemd.__file__).read_text()
