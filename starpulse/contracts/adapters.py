@@ -548,6 +548,27 @@ class VerdictEvent(_Contract):
     source: str = Field(default="", description="The producer that posted it through the CloudEvents ingest.")
 
 
+class BreakingChangeEvent(_Contract):
+    """One `breaking-change:events` entry: a detector naming a commit that broke the default branch, or the postmortem
+    that closes the commit's row. Detector and outcome are the producer's own strings."""
+
+    event: Literal["BreakingChangeRecorded", "BreakingChangePostmortemed"] = Field(description="Which of the two it is.")
+    commit: str = Field(min_length=1, description="The merge commit that broke the branch.")
+    time: float = Field(ge=0, allow_inf_nan=False, description="When it was recorded, in epoch seconds.")
+    source: str = Field(default="", description="The producer that posted it through the CloudEvents ingest.")
+    detector: str | None = Field(default=None, min_length=1, description="What saw it; required to record a break.")
+    outcome: str | None = Field(default=None, description="How the break ended, such as `revert-opened`.")
+    pr: int | None = Field(default=None, ge=1, strict=True, description="The pull request that merged the commit.")
+    task: str | None = Field(default=None, description="The task of the commit; on a postmortem, the postmortem task.")
+    evidence: str | None = Field(default=None, description="A link that shows the break.")
+
+    @model_validator(mode="after")
+    def _a_record_names_its_detector(self) -> Self:
+        if self.event == "BreakingChangeRecorded" and self.detector is None:
+            raise ValueError("a recorded break names its detector")
+        return self
+
+
 #: Each contract's model, by the name its checked-in schema file carries.
 CONTRACTS: dict[str, type[BaseModel]] = {
     "board": BoardTask,
@@ -556,6 +577,7 @@ CONTRACTS: dict[str, type[BaseModel]] = {
     "lane-events": LaneEvent,
     "rating-events": RatingEvent,
     "verdict-events": VerdictEvent,
+    "breaking-change-events": BreakingChangeEvent,
     "runs": Dag,
     "pools": Pool,
 }
@@ -568,6 +590,7 @@ EVENT_STREAMS: dict[str, str] = {
     "board:lanes": "lane-events",
     "task:ratings": "rating-events",
     "task:verdicts": "verdict-events",
+    "breaking-change:events": "breaking-change-events",
 }
 #: Each contract's JSON Schema, by the same names.
 SCHEMAS: dict[str, dict] = {name: model.model_json_schema() for name, model in CONTRACTS.items()}

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
+from starpulse.contracts.api.dto.breaking_changes import BreakingChanges
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps, TaskEventHistory
 from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
@@ -141,6 +142,7 @@ RESPONSES: dict[str, Any] = {
     "/api/docs/": DocShown,
     "/api/retired": RetiredTasks,
     "/api/history": LaneHistory | MachineHistory | TaskEventHistory,
+    "/api/breaking-changes": BreakingChanges,
     "/api/pulls": Pulls,
     "/api/search": SearchResults,
     "/api/scheduler": SchedulerStatus,
@@ -185,6 +187,7 @@ BODIES: dict[str, Any] = {
     "machines": Machines | ApiError,
     "done": DonePage | ApiError,
     "history": LaneHistory | MachineHistory | TaskEventHistory | ApiError,
+    "breaking_changes": BreakingChanges | ApiError,
     "pulls": Pulls | ApiError,
     "search": SearchResults | ApiError,
     "health": Health | ApiError,

@@ -20,6 +20,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
 )
 
 metadata = MetaData()
@@ -217,6 +218,34 @@ task_verdicts = Table(
     Column("reason", String, nullable=False),
     Column("occurred_at", Float, nullable=False),
     Index("ix_starpulse_task_verdicts_task", "task", "occurred_at"),
+)
+
+#: One row per commit that broke the default branch, written by the first `BreakingChangeRecorded` that names it and
+#: closed by `BreakingChangePostmortemed`; `outcome` is the first detector's, a free string.
+breaking_changes = Table(
+    "starpulse_breaking_changes",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("commit_sha", String, nullable=False, unique=True),
+    Column("pr", Integer),
+    Column("task", String),
+    Column("outcome", String),
+    Column("first_seen", Float, nullable=False),
+    Column("postmortem_task", String),
+)
+
+#: What each detector saw of a breaking commit: one row per `(commit, detector)`.
+breaking_change_detections = Table(
+    "starpulse_breaking_change_detections",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("event_id", String, nullable=False, unique=True),
+    Column("commit_sha", String, nullable=False),
+    Column("detector", String, nullable=False),
+    Column("outcome", String),
+    Column("evidence", String),
+    Column("occurred_at", Float, nullable=False),
+    UniqueConstraint("commit_sha", "detector"),
 )
 
 #: The telemetry analytics' answers, one row per view and query: a read answers from its row, and a restart serves the

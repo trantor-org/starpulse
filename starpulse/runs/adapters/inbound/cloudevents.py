@@ -35,8 +35,8 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from starpulse.board.model.adapter_types import module_name
-from starpulse.contracts.adapters import CloudEvent, VerdictEvent
-from starpulse.event_log import verdict_events
+from starpulse.contracts.adapters import BreakingChangeEvent, CloudEvent, VerdictEvent
+from starpulse.event_log import breaking_change_events, verdict_events
 from starpulse.event_log.events import STREAM
 from starpulse.runs.adapters.inbound.ingest import run_event, token_owner
 from starpulse.runs.model import run_events
@@ -131,6 +131,12 @@ class CloudEventsIngest:
             return run_events.STREAM, f"{producer.name}/{parsed.id}", self._run_entry(producer, parsed)
         if parsed.machine is None and parsed.type == verdict_events.EVENT:
             return verdict_events.STREAM, f"{producer.name}/{parsed.id}", self._verdict_entry(producer, parsed)
+        if parsed.machine is None and parsed.type in breaking_change_events.EVENTS:
+            return (
+                breaking_change_events.STREAM,
+                f"{producer.name}/{parsed.id}",
+                self._breaking_change_entry(producer, parsed),
+            )
         fields = self._machine_entry(producer, parsed)
         return STREAM, fields["event_id"], fields
 
@@ -178,6 +184,24 @@ class CloudEventsIngest:
         )
         try:
             VerdictEvent.model_validate(fields)
+        except ValidationError as invalid:
+            raise _Refused(400, _reason(invalid)) from None
+        return fields
+
+    def _breaking_change_entry(self, producer: Producer, event: CloudEvent) -> dict[str, Any]:
+        """The `breaking-change:events` fields of a record or postmortem: the subject is the merge commit."""
+        if event.subject is None:
+            raise _Refused(400, "a breaking-change event carries a subject (the merge commit)")
+        data = event.data or {}
+        fields = breaking_change_events.entry(
+            event.type,
+            event.subject,
+            self._at(event),
+            producer.name,
+            **{name: data.get(name) for name in ("detector", "outcome", "pr", "task", "evidence")},
+        )
+        try:
+            BreakingChangeEvent.model_validate(fields)
         except ValidationError as invalid:
             raise _Refused(400, _reason(invalid)) from None
         return fields

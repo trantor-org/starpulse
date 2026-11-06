@@ -1145,6 +1145,21 @@ def _parser() -> argparse.ArgumentParser:
     checkpoint.add_argument("task", help="the task's key (`PROJ-45`)")
     checkpoint.add_argument("criterion", type=int, help="the criterion's number (`2` for `#2`)")
     checkpoint.add_argument("evidence", help="what shows it holds, recorded as `Verified AC #N: <evidence>`")
+    breaking = verbs.add_parser(
+        "breaking-change",
+        description="the commits that broke the default branch",
+        help="the commits that broke the default branch",
+    )
+    breaking_verbs = breaking.add_subparsers(dest="verb", required=True, metavar="verb")
+    listing = leaf(
+        breaking_verbs,
+        "list",
+        "each commit a detector named as a break, with its detections, oldest first",
+        _in_tasks("breaking_change_list"),
+        ("changes",),
+        (0, 2, 3),
+    )
+    listing.add_argument("--open", action="store_true", help="only the commits no postmortem has closed")
     machine = verbs.add_parser(
         "machine",
         description="the machines the server draws and the machine files",

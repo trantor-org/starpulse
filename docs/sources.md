@@ -464,6 +464,15 @@ missing a lens, round or outcome answers 400 and writes nothing. Every verdict i
 history store, and `/api/events` sends each as a `verdict` event (`task`, `lens`, `round`, `outcome`, `reason`, `at`).
 A lens that has sent no verdict has no row, so a reader never counts it as `PASS`.
 
+A commit that broke the default branch rides the route as `BreakingChangeRecorded`: no `machine`, `subject` the merge
+commit and `data` holding the `detector` and optionally `outcome`, `pr`, `task` and `evidence`. All are the producer's
+strings; StarPulse names no detector. `BreakingChangePostmortemed` (`subject` the commit, `data.task` the postmortem
+task) closes the commit's row. An event with no subject commit, or a `Recorded` one with no detector, answers 400 and
+writes nothing. The history store keeps one row per commit with one detection per detector, so two detectors naming one
+commit leave one row with two detections, and a repeated event id changes nothing. `GET /api/breaking-changes` (and
+`starpulse breaking-change list`) answers each commit once with its detections, oldest first; `?open=1` (`--open`)
+keeps those with no postmortem.
+
 ## Post machine events as CloudEvents
 
 A build job, a bot or any service that is not on the host posts a lifecycle machine's event over HTTP as a

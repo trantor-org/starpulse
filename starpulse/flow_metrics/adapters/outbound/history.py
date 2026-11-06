@@ -43,13 +43,15 @@ from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import OperationalError
 
 from starpulse.event_log import events as machine_events
-from starpulse.event_log import lane_events, verdict_events
+from starpulse.event_log import breaking_change_events, lane_events, verdict_events
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import EventLog, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 from starpulse.event_log.store import EventStore
+from starpulse.event_log.tables import breaking_change_detections as _detections
+from starpulse.event_log.tables import breaking_changes as _breaking_changes
 from starpulse.event_log.tables import gaps as _gaps
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
@@ -191,6 +193,8 @@ class History(Protocol):
     def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]: ...
 
     def task_events(self, task: str, since: float, now: float) -> list[dict]: ...
+
+    def breaking_changes(self, *, open_only: bool = False) -> list[dict]: ...
 
 
 @runtime_checkable
@@ -375,6 +379,69 @@ class HistoryStore:
             return [
                 {"lens": lens, "round": round, "outcome": outcome, "reason": reason, "at": at}
                 for lens, round, outcome, reason, at in db.execute(query)
+            ]
+
+    def record_breaking_change(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
+        """Write one breaking-change entry: a detection joins its commit's row, which the first one opens, and a
+        postmortem closes the row. A replayed entry changes nothing. `cursor`, the entry's id in the log, is saved in the
+        same transaction."""
+        commit = fields["commit"]
+        at = float(fields["time"])
+        recorded = fields["event"] == breaking_change_events.RECORDED
+        pr = fields.get("pr")
+        row = {
+            "commit_sha": commit,
+            "pr": int(pr) if pr is not None else None,
+            "task": fields.get("task") if recorded else None,
+            "outcome": fields.get("outcome"),
+            "first_seen": at,
+        }
+        with self.engine.begin() as db:
+            db.execute(self._insert(_breaking_changes).values(row).on_conflict_do_nothing())
+            if recorded:
+                detection = {
+                    "event_id": entry_id,
+                    "commit_sha": commit,
+                    "detector": fields["detector"],
+                    "outcome": fields.get("outcome"),
+                    "evidence": fields.get("evidence"),
+                    "occurred_at": at,
+                }
+                db.execute(self._insert(_detections).values(detection).on_conflict_do_nothing())
+            else:
+                closing = update(_breaking_changes).where(_breaking_changes.c.commit_sha == commit)
+                db.execute(closing.values(postmortem_task=fields.get("task")))
+            if cursor is not None:
+                self.checkpoints.save(breaking_change_events.STREAM, cursor, conn=db)
+
+    def breaking_changes(self, *, open_only: bool = False) -> list[dict]:
+        """Every commit that broke the branch, oldest first, with its `detections` (`detector`, `outcome`, `evidence`,
+        `at`); `open_only` keeps those no postmortem has closed."""
+        columns = _breaking_changes.c
+        found = _detections.c
+        query = select(_breaking_changes).order_by(columns.first_seen, columns.id)
+        if open_only:
+            query = query.where(columns.postmortem_task.is_(None))
+        detections = select(found.commit_sha, found.detector, found.outcome, found.evidence, found.occurred_at).order_by(
+            found.occurred_at, found.id
+        )
+        with self.engine.connect() as db:
+            seen: dict[str, list[dict]] = {}
+            for commit, detector, outcome, evidence, at in db.execute(detections):
+                seen.setdefault(commit, []).append(
+                    {"detector": detector, "outcome": outcome, "evidence": evidence, "at": at}
+                )
+            return [
+                {
+                    "commit": row.commit_sha,
+                    "pr": row.pr,
+                    "task": row.task,
+                    "outcome": row.outcome,
+                    "first_seen": row.first_seen,
+                    "postmortem_task": row.postmortem_task,
+                    "detections": seen.get(row.commit_sha, []),
+                }
+                for row in db.execute(query)
             ]
 
     def _summaries_changed(self) -> None:
@@ -858,6 +925,11 @@ def record_machine_events(store: HistoryStore, log: EventLog, stop: StopEvent) -
 def record_verdicts(store: HistoryStore, log: EventLog, stop: StopEvent) -> None:
     """Copy the log's qa verdicts into `store` until `stop`, as `record_machine_events` does the machine events."""
     _copy(store, log, stop, verdict_events.STREAM, store.record_verdict)
+
+
+def record_breaking_changes(store: HistoryStore, log: EventLog, stop: StopEvent) -> None:
+    """Copy the log's breaking-change entries into `store` until `stop`, as `record_verdicts` does the qa verdicts."""
+    _copy(store, log, stop, breaking_change_events.STREAM, store.record_breaking_change)
 
 
 def _copy(

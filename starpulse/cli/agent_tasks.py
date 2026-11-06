@@ -598,6 +598,13 @@ def task_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
     return {"tasks": _record_call(base, path, status, reply, noun="retired task")["tasks"]}
 
 
+def breaking_change_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base = agent_wire.server_url(args.server, environ)
+    path = "/api/breaking-changes?open=1" if args.open else "/api/breaking-changes"
+    status, reply = agent_wire.get(base, path)
+    return {"changes": _record_call(base, path, status, reply, noun="breaking change")["changes"]}
+
+
 def task_import_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/retired/import"
     files = [Path(file) for file in args.files]

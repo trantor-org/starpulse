@@ -98,6 +98,13 @@ def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
     return named | {"model": record.get("profile") or "", "entered": stub["entered"]} | card
 
 
+def breaking_changes_response(history: History, query: dict[str, list[str]]) -> tuple[bytes, int]:
+    """The body for `/api/breaking-changes`: every commit that broke the branch, or with `?open=1` those no postmortem
+    has closed."""
+    open_only = query.get("open", [""])[0] in ("1", "true")
+    return encode("breaking_changes", {"changes": history.breaking_changes(open_only=open_only)}), 200
+
+
 def history_response(
     history: History,
     query: dict[str, list[str]],
