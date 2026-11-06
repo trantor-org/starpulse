@@ -86,3 +86,21 @@ def test_the_deliver_skill_names_the_args_the_configured_argv_needs_and_runs_sho
 
     assert named == document["args"]
     assert text.index("command show deliver") < text.index("## 4. Deliver")
+
+
+HEADING_FREE = "**Task:** TASK-11602\n\nAdds the hc t36 collector and its tests; all checks pass locally.\n"
+TRANTOR_TEMPLATE = Path(__file__).parents[3] / ".github" / "pull_request_template.md"
+
+
+def _sections(text: str) -> list[str]:
+    return re.findall(r"^## (.+)$", re.sub(r"<!--.*?-->", "", text, flags=re.S), flags=re.M)
+
+
+def test_the_printed_trantor_template_gives_a_body_its_required_sections_and_a_heading_free_body_lacks_them(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    _, document = _show(capsys, tmp_path, "deliver", **{".github__pull_request_template.md": TRANTOR_TEMPLATE.read_text()})
+    required = ["Summary", "For the reviewer", "Verification"]
+
+    assert _sections(document["pr_body_template"]["text"]) == required
+    assert _sections(HEADING_FREE) == []

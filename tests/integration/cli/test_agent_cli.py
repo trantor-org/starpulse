@@ -1634,6 +1634,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "analytics scores",
         "analytics verdict",
         "command run",
+        "command show",
         "config check",
         "demo",
         "doctor",
@@ -2366,6 +2367,10 @@ CASES = {
     ("command run", 2): ["command", "run", "--config", "{dir}/commands.toml", "needs-task"],
     ("command run", 3): ["command", "run", "--config", "{dir}/commands.toml", "missing-binary"],
     ("command run", 4): ["command", "run", "--config", "{dir}/commands.toml", "nope"],
+    ("command show", 0): ["command", "show", "--config", "{dir}/commands.toml", "pass"],
+    ("command show", 1): ["command", "show", "--config", "{dir}/bad.toml", "pass"],
+    ("command show", 2): ["command", "show"],
+    ("command show", 4): ["command", "show", "--config", "{dir}/commands.toml", "nope"],
     ("config check", 0): ["config", "check", "--config", "{dir}/ok.toml"],
     ("config check", 1): ["config", "check", "--config", "{dir}/bad.toml"],
     ("config check", 2): ["config", "check", "--nope"],
@@ -2393,7 +2398,7 @@ def _edit_an_installed_copy() -> None:
 
 
 # An error document that carries a key beyond `error` and `code`: an unmapped command names the fallback.
-ERROR_EXTRAS = {("command run", 4): {"fallback"}}
+ERROR_EXTRAS = {("command run", 4): {"fallback"}, ("command show", 4): {"fallback"}}
 
 PREPARE = {("skills install", 1): _edit_an_installed_copy}
 
