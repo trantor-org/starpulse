@@ -339,3 +339,22 @@ def test_the_github_actor_writes_each_of_the_six_events(machines: dict) -> None:
     writers = machines["github-pull-request"]["writers"]
 
     assert all("github" in [w["actor"] for w in writers[event]] for event in EVENTS)
+
+
+def workflow_run(status: str, conclusion: str | None = None) -> dict:
+    run = {"id": 77, "run_attempt": 1, "path": ".github/workflows/ci.yml", "status": status, "conclusion": conclusion}
+    return {"action": status, "repository": {"full_name": REPO}, "workflow_run": run}
+
+
+def test_a_workflow_run_delivery_becomes_a_run_event_with_no_linked_task(world: World) -> None:
+    delivery_id = world.save("workflow_run", workflow_run("completed", "success"))
+    world.save("workflow_run", workflow_run("completed", "success"))  # a redelivery
+    world.run()
+
+    [recorded] = [entry.fields for entry in Tail.replay(world.log, "runs:events").poll()]
+    assert (recorded["event"], recorded["workflow"], recorded["run_id"], recorded["status"]) == (
+        "StepFinished", "ci.yml", "77", "succeeded",
+    )  # fmt: skip
+    assert recorded["instance"] == "github"
+    assert world.state(delivery_id)["status"] == "done"
+    assert world.events() == []

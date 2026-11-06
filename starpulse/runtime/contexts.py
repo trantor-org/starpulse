@@ -52,7 +52,11 @@ def contexts_of(config: Config) -> list[str]:
     github_events = config.github and any(producer.name == "github" for producer in config.producers)
     receivers = [
         name
-        for name, table in (("claude-code", config.claude_code), ("github", config.github), ("github-events", github_events))
+        for name, table in (
+            ("claude-code", config.claude_code),
+            ("github", config.github),
+            ("github-events", github_events),
+        )
         if table
     ]
     return [*kept, *adapter_contexts(config), *receivers]
@@ -128,7 +132,7 @@ def default_starters(
 ) -> dict[str, Starter]:
     """The starter of each context in `names`, all over `log` and one board. Raises `ValueError` for a name that is no
     context or a `[[runs]]` instance whose adapter the config cannot load."""
-    from starpulse.runtime.assembly import assemble, own_pull_merged, prune_steps, worker_board
+    from starpulse.runtime.assembly import assemble, own_pull_merged, prune_steps, runs_kind, worker_board
     from starpulse.runtime.assembly import history_store as build_history_store
     from starpulse.runtime.config import load
     from starpulse.runtime.read_model_follow import follow
@@ -201,7 +205,16 @@ def default_starters(
     def sweeper(own: threading.Event) -> Callable[[], None]:
         from starpulse.sweeper.bin import sweeper_worker
 
-        return sweeper_worker.start(config, path, base, log, own, load=load, prune=prune_steps(log, config, base))
+        return sweeper_worker.start(
+            config,
+            path,
+            base,
+            log,
+            own,
+            load=load,
+            prune=prune_steps(log, config, base),
+            contexts=[runs_kind(log, adapters)],
+        )
 
     def search(own: threading.Event) -> Callable[[], None]:
         from starpulse.board.bin import search_worker

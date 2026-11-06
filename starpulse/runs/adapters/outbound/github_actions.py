@@ -3,8 +3,8 @@
 `listing` reads one repository (`owner/name`) into those records: a workflow per active workflow file, its jobs (and, for
 a job the latest run took once, that job's steps) as the step graph. `start` and `follow` are what a runs adapter module
 offers the server for one configured instance. `start` dispatches a workflow that declares `workflow_dispatch` and needs
-`GITHUB_TOKEN` or `GH_TOKEN`. `follow` lists the repository, and every `RECONCILE_INTERVAL` seconds reads it again: two calls, plus those of a workflow
-whose latest run changed or has not ended (`Repository`).
+`GITHUB_TOKEN` or `GH_TOKEN`. `follow` lists the repository, then reads a workflow again when a run entry reports it (`Repository` reads only the
+workflows whose latest run changed or has not ended).
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound.rest import GitHubError, Transport, connect, get, repo_of
+from starpulse.runs.adapters.outbound.resync import follow_resync
 from starpulse.runs.model import run_events
 
 #: Each status a run, job or step reports before it completes, and the status it becomes.
@@ -372,27 +373,26 @@ class GitHubRuns:
             self._sink.set_dags(list(self._dags.values()), None, startable=sorted(self._startable))
 
 
-#: Seconds between two readings of a followed repository; a workflow file added since the last one shows at the next.
-#: A reading of a repository where no run changed is two calls, so this is also GitHub's only cost while it is quiet.
-RECONCILE_INTERVAL = 60.0
 #: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
 WORKER = "github-actions"
 
 
-def _reconcile_forever(runs: GitHubRuns) -> None:
-    """Read the repository every `RECONCILE_INTERVAL` seconds, so a run no entry reported shows all the same."""
-    while True:
-        runs.reconcile()
-        time.sleep(RECONCILE_INTERVAL)
+def read(url: str) -> list[dict]:
+    """The workflows of the repository at `url`, as the sweeper's `runs` kind compares them with the projection."""
+    transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+    return listing(transport, repo_of(url))[0]
 
 
-def follow(url: str, runs: RunsSink, log: EventLog) -> None:
+def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:
     """Read the repository at `url` into `runs`: its listing, then each run entry appended since the log's head.
 
     The head is read before the listing, so an entry the listing may not hold is still read and the retained ones,
-    already in it, are not replayed; an entry stamped before the listing is dropped (`GitHubRuns`). Reads are signed in
-    with `GITHUB_TOKEN` or `GH_TOKEN` when one is set; without, GitHub's lower unauthenticated rate limit applies.
+    already in it, are not replayed; an entry stamped before the listing is dropped (`GitHubRuns`). A `runs:resync`
+    entry naming the instance lists the repository again (`follow_resync`). Reads are signed in with `GITHUB_TOKEN` or
+    `GH_TOKEN` when one is set; without, GitHub's lower unauthenticated rate limit applies. The thread ends when `stop`
+    is set; the server passes none and it runs for the process's life.
     """
+    stop = stop or StopEvent()
     repo = repo_of(url)
     transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
     reader = GitHubRuns(runs, Repository(transport, repo))
@@ -400,7 +400,7 @@ def follow(url: str, runs: RunsSink, log: EventLog) -> None:
     def read() -> None:
         tail = Tail.live(log, run_events.STREAM)  # before the listing: what it holds is not replayed
         reader.reconcile()
-        tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), StopEvent())
+        tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), stop)
 
     threading.Thread(target=read, name="github-runs", daemon=True).start()
-    threading.Thread(target=_reconcile_forever, args=(reader,), name="github-runs-reconcile", daemon=True).start()
+    follow_resync(log, getattr(runs, "instance", None) or "", reader.reconcile, stop)

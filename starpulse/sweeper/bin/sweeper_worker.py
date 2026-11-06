@@ -68,15 +68,18 @@ def start(
     *,
     load: Callable[[Path | None], SweeperConfig],
     prune: Sequence[Housekeeping],
+    contexts: Sequence[Kind] = (),
     alive: Callable[[int], bool] = process_alive,
 ) -> Callable[[], None]:
     """Take the lease and start the pass loop over `log`, ending when `stop` is set; return its reload. `prune` is the
-    event-log prune as housekeeping steps, which the runtime builds as no context imports it. Raises `LeaseHeld` while
+    event-log prune as housekeeping steps and `contexts` the kinds of the contexts (`runs`), which the runtime builds as no
+    context imports another. Raises `LeaseHeld` while
     another live process holds the lease."""
     lease = acquire(log.engine, LEASE, alive=alive)
     declared = config.sweeper
     kinds: list[Kind] = [
         Readers(log, wake=log.committed),
+        *contexts,
         *(CommandKind(k.name, k.command, base, k.timeout_s) for k in declared.kinds),
     ]
     housekeeping: list[Housekeeping] = [
@@ -95,6 +98,7 @@ def main(
     discover: Callable[[Path | None], Path | None],
     load: Callable[[Path | None], SweeperConfig],
     prune: Callable[[EventLog, SweeperConfig, Path], Sequence[Housekeeping]],
+    contexts: Callable[[EventLog, argparse.ArgumentParser, SweeperConfig], Sequence[Kind]],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
     """Run the sweeper; `runtime` passes the collaborators it builds, as no context imports it. Exits 1 naming the
@@ -109,7 +113,16 @@ def main(
     log = EventLog(database_url(config.database_url, base))
     stop = StopEvent()
     try:
-        reload_config = start(config, path, base, log, stop, load=load, prune=prune(log, config, base))
+        reload_config = start(
+            config,
+            path,
+            base,
+            log,
+            stop,
+            load=load,
+            prune=prune(log, config, base),
+            contexts=contexts(log, parser, config),
+        )
     except LeaseHeld as exc:
         parser.exit(1, f"{exc}\n")
     hold(stop, reload_config)

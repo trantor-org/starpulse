@@ -133,7 +133,9 @@ def main(argv: list[str] | None = None) -> None:
             history_store=history_store,
             hold=hold,
         )
-    if args.context in OPT_IN:  # a run adapter's worker: the `contexts` child runs it, the runs worker leaves it its instances
+    if (
+        args.context in OPT_IN
+    ):  # a run adapter's worker: the `contexts` child runs it, the runs worker leaves it its instances
         from starpulse.runs.bin import adapter_worker
         from starpulse.runtime.server import run_adapters
 
@@ -153,10 +155,14 @@ def main(argv: list[str] | None = None) -> None:
             hold=hold,
         )
     if args.context == "sweeper":
-        from starpulse.runtime.assembly import prune_steps
+        from starpulse.runtime.assembly import prune_steps, runs_kind
+        from starpulse.runtime.server import run_adapters
         from starpulse.sweeper.bin import sweeper_worker
 
-        return sweeper_worker.main(argv, parser, **loader, prune=prune_steps, hold=hold)
+        def contexts(log, parser, config):
+            return [runs_kind(log, run_adapters(parser, config))]
+
+        return sweeper_worker.main(argv, parser, **loader, prune=prune_steps, contexts=contexts, hold=hold)
     if args.context == "search":
         from starpulse.board.bin import search_worker
 
