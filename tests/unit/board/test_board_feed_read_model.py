@@ -2,6 +2,7 @@
 paged, and no Task is held in the feed."""
 
 import tempfile
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -490,3 +491,59 @@ def test_titled_returns_each_read_model_tasks_title_labels_milestone_and_profile
         "profile": "@agent-fast-high",
     }
     assert named["TASK-2"] == {"title": "Task 2", "labels": ["kind-execute"], "milestone": None, "profile": None}
+
+
+class _SlowReadModel(ReadModel):
+    """A read model whose live-Task query stops until the test lets it go, as a build of a long board does."""
+
+    def __init__(self, engine: Engine) -> None:
+        super().__init__(engine)
+        self.reading = threading.Event()
+        self.let_go = threading.Event()
+
+    def snapshot(self, *args: object, **kwargs: object) -> list[dict]:
+        self.reading.set()
+        assert self.let_go.wait(10)
+        return super().snapshot(*args, **kwargs)
+
+
+def _slow_feed(engine: Engine) -> tuple[BoardFeed, _SlowReadModel]:
+    _append(engine, 1, "Ready")
+    Projector(engine, EventStore(engine)).catch_up()
+    model = _SlowReadModel(engine)
+    return BoardFeed(read_model=model), model
+
+
+def test_a_publish_does_not_wait_for_a_snapshot_build_that_is_reading_the_read_model(engine: Engine) -> None:
+    """The board stream's tail latency: `follow_read_model` publishes a Task delta under the feed lock, so a snapshot
+    build that held the lock for its whole read-model query kept every comment from the stream for that long."""
+    feed, model = _slow_feed(engine)
+    building = threading.Thread(target=feed.snapshot_at)
+    building.start()
+    assert model.reading.wait(10)
+    published = threading.Event()
+
+    publisher = threading.Thread(target=lambda: (feed.publish("task", {"id": "TASK-1"}), published.set()))
+    publisher.start()
+    prompt = published.wait(2)
+    model.let_go.set()
+    building.join(10)
+    publisher.join(10)
+
+    assert prompt
+
+
+def test_a_change_published_while_the_snapshot_is_building_is_one_the_stream_still_replays(engine: Engine) -> None:
+    feed, model = _slow_feed(engine)
+    taken: list[tuple[int, int, dict]] = []
+    building = threading.Thread(target=lambda: taken.append(feed.snapshot_at()))
+    building.start()
+    assert model.reading.wait(10)
+
+    feed.publish("task", {"id": "TASK-1"})
+    model.let_go.set()
+    building.join(10)
+
+    _, sent, _ = taken[0]
+    missed, _ = feed.watch_from(sent) or ([], None)
+    assert [kind for kind, _ in missed] == ["task"]
