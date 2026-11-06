@@ -95,6 +95,8 @@ a board that keeps none answers exit 3. A `--spec` or `--adr` on `milestone edit
 bodies out, `doc show` returns one with its `body`, and a board that keeps no docs answers exit 3. `doc restore`
 returns an archived doc's file, unchanged, to `--folder` under the docs (the docs folder itself by default), refusing a doc
 that is open or a destination that exists (exit 1).
+`session records` reads no server: it prints a session's Claude Code transcript records grouped by the task each belongs to,
+read from the transcript files and never stored.
 `skills` reads no server: it copies the bundled skills into the project or, with `--user`, the home directory.
 """
 
@@ -646,6 +648,35 @@ def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     if refused := _unlisted_writers(config, path.parent if path else Path()):
         return {**checked, "ok": False, "errors": refused, "config": effective}
     return {**checked, "ok": True, "config": effective}
+
+
+def _session_records(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """One session's transcript records grouped by the task each belongs to, in the order the tasks are first named,
+    read from the transcript files under `--transcripts`, else `[board] transcripts`, else Claude Code's own directory."""
+    from starpulse.board.adapters.session_activity import DEFAULT_TRANSCRIPTS  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.contracts.adapters import TaskKeys  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.contracts.analytics import Analytics  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.sessions.transcript_records import records_by_task, session_records  # noqa: PLC0415 - import cost, paid on first use
+
+    path = discover(args.config)
+    try:
+        config = load(path)
+    except (ConfigError, OSError, ValueError) as exc:
+        raise agent_wire.CliError("refused", f"{path}: {exc}") from exc
+    root = Path(args.transcripts or config.board.get("transcripts", DEFAULT_TRANSCRIPTS)).expanduser()
+    records = session_records(root, args.session)
+    if records is None:
+        raise agent_wire.CliError("not_found", f"no transcript of session {args.session} under {root}")
+    settings = config.claude_code or ClaudeCode()
+    keys = TaskKeys(key=re.compile(settings.key), branch=re.compile(settings.branch), key_format=settings.key_format)
+    groups = records_by_task(records, keys, config.analytics or Analytics())
+    return {
+        "session": args.session,
+        "records": len(records),
+        "groups": [{"task": task, "records": found} for task, found in groups.items()],
+    }
 
 
 def _unlisted_writers(config: Config, base: Path) -> list[str]:
@@ -1538,6 +1569,23 @@ def _parser() -> argparse.ArgumentParser:
     )
     command_show.add_argument("name", help="the step's name (`deliver`)")
     command_show.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    session = verbs.add_parser("session", description="one agent session", help="one agent session")
+    session_verbs = session.add_subparsers(dest="verb", required=True, metavar="verb")
+    session_records = leaf(
+        session_verbs,
+        "records",
+        "a Claude Code session's transcript records, grouped by the task each belongs to (a claim or a task branch starts "
+        "a task), read from the transcript files and never stored",
+        _session_records,
+        ("session", "records", "groups"),
+        (0, 1, 2, 4),
+        reads_server=False,
+    )
+    session_records.add_argument("session", help="the Claude Code session id")
+    session_records.add_argument(
+        "--transcripts", type=Path, help="the directory of `<project>/<session>.jsonl` files (default: `[board] transcripts`)"
+    )
+    session_records.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(

@@ -55,6 +55,7 @@ Four verbs work on files, and only `demo` without `--mockup` reads the server; e
 starpulse machine validate .starpulse/machines/*.yaml   # schema and compile errors, each with its file and line
 starpulse machine import mermaid flow.mmd               # draft a machine file from a stateDiagram-v2 diagram
 starpulse config check --config starpulse.toml          # unknown keys by name, and the effective config with defaults
+starpulse session records <session-id>                  # a session's transcript records grouped by task, read from the files
 starpulse demo --out demo.html                          # the self-contained demo page (reads the server's snapshot)
 ```
 
@@ -127,6 +128,7 @@ lists exactly the verbs there are.
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load (a malformed `[project.commands]` entry included), or when a built-in board's machine names a writer workflow no `[[runs]]` domain lists, which `serve` refuses to start on |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
+| `session records` | `SESSION`, `--transcripts`, `--config` | `session`, `records` (the count) and `groups`, each `{task, records}` in the order the tasks are first named, `task` null for a session that names none; the records are the transcript's own JSON lines, read from `<transcripts>/<project>/<session>.jsonl` (`--transcripts`, else `[board] transcripts`, else `~/.claude/projects`) and never stored; a task is claimed by a branch the key scheme names or by a shell command or `Skill` call a `claims` pattern matches, and the records before the first claim join the first task; offline; exit 4 when no transcript of the session exists, 1 when the config does not load |
 | `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |
 | `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |
 | `help --agent` | | `exit_codes` and `verbs` |
