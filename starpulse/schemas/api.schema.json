@@ -8947,6 +8947,22 @@
       "title": "TaskRecord",
       "type": "object"
     },
+    "TaskRecords": {
+      "description": "`GET /api/task-records?ids=A,B`: the `TaskRecord` of each named task the board can read, in the order named.",
+      "properties": {
+        "records": {
+          "items": {
+            "$ref": "#/$defs/TaskRecord"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "records"
+      ],
+      "title": "TaskRecords",
+      "type": "object"
+    },
     "TaskRun": {
       "description": "One scheduler run a task's id names, linked to the run's own page.",
       "properties": {
@@ -10099,6 +10115,9 @@
     "taskRecord": {
       "$ref": "#/$defs/TaskRecord"
     },
+    "taskRecords": {
+      "$ref": "#/$defs/TaskRecords"
+    },
     "traceClusters": {
       "$ref": "#/$defs/TraceClusters"
     },
@@ -10146,6 +10165,7 @@
     "schedulerStatus",
     "contractReport",
     "taskRecord",
+    "taskRecords",
     "milestones",
     "milestoneShown",
     "docs",

@@ -225,6 +225,7 @@ const HANDLERS: Record<string, Handler> = {
     const { task, to } = JSON.parse(String(init?.body ?? "{}")) as { task?: string; to?: string };
     return server.move(String(task), String(to));
   },
+  "/api/task-records": (server, _path, query) => server.taskRecords((query.get("ids") ?? "").split(",")),
   "/api/task": (server, path) => server.task(decodeURIComponent(path.slice("/api/task/".length))),
   "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
@@ -464,10 +465,20 @@ export class DemoServer {
 
   /** The synthetic full record behind a public demo card; an In Progress card's names a synthetic claiming session, a fragment so the public demo carries no real host. */
   task(id: string): Response {
+    const full = this.fullRecord(id);
+    return full ? json(full) : json({ error: `${id} has no record to read` }, 404);
+  }
+
+  /** The records of the named tasks that have one, in the order named. */
+  taskRecords(ids: string[]): Response {
+    return json({ records: ids.flatMap((id) => this.fullRecord(id) ?? []) });
+  }
+
+  private fullRecord(id: string): { task: string; record: Record<string, unknown> } | null {
     const record = this.records[id];
-    if (!record) return json({ error: `${id} has no record to read` }, 404);
+    if (!record) return null;
     const working = plays(this.snapshot.flows.find((f) => f.name === "board")?.agents.find((a) => a.id === id)?.state, this.snapshot.roles?.working);
-    return json({ task: id, record: { ...record, session: working ? `#demo-session-${id.replace(/\D/g, "").padStart(4, "0")}` : "" } });
+    return { task: id, record: { ...record, session: working ? `#demo-session-${id.replace(/\D/g, "").padStart(4, "0")}` : "" } };
   }
 
   /** Apply the same optimistic-lock payload as the served writer, then publish card-sized fields. */
