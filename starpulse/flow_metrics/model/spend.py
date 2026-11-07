@@ -8,7 +8,9 @@ split the two.
 
 `wte` weighs a step's tokens as the provider prices them against one uncached input token: a cache write 1.25, a
 cache read 0.1, an output token 5. `task_wte` sums a task's phases. A cell (kind x size) of at least `MIN_N` tasks
-has a `norm_wte`, the median `task_wte`, and a task over `FLAG_RATIO` times it is `above_norm`.
+has, per phase, a `phase_norm_wte`, the median `wte` of that phase over the cell's tasks that ran it (a phase over
+`FLAG_RATIO` times it is `phase_above_norm`). A task's `norm_wte` sums the norms of the phases it ran, so a qa round
+is weighed against peers' qa, and a task over `FLAG_RATIO` times it is `above_norm`.
 
 A row's `profile` is the `<model>-<effort>` of its first main-thread step, so a subagent's model does not stand for
 the session's; a row of subagent steps alone takes its first step's.
@@ -145,12 +147,19 @@ def _flagged(
     for (task, _), row in rows.items():
         total[task] += row["wte"]
     cells = {task: cell_of(tasks, task) or (None, None) for task in total}
-    in_cell: dict[Any, list[float]] = defaultdict(list)
-    for task, cell in cells.items():
-        in_cell[cell].append(total[task])
+    in_cell: dict[tuple[Any, str], list[float]] = defaultdict(list)
+    for (task, phase), row in rows.items():
+        in_cell[(cells[task], phase)].append(row["wte"])
     norm = {
-        cell: median(values) if cell[0] is not None and len(values) >= MIN_N else None
-        for cell, values in in_cell.items()
+        key: median(values) if key[0][0] is not None and len(values) >= MIN_N else None
+        for key, values in in_cell.items()
+    }
+    phase_norms: dict[str, list[float | None]] = defaultdict(list)
+    for task, phase in rows:
+        phase_norms[task].append(norm[(cells[task], phase)])
+    task_norm = {
+        task: None if None in norms else sum(n for n in norms if n is not None)
+        for task, norms in phase_norms.items()
     }
     return [
         {
@@ -158,8 +167,11 @@ def _flagged(
             "kind": cells[task][0],
             "size": cells[task][1],
             "task_wte": total[task],
-            "norm_wte": norm[cells[task]],
-            "above_norm": norm[cells[task]] is not None and total[task] > FLAG_RATIO * norm[cells[task]],
+            "norm_wte": task_norm[task],
+            "above_norm": task_norm[task] is not None and total[task] > FLAG_RATIO * task_norm[task],
+            "phase_norm_wte": norm[(cells[task], phase)],
+            "phase_above_norm": norm[(cells[task], phase)] is not None
+            and row["wte"] > FLAG_RATIO * norm[(cells[task], phase)],
         }
-        for (task, _), row in sorted(rows.items(), key=lambda kv: (kv[0][0], kv[1]["first_at"]))
+        for (task, phase), row in sorted(rows.items(), key=lambda kv: (kv[0][0], kv[1]["first_at"]))
     ]

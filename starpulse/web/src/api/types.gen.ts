@@ -2851,7 +2851,7 @@ export interface SpendPhase {
   last_at: number;
   models: string[];
   /**
-   * The median `task_wte` of the task's kind and size; null under five tasks in the cell.
+   * The sum of `phase_norm_wte` over the task's phases; null when any is null.
    */
   norm_wte: number | null;
   output: number;
@@ -2863,6 +2863,14 @@ export interface SpendPhase {
    * `claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.
    */
   phase: string;
+  /**
+   * `wte` is over three times `phase_norm_wte`.
+   */
+  phase_above_norm: boolean;
+  /**
+   * The median `wte` of this phase over the tasks of the task's kind and size that ran it; null under five.
+   */
+  phase_norm_wte: number | null;
   /**
    * `<model>-<effort>` of the phase's first main-thread step, each `unknown` when unrecorded.
    */
