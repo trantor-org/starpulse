@@ -115,8 +115,8 @@ def edit_task(
         return 404, {"error": "this board does not edit tasks"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
-    if "acceptanceCriteria" in changes and (refused := holder_refusal(feed, agent, task, who)) is not None:
-        return refused
+    if holder_refusal(feed, agent, task, who) is not None and not comment.strip():
+        comment = f"Edited by session {who.session}, not the holder: {', '.join(sorted(changes))}"
     with EDIT_LOCK:
         if (current := read(task)) is None:
             return 404, {"error": f"{task} has no record to read"}
