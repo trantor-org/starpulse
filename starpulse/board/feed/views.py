@@ -54,7 +54,7 @@ class ViewMethods:
         return rows[:end], len(rows) > end
 
     def _hot(self) -> list[dict]:
-        """Every open task but the cold done ones; the caller holds the lock."""
+        """Every open task but the cold done ones; the caller holds the lock unless the feed has a read model."""
         if self._read_model is not None:
             return self._read_model_hot()
         return [agent for agent in self._open.values() if not is_cold(agent)]
@@ -77,12 +77,21 @@ class ViewMethods:
         ]
 
     def _done_fields(self) -> dict[str, Any]:
-        """The snapshot's account of Done Tasks off the board; the caller holds the lock."""
+        """The snapshot's account of Done Tasks off the board; the caller holds the lock unless the feed has a read model."""
         if self._read_model is None:
             cold = sorted(t for t, a in self._open.items() if is_cold(a))
             return {"settled": dict(self._settled), "cold_done": cold, "milestone_done": {}}
         counts = self._read_model.milestone_done(self._roles.done, local_midnight(self._clock()))
         return {"settled": {}, "cold_done": [], "milestone_done": counts}
+
+    def _flows_unheld(self, now: float) -> tuple[list[dict], dict[str, dict]]:
+        """`_flows` as a caller that does not hold the lock reads it: a read model answers from the store and holds none
+        of the feed's state, so it takes no lock (a build holding the feed lock for its queries kept a publish, and the
+        comment it announces, off the stream for as long as the build ran); a feed that holds its tasks reads under it."""
+        if self._read_model is not None:
+            return self._flows(now)
+        with self._lock:
+            return self._flows(now)
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
         """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
@@ -106,15 +115,14 @@ class ViewMethods:
         """`GET /api/machines`: the next `limit` machines entered from `open_` (None: the In Progress machine) with
         activity older than `before` (None: the newest), `{open, machines, more}`, each machine whole with its
         derivation; None when `open_` is not a machine here."""
-        with self._lock:
-            flows, derived = self._flows(time.time())
-            if open_ is None:
-                open_ = next((n for n, d in derived.items() if d["depth"] == 0), None)
-            elif open_ not in derived:
-                return None
-            names, more = machine_page(derived, open_, before=before, limit=limit)
-            by_name = {f["name"]: f for f in flows}
-            return {"open": open_, "machines": [{**by_name[n], **derived[n]} for n in names], "more": more}
+        flows, derived = self._flows_unheld(time.time())
+        if open_ is None:
+            open_ = next((n for n, d in derived.items() if d["depth"] == 0), None)
+        elif open_ not in derived:
+            return None
+        names, more = machine_page(derived, open_, before=before, limit=limit)
+        by_name = {f["name"]: f for f in flows}
+        return {"open": open_, "machines": [{**by_name[n], **derived[n]} for n in names], "more": more}
 
     def _machine_fields(self, flows: list[dict], derived: dict[str, dict], now: float) -> dict:
         """The snapshot's `machinePage` (names of the In Progress machine's first page of rows; their bodies are in
@@ -198,9 +206,15 @@ class ViewMethods:
         return self._rev
 
     def snapshot_at(self) -> tuple[int, int, dict[str, Any]]:
-        """The snapshot with the `rev` and the publish count it was taken at, as one reading."""
+        """The snapshot with the `rev` and the publish count it was taken at, as one reading. A read model's Tasks are
+        read after the count, outside the lock, so a publish the build overlaps is replayed after `sent` to a stream
+        that attaches: a Task delta carries the Task as it stands, so a replay of a change the read already holds ends
+        on the same page."""
         with self._lock:
-            return self._rev, self._sent, self.snapshot()
+            rev, sent = self._rev, self._sent
+            if self._read_model is None:
+                return rev, sent, self.snapshot()
+        return rev, sent, self.snapshot()
 
     def watch_from(self, sent: int) -> tuple[list[tuple[str, dict]], queue.Queue] | None:
         """The changes published after the `sent`-th, and the queue of every change after those: what a page needs on a
@@ -237,29 +251,44 @@ class ViewMethods:
                 time.sleep(0.005)
 
     def snapshot(self) -> dict[str, Any]:
-        """What the page draws: every machine with its tasks, the workflow declarations, the workflows and their pools."""
+        """What the page draws: every machine with its tasks, the workflow declarations, the workflows and their pools.
+        A read model's tasks are read before the lock is taken, because it holds none of them (see `_flows_unheld`)."""
+        now = time.time()
+        if self._read_model is None:
+            with self._lock:
+                return self._snapshot(now, self._modelled_fields(now))
+        modelled = self._modelled_fields(now)
         with self._lock:
-            now = time.time()
-            flows, derived = self._flows(now)
-            return {
-                "graphs": [*self._drawn, "runs"],
-                "flows": [{**f, **derived.get(f["name"], {})} for f in flows],
-                **self._machine_fields(flows, derived, now),
-                "dags": self._workflows(),
-                "pools": self._drawn_pools(),
-                "cpu": dict(self._cpu),
-                "pulls": self._pulls,
-                **self._ledger_marks(self._ledger_full),
-                "claims": dict(self._claims),
-                "roles": self._roles.wire(),
-                "capabilities": dict(self._capabilities),
-                **self._done_fields(),
-                "ratings": {} if self._ratings is None else self._ratings.latest(),
-                "interactive": dict.fromkeys(self._interactive, True),
-                "error": self._error(),
-                "reading": self._replaying() or self._machines_reading,
-                **declared(self._domains, self._runnable(), self._cues, self._processes),
-                "boardUrl": self._board_url,
-                "hint": self._hint,
-                "now": now,
-            }
+            return self._snapshot(now, modelled)
+
+    def _modelled_fields(self, now: float) -> dict[str, Any]:
+        """The snapshot's fields made of tasks: the flows, the machine page and strip, and the Done account."""
+        flows, derived = self._flows(now)
+        return {
+            "flows": [{**f, **derived.get(f["name"], {})} for f in flows],
+            **self._machine_fields(flows, derived, now),
+            **self._done_fields(),
+        }
+
+    def _snapshot(self, now: float, modelled: dict[str, Any]) -> dict[str, Any]:
+        """The snapshot from `modelled` and the state the feed holds; the caller holds the lock."""
+        return {
+            "graphs": [*self._drawn, "runs"],
+            **modelled,
+            "dags": self._workflows(),
+            "pools": self._drawn_pools(),
+            "cpu": dict(self._cpu),
+            "pulls": self._pulls,
+            **self._ledger_marks(self._ledger_full),
+            "claims": dict(self._claims),
+            "roles": self._roles.wire(),
+            "capabilities": dict(self._capabilities),
+            "ratings": {} if self._ratings is None else self._ratings.latest(),
+            "interactive": dict.fromkeys(self._interactive, True),
+            "error": self._error(),
+            "reading": self._replaying() or self._machines_reading,
+            **declared(self._domains, self._runnable(), self._cues, self._processes),
+            "boardUrl": self._board_url,
+            "hint": self._hint,
+            "now": now,
+        }
