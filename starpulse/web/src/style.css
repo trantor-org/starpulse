@@ -226,7 +226,7 @@ body:has(#sd) #crumb { visibility: hidden; }
 #sd .fchip { cursor: pointer; background: none; font-family: inherit; }
 #sd .fchip b { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: calc(11px * var(--fs)); }
 #sd .fchip span { color: var(--muted); }
-#sd .sd-body { position: relative; flex: 1; min-height: 0; overflow: auto; }
+#sd .sd-body { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 #sd .sd-stage { position: relative; overflow: hidden; }
 #sd .sd-details { position: absolute; top: 0; right: 0; bottom: 0; width: min(320px, 100%); box-sizing: border-box; padding: 20px 18px; background: var(--glass); border-left: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); z-index: 6; font-size: calc(12px * var(--fs)); }
 :is(#kb, #dg) .filters { position: relative; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-height: 34px; flex: none; margin-bottom: 12px; }
