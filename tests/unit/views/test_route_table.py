@@ -59,6 +59,7 @@ _TABLE = [
     ("/api/task-records", _READ),
     ("/api/retired", _READ),
     ("/api/move", ("POST",)),
+    ("/api/resume", ("POST",)),
     ("/api/start", ("POST",)),
     ("/api/edit", ("POST",)),
     ("/api/archive", ("POST",)),

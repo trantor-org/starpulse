@@ -31,7 +31,13 @@ def starter(url: str | None, by: str | None = None) -> Callable[..., str] | None
     base = url.rstrip("/")
 
     def start(
-        task: str, *, harness: str = "claude", mode: str = "interactive", verb: str = "Start", profile: str | None = None
+        task: str,
+        *,
+        harness: str = "claude",
+        mode: str = "interactive",
+        verb: str = "Start",
+        profile: str | None = None,
+        text: str | None = None,
     ) -> str:
         params: dict[str, str] = {"harness": harness, "mode": mode}
         if by:
@@ -40,6 +46,8 @@ def starter(url: str | None, by: str | None = None) -> Callable[..., str] | None
             params["verb"] = verb
         if profile:
             params["profile"] = profile
+        if text:  # a resume's reply, the first message of the recreated session
+            params["text"] = text
         query = f"?{urllib.parse.urlencode(params)}"
         request = urllib.request.Request(f"{base}/start/{task}{query}", method="POST")
         try:

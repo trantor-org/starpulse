@@ -211,6 +211,9 @@ names a session and `anonymous` when it names none, never `operator`, so an unna
 operator's. The write's `board:lanes` row carries all three, and a create stamps `created_by: <harness>:<session>` in
 the task (`anonymous` when it names no session). `POST /api/start` takes an optional `actor` and calls a board writer's
 `assign` with it only when named.
+`POST /api/resume` (`task`, optional `text` up to 4000 characters) recreates the session of a task in the review, waiting or
+attention role through the start service's `Resume` verb, answers `{task, url, recorded}` and records `Resumed in <url>` as
+a task comment; any other lane answers `409`, a start-service refusal `502`.
 
 ## Post-merge checks
 

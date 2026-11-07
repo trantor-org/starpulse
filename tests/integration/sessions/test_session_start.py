@@ -64,6 +64,13 @@ def test_a_start_names_harness_and_mode_in_the_query_the_service_reads() -> None
     assert asked == ["/start/TASK-D7?harness=cursor&mode=headless"]
 
 
+def test_a_resume_names_its_verb_and_carries_the_reply_in_the_query_the_service_reads() -> None:
+    with _service(200, json.dumps({"task": "TASK-D7", "url": "https://claude.ai/code/session_01"})) as (url, asked):
+        _starter(url)("TASK-D7", verb="Resume", text="fix the typo & retry")
+
+    assert asked == ["/start/TASK-D7?harness=claude&mode=interactive&verb=Resume&text=fix+the+typo+%26+retry"]
+
+
 def test_a_start_by_the_scheduler_says_so_in_the_request_the_service_reads() -> None:
     with _service(200, json.dumps({"task": "TASK-D7", "url": "https://claude.ai/code/session_01"})) as (url, asked):
         start = starter(url, by="scheduler")
