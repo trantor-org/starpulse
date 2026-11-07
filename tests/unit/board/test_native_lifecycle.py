@@ -722,12 +722,13 @@ def test_the_holding_session_and_the_operator_move_the_task_it_holds(
     assert _move(feed, built, to="in_progress", actor="operator", session="s-2")[0] == 200
 
 
-def test_a_criterion_checkpoint_by_a_session_that_does_not_hold_the_task_is_refused_naming_the_holder(
+def test_a_content_edit_by_a_session_that_does_not_hold_the_task_lands_and_tells_the_holder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     feed, built = _held_by_s1(tmp_path, monkeypatch)
 
-    status, body = _checkpoint(feed, built, session="s-2")
+    status, _ = _checkpoint(feed, built, session="s-2")
 
-    assert status == 409 and "held by s-1" in body["error"]
-    assert _checkpoint(feed, built, session="s-1")[0] == 200
+    assert status == 200
+    assert "[x] #1" in _text(tmp_path, "task-1")
+    assert "Edited by session s-2, not the holder: acceptanceCriteria" in _text(tmp_path, "task-1")
