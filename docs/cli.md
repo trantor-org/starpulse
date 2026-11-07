@@ -190,7 +190,7 @@ board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither r
 
 `analytics spend` reads `GET /api/analytics/spend[?hours=N]` with the window and refusals of `analytics steps`: each task's
 tokens by phase (`claim`, `implement`, `qa`, `deliver`, `review_fix`), their weighted total `wte`, peak context,
-compactions, models and `profile` (`<model>-<effort>` of its first main-thread step), with the task's total against its kind and size `norm_wte` and `above_norm`. A task with no
+compactions, models and `profile` (`<model>-<effort>` of its first main-thread step), with each phase against its kind and size `phase_norm_wte` and `phase_above_norm`, and the task's total against `norm_wte` (the phase norms summed) and `above_norm`. A task with no
 labels is listed with no norm; [Connect sources](sources.md#report-each-tasks-spend-by-phase) defines the phases.
 
 `analytics estimates` reads `GET /api/analytics/estimates[?hours=N][&milestone=m-N]`: one row per completed task with a

@@ -249,8 +249,10 @@ Cursor left out, by task then the phase's first step. Its columns:
 - `models`, `first_at`, `last_at`: the models used and the epoch seconds of the phase's first and last step.
 - `profile`: `<model>-<effort>` of the phase's first main-thread step (its first step when a subagent made every
   step), each `unknown` when the harness recorded none; the key per-profile norms group by.
-- `task_wte`: `wte` over the task's phases in the window. `norm_wte`: the median `task_wte` of the tasks of its kind and
-  size, null under 5 tasks in the cell. `above_norm`: `task_wte` is over 3 times `norm_wte`.
+- `task_wte`: `wte` over the task's phases in the window. `phase_norm_wte`: the median `wte` of the tasks of its kind and
+  size that ran this phase, null under 5 such tasks. `phase_above_norm`: `wte` is over 3 times it. `norm_wte`: the sum
+  of `phase_norm_wte` over the phases the task ran (null when any is null), so a task that ran qa is weighed against
+  peers' qa. `above_norm`: `task_wte` is over 3 times `norm_wte`.
 
 Blind spot: `starting-task` stays in force through the build, so the skill alone cannot split `claim` from `implement`;
 the first edit does, and a task worked by hand with no skill loaded is still placed by it. A task with no labels has

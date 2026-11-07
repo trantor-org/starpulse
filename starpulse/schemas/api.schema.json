@@ -8349,7 +8349,7 @@
               "type": "null"
             }
           ],
-          "description": "The median `task_wte` of the task's kind and size; null under five tasks in the cell."
+          "description": "The sum of `phase_norm_wte` over the task's phases; null when any is null."
         },
         "output": {
           "type": "integer"
@@ -8361,6 +8361,21 @@
         "phase": {
           "description": "`claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.",
           "type": "string"
+        },
+        "phase_above_norm": {
+          "description": "`wte` is over three times `phase_norm_wte`.",
+          "type": "boolean"
+        },
+        "phase_norm_wte": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The median `wte` of this phase over the tasks of the task's kind and size that ran it; null under five."
         },
         "profile": {
           "default": "",
@@ -8417,7 +8432,9 @@
         "last_at",
         "task_wte",
         "norm_wte",
-        "above_norm"
+        "above_norm",
+        "phase_norm_wte",
+        "phase_above_norm"
       ],
       "title": "SpendPhase",
       "type": "object"

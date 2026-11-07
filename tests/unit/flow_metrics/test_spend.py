@@ -89,9 +89,28 @@ def test_a_task_far_above_its_cells_median_is_flagged_and_a_cell_under_five_task
     assert heavy["above_norm"] is True
     assert heavy["norm_wte"] == normal["task_wte"]
     assert heavy["task_wte"] > 10 * heavy["norm_wte"]
+    assert (heavy["phase"], normal["phase_above_norm"]) == ("claim", False)
 
     few = spend_report([s for n in (1, 2) for s in lifecycle(n)], KEYS, tasks, ANALYTICS)
     assert {(r["norm_wte"], r["above_norm"]) for r in few} == {(None, False)}
+
+
+def test_a_qa_round_is_weighed_against_peers_that_ran_qa_not_against_tasks_that_skipped_it() -> None:
+    def without_qa(number: int) -> list[Signal]:
+        return [x for x in lifecycle(number) if x.name != "qa" and x.origin != "side"]
+
+    tasks = {f"TASK-{n}": {"labels": EXECUTE_3} for n in range(1, 12)}
+    found = [s for n in range(1, 6) for s in without_qa(n)]
+    found += [s for n in range(6, 11) for s in lifecycle(n)]
+    found += lifecycle(11) + [sig("request", 7, "s11", branch="claude/task-11-x", model="m", turn="p1", output=50_000)]
+
+    rows = spend_report(found, KEYS, tasks, ANALYTICS)
+
+    qa = {r["task"]: r for r in rows if r["phase"] == "qa"}
+    assert qa["TASK-6"]["phase_norm_wte"] == qa["TASK-6"]["wte"]
+    assert (qa["TASK-6"]["phase_above_norm"], qa["TASK-6"]["above_norm"]) == (False, False)
+    assert qa["TASK-11"]["phase_above_norm"] is True
+    assert all(r["norm_wte"] == sum(p["phase_norm_wte"] for p in rows if p["task"] == r["task"]) for r in rows)
 
 
 def test_two_phases_of_a_task_starting_at_the_same_instant_still_take_its_compactions() -> None:
