@@ -1,0 +1,306 @@
+// The DAGs tied to a Board state, drawn on the Star Map as a hangar per state: its DAGs orbit the state just outside its ring, each turned
+// toward the transition it acts on, with the hangar's name beside them. Which DAGs are tied, the state each belongs to, and where each orbiter
+// and name sits; the renderer draws them (drawPivot). A DAG that only launches work, or has no tie, stays off the map (the DAGs view lists it).
+//   write — the DAG writes a Board transition (the board machine's `writers`)
+//   cue   — a Board event cues the DAG (the snapshot's `cues`)
+import { pathLedger, type Fold } from "./levels";
+import type { Source } from "../features/level/ledger";
+import { bez, sample, type BEdge, type Curve, type Pt, type Scene } from "./scene";
+import { PULSE, TRAVEL, type Move, type Sky } from "./sky";
+
+export type TieKind = "write" | "cue";
+export interface Anchor extends Pt {
+  kind: TieKind;
+  /** The Board event the tie is about. */
+  event: string;
+  edge?: BEdge;
+  /** The state the tie acts on: a write's source (the state the DAG moves work out of), a cue's state (where the event lands). */
+  state: string;
+}
+export interface Orbiter extends Pt {
+  dag: string;
+  label: string;
+  anchors: Anchor[];
+  /** The transition the DAG docks by: its orbiter aims at it. */
+  primary?: Anchor;
+  /** Where it writes the states of a machine it launches, drawn as a dashed ring while it is hovered. */
+  subs: (Pt & { flow: string })[];
+  /** Its angle round the state. */
+  a: number;
+}
+export interface Pivot {
+  /** The state it orbits. */
+  state: string;
+  /** The state's centre, and the radius of the ring its orbiters sit on, in world units. */
+  c: Pt;
+  orbit: number;
+  orbs: Orbiter[];
+  /** The hangar's name: where it is anchored, its alignment, and the room it takes. */
+  lab: Pt;
+  align: CanvasTextAlign;
+  box: [number, number, number, number];
+  /** The stretches of the ring its arc draws, clear of every name it would cross. */
+  arcs: [number, number][];
+}
+export interface Ties {
+  pivots: Pivot[];
+  /** World units a screen pixel at the Board's fit, and the page's text size as a factor. */
+  u: number;
+  ts: number;
+}
+
+/** A Board move a tied DAG took part in: the DAG wrote it, or its event cued the DAG. `u` is how far the comet has run, 0 to 1 over TRAVEL, then 1 while its ring fades. */
+export interface Touch {
+  orbiter: Orbiter;
+  anchor: Anchor;
+  at: number;
+  u: number;
+}
+
+/**
+ * The Board moves playing at `now` that a tied DAG caused, one per DAG and anchor. A move carries no actor, so a writer is credited only when
+ * `ran` says it ran at the move; a cue needs nothing but the event. A tied transition's line shows nothing at rest, so no move playing is no touch.
+ */
+export function touches({ pivots }: Ties, moves: readonly Move[], ran: (dag: string, at: number) => boolean, now: number): Touch[] {
+  const out: Touch[] = [];
+  for (const m of moves) {
+    if (m.machine !== "board" || m.at > now || now - m.at >= TRAVEL + PULSE) continue;
+    for (const h of pivots)
+      for (const orbiter of h.orbs)
+        for (const anchor of orbiter.anchors)
+          if (anchor.event === m.event && (anchor.kind === "cue" || ran(orbiter.dag, m.at))) out.push({ orbiter, anchor, at: m.at, u: Math.min(1, (now - m.at) / TRAVEL) });
+  }
+  return out;
+}
+
+const short = (d: string) => d.replace(/^[^/]+\//, "");
+
+/** The tied DAGs of the Board level: a hangar per state with an orbiter for each DAG that writes or is cued by one of its transitions. */
+export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
+  const board = sky.board.machine, byDag = new Map<string, Orbiter>();
+  const tie = (dag: string): Orbiter | null => {
+    if (!sky.dagBy[dag]) return null;
+    let t = byDag.get(dag);
+    if (!t) byDag.set(dag, (t = { dag, label: short(dag), anchors: [], subs: [], x: 0, y: 0, a: 0 }));
+    return t;
+  };
+  const edgeOf = (event: string) => [...sc.bEdges, ...sc.entries, ...sc.exits].find((e) => e.events.includes(event));
+  const mid = (e: BEdge): Pt | null => (e.p0 && e.c && e.p1 ? bez(e.p0, e.c, e.p1, 0.5) : null);
+  const rimOf = (id: string): Pt => {
+    const g = sc.galaxies[id];
+    return { x: g.x, y: g.y - g.R };
+  };
+  for (const [event, ws] of Object.entries(board.writers ?? {}))
+    for (const w of ws) {
+      const t = tie(w.actor), tr = board.transitions.find((x) => x.event === event);
+      if (!t || !tr || !sc.galaxies[tr.source]) continue;
+      const e = edgeOf(event), m = e && !e.loop ? mid(e) : null;
+      t.anchors.push({ ...(m ?? rimOf(tr.source)), kind: "write", event, edge: e, state: tr.source });
+    }
+  for (const c of sky.cues) {
+    const t = tie(c.dag), e = edgeOf(c.event), m = e ? mid(e) : null;
+    if (t && m) t.anchors.push({ ...m, kind: "cue", event: c.event, edge: e, state: c.state || e!.target });
+  }
+  // a tied DAG that also writes the events of the machine it launches is that machine's writer too, anchored at the machine's moon
+  for (const l of sky.launches) {
+    const t = byDag.get(l.dag), flow = t && launchedFlow(sky, l.dag, l.machine);
+    if (!t || !flow || !Object.values(sky.flows[flow].machine.writers ?? {}).some((ws) => ws.some((w) => w.actor === l.dag))) continue;
+    const moon = sc.moons.find((m) => m.name === flow), host = sc.galaxies[sky.tree.ipState ?? sky.roles.working ?? ""];
+    if (moon || host) t.subs.push({ flow, ...(moon ?? { x: host.x, y: host.y - host.R }) });
+  }
+  const all = [...byDag.values()];
+  // each DAG belongs to the state most of its ties act on (the first, on a tie), and docks by one of that state's transitions
+  const home = (t: Orbiter) => {
+    const n = new Map<string, number>();
+    for (const a of t.anchors) if (sc.galaxies[a.state]) n.set(a.state, (n.get(a.state) ?? 0) + 1);
+    return [...n].reduce<[string, number] | null>((b, x) => (!b || x[1] > b[1] ? x : b), null)?.[0];
+  };
+  const own = (t: Orbiter) => t.anchors.filter((a) => a.state === home(t));
+  // among them, the one whose edge holds the fewest DAGs so far, the DAGs with fewest ties choosing first
+  const load = new Map<BEdge | undefined, number>();
+  for (const t of all.filter((t) => own(t).length).sort((a, b) => own(a).length - own(b).length)) {
+    const a = own(t).reduce((x, y) => ((load.get(y.edge) ?? 0) < (load.get(x.edge) ?? 0) ? y : x));
+    load.set(a.edge, (load.get(a.edge) ?? 0) + 1);
+    t.primary = a;
+  }
+  const byState = new Map<string, Orbiter[]>();
+  for (const t of all.filter((t) => t.primary)) byState.set(t.primary!.state, [...(byState.get(t.primary!.state) ?? []), t]);
+  const pivots: Pivot[] = [];
+  // the Board's paths as points 4 px apart, which a hangar's name keeps off
+  const paths = sc.bEdges.flatMap((e) => (e.p0 && e.c && e.p1 ? sample(e as Curve, Math.ceil((Math.hypot(e.c.x - e.p0.x, e.c.y - e.p0.y) + Math.hypot(e.p1.x - e.c.x, e.p1.y - e.c.y)) / (4 * u))) : []));
+  for (const [state, os] of byState) pivots.push(place(sc, state, os, pivots, u, ts, paths));
+  return { pivots, u, ts };
+}
+
+/** Seconds each idle tied DAG holds the map in its turn, seconds its edges fade over, and how faint an idle orbiter stays between its turns. */
+export const TURN = 12;
+export const TURN_FADE = 0.6;
+export const IDLE = 0.3;
+
+/** A DAG that is running, queued or failed: it shows in full, out of turn. */
+export const activeDag = (status?: string | null) => ["running", "queued", "failed"].includes(status ?? "");
+
+/** The DAGs that take a turn: the idle ones tied to a Board state, in hangar order. An active DAG needs no turn, and one with no hangar has nowhere to show. */
+export const turnDags = ({ pivots }: Ties, active: (dag: string) => boolean): string[] => pivots.flatMap((h) => h.orbs.map((o) => o.dag)).filter((d) => !active(d));
+
+/** The DAG whose turn it is at `now` seconds, round the DAGs in order, and how visible it is: fading in and out over TURN_FADE at its window's edges. */
+export function dagTurn(dags: readonly string[], now: number): { dag: string; alpha: number } | null {
+  if (!dags.length) return null;
+  const t = (((now / TURN) % dags.length) + dags.length) % dags.length, i = Math.floor(t), into = (t - i) * TURN;
+  return { dag: dags[i], alpha: Math.max(0, Math.min(1, into / TURN_FADE, (TURN - into) / TURN_FADE)) };
+}
+
+/** The Ledger a hangar opens: that of the first transition its DAGs dock by that has one, else the fold of its DAGs. */
+export function hangarLevel(src: Source, orbs: Pick<Orbiter, "dag" | "primary">[]): { kind: "fold" } & Fold {
+  const led = pathLedger(src, orbs.flatMap((o) => (o.primary ? [o.primary.event] : [])));
+  return led ?? { kind: "fold", dags: orbs.map((o) => o.dag), crit: orbs.map((o) => `${o.dag}: ${o.primary?.kind === "cue" ? "runs on" : "writes"} ${o.primary?.event ?? ""}`), path: null };
+}
+
+/** The Ledger an orbiter opens: its docking transition's, else the first of its other transitions that has one (a state's self-loop has none). */
+export function tieLedger(src: Source, o: Pick<Orbiter, "primary" | "anchors">) {
+  for (const ev of new Set([o.primary?.event, ...o.anchors.map((a) => a.event)])) {
+    const led = ev ? pathLedger(src, [ev]) : null;
+    if (led) return { ev: ev!, led };
+  }
+  return null;
+}
+
+/** The machine a DAG launches: the one the server tied it to, else the flow its launch names when the page holds it. */
+function launchedFlow(sky: Sky, dag: string, flow: string | null): string | null {
+  for (const [name, f] of Object.entries(sky.flows)) if (f.ties?.some((x) => x.kind === "dag" && x.dag === dag)) return name;
+  return flow && sky.flows[flow] ? flow : null;
+}
+
+type Dir = "down" | "up" | "left" | "right";
+/** The side facing away along (dx, dy). */
+const outward = (dx: number, dy: number): Dir => (Math.abs(dy) >= Math.abs(dx) * 0.8 ? (dy > 0 ? "down" : "up") : dx > 0 ? "right" : "left");
+/** A box and how heavily an overlap with it counts. */
+type Box = [number, number, number, number, number];
+/** The area two boxes share, weighted by `b`'s. */
+export const over = (a: Box, b: Box) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1])) * b[4];
+
+/** How little a name's overlap with a neighbour's footprint counts beside one with an orbiter or a moon label: suns sized to their names leave
+ *  footprints that tile the gaps, so every spot touches one, and the name still has to stay off its own orbiters. */
+const DISC = 0.02;
+
+/** What a hangar's name and orbiters keep clear of, each padded: every state's disc (but `state`'s own), every moon and
+ *  its full name (a zoomed-in map cuts none), and the hangars already placed with their orbiters. */
+export function obstacles(sc: Scene, placed: Pivot[], u: number, ts: number, state?: string): Box[] {
+  const pad = 8 * u, out: Box[] = [];
+  for (const s of Object.values(sc.galaxies)) {
+    const R = Math.max(s.R, s.visR);
+    if (s.id !== state) out.push([s.x - R - pad, s.y - R - pad, s.x + R + pad, s.y + R + pad, DISC]);
+  }
+  for (const m of sc.moons) {
+    const left = m.x < m.parent.x, x0 = m.x + (left ? -1 : 1) * (m.R + m.ext + 10), w = (m.label.length * 6 + 4) * u * ts, h = 9 * u * ts;
+    out.push(left ? [x0 - w - pad, m.y - h - pad, m.x + m.R + pad, m.y + h + pad, 1] : [m.x - m.R - pad, m.y - h - pad, x0 + w + pad, m.y + h + pad, 1]);
+  }
+  for (const h of placed) {
+    out.push([...h.box, 1]);
+    for (const o of h.orbs) out.push([o.x - 10 * u, o.y - 10 * u, o.x + 10 * u, o.y + 10 * u, 1]);
+  }
+  return out;
+}
+
+/** A state's DAGs orbit it just outside its ring, each turned toward the transition it docks by and spread so no two touch, clear of every name
+ *  the ring crosses; then the hangar's name goes beside them, off the Board's `paths`, and the group turns round the ring (up to 90°) until the
+ *  name fits, or up to 180° to the nearest spot off every path when a path crosses each nearer one. */
+function place(sc: Scene, state: string, orbs: Orbiter[], placed: Pivot[], u: number, ts: number, paths: Pt[]): Pivot {
+  const g = sc.galaxies[state], gs = Object.values(sc.galaxies), R0 = Math.max(g.R, g.visR), name = widest(orbs), tall = (nameLines(orbs).length - 1) * 13 * u * ts;
+  const c: Pt = { x: g.x, y: g.y }, orbit = Math.max(R0, g.moonR) + 16 * u;
+  const bare = obstacles(sc, placed, u, ts);
+  const x0 = Math.min(...gs.map((s) => s.x - Math.max(s.R, s.visR))) - 40 * u, x1 = Math.max(...gs.map((s) => s.x + Math.max(s.R, s.visR))) + 40 * u;
+  const aim = (t: Orbiter) => Math.atan2(t.primary!.y - c.y, t.primary!.x - c.x);
+  const order = [...orbs].sort((a, b) => aim(a) - aim(b));
+  order.forEach((t) => (t.a = aim(t)));
+  // neighbours closer than the least gap push apart, half each, until none are; the ring wraps
+  const sep = Math.min((22 * u) / orbit, (Math.PI * 2) / order.length);
+  const spread = () => {
+    for (let pass = 0; pass < 60; pass++)
+      for (let i = 0; i < order.length; i++) {
+        const p = order[i], q = order[(i + 1) % order.length];
+        let d = q.a - p.a;
+        if (i === order.length - 1) d += Math.PI * 2;
+        if (order.length < 2 || d >= sep) continue;
+        p.a -= (sep - d) / 2;
+        q.a += (sep - d) / 2;
+      }
+  };
+  spread();
+  // the ring crosses its neighbours and their labels: each orbiter takes the nearest stretch clear of them
+  const ring = obstacles(sc, placed, u, ts, state), rr = 10 * u, step = Math.PI / 90;
+  const posAt = (a: number) => ({ x: c.x + Math.cos(a) * orbit, y: c.y + Math.sin(a) * orbit });
+  const free = (a: number) => {
+    const { x, y } = posAt(a);
+    return !ring.some((k) => over([x - rr, y - rr, x + rr, y + rr, 1], k) > 0);
+  };
+  const snap = (a: number) => {
+    for (let k = 0; k <= 90; k++) for (const sg of k ? [-1, 1] : [1]) if (free(a + sg * k * step)) return a + sg * k * step;
+    return a;
+  };
+  for (let pass = 0; pass < 6; pass++) {
+    order.forEach((t) => (t.a = snap(t.a)));
+    if (pass < 5) spread();
+  }
+  // the name right beside its orbiters, past them on the far side from the state first, then any other side of them; where no side has room,
+  // the group turns a little round the ring (6° at a time, up to 90°) until one does, so the name never drifts off its DAGs; a name still
+  // under a path there turns on (up to 180°) to the first better spot that is off every path
+  const base = orbs.map((t) => t.a), g8 = 9 * u, g3 = 3 * u;
+  let pick: { s: number; lines: number; as: number[]; lab: Pt; align: CanvasTextAlign; box: Pivot["box"] } | null = null;
+  for (let k = 0; k <= 30 && pick?.s !== 0 && (k <= 15 || pick!.lines > 0); k++)
+    for (const sg of k ? [-1, 1] : [1]) {
+      const as = base.map((a) => a + (sg * k * 6 * Math.PI) / 180);
+      if (k && !as.every(free)) continue;
+      const ps = as.map(posAt), own = ps.map((q): Box => [q.x - 9 * u, q.y - 9 * u, q.x + 9 * u, q.y + 9 * u, 1]);
+      const xs = ps.map((q) => q.x), ys = ps.map((q) => q.y);
+      const bx0 = Math.min(...xs) - g8, bx1 = Math.max(...xs) + g8, by0 = Math.min(...ys) - g8, by1 = Math.max(...ys) + g8, my = (by0 + by1) / 2, mx = (bx0 + bx1) / 2;
+      const at: Record<Dir, [Pt, CanvasTextAlign]> = { right: [{ x: bx1 + 4 * u, y: my + 3.5 * u * ts - tall / 2 }, "left"], left: [{ x: bx0 - 4 * u, y: my + 3.5 * u * ts - tall / 2 }, "right"], down: [{ x: mx, y: by1 + (4 + 8 * ts) * u }, "center"], up: [{ x: mx, y: by0 - (4 + 10 * ts) * u - tall }, "center"] };
+      const out = outward(mx - c.x, my - c.y);
+      for (const dir of [out, "right", "left", "down", "up"].filter((d, i, l) => l.indexOf(d) === i) as Dir[]) {
+        const [lab, align] = at[dir], box = boxOf(lab, align, name, u, ts, tall);
+        // a point of a path under the name counts as the 4 px of a 6 px line it stands for
+        const lines = paths.filter((p) => p.x > box[0] - g3 && p.x < box[2] + g3 && p.y > box[1] - g3 && p.y < box[3] + g3).length * 24 * u * u;
+        const s = [...bare, ...own].reduce((n, o) => n + over([...box, 1], o), 0) + lines + (box[0] < x0 || box[2] > x1 ? 1e9 : 0);
+        if (!pick || (s < pick.s && (k <= 15 || lines === 0))) pick = { s, lines, as, lab, align, box };
+        if (s === 0) break;
+      }
+      if (pick?.s === 0) break;
+    }
+  const best = pick!;
+  orbs.forEach((t, i) => Object.assign(t, { a: best.as[i] }, posAt(best.as[i])));
+  // the arc: the clear stretches between its outermost orbiters, round their middle however the angles wrap, broken at its own name too
+  const lb = best.box, m0 = Math.atan2(orbs.reduce((n, t) => n + Math.sin(t.a), 0), orbs.reduce((n, t) => n + Math.cos(t.a), 0));
+  const as = orbs.map((t) => m0 + Math.atan2(Math.sin(t.a - m0), Math.cos(t.a - m0))), pad = (14 * u) / orbit, arcs: [number, number][] = [];
+  const clear = (a: number) => {
+    const q = posAt(a);
+    return free(a) && over([q.x - 2 * u, q.y - 2 * u, q.x + 2 * u, q.y + 2 * u, 1], [...lb, 1]) === 0;
+  };
+  let run: number | null = null;
+  for (let a = Math.min(...as) - pad; a <= Math.max(...as) + pad + 1e-9; a += step / 2) {
+    if (clear(a)) run ??= a;
+    else if (run !== null) {
+      arcs.push([run, a]);
+      run = null;
+    }
+  }
+  if (run !== null) arcs.push([run, Math.max(...as) + pad]);
+  return { state, c, orbit, orbs, lab: best.lab, align: best.align, box: best.box, arcs };
+}
+
+/** A hangar's name: its one DAG, or how many it holds. */
+export const nameOf = (orbs: Pick<Orbiter, "label">[]) => (orbs.length === 1 ? orbs[0].label : `${orbs.length} DAGs`);
+/** A hangar's name as drawn: a lone DAG's long name breaks after the hyphen nearest its middle, so it stays whole in half the width. */
+export const nameLines = (orbs: Pick<Orbiter, "label">[]): string[] => {
+  const n = nameOf(orbs), cuts = [...n.matchAll(/-/g)].map((m) => m.index + 1);
+  if (orbs.length > 1 || n.length <= 12 || !cuts.length) return [n];
+  const at = cuts.reduce((a, b) => (Math.abs(b - n.length / 2) < Math.abs(a - n.length / 2) ? b : a));
+  return [n.slice(0, at), n.slice(at)];
+};
+/** The widest line a hangar's name shows: its longer line, when it breaks. */
+const widest = (orbs: Pick<Orbiter, "label">[]) => nameLines(orbs).reduce((a, b) => (b.length > a.length ? b : a));
+/** The room a hangar's name takes, anchored at `lab` and aligned `align`: one line or two when it breaks. */
+const boxOf = (lab: Pt, align: CanvasTextAlign, name: string, u: number, ts: number, tall: number): Pivot["box"] => {
+  const tw = (name.length * 3.4 + 4) * u * ts, lines = (6 + 16 * ts) * u + tall;
+  const x = align === "left" ? [lab.x, lab.x + 2 * tw] : align === "right" ? [lab.x - 2 * tw, lab.x] : [lab.x - tw, lab.x + tw];
+  return [x[0], lab.y - 9 * u * ts, x[1], lab.y + lines];
+};

@@ -1,0 +1,21 @@
+name: copilot
+states:
+  idle: {initial: true}
+  working: {}
+  reviewing: {}
+  done: {final: true}
+events:
+  WORK_STARTED:
+    - {from: idle, to: working}
+  WORK_FINISHED:
+    - {from: working, to: done}
+  RUN_STARTED:
+    - {from: [idle, working], to: working}
+  RUN_FINISHED:
+    - {from: working, to: done}
+  REVIEW_RUN_STARTED:
+    - {from: idle, to: reviewing}
+  REVIEW_RUN_FINISHED:
+    - {from: reviewing, to: done}
+  REVIEW_SUBMITTED:
+    - {from: [idle, reviewing], to: done}

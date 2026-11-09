@@ -1,0 +1,458 @@
+import { isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import { Card, HeldBy, StackList, StackView, Stacks } from "./Kanban";
+import { CLOSED, NO_PREFS, layout, stackOf, stackStep, stacksOf, type KanbanTask, type StackEvent } from "./kanbanModel";
+import type { Pull } from "../../api/types.gen";
+import { place } from "./move";
+import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
+import { TaskView } from "./TaskView";
+import { sessionNickname } from "./nickname";
+
+const task: KanbanTask = {
+  id: "PROJ-1", title: "A title long enough to need two lines in a comfortable card", lane: "in_progress", milestone: "m-1", labels: ["feature", "needs-review"], assignee: "@agent-standard-high",
+  dependencies: [], openDeps: 2, prs: [], description: "", live: { machine: "in-progress", state: "red_proven", at: 100 }, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
+};
+const draw = (compact: boolean) => renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
+
+describe("a Kanban card's density", () => {
+  it("keeps the footer of dependencies and profile, and no labels, when comfortable", () => {
+    const html = draw(false);
+
+    expect(html).toContain('class="foot"');
+    expect(html).not.toContain("needs-review");
+    expect(html).toContain("standard-high");
+    expect(html).not.toContain("compact");
+  });
+
+  it("drops the footer but keeps the id, title and machine line when compact", () => {
+    const html = draw(true);
+
+    expect(html).toContain('class="card compact"');
+    expect(html).not.toContain('class="foot"');
+    expect(html).not.toContain("needs-review");
+    expect(html).toContain("PROJ-1");
+    expect(html).toContain("A title long enough");
+    expect(html).toContain("red proven");
+    expect(html).toContain("1m");
+  });
+});
+
+describe("a Kanban card's size estimate", () => {
+  const drawLabelled = (labels: string[], compact = false) => renderToStaticMarkup(<Card task={{ ...task, labels }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
+
+  it("is never drawn on a card, which shows no label at all", () => {
+    for (const compact of [false, true]) {
+      const html = drawLabelled(["kind-feature", "size-5", "area-starpulse"], compact);
+
+      expect(html).not.toContain("5pt");
+      expect(html).not.toContain("size-5");
+      expect(html).not.toContain("area-starpulse");
+    }
+  });
+});
+
+describe("a Kanban card's pull request chips", () => {
+  const pull = (number: number, over: Partial<Pull> = {}): Pull => ({ number, repo: "o/r", url: `http://pr/${number}`, checks: "pass", merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false, ...over });
+  const drawPulls = (prs: Pull[]) => renderToStaticMarkup(<Card task={{ ...task, prs }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={false} />);
+  const chips = (html: string) => [...html.matchAll(/<span class="pr ([^"]*)"[^>]*title="([^"]*)"[^>]*>(.*?)<\/span>(?=<span class="pr |<\/span>)/g)].map((m) => ({ cls: m[1], title: m[2], text: m[3] }));
+
+  it("draws each of up to three PRs as its own chip in the order the task cites them", () => {
+    const html = drawPulls([pull(11), pull(12), pull(13)]);
+
+    expect(html).toContain('class="prs"');
+    expect(chips(html).map((c) => c.text.replace(/<[^>]+>/g, ""))).toEqual(["#11", "#12", "#13"]);
+  });
+
+  it("draws the first three and a +N chip whose hover lists every PR past them with its state", () => {
+    const html = drawPulls([pull(11), pull(12), pull(13), pull(14, { merged: true }), pull(15, { closed: true })]);
+    const drawn = chips(html);
+
+    expect(drawn.map((c) => c.text.replace(/<[^>]+>/g, ""))).toEqual(["#11", "#12", "#13", "+2"]);
+    expect(drawn[3].title).toContain("#14 merged");
+    expect(drawn[3].title).toContain("#15 closed");
+    expect(drawn[3].title).not.toContain("#11");
+  });
+
+  it("draws merged, closed, conflicting and failing PRs each in its own state", () => {
+    const drawn = chips(drawPulls([pull(1, { merged: true }), pull(2, { closed: true }), pull(3, { conflicting: true })]));
+    const failing = chips(drawPulls([pull(4, { checks: "failing" })]));
+
+    expect(drawn.map((c) => c.cls.split(" ")[0])).toEqual(["merged", "closed", "pass"]);
+    expect(drawn[1].title).toContain("closed");
+    expect(drawn[2].cls).toContain("conflict");
+    expect(drawn[2].title).toContain("merge conflict");
+    expect(failing[0].cls).toBe("fail");
+    expect(failing[0].title).toContain("checks failing");
+  });
+
+  it("draws a queued PR as queued, ahead of its checks, and names it in the hover", () => {
+    const queued = chips(drawPulls([pull(1, { queued: true }), pull(2, { queued: true, checks: "failing" }), pull(3, { queued: true, merged: true })]));
+
+    expect(queued.map((c) => c.cls.split(" ")[0])).toEqual(["queued", "queued", "merged"]);
+    expect(queued[0].title).toContain("queued");
+    expect(queued[2].title).not.toContain("queued");
+  });
+
+  it("marks the +N chip with the worst state among the PRs it hides, so a failure past the third is never lost", () => {
+    const drawn = chips(drawPulls([pull(1), pull(2), pull(3), pull(4, { merged: true }), pull(5, { checks: "failing", conflicting: true })]));
+
+    expect(drawn[3].cls).toContain("fail");
+    expect(drawn[3].cls).toContain("conflict");
+  });
+});
+
+describe("a Kanban card's rating", () => {
+  it("is never drawn, whatever the task's rating", () => {
+    const html = renderToStaticMarkup(<Card task={{ ...task, rating: { verdict: "fail", reason: "dropped the lane filter", at: 100, actor: "operator", changes: 2 } }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(html).not.toMatch(/rating|dropped the lane filter|operator|\bfail/i);
+    expect(html).toBe(renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />));
+  });
+});
+
+describe("a Kanban card's machine line", () => {
+  const line = (live: KanbanTask["live"]) => renderToStaticMarkup(<Card task={{ ...task, live }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+
+  it("marks the dot mapped and names the source when the latest machine has one", () => {
+    const html = line({ machine: "ci", state: "running", at: 100, source: "GitHub" });
+
+    expect(html).toContain('class="p mapped"');
+    expect(html).toContain('title="mapped from GitHub"');
+  });
+
+  it("colours a CI line's dot as the checks dots do, leaving its phases blue", () => {
+    expect(line({ machine: "ci", state: "failing", at: 100, source: "GitHub" })).toContain('class="p mapped fail"');
+    expect(line({ machine: "ci", state: "merged", at: 100, source: "GitHub" })).toContain('class="p mapped merged"');
+    expect(line({ machine: "ci", state: "running", at: 100, source: "GitHub" })).toContain('class="p mapped"');
+    expect(line({ machine: "deliver", state: "failing", at: 100 })).toContain('class="p"');
+  });
+
+  it("leaves a local machine's dot unmarked", () => {
+    const html = line({ machine: "in-progress", state: "red_proven", at: 100 });
+
+    expect(html).toContain('class="p"');
+    expect(html).not.toContain("mapped");
+  });
+});
+
+describe("a Kanban card's pull request chip", () => {
+  const pull = { number: 12, repo: "o/r", url: "http://pr/12", checks: "pass" as const, merged: true, merge_sha: null, merged_at: null, threads: 0, stale: false };
+  const ci = { machine: "ci", state: "merged", at: 100, source: "GitHub", trail: [] };
+  const chip = (machines: KanbanTask["machines"], live: KanbanTask["live"]) =>
+    renderToStaticMarkup(<Card task={{ ...task, prs: [pull], machines, live }} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />).match(/<span class="pr[^"]*"[^>]*>[\s\S]*?<\/span>/)?.[0] ?? "";
+
+  it("keeps its status dot when the card's line is the CI machine, so a merged, queued or failing PR never reads as a plain chip", () => {
+    expect(chip([ci], { machine: "ci", state: "merged", at: 100 })).toContain("<i>");
+  });
+
+  it("draws its own status dot when the card's line is another machine, though CI is recorded", () => {
+    expect(chip([ci], { machine: "harness", state: "active", at: 150 })).toContain("<i>");
+  });
+
+  it("draws its own status dot when no CI is recorded", () => {
+    expect(chip([], null)).toContain("<i>");
+  });
+});
+
+describe("what holds the Waiting lane", () => {
+  const holder = (id: string, holds: number, lane = "ready") => ({ task: { ...task, id, lane }, holds });
+
+  it("marks a card with the Waiting tasks it holds, and draws no mark on a card that holds none", () => {
+    const held = renderToStaticMarkup(<Card task={task} holds={23} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+    const free = renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(held).toContain('title="holds 23 Waiting tasks"');
+    expect(held).toContain("⛓23");
+    expect(free).not.toContain("⛓");
+  });
+
+  it("lists the top three holders with their counts, flags a Needs attention one and counts the rest", () => {
+    const html = renderToStaticMarkup(
+      <HeldBy holders={[holder("TASK-2706", 23, "needs_attention"), holder("TASK-2875", 3), holder("TASK-2873", 3), holder("TASK-1878", 2)]} roles={LIFECYCLE_ROLES} open={() => {}} />,
+    );
+
+    expect(html).toContain("Held by");
+    expect(html).toMatch(/TASK-2706.*23/);
+    expect(html).toContain('class="hb nh"');
+    expect(html).toContain("TASK-2873");
+    expect(html).not.toContain("TASK-1878");
+    expect(html).toContain("+1 more");
+  });
+
+  it("marks a card's place in the hovered chain, and leaves a card outside it as it was", () => {
+    const as = (chain?: "self" | "holds" | "waits") =>
+      renderToStaticMarkup(<Card task={task} chain={chain} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(as("self")).toContain('class="card chain-self"');
+    expect(as("holds")).toContain('class="card chain-holds"');
+    expect(as("waits")).toContain('class="card chain-waits"');
+    expect(as()).toContain('class="card"');
+  });
+
+  it("draws nothing when no task holds Waiting work", () => {
+    expect(renderToStaticMarkup(<HeldBy holders={[]} roles={LIFECYCLE_ROLES} open={() => {}} />)).toBe("");
+  });
+});
+
+describe("a Kanban card's start control", () => {
+  type El = ReactElement<{ children?: ReactNode; className?: string; onClick?: (e: unknown) => void; disabled?: boolean; title?: string }>;
+  const ready = (allowed = true): KanbanTask => ({ ...task, lane: "ready", moves: { in_progress: { allowed, reason: allowed ? "" : "needs an Implementation Plan", skill: "" } } });
+  const card = (t: KanbanTask, onOpen = () => {}, onPlay = () => {}) =>
+    Card({ task: t, now: 160, marks: {}, names: {}, roles: LIFECYCLE_ROLES, onOpen, onPlay, dismiss: () => {} }) as El;
+  const kids = (el: El) => [el.props.children].flat(Infinity).filter(isValidElement) as El[];
+  const play = (el: El) => kids(el).find((k) => k.type === "button" && /\bplay\b/.test(k.props.className ?? ""));
+  const click = () => ({ stopPropagation: vi.fn() });
+
+  it("draws the start control as the right-edge strip beside the card body, not beside the id", () => {
+    const root = card(ready());
+    const top = kids(root).find((k) => k.props.className === "top")!;
+
+    expect(play(root)?.props.className).toBe("play edge");
+    expect(play(top)).toBeUndefined();
+    expect(renderToStaticMarkup(root)).toContain('aria-label="Start PROJ-1"');
+  });
+
+  it("asks the start question on a click of the strip without opening the card", () => {
+    const onOpen = vi.fn(), onPlay = vi.fn(), e = click();
+
+    const strip = play(card(ready(), onOpen, onPlay));
+    expect(strip).toBeDefined();
+    strip!.props.onClick!(e);
+
+    expect(onPlay).toHaveBeenCalledOnce();
+    expect(e.stopPropagation).toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("opens the task on a click of the card beside the strip", () => {
+    const onOpen = vi.fn(), onPlay = vi.fn();
+
+    card(ready(), onOpen, onPlay).props.onClick!(click());
+
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it("disables the strip with the guard's reason as its title while a guard refuses the move", () => {
+    const strip = play(card(ready(false)));
+
+    expect(strip).toBeDefined();
+    expect(strip!.props.disabled).toBe(true);
+    expect(strip!.props.title).toBe("needs an Implementation Plan");
+  });
+
+  it("draws no strip on a card in a lane a session does not start from", () => {
+    expect(play(card({ ...ready(), lane: "in_progress" }))).toBeUndefined();
+  });
+});
+
+describe("a Waiting stack", () => {
+  const wait = (id: string, ...dependencies: string[]): KanbanTask => ({ ...task, id, title: `Title of ${id}`, lane: "waiting", dependencies, openDeps: dependencies.length, live: null });
+  const chain = [wait("T-1"), wait("T-2", "T-1"), wait("T-3", "T-2")];
+  const stack = stacksOf(chain, LIFECYCLE_ROLES)[0];
+  const card = (t: KanbanTask, extra: { under?: boolean; stacked?: number; links?: string[] } = {}) =>
+    <Card key={t.id} task={t} holds={t.id === "T-1" ? 2 : undefined} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} {...extra} />;
+  type Root = ReactElement<{ onPointerEnter: () => void; onPointerLeave: () => void; onFocus: () => void; onBlur: (e: unknown) => void; onKeyDown: (e: { key: string }) => void }>;
+  /** The stack drawn from its state, with the events it raises applied to that state, as the Kanban's stack does. */
+  const drive = () => {
+    let state = CLOSED;
+    const root = () => StackView({ stack, state, card, onEvent: (e: StackEvent) => (state = stackStep(state, e)) }) as Root;
+    return { root, html: () => renderToStaticMarkup(root()) };
+  };
+
+  it("folds to its top card whole, with only its ⛓ badge and one or two card edges peeking below", () => {
+    const html = drive().html();
+
+    expect(html).toContain('class="stack"');
+    expect(html).toMatch(/data-id="T-1"/);
+    expect(html).toMatch(/class="holds"[^>]*>⛓2/);
+    expect(html).not.toContain('class="sk');
+    expect(html.match(/class="edge"/g)).toHaveLength(2);
+    expect(renderToStaticMarkup(<StackView stack={stacksOf(chain.slice(0, 2), LIFECYCLE_ROLES)[0]} state={CLOSED} card={card} onEvent={() => {}} />).match(/class="edge"/g)).toHaveLength(1);
+    expect(html).not.toContain("waits on");
+  });
+
+  it("unstacks on hover, each card below the top saying what it waits on, and folds when the pointer leaves", () => {
+    const d = drive();
+    d.root().props.onPointerEnter();
+
+    expect(d.html()).toContain('class="stack open"');
+    expect(d.html()).toContain("⧗ waits on</span> <span class=\"nw\">T-1</span>");
+    expect(d.html()).toContain("⧗ waits on</span> <span class=\"nw\">T-2</span>");
+
+    d.root().props.onPointerLeave();
+
+    expect(d.html()).toContain('class="stack"');
+    expect(d.html()).not.toContain("waits on");
+  });
+
+  it("unstacks on focus and folds when focus leaves the stack, not when it moves between its cards", () => {
+    const d = drive();
+    d.root().props.onFocus();
+    expect(d.html()).toContain("⧗ waits on");
+
+    d.root().props.onBlur({ currentTarget: { contains: () => true }, relatedTarget: {} });
+    expect(d.html()).toContain("⧗ waits on");
+
+    d.root().props.onBlur({ currentTarget: { contains: () => false }, relatedTarget: null });
+    expect(d.html()).not.toContain("⧗ waits on");
+  });
+
+  it("folds on Escape even with the pointer still over it, and ignores any other key", () => {
+    const d = drive();
+    d.root().props.onPointerEnter();
+    d.root().props.onFocus();
+
+    d.root().props.onKeyDown({ key: "ArrowDown" });
+    expect(d.html()).toContain("⧗ waits on");
+
+    d.root().props.onKeyDown({ key: "Escape" });
+    expect(d.html()).not.toContain("⧗ waits on");
+  });
+
+  it("lists the stack in the task modal, the open task in bold and the others as buttons that open them", () => {
+    const html = renderToStaticMarkup(<StackList stack={stack} id="T-2" open={() => {}} />);
+
+    expect(html).toMatch(/▣ <button[^>]*>T-1<\/button>/);
+    expect(html).toMatch(/↳ <b>T-2<\/b>/);
+    expect(html).toMatch(/↳ <button[^>]*>T-3<\/button>/);
+  });
+
+  it("re-forms when a drag moves a stacked task out of Waiting, so the badge and its cards go with it", () => {
+    const draw = (tasks: KanbanTask[]) => renderToStaticMarkup(
+      <>{layout(tasks, { waiting: "Waiting" }, LIFECYCLE_ROLES, NO_PREFS, 0).columns.find((c) => c.id === "waiting")!.buckets.map((b) => <Stacks key={b.milestone} stacks={b.stacks} card={card} enabled />)}</>,
+    );
+    const moved = place(chain, { pending: { "T-2": { from: "waiting", to: "ready", saving: true, at: 1 } }, refused: {} });
+
+    expect(draw(chain)).toContain('class="stack"');
+    expect(stackOf(layout(chain, {}, LIFECYCLE_ROLES, NO_PREFS, 0), "T-3")?.members).toHaveLength(3);
+    const after = draw(moved);
+    expect(after).not.toContain('class="stack"');
+    expect(after).not.toContain('class="sk"');
+    expect(after).not.toContain("T-2");
+    expect(after).toContain('data-id="T-1"');
+    expect(after).toContain('data-id="T-3"');
+  });
+});
+
+describe("a Done chain", () => {
+  const fin = (id: string, ...dependencies: string[]): KanbanTask => ({ ...task, id, title: `Title of ${id}`, lane: "done", dependencies, openDeps: 0, live: null });
+  const chain = [fin("T-1"), fin("T-2", "T-1"), fin("T-3", "T-2")];
+  const stack = stacksOf(chain, LIFECYCLE_ROLES, LIFECYCLE_ROLES.done)[0];
+  const card = (t: KanbanTask, extra: { under?: boolean; stacked?: number; links?: string[] } = {}) =>
+    <Card key={t.id} task={t} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} {...extra} />;
+  type Root = ReactElement<{ onPointerEnter: () => void; onPointerLeave: () => void }>;
+  const drive = () => {
+    let state = CLOSED;
+    const root = () => StackView({ stack, state, card, onEvent: (e: StackEvent) => (state = stackStep(state, e)) }) as Root;
+    return { root, html: () => renderToStaticMarkup(root()) };
+  };
+
+  it("folds to the chain's last finished task with a green count badge", () => {
+    const html = drive().html();
+
+    expect(html).toMatch(/data-id="T-3"/);
+    expect(html).toMatch(/class="sk dn"[^>]*title="2 Done tasks this one&#x27;s chain finished first; hover to unstack"/);
+    expect(html).not.toContain("unblocked");
+  });
+
+  it("draws no count badge on a Waiting stack's top: its ⛓ already says what it holds", () => {
+    const html = renderToStaticMarkup(<Card task={{ ...task, lane: "waiting" }} stacked={2} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(html).not.toContain('class="sk');
+  });
+
+  it("unstacks on hover, each card below the top saying which task it unblocked, and folds when the pointer leaves", () => {
+    const d = drive();
+    d.root().props.onPointerEnter();
+
+    expect(d.html()).toContain('class="stack open"');
+    expect(d.html()).toContain('✓ unblocked</span> <span class="nw">T-3</span>');
+    expect(d.html()).toContain('✓ unblocked</span> <span class="nw">T-2</span>');
+    expect(d.html()).not.toContain("waits on");
+
+    d.root().props.onPointerLeave();
+
+    expect(d.html()).toContain('class="stack"');
+    expect(d.html()).not.toContain("unblocked");
+  });
+
+  it("labels the task modal's stack section done chain, and a Waiting stack's waiting stack", () => {
+    const draw = (lane: string) => renderToStaticMarkup(
+      <TaskView task={{ ...task, lane }} tasks={[]} roles={LIFECYCLE_ROLES} record={null} lane="" now={0} open={() => {}} profiles={[]} milestones={[]} refusal={null} startNote={null} capabilities={undefined}
+        saving={false} claiming={false} close={() => {}} hide={() => {}} constellation={() => {}} move={() => {}} start={() => {}}
+        stack={<StackList stack={stack} id="T-2" open={() => {}} />} />,
+    );
+
+    expect(draw("done")).toMatch(/<td>done chain<\/td><td class="stacklist"><div>▣ <button[^>]*>T-3<\/button><\/div><div>↳ <b>T-2<\/b>/);
+    expect(draw("waiting")).toContain("<td>waiting stack</td>");
+  });
+});
+
+describe("a Waiting card linked to a blocker in another milestone", () => {
+  type El = ReactElement<{ children?: ReactNode; className?: string; title?: string; onClick?: (e: unknown) => void; onPointerDown?: (e: unknown) => void; onKeyDown?: (e: unknown) => void }>;
+  const blocker: KanbanTask = { ...task, id: "T-1", milestone: "m-1", lane: "waiting" };
+  const waiting: KanbanTask = { ...task, id: "T-2", milestone: "m-2", lane: "waiting", dependencies: ["T-1"], openDeps: 1 };
+  const card = (onOpen = () => {}, onCross = () => {}, cross: KanbanTask[] = [blocker]) =>
+    Card({ task: waiting, now: 160, marks: {}, names: {}, roles: LIFECYCLE_ROLES, onOpen, dismiss: () => {}, cross, onCross }) as El;
+  const walk = (el: El): El[] => [el, ...[el.props.children].flat(Infinity).filter(isValidElement).flatMap((k) => walk(k as El))];
+  const badge = (el: El) => walk(el).find((k) => /\bxm\b/.test(k.props.className ?? ""));
+  const ev = () => ({ stopPropagation: vi.fn(), key: "Enter", preventDefault: vi.fn() });
+
+  it.each([
+    ["URL", "https://claude.ai/code/session_01AbCdEfGh", "01AbC"],
+    ["bare UUID", "1491aced-f6da-42b1-9303-9c19adfcc87d", "1491a"],
+  ])("draws a held session's %s as its nickname", (_, assignee, raw) => {
+    const held: KanbanTask = { ...task, assignee };
+    const html = renderToStaticMarkup(<Card task={held} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(html).toMatch(/[a-z]+-[a-z]+/);
+    expect(html).toContain(String(sessionNickname(assignee)));
+    expect(html).not.toContain(raw);
+    expect(html).not.toContain("claude.ai");
+  });
+
+  it("draws a badge in the footer naming the blocker's milestone and id, and none on a card with no blocker elsewhere", () => {
+    const html = renderToStaticMarkup(card());
+
+    expect(html).toMatch(/<button[^>]*class="xm"[^>]*>↗ <span class="nw">m-1<\/span> · <span class="nw">T-1<\/span><\/button>/);
+    expect(html).toContain("Waits on T-1 in m-1");
+    expect(html.indexOf("⧗1")).toBeLessThan(html.indexOf('class="xm"'));
+    expect(html.indexOf('class="xm"')).toBeLessThan(html.indexOf('class="who"'));
+    expect(badge(card(() => {}, () => {}, []))).toBeUndefined();
+    expect(renderToStaticMarkup(<Card task={waiting} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />)).not.toContain("↗");
+  });
+
+  it("opens the blocker's task on a click of the badge, without opening the card or starting a drag", () => {
+    const onOpen = vi.fn(), onCross = vi.fn(), click = ev(), press = ev();
+
+    const xm = badge(card(onOpen, onCross))!;
+    xm.props.onPointerDown!(press);
+    xm.props.onClick!(click);
+
+    expect(onCross).toHaveBeenCalledExactlyOnceWith("T-1");
+    expect(click.stopPropagation).toHaveBeenCalled();
+    expect(press.stopPropagation).toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("keeps Enter and Space on the badge from opening the card", () => {
+    const key = ev();
+
+    badge(card())!.props.onKeyDown!(key);
+
+    expect(key.stopPropagation).toHaveBeenCalled();
+  });
+
+  it("draws a badge per blocker, and names a blocker with no milestone", () => {
+    const html = renderToStaticMarkup(card(() => {}, () => {}, [blocker, { ...blocker, id: "T-9", milestone: "" }]));
+
+    expect(html.match(/class="xm"/g)).toHaveLength(2);
+    expect(html).toContain("no milestone");
+  });
+
+  it("is left off a compact card, which drops the footer", () => {
+    expect(renderToStaticMarkup(<Card task={waiting} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} cross={[blocker]} compact />)).not.toContain("↗");
+  });
+});

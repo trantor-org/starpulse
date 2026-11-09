@@ -1,0 +1,60 @@
+{
+  "additionalProperties": false,
+  "description": "One change of a task's pass/fail rating; the `task:ratings` entry's fields. Every change is kept, and the latest\none for a task is its rating.",
+  "properties": {
+    "task": {
+      "description": "The task key whose rating changed.",
+      "minLength": 1,
+      "title": "Task",
+      "type": "string"
+    },
+    "verdict": {
+      "description": "The rating the change sets; `cleared` drops it.",
+      "enum": [
+        "pass",
+        "fail",
+        "cleared"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    },
+    "time": {
+      "description": "When the change was made, in epoch seconds.",
+      "minimum": 0,
+      "title": "Time",
+      "type": "number"
+    },
+    "reason": {
+      "default": "",
+      "description": "Why the task fails; empty when none was given.",
+      "maxLength": 120,
+      "title": "Reason",
+      "type": "string"
+    },
+    "actor": {
+      "default": "",
+      "description": "Who made the change, as the write's actor names it; empty when none.",
+      "title": "Actor",
+      "type": "string"
+    },
+    "session": {
+      "default": "",
+      "description": "The harness session that made the change, as its write named it; empty when none.",
+      "title": "Session",
+      "type": "string"
+    },
+    "harness": {
+      "default": "",
+      "description": "The harness of that session; empty when the write named none.",
+      "title": "Harness",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task",
+    "verdict",
+    "time"
+  ],
+  "title": "RatingEvent",
+  "type": "object"
+}

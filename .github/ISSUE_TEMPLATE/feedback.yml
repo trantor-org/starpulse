@@ -1,0 +1,17 @@
+name: Feedback
+description: Tell us what was confusing or hard to use.
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What were you trying to do?
+      description: Describe the outcome you wanted from StarPulse.
+    validations:
+      required: true
+  - type: textarea
+    id: confusion
+    attributes:
+      label: What confused you?
+      description: Tell us where you got stuck or what was unclear.
+    validations:
+      required: true

@@ -1,0 +1,238 @@
+"""Per-transition cost and the cell report, for each kind x size cell of the board's tasks.
+
+`transition_cost` charges every model request to the skill in force on it (`starpulse.flow_metrics.model.steps`), inside
+the kind x size cell of the task it worked. A subagent's requests carry the parent's session and so count toward the
+task that spawned it (`side_steps` of `steps` are those); a compaction's own call is no step. A step is *wasted* when
+a call it owns failed, was refused by a guard or hook, or repeats the shell command of the call before it in its
+session. `agent_s` is its requests' and calls' seconds and `peak_context` the most input, cache read and cache write
+tokens one request held. A step of a task with no kind or no size label, or of a Codex session, is in no row.
+
+The cell report: median steps per clean completion for each kind x size cell of the board's tasks.
+
+A cell is the tasks whose board labels are `kind-<kind>` and `size-<size>`. Its members are the task slices
+(`starpulse.flow_metrics.model.session_health.slice_health`) that completed, left out when a Codex session worked them, which
+the steps ledger does not cover. A slice that completed *clean* counts toward the cell; the others only lower its
+`clean_rate`, completions that were clean over completions.
+
+The cell reports nothing under `MIN_N` clean completions. Otherwise its `holdout` is the latest fifth of them, rounded
+up, by the end of their last session, and the medians are the holdout's: `median_steps` (main and subagent requests)
+and `median_steps_before_edit`. A clean completion has no human prompt after the claim, so `median_operator_prompts`
+(human prompts after the claim) is the median of the latest fifth of all the cell's completions, clean or not, the
+same share of them by the same end time. A cell can improve because its tasks got easier, so the report carries `n`, `completions` and `clean_rate` beside them.
+
+The estimate report: each completed task's size estimate beside what it measured.
+A task's estimate is its `size-<n>` and `kind-<kind>` labels and its profile. Its actuals are the steps (a subagent's
+included) and active minutes (agent seconds plus the operator's wait) of its slice
+(`starpulse.flow_metrics.model.session_health.slice_health`). `bands` are the instance's sizes with the p90 steps and
+active minutes a task of that size lands within (`[analytics]` `size_bands`), smallest first: the *effort size* is the
+smallest size whose band holds both actuals, and the *effort size step* is how many sizes it lies above (positive) or
+below (negative) the label. Effort past the largest band has no size and steps to one past the top. With no bands, or a
+label that is no band's size, the step is None; with no bands the effort size is too.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
+from math import ceil
+from statistics import median
+from typing import Any
+
+from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.analytics import Analytics
+from starpulse.contracts.signals import CLAUDE_CODE, Signal
+from starpulse.flow_metrics.model.session_health import by_session
+from starpulse.flow_metrics.model.steps import session_owned
+
+__all__ = [
+    "MIN_N",
+    "cell_of",
+    "cell_report",
+    "combine_cost",
+    "estimate_report",
+    "fold_cost",
+    "profile_of",
+    "transition_cost",
+]
+
+#: Clean completions a cell needs to report.
+MIN_N = 5
+_HOLDOUT = 5
+
+
+def _label(labels: Iterable[str], prefix: str) -> str | None:
+    return next((label.removeprefix(prefix) for label in labels if label.startswith(prefix)), None)
+
+
+def _median(values: Iterable[int | None]) -> float | None:
+    held = [v for v in values if v is not None]
+    return median(held) if held else None
+
+
+def cell_report(slices: Iterable[dict[str, Any]], tasks: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """One row per kind x size cell of the slices `slices` with `MIN_N` clean completions, by kind then size.
+
+    `tasks` maps a task key to its board entry, whose `labels` name its kind and size; a task with either missing is in
+    no cell."""
+    cells: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    for s in slices:
+        labels = tasks.get(s["task"], {}).get("labels") or ()
+        kind, size = _label(labels, "kind-"), _label(labels, "size-")
+        if s["complete"] and kind and size and size.isdigit() and set(s["harnesses"]) == {CLAUDE_CODE}:
+            cells[kind, int(size)].append(s)
+    rows = []
+    for (kind, size), completed in sorted(cells.items()):
+        clean = sorted((s for s in completed if s["clean"]), key=lambda s: (s["last_at"], s["task"]))
+        if len(clean) < MIN_N:
+            continue
+        holdout = clean[-ceil(len(clean) / _HOLDOUT) :]
+        latest = sorted(completed, key=lambda s: (s["last_at"], s["task"]))[-ceil(len(completed) / _HOLDOUT) :]
+        rows.append(
+            {
+                "kind": kind,
+                "size": size,
+                "n": len(clean),
+                "completions": len(completed),
+                "clean_rate": len(clean) / len(completed),
+                "holdout": len(holdout),
+                "median_steps": _median(s["steps"] + s["side_steps"] for s in holdout),
+                "median_operator_prompts": _median(s["operator_prompts"] for s in latest),
+                "median_steps_before_edit": _median(s["steps_before_edit"] for s in holdout),
+            }
+        )
+    return rows
+
+
+def cell_of(tasks: Mapping[str, Mapping[str, Any]], task: str | None) -> tuple[str, int] | None:
+    labels = tasks.get(task or "", {}).get("labels") or ()
+    kind, size = _label(labels, "kind-"), _label(labels, "size-")
+    return (kind, int(size)) if kind and size and size.isdigit() else None
+
+
+def profile_of(model: str, effort: str) -> str:
+    """The profile a session ran as, `<model>-<effort>`, each `unknown` when unrecorded."""
+    return f"{model or 'unknown'}-{effort or 'unknown'}"
+
+
+SizeBand = tuple[int, int, float]
+
+
+def _effort_rank(bands: Sequence[SizeBand], steps: int, minutes: float) -> int:
+    """The index of the first band holding `steps` and `minutes`, or `len(bands)` past the last."""
+    fits = (i for i, (_, p90_steps, p90_minutes) in enumerate(bands) if steps <= p90_steps and minutes <= p90_minutes)
+    return next(fits, len(bands))
+
+
+def estimate_report(
+    slices: Iterable[Mapping[str, Any]],
+    tasks: Mapping[str, Mapping[str, Any]],
+    bands: Sequence[SizeBand],
+    milestone: str | None = None,
+) -> list[dict[str, Any]]:
+    """One row per completed, kind- and size-labelled task of `slices` (in `milestone` when given), oldest first; see
+    the module docstring."""
+    ranks = {size: i for i, (size, _, _) in enumerate(bands)}
+    rows = []
+    for s in slices:
+        cell = cell_of(tasks, s["task"])
+        task = tasks.get(s["task"], {})
+        if not s["complete"] or cell is None or (milestone is not None and task.get("milestone") != milestone):
+            continue
+        (kind, size), steps = cell, s["steps"] + s["side_steps"]
+        minutes = (s["active_s"] + s["operator_wait_s"]) / 60
+        rank = _effort_rank(bands, steps, minutes)
+        rows.append(
+            {
+                "task": s["task"],
+                "milestone": task.get("milestone"),
+                "kind": kind,
+                "size": size,
+                "profile": task.get("profile"),
+                "steps": steps,
+                "active_minutes": round(minutes, 1),
+                "effort_size": bands[rank][0] if rank < len(bands) else None,
+                "effort_size_step": rank - ranks[size] if size in ranks else None,
+            }
+        )
+    return rows
+
+
+def _repeats(calls: Iterable[Signal]) -> set[str]:
+    """The keys of the shell results among `calls`, oldest first, whose command is the one of the call before."""
+    repeated, before = set(), None
+    for call in sorted((c for c in calls if c.kind == "tool"), key=lambda c: c.time):
+        if call.command and call.command == before:
+            repeated.add(call.key)
+        before = call.command or None
+    return repeated
+
+
+def fold_cost(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> list[dict[str, Any]]:
+    """The fold of one session's `signals`: one row per (task, skill) of its steps, as plain JSON data, with the
+    steps, the subagent's, the wasted ones, the seconds and the peak context `transition_cost` sums per cell."""
+    owned = [
+        o for o in session_owned(signals, keys, analytics) if o.step["captured"] and o.step["origin"] != "auxiliary"
+    ]
+    repeated = _repeats(c for o in owned for c in o.calls)
+    rows: dict[tuple[str | None, str], dict[str, Any]] = {}
+    for o in owned:
+        row = rows.setdefault(
+            (o.step["task"], o.step["skill"]),
+            {
+                "task": o.step["task"],
+                "skill": o.step["skill"],
+                "steps": 0,
+                "side_steps": 0,
+                "wasted_steps": 0,
+                "agent_s": 0.0,
+                "peak_context": 0,
+            },
+        )
+        tokens = o.step["tokens"]
+        row["steps"] += 1
+        row["side_steps"] += o.step["origin"] == "side"
+        row["wasted_steps"] += any((c.kind in {"tool", "decision"} and not c.ok) or c.key in repeated for c in o.calls)
+        row["agent_s"] += o.seconds + sum(c.seconds for c in o.calls if c.kind == "tool")
+        row["peak_context"] = max(row["peak_context"], tokens["input"] + tokens["cache_read"] + tokens["cache_write"])
+    return list(rows.values())
+
+
+def combine_cost(folds: Iterable[list[dict[str, Any]]], tasks: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """One row per (kind, size, skill) of the sessions' `fold_cost` results, by kind, size, then skill; see the module
+    docstring."""
+    cost: dict[tuple[str, int, str], dict[str, Any]] = {}
+    for part in (part for rows in folds for part in rows):
+        if (cell := cell_of(tasks, part["task"])) is None:
+            continue
+        row = cost.setdefault(
+            (*cell, part["skill"]),
+            {
+                "kind": cell[0],
+                "size": cell[1],
+                "skill": part["skill"],
+                "tasks": set(),
+                "steps": 0,
+                "side_steps": 0,
+                "wasted_steps": 0,
+                "agent_s": 0.0,
+                "peak_context": 0,
+            },
+        )
+        row["tasks"].add(part["task"])
+        for field in ("steps", "side_steps", "wasted_steps", "agent_s"):
+            row[field] += part[field]
+        row["peak_context"] = max(row["peak_context"], part["peak_context"])
+    return [
+        {**row, "tasks": len(row["tasks"]), "wasted_rate": row["wasted_steps"] / row["steps"]}
+        for _, row in sorted(cost.items())
+    ]
+
+
+def transition_cost(
+    found: Iterable[Signal],
+    keys: TaskKeys | None,
+    tasks: Mapping[str, Mapping[str, Any]],
+    analytics: Analytics | None = None,
+) -> list[dict[str, Any]]:
+    """One row per (kind, size, skill) of the steps of `found`, by kind, size, then skill; see the module docstring."""
+    return combine_cost((fold_cost(group, keys, analytics) for group in by_session(found)), tasks)

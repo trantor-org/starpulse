@@ -1,0 +1,406 @@
+"""The GitHub Actions adapter: each workflow's job and step graph and latest run, as the `runs` contract's `Dag` records.
+
+`listing` reads one repository (`owner/name`) into those records: a workflow per active workflow file, its jobs (and, for
+a job the latest run took once, that job's steps) as the step graph. `start` and `follow` are what a runs adapter module
+offers the server for one configured instance. `start` dispatches a workflow that declares `workflow_dispatch` and needs
+`GITHUB_TOKEN` or `GH_TOKEN`. `follow` lists the repository, then reads a workflow again when a run entry reports it (`Repository` reads only the
+workflows whose latest run changed or has not ended).
+"""
+
+from __future__ import annotations
+
+import base64
+import os
+import posixpath
+import threading
+import time
+from collections.abc import Callable, Collection
+from typing import Any, NamedTuple, get_args
+from urllib.parse import quote
+
+import yaml
+
+from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
+from starpulse.event_log.event_log import EventLog, Tail
+from starpulse.event_log.wake import StopEvent
+from starpulse.github.adapters.outbound.rest import GitHubError, Transport, connect, get, repo_of
+from starpulse.runs.adapters.outbound.resync import follow_resync
+from starpulse.runs.model import run_events
+
+#: Each status a run, job or step reports before it completes, and the status it becomes.
+#: A run held for a runner, an approval or a protection rule is `queued`; the label itself stays in `raw`.
+_STATUS: dict[str, RunStatus] = {
+    "requested": "queued",
+    "pending": "queued",
+    "queued": "queued",
+    "waiting": "queued",
+    "in_progress": "running",
+}
+
+#: Each conclusion a completed run, job or step reports, and the status it becomes.
+#: A run that timed out or never started is `failed`; one cancelled, gone stale or left for an approval nobody gave is
+#: `aborted`; the label itself stays in `raw`.
+_CONCLUSION: dict[str, RunStatus] = {
+    "success": "succeeded",
+    "neutral": "succeeded",
+    "failure": "failed",
+    "timed_out": "failed",
+    "startup_failure": "failed",
+    "cancelled": "aborted",
+    "stale": "aborted",
+    "action_required": "aborted",
+    "skipped": "skipped",
+}
+
+
+def status_of(status: str, conclusion: str | None) -> RunStatus:
+    """The status GitHub's `status` and, once `completed`, `conclusion` become; a label GitHub added since is an error,
+    never read as a failure."""
+    if status == "completed":
+        mapped = _CONCLUSION.get(conclusion or "")
+    else:
+        mapped = None if conclusion else _STATUS.get(status)
+    if mapped is None:
+        raise ValueError(f"unmapped GitHub Actions status {status!r} with conclusion {conclusion!r}")
+    return mapped
+
+
+#: What a workflow with several jobs of one name, such as a matrix, reports: the first of these any of them has.
+_PRECEDENCE: tuple[RunStatus, ...] = ("failed", "running", "queued", "aborted", "skipped", "succeeded", "not_started")
+
+
+def _reported(status: str, conclusion: str | None) -> dict[str, Any]:
+    """A record's `status`, and its `raw` label (the conclusion once completed) when the status does not already say it."""
+    mapped = status_of(status, conclusion)
+    label = conclusion if status == "completed" else status
+    return {"status": mapped} | ({"raw": label} if label != mapped else {})
+
+
+def _definition(transport: Transport, repo: str, path: str) -> dict:
+    """The workflow file at `path` on the repository's default branch, parsed; empty when it is not a mapping."""
+    content = get(transport, f"/repos/{repo}/contents/{quote(path)}")["content"]
+    document = yaml.safe_load(base64.b64decode(content))
+    return document if isinstance(document, dict) else {}
+
+
+def _jobs(definition: dict) -> list[tuple[str, str, list[str]]]:
+    """Each job a workflow file declares: its id, the name a run reports it under, and the ids it needs."""
+    declared = definition.get("jobs")
+    out = []
+    for key, job in (declared if isinstance(declared, dict) else {}).items():
+        job = job if isinstance(job, dict) else {}
+        name, needs = job.get("name"), job.get("needs") or []
+        literal = name if isinstance(name, str) and "${{" not in name else str(key)
+        out.append((str(key), literal, [needs] if isinstance(needs, str) else [str(n) for n in needs]))
+    return out
+
+
+def _worst(statuses: list[RunStatus]) -> RunStatus:
+    return next(s for s in _PRECEDENCE if s in statuses)
+
+
+def _graph(definition: dict, ran: list[dict]) -> list[dict]:
+    """The step graph of a workflow: its jobs waiting on the jobs they need, each followed by the steps its run took.
+
+    A job's steps are drawn only when exactly one job of the run is that job (a matrix reports one per cell); a job of
+    the run the file does not declare, such as one of a reusable workflow, joins the graph waiting on nothing.
+    """
+    jobs = _jobs(definition)
+    named = {key: name for key, name, _ in jobs}
+    declared = set(named) | set(named.values())
+    steps: list[dict] = []
+    taken: set[int] = set()
+    for key, name, needs in jobs:
+        mine = [j for j in ran if j["name"] in (name, key) or (j["name"] not in declared and j["name"].startswith(f"{name} ("))]
+        taken.update(j["id"] for j in mine)
+        steps.extend(_job_steps(name, [named.get(n, n) for n in needs], mine))
+    for job in ran:
+        if job["id"] not in taken:
+            steps.extend(_job_steps(job["name"], [], [job]))
+    return steps
+
+
+def _job_steps(name: str, depends: list[str], ran: list[dict]) -> list[dict]:
+    """A job as one step, and when one job of the run is it, the steps that job took after it in order."""
+    if len(ran) == 1:
+        state = _reported(ran[0]["status"], ran[0].get("conclusion"))
+    elif ran:
+        state = {"status": _worst([status_of(j["status"], j.get("conclusion")) for j in ran])}
+    else:
+        state = {"status": "not_started"}
+    out = [{"name": name, "depends": depends, **state, "kind": None, "precondition": None, "lock": None, "last": []}]
+    if len(ran) != 1:
+        return out
+    taken = {name}
+    for step in sorted(ran[0].get("steps", []), key=lambda s: s["number"]):
+        label = f"{name} / {step['name']}"
+        label = label if label not in taken else f"{label} #{step['number']}"
+        taken.add(label)
+        out.append(
+            {
+                "name": label,
+                "depends": [out[-1]["name"]],
+                **_reported(step["status"], step.get("conclusion")),
+                "kind": None,
+                "precondition": None,
+                "lock": None,
+                "last": [],
+            }
+        )
+    return out
+
+
+class _Read(NamedTuple):
+    """What one workflow's reading held: when it was taken, the workflow file, and the record drawn from them."""
+
+    stamp: tuple[str, str]
+    definition: dict
+    dag: dict
+    ended: bool
+
+
+def _signature(run: dict | None) -> str:
+    return f"{run['id']} {run['status']} {run.get('conclusion')} {run['updated_at']}" if run else ""
+
+
+class Repository:
+    """One repository (`owner/name`) read through `transport`, remembering each workflow's reading.
+
+    Called with `only` it reads those workflow files afresh; called with none it reads the repository: the workflow list
+    and the latest runs of every workflow, two calls however many workflows there are, and a workflow again only when it
+    is new, its file or latest run changed since, or that run has not ended (its jobs move without the run moving). A
+    workflow file is fetched again only when the workflow's own `updated_at` moved. Calls come from the consumer thread
+    and the periodic reconcile, so a reading holds a lock.
+    """
+
+    def __init__(self, transport: Transport, repo: str) -> None:
+        self._transport = transport
+        self._repo = repo
+        self._lock = threading.Lock()
+        self._read: dict[str, _Read] = {}
+
+    def __call__(self, only: Collection[str] | None = None) -> tuple[list[dict], list[str]]:
+        """Every active workflow of the repository, or just those files in `only`, named for its file, with its latest
+        run and its job and step graph, and the names of those whose file declares a `workflow_dispatch` trigger."""
+        with self._lock:
+            workflows = [
+                w
+                for w in get(self._transport, f"/repos/{self._repo}/actions/workflows?per_page=100")["workflows"]
+                if w["state"] == "active"
+            ]
+            latest = {} if only is not None else self._latest()
+            fresh = {}
+            for workflow in workflows:
+                name = posixpath.basename(workflow["path"])
+                if only is None and not self._stale(name, workflow, latest) or only is not None and name not in only:
+                    continue
+                fresh[name] = self._reading(workflow, latest.get(workflow["id"]))
+            if only is None:
+                self._read = {n: fresh.get(n) or self._read[n] for n in map(_named, workflows)}
+                fresh = self._read
+            else:
+                self._read |= fresh
+            dags = list(r.dag for r in fresh.values())
+            return dags, [n for n, r in fresh.items() if declares_dispatch(r.definition)]
+
+    def _latest(self) -> dict[int, dict]:
+        """The newest run of each workflow among the repository's latest runs, by workflow id."""
+        runs = get(self._transport, f"/repos/{self._repo}/actions/runs?per_page=100")["workflow_runs"]
+        latest: dict[int, dict] = {}
+        for run in runs:  # newest first
+            latest.setdefault(run["workflow_id"], run)
+        return latest
+
+    def _stale(self, name: str, workflow: dict, latest: dict[int, dict]) -> bool:
+        """Whether the workflow must be read again: new, unfinished, or its file or latest run moved since."""
+        seen = self._read.get(name)
+        if seen is None or not seen.ended:
+            return True
+        run = latest.get(workflow["id"])  # a workflow with no run among the latest keeps the run it was read with
+        return seen.stamp != (workflow["updated_at"], _signature(run) if run else seen.stamp[1])
+
+    def _reading(self, workflow: dict, run: dict | None) -> _Read:
+        repo, path = self._repo, workflow["path"]
+        name = posixpath.basename(path)
+        if run is None:
+            runs = get(self._transport, f"/repos/{repo}/actions/workflows/{workflow['id']}/runs?per_page=1")
+            run = next(iter(runs["workflow_runs"]), None)
+        ran = get(self._transport, f"/repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100")["jobs"] if run else []
+        seen = self._read.get(name)
+        if seen is not None and seen.stamp[0] == workflow["updated_at"]:
+            definition = seen.definition
+        else:
+            try:
+                definition = _definition(self._transport, repo, path)
+            except GitHubError as exc:  # a GitHub-managed dynamic workflow has no file: list it from its run alone
+                if exc.status != 404:
+                    raise
+                definition = {}
+        dag = {
+            "name": name,
+            **(_reported(run["status"], run.get("conclusion")) if run else {"status": "not_started"}),
+            "runId": str(run["id"]) if run else "",
+            "startedAt": (run.get("run_started_at") or run["created_at"]) if run else "",
+            "finishedAt": run["updated_at"] if run and run["status"] == "completed" else "",
+            "steps": _graph(definition, ran),
+            "schedule": [],
+            "stats": None,
+            "rerun": None,
+        }
+        ended = run is None or run["status"] == "completed"
+        return _Read((workflow["updated_at"], _signature(run)), definition, dag, ended)
+
+
+def _named(workflow: dict) -> str:
+    return posixpath.basename(workflow["path"])
+
+
+def listing(transport: Transport, repo: str, only: Collection[str] | None = None) -> tuple[list[dict], list[str]]:
+    """`Repository(transport, repo)(only)`: one reading, with nothing remembered from an earlier one."""
+    return Repository(transport, repo)(only)
+
+
+def declares_dispatch(definition: dict) -> bool:
+    """Whether the workflow file lists `workflow_dispatch` among its `on:` events, as a name, a list or a mapping."""
+    on = definition.get("on", definition.get(True))  # YAML 1.1 reads an unquoted `on` key as true
+    return isinstance(on, str | list | dict) and (on == "workflow_dispatch" or "workflow_dispatch" in on)
+
+
+def starter(transport: Transport, repo: str) -> Callable[[str], str]:
+    """The adapter's start capability: dispatches a workflow of `repo` on its default branch and returns the run's id.
+
+    A workflow whose file declares no `workflow_dispatch` is refused without asking GitHub to run it. GitHub answers a
+    dispatch with the run's id only when asked to (`return_run_details`); an answer with none gives an empty id.
+    """
+
+    def start(workflow: str) -> str:
+        try:
+            if not declares_dispatch(_definition(transport, repo, f".github/workflows/{workflow}")):
+                raise StartFailedError(f"{workflow} declares no workflow_dispatch trigger")
+            ref = get(transport, f"/repos/{repo}")["default_branch"]
+            status, body = transport(
+                "POST",
+                f"/repos/{repo}/actions/workflows/{quote(workflow, safe='')}/dispatches",
+                {"ref": ref, "return_run_details": True},
+            )
+        except GitHubError as exc:
+            raise StartFailedError(f"no workflow {workflow} in {repo}" if exc.status == 404 else str(exc)) from exc
+        except OSError as exc:
+            raise StartFailedError(f"GitHub unreachable: {exc}") from exc
+        if status not in (200, 204):
+            raise StartFailedError(f"GitHub refused the dispatch (HTTP {status})")
+        return str(body.get("workflow_run_id", ""))
+
+    return start
+
+
+def start(url: str) -> Callable[[str], str] | None:
+    """The start capability of the repository at `url`, or None without a token in `GITHUB_TOKEN` or `GH_TOKEN`."""
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    return starter(connect(token), repo_of(url)) if token else None
+
+
+def _decode(fields: dict) -> tuple[str, float] | None:
+    """The workflow and the time an entry of the runs stream reports, or None for one the contract does not allow."""
+    try:
+        well_formed = fields["event"] in run_events.EVENTS and fields["status"] in get_args(RunStatus)
+        return (fields["workflow"], float(fields["time"])) if well_formed else None
+    except KeyError, ValueError, TypeError:
+        return None
+
+
+class GitHubRuns:
+    """The workflows as the page draws them, from `fetch` (one listing of the repository, or of the named workflows) and
+    then run entries.
+
+    The listing is the truth: an entry for a listed workflow reads that workflow again rather than patching it, and an
+    unreachable GitHub keeps the workflows last read. Entries and reconnects arrive on the consumer thread and the
+    periodic reconcile runs on its own, so the workflows are held under a lock; the sink holds the page-facing state.
+    """
+
+    def __init__(
+        self,
+        sink: RunsSink,
+        fetch: Callable[[Collection[str] | None], tuple[list[dict], list[str]]],
+        *,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self._sink = sink
+        self._fetch = fetch
+        self._clock = clock
+        self._lock = threading.RLock()
+        self._dags: dict[str, dict] = {}
+        self._startable: set[str] = set()
+        #: When the last listing began; an entry stamped before it is already in that listing.
+        self._listed_at = 0.0
+
+    def reconcile(self) -> None:
+        """Read the repository once and hand it to the page; when it cannot be read the last reading stays and the error shows."""
+        listed_at = self._clock()
+        try:
+            dags, startable = self._fetch(None)
+        except OSError as exc:
+            self._sink.set_dags(None, str(exc))
+            return
+        except (
+            ValueError,
+            KeyError,
+            TypeError,
+            yaml.YAMLError,
+        ) as exc:  # an answer or a file not in the shape `listing` reads
+            self._sink.set_dags(None, f"unreadable response ({type(exc).__name__}: {exc})")
+            return
+        with self._lock:
+            self._listed_at = listed_at
+            self._dags = {dag["name"]: dag for dag in dags}
+            self._startable = set(startable)
+            self._sink.set_dags(dags, None, startable=startable)
+
+    def handle_entry(self, entry_id: str, fields: dict) -> None:
+        """Read the workflow an entry reports again; a malformed entry, one the last listing already holds, or one for a
+        workflow the repository did not list is dropped, and a workflow GitHub cannot be asked about keeps its state."""
+        decoded = _decode(fields)
+        with self._lock:
+            if decoded is None or decoded[1] < self._listed_at or decoded[0] not in self._dags:
+                return
+            name = decoded[0]
+            try:
+                dags, startable = self._fetch({name})
+            except OSError, ValueError, KeyError, TypeError, yaml.YAMLError:
+                return  # the next reconcile corrects it
+            self._dags = {n: next((d for d in dags if d["name"] == n), d) for n, d in self._dags.items()}
+            self._startable = (self._startable - {name}) | set(startable)
+            self._sink.set_dags(list(self._dags.values()), None, startable=sorted(self._startable))
+
+
+#: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
+WORKER = "github-actions"
+
+
+def read(url: str) -> list[dict]:
+    """The workflows of the repository at `url`, as the sweeper's `runs` kind compares them with the projection."""
+    transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+    return listing(transport, repo_of(url))[0]
+
+
+def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:
+    """Read the repository at `url` into `runs`: its listing, then each run entry appended since the log's head.
+
+    The head is read before the listing, so an entry the listing may not hold is still read and the retained ones,
+    already in it, are not replayed; an entry stamped before the listing is dropped (`GitHubRuns`). A `runs:resync`
+    entry naming the instance lists the repository again (`follow_resync`). Reads are signed in with `GITHUB_TOKEN` or
+    `GH_TOKEN` when one is set; without, GitHub's lower unauthenticated rate limit applies. The thread ends when `stop`
+    is set; the server passes none and it runs for the process's life.
+    """
+    stop = stop or StopEvent()
+    repo = repo_of(url)
+    transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+    reader = GitHubRuns(runs, Repository(transport, repo))
+
+    def read() -> None:
+        tail = Tail.live(log, run_events.STREAM)  # before the listing: what it holds is not replayed
+        reader.reconcile()
+        tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), stop)
+
+    threading.Thread(target=read, name="github-runs", daemon=True).start()
+    follow_resync(log, getattr(runs, "instance", None) or "", reader.reconcile, stop)

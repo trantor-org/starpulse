@@ -1,0 +1,64 @@
+import { describe, expect, it } from "vitest";
+import sheet from "../style.css?raw";
+
+const css = sheet.replace(/\/\*[\s\S]*?\*\//g, "");
+const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: m[1].trim(), body: m[2] }));
+const scrolls = (body: string) => /overflow(-[xy])?\s*:\s*(auto|scroll)/.test(body);
+
+/** An open DAG's chart, which wraps a wide DAG onto bands below rather than scrolling. */
+const CHART = "#kbm .dgm .chart";
+/** The In Progress drill-in's board: its phase columns need 800px, so on a phone it scrolls inside its region rather than draw overlapping. */
+const DRILL_BOARD = "#sd .sd-body";
+/** The Kanban board: its lanes keep one fixed width, so it scrolls sideways once they outgrow the viewport. */
+const KANBAN_BOARD = "#kb #cols";
+
+describe("the page's scrolling boxes", () => {
+  it("never scroll sideways but the Kanban board, the open DAG's chart included, whose drawing fits its box", () => {
+    const sideways = rules.filter((r) => /overflow-x\s*:\s*(auto|scroll)/.test(r.body) && r.sel !== KANBAN_BOARD);
+    expect(sideways.map((r) => r.sel)).toEqual([]);
+    expect(rules.find((r) => r.sel === KANBAN_BOARD)?.body).toMatch(/overflow-x:\s*auto/);
+    expect(css).toMatch(/#kbm \.dgm \.chart svg \{[^}]*max-width:\s*100%/);
+  });
+
+  it("scroll in one rule only: vertically, never sideways, with the Kanban columns' thin scrollbar", () => {
+    const scrolling = rules.filter((r) => scrolls(r.body) && r.sel !== CHART && r.sel !== DRILL_BOARD && r.sel !== KANBAN_BOARD);
+    expect(scrolling.map((r) => r.sel)).toHaveLength(1);
+    const [rule] = scrolling;
+    expect(rule.body).toMatch(/overflow-x:\s*hidden/);
+    expect(rule.body).toMatch(/overflow-y:\s*auto/);
+    expect(rule.body).toMatch(/scrollbar-width:\s*thin/);
+    expect(rule.body).toMatch(/scrollbar-color:\s*color-mix\(in srgb, var\(--slate\) 25%, transparent\) transparent/);
+    for (const box of ["#kb .col .body", "#nav .matches", "#panel", "#admin", "#dg #stage"]) expect(rule.sel).toContain(box);
+    expect(rule.sel).not.toContain("#feed");
+  });
+
+  it("let a finger on a Kanban card pan the lane at phone width, where a card takes no drag", () => {
+    expect(css.match(/touch-action\s*:\s*none/g)).toHaveLength(1);
+    expect(css).toContain("@media (min-width: 901px) { #kb .card { touch-action: none; } }");
+  });
+
+  it("wrap a Kanban card's head and its pull request chip in a narrow lane rather than clip them", () => {
+    for (const sel of ["#kb .card .top", "#kb .pr"]) {
+      const r = rules.find((x) => x.sel === sel);
+      expect(r?.body, sel).toMatch(/flex-wrap:\s*wrap/);
+    }
+    expect(rules.find((x) => x.sel === "#kb .pr")?.body).toMatch(/max-width:\s*100%/);
+  });
+
+  it("wrap the Kanban and DAGs toolbar onto a second row rather than run it under the right rail", () => {
+    const bar = rules.find((x) => x.sel === ":is(#kb, #dg) .filters")!.body;
+    expect(bar).toMatch(/flex-wrap:\s*wrap/);
+    expect(bar).not.toMatch(/(^|;)\s*height:/);
+  });
+
+  it("keep the right rail's Recent lines to one line each, cut with an ellipsis in a box that never scrolls, and leave the legend whole", () => {
+    const body = (sel: string) => rules.find((r) => r.sel === sel)!.body;
+    expect(body("#rail .recent")).toMatch(/height:\s*50%/);
+    expect(body("#feed")).toMatch(/overflow:\s*hidden/);
+    expect(body("#feed div")).toMatch(/white-space:\s*nowrap/);
+    expect(body("#feed div")).toMatch(/text-overflow:\s*ellipsis/);
+    const legend = rules.filter((r) => /#legend/.test(r.sel));
+    expect(legend.length).toBeGreaterThan(0);
+    for (const r of legend) expect(r.body, r.sel).not.toMatch(/text-overflow|white-space:\s*nowrap|overflow:\s*hidden/);
+  });
+});

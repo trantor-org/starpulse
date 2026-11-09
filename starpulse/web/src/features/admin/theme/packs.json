@@ -1,0 +1,434 @@
+{
+ "packs": {
+  "starpulse": {
+   "name": "StarPulse",
+   "vibe": "Today's slate and Tailwind statuses, with the phase machine moved to Tailwind indigo",
+   "src": {
+    "label": "tailwindlabs/tailwindcss palette"
+   },
+   "c": {
+    "emerald": "#34d399",
+    "amber": "#fbbf24",
+    "rose": "#fb7185",
+    "red": "#f87171",
+    "violet": "#a78bfa",
+    "orange": "#fb923c",
+    "cyan": "#67e8f9",
+    "blue": "#60a5fa",
+    "teal": "#5eead4",
+    "indigo": "#818cf8"
+   },
+   "r": {
+    "ok": "emerald",
+    "run": "amber",
+    "fail": "rose",
+    "danger": "red",
+    "agent": "violet",
+    "hold": "orange",
+    "waits": "cyan",
+    "ready": "blue",
+    "released": "teal",
+    "phase": "indigo"
+   },
+   "x": {
+    "ok-hi": "#6ee7b7",
+    "ok-text": "#a7f3d0",
+    "run-hi": "#fcd34d",
+    "run-text": "#fcd34d",
+    "fail-hi": "#fecdd3",
+    "fail-text": "#fda4af",
+    "danger-hi": "#fecaca",
+    "danger-text": "#fca5a5",
+    "agent-hi": "#ede9fe",
+    "agent-text": "#c4b5fd",
+    "hold-hi": "#fed7aa",
+    "hold-text": "#fdba74",
+    "waits-hi": "#a5f3fc",
+    "waits-text": "#a5f3fc",
+    "ready-hi": "#93c5fd",
+    "ready-text": "#93c5fd",
+    "released-hi": "#99f6e4",
+    "released-text": "#99f6e4",
+    "phase-hi": "#c7d2fe",
+    "phase-text": "#a5b4fc"
+   }
+  },
+  "catppuccin": {
+   "name": "Catppuccin",
+   "vibe": "Soft pastels on blue-violet greys; Latte by day, Mocha by night",
+   "src": {
+    "label": "catppuccin/palette"
+   },
+   "c": {
+    "rosewater": "#f5e0dc",
+    "flamingo": "#f2cdcd",
+    "pink": "#f5c2e7",
+    "mauve": "#cba6f7",
+    "red": "#f38ba8",
+    "maroon": "#eba0ac",
+    "peach": "#fab387",
+    "yellow": "#f9e2af",
+    "green": "#a6e3a1",
+    "teal": "#94e2d5",
+    "sky": "#89dceb",
+    "sapphire": "#74c7ec",
+    "blue": "#89b4fa",
+    "lavender": "#b4befe",
+    "crust": "#11111b",
+    "mantle": "#181825",
+    "base": "#1e1e2e",
+    "surface0": "#313244",
+    "surface1": "#45475a",
+    "overlay0": "#6c7086",
+    "overlay1": "#7f849c",
+    "subtext1": "#bac2de",
+    "text": "#cdd6f4"
+   },
+   "r": {
+    "ok": "green",
+    "run": "yellow",
+    "fail": "red",
+    "danger": "maroon",
+    "agent": "mauve",
+    "hold": "peach",
+    "waits": "sky",
+    "ready": "blue",
+    "released": "teal",
+    "phase": "lavender"
+   }
+  },
+  "rosepine": {
+   "name": "Ros\u00e9 Pine",
+   "vibe": "Muted rose, gold and pine on dusky purple; no pure green by design",
+   "src": {
+    "label": "rose-pine/palette"
+   },
+   "c": {
+    "love": "#eb6f92",
+    "gold": "#f6c177",
+    "rose": "#ebbcba",
+    "pine": "#31748f",
+    "foam": "#9ccfd8",
+    "iris": "#c4a7e7",
+    "base": "#191724",
+    "surface": "#1f1d2e",
+    "overlay": "#26233a",
+    "muted": "#6e6a86",
+    "subtle": "#908caa",
+    "text": "#e0def4",
+    "hl-med": "#403d52",
+    "hl-high": "#524f67"
+   },
+   "r": {
+    "ok": "pine",
+    "run": "gold",
+    "fail": "love",
+    "danger": [
+     "love",
+     "rose",
+     0.3
+    ],
+    "agent": "iris",
+    "hold": [
+     "rose",
+     "gold",
+     0.35
+    ],
+    "waits": "foam",
+    "ready": [
+     "foam",
+     "iris",
+     0.5
+    ],
+    "released": [
+     "pine",
+     "foam",
+     0.5
+    ],
+    "phase": [
+     "iris",
+     "pine",
+     0.45
+    ]
+   }
+  },
+  "gruvbox": {
+   "name": "Gruvbox",
+   "vibe": "Retro warm earth: brown-grey ground, high-saturation fruit accents",
+   "src": {
+    "label": "morhetz/gruvbox"
+   },
+   "c": {
+    "red": "#fb4934",
+    "green": "#b8bb26",
+    "yellow": "#fabd2f",
+    "blue": "#83a598",
+    "purple": "#d3869b",
+    "aqua": "#8ec07c",
+    "orange": "#fe8019",
+    "red-2": "#cc241d",
+    "blue-2": "#458588",
+    "aqua-2": "#689d6a",
+    "bg0_h": "#1d2021",
+    "bg0": "#282828",
+    "bg1": "#3c3836",
+    "bg2": "#504945",
+    "bg3": "#665c54",
+    "gray": "#928374",
+    "fg2": "#d5c4a1",
+    "fg1": "#ebdbb2"
+   },
+   "r": {
+    "ok": "green",
+    "run": "yellow",
+    "fail": "red",
+    "danger": "red-2",
+    "agent": "purple",
+    "hold": "orange",
+    "waits": "aqua",
+    "ready": "blue",
+    "released": "aqua-2",
+    "phase": [
+     "blue",
+     "purple",
+     0.5
+    ]
+   }
+  },
+  "solarized": {
+   "name": "Solarized",
+   "vibe": "Ethan Schoonover's precision palette: one accent set, mirrored light and dark grounds",
+   "src": {
+    "label": "altercation/solarized"
+   },
+   "c": {
+    "yellow": "#b58900",
+    "orange": "#cb4b16",
+    "red": "#dc322f",
+    "magenta": "#d33682",
+    "violet": "#6c71c4",
+    "blue": "#268bd2",
+    "cyan": "#2aa198",
+    "green": "#859900",
+    "base03": "#002b36",
+    "base02": "#073642",
+    "base01": "#586e75",
+    "base00": "#657b83",
+    "base0": "#839496",
+    "base1": "#93a1a1"
+   },
+   "r": {
+    "ok": "green",
+    "run": "yellow",
+    "fail": "red",
+    "danger": [
+     "red",
+     "magenta",
+     0.3
+    ],
+    "agent": "magenta",
+    "hold": "orange",
+    "waits": "cyan",
+    "ready": "blue",
+    "released": [
+     "cyan",
+     "green",
+     0.45
+    ],
+    "phase": "violet"
+   }
+  },
+  "nord": {
+   "name": "Nord",
+   "vibe": "Arctic: Polar Night greys, Frost blues, Aurora accents",
+   "src": {
+    "label": "nordtheme/nord"
+   },
+   "c": {
+    "nord7": "#8fbcbb",
+    "nord8": "#88c0d0",
+    "nord9": "#81a1c1",
+    "nord10": "#5e81ac",
+    "nord11": "#bf616a",
+    "nord12": "#d08770",
+    "nord13": "#ebcb8b",
+    "nord14": "#a3be8c",
+    "nord15": "#b48ead",
+    "nord0": "#2e3440",
+    "nord1": "#3b4252",
+    "nord2": "#434c5e",
+    "nord3": "#4c566a",
+    "nord3-bright": "#616e88",
+    "nord4": "#d8dee9",
+    "nord6": "#eceff4"
+   },
+   "r": {
+    "ok": "nord14",
+    "run": "nord13",
+    "fail": "nord11",
+    "danger": [
+     "nord11",
+     "nord12",
+     0.25
+    ],
+    "agent": "nord15",
+    "hold": "nord12",
+    "waits": "nord8",
+    "ready": "nord10",
+    "released": [
+     "nord7",
+     "nord14",
+     0.35
+    ],
+    "phase": [
+     "nord9",
+     "nord15",
+     0.4
+    ]
+   }
+  },
+  "everforest": {
+   "name": "Everforest",
+   "vibe": "Forest greens and warm khaki, low glare, made for long sessions",
+   "src": {
+    "label": "sainnhe/everforest"
+   },
+   "c": {
+    "red": "#e67e80",
+    "orange": "#e69875",
+    "yellow": "#dbbc7f",
+    "green": "#a7c080",
+    "aqua": "#83c092",
+    "blue": "#7fbbb3",
+    "purple": "#d699b6",
+    "bg_dim": "#232a2e",
+    "bg0": "#2d353b",
+    "bg1": "#343f44",
+    "bg3": "#475258",
+    "bg5": "#56635f",
+    "grey0": "#7a8478",
+    "grey1": "#859289",
+    "grey2": "#9da9a0",
+    "fg": "#d3c6aa"
+   },
+   "r": {
+    "ok": "green",
+    "run": "yellow",
+    "fail": "red",
+    "danger": [
+     "red",
+     "purple",
+     0.2
+    ],
+    "agent": "purple",
+    "hold": "orange",
+    "waits": [
+     "blue",
+     "purple",
+     0.3
+    ],
+    "ready": "blue",
+    "released": "aqua",
+    "phase": [
+     "blue",
+     "purple",
+     0.55
+    ]
+   }
+  },
+  "tokyonight": {
+   "name": "Tokyo Night",
+   "vibe": "Neon city at night: ink-blue ground, electric blue, magenta and lime",
+   "src": {
+    "label": "folke/tokyonight.nvim"
+   },
+   "c": {
+    "blue": "#7aa2f7",
+    "cyan": "#7dcfff",
+    "blue1": "#2ac3de",
+    "magenta": "#bb9af7",
+    "purple": "#9d7cd8",
+    "orange": "#ff9e64",
+    "yellow": "#e0af68",
+    "green": "#9ece6a",
+    "green1": "#73daca",
+    "teal": "#1abc9c",
+    "red": "#f7768e",
+    "red1": "#db4b4b",
+    "bg_dark": "#16161e",
+    "bg": "#1a1b26",
+    "bg_highlight": "#292e42",
+    "terminal_black": "#414868",
+    "comment": "#565f89",
+    "dark5": "#737aa2",
+    "fg_dark": "#a9b1d6",
+    "fg": "#c0caf5"
+   },
+   "r": {
+    "ok": "green",
+    "run": "yellow",
+    "fail": "red",
+    "danger": "red1",
+    "agent": "magenta",
+    "hold": "orange",
+    "waits": "cyan",
+    "ready": "blue",
+    "released": "green1",
+    "phase": "purple"
+   }
+  },
+  "flexoki": {
+   "name": "Flexoki",
+   "vibe": "Ink on paper: warm off-white or near-black ground, analog pigment accents",
+   "src": {
+    "label": "kepano/flexoki"
+   },
+   "c": {
+    "red": "#d14d41",
+    "orange": "#da702c",
+    "yellow": "#d0a215",
+    "green": "#879a39",
+    "cyan": "#3aa99f",
+    "blue": "#4385be",
+    "purple": "#8b7ec8",
+    "magenta": "#ce5d97",
+    "red-600": "#af3029",
+    "black": "#100f0f",
+    "base-950": "#1c1b1a",
+    "base-900": "#282726",
+    "base-850": "#343331",
+    "base-700": "#575653",
+    "base-500": "#878580",
+    "base-300": "#b7b5ac",
+    "base-200": "#cecdc3"
+   },
+   "r": {
+    "ok": "green",
+    "run": "yellow",
+    "fail": "red",
+    "danger": "red-600",
+    "agent": "magenta",
+    "hold": "orange",
+    "waits": "cyan",
+    "ready": "blue",
+    "released": [
+     "cyan",
+     "green",
+     0.5
+    ],
+    "phase": "purple"
+   }
+  }
+ },
+ "slate": {
+  "bg0": "#05070d",
+  "bg1": "#0b1224",
+  "surface": "#0c1322",
+  "stack": "#11192b",
+  "track": "#334155",
+  "faint": "#475569",
+  "muted": "#6b7a93",
+  "ink2": "#cbd5e1",
+  "ink": "#dbe4f3"
+ }
+}

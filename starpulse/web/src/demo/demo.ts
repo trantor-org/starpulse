@@ -1,0 +1,763 @@
+// The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
+// demo page (`starpulse.cli.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
+// A served page never loads this module on the first-paint path: `demo/host.ts` is what `apiFetch` and `openStream` read.
+import { arriveMerge, demoContract, demoLedger, demoPins, demoStrip, scenarioOf } from "./demoLedger";
+import { PAGE } from "../features/level/ledgerScroll";
+import { MERGE_EVENT } from "../features/level/ledger";
+import { padMachines, shapeBoard } from "./demoMachines";
+import { rankRows } from "../features/level/machineRows";
+import { columnsOf } from "../features/kanban/kanbanModel";
+import type { LaneStep } from "../features/level/trace";
+import type { FlowSnapshot, LedgerRow, Machine, RawTask, Roles, Snapshot } from "../api";
+import { criteriaBlock, demoCriteria } from "./demoCriteria";
+import { demoSpend } from "./demoSpend";
+import type { TaskRecord } from "../features/kanban/taskViewModel";
+import { demoServer as installed, embedded, setDemoServer } from "./host";
+
+export { embedded } from "./host";
+
+/** Whether `state` is the State a machine gives `role`; a machine with no such State matches nothing. */
+const plays = (state: string | undefined, role: string | null | undefined) => !!role && state === role;
+
+let demoN = 0;
+/** Seconds between two merges landing on a demo page's Ledger. */
+const MERGE_EVERY_S = 25;
+
+/** The page's own snapshot with what the demo server keeps live: the runs instances' workflows and the Ledger's 24-hour strip and pins. The page plays the machines itself. */
+export function demoLive(prev: Snapshot, next: Snapshot): Snapshot {
+  return { ...prev, dags: next.dags, mergeStrip: next.mergeStrip, mergePins: next.mergePins };
+}
+
+/** How likely a working task is to take a move on a tick: on the demo's ~1.2 s tick each task moves every few seconds. */
+const PHASE_MOVE_P = 0.2;
+const initOf = (m: Machine) => m.states.find((s) => s.initial)?.id ?? m.states[0].id;
+
+function move(ag: RawTask, e: Machine["transitions"][number], now: number) {
+  ag.state = e.target;
+  ag.steps = (ag.steps ?? 0) + 1;
+  (ag.trail ??= []).push({ state: e.target, event: e.event, at: now });
+  ag.active = now;
+}
+
+function restart(ag: RawTask, m: Machine) {
+  ag.state = initOf(m);
+  ag.steps = 0;
+  ag.trail = [];
+}
+
+/** The task's agent on a flow, a new one at the flow's start when it has none yet. */
+function agentIn(f: FlowSnapshot, card: RawTask, now: number) {
+  const found = f.agents.find((a) => (a.task ?? a.id) === card.id);
+  if (found) return found;
+  const ag: RawTask = { id: card.id, task: card.id, title: card.title, model: card.model, state: initOf(f.machine), steps: 0, trail: [], active: now };
+  f.agents.push(ag);
+  return ag;
+}
+
+/** The nearest later move out of a state: a machine lists its states main line first, so that is the next step. */
+function nearestAhead(m: Machine, state: string) {
+  const rank = (id: string) => m.states.findIndex((s) => s.id === id);
+  const later = m.transitions.filter((e) => e.source === state && rank(e.target) > rank(state));
+  return later.toSorted((a, b) => rank(a.target) - rank(b.target))[0];
+}
+
+/** Mostly the next step along the machine, sometimes any other way out (a loop back, a failed lens). */
+function nextMove(m: Machine, state: string, random: () => number) {
+  const outs = m.transitions.filter((e) => e.source === state && e.target !== state);
+  const ahead = nearestAhead(m, state);
+  return ahead && random() < 0.85 ? ahead : outs[Math.floor(random() * outs.length)];
+}
+
+/**
+ * Plays each working task through the board's lifecycle: a move inside the phase it is in, and at that phase's
+ * end on to the next phase, or back when it ended on anything but its first final, so a page drilled into a
+ * task sees one story, not independent walks. Answers the flows it played, which `demoStep` then leaves alone.
+ */
+function walkPhases(snap: Snapshot, random: () => number) {
+  const flows = new Map(snap.flows.map((f) => [f.name, f]));
+  const board = flows.get("board");
+  const working = snap.roles?.working;
+  const lifecycle = board?.machine.submachines?.find((s) => s.state === working && !s.when);
+  const sub = lifecycle && flows.get(lifecycle.machine);
+  const phases = sub?.machine.submachines;
+  if (!board || !sub || !phases?.length) return new Set<string>();
+  const phaseFlow = (state: string) => flows.get(phases.find((p) => p.state === state)?.machine ?? "");
+  const rank = (id: string) => sub.machine.states.findIndex((s) => s.id === id);
+  const now = Date.now() / 1000;
+  for (const card of board.agents.filter((a) => a.state === working)) {
+    if (random() >= PHASE_MOVE_P) continue;
+    const at = agentIn(sub, card, now);
+    const flow = phaseFlow(at.state);
+    const ag = flow && agentIn(flow, card, now);
+    const ended = flow?.machine.states.filter((s) => s.final).map((s) => s.id) ?? [];
+    const inside = flow && ag && !ended.includes(ag.state) && nextMove(flow.machine, ag.state, random);
+    if (inside) {
+      move(ag, inside, now);
+      continue;
+    }
+    const back = sub.machine.transitions.find((e) => e.source === at.state && phaseFlow(e.target) && rank(e.target) < rank(at.state));
+    const ahead = nearestAhead(sub.machine, at.state);
+    const leave = ag?.state === ended[0] ? ahead : back ?? ahead;
+    const entered = leave && phaseFlow(leave.target);
+    if (leave && entered) {
+      move(at, leave, now);
+      restart(agentIn(entered, card, now), entered.machine);
+      continue;
+    }
+    // past the last phase: the task's lap starts again, so a page left open never runs out of moves
+    restart(at, sub.machine);
+    for (const p of phases) {
+      const f = flows.get(p.machine);
+      if (f) f.agents = f.agents.filter((a) => (a.task ?? a.id) !== card.id);
+    }
+    const first = phaseFlow(at.state);
+    if (first) agentIn(first, card, now);
+  }
+  return new Set([sub.name, ...phases.map((p) => p.machine)]);
+}
+
+export function demoStep(prev: Snapshot, random = Math.random): Snapshot {
+  const snap = structuredClone(prev);
+  const played = walkPhases(snap, random);
+  const f = snap.flows[Math.floor(random() * snap.flows.length)];
+  if (!f || played.has(f.name)) return stepDags(snap, random);
+  const trans = f.machine.transitions;
+  const init = f.machine.states.find((s) => s.initial)?.id ?? f.machine.states[0].id;
+  const finals = new Set(f.machine.states.filter((s) => s.final).map((s) => s.id));
+  const now = Date.now() / 1000;
+  if (f.name === "board") {
+    const pool = f.agents.filter((a) => !plays(a.state, snap.roles?.done) || random() < 0.1);
+    const ag = pool[Math.floor(random() * f.agents.length * 0.9)] ?? f.agents[0];
+    const outs = ag ? trans.filter((e) => e.source === ag.state && e.target !== e.source) : [];
+    if (ag && outs.length) {
+      const e = outs[Math.floor(random() * outs.length)];
+      if (finals.has(e.target)) {
+        f.agents = f.agents.filter((a) => a !== ag);
+        snap.settled[ag.id] = { state: e.target, at: Date.now() / 1000, created: ag.created ?? null, title: ag.title, model: ag.model };
+      } else ag.state = e.target;
+    }
+  } else {
+    if (!f.agents.length || (f.agents.length < 6 && random() < 0.25))
+      f.agents.push({
+        id: `DEMO-${100 + ++demoN}`, task: `DEMO-${100 + demoN}`, title: "demo", model: ["@agent-deep-high", "@agent-standard-high", ""][demoN % 3],
+        state: init, steps: 0, trail: [], active: now,
+      });
+    const ag = f.agents[Math.floor(random() * f.agents.length)];
+    const outs = trans.filter((e) => e.source === ag.state);
+    if (outs.length && !finals.has(ag.state)) {
+      move(ag, outs[Math.floor(random() * outs.length)], now);
+    } else f.agents = f.agents.filter((a) => a !== ag);
+  }
+  return stepDags(snap, random);
+}
+
+function stepDags(snap: Snapshot, random: () => number): Snapshot {
+  const idle = snap.dags.filter((d) => !d.active?.length); // a DAG with runs in flight moves by `stepRuns`
+  if (idle.length && random() < 0.3) {
+    const d = idle[Math.floor(random() * idle.length)];
+    d.status = d.status === "running" ? (random() < 0.85 ? "succeeded" : "failed") : d.status === "queued" ? "running" : "queued";
+    if (d.status === "queued") d.runId += "+";
+  }
+  return snap;
+}
+
+const iso = (at: number) => new Date(at * 1000).toISOString().replace(/\.\d+Z$/, "Z");
+
+/**
+ * One step of the fan-out the embedded demo plays: a run in flight enters its next step or ends, or a new run starts while
+ * its pool has room, the pool's count following. A DAG with no pool or steps does not move.
+ */
+export function stepRuns(prev: Snapshot, random = Math.random): Snapshot {
+  const fans = prev.dags.filter((d) => d.pool && d.steps.length && prev.pools?.some((p) => p.name === d.pool));
+  if (!fans.length) return prev;
+  const snap = structuredClone(prev), now = Date.now() / 1000;
+  const action = random(), d = snap.dags.filter((x) => fans.some((f) => f.name === x.name))[Math.floor(random() * fans.length)];
+  const pool = snap.pools!.find((p) => p.name === d.pool)!, active = (d.active ??= []), names = d.steps.map((s) => s.name);
+  if (action < 0.5 && active.length) {
+    const run = active[Math.floor(random() * active.length)], at = names.indexOf(run.step);
+    if (at + 1 < names.length) {
+      const step = names[at + 1];
+      Object.assign(run, { step, stepStartedAt: iso(now), steps: { ...run.steps, [run.step]: "succeeded", [step]: "running" } });
+    } else {
+      active.splice(active.indexOf(run), 1);
+      pool.running = Math.max(0, pool.running - 1);
+      if (!active.length) Object.assign(d, { status: "succeeded", finishedAt: iso(now) });
+    }
+  } else if (action >= 0.5 && action < 0.75 && pool.running < pool.cap) {
+    const runId = `${d.name.slice(d.name.indexOf("/") + 1)}-agent-demo-${100 + ++demoN}`;
+    active.push({ runId, status: "running", startedAt: iso(now), step: names[0], stepStartedAt: iso(now), steps: Object.fromEntries(names.map((n, i) => [n, i ? "not_started" : "running"])) });
+    pool.running++;
+    Object.assign(d, { status: "running", runId, startedAt: iso(now), finishedAt: "" });
+  }
+  return snap;
+}
+
+/** The snapshot `starpulse.cli.demo` embeds, with each Board task's lane changes as `/api/history?task=` answers them. */
+export type DemoFixture = Snapshot & { history?: Record<string, LaneStep[]> };
+
+type Handler = (server: DemoServer, path: string, query: URLSearchParams, init?: RequestInit) => Response | Promise<Response>;
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+const HANDLERS: Record<string, Handler> = {
+  "/api/history": (server, _path, query) => {
+    const task = query.get("task") ?? "", machine = query.get("machine");
+    // the drill-in's replay: every machine's trail of the task, each step a move from the state before it
+    if (query.has("hours"))
+      return json({
+        task,
+        events: server.snapshot.flows
+          .flatMap((f) => {
+            const init = f.machine.states.find((s) => s.initial)?.id ?? f.machine.states[0]?.id ?? "start";
+            const trail = f.agents.find((x) => (x.task ?? x.id) === task)?.trail ?? [];
+            return trail.map(({ at, event, state }, i) => ({ at, machine: f.name, event, from: trail[i - 1]?.state ?? init, to: state }));
+          })
+          .sort((a, b) => a.at - b.at),
+      });
+    // a task with a plan shows it as rewritten once, so the dialog draws the plan heading's `revised 1×` link
+    if (!machine) return json({ task, path: server.lanes[task] ?? [], plan_revisions: server.records[task]?.plan ? 1 : 0 });
+    const f = server.snapshot.flows.find((x) => x.name === machine);
+    if (!f) return json({ error: `no machine ${machine}` }, 404);
+    const a = f.agents.find((x) => (x.task ?? x.id) === task);
+    const path = (a?.trail ?? []).map(({ at, event, state }) => ({ at, event, state }));
+    return json({ task, machine, path, steps: a ? (a.steps ?? path.length) : 0 });
+  },
+  "/api/move": async (server, _path, _query, init) => {
+    const { task, to } = JSON.parse(String(init?.body ?? "{}")) as { task?: string; to?: string };
+    return server.move(String(task), String(to));
+  },
+  "/api/task": (server, path) => server.task(decodeURIComponent(path.slice("/api/task/".length))),
+  "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
+  "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
+  "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
+  "/api/rating": (server, _path, _query, init) => server.rate(String(init?.body ?? "{}")),
+  "/api/scheduler": (server, _path, _query, init) => server.scheduler(init?.method ?? "GET", String(init?.body ?? "")),
+  "/api/harnesses": () => json(HARNESSES),
+  "/api/analytics": (server, path) => (path === "/api/analytics/spend" ? json(demoSpend(server.snapshot)) : json({ error: `This demo does not serve ${path}.` }, 404)),
+  "/api/milestones": (_server, path) => json({ milestone: demoMilestone(decodeURIComponent(path.slice("/api/milestones/".length))) }),
+  "/api/docs": (_server, path) => {
+    const id = decodeURIComponent(path.slice("/api/docs/".length));
+    if (path === "/api/docs") return json({ docs: DEMO_DOCS.map(({ body: _body, ...listed }) => listed) });
+    const doc = DEMO_DOCS.find((d) => d.id === id);
+    return doc ? json({ doc }) : json({ error: `${id} is not an open doc` }, 404);
+  },
+  "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
+  "/api/ledger": (server, path, query) => json(server.ledgerPage(decodeURIComponent(path.slice("/api/ledger/".length)), query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
+  "/api/runs": (server, path, _query, init) => {
+    const dag = path.match(/^\/api\/runs\/(.+)\/rerun$/)?.[1];
+    return dag && init?.method === "POST" ? server.rerun(decodeURIComponent(dag)) : json({ error: `This demo does not serve ${path}.` }, 404);
+  },
+  "/api/machines": (server, _path, query) => {
+    const { flows } = server.snapshot, open = query.get("open") ?? flows.find((f) => f.depth === 0)?.name ?? "", before = query.get("before"), limit = Number(query.get("limit") ?? 20);
+    if (!flows.some((f) => f.name === open)) return json({ error: `${open} is not a machine here` }, 404);
+    const last = (n: string) => flows.find((f) => f.name === n)?.last ?? 0;
+    const live = rankRows(Object.fromEntries(flows.map((f) => [f.name, f])), open).filter((n) => before == null || last(n) < Number(before));
+    let end = limit;
+    while (0 < end && end < live.length && last(live[end]) === last(live[end - 1])) end++;
+    return json({ open, machines: live.slice(0, end).map((n) => flows.find((f) => f.name === n)), more: end < live.length });
+  },
+};
+
+/**
+ * The scheduler a demo page pretends to run: `off` is paused, `over` a host past its RAM limit, `empty` a queue with nothing eligible,
+ * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no scheduler, `quiet` inside its quiet hours,
+ * `credits` Cursor paused for two hours on a usage limit.
+ */
+export type SchedulerDemo = "off" | "over" | "empty" | "refused" | "down" | "quiet" | "credits";
+/** The quiet hours the `quiet` demo holds admission in; the demo treats any window it keeps as holding now. */
+const NIGHT = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
+/** The harnesses the demo names, so the Scheduler card draws its harness Segments; a start on either is still refused (`/api/start`). */
+const HARNESSES = {
+  tiers: ["fast", "standard", "deep"],
+  harnesses: [
+    { name: "claude", label: "Claude Code", sessions: true, reason: null, tiers: {
+      fast: { model: "haiku", efforts: [] }, standard: { model: "sonnet", efforts: ["medium", "high"] }, deep: { model: "opus", efforts: ["medium", "high"] } } },
+    { name: "cursor", label: "Cursor", sessions: true, reason: null, tiers: {
+      fast: { model: "composer-2.5-fast", efforts: [] }, standard: { model: "composer-2.5", efforts: ["medium", "high"] }, deep: { model: "cursor-grok-4.6-xhigh", efforts: ["medium", "high"] } } },
+  ],
+};
+/** The limits the demo's capacity strip holds its stand-in host under, in the units the server samples. */
+const PILOT = { cpu: 80, memory: 85, sessions: 4, review: 24 };
+/** Each harness's session cap, as `[scheduler.session_limits]` sets it on the live server. */
+const CAPS: Record<string, number> = { claude: 3, cursor: 2 };
+
+/**
+ * Every /api route the page requests, and how a demo page answers it: `null` for one the demo serves (`/api/events` by
+ * `openStream` following the server, the rest by `DemoServer.fetch`), else why a page with no server cannot.
+ * The demo test fails when the page's source requests a route missing here.
+ */
+export const ROUTES: Record<string, string | null> = {
+  "/api/events": null,
+  ...Object.fromEntries(Object.keys(HANDLERS).map((r) => [r, null])),
+  "/api/run": "This demo has no runs instance to start a run on.",
+  "/api/start": "This demo has no session-start service to start a session with.",
+  "/api/history-window": "This demo has no server to keep a shared history window.",
+};
+
+/** The Board columns a card in `state` may be moved to: the machine's exits that are neither its creation nor a settled state. */
+function columns(m: Machine, state: string): string[] {
+  const rest = new Set(m.states.filter((s) => !s.initial && !s.final).map((s) => s.id));
+  return [...new Set(m.transitions.filter((t) => t.source === state && t.target !== state && rest.has(t.target)).map((t) => t.target))];
+}
+const ALLOWED = { allowed: true, reason: "", skill: "" };
+
+/**
+ * The server a demo page has instead of starpulse.runtime.server: it holds the snapshot, plays the `?demo` walk on it, keeps
+ * each Board card's lane history and move verdicts current, and answers /api requests from that, so every view and
+ * every hover of a page with no server behaves as it does on a served one.
+ */
+export class DemoServer {
+  snapshot: Snapshot;
+  lanes: Record<string, LaneStep[]>;
+  records: Record<string, TaskRecord>;
+  private created = new Set<string>();
+  /** Every merge of the demo's day, newest first: `/api/ledger/MERGED` serves it a page at a time. */
+  private day: LedgerRow[] = [];
+  /** When each forced rerun started, and the DAGs whose forced run is still going. */
+  private reruns: number[] = [];
+  private forcing = new Set<string>();
+  private admitting: boolean;
+  private harness = "claude";
+  private quietHours: typeof NIGHT | null;
+  /** The session caps an Admin save overrides `CAPS` with, per harness. */
+  private capOverrides: Record<string, number> = {};
+  private limitOverrides: Record<string, number> = {};
+  private listeners = new Set<(s: Snapshot) => void>();
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private merges: ReturnType<typeof setInterval> | undefined;
+
+  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private failingEvaluator = false, private pilot?: SchedulerDemo) {
+    this.admitting = pilot !== "off";
+    // the credits state opens on the paused harness, so the page draws its disabled option and the pick it holds
+    if (pilot === "credits") this.harness = "cursor";
+    this.quietHours = pilot === "quiet" ? NIGHT : null;
+    const { history, ...snap } = structuredClone(fixture);
+    // the fixture's times are kept as ages, so what settled an hour before the capture settled an hour before the page opened
+    const age = clock() - snap.now;
+    for (const card of snap.flows.find((f) => f.name === "board")?.agents ?? []) {
+      if (card.created != null) card.created += age;
+      // an unassigned task keeps its flat paragraph, which reads as the legacy format the board card flags
+      if (!card.model) card.readable = "the description has no Outcome section";
+    }
+    for (const e of Object.values(snap.settled)) [e.at, e.created] = [e.at == null ? null : e.at + age, e.created == null ? null : e.created + age];
+    for (const f of snap.flows) if (f.last != null) f.last += age;
+    for (const e of snap.machineStrip?.entries ?? []) e.at += age;
+    this.lanes = history ?? {};
+    this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card, snap.roles ?? {}, clock(), failingEvaluator)]));
+    const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
+    this.day = ledger;
+    this.snapshot = this.verdicts({ ...snap, now: clock(), ...(ledger.length ? this.ledgerFields() : {}), capabilities: { edit: true, archive: true, create: true } });
+  }
+
+  subscribe(fn: (s: Snapshot) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** Play the walk until `stop`, one step every 0.6 to 1.8 seconds, and a merge landing on the Ledger every 25. */
+  start() {
+    const tick = () => {
+      this.step();
+      this.timer = setTimeout(tick, 600 + Math.random() * 1200);
+    };
+    this.timer ??= setTimeout(tick, 1200);
+    this.merges ??= setInterval(() => this.land(), MERGE_EVERY_S * 1000);
+  }
+  stop() {
+    clearTimeout(this.timer);
+    clearInterval(this.merges);
+    this.timer = this.merges = undefined;
+  }
+
+  /** A merge lands on the Ledger: the runs in flight finish and the new merge's writer starts. A demo with no merge Ledger has none to land. */
+  land() {
+    if (!this.day.length) return;
+    const next = structuredClone(this.snapshot);
+    this.day = arriveMerge(next, this.day, this.clock());
+    Object.assign(next, this.ledgerFields());
+    this.publish(next);
+  }
+
+  /** The Ledger's part of a snapshot: the day's strip counted over all the merges, and the pins the newest page leaves out. */
+  private ledgerFields(): Pick<Snapshot, "mergeStrip" | "mergePins"> {
+    return { mergeStrip: demoStrip(this.day, this.reruns, this.clock()), mergePins: demoPins(this.day, this.day.slice(0, PAGE)) };
+  }
+
+  /** `POST /api/runs/<dag>/rerun`: a forced run of a DAG with an unresolved failure, refused as the server refuses one with nothing to rerun or one already going; it clears the failures a few seconds later. */
+  rerun(dag: string): Response {
+    const cell = this.snapshot.dags.find((d) => d.name === dag);
+    if (!cell) return json({ error: `no workflow ${dag}` }, 404);
+    if (!this.day.some((r) => r.fails[dag]?.resolved === null)) return json({ error: `${dag} has no unresolved failure to rerun.` }, 409);
+    if (this.forcing.has(dag)) return json({ error: `${dag} already has a forced rerun running.` }, 409);
+    const now = this.clock(), runId = `${dag}-forced-${this.reruns.length + 1}`, names = cell.steps.map((s) => s.name);
+    const next = structuredClone(this.snapshot);
+    (next.dags.find((d) => d.name === dag)!.active ??= []).push({ runId, status: "running", startedAt: iso(now), step: names[0] ?? "", stepStartedAt: iso(now), steps: Object.fromEntries(names.map((n, i) => [n, i ? "not_started" : "running"])) });
+    this.forcing.add(dag);
+    this.reruns.push(now);
+    this.publish(next);
+    setTimeout(() => this.finishRerun(dag, runId), 4000);
+    return json({ runId });
+  }
+  private finishRerun(dag: string, runId: string) {
+    const at = iso(this.clock());
+    this.forcing.delete(dag);
+    this.day = this.day.map((r) => {
+      if (r.fails[dag]?.resolved !== null) return r;
+      const fails = { ...r.fails, [dag]: { ...r.fails[dag], resolved: { runId, at } } };
+      return { ...r, fails, pinned: Object.values(fails).some((f) => f.resolved === null) };
+    });
+    const next = structuredClone(this.snapshot);
+    const cell = next.dags.find((d) => d.name === dag);
+    if (cell?.active) cell.active = cell.active.filter((a) => a.runId !== runId);
+    Object.assign(next, this.ledgerFields());
+    this.publish(next);
+  }
+
+  /** `GET /api/ledger/<event>`: up to `limit` rows older than `before` (none: the newest), and whether older ones remain. Merges of one second come whole, as the server's do; the demo has no other event's rows. */
+  ledgerPage(event: string, before: number | undefined, limit: number): { rows: LedgerRow[]; more: boolean } {
+    const older = event === MERGE_EVENT ? this.day.filter((r) => before === undefined || r.at < before) : [];
+    let end = Math.min(limit, older.length);
+    while (end > 0 && end < older.length && older[end].at === older[end - 1].at) end++;
+    return { rows: older.slice(0, end), more: end < older.length };
+  }
+
+  /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains.
+   * A card the viewer created stays out of the walk, so it stays where it landed until the viewer moves it. */
+  step(random = Math.random) {
+    const walked = structuredClone(this.snapshot);
+    const held = walked.flows.find((f) => f.name === "board");
+    const created = held?.agents.filter((a) => this.created.has(a.id)) ?? [];
+    if (held) held.agents = held.agents.filter((a) => !this.created.has(a.id));
+    const next = stepRuns(demoStep(walked, random), random);
+    const board = next.flows.find((f) => f.name === "board");
+    const prev = held?.agents ?? [];
+    const fresh = new Set<string>();
+    if (board) {
+      board.agents.push(...created);
+      const lane = board.machine.mainLine?.[1] ?? board.machine.states.find((s) => s.initial)?.id ?? board.machine.states[0].id;
+      const ids = [...board.agents, ...prev].map((a) => a.id).concat(Object.keys(next.settled));
+      let n = Math.max(0, ...ids.map((id) => Number(id.match(/\d+$/)?.[0] ?? 0)));
+      for (const card of prev.filter((a) => a.id in next.settled && !(a.id in this.snapshot.settled))) {
+        next.settled[card.id].at = this.clock();
+        const work = { ...card, id: `DEMO-${++n}`, state: lane, moves: undefined, created: this.clock() };
+        this.records[work.id] = demoRecord(work, this.snapshot.roles ?? {}, this.clock(), this.failingEvaluator);
+        fresh.add(work.id);
+        board.agents.push(work);
+      }
+    }
+    this.publish(next, fresh);
+  }
+
+  /** Move `task` to column `to` as the board writer would: refused unless its lane exits there. */
+  move(task: string, to: string): Response {
+    const board = this.snapshot.flows.find((f) => f.name === "board");
+    const card = board?.agents.find((a) => a.id === task);
+    if (!board || !card) return json({ error: `${task} is not on the board` }, 404);
+    const roles = this.snapshot.roles;
+    if (plays(card.state, roles?.proposed) && plays(to, roles?.final)) return this.archive(JSON.stringify({ task }));
+    if (!columns(board.machine, card.state).includes(to)) return json({ error: `${task} cannot move from ${card.state} to ${to}` }, 409);
+    if (plays(card.state, roles?.proposed) && plays(to, roles?.ready) && !this.records[task]?.profile) return json({ error: `${task} has no profile, so it cannot be promoted` }, 409);
+    const next = structuredClone(this.snapshot);
+    next.flows.find((f) => f.name === "board")!.agents.find((a) => a.id === task)!.state = to;
+    this.publish(next);
+    return json({ task, to });
+  }
+
+  /** The synthetic full record behind a public demo card; an In Progress card's names a synthetic claiming session, a fragment so the public demo carries no real host. */
+  task(id: string): Response {
+    const record = this.records[id];
+    if (!record) return json({ error: `${id} has no record to read` }, 404);
+    const working = plays(this.snapshot.flows.find((f) => f.name === "board")?.agents.find((a) => a.id === id)?.state, this.snapshot.roles?.working);
+    return json({ task: id, record: { ...record, session: working ? `#demo-session-${id.replace(/\D/g, "").padStart(4, "0")}` : "" } });
+  }
+
+  /** Apply the same optimistic-lock payload as the served writer, then publish card-sized fields. */
+  edit(raw: string): Response {
+    let request: { task?: string; base?: Partial<TaskRecord>; changes?: Partial<TaskRecord>; comment?: string; actor?: string };
+    try { request = JSON.parse(raw) as typeof request; } catch { return json({ error: "invalid edit" }, 400); }
+    const task = request.task ?? "", current = this.records[task];
+    if (!current || !request.base || !request.changes || !Object.keys(request.changes).length) return json({ error: "invalid edit" }, 400);
+    if (this.refuseEdits) return json({ error: "The demo writer refused this edit.", skill: "completing-tasks" }, 409);
+    const fields = Object.keys(request.changes) as (keyof TaskRecord)[];
+    const stale = fields.filter((field) => JSON.stringify(current[field]) !== JSON.stringify(request.base?.[field]));
+    if (stale.length) return json({ error: `${task} changed since it was opened: ${stale.join(", ")}`, stale, current: Object.fromEntries(stale.map((field) => [field, current[field]])) }, 409);
+    const posted = request.comment ? [{ created: stamp(this.clock()), author: request.actor ?? "operator", text: request.comment }] : [];
+    this.records[task] = { ...current, ...request.changes, comments: [...(current.comments ?? []), ...posted] } as TaskRecord;
+    const next = structuredClone(this.snapshot);
+    const card = next.flows.find((f) => f.name === "board")?.agents.find((agent) => agent.id === task);
+    if (card) {
+      const record = this.records[task];
+      Object.assign(card, { title: record.title, model: record.profile, profile: record.profile, labels: record.labels, milestone: record.milestone, dependencies: record.dependencies, description: record.description });
+      this.publish(next);
+    }
+    return json({ task, changed: fields });
+  }
+
+  /** Rate `task` as the served writer would: the verdict, its reason and a change count land on the snapshot, unless a review fixture makes the writer refuse. */
+  rate(raw: string): Response {
+    let sent: { task?: unknown; verdict?: unknown; reason?: unknown; actor?: unknown };
+    try { sent = JSON.parse(raw) as typeof sent; } catch { sent = {}; }
+    const { task, verdict } = sent;
+    if (typeof task !== "string" || (verdict !== "pass" && verdict !== "fail" && verdict !== "cleared")) return json({ error: "invalid rating" }, 400);
+    if (!this.snapshot.flows.find((f) => f.name === "board")?.agents.some((a) => a.id === task)) return json({ error: `${task} is not on the board` }, 404);
+    if (this.refuseEdits) return json({ error: "rating not saved" }, 503);
+    const reason = typeof sent.reason === "string" ? sent.reason : "";
+    const changes = (this.snapshot.ratings?.[task]?.changes ?? 0) + 1;
+    const next = structuredClone(this.snapshot);
+    next.ratings = { ...next.ratings, [task]: { verdict, reason, actor: typeof sent.actor === "string" ? sent.actor : "", at: this.clock(), changes } };
+    this.publish(next);
+    return json({ task, verdict, reason, changes });
+  }
+
+  /** Archive `task` as the served writer would: the card and its record leave the board, unless a review fixture makes the writer refuse. */
+  archive(raw: string): Response {
+    let task: unknown;
+    try { task = (JSON.parse(raw) as { task?: unknown }).task; } catch { task = undefined; }
+    if (typeof task !== "string") return json({ error: "invalid archive" }, 400);
+    if (!this.snapshot.flows.find((f) => f.name === "board")?.agents.some((a) => a.id === task)) return json({ error: `${task} is not on the board` }, 404);
+    if (this.refuseEdits) return json({ error: "The demo writer refused this archive; the task was not archived.", skill: "completing-tasks" }, 409);
+    const next = structuredClone(this.snapshot);
+    const board = next.flows.find((f) => f.name === "board")!;
+    board.agents = board.agents.filter((a) => a.id !== task);
+    delete this.records[task];
+    this.publish(next);
+    return json({ task });
+  }
+
+  /** Create a task in the Board's starting lane as the served writer would, unless a review fixture makes the writer refuse. */
+  create(raw: string): Response {
+    let sent: Record<string, unknown>;
+    try { sent = JSON.parse(raw) as Record<string, unknown>; } catch { sent = {}; }
+    const { title } = sent;
+    if (typeof title !== "string" || !title.trim()) return json({ error: 'a create needs {"title": "<1 to 300 characters>"}' }, 400);
+    const text = (field: string) => (typeof sent[field] === "string" ? (sent[field] as string).trim() : "");
+    const list = (field: string) => (Array.isArray(sent[field]) ? (sent[field] as unknown[]).filter((v): v is string => typeof v === "string") : []);
+    if (this.refuseEdits) return json({ error: "The demo writer refused this create; the task was not created.", skill: "completing-tasks" }, 409);
+    const next = structuredClone(this.snapshot);
+    const board = next.flows.find((f) => f.name === "board");
+    if (!board) return json({ error: "this board does not create tasks" }, 404);
+    const prefix = board.agents[0]?.id.match(/^(.*?)\d+$/)?.[1] ?? "TASK-";
+    const ids = board.agents.map((a) => a.id).concat(Object.keys(next.settled));
+    const id = `${prefix}${Math.max(0, ...ids.map((n) => Number(n.match(/\d+$/)?.[0] ?? 0))) + 1}`;
+    const lane = startingLane(board.machine, this.snapshot.roles ?? {});
+    const card: RawTask = {
+      id, title: title.trim(), state: lane, model: text("assignee"), assignee: text("assignee"), labels: list("labels"), milestone: text("milestone"),
+      dependencies: list("dependencies"), description: text("description"),
+    };
+    board.agents.push(card);
+    this.created.add(id);
+    this.records[id] = {
+      ...demoRecord(card, this.snapshot.roles ?? {}, this.clock(), this.failingEvaluator), description: card.description ?? "", priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
+      acceptanceCriteria: list("acceptanceCriteria").map((item, i) => ({ n: i + 1, text: item, checked: false })),
+    };
+    this.publish(next, new Set([id]));
+    return json({ task: id }, 201);
+  }
+
+  /**
+   * `/api/scheduler` as starpulse.views.adapters.inbound.api.scheduler answers it, with the sessions in flight and the next pick the
+   * strip also draws: the Board's In Progress cards are the sessions and its first unblocked Ready card is the pick.
+   */
+  scheduler(method: string, raw: string): Response {
+    if (this.pilot === "down") return json({ error: "This server has no scheduler." }, 404);
+    if (method === "PUT") {
+      if (this.pilot === "refused") return json({ error: "Autopilot changes are taken only from loopback or a private address; this demo is neither." }, 403);
+      let sent: { enabled?: unknown; quietHours?: unknown; harness?: unknown; sessionCap?: unknown; cpuLimit?: unknown; memoryLimit?: unknown } = {};
+      try { sent = JSON.parse(raw) as typeof sent; } catch { /* refused below */ }
+      const usage = 'the scheduler takes {"enabled": true|false}, {"harness": "<name>"}, {"sessionCap": <whole number above zero>|null}, {"cpuLimit": <percent above 0, at most 100>|null}, {"memoryLimit": <percent above 0, at most 100>|null} and/or {"quietHours": {"start", "end", "timezone"}|null}';
+      const window = sent?.quietHours as typeof NIGHT | null | undefined;
+      const noField = sent.enabled === undefined && window === undefined && sent.harness === undefined && sent.sessionCap === undefined && sent.cpuLimit === undefined && sent.memoryLimit === undefined;
+      if (!sent || noField || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
+      if (sent.harness !== undefined && (typeof sent.harness !== "string" || !sent.harness)) return json({ error: usage }, 400);
+      const cap = sent.sessionCap;
+      if (cap !== undefined && cap !== null && !(typeof cap === "number" && Number.isInteger(cap) && cap > 0)) {
+        return json({ error: `session cap must be a whole number above zero; got ${JSON.stringify(cap)}` }, 400);
+      }
+      const limits = { cpu: sent.cpuLimit, memory: sent.memoryLimit };
+      for (const [name, value] of Object.entries(limits)) {
+        if (value !== undefined && value !== null && !(typeof value === "number" && value > 0 && value <= 100)) {
+          return json({ error: `${name} limit must be a percent above 0 and at most 100; got ${JSON.stringify(value)}` }, 400);
+        }
+      }
+      if (window && window.start === window.end) return json({ error: "quiet hours start and end must differ" }, 400);
+      for (const [name, value] of Object.entries(limits)) {
+        if (value === null) delete this.limitOverrides[name];
+        else if (value !== undefined) this.limitOverrides[name] = value as number;
+      }
+      if (typeof sent.enabled === "boolean") this.admitting = sent.enabled;
+      if (typeof sent.harness === "string") this.harness = sent.harness;
+      if (window !== undefined) this.quietHours = window;
+      if (cap === null) delete this.capOverrides[this.harness];
+      else if (cap !== undefined) this.capOverrides[this.harness] = cap as number;
+    } else if (method !== "GET") return json({ error: `${method} is not served here` }, 405);
+    const at = this.clock();
+    const cards = this.snapshot.flows.find((f) => f.name === "board")?.agents ?? [];
+    // a demo board holds far more In Progress cards than a host admits: the listing stands in for two sessions, or the limit when over
+    const inFlight = cards.filter((a) => plays(a.state, this.snapshot.roles?.working)).slice(0, this.pilot === "over" ? PILOT.sessions : 2).map((a, i) => ({
+      task: a.id,
+      title: a.title ?? a.id,
+      model: a.model || "sonnet · high",
+      started: at - (14 + 23 * i) * 60,
+      url: `#demo-session-${a.id.replace(/\D/g, "").padStart(4, "0")}`, // a fragment: the public demo names no real host
+    }));
+    const over = this.pilot === "over";
+    const use = { cpu: over ? 74 : 41, memory: over ? 91 : 58, sessions: inFlight.length, review: 13 };
+    const pick = this.pilot === "empty" ? undefined : cards.find((a) => plays(a.state, this.snapshot.roles?.ready) && !a.dependencies?.length);
+    const pauses = this.pilot === "credits" ? [{ harness: "cursor", until: at + 2 * 3600, reason: "usage limit" }] : [];
+    const paused = pauses.some((p) => p.harness === this.harness);
+    const limit = (name: string) => this.capOverrides[name] ?? CAPS[name];
+    const capacity = (name: "cpu" | "memory") => ({ limit: this.limitOverrides[name] ?? PILOT[name], source: name in this.limitOverrides ? "admin" : "starpulse.toml", configLimit: PILOT[name] });
+    const memory = capacity("memory").limit;
+    const waits = this.quietHours ? "quiet hours" : paused ? `${this.harness} usage limit` : use.memory > memory ? `RAM ${use.memory}/${memory}%` : use.sessions >= limit(this.harness) ? `Sessions ${use.sessions}/${limit(this.harness)}` : "";
+    const other = this.harness === "claude" ? "cursor" : "claude";
+    return json({
+      enabled: this.admitting,
+      harness: this.harness,
+      quietHours: this.quietHours,
+      sampledAt: at,
+      dimensions: (Object.keys(PILOT) as (keyof typeof PILOT)[]).map((name) => ({ name, use: use[name], limit: name === "sessions" && this.harness in this.capOverrides ? limit(this.harness) : name === "cpu" || name === "memory" ? capacity(name).limit : PILOT[name] })),
+      inFlight,
+      next: this.admitting && pick ? { task: pick.id, title: pick.title ?? pick.id, verdict: waits ? "waits" : "starting", reason: waits } : null,
+      pauses,
+      sessionsByHarness: {
+        [this.harness]: { use: inFlight.length, limit: limit(this.harness) },
+        [other]: { use: 0, limit: limit(other) },
+      },
+      sessionCap: {
+        harness: this.harness,
+        limit: limit(this.harness),
+        source: this.harness in this.capOverrides ? "admin" : "starpulse.toml",
+        configLimit: CAPS[this.harness],
+      },
+      capacityLimits: { cpu: capacity("cpu"), memory: capacity("memory") },
+    });
+  }
+
+  fetch(input: string, init?: RequestInit): Promise<Response> {
+    const [path, search = ""] = input.split("?", 2); // no URL(): a base address would be a host in the public file
+    const route = Object.keys(ROUTES).find((r) => path === r || path.startsWith(`${r}/`));
+    const handler = route ? HANDLERS[route] : undefined;
+    if (handler) return Promise.resolve(handler(this, path, new URLSearchParams(search), init));
+    return Promise.resolve(json({ error: (route && ROUTES[route]) || `This demo does not serve ${path}.` }, 404));
+  }
+
+  /** Push `next`, recording each Board lane change; a `fresh` card's path starts again from nothing. */
+  private publish(next: Snapshot, fresh = new Set<string>()) {
+    const was = new Map(this.snapshot.flows.find((f) => f.name === "board")?.agents.map((a) => [a.id, a.state]));
+    const at = this.clock();
+    for (const a of next.flows.find((f) => f.name === "board")?.agents ?? []) {
+      const from = fresh.has(a.id) ? null : was.get(a.id) ?? null;
+      if (from !== a.state) (this.lanes[a.id] ??= []).push({ at, from, to: a.state });
+    }
+    this.snapshot = this.verdicts({ ...next, now: at });
+    for (const fn of this.listeners) fn(this.snapshot);
+  }
+
+  private verdicts(snap: Snapshot): Snapshot {
+    const flows = snap.flows.map((f) =>
+      f.name !== "board" ? f : { ...f, agents: f.agents.map((a): RawTask => ({ ...a, profile: a.profile ?? a.model, moves: Object.fromEntries(columns(f.machine, a.state).map((c) => [c, ALLOWED])) })) },
+    );
+    return { ...snap, flows };
+  }
+}
+
+/** Where a new task starts: the machine's initial state when the Kanban draws it as a column, else the first column. */
+const startingLane = (machine: Machine, roles: Roles): string => {
+  const lanes = columnsOf(Object.fromEntries(machine.states.map((s) => [s.id, s.name])), roles);
+  const initial = machine.states.find((s) => s.initial)?.id ?? "";
+  return lanes.includes(initial) ? initial : lanes[0];
+};
+
+/** The Markdown every demo description carries: a table and a fenced block the dialog draws, and the creation sections it hides. */
+const DEMO_DOCS = [
+  {
+    id: "doc-1", title: "Demo spec", type: "specification",
+    body: [
+      "## Outcome", "A synthetic spec the public preview opens in the task dialog.",
+      "## Decisions", "| Decision | Measure |\n| --- | ---: |\n| Draw a diagram | 1 |\n| Load mermaid late | 2 |",
+      "## Flow", "```mermaid\nflowchart LR\n  Task --> Milestone\n  Milestone --> Spec\n```",
+    ].join("\n\n"),
+  },
+  { id: "doc-2", title: "Demo notes", type: "guide", body: "## Notes\n\nThis doc contains no real board data." },
+];
+
+/** A synthetic milestone of any id, whose one spec is the demo spec. */
+const demoMilestone = (id: string) => ({
+  id, title: "Demo milestone", specs: ["doc-1 — Demo spec"], description: "## Outcome\n\nThe public preview shows a milestone, its spec and its docs.\n\n## Spec\n\n- doc-1 — Demo spec",
+});
+
+const DEMO_BRIEF = [
+  "## Outcome\n\nThe public preview draws a task brief with lists, inline code and collapsible sections.",
+  "## Why This Matters\n\nA reader sees the outcome first and opens the rest only when needed.",
+  "## Scope\n\n- Draw `ordered` and `unordered` lists, nested one level\n- Link a file such as `starpulse/web/src/style.css`\n  - to the repository page\n- Keep **Outcome**, **Why** and **Scope** open",
+  "## Constraints\n\nOne pane, capped near 24rem, scrolling inside the dialog. Sticky headings stay in view.",
+  "## Implementation Plan\n\n1. Read the blocks\n2. Draw each `##` as a toggle row\n3. Store the open state per heading name",
+].join("\n\n");
+
+const DEMO_BODY = [
+  "## Rollout",
+  "| Stage | Hosts | Window |\n| --- | ---: | --- |\n| Canary | 1 | 10 min |\n| Fleet | 24 | 1 h |",
+  "```\nstarpulse task list --status ready\n```",
+  "## Duplicate Search\n\nSearched the board for the same change: none.",
+  "## Duplicate Resolution\n\nNew task.",
+  "## ADR Needed\n\nNo.",
+].join("\n\n");
+
+const demoRecord = (card: RawTask, roles: Roles, now: number, failing = false): TaskRecord => {
+  const criteria = plays(card.state, roles.waiting) ? demoCriteria(now, failing) : undefined;
+  return {
+    title: card.title,
+    profile: card.model,
+    priority: "Medium",
+    labels: card.labels ?? ["demo"],
+    milestone: card.milestone ?? "",
+    documentation: ["docs/specs/doc-1 - Demo spec.md", "docs/doc-2 - Demo notes.md"],
+    dependencies: card.dependencies ?? [],
+    follows: card.follows ?? "",
+    description: [card.description ?? "A synthetic task used by the public StarPulse preview.", card.model ? DEMO_BRIEF : "", DEMO_BODY, criteria && criteriaBlock(criteria)].filter(Boolean).join("\n\n"),
+    ...(criteria && { start_criteria: criteria }),
+    // an unassigned task has no plan yet, so the dialog offers `+ Add plan`
+    plan: card.model ? "1. Inspect the task\n2. Make the smallest safe change\n3. Verify the result" : "",
+    notes: `**Assignee:** ${card.model || "nobody"}\nThis record contains no real board data.`,
+    acceptanceCriteria: [
+      { n: 1, text: "The public preview can edit every field", checked: false },
+      { n: 2, text: "The saved card refreshes immediately", checked: false },
+    ],
+    definitionOfDone: [{ n: 1, text: "The change is verified", checked: false }],
+    // a claimed task has the record's three kinds: checkpoint evidence and a StarPulse step under Activity, a person's note under Comments
+    comments: card.model ? [
+      { created: stamp(now - 5400), author: "starpulse/task-actor", text: "Every dependency has merged." },
+      { created: stamp(now - 3600), author: "agent", text: "Verified AC #1: `pnpm exec vitest run` failed on the stale field, then passed" },
+      { created: stamp(now - 2700), author: "operator", text: "Keep the **saved** card in place while it refreshes." },
+      { created: stamp(now - 1800), author: "agent", text: "Verified AC #2: `pnpm exec vitest run -t refresh` exited 0\n\n```\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n```" },
+    ] : [],
+  };
+};
+
+/** A comment's `created` as the board writes it: local `YYYY-MM-DD HH:MM`. */
+const stamp = (at: number) => {
+  const d = new Date(at * 1000), two = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+};
+
+/**
+ * Builds the page's one DemoServer from the embedded fixture and registers it on the host, or returns the one already
+ * installed. A served page with no fixture leaves the host empty. Call before `boot` on an embedded page (and from tests
+ * that still call `demoServer()`).
+ */
+export function ensureDemoServer(): DemoServer | null {
+  const held = installed();
+  if (held) return held as DemoServer;
+  const fixture = embedded() as DemoFixture | null;
+  const query = new URLSearchParams(globalThis.location?.search ?? "");
+  const refuseEdits = query.get("edit") === "refuse";
+  const scheduler = (["off", "over", "empty", "refused", "down", "quiet", "credits"] as const).find((state) => state === query.get("scheduler"));
+  const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
+  const shaped = fixture ? shapeBoard(fixture, query.get("board")) : null; // `?board=no-archived|no-attention|unlisted|fourteen` reshapes the Board for a Star Map review
+  if (!shaped) return null;
+  const server = new DemoServer(many ? padMachines(shaped, many) : shaped, undefined, refuseEdits, query.get("evaluator") === "error", scheduler);
+  setDemoServer(server);
+  return server;
+}
+
+/** The page's one DemoServer when it embeds a fixture, else null: builds and registers it the first time. */
+export const demoServer = (): DemoServer | null => ensureDemoServer();

@@ -1,0 +1,82 @@
+{
+  "additionalProperties": false,
+  "description": "One task entering a Board lane; the `board:lanes` entry's fields. It never carries a title, a description, a\nholder or any session detail.",
+  "properties": {
+    "task": {
+      "description": "The task key that changed lane.",
+      "minLength": 1,
+      "title": "Task",
+      "type": "string"
+    },
+    "lane": {
+      "description": "The id of the Board machine state the task entered.",
+      "minLength": 1,
+      "title": "Lane",
+      "type": "string"
+    },
+    "time": {
+      "description": "When the task entered the lane, in epoch seconds.",
+      "minimum": 0,
+      "title": "Time",
+      "type": "number"
+    },
+    "team": {
+      "default": "",
+      "description": "The task's team key; empty on an entry replayed from the history or recorded when a write moved the task.",
+      "title": "Team",
+      "type": "string"
+    },
+    "milestone": {
+      "default": "",
+      "description": "The task's milestone; empty when it has none.",
+      "title": "Milestone",
+      "type": "string"
+    },
+    "labels": {
+      "default": [],
+      "description": "The task's labels; empty when it has none.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Labels",
+      "type": "array"
+    },
+    "profile": {
+      "default": "",
+      "description": "Which agent profile or model the task was routed to; empty when unrouted, and a person's name.",
+      "title": "Profile",
+      "type": "string"
+    },
+    "assignee": {
+      "default": "",
+      "description": "The legacy name of `profile`, read on an entry an older instance wrote.",
+      "title": "Assignee",
+      "type": "string"
+    },
+    "actor": {
+      "default": "",
+      "description": "Who made the move: the actor of the write the board's server recorded it from (`operator`, `agent`, `anonymous`, `<instance>/<workflow>` or `starpulse/task-actor`), or `external` for a change no such write made (a hand edit of the board, a board adapter that records at placement); empty on an entry that predates actors.",
+      "title": "Actor",
+      "type": "string"
+    },
+    "session": {
+      "default": "",
+      "description": "The harness session that made the move, as its write named it; empty when it named none.",
+      "title": "Session",
+      "type": "string"
+    },
+    "harness": {
+      "default": "",
+      "description": "The harness (`claude`, `cursor`) of that session; empty when the write named none.",
+      "title": "Harness",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task",
+    "lane",
+    "time"
+  ],
+  "title": "LaneEvent",
+  "type": "object"
+}

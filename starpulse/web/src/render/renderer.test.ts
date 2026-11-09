@@ -1,0 +1,149 @@
+import { describe, expect, it } from "vitest";
+import { arrivalRings, tierColor } from "./draw";
+import { dagRings, orbiterLook } from "./boardDraw";
+import { DAG_COLOR } from "./draw";
+import { token } from "./palette";
+import { feedOf } from "./feed";
+import { nameLines } from "./dagTies";
+import { PULSE } from "./sky";
+import type { Dag } from "../api";
+
+const FIN = 100;
+const sweep = (fins: number[], from = FIN - 1, to = FIN + 12, step = 0.05) =>
+  Array.from({ length: Math.round((to - from) / step) + 1 }, (_, i) => {
+    const now = from + i * step;
+    return { now, rings: fins.flatMap((f) => dagRings(f, now)) };
+  });
+
+describe("a DAG event's pulse", () => {
+  it("is one ring that grows once and then stays gone", () => {
+    const frames = sweep([FIN]), shown = frames.filter((f) => f.rings.length);
+    expect(frames.every((f) => f.rings.length <= 1)).toBe(true);
+    // one contiguous window: no ring before the run ends, none once it has faded
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown[0].now).toBeGreaterThanOrEqual(FIN);
+    expect(shown[shown.length - 1].now).toBeLessThanOrEqual(FIN + PULSE + 0.05);
+    expect(frames.slice(frames.indexOf(shown[shown.length - 1]) + 1).every((f) => f.rings.length === 0)).toBe(true);
+    // the ring only ever grows: a restart from zero would be a second pulse
+    const ages = shown.map((f) => f.rings[0]);
+    expect(ages.every((a, i) => i === 0 || a > ages[i - 1])).toBe(true);
+  });
+
+  it("schedules one ring for each event, so two runs ending together ring twice", () => {
+    const both = sweep([FIN, FIN]).filter((f) => f.rings.length);
+    expect(Math.max(...both.map((f) => f.rings.length))).toBe(2);
+    expect(Math.max(...sweep([FIN]).map((f) => f.rings.length))).toBe(1);
+  });
+
+  it("draws nothing for a DAG that has not run", () => {
+    expect(dagRings(undefined, FIN)).toEqual([]);
+  });
+});
+
+describe("a task's arrival pulse", () => {
+  it("is one ring at any age, never a second one a beat behind", () => {
+    const ages = Array.from({ length: 101 }, (_, i) => i / 100), rings = ages.map(arrivalRings);
+    expect(rings.every((r) => r.length <= 1)).toBe(true);
+    expect(rings[50]).toEqual([0.5]);
+    expect([rings[0], rings[100]]).toEqual([[], []]);
+  });
+});
+
+describe("an agent's colour", () => {
+  it("follows the tier its profile names, whatever the effort", () => {
+    expect(["@agent-deep-high", "@agent-deep-medium"].map(tierColor)).toEqual(Array(2).fill(token("agent-text")));
+    expect(["@agent-standard-high", "@agent-standard-medium"].map(tierColor)).toEqual(Array(2).fill(token("waits")));
+  });
+
+  it("is the other colour for fast, a person or no assignee", () => {
+    expect(["@agent-fast", "adin", ""].map(tierColor)).toEqual(Array(3).fill(token("run-text")));
+    expect(tierColor()).toBe(token("run-text"));
+  });
+});
+
+describe("the Recent feed's lines", () => {
+  const dag: Dag = { name: "dagu/deliver", status: "succeeded", runId: "r1", startedAt: "", finishedAt: "2026-10-05T16:00:00Z", schedule: [], stats: null, rerun: null, steps: [] };
+  const fin = Date.parse(dag.finishedAt) / 1000;
+
+  it("points a move's line at the task it moved", () => {
+    const [line] = feedOf([{ machine: "delivery", task: "TASK-7", at: 10, event: "PR_OPENED", to: "pr_opened", from: "claimed" }], [], [], 20);
+
+    expect(line).toMatchObject({ who: "TASK-7", what: "pr_opened", where: "delivery", task: "TASK-7" });
+  });
+
+  it("points a DAG's own finished line at the DAG, with no task", () => {
+    const [line] = feedOf([], [dag], [], fin + 1);
+
+    expect(line).toMatchObject({ who: "dagu/deliver", where: "succeeded", dag: "dagu/deliver" });
+    expect(line.task).toBeUndefined();
+  });
+
+  it("keeps a move line's key when an older move ages out, so the line under the pointer is not remounted", () => {
+    const old = { machine: "delivery", task: "TASK-6", at: 5, event: "CLAIMED", to: "claimed", from: "ready" };
+    const kept = { machine: "delivery", task: "TASK-7", at: 10, event: "PR_OPENED", to: "pr_opened", from: "claimed" };
+
+    const before = feedOf([old, kept], [], [], 20).find((l) => l.task === "TASK-7");
+    const after = feedOf([kept], [], [], 20).find((l) => l.task === "TASK-7");
+
+    expect(after?.key).toBe(before?.key);
+  });
+
+  it("keys a task's repeated move apart from its earlier one, so a note lands on the hovered line alone", () => {
+    const red = (at: number) => ({ machine: "delivery", task: "TASK-7", at, event: "CI_RED", to: "ci_red", from: "ci_red" });
+
+    const [late, early] = feedOf([red(5), red(10)], [], [], 20);
+
+    expect(late.key).not.toBe(early.key);
+  });
+
+  const SID = "92ead411-c78b-4454-a63e-fcae6a3d6259";
+  const session = (event: string, at = 10) => ({ machine: "harness", task: SID, at, event, to: "active", from: "active" });
+
+  it("leaves out a session's tool and skill uses, keeping its start and stop", () => {
+    const lines = feedOf([session("TOOL_USED", 5), session("SKILL_USED", 6), session("SESSION_STARTED", 4), session("SESSION_STOPPED", 7)], [], [], 20);
+
+    expect(lines.map((l) => l.what)).toEqual(["session_stopped", "session_started"]);
+  });
+
+  it("names a session's line by the task it holds, and lights that task", () => {
+    const [line] = feedOf([session("SESSION_STOPPED")], [], [], 20, new Map([[SID, "TASK-6160"]]));
+
+    expect(line).toMatchObject({ who: "TASK-6160", task: "TASK-6160", where: "harness" });
+  });
+
+  it("shortens the id of a session that holds no task", () => {
+    const [line] = feedOf([session("SESSION_STARTED")], [], [], 20);
+
+    expect(line.who).toBe("92ead411");
+  });
+});
+
+describe("a tied DAG's orbiter", () => {
+  it("draws the Spinner while its DAG runs", () => {
+    expect(orbiterLook("running")).toEqual({ spin: true, color: DAG_COLOR.running, dashed: false });
+  });
+
+  it("shows its last run's colour at rest, with a plain ring", () => {
+    expect(orbiterLook("succeeded")).toEqual({ spin: false, color: DAG_COLOR.succeeded, dashed: false });
+    expect(orbiterLook("aborted")).toEqual({ spin: false, color: DAG_COLOR.aborted, dashed: false });
+  });
+
+  it("draws red with a dashed ring after a failed run", () => {
+    expect(orbiterLook("failed")).toEqual({ spin: false, color: DAG_COLOR.failed, dashed: true });
+  });
+
+  it("is slate for a DAG that has not reported, and for one that is only queued", () => {
+    expect(orbiterLook("")).toMatchObject({ spin: false, color: token("slate"), dashed: false });
+    expect(orbiterLook("queued")).toMatchObject({ spin: false, color: token("slate"), dashed: false });
+  });
+});
+
+describe("a tied-DAG hangar's label", () => {
+  const orbs = (...labels: string[]) => labels.map((label) => ({ label }));
+
+  it("is the name alone, whichever of its DAGs run or failed", () => {
+    expect(nameLines(orbs("main-follow"))).toEqual(["main-follow"]);
+    expect(nameLines(orbs("board-scheduler"))).toEqual(["board-", "scheduler"]);
+    expect(nameLines(orbs("healthcheck", "apply-on-merge"))).toEqual(["2 DAGs"]);
+  });
+});

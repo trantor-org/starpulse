@@ -1,0 +1,163 @@
+"""`/api/scheduler`."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import Field
+
+from starpulse.contracts.api._base import _Api
+
+
+class SchedulerDimension(_Api):
+    """One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`."""
+
+    name: Literal["cpu", "memory", "sessions", "review"]
+    use: float
+    limit: float
+
+
+class SchedulerBlock(_Api):
+    """One gate holding admission back: a capacity dimension the top task overfits, or `start-limit`, the session-start
+    service refusing every start because its live-session limit is full."""
+
+    name: Literal["cpu", "memory", "sessions", "review", "start-limit"]
+    use: float
+    limit: float
+    count: int | None = Field(default=None, description="For `start-limit`, the refusals since a start last landed.")
+
+
+class SchedulerGateRow(_Api):
+    """One kept row of the gate history: every dimension's reading and every gate that held admission back at `at`."""
+
+    at: float = Field(description="When the row was kept, in epoch seconds.")
+    dimensions: list[SchedulerDimension]
+    blockedBy: list[SchedulerBlock]
+
+
+class SchedulerSession(_Api):
+    """A session the scheduler started whose task is still running: the strip's Sessions menu draws one row of it."""
+
+    task: str
+    title: str
+    model: str = Field(description="The task's agent profile, empty when it has none.")
+    started: float = Field(description="When the loop started the session, in epoch seconds.")
+    url: str = Field(description="The session's address, as `start` answered it.")
+
+
+class SchedulerNext(_Api):
+    """The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on."""
+
+    task: str
+    title: str
+    verdict: Literal["starting", "waits"]
+    reason: str = Field(
+        description="`goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` or `<harness> start halted: ...` "
+        "while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`."
+    )
+    priority: str = Field(
+        description="The Priority matrix cell the task ranked by, `<impact>/<urgency>`, or `default` when it has no Impact or Urgency."
+    )
+
+
+class SchedulerPause(_Api):
+    """A harness whose admission is paused until `until` after a usage or credit limit."""
+
+    harness: str
+    until: float = Field(description="When admission for this harness may resume, in epoch seconds.")
+    reason: str
+
+
+class QuietHours(_Api):
+    """A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before
+    `start` runs past midnight."""
+
+    start: str
+    end: str
+    timezone: str = Field(description="The IANA zone the window's times are read in, such as America/Phoenix.")
+
+
+class SchedulerHarnessSessions(_Api):
+    """One harness's scheduler sessions in flight against its own session cap."""
+
+    use: float
+    limit: float
+
+
+class SchedulerSessionCap(_Api):
+    """The session cap the selected harness runs under and where it comes from."""
+
+    harness: str
+    limit: float
+    source: Literal["admin", "starpulse.toml"] = Field(
+        description="`admin` when an operator set the cap in Admin, `starpulse.toml` when the config's limit holds."
+    )
+    configLimit: float = Field(description="What `starpulse.toml` gives this harness, which clearing the Admin cap returns to.")
+
+
+class SchedulerCapacityLimit(_Api):
+    """The cpu or memory limit in force, in percent, and where it comes from."""
+
+    limit: float
+    source: Literal["admin", "starpulse.toml"] = Field(
+        description="`admin` when an operator set the limit in Admin, `starpulse.toml` when the config's limit holds."
+    )
+    configLimit: float = Field(description="What `starpulse.toml` gives this dimension, which clearing the Admin limit returns to.")
+
+
+class SchedulerCapacityLimits(_Api):
+    """The cpu and memory limits the scheduler admits against."""
+
+    cpu: SchedulerCapacityLimit
+    memory: SchedulerCapacityLimit
+
+
+class SchedulerOperatorTask(_Api):
+    """A task in the eligible lane that waits on the operator's decision rather than on capacity."""
+
+    task: str
+    title: str
+
+
+class SchedulerStatus(_Api):
+    """Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.
+
+    `inFlight`, `next`, `sessionsByHarness`, `blockedBy`, `gateHistory` and `needsOperator` are served only by a server that runs a dispatch loop; without one they
+    are absent.
+    """
+
+    enabled: bool
+    harness: str = Field(description="The harness the loop starts sessions on; defaults to claude.")
+    quietHours: QuietHours | None = Field(default=None, description="Null when no window holds admission back.")
+    sessionCap: SchedulerSessionCap | None = Field(
+        default=None, description="Absent before the scheduler worker has reported one."
+    )
+    capacityLimits: SchedulerCapacityLimits | None = Field(
+        default=None, description="Absent before the scheduler worker has reported them."
+    )
+    sampledAt: float | None
+    dimensions: list[SchedulerDimension]
+    inFlight: list[SchedulerSession] = Field(
+        default_factory=list, description="Every live session holding an In Progress task, oldest first; `url` is empty for one the loop did not start."
+    )
+    next: SchedulerNext | None = Field(default=None, description="Null when no task in the eligible lane is workable.")
+    pauses: list[SchedulerPause] = Field(
+        default_factory=list,
+        description="Harnesses whose admission is paused until `until`. Absent when none are paused.",
+    )
+    sessionsByHarness: dict[str, SchedulerHarnessSessions] = Field(
+        default_factory=dict,
+        description="Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.",
+    )
+    blockedBy: list[SchedulerBlock] = Field(
+        default_factory=list,
+        description="Every gate holding admission back now, each with its use and limit; empty when none does.",
+    )
+    gateHistory: list[SchedulerGateRow] = Field(
+        default_factory=list,
+        description="The latest kept rows of gate readings and block reasons, oldest first, kept by the scheduler itself.",
+    )
+    needsOperator: list[SchedulerOperatorTask] = Field(
+        default_factory=list,
+        description="The `kind-decide` tasks in the eligible lane, which the scheduler never starts: the operator decides.",
+    )

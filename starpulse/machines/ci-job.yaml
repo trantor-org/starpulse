@@ -1,0 +1,13 @@
+# One CI job of a pull request's head commit. An event is keyed by the job's run and carries `repository`, `pr`,
+# `head_sha` and `job` in its data, so the pull request store can set the head and the job's check result.
+name: ci-job
+source: GitHub
+states:
+  pending: {initial: true}
+  passed: {}
+  failed: {}
+events:
+  JOB_SUCCEEDED:
+    - {from: [pending, passed, failed], to: passed}
+  JOB_FAILED:
+    - {from: [pending, passed, failed], to: failed}

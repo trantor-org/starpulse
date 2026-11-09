@@ -1,0 +1,32 @@
+# Contributing to StarPulse
+
+StarPulse takes changes two ways: anyone can open an issue, and collaborators open pull requests.
+
+## Open an issue
+
+Report a bug, ask for a feature or propose a change by
+[opening an issue](https://github.com/trantor-org/starpulse/issues/new/choose). The bug form asks for the
+version, how you ran StarPulse and what you saw; the feature form asks what you are trying to do. An accepted
+issue is fixed by the maintainer or a collaborator, and its pull request links back to it.
+
+Pull requests are open to collaborators only, and GitHub refuses one from anyone else. To become a
+collaborator, say so in an issue.
+
+## Open a pull request (collaborators)
+
+- Branch from `main` in this repository and keep a pull request to one change, with tests for what it changes.
+- The `python`, `web`, `static-checks` and `build` checks must pass before it merges. `uv run pytest` and
+  `pnpm --dir starpulse/web run check` run the first two locally; [docs/development.md](docs/development.md) sets them up and says
+  how to regenerate the API schema and types that `static-checks` compares.
+- The maintainer adds it to the merge queue. The queue squashes it onto `main` plus every pull request ahead of it,
+  reruns the required checks on that candidate, and merges only a green one, so a pull request never needs
+  rebasing to stay current. Its title becomes the commit on `main` and the line in the next release's
+  notes, so write the title for someone who uses StarPulse.
+- Nobody pushes to `main` directly, force-pushes it or deletes it.
+- No workflow here deploys or pins a commit, and no secret here holds a deploy key. A consumer pins StarPulse by SHA
+  once the required checks (`python`, `web`, `static-checks`) have passed on the merge-queue candidate that tested it.
+
+## License
+
+A contribution is licensed under this project's [MIT License](LICENSE), the same terms you received it under.
+There is no sign-off or contributor agreement.

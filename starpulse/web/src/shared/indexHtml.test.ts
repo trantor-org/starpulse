@@ -1,0 +1,128 @@
+// @ts-expect-error Vitest runs this test in Node; production source stays browser-only.
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const page = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+
+/** Every `<link>` tag in the page's head, as its attributes. */
+function links(): Record<string, string>[] {
+  return [...page.matchAll(/<link\b([^>]*)>/g)].map(([, attrs]) =>
+    Object.fromEntries([...attrs.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([, k, v]) => [k, v ?? ""])),
+  );
+}
+
+describe("index.html's first paint", () => {
+  it("waits on no stylesheet from another origin: a pending one holds the bundle's script until it arrives", () => {
+    const blocking = links().filter((l) => l.rel === "stylesheet" && /^https?:/.test(l.href ?? "") && l.media !== "print");
+    expect(blocking).toEqual([]);
+  });
+
+  it("links no font host: the page serves its own fonts, so no load paints in a fallback face or waits on another origin", () => {
+    expect(page).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+  });
+
+  it("preloads, from its own origin, only the Inter faces the Board's first canvas draw measures", () => {
+    const preloaded = links().filter((l) => l.rel === "preload" && l.as === "font");
+    for (const l of preloaded) {
+      expect(l.type).toBe("font/woff2");
+      expect(l).toHaveProperty("crossorigin"); // a font fetch is anonymous-CORS, so a preload without it is fetched twice
+      expect(l.href).not.toMatch(/^(https?:)?\/\//);
+    }
+    // Inter 500 and JetBrains Mono load after starpulse:board-drawn (loadLateFonts), so they are not preloaded here
+    expect(preloaded.map((l) => l.href?.split("/").pop()?.replace(/\.woff2$/, "")).sort()).toEqual([
+      "inter-latin-300-normal",
+      "inter-latin-400-normal",
+    ]);
+  });
+});
+
+describe("index.html's early stream", () => {
+  const inline = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, body]) => body);
+  const streamSource = readFileSync(new URL("../api/stream.ts", import.meta.url), "utf8");
+
+  class Source {
+    listeners = new Map<string, ((e: { type: string; data: string }) => void)[]>();
+    constructor(readonly url: string) {}
+    addEventListener(type: string, fn: (e: { type: string; data: string }) => void) {
+      this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+    }
+    send(type: string, data: string) {
+      for (const fn of this.listeners.get(type) ?? []) fn({ type, data });
+    }
+  }
+  const start = (search = "") => {
+    const win: {
+      location: { search: string }; __earlyRecord?: { id: string; read: unknown };
+      __earlyStream?: { src: Source; events: { type: string; data: string }[]; adopted?: boolean; bodies: Record<string, unknown> };
+    } = { location: { search } };
+    const asked: string[] = [];
+    new Function("window", "EventSource", "fetch", inline[0])(win, Source, (url: string) => (asked.push(url), `read ${url}`));
+    return { win, asked };
+  };
+  const run = () => {
+    const { win, asked } = start();
+    return Object.assign(win.__earlyStream!, { asked });
+  };
+
+  it("runs before the bundle's module script, so the snapshot is requested while the bundle loads", () => {
+    expect(inline).toHaveLength(1);
+    expect(page.indexOf("<script>")).toBeLessThan(page.indexOf('<script type="module"'));
+    expect(run().src.url).toBe("/api/events?snapshot=ref");
+  });
+
+  it("holds every event type the page listens for, in the order they arrive", () => {
+    const early = run();
+    const types = [...streamSource.matchAll(/addEventListener\("(\w+)"/g)].map(([, t]) => t);
+    expect(types.length).toBeGreaterThan(5);
+
+    for (const [i, type] of types.entries()) early.src.send(type, `{"n":${i}}`);
+
+    expect(early.events).toEqual(types.map((type, i) => ({ type, data: `{"n":${i}}` })));
+  });
+
+  it("asks for a snapshot's body the moment its reference arrives, and holds the answer for the page", () => {
+    const early = run();
+    early.src.send("snapshot", "ref /api/events/body/0123abcd");
+
+    expect([early.asked, early.bodies]).toEqual([["/api/events/body/0123abcd"], { "/api/events/body/0123abcd": "read /api/events/body/0123abcd" }]);
+  });
+
+  it("asks for the record of the task the address names while the bundle loads, and holds the answer for the boot", () => {
+    const { win, asked } = start("?view=kanban&task=TASK-9");
+
+    expect(asked).toEqual(["/api/task/TASK-9"]);
+    expect(win.__earlyRecord).toEqual({ id: "TASK-9", read: "read /api/task/TASK-9" });
+  });
+
+  it("asks for no record when the address names no task or is a demo", () => {
+    expect(start("?view=kanban").asked).toEqual([]);
+    expect(start("?demo&task=TASK-9").asked).toEqual([]);
+  });
+
+  it("stops holding events once the page listens itself", () => {
+    const early = run();
+    early.src.send("snapshot", "{}");
+    early.adopted = true;
+    early.src.send("task", "{}");
+
+    expect(early.events).toEqual([{ type: "snapshot", data: "{}" }]);
+  });
+});
+
+describe("index.html's frames", () => {
+  const body = page.slice(page.indexOf("<body>"), page.indexOf('<script type="module"'));
+  const at = (id: string) => body.search(new RegExp(`id="${id}"`));
+
+  it("carries the canvas and the two boxes the renderer draws into, so the first frame does not wait on the React tree", () => {
+    for (const id of ["c", "tip", "panel", "crumb", "nav", "rail"]) expect(at(id), id).toBeGreaterThan(-1);
+  });
+
+  it("keeps their stacking order: the canvas, then the page's chrome, then the tip and the panel above it", () => {
+    expect([at("c"), at("root"), at("tip"), at("panel")]).toEqual([...[at("c"), at("root"), at("tip"), at("panel")]].sort((a, b) => a - b));
+  });
+
+  it("leaves the navigator, crumb and rail inside #root, where the React page replaces them at its first commit", () => {
+    const root = body.slice(at("root"), at("tip"));
+    for (const id of ["nav", "crumb", "rail"]) expect(root).toContain(`id="${id}"`);
+  });
+});

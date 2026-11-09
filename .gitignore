@@ -1,0 +1,11 @@
+__pycache__/
+.venv/
+.pytest_cache/
+node_modules/
+# Built by `pnpm --dir starpulse/web build`.
+starpulse/static/
+*.sqlite
+*.egg-info/
+.tmp/
+# setuptools build output from the editable `uv sync` install.
+build/

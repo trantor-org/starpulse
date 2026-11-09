@@ -1,0 +1,193 @@
+"""`starpulse worker scheduler`: the Scheduler context (the capacity sampler and the dispatch loop) as its own process,
+beside `serve`.
+
+It reads the config and the history database `serve` does and meets `serve` only in the event log
+(`starpulse.scheduler.adapters.remote`): it publishes the status the page strip draws and wakes on the settings `serve`
+writes. What a restart must keep (a task's one start, a harness's pause, the switch) is in that log, so a new process
+resumes where the last stopped. `SIGTERM` stops it; `SIGHUP` re-reads the config and rebuilds the runtime in the same
+process when a Scheduler setting changed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import threading
+from collections.abc import Callable, Mapping
+from pathlib import Path
+from typing import Any
+
+from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.seam import Board
+from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.opening import database_url
+from starpulse.event_log.wake import StopEvent
+from starpulse.flow_metrics.adapters.outbound.history import History
+from starpulse.scheduler.adapters.remote import follow_wakes, publisher
+from starpulse.scheduler.adapters.runtime import Runtime
+from starpulse.scheduler.bin.blocks import SchedulerConfig, scheduler_fixed_blocks, scheduler_live_blocks
+from starpulse.scheduler.bin.scheduler_service import start_scheduler
+
+logger = logging.getLogger(__name__)
+
+
+class Scheduler:
+    """The runtime of one config, taken down and built again in this process when a reload changes it."""
+
+    def __init__(
+        self,
+        config: SchedulerConfig,
+        base: Path,
+        board: Board,
+        feed: BoardFeed,
+        log: EventLog,
+        history: History,
+        probe: Callable[[], Mapping[str, float]] | None = None,
+        *,
+        trajectories_response: Callable[..., tuple[bytes, int]],
+        cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
+        starter: Callable[..., Any],
+        delivered: Callable[[EventLog, Mapping[str, Any]], bool],
+    ) -> None:
+        self._config = config
+        self._trajectories_response = trajectories_response
+        self._cached = cached
+        self._starter = starter
+        self._delivered = delivered
+        self._built = (base, board, feed, log, history)
+        self._probe = probe
+        self._stop = StopEvent()
+        self._wakes = threading.Event()
+        self.runtime: Runtime | None = None
+
+    def start(self) -> None:
+        """Start the sampler and the loop of the running config, each ending when `stop` is called, and wake the loop
+        for each setting `serve` writes."""
+        base, board, feed, log, history = self._built
+        self._stop = stop = StopEvent()
+        self.runtime = start_scheduler(
+            self._config,
+            base,
+            feed,
+            board,
+            history,
+            log,
+            self._config.level,
+            stop,
+            probe=self._probe,
+            publish=publisher(log, feed),
+            trajectories_response=self._trajectories_response,
+            cached=self._cached,
+            starter=self._starter,
+            delivered=self._delivered,
+        )
+        follow_wakes(log, self._wake, stop)
+
+    def _wake(self) -> None:
+        runtime = self.runtime
+        if runtime is None:
+            return
+        if runtime.loop is not None:
+            runtime.loop.wake()
+        runtime.push_status()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self.runtime is not None and self.runtime.loop is not None:
+            self.runtime.loop.wake()  # the loop looks at `stop` between events
+
+    def reload(self, path: Path, load: Callable[[Path | None], SchedulerConfig]) -> None:
+        """Re-read `path`. An invalid config is logged and the running one kept; a changed Scheduler block takes the
+        runtime down and builds it again from the new config."""
+        try:
+            new = load(path)
+        except (OSError, ValueError) as exc:
+            logger.error("reload: %s: %s; keeping the running config", path, exc)
+            return
+        if scheduler_fixed_blocks(new) != scheduler_fixed_blocks(self._config):
+            logger.warning("reload: the database or board changed; restart the worker to apply it")
+        if scheduler_live_blocks(new) == scheduler_live_blocks(self._config):
+            logger.info("reload: no Scheduler setting changed")
+            return
+        logger.info("reload: a Scheduler setting changed; rebuilding the runtime")
+        self.stop()
+        self._config = new
+        self.start()
+
+
+def start(
+    config: SchedulerConfig,
+    path: Path | None,
+    base: Path,
+    log: EventLog,
+    stop: StopEvent,
+    *,
+    load: Callable[[Path | None], SchedulerConfig],
+    worker_board: Callable[..., tuple[Board, BoardFeed]],
+    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], History],
+    trajectories_response: Callable[..., tuple[bytes, int]],
+    cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
+    starter: Callable[..., Any],
+    delivered: Callable[[EventLog, Mapping[str, Any]], bool],
+) -> Callable[[], None]:
+    """Start the sampler and the dispatch loop over `log` and return their reload; the threads are daemons that end with
+    the process. Raises `ValueError` as `worker_board` does."""
+    board, feed = worker_board(config, base, log, stop)
+    scheduler = Scheduler(
+        config,
+        base,
+        board,
+        feed,
+        log,
+        history_store(config, base, feed.machines),
+        trajectories_response=trajectories_response,
+        cached=cached,
+        starter=starter,
+        delivered=delivered,
+    )
+    scheduler.start()
+    return lambda: scheduler.reload(path, load)
+
+
+def main(
+    argv: list[str] | None,
+    parser: argparse.ArgumentParser,
+    *,
+    discover: Callable[[Path | None], Path | None],
+    load: Callable[[Path | None], SchedulerConfig],
+    worker_board: Callable[..., tuple[Board, BoardFeed]],
+    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], History],
+    hold: Callable[[threading.Event, Callable[[], None]], None],
+    trajectories_response: Callable[..., tuple[bytes, int]],
+    cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
+    starter: Callable[..., Any],
+    delivered: Callable[[EventLog, Mapping[str, Any]], bool],
+) -> None:
+    """Run the Scheduler worker; `runtime` passes the collaborators it builds, as no context imports it."""
+    args = parser.parse_args(argv)
+    path = discover(args.config)
+    try:
+        config = load(path)
+    except (OSError, ValueError) as exc:
+        parser.exit(1, f"{path}: {exc}\n")
+    base = args.config.parent if args.config else Path.cwd()
+    log = EventLog(database_url(config.database_url, base))
+    stop = StopEvent()
+    try:
+        reload_config = start(
+            config,
+            path,
+            base,
+            log,
+            stop,
+            load=load,
+            worker_board=worker_board,
+            history_store=history_store,
+            trajectories_response=trajectories_response,
+            cached=cached,
+            starter=starter,
+            delivered=delivered,
+        )
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
+    hold(stop, reload_config)

@@ -1,0 +1,44 @@
+# The mitigate phase: a failing or runaway service is stopped from getting worse before anyone asks why. Each
+# transition cites the sentence of this skill that authorizes it, and `writers` names who fires each event. DIAGNOSED
+# leaves only `healthy`, so a diagnosis recorded while impact is live is a move the machine refuses.
+name: Mitigate
+states:
+  start: {initial: true}
+  assessed: {role: resting}
+  mitigated: {role: resting}
+  healthy: {role: resting}
+  diagnosed: {role: resting}
+  followed_up: {final: true}
+  escalated: {final: true}
+events:
+  HEALTH_RED:
+    - {from: start, to: assessed, cite: {skill: mitigate, quote: "Done when one command names the failing target and whether its impact is growing."}}
+    - {from: mitigated, to: assessed, cite: {skill: mitigate, quote: "Still failing: take the next lever on the list."}}
+  EVIDENCE_CAPTURED:
+    - {from: assessed, to: assessed, cite: {skill: mitigate, quote: "Capture only what the lever would destroy, in one bounded command."}}
+  MITIGATED:
+    - {from: assessed, to: mitigated, cite: {skill: mitigate, quote: "Apply the least destructive lever that stops the growth."}}
+  HEALTH_GREEN:
+    - {from: mitigated, to: healthy, cite: {skill: mitigate, quote: "Done when the health check that failed now passes."}}
+  ESCALATED:
+    - {from: [assessed, mitigated], to: escalated, cite: {skill: mitigate, quote: "A lever the project does not authorize, or one that destroys state, goes to a person."}}
+  DIAGNOSED:
+    - {from: healthy, to: diagnosed, cite: {skill: mitigate, quote: "Only now ask why."}}
+  FOLLOWUP_FILED:
+    - {from: diagnosed, to: followed_up, cite: {skill: mitigate, quote: "File the durable fix as a task, or fix it under starting-task."}}
+writers:
+  HEALTH_RED:
+    - {actor: agent, trigger: "starpulse command run health"}
+  EVIDENCE_CAPTURED:
+    - {actor: agent, trigger: "starpulse command run snapshot"}
+  MITIGATED:
+    - {actor: agent, trigger: "starpulse command run mitigate"}
+  HEALTH_GREEN:
+    - {actor: agent, trigger: "starpulse command run health"}
+  ESCALATED:
+    - {actor: agent, trigger: "starpulse command run mitigate"}
+    - {actor: agent, trigger: "starpulse task park"}
+  DIAGNOSED:
+    - {actor: agent, trigger: "starpulse task edit"}
+  FOLLOWUP_FILED:
+    - {actor: agent, trigger: "starpulse task create"}

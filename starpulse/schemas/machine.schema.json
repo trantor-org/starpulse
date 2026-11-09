@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StarPulse machine definition",
+  "description": "A lifecycle machine declared under .starpulse/machines/. Guards are field matches on the triggering event or the name of a guard an adapter registers in Python; config holds no expressions or code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "states", "events"],
+  "properties": {
+    "name": {"$ref": "#/$defs/name"},
+    "source": {
+      "description": "The third party that moves this machine, such as GitHub. Only that party's events move it; StarPulse observes, and the page draws the machine apart from one StarPulse's own actors move.",
+      "type": "string",
+      "minLength": 1
+    },
+    "states": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"$ref": "#/$defs/identifier"},
+      "additionalProperties": {"$ref": "#/$defs/state"}
+    },
+    "events": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"$ref": "#/$defs/transition"}
+      }
+    },
+    "migrations": {
+      "description": "Old State to the State its live Tasks move to when this version replaces one that had the old State. A change that drops or renames a State holding live Tasks is accepted only with the mapping.",
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/identifier"},
+      "additionalProperties": {"$ref": "#/$defs/identifier"}
+    },
+    "bindings": {
+      "description": "Adapter event name to the machine event it moves.",
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "writers": {
+      "description": "Per machine event, who fires it: a bare actor (an agent, an operator) or a workflow as <instance>/<workflow>, with the trigger it fires through.",
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"$ref": "#/$defs/writer"}
+      }
+    },
+    "cues": {
+      "description": "The workflows a machine event cues, each with how its failure resolves.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/cue"}
+    },
+    "tiers": {
+      "description": "The state ids the Star Map draws at each stage, left to right; a tier's states stack in its cell.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}}
+    },
+    "main_line": {
+      "description": "The state ids along the machine's axis, in order. A Board file without one draws its lanes in order.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "rests": {
+      "description": "States drawn as where a lifecycle ends though the machine does not declare them final, because an event leaves them.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "submachines": {
+      "description": "Machines that open under one of this machine's states, each a sibling file named by its stem.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/submachine"}
+    },
+    "next": {
+      "description": "The edge a finished skill hands to: the skill or operation that runs next. Absent means no edge is declared.",
+      "type": "object",
+      "properties": {
+        "kind": {"enum": ["skill", "operation"]},
+        "name": {"type": "string", "minLength": 1}
+      },
+      "required": ["kind", "name"],
+      "additionalProperties": false
+    },
+    "launches": {
+      "description": "Per launching workflow (its own name, or <instance>/<workflow>), the skill it starts and the sibling machine that skill draws.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/launch"}
+    }
+  },
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "initial": {"type": "boolean"},
+        "final": {"type": "boolean"},
+        "label": {
+          "description": "The name a person reads for this state (In Progress, Needs attention); the state id when absent.",
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "description": "What this state is for, so StarPulse code reads the role and never the state's name: resting (a task rests here), waiting_on_fact (it leaves when a fact holds) waiting_on_person (it leaves when a person acts) or proposed (a task waits here off the lanes, never admitted, until it is promoted to the state waiting on criteria_unmet or dropped to a final state). A state flagged initial or final has that role already.",
+          "enum": ["resting", "waiting_on_fact", "waiting_on_person", "proposed"]
+        },
+        "waits": {
+          "description": "The facts this state waits on, each a fact kind (pr_terminal, pr_merged, pr_merged_planned, pr_merged_unfinished, pr_ready, deps_done, deps_unresolved, criteria_met, criteria_unmet) mapped to the event that leaves this state when the fact holds. The loader refuses an unknown fact kind and an event that is not a transition out of this state.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
+        }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}
+          ]
+        },
+        "to": {"type": "string"},
+        "if": {"$ref": "#/$defs/guard"},
+        "unless": {"$ref": "#/$defs/guard"},
+        "action": {"$ref": "#/$defs/registered"},
+        "cite": {
+          "description": "The sentence of a skill that sends a session down this transition, drawn as the edge's tooltip.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["skill", "quote"],
+          "properties": {
+            "skill": {"type": "string", "minLength": 1},
+            "quote": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "writer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "trigger"],
+      "properties": {
+        "actor": {
+          "description": "A bare actor name, or a workflow as <instance>/<workflow> naming a workflow a configured runs adapter lists.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_./-]+)?$"
+        },
+        "trigger": {"type": "string", "minLength": 1}
+      }
+    },
+    "submachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "machine", "exits"],
+      "properties": {
+        "state": {"$ref": "#/$defs/identifier"},
+        "machine": {"description": "The sibling machine file's stem.", "type": "string", "minLength": 1},
+        "exits": {
+          "description": "Per final state of the inner machine, the event of this machine that leaves the state.",
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
+        },
+        "routes": {
+          "description": "Per phase state that may follow this one in a task type's `[sequences]` entry, the event of this machine that leaves the state toward it instead of the exit's own.",
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
+        },
+        "when": {"description": "What has to hold for the inner machine to run under the state.", "type": "string"}
+      }
+    },
+    "launch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skill"],
+      "properties": {
+        "skill": {"type": "string", "minLength": 1},
+        "machine": {"description": "The sibling machine file's stem; absent when the skill has no machine.", "type": "string", "minLength": 1}
+      }
+    },
+    "cue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "dag", "on", "resolves"],
+      "properties": {
+        "event": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+        "dag": {
+          "description": "The cued workflow as <instance>/<workflow>.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+/[A-Za-z0-9_./-]+$"
+        },
+        "on": {"description": "What the page says cues it, such as a push to main.", "type": "string", "minLength": 1},
+        "resolves": {
+          "description": "forced: a failed run stays pinned until a forced rerun. next: it clears on the next run of the DAG.",
+          "enum": ["forced", "next"]
+        },
+        "grace": {
+          "description": "Seconds after the event a run of the DAG may take to start before the page draws it overdue. Default 300.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "registered": {
+      "description": "The name of a guard or action an adapter registers in Python.",
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_]*$"
+    },
+    "guard": {
+      "oneOf": [
+        {"$ref": "#/$defs/registered"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["when"],
+          "properties": {"when": {"$ref": "#/$defs/when"}}
+        }
+      ]
+    },
+    "when": {
+      "description": "Every listed field of the triggering event must match.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+        "not": {"enum": ["event", "event_data", "machine", "model", "source", "state", "target", "transition"]}
+      },
+      "additionalProperties": {"$ref": "#/$defs/match"}
+    },
+    "match": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "equals": {"$ref": "#/$defs/scalar"},
+        "in": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scalar"}},
+        "exists": {"type": "boolean"}
+      }
+    },
+    "scalar": {"type": ["string", "number", "boolean"]}
+  }
+}

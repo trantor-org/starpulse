@@ -1,0 +1,74 @@
+// A DAG's modal, opened from a row of the DAGs view in the Kanban task modal's frame, as wide as its graph needs: the title with its state dot and
+// declared rerun safety, the full step chart, each step's history, this or the last run, the pool's queue slots, every Board tie with its note, and Run now in the footer.
+import { useEffect, useState, type CSSProperties } from "react";
+import { chartBox, LedgerNote, lastLine, Orb, StepHistory, Strip, TieChip, type LedgerGo } from "./DagParts";
+import { ago, refusal, rerunLine, runLine, short, ties, type DagData, type Row } from "./dagsModel";
+
+const STATE = (r: Row) => (r.phase === "ok" ? "healthy" : r.phase === "idle" ? "never run" : r.phase === "failed" ? r.d.status : r.phase);
+
+/** The modal's narrowest width, and what its frame takes from the chart's: the body's side padding. */
+const MIN_WIDTH = 640, CHROME = 52;
+/** The widest the modal grows before its chart wraps, and the phone width (style.css) at which it fills the screen and its body's padding narrows. */
+const MAX_WIDTH = 1200, PHONE = 900, PHONE_CHROME = 28;
+/** The width the chart may take before it wraps: the modal at its widest on this viewport, less its frame. */
+const roomFor = (vw: number) => (vw <= PHONE ? vw - PHONE_CHROME : Math.min(vw - 40, MAX_WIDTH) - CHROME);
+
+export function DagModal({ data, r, now, starting, refused, run, close, ledger }: {
+  data: DagData; r: Row; now: number; starting: boolean; refused: string | null; run: () => void; close: () => void; ledger?: LedgerGo;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && close();
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [close]);
+  const [vw, setVw] = useState(innerWidth);
+  useEffect(() => {
+    const onResize = () => setVw(innerWidth);
+    addEventListener("resize", onResize);
+    return () => removeEventListener("resize", onResize);
+  }, []);
+  const pool = data.pools.find((p) => p.name === r.d.pool), board = ties(data, r.d.name), why = refusal(r, starting), box = chartBox(r, roomFor(vw)), rerun = rerunLine(r.d.rerun), live = r.d.active ?? [];
+  const jobRuns = [...live.map((x) => ({ key: x.runId, bad: false, line: runLine(x) })), ...(r.d.failed ?? []).map((x) => ({ key: x.runId, bad: true, line: runLine(x) }))].filter((x) => x.line);
+  return (
+    <div id="kbm" onClick={(e) => e.target === e.currentTarget && close()}>
+      <div className="modal tv dgm" role="dialog" aria-label={r.d.name} style={{ "--dgw": `${Math.max(MIN_WIDTH, Math.ceil(box.w) + CHROME)}px` } as CSSProperties}>
+        <button className="x" onClick={close} aria-label="Close">✕</button>
+        <div className="tvhead">
+          <h2><Orb phase={r.phase} big />{short(r.d.name)}</h2>
+          <div className="k">{r.d.name} · {STATE(r)} · {r.domain}{r.d.pool ? ` · pool ${short(r.d.pool)}` : ""}</div>
+          {rerun && <div className="rerun k">{rerun}</div>}
+        </div>
+        <div className="tvbody">
+          {refused && <div className="editrefusal"><b>Run refused.</b> {refused}</div>}
+          <section className="sec"><div className="sh"><span className="t">Steps</span><span className="n">{r.d.steps.length}</span></div>
+            <div className="chart"><Strip r={r} w={box.w} h={box.h} room={box.room} big /></div>
+          </section>
+          <section className="sec"><div className="sh"><span className="t">Step history</span></div>
+            <StepHistory steps={r.d.steps} rerun={r.d.rerun} />
+          </section>
+          {!!jobRuns.length && (
+            <section className="sec"><div className="sh"><span className="t">Runs</span><span className="n">{jobRuns.length}</span></div>
+              {jobRuns.map((x) => <div className="k" key={x.key}><b className={x.bad ? "bad" : "hot"}>{x.bad ? "failed" : "running"}</b> {x.line}</div>)}
+            </section>
+          )}
+          <table><tbody>
+            <tr><td>{r.phase === "running" || r.phase === "queued" ? "this run" : "last run"}</td><td>{lastLine(r, now)}</td></tr>
+            <tr><td>started</td><td>{r.startedAt ? `${new Date(r.startedAt * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} (${ago(now, r.startedAt)})` : "—"}</td></tr>
+            <tr><td>run</td><td className="mono">{live[0]?.runId || r.d.runId || "—"}{live.length > 1 ? ` + ${live.length - 1} more` : ""}</td></tr>
+            <tr><td>queue</td><td>{pool ? <span className="slots">{Array.from({ length: Math.min(pool.cap, 12) }, (_, i) => <i key={i} className={i < pool.running ? "on" : ""} />)}{pool.cap > 12 && <em>…</em>}<span>{short(pool.name)}: {pool.running} of {pool.cap} running{pool.queued ? `, ${pool.queued} queued` : ""}</span></span> : "no pool"}</td></tr>
+            <tr><td>run now</td><td>{why ? <span className="k">{why}</span> : "run-safe: StarPulse may start it"}</td></tr>
+          </tbody></table>
+          <section className="sec"><div className="sh"><span className="t">Board</span></div>
+            {board.map((t) => (
+              <div className="tierow" key={t.kind + t.text + (t.ev ?? "")}><TieChip t={t} label={t.kind === "writes" ? `writes ${t.text}` : t.kind === "acts" ? "acts" : t.text} ledger={ledger} /><span className="k">{t.note}</span><LedgerNote t={t} ledger={ledger} /></div>
+            ))}
+            {!board.length && <div className="k">No Board tie: this DAG neither moves a task nor is cued by one.</div>}
+          </section>
+        </div>
+        <div className="tvfoot">
+          <button className="startbtn" disabled={!!why} title={why ?? undefined} onClick={run}>▶ Run now</button>
+        </div>
+      </div>
+    </div>
+  );
+}

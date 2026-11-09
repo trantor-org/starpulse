@@ -1,0 +1,231 @@
+// The Admin view's Scheduler card: the global switch, the harness Segments, each capacity dimension's use against its
+// limit, the next pick as text with why it goes or waits, the count of sessions in flight and the quiet hours. Status
+// arrives on /api/events; one GET syncs on view open. Off stops admission; the card dims and counts the sessions still
+// running from its last reading.
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { clockHm } from "../../shared/clock";
+import { useViewActive } from "../../shared/Kept";
+import type { QuietHoursStore } from "../admin/quietHours";
+import {
+  level,
+  type SchedulerState,
+  type SchedulerStore,
+  type Block,
+  type Dimension,
+  type HarnessOption,
+  type NextPick,
+  type Pause,
+  type SessionCap,
+  type CapacityLimit,
+  type CapacityName,
+} from "./scheduler";
+
+const pct = (d: Dimension) => `${Math.min(100, (d.used / d.limit) * 100)}%`;
+
+function Meter({ d }: { d: Dimension }) {
+  return (
+    <div className={`dm ${level(d)}`} title={d.detail}>
+      <div className="r"><span>{d.label}</span><b>{Math.round(d.used)}/{d.limit}{d.unit}</b></div>
+      <div className="m"><i style={{ width: pct(d) }} /></div>
+    </div>
+  );
+}
+
+const why = (next: NextPick) => (next.verdict === "starting" ? "starting" : `waits: ${next.reason}`);
+
+const blockText = (b: Block) => [b.name, " ", b.use, "/", b.limit, b.count === null ? "" : " ×" + b.count].join("");
+
+/** The next pick as text: green when it starts, yellow with what it waits on. */
+function Next({ on, next }: { on: boolean; next: NextPick | null }) {
+  if (!on) return <div className="nx none">Paused: nothing starts</div>;
+  if (!next) return <div className="nx none">Nothing eligible</div>;
+  return <div className={`nx ${next.verdict}`}><b className="id">{next.task}</b><span className="tt">{next.title}</span><span className="why">{why(next)}</span></div>;
+}
+
+/** The quiet hours row: the daily window in which scheduler starts no task, kept by the server with the switch. */
+function QuietRow({ store, clock }: { store: QuietHoursStore; clock: "24" | "12" }) {
+  const { loaded, current, draft, phase, unavailable } = useSyncExternalStore(store.subscribe, store.get);
+  useEffect(() => void store.load(), [store]);
+  const dirty = store.dirty(), saving = phase.kind === "saving";
+  return (
+    <div className="row">
+      <div><div className="lb">Quiet hours</div><div className="hint">Autopilot starts no task in this window; sessions already running continue</div></div>
+      <div>
+        {!loaded ? (
+          unavailable && <div className="refusal"><div className="k">the quiet hours cannot be read</div>{unavailable}</div>
+        ) : (
+          <>
+            <div className="hours">
+              <button type="button" className="sw" role="switch" aria-checked={draft.on} aria-label="Autopilot quiet hours" onClick={() => store.edit({ on: !draft.on })} />
+              <input type="time" value={draft.start} disabled={!draft.on} aria-label="Quiet hours start" onChange={(e) => store.edit({ start: e.target.value })} />
+              to
+              <input type="time" value={draft.end} disabled={!draft.on} aria-label="Quiet hours end" onChange={(e) => store.edit({ end: e.target.value })} />
+              <button type="button" className="btn go" disabled={!dirty || saving} onClick={() => void store.save()}>{saving ? "Saving…" : "Save"}</button>
+            </div>
+            <div className="hint">Times in {store.zone()}; an end before the start runs past midnight.</div>
+            {phase.kind === "saved" && (
+              <div className="ok">
+                {current ? `Saved: scheduler starts nothing from ${current.start} to ${current.end}` : "Saved: no quiet hours"} · <span className="when">{clockHm(phase.at, clock)}</span>
+              </div>
+            )}
+            {phase.kind === "refused" && <div className="refusal"><div className="k">the server refused the change</div>{phase.reason}</div>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const WHOLE = /^[1-9][0-9]*$/;
+
+/** The selected harness's session cap: what admission holds it under, whether an operator or `starpulse.toml` sets it, and the override's controls. */
+function SessionCapRow({ store, cap, harness, saving }: { store: SchedulerStore; cap: SessionCap; harness: string; saving: boolean }) {
+  const [text, setText] = useState(String(cap.limit));
+  const valid = WHOLE.test(text.trim());
+  const admin = cap.source === "admin";
+  return (
+    <div className="row">
+      <div><div className="lb">Session cap</div><div className="hint">Most sessions autopilot runs at once on {harness}; a saved cap replaces the one in starpulse.toml</div></div>
+      <div>
+        <div className="hours">
+          <input type="number" min={1} step={1} value={text} aria-label="Session cap" onChange={(e) => setText(e.target.value)} />
+          <button type="button" className="btn go" disabled={!valid || Number(text) === cap.limit || saving} onClick={() => void store.setSessionCap(Number(text))}>Save</button>
+          {admin && <button type="button" className="btn" disabled={saving} onClick={() => void store.setSessionCap(null)}>Use starpulse.toml</button>}
+        </div>
+        <div className="hint">{admin ? `Admin override; starpulse.toml sets ${cap.configLimit}` : "Set by starpulse.toml"}</div>
+      </div>
+    </div>
+  );
+}
+
+const PERCENT = /^\d+(\.\d+)?$/;
+
+/** One of cpu or memory's limit: what admission holds the dimension under, whether an operator or `starpulse.toml` sets it, and the override's controls. */
+function CapacityLimitRow({ store, name, label, row, saving }: { store: SchedulerStore; name: CapacityName; label: string; row: CapacityLimit; saving: boolean }) {
+  const [text, setText] = useState(String(row.limit));
+  const value = Number(text);
+  const valid = PERCENT.test(text.trim()) && value > 0 && value <= 100;
+  const admin = row.source === "admin";
+  return (
+    <div className="row">
+      <div><div className="lb">{label} limit</div><div className="hint">Percent of {label} in use at which autopilot starts nothing; a saved limit replaces the one in starpulse.toml</div></div>
+      <div>
+        <div className="hours pct">
+          <input type="number" min={1} max={100} step="any" value={text} aria-label={`${label} limit`} onChange={(e) => setText(e.target.value)} />
+          <button type="button" className="btn go" disabled={!valid || value === row.limit || saving} onClick={() => void store.setLimit(name, value)}>Save</button>
+          {admin && <button type="button" className="btn" disabled={saving} onClick={() => void store.setLimit(name, null)}>Use starpulse.toml</button>}
+        </div>
+        <div className="hint">{admin ? `Admin override; starpulse.toml sets ${row.configLimit}` : "Set by starpulse.toml"}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Tooltip / hint for a credit pause: `credits until 14:00` in the Admin clock. */
+const creditHint = (pause: Pause | undefined, clock: "24" | "12") =>
+  pause ? `credits until ${clockHm(pause.until, clock)}` : "";
+
+function optionReason(h: HarnessOption, pauses: Pause[], clock: "24" | "12"): string | undefined {
+  const paused = pauses.find((p) => p.harness === h.name);
+  if (paused) return creditHint(paused, clock);
+  if (!h.sessions) return h.reason || "runs no sessions";
+  return undefined;
+}
+
+function labelOf(name: string, options: HarnessOption[]) {
+  return options.find((h) => h.name === name)?.label ?? name;
+}
+
+function capacityHint(current: SchedulerState, options: HarnessOption[]) {
+  const selected = labelOf(current.harness, options);
+  const other = Object.keys(current.sessionsByHarness).find((n) => n !== current.harness)
+    ?? options.find((h) => h.name !== current.harness)?.name;
+  if (!other) return `${selected}'s session cap`;
+  const row = current.sessionsByHarness[other] ?? { use: 0, limit: 0 };
+  return `${selected}'s session cap; ${labelOf(other, options)} ${Math.round(row.use)}/${row.limit} running`;
+}
+
+export function SchedulerCard({ store, quiet, clock }: { store: SchedulerStore; quiet: QuietHoursStore; clock: "24" | "12" }) {
+  const { current, phase, unavailable, harnesses } = useSyncExternalStore(store.subscribe, store.get);
+  const active = useViewActive();
+  useEffect(() => {
+    if (!active) return;
+    void store.load();
+  }, [store, active]);
+  const head = <h2>Autopilot <span className="c">starts Ready tasks on this server</span></h2>;
+  if (!current) {
+    return (
+      <section className="card ap">
+        {head}
+        {unavailable && <div className="row"><div className="refusal"><div className="k">scheduler cannot be read</div>{unavailable}</div></div>}
+      </section>
+    );
+  }
+  const { on, dimensions, inFlight, next, harness, pauses } = current;
+  const running = dimensions.find((d) => d.name === "sessions")?.used ?? inFlight?.length ?? 0;
+  const selectedPause = pauses.find((p) => p.harness === harness);
+  const selectedLabel = labelOf(harness, harnesses);
+  return (
+    <section className={`card ap${on ? "" : " off"}`}>
+      {head}
+      <div className="row">
+        <div>
+          <div className="lb">Admission</div>
+          <div className="hint">Off starts nothing; sessions already running continue. Starts on the picked harness.</div>
+        </div>
+        <div>
+          <div className="hours">
+            <button type="button" className="sw" role="switch" aria-checked={on} aria-label="Autopilot" disabled={phase.kind === "saving"}
+              onClick={() => void store.setOn(!on)} />
+            <span className="state">{on ? "On" : "Paused"}</span>
+            {harnesses.length > 1 && (
+              <span className="seg" role="radiogroup" aria-label="Harness">
+                {harnesses.map((h) => {
+                  const reason = optionReason(h, pauses, clock);
+                  return (
+                    <button key={h.name} type="button" role="radio" aria-pressed={h.name === harness}
+                      disabled={!!reason || phase.kind === "saving"} title={reason}
+                      onClick={() => void store.setHarness(h.name)}>{h.label}</button>
+                  );
+                })}
+              </span>
+            )}
+          </div>
+          {selectedPause && <div className="hint">{creditHint(selectedPause, clock)}</div>}
+          {phase.kind === "refused" && (
+            <div className="refusal" role="alert">
+              <div className="k">the server refused the change</div><div className="via">{phase.reason}<button type="button" className="dismiss" aria-label="Dismiss" onClick={() => store.dismiss()}>✕</button></div>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="row">
+        <div><div className="lb">Capacity</div><div className="hint">{capacityHint(current, harnesses)}</div></div>
+        <div className="dims">{dimensions.map((d) => <Meter key={d.name} d={d} />)}</div>
+      </div>
+      {current.sessionCap && (
+        <SessionCapRow key={`${current.sessionCap.harness}:${current.sessionCap.source}:${current.sessionCap.limit}`}
+          store={store} cap={current.sessionCap} harness={selectedLabel} saving={phase.kind === "saving"} />
+      )}
+      {current.capacityLimits && (["cpu", "memory"] as const).map((name) => {
+        const row = current.capacityLimits![name];
+        return <CapacityLimitRow key={`${name}:${row.source}:${row.limit}`} store={store} name={name} label={name === "cpu" ? "CPU" : "Memory"} row={row} saving={phase.kind === "saving"} />;
+      })}
+      <div className="row">
+        <div><div className="lb">Next pick</div><div className="hint">The Ready task scheduler starts next, or what it waits on</div></div>
+        <Next on={on} next={next} />
+      </div>
+      {on && current.blockedBy.length > 0 && (
+        <div className="row">
+          <div><div className="lb">Blocked by</div><div className="hint">Every gate holding admission back now, with its use and limit</div></div>
+          <div className="inflight blocked">{current.blockedBy.map(blockText).join(" · ")}</div>
+        </div>
+      )}
+      <div className="row">
+        <div><div className="lb">In flight</div><div className="hint">Autopilot's sessions running now on {selectedLabel}</div></div>
+        <div className="inflight">{running} running</div>
+      </div>
+      <QuietRow store={quiet} clock={clock} />
+    </section>
+  );
+}

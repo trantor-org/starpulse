@@ -1,0 +1,604 @@
+{
+  "$defs": {
+    "ActiveRun": {
+      "additionalProperties": false,
+      "description": "One run of a DAG that is running or queued now.",
+      "properties": {
+        "runId": {
+          "description": "The run's id.",
+          "title": "Runid",
+          "type": "string"
+        },
+        "status": {
+          "description": "The run's status: `running` or `queued`.",
+          "enum": [
+            "not_started",
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "aborted",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The engine's own status for the run when it differs from `status`, shown as is.",
+          "title": "Raw"
+        },
+        "startedAt": {
+          "description": "When the run started, or was queued while it waits, ISO 8601 UTC (`2026-10-02T17:00:00Z`).",
+          "title": "Startedat",
+          "type": "string"
+        },
+        "step": {
+          "description": "The step the run entered last among those running; empty while it is queued or between steps.",
+          "title": "Step",
+          "type": "string"
+        },
+        "stepStartedAt": {
+          "description": "When the run entered `step`, ISO 8601 UTC; empty when `step` is.",
+          "title": "Stepstartedat",
+          "type": "string"
+        },
+        "steps": {
+          "additionalProperties": {
+            "enum": [
+              "not_started",
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "aborted",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "description": "Each of the DAG's steps by name with its status in this run.",
+          "title": "Steps",
+          "type": "object"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The Board task the run works on (`TASK-N`); None when it names none.",
+          "title": "Task"
+        },
+        "attempt": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The attempt of the step the run is on (or failed on); None when the engine counts none.",
+          "title": "Attempt"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The last failure's message (the step's, or the run's); None when nothing failed.",
+          "title": "Failure"
+        }
+      },
+      "required": [
+        "runId",
+        "status",
+        "startedAt",
+        "step",
+        "stepStartedAt",
+        "steps"
+      ],
+      "title": "ActiveRun",
+      "type": "object"
+    },
+    "RecentRun": {
+      "additionalProperties": false,
+      "description": "One run of a DAG within the last day, running or over, with the parameters it started with.",
+      "properties": {
+        "runId": {
+          "description": "The run's id.",
+          "title": "Runid",
+          "type": "string"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The Board task a `dag-run-task-<N>-<ts>` run id names (`TASK-N`); None for any other run.",
+          "title": "Task"
+        },
+        "url": {
+          "default": "",
+          "description": "A link to the run in the scheduler's own page; empty when it has none.",
+          "title": "Url",
+          "type": "string"
+        },
+        "status": {
+          "description": "The run's status.",
+          "enum": [
+            "not_started",
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "aborted",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The engine's own status for the run when it differs from `status`, shown as is.",
+          "title": "Raw"
+        },
+        "startedAt": {
+          "description": "When the run started, ISO 8601 UTC (`2026-10-02T17:00:00Z`).",
+          "title": "Startedat",
+          "type": "string"
+        },
+        "finishedAt": {
+          "description": "When the run ended, ISO 8601 UTC; empty while it runs.",
+          "title": "Finishedat",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The `KEY=value` parameters the run started with, by name; empty when it had none.",
+          "title": "Params",
+          "type": "object"
+        },
+        "steps": {
+          "additionalProperties": {
+            "enum": [
+              "not_started",
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "aborted",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "description": "Each step the run reached by name with its status in this run.",
+          "title": "Steps",
+          "type": "object"
+        },
+        "attempt": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The attempt of the step the run is on (or failed on); None when the engine counts none.",
+          "title": "Attempt"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The last failure's message (the step's, or the run's); None when nothing failed.",
+          "title": "Failure"
+        }
+      },
+      "required": [
+        "runId",
+        "status",
+        "startedAt",
+        "finishedAt",
+        "params",
+        "steps"
+      ],
+      "title": "RecentRun",
+      "type": "object"
+    },
+    "Rerun": {
+      "additionalProperties": false,
+      "description": "What a DAG declares about a rerun of it: safe (all None), once per `key`, or repeating its effects.",
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the DAG keys its effects by, so a rerun for the same key repeats none; None when it declares no key.",
+          "title": "Key"
+        },
+        "repeats": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why a rerun repeats the DAG's effects; None when the DAG declares it does not.",
+          "title": "Repeats"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The step whose effects repeat; None when the DAG names none.",
+          "title": "Step"
+        }
+      },
+      "required": [
+        "key",
+        "repeats",
+        "step"
+      ],
+      "title": "Rerun",
+      "type": "object"
+    },
+    "RunStats": {
+      "additionalProperties": false,
+      "description": "A DAG's runs over the last seven days.",
+      "properties": {
+        "runs": {
+          "description": "The runs that began in the window, over or not.",
+          "minimum": 0,
+          "title": "Runs",
+          "type": "integer"
+        },
+        "hours": {
+          "description": "The summed duration of the window's runs that are over, in hours.",
+          "minimum": 0,
+          "title": "Hours",
+          "type": "number"
+        },
+        "medianSeconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The median duration of those runs; None while none is over.",
+          "title": "Medianseconds"
+        },
+        "p95Seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The 95th-percentile duration of those runs; None while none is over.",
+          "title": "P95Seconds"
+        },
+        "failureShare": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The share of those runs that failed; None while none is over.",
+          "title": "Failureshare"
+        }
+      },
+      "required": [
+        "runs",
+        "hours",
+        "medianSeconds",
+        "p95Seconds",
+        "failureShare"
+      ],
+      "title": "RunStats",
+      "type": "object"
+    },
+    "Step": {
+      "additionalProperties": false,
+      "description": "One step of a DAG in its latest run.",
+      "properties": {
+        "name": {
+          "description": "The step's name, unique within its DAG.",
+          "title": "Name",
+          "type": "string"
+        },
+        "depends": {
+          "description": "Names of the steps that must finish before this one starts.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends",
+          "type": "array"
+        },
+        "status": {
+          "description": "The step's status in the latest run.",
+          "enum": [
+            "not_started",
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "aborted",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The engine's own status for the step when it differs from `status`, shown as is.",
+          "title": "Raw"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The phase kind the step declares (`agent`), or None when it declares none.",
+          "title": "Kind"
+        },
+        "precondition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What must hold for the step to run, as the scheduler states it; None when it declares none.",
+          "title": "Precondition"
+        },
+        "lock": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The lock the step takes so no other holder runs at once; None when it declares none or the scheduler has no lock to declare.",
+          "title": "Lock"
+        },
+        "last": {
+          "description": "The step's outcomes in the runs that are over, newest first, at most five; empty when the scheduler keeps none or the step never ran.",
+          "items": {
+            "enum": [
+              "not_started",
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "aborted",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Last",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "depends",
+        "status",
+        "kind",
+        "precondition",
+        "lock",
+        "last"
+      ],
+      "title": "Step",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One DAG with its step graph and its latest run.",
+  "properties": {
+    "name": {
+      "description": "The DAG's name, unique on its scheduler.",
+      "title": "Name",
+      "type": "string"
+    },
+    "status": {
+      "description": "The latest run's status (`not_started` before any run).",
+      "enum": [
+        "not_started",
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "aborted",
+        "skipped"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "raw": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The engine's own status for the run when it differs from `status`, shown as is.",
+      "title": "Raw"
+    },
+    "runId": {
+      "description": "The latest run's id; empty before any run.",
+      "title": "Runid",
+      "type": "string"
+    },
+    "startedAt": {
+      "description": "When the latest run started, ISO 8601 UTC (`2026-10-02T17:00:00Z`); empty before any run.",
+      "title": "Startedat",
+      "type": "string"
+    },
+    "finishedAt": {
+      "description": "When the latest run ended, ISO 8601 UTC; empty while it runs or before any run.",
+      "title": "Finishedat",
+      "type": "string"
+    },
+    "steps": {
+      "description": "The DAG's steps; empty when the scheduler cannot describe them.",
+      "items": {
+        "$ref": "#/$defs/Step"
+      },
+      "title": "Steps",
+      "type": "array"
+    },
+    "schedule": {
+      "description": "The cron expressions that start the DAG; empty when it only runs when asked for.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Schedule",
+      "type": "array"
+    },
+    "stats": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunStats"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The DAG's runs over the last seven days; None when it has never run or the scheduler cannot list them, never zeros."
+    },
+    "rerun": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Rerun"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "What the DAG declares about a rerun repeating its effects; None when it declares nothing, and the page then claims nothing."
+    },
+    "active": {
+      "default": [],
+      "description": "Every run of the DAG that is running or queued now, longest-running first; empty when none is or the scheduler cannot list them.",
+      "items": {
+        "$ref": "#/$defs/ActiveRun"
+      },
+      "title": "Active",
+      "type": "array"
+    },
+    "pool": {
+      "default": "",
+      "description": "The name of the concurrency `Pool` the DAG runs on; empty when it names none.",
+      "title": "Pool",
+      "type": "string"
+    },
+    "recent": {
+      "default": [],
+      "description": "The DAG's runs of the last day with the parameters each started with and its per-step status, for the workflows a Board event cues or that write one; empty for any other or when the scheduler cannot list them.",
+      "items": {
+        "$ref": "#/$defs/RecentRun"
+      },
+      "title": "Recent",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name",
+    "status",
+    "runId",
+    "startedAt",
+    "finishedAt",
+    "steps",
+    "schedule",
+    "stats",
+    "rerun"
+  ],
+  "title": "Dag",
+  "type": "object"
+}

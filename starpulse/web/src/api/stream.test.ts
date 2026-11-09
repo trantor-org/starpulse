@@ -1,0 +1,934 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
+import { DemoServer } from "../demo/demo";
+import { applyDelta, foldRows, openStream } from "./stream";
+import { openLedger } from "./ledgerStream";
+import type { ActiveRun, Dag, LedgerRow, Pool, RawTask, Snapshot } from ".";
+
+const agent = (id: string, state: string): RawTask => ({ id, title: id, state, model: "" });
+const board = (agents: RawTask[], extra: Partial<Snapshot> = {}): Snapshot => ({
+  graphs: ["board", "runs"],
+  dags: [],
+  flows: [{ name: "board", machine: { states: [], transitions: [] } as never, agents }],
+  roles: LIFECYCLE_ROLES,
+  settled: {},
+  error: null,
+  now: 1,
+  ...extra,
+});
+const ids = (s: Snapshot) => s.flows[0].agents.map((a) => `${a.id}:${a.state}`);
+
+const settled = (state: string) => ({ state, at: null, created: null, title: "t", model: "" });
+
+describe("applyDelta", () => {
+  it("replaces a task already on the Board and adds one that is not", () => {
+    const s = board([agent("PROJ-1", "to_do")]);
+
+    const moved = applyDelta(s, { kind: "task", id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
+    const added = applyDelta(moved, { kind: "task", id: "PROJ-2", agent: agent("PROJ-2", "ready"), settled: null });
+
+    expect(ids(moved)).toEqual(["PROJ-1:in_progress"]);
+    expect(ids(added)).toEqual(["PROJ-1:in_progress", "PROJ-2:ready"]);
+  });
+
+  it("takes a task off the lanes and records where it went", () => {
+    const s = board([agent("PROJ-1", "done"), agent("PROJ-2", "done")]);
+
+    const swept = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: settled("completed") });
+
+    expect(ids(swept)).toEqual(["PROJ-2:done"]);
+    expect(swept.settled).toEqual({ "PROJ-1": settled("completed") });
+  });
+
+  it("forgets a task's settled state once it is back in a lane", () => {
+    const s = board([], { settled: { "PROJ-1": settled("completed"), "PROJ-2": settled("archived") } });
+
+    const back = applyDelta(s, { kind: "task", id: "PROJ-1", agent: agent("PROJ-1", "to_do"), settled: null });
+
+    expect(back.settled).toEqual({ "PROJ-2": settled("archived") });
+  });
+
+  describe("a milestone's completed count", () => {
+    const done = (milestone: string, state = "completed") => ({ ...settled(state), milestone });
+    const counted = (s: Snapshot) => s.milestone_done;
+
+    it("counts a task that completes in a milestone", () => {
+      const s = board([agent("PROJ-1", "in_progress")], { milestone_done: { "m-1": 2 } });
+
+      const completed = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: done("m-1") });
+      const first = applyDelta(completed, { kind: "task", id: "PROJ-2", agent: null, settled: done("m-2") });
+
+      expect(counted(completed)).toEqual({ "m-1": 3 });
+      expect(counted(first)).toEqual({ "m-1": 3, "m-2": 1 });
+    });
+
+    it("leaves it as it was for an archived task, a task with no milestone and a lane move", () => {
+      const s = board([agent("PROJ-1", "in_progress")], { milestone_done: { "m-1": 2 } });
+
+      const archived = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: done("m-1", "archived") });
+      const bare = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: settled("completed") });
+      const moved = applyDelta(s, { kind: "task", id: "PROJ-1", agent: agent("PROJ-1", "ready"), settled: null });
+
+      expect([counted(archived), counted(bare), counted(moved)]).toEqual([{ "m-1": 2 }, { "m-1": 2 }, { "m-1": 2 }]);
+    });
+
+    it("takes a task's completion back when it returns to a lane, and counts it once when it settles again", () => {
+      const s = board([], { settled: { "PROJ-1": done("m-1") }, milestone_done: { "m-1": 2 } });
+
+      const back = applyDelta(s, { kind: "task", id: "PROJ-1", agent: agent("PROJ-1", "to_do"), settled: null });
+      const again = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: done("m-1") });
+
+      expect(counted(back)).toEqual({ "m-1": 1 });
+      expect(counted(again)).toEqual({ "m-1": 2 });
+    });
+  });
+
+  it("takes the strip and pins whole from a ledgers delta, and never touches the sky's rows", () => {
+    const pin: LedgerRow = { key: "p", at: 1, tasks: ["p"], runs: {}, fails: {}, pinned: true };
+    const mergeStrip = { since: 0, bucket: 900, buckets: [] };
+
+    const next = applyDelta(board([]), { kind: "ledgers", mergeStrip, mergePins: [pin] });
+
+    expect([next.mergeStrip, next.mergePins, "ledgers" in next]).toEqual([mergeStrip, [pin], false]);
+  });
+
+  it("takes Dagu's runs and error without touching the tasks", () => {
+    const s = board([agent("PROJ-1", "to_do")]);
+    const dags = [{ name: "d" } as Dag];
+
+    const next = applyDelta(s, { kind: "dags", dags, error: "ci: down" });
+
+    expect([next.dags, next.error, ids(next)]).toEqual([dags, "ci: down", ["PROJ-1:to_do"]]);
+  });
+
+  it("keeps each concurrent run's own step as the deltas of a DAG move one run at a time", () => {
+    const run = (runId: string, step: string) =>
+      ({ runId, status: "running", startedAt: "", step, stepStartedAt: "", steps: {} }) as ActiveRun;
+    const deliver = (...active: ActiveRun[]) => [{ name: "ci/deliver", active } as Dag];
+    const s = applyDelta(board([]), { kind: "dags", dags: deliver(run("r1", "refuse"), run("r2", "refuse")), error: null });
+
+    const moved = applyDelta(s, { kind: "dags", dags: deliver(run("r1", "refuse"), run("r2", "lint")), error: null });
+
+    expect(moved.dags[0].active?.map((a) => `${a.runId}:${a.step}`)).toEqual(["r1:refuse", "r2:lint"]);
+    expect(s.dags[0].active?.map((a) => `${a.runId}:${a.step}`)).toEqual(["r1:refuse", "r2:refuse"]);
+  });
+
+  it("takes the pools a runs delta carries, and keeps the last ones from a delta that carries none", () => {
+    const lane: Pool = { name: "ci/deliver", cap: 2, running: 1, queued: 1 };
+    const s = board([], { pools: [lane] });
+
+    const emptied = applyDelta(s, { kind: "dags", dags: [], pools: [], error: null });
+    const kept = applyDelta(s, { kind: "dags", dags: [], error: null });
+    const replaced = applyDelta(s, { kind: "dags", dags: [], pools: [{ ...lane, running: 2 }], error: null });
+
+    expect([emptied.pools, kept.pools, replaced.pools]).toEqual([[], [lane], [{ ...lane, running: 2 }]]);
+  });
+
+  it("takes the CPU readings a runs delta carries, and keeps the last ones from a delta that carries none", () => {
+    const reading = { dagu: { share: 0.4, cores: 36 } };
+    const s = board([], { cpu: reading });
+
+    const kept = applyDelta(s, { kind: "dags", dags: [], error: null });
+    const replaced = applyDelta(s, { kind: "dags", dags: [], cpu: { dagu: { share: 0.1, cores: 36 } }, error: null });
+
+    expect([kept.cpu, replaced.cpu]).toEqual([reading, { dagu: { share: 0.1, cores: 36 } }]);
+  });
+
+  it("keeps the identity of every DAG and pin a delta leaves as it was, so only the entry it changes is new", () => {
+    const wire = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T; // each delta arrives as freshly parsed JSON
+    const dags = [{ name: "ci/a", status: "succeeded", steps: [] }, { name: "ci/b", status: "running", steps: [] }] as unknown as Dag[];
+    const row = (key: string) => ({ key, at: 1 }) as unknown as LedgerRow;
+    const s = board([], { dags, pools: [{ name: "ci/a", cap: 1, running: 0, queued: 0 }], mergePins: [row("p")] });
+
+    const d = applyDelta(s, { kind: "dags", dags: wire(dags.map((x) => (x.name === "ci/b" ? { ...x, status: "failed" } : x))), pools: wire(s.pools!), error: null });
+    const l = applyDelta(s, { kind: "ledgers", mergeStrip: null, mergePins: wire(s.mergePins!) });
+
+    expect(d.dags[0]).toBe(s.dags[0]);
+    expect(d.dags[1]).not.toBe(s.dags[1]);
+    expect(d.dags[1].status).toBe("failed");
+    expect(d.pools).toBe(s.pools);
+    expect(l.mergePins).toBe(s.mergePins);
+  });
+
+  it("replaces the pull requests wholesale with the server's latest read", () => {
+    const pull = { number: 7, repo: "o/r", url: "https://github.com/o/r/pull/7", checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 2, stale: false };
+    const s = board([], { pulls: { "PROJ-1": [{ ...pull, number: 6 }], "PROJ-2": [pull] } });
+
+    const next = applyDelta(s, { kind: "pulls", pulls: { "PROJ-1": [pull] } });
+
+    expect(next.pulls).toEqual({ "PROJ-1": [pull] });
+  });
+
+  it("keeps each task's latest refused claim beside the ones the snapshot carried", () => {
+    const s = board([], { claims: { "TASK-D1": { reason: "old", at: 5 } } });
+
+    const next = applyDelta(applyDelta(s, { kind: "claim", task: "TASK-D2", reason: "TASK-D3 is not Done", at: 9 }), { kind: "claim", task: "TASK-D1", reason: "new", at: 10 });
+
+    expect(next.claims).toEqual({ "TASK-D1": { reason: "new", at: 10 }, "TASK-D2": { reason: "TASK-D3 is not Done", at: 9 } });
+    expect(s.claims).toEqual({ "TASK-D1": { reason: "old", at: 5 } });
+  });
+
+  it("returns the very snapshot for a move that repeats the place a task already holds, so the page draws nothing", () => {
+    const s = board([agent("PROJ-1", "in_progress")]);
+    s.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [agent("PROJ-1", "worktree_ready")] });
+
+    expect(applyDelta(s, { kind: "move", machine: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "worktree_ready") })).toBe(s);
+    expect(applyDelta(s, { kind: "move", machine: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "pushed") })).not.toBe(s);
+  });
+
+  it("places a task on the machine a move names, replacing the place it held there, and leaves the Board and the other machines alone", () => {
+    const s = board([agent("PROJ-1", "in_progress")]);
+    s.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [agent("PROJ-1", "worktree_ready")] });
+    s.flows.push({ name: "auditing-docs", machine: { states: [], transitions: [] } as never, agents: [] });
+
+    const moved = applyDelta(s, { kind: "move", machine: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "pushed") });
+    const added = applyDelta(moved, { kind: "move", machine: "in-progress", id: "PROJ-2", agent: agent("PROJ-2", "worktree_ready") });
+
+    expect(moved.flows.map((f) => f.agents.map((a) => `${a.id}:${a.state}`))).toEqual([["PROJ-1:in_progress"], ["PROJ-1:pushed"], []]);
+    expect(added.flows[1].agents.map((a) => `${a.id}:${a.state}`)).toEqual(["PROJ-1:pushed", "PROJ-2:worktree_ready"]);
+    expect(s.flows[1].agents.map((a) => a.state)).toEqual(["worktree_ready"]);
+  });
+
+  it("leaves the snapshot it was given as it was", () => {
+    const s = board([agent("PROJ-1", "to_do")]);
+
+    applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: settled("archived") });
+
+    expect([ids(s), s.settled]).toEqual([["PROJ-1:to_do"], {}]);
+  });
+});
+
+describe("foldRows", () => {
+  const row = (key: string, at: number, pinned = false): LedgerRow => ({ key, at, tasks: [key], runs: {}, fails: {}, pinned });
+  const [a, b, c] = [row("a", 30), row("b", 20), row("c", 10)];
+
+  it("replaces the changed row and keeps every other row's reference", () => {
+    const b2 = row("b", 20, true);
+
+    const next = foldRows([a, b, c], [b2]);
+
+    expect(next).toEqual([a, b2, c]);
+    expect([next[0], next[2]]).toEqual([a, c]);
+    expect(next[0]).toBe(a);
+    expect(next[1]).toBe(b2);
+  });
+
+  it("places a new row by its time among the held ones, newest first", () => {
+    const next = foldRows([a, c], [row("n", 40), row("m", 20)]);
+
+    expect(next.map((r) => r.key)).toEqual(["n", "a", "m", "c"]);
+    expect(next[1]).toBe(a);
+  });
+});
+
+class FakeSource {
+  static made: FakeSource[] = [];
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  private listeners = new Map<string, ((e: { data: string }) => void)[]>();
+  constructor(readonly url: string) {
+    FakeSource.made.push(this);
+  }
+  addEventListener(type: string, fn: (e: { data: string }) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+  }
+  send(type: string, data: unknown) {
+    for (const fn of this.listeners.get(type) ?? []) fn({ data: JSON.stringify(data) });
+  }
+  dispatchEvent(e: { type: string; data: string }) {
+    for (const fn of this.listeners.get(e.type) ?? []) fn(e);
+    return true;
+  }
+  close() {
+    this.readyState = 2;
+  }
+}
+const open = (url: string) => new FakeSource(url) as unknown as EventSource;
+const EVENTS = "/api/events?snapshot=ref";
+const BODY = "/api/events/body/0123abcd";
+/** A fetch whose answers the test settles itself, one per call. */
+function fetchStub() {
+  const calls: { url: string; settle(ok: boolean, body?: unknown): void }[] = [];
+  const fn = vi.fn((url: string) => new Promise<Response>((resolve) => {
+    calls.push({ url, settle: (ok, body) => resolve({ ok, status: ok ? 200 : 404, json: () => Promise.resolve(body) } as Response) });
+  }));
+  vi.stubGlobal("fetch", fn);
+  return calls;
+}
+const flush = () => vi.advanceTimersByTimeAsync(0);
+const last = () => FakeSource.made[FakeSource.made.length - 1];
+
+describe("openStream", () => {
+  const seen: Snapshot[] = [];
+  const kinds: (string | undefined)[] = [];
+  const lives: boolean[] = [];
+  const handlers = { snapshot: (s: Snapshot, kind?: string) => void (seen.push(s), kinds.push(kind)), live: (on: boolean) => void lives.push(on) };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSource.made = [];
+    seen.length = 0;
+    kinds.length = 0;
+    lives.length = 0;
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("opens one connection to /api/events, asking for its snapshot by reference, and hands over its snapshot", () => {
+    openStream(handlers, open);
+
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+    expect(FakeSource.made.map((f) => f.url)).toEqual([EVENTS]);
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do"]]);
+  });
+
+  describe("a connection index.html opened before the bundle ran", () => {
+    const early = (readyState: number, events: { type: string; data: string }[]) => {
+      const src = new FakeSource(EVENTS);
+      src.readyState = readyState;
+      FakeSource.made = [];
+      return { src: src as unknown as EventSource, events };
+    };
+    const raw = (type: string, data: unknown) => ({ type, data: JSON.stringify(data) });
+
+    it("is the connection: no second one opens, and what it received before the page listened reaches the page in order", () => {
+      const pending = early(1, [raw("snapshot", board([agent("PROJ-1", "to_do")])), raw("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null })]);
+
+      openStream(handlers, open, null, pending);
+
+      expect(FakeSource.made).toEqual([]);
+      expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"]]);
+      expect(lives).toEqual([true]);
+    });
+
+    it("goes on handing over the events it receives after the page took it over", () => {
+      const pending = early(0, []);
+      openStream(handlers, open, null, pending);
+
+      (pending.src as unknown as FakeSource).send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+      expect(seen.map(ids)).toEqual([["PROJ-1:to_do"]]);
+      expect(lives).toEqual([]);
+    });
+
+    it("opens a fresh connection at once when it was already given up, as it would its own", () => {
+      const pending = early(2, []);
+      openStream(handlers, open, null, pending);
+      expect(FakeSource.made).toEqual([]);
+
+      vi.advanceTimersByTime(0);
+
+      expect(FakeSource.made.map((f) => f.url)).toEqual([EVENTS]);
+    });
+  });
+
+  it("follows an embedded page's demo server without opening a connection: its moves and its walk reach the page until closed", () => {
+    const machine = {
+      states: ["new", "to_do", "done"].map((id) => ({ id, name: id, initial: id === "new", final: false })),
+      transitions: [{ source: "to_do", target: "done", event: "FINISH" }],
+    };
+    const server = new DemoServer(board([agent("TASK-D1", "to_do")], { flows: [{ name: "board", machine, agents: [agent("TASK-D1", "to_do")] }] }));
+
+    const stream = openStream(handlers, open, server);
+    server.move("TASK-D1", "done");
+    vi.advanceTimersByTime(1200);
+    const walked = seen.length;
+    stream.close();
+    vi.advanceTimersByTime(60_000);
+
+    expect(FakeSource.made).toEqual([]);
+    expect(lives).toEqual([true]);
+    expect(seen.slice(0, 2).map(ids)).toEqual([["TASK-D1:to_do"], ["TASK-D1:done"]]);
+    expect([walked, seen.length]).toEqual([3, 3]); // the snapshot, the move, one walk step; nothing once closed
+  });
+
+  it("plays the connection state a demo page's address names, until the stream is closed", () => {
+    vi.stubGlobal("location", { search: "?link=restart" });
+    const links: string[] = [];
+    const machine = {
+      states: ["new", "to_do"].map((id) => ({ id, name: id, initial: id === "new", final: false })),
+      transitions: [{ source: "new", target: "to_do", event: "START" }],
+    };
+    const server = new DemoServer(board([agent("TASK-D1", "to_do")], { flows: [{ name: "board", machine, agents: [agent("TASK-D1", "to_do")] }] }));
+    const stream = openStream({ ...handlers, link: (state) => void links.push(state) }, open, server);
+
+    vi.advanceTimersByTime(2_000);
+    stream.close();
+    vi.advanceTimersByTime(60_000);
+    vi.unstubAllGlobals();
+
+    expect(links).toEqual(["live", "live", "restarting"]); // the demo's own live, then the played scenario's start and its restart
+  });
+
+  it("hands over the Board folded with each delta that follows", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+    last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
+    last().send("dags", { dags: [], error: "ci: down" });
+
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"], ["PROJ-1:in_progress"]]);
+    expect(seen[2].error).toBe("ci: down");
+  });
+
+  it("hands over a whole-section event once while its body repeats, and again once it changes or a snapshot resyncs", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+    last().send("dags", { dags: [], error: "ci: down" });
+    last().send("dags", { dags: [], error: "ci: down" });
+    last().send("pulls", { pulls: [] });
+    last().send("pulls", { pulls: [] });
+    expect(kinds).toEqual([undefined, "dags", "pulls"]);
+
+    last().send("dags", { dags: [], error: null });
+    expect(kinds).toEqual([undefined, "dags", "pulls", "dags"]);
+
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+    last().send("dags", { dags: [], error: null });
+    expect(kinds).toEqual([undefined, "dags", "pulls", "dags", undefined, "dags"]);
+  });
+
+  it("names the delta each hand-over folded, and none for a connect's snapshot", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+    last().send("ledgers", { mergeStrip: null, mergePins: [] });
+    last().send("dags", { dags: [], error: null });
+
+    expect(kinds).toEqual([undefined, "ledgers", "dags"]);
+  });
+
+  it("folds the 24-hour strip and the pins the head left out", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+    const mergeStrip = { since: 0, bucket: 900, buckets: [{ merges: 1, failed: 1, reruns: 0 }] };
+    const pin = { key: "p", at: 1, tasks: [], runs: {}, fails: {}, pinned: true };
+
+    last().send("ledgers", { mergeStrip, mergePins: [pin] });
+
+    expect(seen.at(-1)!.mergeStrip).toEqual(mergeStrip);
+    expect(seen.at(-1)!.mergePins?.map((r) => r.key)).toEqual(["p"]);
+  });
+
+  it("folds a refused claim the writer published into the snapshot", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("TASK-D1", "waiting")]));
+
+    last().send("claim", { task: "TASK-D1", reason: "TASK-D3 is not Done", at: 1001 });
+
+    expect(seen.at(-1)!.claims).toEqual({ "TASK-D1": { reason: "TASK-D3 is not Done", at: 1001 } });
+  });
+
+  it("folds a move on a machine into the snapshot without any request but the one stream", () => {
+    const fetched = vi.fn();
+    vi.stubGlobal("fetch", fetched);
+    openStream(handlers, open);
+    const snap = board([agent("PROJ-1", "in_progress")]);
+    snap.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [] });
+    last().send("snapshot", snap);
+
+    last().send("move", { machine: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "worktree_ready") });
+    vi.advanceTimersByTime(60_000);
+
+    expect(seen.at(-1)!.flows[1].agents.map((a) => `${a.id}:${a.state}`)).toEqual(["PROJ-1:worktree_ready"]);
+    expect([fetched.mock.calls.length, FakeSource.made.map((f) => f.url)]).toEqual([0, [EVENTS]]);
+    vi.unstubAllGlobals();
+  });
+
+  describe("a snapshot the server sends by reference", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("is read from the path it names, and the deltas that arrived while it was read are folded into it in order and handed over once", async () => {
+      const reads = fetchStub();
+      openStream(handlers, open);
+
+      last().dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
+      last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
+      last().send("dags", { dags: [], error: "ci: down" });
+      expect(seen).toEqual([]);
+      reads[0].settle(true, board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      expect(reads.map((r) => r.url)).toEqual([BODY]);
+      expect(seen.map(ids)).toEqual([["PROJ-1:in_progress"]]);
+      expect([kinds, seen[0].error]).toEqual([[undefined], "ci: down"]);
+    });
+
+    it("is read once when index.html's connection already asked for it", async () => {
+      const reads = fetchStub();
+      const asked = fetch(BODY);
+      const src = new FakeSource(EVENTS);
+      FakeSource.made = [];
+      openStream(handlers, open, null, { src: src as unknown as EventSource, events: [{ type: "snapshot", data: `ref ${BODY}` }], bodies: { [BODY]: asked } });
+
+      reads[0].settle(true, board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      expect([reads.length, seen.map(ids)]).toEqual([1, [["PROJ-1:to_do"]]]);
+    });
+
+    it("gives way to a newer snapshot that arrives while it is read", async () => {
+      const reads = fetchStub();
+      openStream(handlers, open);
+
+      last().dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
+      last().send("snapshot", board([agent("PROJ-1", "done")]));
+      reads[0].settle(true, board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      expect(seen.map(ids)).toEqual([["PROJ-1:done"]]);
+    });
+
+    it("that cannot be read drops the connection for a fresh one, which sends a fresh snapshot", async () => {
+      const reads = fetchStub();
+      openStream(handlers, open);
+      const first = last();
+
+      first.dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
+      reads[0].settle(false);
+      await flush();
+      vi.advanceTimersByTime(0);
+
+      expect([first.readyState, lives, FakeSource.made.length, seen]).toEqual([2, [false], 2, []]);
+    });
+  });
+
+  it("ignores a delta that arrives before any snapshot", () => {
+    openStream(handlers, open);
+
+    last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "to_do"), settled: null });
+
+    expect(seen).toEqual([]);
+  });
+
+  it("reports whether the connection is up", () => {
+    openStream(handlers, open);
+
+    last().onopen?.();
+    last().onerror?.();
+
+    expect(lives).toEqual([true, false]);
+  });
+
+  it("reopens a dropped connection itself, not waiting for the browser's retry, and resyncs from the snapshot the server sends on it", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+    const first = last();
+
+    first.onerror?.(); // readyState stays CONNECTING: left alone, the browser would wait seconds before it reconnected
+    vi.advanceTimersByTime(0);
+    last().send("snapshot", board([agent("PROJ-1", "done")]));
+
+    expect(first.readyState).toBe(2);
+    expect(FakeSource.made).toHaveLength(2);
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:done"]]);
+  });
+
+  it("keeps the Board it showed while a restarted server is still reading its board, then hands over the Board it read in one piece", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do"), agent("PROJ-2", "review")]));
+
+    last().onerror?.(); // the server restarted
+    vi.advanceTimersByTime(0);
+    last().send("snapshot", board([], { reading: true, error: "board: reading q:tasks" }));
+    last().send("move", { machine: "board", id: "PROJ-9", agent: agent("PROJ-9", "x") });
+    last().send("dags", { dags: [], error: "board: reading q:tasks" });
+    last().send("snapshot", board([agent("PROJ-1", "in_progress"), agent("PROJ-2", "review")], { reading: false }));
+
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do", "PROJ-2:review"], ["PROJ-1:in_progress", "PROJ-2:review"]]);
+  });
+
+  it("shows a server that is still reading its board when the page has shown nothing yet", () => {
+    openStream(handlers, open);
+
+    last().send("snapshot", board([], { reading: true, error: "board: reading q:tasks" }));
+
+    expect(seen.map((s) => s.error)).toEqual(["board: reading q:tasks"]);
+  });
+
+  describe("with a snapshot kept in browser storage", () => {
+    const links: string[] = [];
+    const kept = (held: Snapshot | null = null) => {
+      const writes: Snapshot[] = [];
+      return { writes, cache: { read: () => Promise.resolve(held), write: (s: Snapshot) => (writes.push(s), Promise.resolve()) } };
+    };
+    const withLinks = { ...handlers, link: (state: string) => void links.push(state) };
+    const start = (held: Snapshot | null) => {
+      const store = kept(held);
+      const stream = openStream(withLinks, open, null, null, store.cache);
+      return { ...store, stream };
+    };
+    const lane = (s: Snapshot | undefined) => (s ? ids(s) : []);
+    beforeEach(() => void (links.length = 0));
+
+    it("keeps each snapshot it hands over, at most once a second, and never a partial Board", async () => {
+      const { writes } = start(null);
+
+      last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+      last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(writes).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      last().send("snapshot", board([], { reading: true }));
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(writes.map(ids)).toEqual([["PROJ-1:in_progress"]]);
+    });
+
+    it("draws the kept Board at once, marked stale, before the server has answered", async () => {
+      start(board([agent("PROJ-1", "to_do"), agent("PROJ-2", "review")]));
+
+      await flush();
+
+      expect(seen.map(ids)).toEqual([["PROJ-1:to_do", "PROJ-2:review"]]);
+      expect(links).toEqual(["stale"]);
+    });
+
+    it("keeps drawing the kept Board when the server never answers, and does not write it back", async () => {
+      const { writes } = start(board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      last().onerror?.();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect([seen.map(ids), links, writes]).toEqual([[["PROJ-1:to_do"]], ["stale", "retrying"], []]);
+    });
+
+    it("replaces the kept Board with the server's snapshot and clears the stale mark once the connection is up", async () => {
+      start(board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      last().send("snapshot", board([agent("PROJ-1", "done")]));
+      last().onopen?.();
+
+      expect([seen.map(ids), links]).toEqual([[["PROJ-1:to_do"], ["PROJ-1:done"]], ["stale", "live"]]);
+    });
+
+    it("leaves the kept Board out once the server's snapshot is already the page's Board", async () => {
+      const store = kept(board([agent("PROJ-1", "to_do")]));
+      let release: (s: Snapshot | null) => void = () => {};
+      const slow = { ...store.cache, read: () => new Promise<Snapshot | null>((resolve) => void (release = resolve)) };
+      openStream(withLinks, open, null, null, slow);
+
+      last().send("snapshot", board([agent("PROJ-1", "done")]));
+      release(board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      expect([seen.map(ids), links]).toEqual([[["PROJ-1:done"]], []]);
+    });
+
+    it("holds the stale mark, and the kept Board, while a restarted server is still reading its board", async () => {
+      start(board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      last().send("snapshot", board([], { reading: true }));
+      last().onopen?.();
+      expect([seen.length, links]).toEqual([1, ["stale"]]);
+      last().send("snapshot", board([agent("PROJ-1", "in_progress")], { reading: false }));
+
+      expect([seen.map(ids).at(-1), links]).toEqual([["PROJ-1:in_progress"], ["stale", "live"]]);
+    });
+
+    it("marks the Board it held through a drop stale from the reconnect until the server's whole Board arrives", () => {
+      const { cache } = kept(null);
+      openStream(withLinks, open, null, null, cache);
+      last().onopen?.();
+      last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+      last().onerror?.();
+      vi.advanceTimersByTime(0);
+      last().onopen?.();
+      last().send("snapshot", board([], { reading: true }));
+      last().send("snapshot", board([agent("PROJ-1", "done")]));
+
+      expect([seen.map(ids), links]).toEqual([[["PROJ-1:to_do"], ["PROJ-1:done"]], ["live", "retrying", "stale", "live"]]);
+    });
+
+    it("draws nothing from a store that is empty, unreadable or without a kept Board", async () => {
+      openStream(withLinks, open, null, null, { read: () => Promise.reject(new Error("blocked")), write: () => Promise.resolve() });
+      await flush();
+      start(null);
+      await flush();
+
+      expect([seen, links]).toEqual([[], []]);
+    });
+
+    it("lives with a store that refuses a write", async () => {
+      openStream(withLinks, open, null, null, { read: () => Promise.resolve(null), write: () => Promise.reject(new Error("quota")) });
+
+      last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+      await vi.advanceTimersByTimeAsync(2000);
+      last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "done"), settled: null });
+
+      expect(lane(seen.at(-1))).toEqual(["PROJ-1:done"]);
+    });
+  });
+
+  it("opens a new connection when the browser gives the old one up", () => {
+    openStream(handlers, open);
+    last().readyState = 2;
+
+    last().onerror?.();
+    vi.advanceTimersByTime(0);
+
+    expect(FakeSource.made).toHaveLength(2);
+  });
+
+  it("closes the connection and cancels a pending reopen", () => {
+    const stream = openStream(handlers, open);
+    const first = last();
+    first.readyState = 2;
+    first.onerror?.();
+
+    stream.close();
+    vi.advanceTimersByTime(6000);
+
+    expect(FakeSource.made).toHaveLength(1);
+    expect(first.readyState).toBe(2);
+  });
+
+  it("closes a live connection", () => {
+    const stream = openStream(handlers, open);
+
+    stream.close();
+
+    expect(last().readyState).toBe(2);
+  });
+
+  describe("what the connection is doing", () => {
+    const links: string[] = [];
+    const builds: string[] = [];
+    const watching = { ...handlers, link: (state: string) => void links.push(state), build: (id: string) => void builds.push(id) };
+    /** Drop the connection, then let the page's own reopen run at the end of its wait. */
+    const dropAndWait = (ms: number) => {
+      last().onerror?.();
+      vi.advanceTimersByTime(ms);
+    };
+
+    beforeEach(() => {
+      links.length = 0;
+      builds.length = 0;
+    });
+
+    it("is live once the connection opens", () => {
+      openStream(watching, open);
+
+      last().onopen?.();
+
+      expect(links).toEqual(["live"]);
+    });
+
+    it("says restarting from the server's announcement, while the connection is still open, and through the drop that follows", () => {
+      openStream(watching, open);
+      last().onopen?.();
+
+      last().send("restarting", {});
+      expect(links).toEqual(["live", "restarting"]);
+      expect(lives).toEqual([true]);
+
+      dropAndWait(0);
+
+      expect(links).toEqual(["live", "restarting"]);
+      expect(lives).toEqual([true, false]);
+    });
+
+    it("says retrying for a drop the server did not announce", () => {
+      openStream(watching, open);
+      last().onopen?.();
+
+      last().onerror?.();
+
+      expect(links).toEqual(["live", "retrying"]);
+    });
+
+    it("says offline once the connection has been down for 20 s, and keeps retrying", () => {
+      openStream(watching, open);
+      last().onopen?.();
+      last().onerror?.();
+
+      vi.advanceTimersByTime(19_999);
+      expect(links).toEqual(["live", "retrying"]);
+      vi.advanceTimersByTime(1);
+
+      expect(links).toEqual(["live", "retrying", "offline"]);
+      const attempts = FakeSource.made.length;
+      last().onerror?.(); // the retry that failed: another follows, and the line keeps saying offline
+      vi.advanceTimersByTime(3000);
+      expect(FakeSource.made.length).toBeGreaterThan(attempts);
+      expect(links).toEqual(["live", "retrying", "offline"]);
+    });
+
+    it("counts the 20 s from when the server announced the restart", () => {
+      openStream(watching, open);
+      last().onopen?.();
+      last().send("restarting", {});
+      vi.advanceTimersByTime(15_000);
+      last().onerror?.();
+
+      vi.advanceTimersByTime(4_999);
+      expect(links).toEqual(["live", "restarting"]);
+      vi.advanceTimersByTime(1);
+
+      expect(links).toEqual(["live", "restarting", "offline"]);
+    });
+
+    it("reconnects at once after a drop, on a connection of its own, and says live when that one opens", () => {
+      openStream(watching, open);
+      const first = last();
+      first.onopen?.();
+
+      first.onerror?.();
+      vi.advanceTimersByTime(0);
+
+      expect(first.readyState).toBe(2);
+      expect(FakeSource.made).toHaveLength(2);
+      last().onopen?.();
+      expect(links).toEqual(["live", "retrying", "live"]);
+    });
+
+    it("backs off while the server stays away, never waiting more than 3 s", () => {
+      openStream(watching, open);
+      const waits: number[] = [];
+
+      for (const wait of [0, 250, 500, 1000, 2000, 3000, 3000]) {
+        const made = FakeSource.made.length;
+        last().onerror?.();
+        if (wait > 0) vi.advanceTimersByTime(wait - 1);
+        waits.push(FakeSource.made.length - made);
+        vi.advanceTimersByTime(1);
+        waits.push(FakeSource.made.length - made);
+      }
+
+      // before the wait ends no connection is made, once it has ended exactly one is (at 0 ms there is no "before")
+      expect(waits).toEqual([0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]);
+    });
+
+    it("starts over at once after a connection that opened", () => {
+      openStream(watching, open);
+      dropAndWait(0);
+      dropAndWait(250);
+      last().onopen?.();
+
+      const made = FakeSource.made.length;
+      last().onerror?.();
+      vi.advanceTimersByTime(0);
+
+      expect(FakeSource.made).toHaveLength(made + 1);
+    });
+
+    it("reports a build other than the page's own once, and says nothing for the build it already holds", () => {
+      openStream(watching, open);
+      last().send("build", { id: "aaa" });
+      expect(builds).toEqual([]);
+
+      dropAndWait(0);
+      last().send("build", { id: "aaa" });
+      expect(builds).toEqual([]);
+
+      dropAndWait(250);
+      last().send("build", { id: "bbb" });
+      dropAndWait(500);
+      last().send("build", { id: "bbb" });
+
+      expect(builds).toEqual(["bbb"]);
+    });
+
+    it("holds a new build while its server is still reading its board, so the page reloads onto the Board it read", () => {
+      openStream(watching, open);
+      last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+      last().send("build", { id: "aaa" });
+
+      dropAndWait(0); // a deploy restarted the server
+      last().send("snapshot", board([], { reading: true }));
+      last().send("build", { id: "bbb" });
+      last().send("snapshot", board([agent("PROJ-1", "to_do")], { reading: true }));
+      expect(builds).toEqual([]);
+
+      last().send("snapshot", board([agent("PROJ-1", "to_do")], { reading: false }));
+      expect(builds).toEqual(["bbb"]);
+    });
+
+    it("takes the build the connection index.html opened named as the page's own", () => {
+      const early = new FakeSource(EVENTS);
+      early.readyState = 1;
+      FakeSource.made = [];
+
+      openStream(watching, open, null, { src: early as unknown as EventSource, events: [{ type: "build", data: JSON.stringify({ id: "aaa" }) }] });
+      early.onerror?.();
+      vi.advanceTimersByTime(0);
+      last().send("build", { id: "bbb" });
+
+      expect(builds).toEqual(["bbb"]);
+    });
+  });
+});
+
+describe("the page's sources", () => {
+  const sources = import.meta.glob<string>(["../**/*.ts", "../**/*.tsx", "!../**/*.test.ts", "!../**/*.test.tsx", "!../api/types.gen.ts"], { query: "?raw", import: "default", eager: true });
+
+  it("name no snapshot endpoint and keep no timed poll of one: every flow arrives over the stream", () => {
+    const polling = Object.entries(sources).filter(([, text]) => /api\/snapshot|fetchSnapshot|\bpoll/i.test(text));
+
+    expect(Object.keys(sources).length).toBeGreaterThan(5);
+    expect(polling.map(([file]) => file)).toEqual([]);
+  });
+
+  it("keeps no timed GET refresh for level", () => {
+    // clock-only setInterval (ago stamps) may share a file with apiFetch; ban the live-data refresh patterns
+    const text = Object.entries(sources)
+      .filter(([file]) => /orbit\/levelData/.test(file))
+      .map(([, body]) => body)
+      .join("\n");
+    expect(text).not.toMatch(/setInterval/);
+    expect(text).not.toMatch(/REFRESH_MS/);
+  });
+
+  it("keeps no timed refresh anywhere but the clock-only and non-data timers", () => {
+    // each allowed timer repaints a clock stamp, a DOM busy state or a simulator (the drill-in's replay and move animation); none refetches live data
+    const clockOnly = /\/(App\.tsx|Kanban\.tsx|Dags\.tsx|SunsDrillIn\.tsx|reload\.ts|renderer\.ts|demo\.ts)$/;
+    const timed = Object.entries(sources)
+      .filter(([file, text]) => !clockOnly.test(file) && /setInterval|REFRESH_MS/.test(text))
+      .map(([file]) => file);
+    const refreshing = Object.entries(sources)
+      .filter(([, text]) => /REFRESH_MS/.test(text))
+      .map(([file]) => file);
+    const idle = Object.entries(sources)
+      .filter(([file, text]) => clockOnly.test(file) && !/setInterval/.test(text))
+      .map(([file]) => file);
+
+    expect(timed).toEqual([]);
+    expect(refreshing).toEqual([]);
+    // an allowlisted file that no longer holds a timer is a stale entry: drop it from the list
+    expect(idle).toEqual([]);
+  });
+});
+
+describe("openLedger", () => {
+  const row = (key: string, at: number): LedgerRow => ({ key, at, tasks: [key], runs: {}, fails: {}, pinned: false });
+
+  beforeEach(() => {
+    FakeSource.made = [];
+  });
+
+  it("opens the one event's stream, hands over its head, then each changed row batch", () => {
+    const heads: unknown[] = [];
+    const changed: LedgerRow[][] = [];
+
+    openLedger("MERGED", { head: (page) => heads.push(page), rows: (rows) => changed.push(rows) }, open);
+    last().send("page", { rows: [row("a", 2)], more: true });
+    last().send("rows", { rows: [row("b", 3)] });
+
+    expect(FakeSource.made.map((f) => f.url)).toEqual(["/api/ledger/MERGED/events"]);
+    expect(heads).toEqual([{ rows: [row("a", 2)], more: true }]);
+    expect(changed).toEqual([[row("b", 3)]]);
+  });
+
+  it("closes its source", () => {
+    const { close } = openLedger("MERGED", { head: () => {}, rows: () => {} }, open);
+
+    close();
+
+    expect(last().readyState).toBe(2);
+  });
+});

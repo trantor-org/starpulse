@@ -1,0 +1,127 @@
+"""The output keys each agent verb documents in `starpulse help --agent`, and the snapshot keys a server must answer."""
+
+from __future__ import annotations
+
+SNAPSHOT_KEYS = (
+    "graphs",
+    "flows",
+    "dags",
+    "pools",
+    "cpu",
+    "pulls",
+    "mergeStrip",
+    "mergePins",
+    "machinePage",
+    "machineStrip",
+    "claims",
+    "settled",
+    "cold_done",
+    "milestone_done",
+    "ratings",
+    "interactive",
+    "roles",
+    "error",
+    "cues",
+    "domains",
+    "boardUrl",
+    "hint",
+    "capabilities",
+    "reading",
+    "now",
+)
+
+# Keys a server one release behind may not serve yet: a snapshot without them is still a snapshot.
+NEWER_SNAPSHOT_KEYS = ("cpu", "milestone_done")
+
+
+HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
+
+
+STEP_KEYS = ("now", "window_s", "steps")
+
+
+TRANSITION_KEYS = ("now", "window_s", "transitions")
+SPEND_KEYS = ("now", "window_s", "spend")
+
+
+CELL_KEYS = ("now", "window_s", "cells")
+ESTIMATE_KEYS = ("now", "window_s", "estimates")
+SCORE_KEYS = ("now", "window_s", "scores", "verdicts")
+VERDICT_KEYS = ("kind", "size", "baseline", "profile", "n", "baseline_n", "verdict", "p_non_inferior", "p_worse")
+
+
+GRAPH_KEYS = ("now", "window_s", "graph")
+
+
+STAGE_KEYS = ("now", "window_s", "stages")
+
+
+DIFF_KEYS = ("now", "window_s", "diff")
+
+
+TASK_KEYS = (
+    "id",
+    "title",
+    "lane",
+    "phase",
+    "substate",
+    "skill",
+    "interactive",
+    "done_at",
+    "profile",
+    "assignee",
+    "milestone",
+    "type",
+    "labels",
+    "dependencies",
+    "waiting_on",
+    "criteria",
+    "pause_reason",
+    "readable",
+    "source",
+    "prs",
+    "moves",
+    "rating",
+    "released",
+    "description",
+)
+
+
+MOVE_KEYS = ("ok", "task", "to", "reason", "skill", "advice")
+
+
+CLAIM_KEYS = ("ok", "task", "to", "assignee", "reason", "skill")
+
+
+RELEASE_KEYS = ("ok", "task", "to", "releasedFrom", "reason", "skill")
+
+
+LIFECYCLE_KEYS = ("ok", "task", "to", "reason", "skill")
+
+
+MILESTONE_KEYS = ("id", "title", "outcome", "specs", "adrs", "retro", "description")
+
+
+PULL_KEYS = (
+    "repo",
+    "number",
+    "state",
+    "isDraft",
+    "mergeable",
+    "baseRefName",
+    "headRefOid",
+    "body",
+    "checks",
+    "requiredChecks",
+    "threads",
+    "unresolvedThreads",
+    "headRefName",
+    "updatedAt",
+    "mergedAt",
+    "mergeSha",
+    "fetchedAt",
+    "files",
+)
+
+
+DOC_KEYS = ("id", "title", "type", "created_date", "updated_date", "path", "body")

@@ -1,0 +1,129 @@
+"""`starpulse command run`: the argv a project's `[project.commands]` maps a step name to, run with no shell."""
+
+from __future__ import annotations
+
+import argparse
+import string
+import subprocess
+import time
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
+
+from starpulse.cli.agent_wire import CliError
+from starpulse.runtime.config import ConfigError, discover, load
+
+#: What a caller does for a step the project has not mapped.
+FALLBACK = "AGENTS.md"
+
+#: Where a repository keeps its pull request template, in the order GitHub looks.
+PR_TEMPLATES = (
+    ".github/pull_request_template.md",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    "docs/pull_request_template.md",
+    "pull_request_template.md",
+)
+#: Filled by the command itself (`--task`, the git toplevel), so a caller names no `--arg` for them.
+_FILLED = {"task", "worktree", "args"}
+
+
+class _Values(dict[str, str]):
+    """The placeholders' values; `{worktree}` is the git toplevel, looked up only when an argv uses it."""
+
+    def __missing__(self, key: str) -> str:
+        if key != "worktree":
+            raise CliError(
+                "usage",
+                f"{{{key}}} has no value; pass it as --arg {key}=VALUE" + (" or --task" if key == "task" else ""),
+            )
+        done = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
+        if done.returncode:
+            raise CliError("usage", "{worktree} needs a git checkout; this directory is in none")
+        return self.setdefault(key, done.stdout.strip())
+
+
+def _fill(element: str, values: _Values) -> str:
+    try:
+        return element.format_map(values)
+    except (ValueError, IndexError, KeyError, AttributeError, TypeError) as exc:
+        message = f"{element!r} has a brace that is not a placeholder; write a literal one as {{{{ or }}}}"
+        raise CliError("usage", message) from exc
+
+
+def _argv(template: tuple[str, ...], values: _Values, extra: list[str]) -> list[str]:
+    argv: list[str] = []
+    for element in template:
+        argv.extend(extra if element == "{args}" else [_fill(element, values)])
+    return argv
+
+
+def _superproject_hint(path: Path, name: str) -> str:
+    """Where a child worktree's step runs instead: the nearest enclosing checkout whose config maps `name`."""
+    path = path.resolve()
+    for parent in path.parent.parents:
+        candidate = (parent / "starpulse.toml").resolve()
+        try:
+            mapped = candidate.is_file() and name in load(candidate).project.commands
+        except ConfigError, OSError, ValueError:
+            continue
+        if mapped:
+            return f"; run it from the superproject {parent} with --arg worktree={path.parent}"
+    return ""
+
+
+def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Run one named command; the child's output streams to stderr and the document is its name, argv, exit and seconds."""
+    _, commands = _mapped(args)
+    values = _Values()
+    if args.task is not None:
+        values["task"] = args.task
+    for pair in args.arg:
+        name, sep, value = pair.partition("=")
+        if not sep:
+            raise CliError("usage", f"--arg {pair!r} is not NAME=VALUE")
+        values[name] = value
+    argv = _argv(commands[args.name], values, args.args)
+    started = time.monotonic()
+    try:
+        done = subprocess.run(argv, stdout=2, check=False)
+    except OSError as exc:
+        raise CliError("unavailable", f"{argv[0]} cannot run: {exc.strerror or exc}") from exc
+    return {
+        "name": args.name,
+        "argv": argv,
+        "exit": done.returncode,
+        "seconds": round(time.monotonic() - started, 3),
+        "ok": done.returncode == 0,
+    }
+
+
+def _mapped(args: argparse.Namespace) -> tuple[Path | None, Mapping[str, tuple[str, ...]]]:
+    path = discover(args.config)
+    try:
+        commands = load(path).project.commands
+    except (ConfigError, OSError, ValueError) as exc:
+        raise CliError("refused", f"config: {exc}") from exc
+    if args.name not in commands:
+        where = _superproject_hint(path or Path.cwd() / "starpulse.toml", args.name)
+        raise CliError("not_found", f"no [project.commands] entry {args.name}{where}; do the step as {FALLBACK} says", fallback=FALLBACK)
+    return path, commands
+
+
+def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """What `run NAME` needs: the `--arg` names its argv holds and, when it takes a `{body}`, the project's PR template."""
+    path, commands = _mapped(args)
+    argv = commands[args.name]
+    fields = [f for element in argv for _, f, _, _ in string.Formatter().parse(element) if f]
+    needed = list(dict.fromkeys(f for f in fields if f not in _FILLED))
+    flags = "".join(f" --arg {name}=<{name}>" for name in needed)
+    task = " --task <TASK>" if "task" in fields else ""
+    root = path.parent if path else Path.cwd()
+    found = next((root / rel for rel in PR_TEMPLATES if "body" in fields and (root / rel).is_file()), None)
+    template = {"path": found.relative_to(root).as_posix(), "text": found.read_text()} if found else None
+    return {
+        "name": args.name,
+        "argv": list(argv),
+        "args": needed,
+        "invocation": f"starpulse command run {args.name}{task}{flags}",
+        "pr_body_template": template,
+    }
