@@ -66,10 +66,17 @@ GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for th
                    `process_threads`, `process_open_fds` and `process_start_time_seconds`, which moves on every
                    restart. With `[board.actor]`, also `starpulse_task_actor_refusals_total` and the
                    `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds` and
-                   `starpulse_task_actor_handoff_seconds` histograms
+                   `starpulse_task_actor_handoff_seconds` and
+                   `starpulse_task_merge_move_seconds` histograms, and the gauges
+                   `starpulse_task_actor_heartbeat_timestamp_seconds`, `starpulse_task_actor_recovery_finished` and
+                   `starpulse_task_actor_merged_review_waiting`
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
+GET /api/ready     {ready, components}: 200 when the event log is at the schema head, the Board is assembled and every
+                   context this `serve` supervises has started, else 503 naming each component (`store`, `board`, `writer`,
+                   `contexts`) that is not, each {ready, detail}; reads no task and writes nothing. `starpulse doctor` and
+                   `starpulse rehearse` read it
 GET /api/machines[?open=NAME][&before=T][&limit=N]
                    {open, machines, more}: the next `limit` machines (default 20, at most 100) entered from the machine
                    `open` (default the In Progress machine), newest activity first, each whole as a snapshot `flows`
@@ -175,249 +182,26 @@ POST /api/machine-events (also gRPC `starpulse.v1.CloudEventsIngest` Publish and
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import logging
 import os
-import shutil
 import signal
-import socket
-import stat
 import subprocess
 import sys
 import threading
-import time
-from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from types import ModuleType
-from typing import TYPE_CHECKING, Any, NamedTuple
 
-from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse.board.claim_refusals import CLAIMS_STREAM
-from starpulse.board.model.seam import (
-    Board,
-)
-from starpulse.cli import doctor
-from starpulse.event_log import events as machine_events
-from starpulse.event_log.wake import StopEvent
-from starpulse.event_log import lane_events
-from starpulse.event_log.conformance_monitor import Conformance
-from starpulse.flow_metrics.model.level import Level
-from starpulse.flow_metrics.model.level_metrics import RunWindow, WindowPastHistory
-from starpulse.flow_metrics.model.trajectories import trajectory_analytics
-from starpulse.pulls.adapters.inbound.delivery import (
-    Projected,
-    follow_saves,
-    keep_beating,
-    metrics_of,
-    poller_problem,
-    request_refresh,
-)
-from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
-from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor, moves_of
-from starpulse.pulls.adapters.inbound.unblock import UNBLOCK_S, Unblocker
-from starpulse.pulls.adapters.outbound.pull_requests import PullRequests
-from starpulse.pulls.adapters.outbound.pull_store import PullSync
-from starpulse.pulls.adapters.outbound.pin_reader import GitHub
-from starpulse.pulls.model.pins import LiveBuild, running_commit
-from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
-from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
-from starpulse.runs.application.queries import projection as runs_projection
-from starpulse.runs.model import opt_in
-from starpulse.runs.model.config import RunsInstance
-from starpulse.runtime import launch
+from starpulse.event_log import heartbeat
+from starpulse.runtime import launch, wiring
 from starpulse.runtime.closure import CONTEXT_ENTRIES, ENTRIES, Reader
-from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
+from starpulse.runtime.config import Config, rehearsing
 from starpulse.runtime.control import control_file
-from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, adopted_from_env, announce_ready
+from starpulse.runtime.hold import BOOT_ENV, LISTEN_FD_ENV, STATIC_ENV, adopted_from_env, boot_token
+from starpulse.runtime.listen import inherited_socket, listen, listen_options, resolve_listen
+from starpulse.runtime.nats_server import bridge_commands
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 from starpulse.runtime.zygote import Forker
-from starpulse.sessions.adapters.outbound.session_start import starter
-from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
-from starpulse.views.adapters.inbound.page_server import BACKLOG, DRAIN_S, PageServer
-from starpulse.views.application.queries.responses import (  # noqa: F401 - the read routes stay importable from here
-    _HEALTH_HOURS,
-    _error,
-    _hours,
-    health_response,
-    history_response,
-)
-from starpulse.views.model.encoding import encode, event
-from starpulse.views.ports.services import Services
 
 logger = logging.getLogger(__name__)
-
-
-_HERE = Path(__file__).parents[1]
-
-
-#: The Vite build of web/; it holds nothing but the page, so all of it is served.
-_STATIC = _HERE / "static"
-
-
-if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    from starpulse.board.board_feed import BoardFeed
-    from starpulse.event_log.event_log import EventLog
-    from starpulse.flow_metrics.adapters.outbound.history import History
-    from starpulse.pulls.adapters.outbound.pulls import PullStore
-    from starpulse.scheduler.adapters.remote import Remote
-
-
-def trajectories_response(
-    history: History, query: dict[str, list[str]], level: Level, machines: Mapping[str, dict], now: float
-) -> tuple[bytes, int]:
-    """The body and status of the trajectory analytics of the runs that ended in the last `hours` as of `now`, which
-    the scheduler ranks tasks by; refused when `hours` is no positive number."""
-    from starpulse.flow_metrics.adapters.outbound.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
-
-    window = _hours(query, "hours", _HEALTH_HOURS)
-    if window is None:
-        return _error("hours must be a positive number"), 400
-    if not isinstance(history, LevelHistory):
-        return _error("this history does not keep every task's trajectory, so it cannot report the level"), 501
-
-    def answer() -> tuple[bytes, int]:
-        try:
-            if isinstance(history, SummarisedLevel):
-                held = history.level_window(level, now=now, window_s=window * 3600)
-            else:
-                held = RunWindow(history.level_runs(level.machine))
-            return (
-                encode(
-                    "trajectories",
-                    trajectory_analytics(
-                        level,
-                        machines[level.machine],
-                        held.runs,
-                        now=now,
-                        window_s=window * 3600,
-                        history_start=held.first,
-                        sources=held.sources,
-                    ),
-                ),
-                200,
-            )
-        except WindowPastHistory as exc:
-            return encode("trajectories", {"error": str(exc), "history_s": exc.history_s}), 400
-
-    if not isinstance(history, SummarisedLevel):
-        return answer()
-    # the query's own params, so a junk param cannot fill the memo
-    params = tuple(tuple(query.get(name, ())) for name in ("hours", "from", "to", "p"))
-    return history.level_answer(level, ("trajectories", params), now=now, compute=answer)
-
-
-def _config(parser: argparse.ArgumentParser, path: Path | None) -> Config:
-    """The config in `path`, else `starpulse.toml` beside where the view runs, else the defaults."""
-    path = discover(path)
-    try:
-        return load(path)
-    except (OSError, ValueError) as exc:
-        parser.exit(1, f"{path}: {exc}\n")
-
-
-def _adapter(parser: argparse.ArgumentParser, instance: RunsInstance) -> ModuleType:
-    """The runs adapter module of `instance`: `start(url)` gives its start capability or None, `follow(url, sink, log)` reads its workflows from the event log and the instance."""
-    try:
-        return runs_adapter(instance.type)
-    except ConfigError as exc:
-        parser.exit(1, f"runs instance {instance.name}: {exc}\n")
-
-
-def run_adapters(parser: argparse.ArgumentParser, config: Config) -> list[tuple[RunsInstance, ModuleType]]:
-    """Each `[[runs]]` instance that names a type, with its adapter module (an instance with none is push-only)."""
-    return [(instance, _adapter(parser, instance)) for instance in config.runs if instance.type]
-
-
-def run_starts(adapters: Sequence[tuple[RunsInstance, ModuleType]]) -> dict[str, Callable[[str], str]]:
-    """The start capability of each run adapter instance that has one, by instance name."""
-    starts = {}
-    for instance, adapter in adapters:
-        start = adapter.start(instance.url)
-        if start:
-            starts[instance.name] = start
-    return starts
-
-
-def announce(port: int, hint: str | None) -> None:
-    """Say on the terminal where the view is, and the Backlog.md project it found when it did."""
-    print(f"StarPulse on :{port}", flush=True)
-    if hint:
-        print(hint, flush=True)
-
-
-def scheduler_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog, stop: StopEvent) -> Remote:
-    """The scheduler `serve` answers `/api/scheduler` from: the `Remote` that reads the status the scheduler worker
-    publishes and writes the settings the worker reads. The loop itself runs in that worker, never in `serve`. The status
-    follower runs until `stop` is set.
-
-    The scheduler modules are imported here, not at the top, so `starpulse worker pulls` does not load them.
-    """
-    from starpulse.scheduler.adapters.remote import Remote, follow_status
-
-    follow_status(log, feed, stop)
-    return Remote(log)
-
-
-#: The first file descriptor a service manager passes (`sd_listen_fds(3)`): 0, 1 and 2 are stdio.
-_LISTEN_FDS_START = 3
-
-
-def inherited_socket(environ: Mapping[str, str]) -> socket.socket | None:
-    """The listening socket passed in, or `None` to bind `--host` and `--port`.
-
-    A `serve` hands its Page API child, and its own next image when it re-executes, the descriptor `LISTEN_FD_ENV`
-    names. Otherwise the service manager's `sd_listen_fds` protocol: `LISTEN_PID` names this process and `LISTEN_FDS`
-    counts the sockets, from fd 3. A socket passed to another process, as a child of the unit's would see, is not ours.
-    """
-    if (handed := environ.get(LISTEN_FD_ENV)) is not None:
-        try:
-            if not stat.S_ISSOCK(os.fstat(int(handed)).st_mode):
-                raise ValueError(f"{LISTEN_FD_ENV}={handed} is not a socket")
-        except OSError as exc:
-            raise ValueError(f"{LISTEN_FD_ENV}={handed} is not a socket: {exc.strerror}") from exc
-        os.set_inheritable(int(handed), False)  # the workers this process starts must not keep it open
-        return socket.socket(fileno=int(handed))
-    if environ.get("LISTEN_PID") != str(os.getpid()):
-        return None
-    count = int(environ.get("LISTEN_FDS", "0"))
-    if count > 1:
-        raise ValueError(f"the service manager passed {count} sockets; serve takes one")
-    if count < 1:
-        return None
-    os.set_inheritable(_LISTEN_FDS_START, False)  # the unit's other processes must not keep it open
-    return socket.socket(fileno=_LISTEN_FDS_START)
-
-
-def serve_until_stopped(server: PageServer, feed: BoardFeed) -> None:
-    """Serve until Ctrl-C or `SIGTERM`, then tell every open stream the server is restarting, finish the requests taken
-    and save the Board the feed keeps, so the next start resumes from it."""
-    try:
-        server.run()
-    finally:
-        feed.save()
-
-
-def listen_options(parser: argparse.ArgumentParser) -> None:
-    """Add what the Page API listens on and draws, to the `serve` and `worker api` command lines."""
-    parser.add_argument(
-        "--host",
-        help="the address to listen on; default the config's `host`, else 127.0.0.1, which answers this machine only; "
-        "0.0.0.0 answers the network",
-    )
-    parser.add_argument("--port", type=int, help="the port to listen on; default the config's `port`, else 8766")
-    parser.add_argument(
-        "--hours",
-        type=float,
-        help="how far back a task's latest move on a machine counts, Admin's override replaces it; "
-        "default the config's `hours`, else 6",
-    )
-
-
-def resolve_listen(args: argparse.Namespace, config: Config) -> None:
-    """Fill each listen option no flag gave from `config`, whose own defaults are today's."""
-    for option in ("host", "port", "hours"):
-        if getattr(args, option) is None:
-            setattr(args, option, getattr(config, option))
 
 
 def serve_parser() -> argparse.ArgumentParser:
@@ -428,183 +212,8 @@ def serve_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _then(first: Callable[[], None], second: Callable[[], None]) -> Callable[[], None]:
-    """One callback that runs `first` and then `second`."""
-
-    def both() -> None:
-        first()
-        second()
-
-    return both
-
-
-POLL_RESTART_S = (1.0, 60.0)  # the pull poller's first restart delay after a crash and the longest it backs off to
-
-
-def keep_polling(
-    sync: PullSync, stop: StopEvent, running: threading.Event, delay_s: tuple[float, float] = POLL_RESTART_S
-) -> None:
-    """Run the pull poller until `stop`, with `running` set while it runs, starting it again after a crash with a delay
-    that doubles from `delay_s[0]` to `delay_s[1]`, and logging each crash. A run that lasts the longest delay starts
-    the backoff over."""
-    delay, longest = delay_s
-    while not stop.is_set():
-        started = time.monotonic()
-        running.set()
-        try:
-            sync.run_forever()
-            return
-        except Exception:
-            logger.exception("pull requests: the poller crashed; restarting in %.0fs", delay)
-        finally:
-            running.clear()
-        ran = time.monotonic() - started
-        stop.wait(delay)
-        delay = delay_s[0] if ran >= longest else min(delay * 2, longest)
-
-
-def start_delivery(
-    config: Config,
-    board: Board,
-    feed: BoardFeed,
-    log: EventLog,
-    pulls: PullStore,
-    pins: GitHub,
-    stop: StopEvent,
-    *,
-    after_project: Callable[[], None] | None = None,
-) -> tuple[TaskActor | None, PullSync | None]:
-    """Start the Delivery context: the task actor, the pull store's sync with the projection it feeds, and the
-    unblock of dependents, as `config` asks. Returns the actor and the sync, each None when not started.
-
-    The actor records the lane of each write it makes on `feed` (`BoardFeed.record_written`); `after_project` runs
-    after each projection. Raises `ValueError` naming a table the board cannot serve.
-    """
-    from starpulse.pulls.application.commands.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
-
-    # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
-    release = config.release
-    live = LiveBuild(release.repo, running_commit) if release and release.settle == "release" else None
-    actor = None
-    if config.task_actor:
-        if board.edit is None:
-            raise ValueError("[board.actor] needs a board that edits tasks")
-        actor = TaskActor(
-            feed,
-            pulls,
-            board.edit,
-            board.waits,
-            moves_of(feed.machines["board"]),
-            config.repos,
-            config.release.settle if config.release else None,
-            pins,
-            config.board_repo,
-            evaluate=board.evaluate,
-            holds=board.holds,
-            read=board.read,
-            unfinished=board.unfinished,
-            create=board.create,
-            parked=board.parked,
-            released=board.released,
-            delivered=board.delivered,
-            returned=board.returned,
-            verifying=board.verifying,
-            closed=board.closed,
-            live=live,
-            advance=lambda machine, task, event: machine_events.publish(
-                machine, event, actor=ACTOR, task=task, log=log
-            ),
-            sequences=config.sequences,
-        )
-        actor.start(stop)
-    sync = None
-    if config.pull_requests and shutil.which("gh"):
-        pull_requests = PullRequests(
-            feed, pulls, repos=config.repos, pins=pins, trail=CiTrail(log) if config.ci else None
-        )
-        project = pull_requests.refresh
-        if actor:  # the actor reads each save at once and the pins after each projection
-            pulls.subscribe(actor.store_changed)
-            project = _then(actor.timed_projection(project), actor.pulls_changed)
-        if after_project:
-            project = _then(project, after_project)
-        sync = PullSync(pulls, feed, config.repos, project=project, stop=stop)
-        running = threading.Event()
-        keep_beating(log, running, stop)
-        threading.Thread(target=keep_polling, args=(sync, stop, running), name="pull-store", daemon=True).start()
-    if config.release is not None:
-        if board.edit is None or not (feed.roles.waiting and feed.roles.ready):
-            raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
-        if actor is None:  # the actor merges and unblocks on the facts, so the polling pass would only repeat it
-            unblocker = Unblocker(feed, pulls, board.edit, config.repos, config.release.settle, pins, live)
-            threading.Thread(
-                target=_keep_unblocked, args=(unblocker, feed, stop), name="board-unblock", daemon=True
-            ).start()
-    return actor, sync
-
-
-def _keep_unblocked(
-    unblocker: Unblocker, feed: BoardFeed, stop: StopEvent, interval_s: float = UNBLOCK_S
-) -> None:  # pragma: no mutate block
-    """Once the Board replay is done, unblock the Waiting tasks whose dependencies merged every `interval_s` seconds
-    until `stop`; a failed pass is logged and never ends the loop."""
-    feed.wait_replayed()
-    while not stop.is_set():
-        try:
-            unblocker.unblock()
-        except Exception:
-            logger.exception("unblock: the pass failed")
-        stop.wait(interval_s)
-
-
-class Prepared(NamedTuple):
-    """What the config and the environment settle before anything starts: `serve` fails on it before it spawns a child,
-    and the Page API is built from it."""
-
-    refresh_token: str | None
-    starts: dict[str, Callable[[str], str]]
-    reruns: dict[str, Any]
-    run_safe: list[str]
-    producer_tokens: dict[str, str]
-    opt_in_workers: list[str]
-    """The `[[runs]]` instances an adapter's own worker runs (`starpulse.runs.model.opt_in`): `serve` runs none of them itself."""
-
-
-def export_github_token(config: Config) -> None:
-    """Export the token `github_token_env` names as `GITHUB_TOKEN` and `GH_TOKEN`, so the GitHub reads and every worker
-    sign in with it; `gh` reads `GH_TOKEN` first, which systemd's `EnvironmentFile=` may leave a literal `$VAR` alias.
-    Unset, or the variable unset, both are left as they were."""
-    token = os.environ.get(config.github_token_env or "")
-    if token:
-        os.environ["GITHUB_TOKEN"] = os.environ["GH_TOKEN"] = token
-
-
-def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config) -> Prepared:
-    """Check `config` and the environment for serving, exiting with the reason when they cannot serve."""
-    try:
-        producer_tokens = ingest_tokens(config.producers, os.environ)
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
-    refresh_token = os.environ.get(config.refresh_token_env or "")
-    if config.refresh_token_env and not refresh_token:
-        parser.exit(1, f"refresh_token_env: {config.refresh_token_env} is not set\n")
-    if not (_STATIC / "index.html").is_file():
-        parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter @starpulse/web build` first\n")
-    adapters = run_adapters(parser, config)
-    starts = run_starts(adapters)
-    # Run now is drawn only for an instance whose adapter can start a run, and only on its run-safe workflows.
-    reruns = {
-        instance.name: rerun
-        for instance, adapter in adapters
-        if (factory := getattr(adapter, "rerun", None)) and (rerun := factory(instance.url))
-    }
-    run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
-    opted_in = [instance.name for instance, adapter in adapters if opt_in.worker_of(adapter)]
-    return Prepared(refresh_token, starts, reruns, run_safe, producer_tokens, opted_in)
-
-
 def refuse_unassemblable(
-    parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config, ready: Prepared
+    parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config, ready: wiring.Prepared
 ) -> None:
     """Exit with the reason when the page cannot be built from `config`, so `serve` fails on it as the Page API child would
     rather than supervising a child that exits on it at every start."""
@@ -661,16 +270,6 @@ def admit_at_start(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         parser.exit(1, f"{exc}\n")
 
 
-def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.socket:
-    """Bind `--host` and `--port`, exiting with the reason when something holds them."""
-    try:
-        return socket.create_server((args.host, args.port), backlog=BACKLOG)
-    except OSError as exc:
-        # the errno's own text: `create_server` appends the address the line already names
-        reason = os.strerror(exc.errno) if exc.errno and exc.errno > 0 else exc.strerror
-        parser.exit(1, f"cannot listen on {args.host}:{args.port}: {reason}; pass --port to serve elsewhere\n")
-
-
 def stay_until_stopped() -> None:  # pragma: no mutate block — process boundary
     """Block until Ctrl-C or `SIGTERM`: `serve` has no page of its own while a child serves it."""
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
@@ -695,12 +294,25 @@ DATABASE_STACK = (
 )
 
 
+def forget_old_starts(config: Config, args: argparse.Namespace) -> None:
+    """Drop the context stamps of the image this one re-executed from; a store it cannot reach is logged, and the page
+    then reads the old image's contexts as started until the new ones stamp again."""
+    from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.runtime.readiness import forget_starts  # noqa: PLC0415
+
+    base = args.config.parent if args.config else Path.cwd()
+    try:
+        forget_starts(database_url(config.database_url, base))
+    except Exception:
+        logging.getLogger(__name__).warning("serve: cannot drop the old image's context stamps", exc_info=True)
+
+
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
     logging.basicConfig(level=logging.INFO)  # the GraphQL cost of each pull request read is an INFO line
     parser = serve_parser()
     args = parser.parse_args(argv)
-    config = _config(parser, args.config)
-    export_github_token(config)
+    config = wiring.read_config(parser, args.config)
+    wiring.export_github_token(config)
     resolve_listen(args, config)
     try:
         listening = inherited_socket(os.environ)
@@ -709,11 +321,18 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     os.environ.pop(
         LISTEN_FD_ENV, None
     )  # the workers started below are handed what they hold, not what this process was
-    adopted = adopted_from_env(os.environ)  # the Page API child the previous image started beside its own
-    ready = prepare(parser, args, config)
-    commands = worker_commands(args.config)
+    adopted = adopted_from_env(os.environ)  # the children the previous image handed over: the Page API, the contexts
+    # one token per start, which each context stamps once it has started; a re-exec that adopts a child keeps the one
+    # that child checks, and drops the stamps of the contexts the old image started unless it keeps the contexts child,
+    # whose stamps are still true
+    os.environ[BOOT_ENV] = boot_token(os.environ, adopted)
+    heartbeat.make_directory()  # the workers below beat into it, and the Page API's `/metrics` reads it
+    if adopted and "contexts" not in adopted:
+        forget_old_starts(config, args)
+    ready = wiring.prepare(parser, args, config)
+    commands = {**worker_commands(args.config), **bridge_commands(config, args.config)}
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
-        os.environ[STATIC_ENV] = str(_STATIC)
+        os.environ[STATIC_ENV] = str(wiring.STATIC)
         listening = listening or listen(parser, args)
         commands["api"] += ["--hours", str(args.hours)]
     admit_at_start(parser, args)
@@ -732,10 +351,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         retire=forker.retire,
         read=reader,
         baseline=reader.at_start,
-        control=control_file(args.config),
+        control=None if rehearsing() else control_file(args.config),  # a rehearsal must not replace the live endpoint
         limits=config.worker_memory,
         admit=lambda: admit_definitions(args),
-        adopted={"api": adopted} if adopted else None,
+        adopted=adopted or None,
     )
     supervisor.start()
     try:

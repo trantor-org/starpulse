@@ -44,6 +44,14 @@ export function mocked(snap: Snapshot): Snapshot {
     "graph-traversal": { kind: "observed", machine: "build", state: "red_proven", count: 2 },
     ci: { kind: "observed", machine: "deliver", state: "pr_opened", count: 2 },
   };
+  // a walking task holds a session in each machine on the way down to its own (In Progress, then the machine that opens it), at the step that opens the next
+  const inLinks = snap.flows.find((f) => f.name === "in-progress")?.machine.submachines ?? [];
+  const path = (flow: string): string[] => (simTies[flow] ? [...path(simTies[flow].machine), flow] : [flow]);
+  const held = (name: string): [string, [string, string]][] =>
+    Object.entries(at).flatMap(([id, [flow, state]]) => {
+      const p = path(flow), i = p.indexOf(name), here = name === "in-progress" ? inLinks.find((l) => l.machine === p[0])?.state : i < 0 ? undefined : i === p.length - 1 ? state : simTies[p[i + 1]].state;
+      return here && flow !== "board" ? [[id, [name, here]]] : [];
+    });
   const flows = snap.flows.map((f) => {
     if (f.name === "board") {
       // under `&sim=1` a walking task is on the Board's Ready or Review while the walk has it there, and In Progress while it is in a phase
@@ -52,8 +60,10 @@ export function mocked(snap: Snapshot): Snapshot {
       return { ...f, agents: agents.map((a) => ({ ...a, state: board(a.id, a.state) })) } as typeof f;
     }
     // the skills a phase runs mid-way are tied by observation in a live board; the preview's history is empty, so the walk's own ties stand in
+    const opens = Object.entries(simTies).filter(([child, t]) => t.machine === f.name && walked[child] !== undefined).map(([child, t]) => ({ state: t.state, machine: child, exits: {}, parent: f.name, when: "" }));
+    if (opens.length) f = { ...f, machine: { ...f.machine, submachines: [...(f.machine.submachines ?? []), ...opens] } } as typeof f;
     if (walked[f.name] !== undefined) f = { ...f, last: walked[f.name], ...(simTies[f.name] && !f.ties?.length && { ties: [simTies[f.name]] }) } as typeof f;
-    const mine = Object.entries(at).filter(([, [flow]]) => flow === f.name);
+    const mine = held(f.name);
     if (!mine.length) return f;
     const model = (id: string) => snap.flows.find((b) => b.name === "board")?.agents.find((a) => a.id === id)?.model ?? extra.find((e) => e.id === id)?.model ?? models[0];
     return { ...f, agents: [...f.agents, ...mine.map(([id, [, state]]) => ({ id, title: id, state, model: model(id), task: id, active: now }))] } as typeof f;

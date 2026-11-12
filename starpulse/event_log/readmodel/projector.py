@@ -70,8 +70,9 @@ class Projector:
         self._placer = Placer(drawn, keys) if drawn is not None else None
         self._checkpoints = Checkpoints(engine)
 
-    def catch_up(self) -> int:
-        """Fold every Task Event appended since the last checkpoint; the number folded.
+    def catch_up(self, *, index: bool = True) -> int:
+        """Fold every Task Event appended since the last checkpoint; the number folded. `index=False` leaves the search
+        index to a later `index()`, so a caller that tells a page of the fold does so first.
 
         Each batch commits its rows and the checkpoint together, so a stop between batches resumes at the next Event
         and a stop inside one folds nothing.
@@ -85,9 +86,14 @@ class Projector:
                 self._checkpoints.save(CHECKPOINT, position, conn=db)
             folded += len(batch)
         self._fold_machines()
+        if index:
+            self.index()
+        return folded
+
+    def index(self) -> None:
+        """Make the search index hold every row folded since it last did; nothing without a search index."""
         if self._search is not None:
             self._index_changed()
-        return folded
 
     def rebuild(self) -> int:
         """Drop every row and the checkpoint and fold the whole History again; the number of Events folded."""

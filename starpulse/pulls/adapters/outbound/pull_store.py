@@ -26,6 +26,9 @@ if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
 
 logger = logging.getLogger(__name__)
 
+#: The waits before a failed single-PR read is asked again: a minute of GitHub trouble, then up to a quarter hour.
+RETRY_DELAYS_S = (15.0, 45.0, 120.0, 300.0, 600.0)
+UNSETTLED_EVERY_S = 300.0
 #: A required check's result, by the `conclusion` of a check run or the `state` of a commit status.
 _PASSED = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 _RUNNING = {"IN_PROGRESS", "QUEUED", "WAITING", "PENDING", "REQUESTED", "EXPECTED"}
@@ -143,12 +146,15 @@ def _all_files(repo: str, node: dict, graphql: Callable[[str, str], dict]) -> di
 
 def refresh_pull(
     repo: str, number: int, store: PullStore, now: float, graphql: Callable[[str, str], dict] = query_github
-) -> None:
-    """Read pull request `number` of `repo` alone, one request, and save its record; a number GitHub has none for
-    leaves the store as it was."""
+) -> dict[str, Any] | None:
+    """Read pull request `number` of `repo` alone, one request, and save its record, which it returns; a number
+    GitHub has none for leaves the store as it was and returns None."""
     if node := graphql(repo, _query([number]))[f"p{number}"]:
         node["files"] = _all_files(repo, node, graphql)
-        store.save([_record(repo, node, now)])
+        record = _record(repo, node, now)
+        store.save([record])
+        return record
+    return None
 
 
 class PullSync:
@@ -165,6 +171,7 @@ class PullSync:
         clock: Callable[[], float] = time.time,
         project: Callable[[], None] | None = None,
         stop: StopEvent | None = None,
+        retry_delays: Sequence[float] = RETRY_DELAYS_S,
     ) -> None:
         self._store = store
         self._feed = feed
@@ -174,9 +181,13 @@ class PullSync:
         self._project = project
         self._stop = stop or StopEvent()
         self._requests: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
+        self._reconciling: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
         self._wake = threading.Event()
         self._projection = threading.Event()
         self._projecting = False
+        self._retry_delays = retry_delays
+        self._attempts: dict[tuple[str, int], int] = {}
+        self._retrying: list[tuple[float, str, int]] = []
 
     def _linked(self) -> dict[str, set[int]]:
         """The numbers the open tasks' PR links name, by repository."""
@@ -208,31 +219,73 @@ class PullSync:
         """Queue a read of each pull request the store holds OPEN, and say how many: one the retired listing poll left
         open, and no event will close, closes on its read. So is a MERGED one with no merge commit, which only a
         lifecycle event wrote and the pin gate cannot release a dependent on. Each read is one pull request alone, so a
-        clean store costs one read per genuinely open pull request."""
+        clean store costs one read per genuinely open pull request. These reads wait behind every `request`: after a
+        restart they take minutes, and a pull request an event just opened must not wait them out."""
         held = self._store.find(held_only=True)
         stale = [r for r in held if r["state"] == "OPEN" or (r["state"] == "MERGED" and not r["mergeSha"])]
         for record in stale:
-            self._requests.put((record["repo"], record["number"]))
+            self._reconciling.put((record["repo"], record["number"]))
         if stale:
             self._wake.set()
         return len(stale)
 
+    def reconcile_unsettled(self) -> int:
+        """Queue a read of each OPEN record whose `mergeable` is still UNKNOWN, and say how many: a read lost, or one
+        whose retries ran out, leaves a record the `pulls_clear` Review guard refuses until a later event, which may never come."""
+        unsettled = [r for r in self._store.find(held_only=True, state="OPEN") if r["mergeable"] == "UNKNOWN"]
+        for record in unsettled:
+            self._attempts.pop((record["repo"], record["number"]), None)
+            self._requests.put((record["repo"], record["number"]))
+        if unsettled:
+            self._wake.set()
+        return len(unsettled)
+
+    def _retry(self, repo: str, number: int) -> None:
+        """Ask for the read again after the next of `retry_delays`; a read that failed them all is left, for the
+        pull request's next event or `pr_status --live`."""
+        tried = self._attempts.get((repo, number), 0)
+        if tried >= len(self._retry_delays):
+            self._attempts.pop((repo, number), None)
+            return
+        self._attempts[repo, number] = tried + 1
+        self._retrying.append((self._clock() + self._retry_delays[tried], repo, number))
+
+    def next_retry_in(self) -> float | None:
+        """Seconds until the earliest failed read is asked again; none when no read waits."""
+        return max(0.0, min(due for due, _, _ in self._retrying) - self._clock()) if self._retrying else None
+
+    def _requeue_due(self) -> None:
+        now = self._clock()
+        for due, repo, number in [entry for entry in self._retrying if entry[0] <= now]:
+            self._retrying.remove((due, repo, number))
+            self._requests.put((repo, number))
+
     def _read_requests(self) -> bool:
         """Read each queued pull request alone, and say whether any was queued; one that cannot be read is logged
-        and left to the next refresh."""
+        and asked again later (`_retry`), as is an open one whose `mergeable` GitHub has not yet computed."""
+        self._requeue_due()
         served = False
         while True:
             try:
                 repo, number = self._requests.get_nowait()
             except queue.Empty:
-                break
+                try:
+                    repo, number = self._reconciling.get_nowait()
+                except queue.Empty:
+                    break
             served = True
             try:
-                refresh_pull(repo, number, self._store, self._clock(), self._graphql)
+                record = refresh_pull(repo, number, self._store, self._clock(), self._graphql)
+                if record and record["state"] == "OPEN" and record["mergeable"] == "UNKNOWN":
+                    self._retry(repo, number)  # GitHub computes mergeability lazily after a push: ask again
+                else:
+                    self._attempts.pop((repo, number), None)
             except GhUnavailableError as exc:
                 logger.warning("pull requests: %s", exc)
+                self._retry(repo, number)
             except Exception:  # one request's bad answer must not end the refresh thread
                 logger.exception("pull requests: %s#%d failed to refresh", repo, number)
+                self._retry(repo, number)
         return served
 
     def serve_requests(self) -> None:
@@ -280,7 +333,12 @@ class PullSync:
             threading.Thread(target=self._project_forever, name="pull-project", daemon=True).start()
         self.project()
         self.reconcile_open()
+        settled_at = self._clock()
         while not self._stop.is_set():
-            self._wake.wait()
+            retry_in = self.next_retry_in()
+            self._wake.wait(UNSETTLED_EVERY_S if retry_in is None else min(retry_in, UNSETTLED_EVERY_S))
             self._wake.clear()  # before the drain: a request queued after it sets the event again
+            if self._clock() - settled_at >= UNSETTLED_EVERY_S:
+                settled_at = self._clock()
+                self.reconcile_unsettled()
             self.serve_requests()

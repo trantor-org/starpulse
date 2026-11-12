@@ -1,7 +1,7 @@
 """The Temporal adapter: each of a server's workflow types as a workflow, its running executions as active runs and the last day's closed ones as recent runs.
 
 `url` is the Temporal UI server's address (`http://host:8233`), whose HTTP API lists executions of the default namespace.
-`Poller.listing` reads the three engine-run types, `task_lifecycle`, `task_phases` and `AlertInvestigationWorkflow`, into
+`Poller.listing` reads the four engine-run types, `task_lifecycle`, `task_phases`, `AlertInvestigationWorkflow` and `CommandWorkflow`, into
 the `runs` contract's `Dag` records: a running execution is an `ActiveRun` with the activity it is on, that activity's
 attempt and the failure its last attempt ended in; a closed one is a `RecentRun`, and a failed one carries the activity
 it failed on, that activity's attempt and the failure. A closed execution never changes, so its history is read once.
@@ -24,7 +24,7 @@ from starpulse.contracts.adapters import RunsSink, RunStatus
 from starpulse.event_log.event_log import EventLog
 
 #: The workflow types shown, in the order the page lists them.
-TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow")
+TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow", "CommandWorkflow")
 
 #: Seconds between two listings of the server.
 POLL_INTERVAL = 15.0
@@ -32,7 +32,7 @@ POLL_INTERVAL = 15.0
 WORKER = "temporal"
 
 #: How many closed runs, failed and of any status, each listing asks for; the server answers newest first.
-RECENT_LIMIT = 40
+RECENT_LIMIT = 100
 #: How many running executions a listing asks for.
 ACTIVE_LIMIT = 200
 _HISTORY_EVENTS = 20
