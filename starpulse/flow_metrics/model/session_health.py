@@ -253,6 +253,12 @@ def _asked_since(ordered: list[Signal], at: int) -> float:
     return ordered[before].time
 
 
+def _origin(first: Signal | None) -> str:
+    if first is None or not first.detail:
+        return "unknown"
+    return "operator" if first.detail == "human" else first.detail
+
+
 def session_rows(
     ordered: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
 ) -> list[dict[str, Any]]:
@@ -265,6 +271,8 @@ def session_rows(
     ends: dict[str, float] = {}
     for turn, s in zip(ids, ordered, strict=True):
         ends[turn] = max(ends.get(turn, s.time), s.time)
+    first_prompt = next((s for s in ordered if s.kind == "prompt"), None)
+    origin = _origin(first_prompt)
     row: dict[str, Any] | None = None
     by_task: dict[str | None, dict[str, Any]] = {}
     last: dict[str, dict[str, str]] = defaultdict(dict)
@@ -318,6 +326,8 @@ def session_rows(
         _note(row, s, last[task or ""], ladder)
     for opened in open_turns.values():
         opened["interrupts"] += 1
+    for row in by_task.values():
+        row["origin"] = origin
     return list(by_task.values())
 
 

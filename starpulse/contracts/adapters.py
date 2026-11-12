@@ -56,12 +56,28 @@ class _Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
 
+class RuleBreak(_Contract):
+    """One board rule a move breaks: what it needs and the skill that produces it."""
+
+    reason: str = Field(description="What the broken rule needs.")
+    skill: str = Field(default="", description="The skill that produces what the rule needs; empty when none.")
+
+
+def _known(model: type[BaseModel], raw: dict[str, Any]) -> dict[str, Any]:
+    kept = {key: value for key, value in raw.items() if key in model.model_fields}
+    return {**kept, "warnings": [_known(RuleBreak, warning) for warning in kept["warnings"]]} if "warnings" in kept else kept
+
+
 class Verdict(_Contract):
     """What a guard says to one actor about a move: allowed, or the reason and skill of the rule that refuses it."""
 
     allowed: bool = Field(description="False when a guard would refuse the move to this actor.")
     reason: str = Field(default="", description="What the refusing guard needs; empty when allowed.")
     skill: str = Field(default="", description="The skill that produces what the guard needs; empty when allowed.")
+    warnings: tuple[RuleBreak, ...] = Field(
+        default=(),
+        description="The lane rules the move breaks that this actor is warned of and may still make, each with its skill.",
+    )
 
 
 class Move(_Contract):
@@ -77,9 +93,19 @@ class Move(_Contract):
     )
     actors: dict[str, Verdict] = Field(
         default_factory=dict,
-        description="The verdict for an actor a guard treats apart from the rest, such as one it exempts, by actor; "
-        "any other actor meets the move's own.",
+        description="The verdict for an actor a guard treats apart from the rest, such as one it exempts or warns, by "
+        "actor; any other actor meets the move's own.",
     )
+    warnings: tuple[RuleBreak, ...] = Field(
+        default=(), description="The lane rules the move breaks that the actor is warned of and may still make."
+    )
+
+    @classmethod
+    def read(cls, raw: dict[str, Any]) -> Move:
+        """A verdict from a server snapshot, dropping a field this client predates so a newer server never breaks it."""
+        known = _known(cls, raw)
+        actors = {actor: _known(Verdict, verdict) for actor, verdict in known.get("actors", {}).items()}
+        return cls.model_validate({**known, "actors": actors})
 
     def permits(self, actor: str) -> bool:
         """False when the machine declares writers for the event and `actor` is none of them."""
@@ -90,7 +116,7 @@ class Move(_Contract):
         is not among its writers."""
         move = self
         if (own := self.actors.get(actor)) is not None:
-            move = self.model_copy(update=own.model_dump())
+            move = self.model_copy(update=dict(own))
         if move.permits(actor):
             return move
         reason = move.reason or f"made by {', '.join(move.writers)}, not {actor}"

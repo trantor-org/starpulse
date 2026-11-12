@@ -1,4 +1,4 @@
-"""`/api/doctor`: the contract report."""
+"""`/api/doctor`: the contract report; `/api/ready`: the readiness report."""
 
 from __future__ import annotations
 
@@ -22,3 +22,18 @@ class ContractReport(_Api):
 
     ok: bool
     checks: list[ContractCheck]
+
+
+class ReadyComponent(_Api):
+    """One part of the server `/api/ready` judges."""
+
+    ready: bool
+    detail: str
+
+
+class ReadyReport(_Api):
+    """Whether the server can serve the board; `components` names `store`, `board`, `writer` and `contexts`, and the route
+    answers 503 with this body when any is not ready."""
+
+    ready: bool
+    components: dict[str, ReadyComponent]
