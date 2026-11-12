@@ -6,6 +6,8 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
+from starpulse.contracts.reads import SLOW_READ_S
+
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.contracts.analytics import Analytics
@@ -26,10 +28,6 @@ class KeptAnswers(Protocol):
     ) -> tuple[bytes, int]: ...
 
 
-#: The default of `slow_read_seconds`.
-SLOW_READ_S = 1.0
-
-
 @dataclass(frozen=True)
 class Services:
     """What the routes use beside the Board: each field None (or empty) leaves its routes unconfigured."""
@@ -46,6 +44,7 @@ class Services:
     events: CloudEventsIngest | None = None
     scheduler: Runtime | Remote | None = None
     contract: Callable[[], dict[str, Any]] | None = None
+    ready: Callable[[], dict[str, Any]] | None = None
     pulls: PullStore | None = None
     telemetry: SignalFoldReader | None = None
     search: SearchIndex | None = None
@@ -55,6 +54,8 @@ class Services:
     pull_refresh: PullRefresh | None = None
     #: Sends the take-over Update to a task's workflow: False when the task has none.
     take_over: Callable[[str], bool] | None = None
+    #: Each lane's tools, typed exit tools and bound skill by lane name, from the board policy.
+    lanes: Callable[[], dict[str, Any]] | None = None
     slow_read_s: float = SLOW_READ_S
     actor_metrics: Callable[[], str] | None = None
     lane_metrics: Callable[[], str] | None = None
@@ -62,4 +63,6 @@ class Services:
     lane_sweep_metrics: Callable[[], str] | None = None
     autopilot_metrics: Callable[[], str] | None = None
     sweeper_metrics: Callable[[], str] | None = None
+    bridge_metrics: Callable[[], str] | None = None
+    history_lag_metrics: Callable[[], str] | None = None
     autopilot_log: Callable[[], dict[str, Any]] | None = None

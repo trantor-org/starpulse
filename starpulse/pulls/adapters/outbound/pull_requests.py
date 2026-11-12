@@ -15,7 +15,8 @@ import json
 import logging
 import re
 import subprocess
-from collections.abc import Mapping, Sequence
+import threading
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
 from starpulse.board.board_feed import BoardFeed
@@ -119,7 +120,11 @@ class CiRecorder(Protocol):
 
 class PullRequests:
     """Keeps `feed`'s per-task pull request state current from `store`, and hands each read's histories to `trail`
-    when there is one."""
+    when there is one.
+
+    `rebuild` takes every task's rows from the store at once and costs no GitHub read, so it runs on each store save
+    (`store.subscribe`); `refresh` does the same, then walks the pins, which can take minutes, and adds `applied_by`.
+    `published` is called after each set of rows is handed to the feed."""
 
     def __init__(
         self,
@@ -128,12 +133,15 @@ class PullRequests:
         repos: Sequence[Repo] = (),
         pins: Pins | None = None,
         trail: CiRecorder | None = None,
+        published: Callable[[], None] | None = None,
     ) -> None:
         self._feed = feed
         self._store = store
         self._repos = repos
         self._pins = pins or GitHub(lambda: feed.pull_answers().get("pins", {}))
         self._trail = trail
+        self._published = published
+        self._lock = threading.RLock()
         self._last: dict[str, dict] = {}
 
     def _stored(self, urls: Sequence[str]) -> dict[str, dict]:
@@ -147,31 +155,69 @@ class PullRequests:
                     found[url] = records[0]
         return found
 
-    def refresh(self) -> None:
-        """Project every open task's PRs from the store once."""
-        wanted = self._feed.pull_requests()
-        stored = self._stored(list(dict.fromkeys(url for prs in wanted.values() for url in prs)))
-        self._last = {
-            url: {
-                "number": record["number"],
-                "repo": record["repo"],
-                "url": url,
-                "checks": record["checks"],
-                "merged": record["state"] == "MERGED",
-                "closed": record["state"] == "CLOSED",
-                "conflicting": record["state"] == "OPEN" and record["mergeable"] == "CONFLICTING",
-                "queued": record["state"] == "OPEN" and bool(record["detail"].get("queued")),
-                "merge_sha": record["detail"]["mergeSha"],
-                "merged_at": record["detail"]["mergedAt"],
-                "files": record["detail"]["files"],
-                "threads": record["threads"],
-                "behind_main": record["detail"]["behindMain"],
-                "stale": False,
-            }
-            for url, record in stored.items()
+    def rebuild(self) -> None:
+        """Hand the feed every open task's rows from the store, keeping the `applied_by` the last pin walk found; a
+        failure is logged, as the saving thread must not fail with it."""
+        try:
+            self._record_trail(*self._rows())
+        except Exception:
+            logger.exception("pull requests: the rows failed to rebuild")
+
+    def _rows(self) -> tuple[dict[str, list[str]], dict[str, dict]]:
+        """Replace the rows by the store's records and publish them; the cited links and records they came from."""
+        with self._lock:
+            wanted = self._feed.pull_requests()
+            stored = self._stored(list(dict.fromkeys(url for prs in wanted.values() for url in prs)))
+            rows = {url: self._row(url, record) for url, record in stored.items()}
+            for url, row in rows.items():
+                self._carry_applied_by(row, self._last.get(url, {}))
+            self._last = rows
+            self._publish(wanted)
+        return wanted, stored
+
+    @staticmethod
+    def _carry_applied_by(row: dict[str, Any], found: Mapping[str, Any]) -> None:
+        if "applied_by" in found and found["merge_sha"] == row["merge_sha"]:
+            row["applied_by"] = found["applied_by"]
+
+    @staticmethod
+    def _row(url: str, record: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "number": record["number"],
+            "repo": record["repo"],
+            "url": url,
+            "checks": record["checks"],
+            "merged": record["state"] == "MERGED",
+            "closed": record["state"] == "CLOSED",
+            "conflicting": record["state"] == "OPEN" and record["mergeable"] == "CONFLICTING",
+            "queued": record["state"] == "OPEN" and bool(record["detail"].get("queued")),
+            "merge_sha": record["detail"]["mergeSha"],
+            "merged_at": record["detail"]["mergedAt"],
+            "files": record["detail"]["files"],
+            "threads": record["threads"],
+            "behind_main": record["detail"]["behindMain"],
+            "stale": False,
         }
+
+    def _publish(self, wanted: Mapping[str, Sequence[str]]) -> None:
+        held = {task: [self._last[url] for url in prs if url in self._last] for task, prs in wanted.items()}
+        self._feed.set_pulls({task: pulls for task, pulls in held.items() if pulls}, self.answers())
+        if self._published:
+            self._published()
+
+    def refresh(self) -> None:
+        """Project every open task's PRs from the store once: the rows at once, then the pin walk that adds `applied_by`,
+        which lands on the rows as they are by then, so a save during the walk is not undone."""
+        wanted, stored = self._rows()
         if self._repos:
-            self._last = link(self._last, self._repos, self._pins.pointer, self._pins.reaches)
+            linked = link(self._last, self._repos, self._pins.pointer, self._pins.reaches)
+            with self._lock:
+                for url, row in self._last.items():
+                    self._carry_applied_by(row, linked.get(url, {}))
+                self._publish(wanted)
+        self._record_trail(wanted, stored)
+
+    def _record_trail(self, wanted: Mapping[str, Sequence[str]], stored: Mapping[str, dict]) -> None:
         if self._trail:
             self._trail.record(
                 {
@@ -179,8 +225,6 @@ class PullRequests:
                     for task, prs in wanted.items()
                 }
             )
-        held = {task: [self._last[url] for url in prs if url in self._last] for task, prs in wanted.items()}
-        self._feed.set_pulls({task: pulls for task, pulls in held.items() if pulls}, self.answers())
 
     def answers(self) -> dict:
         """The records and pin answers read so far, for the feed to save with the Board."""

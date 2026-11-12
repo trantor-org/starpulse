@@ -18,6 +18,7 @@ import argparse
 import logging
 import os
 import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,9 @@ from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
-from starpulse.runtime.config import Config
+from starpulse.runtime.config import Config, rehearsing
+from starpulse.runtime.hold import BOOT_ENV
+from starpulse.runtime.readiness import stamp
 
 logger = logging.getLogger(__name__)
 
@@ -40,19 +43,26 @@ _JOIN_S = 5.0
 
 
 #: The contexts that always run here, in start order; the run Adapters follow them (`adapter_contexts`).
-BACKGROUND_CONTEXTS = ("pulls", "scheduler", "runs", "flow-metrics", "search", "board", "sweeper")
+BACKGROUND_CONTEXTS = ("pulls", "scheduler", "runs", "flow-metrics", "signal-folds", "search", "board", "sweeper")
+
+#: The contexts a rehearsal runs: the rest poll a service, start a session or a run, run a declared command or listen on a port.
+REHEARSED_CONTEXTS = ("flow-metrics", "signal-folds", "board")
 
 
 def contexts_of(config: Config) -> list[str]:
     """The contexts this process runs for `config`: `BACKGROUND_CONTEXTS`, Search only with an `embeddings_url`, then the
-    run Adapters its `[[runs]]` instances name, then the receivers its `[claude_code]` and `[github]` tables ask for."""
+    run Adapters its `[[runs]]` instances name, then the receivers its `[claude_code]` and `[github]` tables ask for;
+    `REHEARSED_CONTEXTS` alone under a rehearsal."""
     from starpulse.runtime.supervisor import adapter_contexts
 
+    if rehearsing():
+        return list(REHEARSED_CONTEXTS)
     kept = [c for c in BACKGROUND_CONTEXTS if c != "search" or config.search.embeddings_url]
     github_events = config.github and any(producer.name == "github" for producer in config.producers)
     receivers = [
         name
         for name, table in (
+            ("bridge", config.bridge.enabled),
             ("claude-code", config.claude_code),
             ("github", config.github),
             ("github-events", github_events),
@@ -132,7 +142,14 @@ def default_starters(
 ) -> dict[str, Starter]:
     """The starter of each context in `names`, all over `log` and one board. Raises `ValueError` for a name that is no
     context or a `[[runs]]` instance whose adapter the config cannot load."""
-    from starpulse.runtime.assembly import assemble, own_pull_merged, prune_steps, runs_kind, worker_board
+    from starpulse.runtime.assembly import (
+        assemble,
+        board_kinds,
+        own_pull_merged,
+        prune_steps,
+        runs_kind,
+        worker_board,
+    )
     from starpulse.runtime.assembly import history_store as build_history_store
     from starpulse.runtime.config import load
     from starpulse.runtime.read_model_follow import follow
@@ -141,7 +158,7 @@ def default_starters(
     shared = _SharedBoard(names, lambda: worker_board(config, base, log, stop), stop)
     adapters: Sequence[Any] = []
     if "runs" in names or any(name in names for name in ADAPTER_CONTEXTS):
-        from starpulse.runtime.server import run_adapters
+        from starpulse.runtime.wiring import run_adapters
 
         adapters = run_adapters(_Refusing(), config)
 
@@ -155,7 +172,7 @@ def default_starters(
 
     def pulls(own: threading.Event) -> Callable[[], None]:
         from starpulse.pulls.bin import pulls_worker
-        from starpulse.runtime.server import start_delivery
+        from starpulse.runtime.delivery_wiring import start_delivery
 
         return pulls_worker.start(
             config, path, base, log, own, load=load, worker_board=shared, history_store=history_store,
@@ -164,9 +181,10 @@ def default_starters(
 
     def scheduler(own: threading.Event) -> Callable[[], None]:
         from starpulse.runtime.assembly import scheduler_board
-        from starpulse.runtime.server import _cached, trajectories_response
+        from starpulse.runtime.wiring import trajectories_response
         from starpulse.scheduler.bin import scheduler_worker
         from starpulse.sessions.adapters.outbound.session_start import starter
+        from starpulse.views.adapters.inbound.asgi_app import _cached
 
         return scheduler_worker.start(
             config, path, base, log, own, load=load,
@@ -202,6 +220,15 @@ def default_starters(
             config, path, base, log, own, load=load, assemble=shared, history_store=history_store,
         )  # fmt: skip
 
+    def signal_folds(own: threading.Event) -> Callable[[], None]:
+        # the api worker reads the fold rows; folding them here keeps the catch-up off the Page API's GIL
+        from starpulse.views.adapters.outbound.signal_folds import SignalFolds
+
+        _, feed = shared()
+        folds = SignalFolds(log, feed.keys, config.analytics)
+        threading.Thread(target=folds.follow, args=(own,), name="signal-folds", daemon=True).start()
+        return lambda: logger.info("signal-folds: the analytics config is read at start; restart to apply a change")
+
     def sweeper(own: threading.Event) -> Callable[[], None]:
         from starpulse.sweeper.bin import sweeper_worker
 
@@ -213,7 +240,29 @@ def default_starters(
             own,
             load=load,
             prune=prune_steps(log, config, base),
-            contexts=[runs_kind(log, adapters)],
+            contexts=[runs_kind(log, adapters), *board_kinds(shared)],
+        )
+
+    def bridge(own: threading.Event) -> Callable[[], None]:
+        from starpulse.bridge import worker
+        from starpulse.runtime.session_delivery import route
+        from starpulse.sessions.adapters.outbound import claude_code_notify as claude
+        from starpulse.sessions.registry import DIRECTORY, Registry
+
+        notifier = claude.ClaudeCodeNotifier(
+            post=claude.post_inbox,
+            resume=claude.resume_with(config.bridge.resume),
+            alive=claude.live_socket(claude.sessions_dir(os.environ)),
+            now=time.monotonic,
+        )
+        return worker.start(
+            config.bridge.port,
+            config.bridge.board,
+            config.bridge.subscriptions,
+            log,
+            lambda: shared()[1],
+            own,
+            route(Registry(base / DIRECTORY), notifier),
         )
 
     def search(own: threading.Event) -> Callable[[], None]:
@@ -249,8 +298,8 @@ def default_starters(
 
     known: dict[str, Starter] = {
         "board": board, "pulls": pulls, "scheduler": scheduler, "runs": runs, "flow-metrics": flow_metrics,
-        "search": search, "sweeper": sweeper, "claude-code": claude_code, "github": github,
-        "github-events": github_events, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
+        "signal-folds": signal_folds, "search": search, "sweeper": sweeper, "bridge": bridge, "claude-code": claude_code,
+        "github": github, "github-events": github_events, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
     }  # fmt: skip
     unknown = [name for name in names if name not in known]
     if unknown:
@@ -265,9 +314,11 @@ def _keep(
     reloads: dict[str, Callable[[], None]],
     stops: dict[str, threading.Event],
     backoff: tuple[float, float],
+    started: Callable[[str], None] | None = None,
 ) -> None:
     """Start the context on its own stop event, again after a growing wait each time `starter` raises, then hold the
-    thread until the process stops. A failed start's stop event is set, so what it began before raising ends."""
+    thread until the process stops. A failed start's stop event is set, so what it began before raising ends. `started`
+    is told the name once `starter` returns; a failure of its own is logged, never a failed start."""
     wait = backoff[0]
     while not stop.is_set():
         own = StopEvent()
@@ -282,6 +333,11 @@ def _keep(
             wait = min(wait * 2, backoff[1])
             continue
         logger.info("%s: started", name)
+        if started:
+            try:
+                started(name)
+            except Exception:
+                logger.exception("%s: could not record its start", name)
         stop.wait()
         own.set()
         return
@@ -297,22 +353,33 @@ def run_contexts(
     starters: Mapping[str, Starter] | None = None,
     hold: Callable[[threading.Event, Callable[[], None]], None] | None = None,
     backoff: tuple[float, float] = BACKOFF_S,
+    started: Callable[[str], None] | None = None,
 ) -> None:
     """Run each context of `names` on a `ctx-<name>` thread until `stop` is set, and return once they are told to end.
 
-    `starters` replaces the real starters (tests); `hold` is the wait for `SIGTERM` and `SIGHUP` (`runtime.hold`).
+    `starters` replaces the real starters (tests); `started` is told each context's name as it starts, and without it a
+    `serve` boot token (`hold.BOOT_ENV`) makes each start stamp the event log; `hold` is the wait for `SIGTERM` and `SIGHUP` (`runtime.hold`).
     Raises `ValueError` before any thread starts when a name is no context or a runs adapter cannot load."""
     base = base or (path.parent if path else Path.cwd())
     if starters is None:
         log = EventLog(database_url(config.database_url, base))
         starters = default_starters(config, path, base, log, names, stop)
+        boot = os.environ.get(BOOT_ENV)
+        if started is None and boot:
+
+            def started(name: str) -> None:
+                stamp(log, name, boot)
+
     if hold is None:
         from starpulse.runtime.hold import hold
     reloads: dict[str, Callable[[], None]] = {}
     stops: dict[str, threading.Event] = {}
     threads = [
         threading.Thread(
-            target=_keep, args=(name, starters[name], stop, reloads, stops, backoff), name=f"ctx-{name}", daemon=True
+            target=_keep,
+            args=(name, starters[name], stop, reloads, stops, backoff, started),
+            name=f"ctx-{name}",
+            daemon=True,
         )
         for name in names
     ]
