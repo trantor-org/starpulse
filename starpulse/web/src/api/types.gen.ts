@@ -63,6 +63,7 @@ export interface ApiContract {
   milestones: Milestones;
   missedLoads: MissedLoads;
   pulls: Pulls;
+  readyReport: ReadyReport;
   requests: (
     | MoveRequest
     | StartRequest
@@ -101,7 +102,9 @@ export interface ApiContract {
   spend: Spend;
   stages: SubStages;
   taskEventHistory: TaskEventHistory;
+  taskMoves: TaskMoves;
   taskRecord: TaskRecord;
+  taskRecords: TaskRecords;
   traceClusters: TraceClusters;
   trajectories: Trajectories;
   transitions: Transitions;
@@ -114,10 +117,12 @@ export interface ApiContract {
  */
 export interface Moved {
   advice?: string | null;
+  ok?: boolean;
   startError?: string | null;
   task: string;
   to: string;
   url?: string | null;
+  warnings?: string[] | null;
   [k: string]: unknown;
 }
 /**
@@ -128,6 +133,9 @@ export interface MovedEach {
   refused: {
     [k: string]: string;
   };
+  warnings?: {
+    [k: string]: string[];
+  } | null;
   [k: string]: unknown;
 }
 export interface Edited {
@@ -686,7 +694,7 @@ export interface TaskCriterion {
  */
 export interface Move {
   /**
-   * The verdict for an actor a guard treats apart from the rest, such as one it exempts, by actor; any other actor meets the move's own.
+   * The verdict for an actor a guard treats apart from the rest, such as one it exempts or warns, by actor; any other actor meets the move's own.
    */
   actors?: {
     [k: string]: Verdict;
@@ -703,6 +711,10 @@ export interface Move {
    * The skill that produces what the guard needs; empty when allowed.
    */
   skill?: string;
+  /**
+   * The lane rules the move breaks that the actor is warned of and may still make.
+   */
+  warnings?: RuleBreak[];
   /**
    * The actors the machine YAML declares for the event behind the move; empty when it declares none, and then any actor may make it.
    */
@@ -722,6 +734,23 @@ export interface Verdict {
   reason?: string;
   /**
    * The skill that produces what the guard needs; empty when allowed.
+   */
+  skill?: string;
+  /**
+   * The lane rules the move breaks that this actor is warned of and may still make, each with its skill.
+   */
+  warnings?: RuleBreak[];
+}
+/**
+ * One board rule a move breaks: what it needs and the skill that produces it.
+ */
+export interface RuleBreak {
+  /**
+   * What the broken rule needs.
+   */
+  reason: string;
+  /**
+   * The skill that produces what the rule needs; empty when none.
    */
   skill?: string;
 }
@@ -1715,12 +1744,36 @@ export interface MachineStep {
   [k: string]: unknown;
 }
 /**
- * `GET /api/machines`: the next page of machines entered from `open`.
+ * `GET /api/machines`: the next page of machines entered from `open`, and each lane's surface by lane name.
  */
 export interface Machines {
+  lanes?: {
+    [k: string]: LaneSurface;
+  };
   machines: MachineRow[];
   more: boolean;
   open: string | null;
+  [k: string]: unknown;
+}
+/**
+ * What a session holding the lane may call: its tools, its exit tools and the skill bound on entry.
+ */
+export interface LaneSurface {
+  exits: ExitTool[];
+  skill: string | null;
+  tools: string[];
+  [k: string]: unknown;
+}
+/**
+ * A typed exit tool of a lane: the event it fires and the JSON schema of its arguments.
+ */
+export interface ExitTool {
+  event: string;
+  name: string;
+  schema: {
+    [k: string]: unknown;
+  };
+  to: string;
   [k: string]: unknown;
 }
 /**
@@ -1817,6 +1870,10 @@ export interface Submachine {
   routes?: {
     [k: string]: string;
   };
+  /**
+   * The skill a session runs while the inner machine does; empty when the link names none.
+   */
+  skill?: string;
   state: string;
   /**
    * What has to hold for the inner machine to run under `state`; empty when always.
@@ -1989,6 +2046,25 @@ export interface PullThread {
   [k: string]: unknown;
 }
 /**
+ * Whether the server can serve the board; `components` names `store`, `board`, `writer` and `contexts`, and the route
+ * answers 503 with this body when any is not ready.
+ */
+export interface ReadyReport {
+  components: {
+    [k: string]: ReadyComponent;
+  };
+  ready: boolean;
+  [k: string]: unknown;
+}
+/**
+ * One part of the server `/api/ready` judges.
+ */
+export interface ReadyComponent {
+  detail: string;
+  ready: boolean;
+  [k: string]: unknown;
+}
+/**
  * `POST /api/move`: move `task`, or each of `tasks` in one call, to the column `to`.
  */
 export interface MoveRequest {
@@ -2027,6 +2103,10 @@ export interface EditRequest {
   };
   comment?: string | null;
   harness?: string | null;
+  /**
+   * The client's key for this send: an edit sent again with it answers the first send's answer.
+   */
+  request_key?: string | null;
   session?: string | null;
   task: string;
 }
@@ -2225,6 +2305,10 @@ export interface CreateRequest {
   profile?: string | null;
   ref?: string | null;
   references?: string[] | null;
+  /**
+   * The client's key for this send: a create sent again with it answers the first send's answer.
+   */
+  request_key?: string | null;
   session?: string | null;
   size?: string | null;
   skill?: string | null;
@@ -2830,7 +2914,7 @@ export interface SpendPhase {
   last_at: number;
   models: string[];
   /**
-   * The median `task_wte` of the task's kind and size; null under five tasks in the cell.
+   * The sum of `phase_norm_wte` over the task's phases; null when any is null.
    */
   norm_wte: number | null;
   output: number;
@@ -2842,6 +2926,14 @@ export interface SpendPhase {
    * `claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.
    */
   phase: string;
+  /**
+   * `wte` is over three times `phase_norm_wte`.
+   */
+  phase_above_norm: boolean;
+  /**
+   * The median `wte` of this phase over the tasks of the task's kind and size that ran it; null under five.
+   */
+  phase_norm_wte: number | null;
   /**
    * `<model>-<effort>` of the phase's first main-thread step, each `unknown` when unrecorded.
    */
@@ -2922,6 +3014,19 @@ export interface MachineEvent {
   [k: string]: unknown;
 }
 /**
+ * `GET /api/moves/<id>`: the verdict on each column one open task may move to, judged by the board's guards now.
+ */
+export interface TaskMoves {
+  /**
+   * The verdict on each Board column, by state id, with the warnings an actor the guards warn instead of refuse would meet. A snapshot's `move_sets` leave these unjudged.
+   */
+  moves: {
+    [k: string]: Move;
+  };
+  task: string;
+  [k: string]: unknown;
+}
+/**
  * `GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.
  */
 export interface TaskRecord {
@@ -2929,10 +3034,21 @@ export interface TaskRecord {
    * The task was archived: read from the archive, off the board's lanes.
    */
   archived?: boolean;
+  /**
+   * When an archived task last changed in the read model: a Done task's entry into Done.
+   */
+  entered?: number | null;
   record: {
     [k: string]: unknown;
   };
   task: string;
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/task-records?ids=A,B`: the `TaskRecord` of each named task the board can read, in the order named.
+ */
+export interface TaskRecords {
+  records: TaskRecord[];
   [k: string]: unknown;
 }
 /**

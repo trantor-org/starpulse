@@ -1,12 +1,13 @@
 // The Kanban view's model: the Board's open tasks laid out as columns of milestone buckets. Pure, so the view only draws it.
-import { midnight, type Sky } from "../../render/sky";
+import { descend, midnight, type Sky } from "../../render/sky";
+import { skillOf } from "../../render/skills";
 import type { TaskRecord } from "./taskViewModel";
 import type { Option } from "../../shared/ChoiceMenu";
-import type { ClaimRelease, Move, Pull, Rating, Roles, TrailStep } from "../../api";
+import type { ClaimRelease, MachineState, Move, Pull, Rating, Roles, TrailStep } from "../../api";
 import { ago } from "../../shared/clock";
 import { sessionNickname } from "./nickname";
 
-/** The States the machine gives a lifecycle role, keyed by role: what stacking, the unheld chip, the Done cutoff and a lane's tone read. Which lanes are drawn is `roles.lanes`, never this. */
+/** The States the machine gives a lifecycle role, keyed by role: what stacking, the unheld chip, the Done cutoff and a lane's tone read. Which lanes are drawn is `roles.lanes`, else these States in order. */
 const lifecycleStates = ({ ready, waiting, working, review, verifying, attention, done }: Roles) => ({ ready, waiting, working, review, verifying, attention, done });
 
 /** The role a State plays in the lifecycle columns, when it plays one. */
@@ -16,9 +17,9 @@ export const roleOf = (roles: Roles, state: string): string | undefined => Objec
 export const recent = (tasks: KanbanTask[], now: number, roles: Roles): KanbanTask[] =>
   tasks.filter((t) => t.lane !== roles.done || !t.entered || t.entered >= midnight(new Date(now * 1000)));
 
-/** The lanes drawn as columns: the snapshot's open lanes in the machine's order when it names a ready State (trantor's lifecycle), else the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses); none before the lanes are known. */
+/** The lanes drawn as columns: the snapshot's open lanes in the machine's order when it names a ready State (trantor's lifecycle), else its lifecycle States in order when an older server sent no `lanes`, else the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses); none before the lanes are known. */
 export const columnsOf = (names: Record<string, string>, roles: Roles): string[] =>
-  roles.ready ? roles.lanes ?? [] : Object.keys(names).filter((s) => s !== roles.proposed);
+  roles.ready ? roles.lanes ?? [...new Set(Object.values(lifecycleStates(roles)).filter((s): s is string => !!s))] : Object.keys(names).filter((s) => s !== roles.proposed);
 
 export interface KanbanTask {
   id: string;
@@ -42,7 +43,9 @@ export interface KanbanTask {
   acceptanceCriteria?: { n: number; text: string; checked: boolean }[];
   definitionOfDone?: { n: number; text: string; checked: boolean }[];
   /** The lifecycle machine that last placed the task, the state it left it in and when (epoch seconds). */
-  live: { machine: string; state: string; at: number; source?: string | null } | null;
+  live: { machine: string; state: string; at: number; source?: string | null; skill?: string } | null;
+  /** The phase machine the task is in and its step, when it is in one: see `climb`. */
+  phase?: PhaseAt | null;
   /** The first `readable` guard rule the description breaks, empty when it reads well: the card draws the legacy-format badge for a non-empty one, the dialog none. */
   readable?: string;
   /** The pass/fail verdict on the task, drawn in the task view only; absent when it was never rated or the rating was cleared. */
@@ -342,7 +345,7 @@ export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, ro
 
 /** What the dialog draws of a cited pull request: its state, check result and unread reviews, or why it has not been read. */
 export type PrReadState =
-  | { read: true; state: "open" | "merged"; checks: Pull["checks"]; unreviewed: number }
+  | { read: true; state: "open" | "merged" | "closed"; checks: Pull["checks"]; unreviewed: number }
   | { read: false; label: "not read yet"; reason: string };
 
 /** An unread citation (`cited` marks it `stale`) is not read yet, never a failed read or no checks: the PR store reads every repository a task cites, so none waits on a grant. */
@@ -353,7 +356,7 @@ export const ciTone = (state: string) => CI_TONES[state] ?? "phase";
 export const prReadState = (p: Pull): PrReadState =>
   p.stale
     ? { read: false, label: "not read yet", reason: "no read since it was cited" }
-    : { read: true, state: p.merged ? "merged" : "open", checks: p.checks, unreviewed: p.threads };
+    : { read: true, state: p.merged ? "merged" : p.closed ? "closed" : "open", checks: p.checks, unreviewed: p.threads };
 
 /** Each pull request a task cites, as GitHub was last read for it; one not read yet is drawn unread (`stale`) rather than left off. */
 const cited = (urls: string[], read: Pull[]): Pull[] => {
@@ -388,15 +391,25 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
     return {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", profile: a.profile ?? "", dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), runs: a.runs ?? [], description: a.description ?? "",
-      live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
+      live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source, skill: skillOf(sky.flows, latest.flow) } : null,
       released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, claimExpiresAt: a.claim_expires_at ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
+      phase: climb(sky, a.id),
       rating: sky.ratings?.[a.id],
       ...(a.readable ? { readable: a.readable } : {}),
       ...(a.criteria ? { acceptanceCriteria: numbered(a.criteria) } : {}),
       ...(a.definition_of_done ? { definitionOfDone: numbered(a.definition_of_done) } : {}),
     };
   });
+}
+
+/** Where a task stands in its phase machines: the machines from its phase down to the one it is in, outermost first, that machine's step and when it took it, and that machine's states in order. */
+export interface PhaseAt { chain: string[]; state: string; at: number; track: MachineState[] }
+
+/** The phase machine `id` is in and its step: from the step it holds in the In Progress machine (the Board's first sub-flow) down the submachine links declared on that step, each machine's newest session and never a machine already on the way down, so a newer row of a machine its step does not declare never stands in for the phase; a task whose row there names no phase with a row takes whichever phase holds its newest row; null for a task in no phase machine, the In Progress machine itself included. */
+export function climb(sky: Sky, id: string): PhaseAt | null {
+  const found = descend(sky.flows, id, sky.board.machine.submachines?.[0]?.machine ?? ""), flow = found && sky.flows[found.machine];
+  return found && flow && found.chain.length ? { chain: found.chain, state: found.row.state, at: found.row.active ?? 0, track: flow.machine.states } : null;
 }
 
 /** The dependency edges between open tasks: each task's open dependencies, and each task's Waiting dependents. */

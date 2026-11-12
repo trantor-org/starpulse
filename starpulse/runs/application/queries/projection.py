@@ -110,6 +110,7 @@ class Projected:
         self._log = log
         self._feed = feed
         self._watched = dict(watched or {})
+        self._refused: set[str] = set()
 
     def apply(self) -> None:
         """Take the kept reports; none kept yet, or one unreadable, leaves the feed as it was."""
@@ -135,12 +136,16 @@ class Projected:
 
     def _current(self, instance: str, dags: list) -> list:
         """The kept workflows, or none when they predate the contract: a body the page's model refuses is a 500 on
-        every request until the worker reports again, and a sealed canary's worker never does."""
+        every request until the worker reports again, and a sealed canary's worker never does. The warning is logged
+        when an instance's workflows turn unreadable, not on each apply of the same body."""
         try:
             _DAGS.validate_python(dags)
         except ValidationError:
-            logger.warning("runs: the kept workflows of %s predate the contract; showing none", instance)
+            if instance not in self._refused:
+                self._refused.add(instance)
+                logger.warning("runs: the kept workflows of %s predate the contract; showing none", instance)
             return []
+        self._refused.discard(instance)
         return dags
 
     def _down(self, instance: str) -> str | None:

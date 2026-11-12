@@ -117,7 +117,7 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     needed = list(dict.fromkeys(f for f in fields if f not in _FILLED))
     flags = "".join(f" --arg {name}=<{name}>" for name in needed)
     task = " --task <TASK>" if "task" in fields else ""
-    root = path.parent if path else Path.cwd()
+    root = args.config.parent if args.config else Path.cwd()
     found = next((root / rel for rel in PR_TEMPLATES if "body" in fields and (root / rel).is_file()), None)
     template = {"path": found.relative_to(root).as_posix(), "text": found.read_text()} if found else None
     return {

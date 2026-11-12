@@ -269,6 +269,21 @@ class TaskHistory:
 
         return run
 
+    def dehydrated(
+        self, complete: Callable[[str], Written], read: Callable[[str], Record | None]
+    ) -> Callable[[str], Written]:
+        """`complete` (a verb moving a Done task out of the active board) that records an `Archived`
+        once it succeeds: the task stays in its History, and replaying that rehydrates it."""
+
+        def run(task: str) -> Written:
+            before = read(task)
+            written = complete(task)
+            if written.ok:
+                self._append(task, before, None, OPERATOR, "")
+            return written
+
+        return run
+
     def created(self, create: Callable[..., Written], read: Callable[[str], Record | None]) -> Callable[..., Written]:
         """`create` that appends the new task's `TaskCreated` once it succeeds."""
 

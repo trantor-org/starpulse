@@ -20,7 +20,7 @@ def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
     from starpulse.contracts.adapters import Move  # pydantic models cost ~0.25 CPU-s, so only a move verdict pays them
 
     return {
-        column: Move.model_validate(raw).for_actor(AGENT).model_dump(include={"allowed", "reason", "skill"})
+        column: Move.read(raw).for_actor(AGENT).model_dump(include={"allowed", "reason", "skill"})
         for column, raw in agent["moves"].items()
     }
 
@@ -54,8 +54,10 @@ def done_ids(snapshot: dict[str, Any]) -> set[str]:
     return done | {task_id for task_id, entry in snapshot["settled"].items() if entry["state"] == "completed"}
 
 
-def cold_agent(task_id: str, record: dict[str, Any], done: str) -> dict[str, Any]:
-    """A cold done task as a snapshot agent, built from its board record (`GET /api/task`) for a verb to view whole."""
+def cold_agent(task_id: str, record: dict[str, Any], done: str, entered: float | None = None) -> dict[str, Any]:
+    """A cold done task as a snapshot agent, built from its board record (`GET /api/task`) for a verb to view whole:
+    `entered` is when it entered its lane, and the record's stored pull requests ride as `pulls`."""
+    pulls = record.get("pulls", [])
     return {
         "id": task_id,
         "title": record["title"],
@@ -68,7 +70,9 @@ def cold_agent(task_id: str, record: dict[str, Any], done: str) -> dict[str, Any
         "labels": record["labels"],
         "dependencies": record["dependencies"],
         "criteria": [{"text": item["text"], "checked": item["checked"]} for item in record["acceptanceCriteria"]],
-        "prs": [],
+        "entered": entered,
+        "prs": [pull["url"] for pull in pulls],
+        "pulls": pulls,
         "moves": {},
         "description": record["description"],
     }
@@ -129,7 +133,7 @@ def _lane(agent: dict[str, Any], phase: str | None) -> str:
 def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | None = None) -> dict[str, Any]:
     """A Board task as a verb reports it. It waits on each dependency not in `done`, read from `snapshot` when absent:
     a caller viewing many tasks passes it once rather than rescanning the board per task."""
-    pulls = {pull["url"]: pull for pull in snapshot["pulls"].get(agent["id"], [])}
+    pulls = {pull["url"]: pull for pull in [*snapshot["pulls"].get(agent["id"], []), *agent.get("pulls", [])]}
     if done is None:
         done = done_ids(snapshot)
     phase, substate, flow = _phase(agent, snapshot)
