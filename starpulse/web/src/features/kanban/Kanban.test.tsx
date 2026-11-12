@@ -323,7 +323,7 @@ describe("a Waiting stack", () => {
     const draw = (tasks: KanbanTask[]) => renderToStaticMarkup(
       <>{layout(tasks, { waiting: "Waiting" }, LIFECYCLE_ROLES, NO_PREFS, 0).columns.find((c) => c.id === "waiting")!.buckets.map((b) => <Stacks key={b.milestone} stacks={b.stacks} card={card} enabled />)}</>,
     );
-    const moved = place(chain, { pending: { "T-2": { from: "waiting", to: "ready", saving: true, at: 1 } }, refused: {} });
+    const moved = place(chain, { pending: { "T-2": { from: "waiting", to: "ready", saving: true, at: 1 } }, refused: {}, asking: null });
 
     expect(draw(chain)).toContain('class="stack"');
     expect(stackOf(layout(chain, {}, LIFECYCLE_ROLES, NO_PREFS, 0), "T-3")?.members).toHaveLength(3);

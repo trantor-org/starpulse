@@ -129,6 +129,35 @@ describe("the sky", () => {
   });
 });
 
+describe("the machine a task rides", () => {
+  const session = (task: string, state: string, active: number): RawTask => ({ id: `--`, title: "t", state, model: "", task, active });
+  const phased = (inProgress: RawTask[], deliver: RawTask[], harness: RawTask[]) => {
+    const base = snap(5000, [task("PROJ-1", "in_progress")], []);
+    base.flows[1] = { name: "in-progress", agents: inProgress, machine: machine(["build", "deliver"], { submachines: [{ state: "deliver", machine: "deliver", exits: {}, parent: "in-progress", when: "" }] }) };
+    base.flows.push({ name: "deliver", agents: deliver, machine: machine(["committed", "pushed"]) }, { name: "harness", agents: harness, machine: machine(["idle", "active", "stopped"]) });
+    return merge(base);
+  };
+
+  it("is the deliver step it holds at pushed when the harness session row is newer", () => {
+    const sky = phased([session("PROJ-1", "deliver", 100)], [session("PROJ-1", "pushed", 200)], [session("PROJ-1", "active", 300)]);
+
+    expect(sky.rides["PROJ-1"]).toEqual({ flow: "deliver", state: "pushed", at: 200 });
+  });
+
+  it("is the phase it holds in the In Progress machine when no deeper machine has a row, and none for a harness row alone", () => {
+    const sky = phased([session("PROJ-1", "deliver", 100)], [], [session("PROJ-1", "active", 300)]);
+
+    expect(sky.rides["PROJ-1"]).toEqual({ flow: "in-progress", state: "deliver", at: 100 });
+    expect(phased([], [], [session("PROJ-1", "active", 300)]).rides["PROJ-1"]).toBeUndefined();
+  });
+
+  it("is the newest linked machine's step when the In Progress machine holds no row for it, the harness row older or newer", () => {
+    const sky = phased([], [session("PROJ-1", "pushed", 200)], [session("PROJ-1", "active", 300)]);
+
+    expect(sky.rides["PROJ-1"]).toEqual({ flow: "deliver", state: "pushed", at: 200 });
+  });
+});
+
 describe("a machine's tasks", () => {
   it("carry the Board's title, profile, labels and description beside the place the machine gave them", () => {
     const board = { ...task("PROJ-1", "in_progress"), title: "Draw tasks", model: "@agent-deep-high", labels: ["kind-execute"], dependencies: ["PROJ-0"], prs: ["https://github.com/o/r/pull/7"] };
