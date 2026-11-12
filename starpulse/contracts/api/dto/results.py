@@ -12,6 +12,8 @@ class Moved(_Api):
 
     task: str
     to: str
+    ok: bool = True
+    warnings: list[str] | None = None
     advice: str | None = None
     url: str | None = None
     startError: str | None = None
@@ -22,6 +24,7 @@ class MovedEach(_Api):
 
     moved: list[str]
     refused: dict[str, str]
+    warnings: dict[str, list[str]] | None = None
 
 
 class Edited(_Api):

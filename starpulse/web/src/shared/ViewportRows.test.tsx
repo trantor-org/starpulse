@@ -47,4 +47,20 @@ describe("viewport rows", () => {
     expect(rows[0].style.minBlockSize).toBe("40px");
     expect(rows[1].style.minBlockSize).toBe("");
   });
+
+  it("keeps an unmounted row at its last measured height so re-entering the overscan edge never resizes it", () => {
+    const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(82);
+    act(() => root.render(
+      <Viewport><ViewportRow initial estimate={96}><span>card</span></ViewportRow></Viewport>,
+    ));
+    const row = host.querySelector<HTMLElement>("[data-viewport-row]")!;
+    const flip = (isIntersecting: boolean) => act(() => notify(
+      [{ target: row, isIntersecting } as unknown as IntersectionObserverEntry], {} as IntersectionObserver));
+    flip(false);
+    expect(row.style.minBlockSize).toBe("82px");
+    flip(true);
+    flip(false);
+    expect(row.style.minBlockSize).toBe("82px");
+    height.mockRestore();
+  });
 });

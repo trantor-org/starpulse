@@ -128,6 +128,11 @@ def _label(text: Any, injected: tuple[str, ...]) -> str:
     return "injected" if opening.startswith(injected) else "human"
 
 
+def _named(text: Any, origins: tuple[tuple[str, tuple[str, ...]], ...]) -> str:
+    opening = str(text or "").lstrip()
+    return next((name for name, prefixes in origins if opening.startswith(prefixes)), "")
+
+
 # A reply asks the operator when its first sentence ends in a question mark.
 _OPENING_QUESTION = re.compile(r"(?:[^.!?\n]|[.!?](?!\s))*\?(?:\s|$)")
 
@@ -310,7 +315,7 @@ def signals(
                 intent = (
                     intent_label(reading.labeller, str(a["prompt"])) if reading.labeller and origin == "human" else ""
                 )
-                fields = {**fields, "detail": origin, "label": intent}
+                fields = {**fields, "detail": _named(a.get("prompt"), reading.session_origins) or origin, "label": intent}
             found.append(
                 Signal(
                     harness,
