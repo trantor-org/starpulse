@@ -125,6 +125,12 @@ export function SunsDrillIn({ tasks, roles, task, onClose, clock = wallClock, na
   });
   const s = sceneOf(jobs, view, setView, now, size);
 
+  // the drill-in is its own breadcrumb, so the Star Map's hides while it is open (a `body:has(#sd)` rule would re-match the page on every insertion)
+  useLayoutEffect(() => {
+    document.body.classList.add("drilling");
+    return () => document.body.classList.remove("drilling");
+  }, []);
+
   const live = useRef({ view, job: s.job });
   useEffect(() => {
     live.current = { view, job: s.job };

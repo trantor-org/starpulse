@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import select
+import selectors
 import signal
 import socket
 import subprocess
@@ -31,6 +32,7 @@ from typing import Any
 
 import psutil
 
+from starpulse.event_log.process_exit import ExitWatch
 from starpulse.runs.model import opt_in
 from starpulse.runtime import launch
 from starpulse.runtime.closure import SELF, Reading, ReloadError
@@ -59,9 +61,7 @@ def worker_commands(config_path: Path | None) -> dict[str, list[str]]:
     """The command of each child `serve` supervises (`WORKER_CONTEXTS`): the Page API and the one `contexts` process,
     which runs the contexts the config names (`starpulse.runtime.contexts.contexts_of`)."""
     tail = ["--config", str(config_path)] if config_path else []
-    return {
-        context: [launch.interpreter(), "-m", "starpulse", "worker", context, *tail] for context in WORKER_CONTEXTS
-    }
+    return {context: [launch.interpreter(), "-m", "starpulse", "worker", context, *tail] for context in WORKER_CONTEXTS}
 
 
 def spawn_child(
@@ -115,7 +115,6 @@ class Supervisor:
         first_delay: float = 1.0,
         longest_delay: float = 60.0,
         stable_after: float = 60.0,
-        poll: float = 0.5,
         grace: float = 10.0,
         warm: float = 30.0,
         read: Callable[[str], Reading] | None = None,
@@ -131,13 +130,13 @@ class Supervisor:
     ) -> None:
         self._admit = admit
         self._adopted = dict(adopted or {})
+        self._handed: set[str] = set()
         self._children = {name: _Child(command) for name, command in commands.items()}
         self._spawn = spawn
         self._sockets = dict(sockets or {})
         self._first_delay = first_delay
         self._longest_delay = longest_delay
         self._stable_after = stable_after
-        self._poll = poll
         self._grace = grace
         self._warm = warm
         self._limits = dict(limits or {})
@@ -148,6 +147,9 @@ class Supervisor:
             self._limits = {}
         self._lock = threading.Lock()
         self._halt = threading.Event()
+        self._wake_read, self._wake_write = socket.socketpair()
+        self._wake_read.setblocking(False)
+        self._wake_write.setblocking(False)
         self._thread: threading.Thread | None = None
         self._read = read
         self._baseline = baseline or read
@@ -190,6 +192,7 @@ class Supervisor:
             child.proc = self._spawn(child.command, listening, ready)
         child.started = child.sampled = now
         logger.info("worker %s started as pid %s", name, child.proc.pid)
+        self._nudge()
 
     def _check_memory(self, name: str, child: _Child, now: float) -> None:
         """Replace `child` past its soft limit and kill it past its hard one; the caller holds the lock."""
@@ -245,8 +248,42 @@ class Supervisor:
             self._control.start()
 
     def _run(self) -> None:
-        while not self._halt.wait(self._poll):
+        """Sleep on each child's exit and on `_nudge`, and wake only for one, or for a restart or memory sample due."""
+        while not self._halt.is_set():
+            with self._lock:
+                watches = [ExitWatch(c.proc.pid) for c in self._children.values() if c.proc is not None]
+                timeout = self._next_deadline(time.monotonic())
+            try:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(self._wake_read, selectors.EVENT_READ)
+                    for watch in watches:
+                        selector.register(watch.fileno(), selectors.EVENT_READ)
+                    selector.select(timeout)
+            finally:
+                for watch in watches:
+                    watch.close()
+            self._drain()
             self.tick(time.monotonic())
+
+    def _next_deadline(self, now: float) -> float | None:
+        """Seconds until the next restart or memory sample is due, or None while nothing is: the caller holds the lock."""
+        due = [c.due for c in self._children.values() if c.proc is None]
+        due += [c.sampled + self._sample_every for n, c in self._children.items() if c.proc is not None and n in self._limits]
+        return max(0.0, min(due) - now) if due else None
+
+    def _nudge(self) -> None:
+        """Wake `_run` to watch the children as they are now."""
+        try:
+            self._wake_write.send(b"x")
+        except OSError:  # full, which wakes it anyway, or closed
+            pass
+
+    def _drain(self) -> None:
+        try:
+            while self._wake_read.recv(4096):
+                pass
+        except OSError:  # nothing more to read
+            pass
 
     def _readings(self, read: Callable[[str], Reading] | None = None) -> dict[str, Reading]:
         read = read or self._read
@@ -269,8 +306,10 @@ class Supervisor:
         live config block to re-read it, and keep the rest; report each as "replaced", "reloaded" or "kept".
 
         When `serve`'s own code changed the Page API is replaced first, beside the old one on the shared socket, from the
-        release now behind the launcher; every other child is ended and `supervisor` reports "re-executed": the caller
-        sends that report, then calls `reexec`, and the next image adopts the Page API. The report's `reads` is
+        release now behind the launcher; every other child whose code or config changed is ended, and `supervisor`
+        reports "re-executed": the caller sends that report, then calls `reexec`, and the next image adopts the Page API
+        and each child whose own code and config did not change, which stays running across the exec and is reported
+        as "kept". The report's `reads` is
         "launcher" when the code was read from the release behind the launcher, which a caller that probes code through
         its own interpreter (an older `starpulse reload`) lacks, and so cannot trust a "kept". Raises `ReloadError`,
         changing nothing, when a reading fails or `admit` refuses the definitions the config now names."""
@@ -286,8 +325,10 @@ class Supervisor:
                 os.environ.pop(STATIC_ENV, None)  # the next release serves the page build it ships
                 for name in self._sockets:
                     self._replace(name, self._children[name])
-                self._end([c.proc for n, c in self._children.items() if n not in self._sockets and c.proc is not None])
-                outcomes = dict.fromkeys(self._children, "replaced")
+                outcomes = {
+                    n: self._hand_over(n, c, after[n]) for n, c in self._children.items() if n not in self._sockets
+                }
+                outcomes.update(dict.fromkeys(self._sockets, "replaced"))
             else:
                 if self._retire and self._code_changed(after):
                     self._retire()
@@ -301,6 +342,11 @@ class Supervisor:
     def _apply(self, name: str, child: _Child, before: Reading | None, now: Reading) -> str:
         if before is None or not before.same_code(now) or before.restart != now.restart:
             return self._replace(name, child)
+        return self._keep(name, child, before, now)
+
+    def _keep(self, name: str, child: _Child, before: Reading, now: Reading) -> str:
+        """Leave a child whose code is unchanged running: "kept", or "reloaded" after a SIGHUP when only its live config
+        block changed (replaced where there is no SIGHUP to send)."""
         if before.live == now.live:
             return "kept"
         running = child.proc is not None and child.proc.poll() is None
@@ -309,6 +355,19 @@ class Supervisor:
         if running:
             child.proc.send_signal(_HANGUP)
         return "reloaded"
+
+    def _hand_over(self, name: str, child: _Child, now: Reading) -> str:
+        """Before a re-exec, keep a running child whose own code and config are unchanged for the next image to adopt
+        (`reexec`), and end any other: its code is not the next release's."""
+        before = self._seen.get(name)
+        alive = child.proc is not None and child.proc.poll() is None
+        if alive and before is not None and before.same_code(now) and before.restart == now.restart:
+            if _stdin_fd(child.proc) is not None:
+                self._handed.add(name)
+                return self._keep(name, child, before, now)
+        if child.proc is not None:
+            self._end([child.proc])
+        return "replaced"
 
     def _replace(self, name: str, child: _Child) -> str:
         old = child.proc
@@ -354,14 +413,21 @@ class Supervisor:
         and the Page API child that `reload` started beside the old one (`ADOPT_ENV`), which keeps answering meanwhile."""
         if self._control:
             self._control.stop()
+        handed = []
         for name, listening in self._sockets.items():  # only the Page API's: one descriptor to name
             listening.set_inheritable(True)
             os.environ[LISTEN_FD_ENV] = str(listening.fileno())
+            handed.append(name)
+        handed.extend(sorted(self._handed))
+        parts = []
+        for name in handed:
             proc = self._children[name].proc
             fd = None if proc is None or proc.poll() is not None else _stdin_fd(proc)
             if fd is not None:
                 os.set_inheritable(fd, True)
-                os.environ[ADOPT_ENV] = f"{proc.pid}:{fd}"
+                parts.append(f"{name}={proc.pid}:{fd}")
+        if parts:
+            os.environ[ADOPT_ENV] = ",".join(parts)
         self._execute()
 
     def _end(self, running: list[Any]) -> None:
@@ -379,6 +445,7 @@ class Supervisor:
     def stop(self) -> None:
         """End every child, killing one still running `grace` seconds after it was asked to stop."""
         self._halt.set()
+        self._nudge()
         if self._control:
             self._control.stop()
         with self._lock:

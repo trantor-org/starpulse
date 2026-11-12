@@ -249,8 +249,10 @@ Cursor left out, by task then the phase's first step. Its columns:
 - `models`, `first_at`, `last_at`: the models used and the epoch seconds of the phase's first and last step.
 - `profile`: `<model>-<effort>` of the phase's first main-thread step (its first step when a subagent made every
   step), each `unknown` when the harness recorded none; the key per-profile norms group by.
-- `task_wte`: `wte` over the task's phases in the window. `norm_wte`: the median `task_wte` of the tasks of its kind and
-  size, null under 5 tasks in the cell. `above_norm`: `task_wte` is over 3 times `norm_wte`.
+- `task_wte`: `wte` over the task's phases in the window. `phase_norm_wte`: the median `wte` of the tasks of its kind and
+  size that ran this phase, null under 5 such tasks. `phase_above_norm`: `wte` is over 3 times it. `norm_wte`: the sum
+  of `phase_norm_wte` over the phases the task ran (null when any is null), so a task that ran qa is weighed against
+  peers' qa. `above_norm`: `task_wte` is over 3 times `norm_wte`.
 
 Blind spot: `starting-task` stays in force through the build, so the skill alone cannot split `claim` from `implement`;
 the first edit does, and a task worked by hand with no skill loaded is still placed by it. A task with no labels has
@@ -378,7 +380,7 @@ Both answer 501 with no telemetry stream, 503 when it cannot be read, and 400 fo
 
 ## Save GitHub webhook deliveries
 
-A `[github]` table (`secret_env`, `organisation` or `repositories`, `database_url`, `max_body_bytes`, `host`, `port`; see
+A `[github]` table (`secret_env`, `organisation` or `repositories`, `database_url`, `max_body_bytes`, `host`, `port`, `reconcile_token_env`; see
 [Serving](serving.md)) makes `serve` run a listener in the `contexts` child for a GitHub App's webhook. Without the
 table none runs. Point the App's webhook URL at the listener, set its secret in the environment variable `secret_env`
 names, and the listener answers each POST in this order:
@@ -424,6 +426,34 @@ absent or fails to start, and the inbox keeps every delivery.
 
 The listener's `/metrics` also serves `starpulse_github_dead_rows{consumer}`, the dead rows each consumer holds until
 `requeue` or `dismiss` clears them.
+
+### Reconcile the inbox against GitHub
+
+With `reconcile_token_env` in `[github]` (the environment variable that holds a token able to read the App's deliveries
+and redeliver them, and to read the accepted repositories' pull requests and checks), the sweeper's `github` kind runs
+a reconcile pass on each sweeper pass (`[sweeper] interval_s`); no thread or timer of the `github-events` context
+runs it. A pass samples each list it reads and counts each redelivery asked and each row inserted as a correction
+(`starpulse_sweeper_samples_total` and `starpulse_sweeper_corrections_total` with `kind="github"`). A token that cannot read
+`GET /app/hook/deliveries` makes the delivery half fail each pass, logged; the pull request half still runs.
+
+1. It pages the App's deliveries back from a stored cursor (the newest `delivered_at` it has handled; the first pass
+   reaches back 7 days) and asks GitHub once, with `POST /app/hook/deliveries/{id}/attempts`, to redeliver each GUID
+   with no `github_inbox` row, whatever GitHub shows as its status. A GUID with a redelivery among its attempts is not
+   asked for again. The listener's dedup makes a repeat harmless.
+2. For each accepted repository (the listed ones, and the organisation's unarchived ones) it lists pull requests newest
+   updated first until it reaches its `pulls:<repository>` cursor. Each closed pull request becomes a `pull_request`
+   row with `delivery_id` `reconcile:<repository>:<number>:<sha>` (the merge SHA when merged, else the head SHA), and
+   each finished check suite on the head of a pull request in the list a `check_suite` row with `delivery_id`
+   `reconcile:<repository>:<number>:<head sha>:<suite id>`. Both have `source = 'reconcile'`, are shaped like the webhook body
+   that would have reported them, and travel the consumer path above; a row for a fact a delivery already reported
+   collapses on the event id.
+3. Every list is read with the ETag it last returned (`If-None-Match`): a 304 spends no rate limit and leaves the
+   cursor and the inbox as they were. No call is GraphQL. A cursor and its ETag are saved only after everything they
+   cover was handled, so a pass that failed reads the same place again.
+
+The pass keeps `starpulse_github_redeliveries_total`, `starpulse_github_reconcile_rows_total{kind}` and
+`starpulse_github_reconcile_cursor_lag_seconds{cursor}` (`deliveries`, `pulls:<repository>`) in its process, as
+`Reconciled.exposition()`.
 
 ## Report runs from any scheduler
 
@@ -600,17 +630,20 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
   shows as the instance's error and keeps the last reading; no timer is dropped silently.
 - **Events.** The allowlist is read once at start. After that a `gdbus monitor` per manager (system, and user when an
   entry has `user/`) streams the D-Bus `PropertiesChanged` signals of the units, and a change to a timer or its service
-  re-reads only that timer, a third of a second after the signals settle. The whole allowlist is listed every 10 minutes
-  as a backstop, and every 30 s while a monitor is down or the last read failed. Idle, the adapter starts no `systemctl`
-  between those. Each `gdbus` child ends with the stream that reads it (terminated when the stream closes, SIGTERM from the
-  kernel when its parent thread dies), so a restart leaves none behind. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
+  re-reads only that timer, a third of a second after the signals settle. A monitor that exits is started again and its
+  timers are read again; a `runs:resync` entry naming the instance reads them all again. Idle, the adapter starts no
+  `systemctl`. systemd sends those signals only while a client holds `Manager.Subscribe` and `gdbus monitor` never
+  subscribes (the system manager has other subscribers, the user manager none), so each monitor also holds that
+  subscription on a socket of its own for as long as it runs. Each `gdbus` child ends with the stream that reads it
+  (terminated when the stream closes, SIGTERM from the kernel when its parent thread dies), so a restart leaves none
+  behind. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
   so the adapter offers no start. `systemctl` and `gdbus` (`libglib2.0-bin`) must run on the host that serves StarPulse.
 
 ## Temporal workflows
 
 `type = "temporal"` reads the Temporal server that runs the engine's own workflows and shows them beside the scheduler's
-DAGs. `url` is the Temporal UI server (`http://host:8233`); its HTTP API lists the default namespace. Each of the three
-workflow types `task_lifecycle`, `task_phases` and `AlertInvestigationWorkflow` is a workflow, shown even with no run.
+DAGs. `url` is the Temporal UI server (`http://host:8233`); its HTTP API lists the default namespace. Each of the four
+workflow types `task_lifecycle`, `task_phases`, `AlertInvestigationWorkflow` and `CommandWorkflow` is a workflow, shown even with no run.
 
 ```toml
 [[runs]]
@@ -621,7 +654,7 @@ url = "http://temporal.internal:8233"
 
 - **Active runs.** Every running execution is an active run with the Board task its workflow id names (`TASK-N`; an
   alert has none), the activity it is on, that activity's attempt and the message its last attempt failed with.
-- **Recent runs.** The last day's closed executions, the newest 40 closed and the newest 40 failed, each with its Temporal
+- **Recent runs.** The last day's closed executions, the newest 100 closed and the newest 100 failed, each with its Temporal
   status. A failed one carries the activity it failed on, that activity's attempt and the failure message, read from its
   history once, since a closed execution never changes.
 - **Polling.** The server pushes no change, so the adapter lists it every 15 s: three listings, and one describe for each
