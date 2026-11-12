@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from pydantic import TypeAdapter, ValidationError
@@ -21,13 +21,12 @@ from starpulse.event_log.wake import StopEvent
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
+    from starpulse.runs.model.opt_in import Liveness
 
 logger = logging.getLogger(__name__)
 
 PROJECTION = "runs.projection"
 _DAGS = TypeAdapter(list[Dag])
-#: Seconds between looks at the Liveness of the opt-in workers, which a silent stop gives no announcement of.
-RECHECK_S = 15.0
 
 
 class Publisher:
@@ -102,14 +101,15 @@ class _Sink:
 class Projected:
     """Applies the worker's kept reports to the serving feed.
 
-    `watched` maps an opt-in worker's instance to why that worker counts as down (`starpulse.runs.model.opt_in`):
-    the page shows it as the instance's error, also for an instance whose worker never reported.
+    `watched` maps an opt-in worker's instance to its `Liveness` (`starpulse.runs.model.opt_in`): the page
+    shows why the worker is down as the instance's error the moment its process exits, also for an instance whose worker never reported.
     """
 
-    def __init__(self, log: EventLog, feed: Any, watched: Mapping[str, Callable[[], str | None]] | None = None) -> None:
+    def __init__(self, log: EventLog, feed: Any, watched: Mapping[str, Liveness] | None = None) -> None:
         self._log = log
         self._feed = feed
         self._watched = dict(watched or {})
+        self._refused: set[str] = set()
 
     def apply(self) -> None:
         """Take the kept reports; none kept yet, or one unreadable, leaves the feed as it was."""
@@ -135,26 +135,26 @@ class Projected:
 
     def _current(self, instance: str, dags: list) -> list:
         """The kept workflows, or none when they predate the contract: a body the page's model refuses is a 500 on
-        every request until the worker reports again, and a sealed canary's worker never does."""
+        every request until the worker reports again, and a sealed canary's worker never does. The warning is logged
+        when an instance's workflows turn unreadable, not on each apply of the same body."""
         try:
             _DAGS.validate_python(dags)
         except ValidationError:
-            logger.warning("runs: the kept workflows of %s predate the contract; showing none", instance)
+            if instance not in self._refused:
+                self._refused.add(instance)
+                logger.warning("runs: the kept workflows of %s predate the contract; showing none", instance)
             return []
+        self._refused.discard(instance)
         return dags
 
     def _down(self, instance: str) -> str | None:
-        problem = self._watched.get(instance)
-        return problem() if problem else None
+        liveness = self._watched.get(instance)
+        return liveness.problem() if liveness else None
 
     def follow(self, stop: StopEvent) -> threading.Thread:
         """Apply the kept reports now, then each one announced after, on a thread until `stop`."""
         thread = self._log.follow_state(PROJECTION, self.apply, stop, thread_name="runs-projected")
         self.apply()
-        if self._watched:
-            threading.Thread(target=self._recheck, args=(stop,), name="runs-liveness", daemon=True).start()
+        for liveness in self._watched.values():
+            liveness.follow(self.apply, stop)
         return thread
-
-    def _recheck(self, stop: StopEvent) -> None:
-        while not stop.wait(RECHECK_S):
-            self.apply()

@@ -2,7 +2,7 @@
 // the catalog, and where a step sits in its constellation. The page's snapshot reaches it as one DagData, read from the Sky.
 import { BOARD_COLOR } from "../../render/scene";
 import type { Sky } from "../../render/sky";
-import type { ActiveRun, Cpu, Cue, Dag, DagStep, Domain, Machine, Pool, RecentRun, Rerun } from "../../api";
+import type { ActiveRun, Cpu, Cue, Dag, DagStep, Domain, Machine, Pool, RecentRun, Rerun, RunStatus } from "../../api";
 
 /** Everything the DAGs view reads from the snapshot: the DAGs, their domains, the pools, the cues, each machine and the server's clock. */
 export interface DagData {
@@ -28,6 +28,24 @@ export function runLine(run: ActiveRun | RecentRun): string {
   if (!run.task && !run.attempt && !run.failure) return "";
   const activity = "step" in run ? run.step : Object.entries(run.steps).find(([, v]) => v === "failed")?.[0];
   return joined([run.task, activity, run.attempt && `attempt ${run.attempt}`, run.failure]);
+}
+
+/** One run in a job's Runs list: its status, what it ran for (task, pull request, short commit, step, attempt, failure), how long it took (so far, while it runs) and its link ("" when the engine has none). */
+export interface JobRun { key: string; status: RunStatus; line: string; took: string; url: string }
+
+const SHORT_COMMIT = 7;
+const seconds = (iso: string) => Date.parse(iso) / 1000;
+
+/** A job's runs: the live ones first, then its closed ones, its older failed runs among them, newest first, each run once. `now` is the server's clock in epoch seconds. */
+export function jobRuns(d: Dag, now: number): JobRun[] {
+  const run = (x: ActiveRun | RecentRun, end: number): JobRun => {
+    const step = "step" in x ? x.step : Object.entries(x.steps).find(([, v]) => v === "failed")?.[0];
+    const line = joined([x.task, x.pr && `#${x.pr}`, x.commit?.slice(0, SHORT_COMMIT), step, x.attempt && `attempt ${x.attempt}`, x.failure]);
+    return { key: x.runId, status: x.status, line, took: took(seconds(x.startedAt), end), url: x.url ?? "" };
+  };
+  const closed = d.closed ?? [], older = (d.failed ?? []).filter((f) => !closed.some((c) => c.runId === f.runId));
+  const gone = [...closed, ...older].sort((a, b) => b.finishedAt.localeCompare(a.finishedAt));
+  return [...(d.active ?? []).map((x) => run(x, now)), ...gone.map((x) => run(x, seconds(x.finishedAt)))];
 }
 
 /** The line a job's row carries in place of its schedule: the run it is in (one on an activity first, then how many others run), else its newest failed run (`failed …`); empty when it has neither to tell. */
