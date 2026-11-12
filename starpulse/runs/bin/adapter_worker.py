@@ -1,10 +1,10 @@
-"""`starpulse worker <dagu|github-actions|systemd|temporal>`: a run Adapter as its own process, which `serve` starts as a child for each `[[runs]]` instance that names it.
+"""`starpulse worker <dagu|github-actions|systemd|temporal|woodpecker>`: a run Adapter as its own process, which `serve` starts as a child for each `[[runs]]` instance that names it.
 
 It follows each `[[runs]]` instance whose adapter names this worker (`starpulse.runs.model.opt_in`) and keeps the
 workflows it reports in the event log (`starpulse.runs.application.queries.projection`), where `serve` reads them for the page.
 A source that offers its own push (Dagu's handlers, GitHub's `workflow_run` webhook) pushes through the ingest; this
-worker reads the rest from the source. It beats into the log while it runs, so `serve` shows the page an instance whose
-worker stopped. `SIGTERM` stops it; `SIGHUP` re-reads the config and, as the adapters are built once, only says whether
+worker reads the rest from the source. It announces its process id in the log, so `serve` shows the page an instance whose
+worker's process exited. `SIGTERM` stops it; `SIGHUP` re-reads the config and, as the adapters are built once, only says whether
 a restart is needed.
 """
 
@@ -36,13 +36,13 @@ def start(
     adapters: Any,
     worker_board: Callable[..., tuple[object, Any]],
 ) -> Callable[[], None]:
-    """Follow each `(instance, adapter)` of `adapters` over `log` and beat for it until `stop` is set, and return the
+    """Follow each `(instance, adapter)` of `adapters` over `log`, announce this process for it, and return the
     reload. Raises `ValueError` as `worker_board` does."""
     _, feed = worker_board(config, base, log, stop)
     publisher = Publisher(log)
     for instance, adapter in adapters:
         adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
-        opt_in.keep_beating(log, instance.name, stop)
+        opt_in.announce(log, instance.name)
     return lambda: reload(path, config, load)
 
 

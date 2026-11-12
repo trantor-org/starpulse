@@ -88,6 +88,13 @@ def _pull_request(repository: str, action: str, payload: dict[str, Any]) -> list
     if action == "closed" and pull.get("merged") is True:
         merge = _text(pull.get("merge_commit_sha"))
         return [Fact("PR_MERGED", repository, number, merge, bot)] if merge else []
+    if action == "edited":  # only a body edit matters, and the update time tells one edit from the next
+        stamp = _text(pull.get("updated_at"))
+        return (
+            [Fact("PR_EDITED", repository, number, stamp, bot)]
+            if "body" in _dict(payload.get("changes")) and stamp
+            else []
+        )
     named = {"opened": "PR_OPENED", "reopened": "PR_REOPENED", "closed": "PR_CLOSED"}.get(action)
     return [Fact(named, repository, number, head, bot)] if named and head else []
 
@@ -126,7 +133,13 @@ def facts_of(event: str, body: bytes) -> list[Fact]:
 
 
 #: A run's `status` before it completes, and each `conclusion` after, as the runs projection's status.
-_RUN_STATUS = {"requested": "queued", "pending": "queued", "queued": "queued", "waiting": "queued", "in_progress": "running"}
+_RUN_STATUS = {
+    "requested": "queued",
+    "pending": "queued",
+    "queued": "queued",
+    "waiting": "queued",
+    "in_progress": "running",
+}
 _RUN_CONCLUSION = {
     "success": "succeeded", "neutral": "succeeded", "failure": "failed", "timed_out": "failed",
     "startup_failure": "failed", "cancelled": "aborted", "stale": "aborted", "action_required": "aborted",
