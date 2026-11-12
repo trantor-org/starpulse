@@ -42,6 +42,7 @@ JOB_RESULTS = {"succeeded": "pass", "failed": "failing"}  # a canceled or unknow
 JOB_EVENTS = {"JOB_SUCCEEDED": "succeeded", "JOB_FAILED": "failed"}  # a `ci-job` event as the result `ci:jobs` names
 CLOSING = {(GITHUB_MACHINE, "PR_MERGED"), (GITHUB_MACHINE, "PR_CLOSED")}
 REOPENING = (GITHUB_MACHINE, "PR_REOPENED")
+MERGING = (GITHUB_MACHINE, "PR_MERGED")
 
 Record = dict[str, Any]
 
@@ -149,7 +150,7 @@ class RecordProjection:
     def _body(self, key: str) -> str:
         """The body a record opened by events carries: the task and the session holding it, so the lookups readers make
         by either find it."""
-        assignee = (self._feed.task(key) or {}).get("assignee") or ""
+        assignee = (self._feed.task(key, lean=True) or {}).get("assignee") or ""
         return f"{key} {assignee}".strip()
 
     def handle(self, entry: Entry) -> None:
@@ -170,14 +171,15 @@ class RecordProjection:
         saved, moved = [], []
         for repo, number in self._targets(key, name, fields):
             found = self._store.find(repo=repo, number=number, detailed=True)
-            if found and at < found[0]["fetchedAt"]:
-                continue  # the record already holds what a later event or read says
+            if found and at < found[0]["fetchedAt"] and name != MERGING:
+                continue  # the record already holds what a later event or read says; a merge is never older than that
             if not found and name in _DELTAS or found and name in _MOVES_HEAD:
                 moved.append((repo, number))  # a record the events open holds no files until GitHub is read
             if name not in _DELTAS:
                 continue
             record = found[0] if found else _opened(repo, number, self._body(key), at)
-            patched = record | _DELTAS[name](record, fields, at) | {"fetchedAt": at, "updatedAt": iso_utc(at)}
+            stamps = {"fetchedAt": max(at, record["fetchedAt"]), "updatedAt": iso_utc(at)}  # a late event never ages it
+            patched = record | _DELTAS[name](record, fields, at) | stamps
             if not found or patched != record:
                 saved.append(patched)
         if saved:

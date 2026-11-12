@@ -31,6 +31,7 @@ from typing import Any
 __all__ = [
     "ASSISTANT_RESPONSE",
     "BRANCH",
+    "SETTLED",
     "SKILL_ACTIVATED",
     "TOOL_RESULT",
     "USER_PROMPT",
@@ -45,6 +46,9 @@ USER_PROMPT = "user_prompt"
 TOOL_RESULT = "tool_result"
 SKILL_ACTIVATED = "skill_activated"
 ASSISTANT_RESPONSE = "assistant_response"
+#: The session settled: a `Stop` hook finished, the one record the export holds for a turn's end.
+SETTLED = "settled"
+HOOK_COMPLETE = "hook_execution_complete"
 _KINDS = {
     spelling: kind
     for kind in (USER_PROMPT, TOOL_RESULT, SKILL_ACTIVATED, ASSISTANT_RESPONSE)
@@ -56,7 +60,7 @@ MAX_BODY = 8 * 1024 * 1024
 
 @dataclass(frozen=True)
 class LogEvent:
-    """One kept log record. `skill` is set for a skill activation; the tool fields for a tool result.
+    """One kept log record. `skill` is set for a skill activation; the tool fields for a tool result; `prompt` for a settle, the turn it ended.
 
     `time` is the record's `event.timestamp` in epoch seconds, and `branch` the export resource's
     `vcs.ref.head.name`; each is None when absent.
@@ -70,6 +74,7 @@ class LogEvent:
     success: bool = False
     tool_input: dict[str, Any] = field(default_factory=dict)
     skill: str = ""
+    prompt: str = ""
     time: float | None = None
     branch: str | None = None
 
@@ -124,8 +129,10 @@ def _tool_input(raw: Any) -> dict[str, Any]:
 
 
 def _kind(record: dict[str, Any], attributes: dict[str, Any]) -> str | None:
-    name = attributes.get("event.name") or _value(record.get("body"))
-    return _KINDS.get(str(name))
+    name = str(attributes.get("event.name") or _value(record.get("body")))
+    if name.removeprefix("claude_code.") == HOOK_COMPLETE:
+        return SETTLED if attributes.get("hook_event") == "Stop" else None
+    return _KINDS.get(name)
 
 
 def parse(payload: dict[str, Any]) -> list[LogEvent]:
@@ -148,6 +155,7 @@ def parse(payload: dict[str, Any]) -> list[LogEvent]:
                 success=str(attributes.get("success")).lower() == "true",
                 tool_input=_tool_input(attributes.get("tool_input")),
                 skill=str(attributes.get("skill.name") or ""),
+                prompt=str(attributes.get("prompt.id") or ""),
                 time=_epoch(attributes.get("event.timestamp")),
                 branch=branch,
             )

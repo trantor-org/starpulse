@@ -178,7 +178,8 @@ class PushRuns:
             logger.warning("StarPulse: replaying %s: the saved pushed runs cannot be read", stream)
             return None
         with self._lock:
-            self._dags |= {name: dict(dag) for name, dag in snapshot.dags.items()}
+            # a workflow saved before `rerun` joined the `Dag` contract lacks it, and the page refuses the whole instance
+            self._dags |= {name: {"rerun": None, **dag} for name, dag in snapshot.dags.items()}
             self._seen = self._saved = position
         self._publish()
         logger.warning("StarPulse: resuming %s after %s", stream, position)

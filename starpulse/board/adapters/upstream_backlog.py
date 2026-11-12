@@ -19,7 +19,7 @@ import shlex
 import subprocess
 import threading
 from collections.abc import Callable, Collection, Iterable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -34,6 +34,7 @@ except ImportError:
 from starpulse.board.adapters import project_machines
 from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.markdown import needs_attention_reason
+from starpulse.board.model.policy import Policy, waits_of
 from starpulse.board.model.seam import Board, MoveWriter, Written
 from starpulse.contracts.task_keys import TaskKeys
 from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
@@ -465,7 +466,7 @@ def _listing(folder: Path) -> list[tuple[str, tuple[int, int]]]:
 
 #: The `[board]` settings this adapter reads: `path` is the project's `backlog/` directory, relative to the config;
 #: `machine` a machine file for the Board, relative to the config; `command` the `backlog` CLI that writes moves.
-_SETTINGS = {"type", "path", "interval", "machine", "command"}
+_SETTINGS = {"type", "path", "interval", "machine", "command", "policy_rows"}
 
 
 def cli_writer(root: Path, statuses: tuple[str, ...], roles: StateRoles, command: list[str]) -> MoveWriter:
@@ -490,15 +491,15 @@ def cli_writer(root: Path, statuses: tuple[str, ...], roles: StateRoles, command
     return write
 
 
-def _machine(path: Path, config: BacklogConfig) -> tuple[Compiled, dict, list[dict]]:
-    """The Board machine a file declares, compiled and drawn, with its cues, each beside the lane its event reaches;
+def _machine(path: Path, config: BacklogConfig, waits: Mapping[str, Mapping[str, str]]) -> tuple[Compiled, dict, list[dict]]:
+    """The Board machine a file declares, compiled and drawn, with the lanes' `waits` the policy DB holds, with its cues, each beside the lane its event reaches;
     refused unless every lane is a state, every other state is initial or final, and each cued event reaches a lane."""
     from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
         load_machine,
     )
     from starpulse.machine_engine.model.snapshot import describe  # noqa: PLC0415 - import cost, paid on first use
 
-    compiled = load_machine(path)
+    compiled = replace(load_machine(path), waits=waits)
     drawn = describe(compiled.machine)
     ids = [lane_id(status) for status in config.statuses]
     states = {state["id"]: state for state in drawn["states"]}
@@ -535,7 +536,7 @@ def project_board(
     board_file = base / str(settings["machine"]) if "machine" in settings else None
     lane_ids = [lane_id(status) for status in config.statuses]
     if board_file:
-        compiled, drawn, cues = _machine(board_file, config)
+        compiled, drawn, cues = _machine(board_file, config, waits_of(settings.get("policy_rows") or Policy()))
         declared = compiled.writers
     else:
         compiled, drawn, cues, declared = None, board_machine(config.statuses), [], {}
