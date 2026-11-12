@@ -297,4 +297,48 @@ describe("opening a task's modal", () => {
     const redrawn = vi.mocked(startLane).mock.calls.map(([t]) => t.id).filter((id) => id !== "TASK-1");
     expect(redrawn).toEqual([]);
   });
+
+  describe("when the open task's status changes", () => {
+    const rerender = (cards: KanbanTask[]) => {
+      const moves = new MoveStore(async () => ({ ok: true }) as never);
+      act(() => root.render(<Kanban hud={{ ...hud, cards } as HudState} moves={moves} starts={new StartStore((async () => ({})) as never, moves)} compact={false} constellation={() => {}} searchSlot={null} outlineSlot={null} />));
+    };
+    const remounted = (removed: Node[], first: Element | null) => removed.filter((n) => n === first || (n as Element).contains?.(first));
+    const watchDialog = () => {
+      const first = dialog();
+      const removed: Node[] = [];
+      const watch = new MutationObserver((records) => records.forEach((r) => r.removedNodes.forEach((n) => removed.push(n))));
+      watch.observe(document.body, { childList: true, subtree: true });
+      return { first, removed, stop: () => watch.disconnect() };
+    };
+
+    it("keeps the same dialog mounted when the task changes lane", async () => {
+      act(() => cardOf("TASK-1").click());
+      await settle();
+      const { first, removed, stop } = watchDialog();
+
+      rerender(hud.cards.map((t) => (t.id === "TASK-1" ? { ...t, lane: "review" } : t)));
+      await settle();
+      stop();
+
+      expect(dialog()).toBe(first);
+      expect(remounted(removed, first)).toEqual([]);
+      expect(first?.textContent).toContain("review");
+    });
+
+    it("keeps the same dialog mounted while a live snapshot leaves the task out and returns it", async () => {
+      act(() => cardOf("TASK-1").click());
+      await settle();
+      const { first, removed, stop } = watchDialog();
+
+      rerender(hud.cards.filter((t) => t.id !== "TASK-1"));
+      rerender(hud.cards.map((t) => (t.id === "TASK-1" ? { ...t, lane: "review" } : t)));
+      await settle();
+      stop();
+
+      expect(dialog()).toBe(first);
+      expect(remounted(removed, first)).toEqual([]);
+      expect(first?.textContent).toContain("review");
+    });
+  });
 });

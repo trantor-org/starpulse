@@ -27,6 +27,7 @@ from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_ag
 from starpulse.cli import agent_wire
 from starpulse.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS, RELEASE_KEYS
 from starpulse.event_log.lane_events import ARCHIVED
+from starpulse.machine_engine.model.transitions import lane_id
 
 #: What a task route's 404 says when the board has no such task, as opposed to a board that cannot read or write tasks.
 _TASK_MISSING = ("is not on the board", "has no record to read")
@@ -45,6 +46,7 @@ _TASK_EDIT_FIELDS = {
     "follows": "follows",
     "label": "labels",
     "dependency": "dependencies",
+    "status": "status",
     "reference": "references",
     "documentation": "documentation",
     "modified_file": "modifiedFiles",
@@ -134,6 +136,14 @@ def _described(view: dict[str, Any], description: str, base: str) -> dict[str, A
     return {**view, "description": linkify(description, base, view["prs"])}
 
 
+def _carrier(base: str, task_id: str) -> str | None:
+    """The id of the task whose file lists `task_id` as an alias (a migrated proposal's old TASK id, a promoted one's
+    PROP id); None when `task_id` is a task's own id or no task carries it."""
+    status, document = agent_wire.get(base, f"/api/task/{urllib.parse.quote(task_id, safe='')}")
+    held = str(document.get("record", {}).get("id") or "") if status == 200 else ""
+    return None if held.casefold() in {"", task_id.casefold()} else held
+
+
 def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     if getattr(args, "markdown", False):
         return {"task": args.task, "markdown": render(_read_record(args, environ))}
@@ -141,6 +151,8 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     wanted = args.task.casefold()
     agents = {agent["id"].casefold(): agent for agent in board_flow(snapshot)["agents"]}
     if (agent := agents.get(wanted)) is None:
+        if carrier := _carrier(agent_wire.server_url(args.server, environ), args.task):
+            return show(argparse.Namespace(**{**vars(args), "task": carrier}), environ)
         cold = next((task for task in snapshot.get("cold_done", ()) if task.casefold() == wanted), None)
         if cold is not None:
             return _show_cold(agent_wire.server_url(args.server, environ), cold, snapshot)
@@ -163,7 +175,19 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             "description": "",
         }
     base = agent_wire.server_url(args.server, environ)
-    return _described(_active(task_view(agent, snapshot), snapshot), agent["description"], base)
+    view = _without_done_dependencies(base, task_view(agent, snapshot), snapshot)
+    return _described(_active(view, snapshot), agent["description"], base)
+
+
+def _without_done_dependencies(base: str, view: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
+    done = roles_of(snapshot).done
+
+    def finished(dependency: str) -> bool:
+        status, document = agent_wire.get(base, f"/api/task/{urllib.parse.quote(dependency, safe='')}")
+        record = document.get("record") if status == 200 else None
+        return record is not None and lane_id(record["status"]) == done
+
+    return {**view, "waiting_on": [dependency for dependency in view["waiting_on"] if not finished(dependency)]}
 
 
 def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -174,9 +198,13 @@ def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, A
         raise agent_wire.CliError("not_found", f"{task_id} is not on the board")
     if status != 200:
         raise agent_wire.CliError("unavailable", f"{base} answered {status} for the record of {task_id}")
-    state = ARCHIVED if document.get("archived") else roles_of(snapshot).done
-    agent = cold_agent(task_id, document["record"], state)
-    return _described(task_view(agent, snapshot), agent["description"], base)
+    record = document["record"]
+    lane = lane_id(record["status"])
+    done = roles_of(snapshot).done
+    # settled rows read archived whatever their file says: a Done file is Done, only another status is truly archived
+    state = lane if lane == done or not document.get("archived") else ARCHIVED
+    agent = cold_agent(record["id"], record, state, document.get("entered"))
+    return _described(_without_done_dependencies(base, task_view(agent, snapshot), snapshot), agent["description"], base)
 
 
 def moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

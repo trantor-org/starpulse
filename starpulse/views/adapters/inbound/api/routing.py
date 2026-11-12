@@ -27,6 +27,7 @@ from starpulse.views.adapters.inbound.api import (
 )
 from starpulse.views.adapters.inbound.api.table import ApiRoute
 from starpulse.views.adapters.inbound.api.pulls import PullReads
+from starpulse.views.adapters.inbound.api.tasks import RetiredDump
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.streams import Streams
 
@@ -55,6 +56,7 @@ class Api:
     page_gauge: Callable[[], str] | None = None
     pull_reads: PullReads = field(init=False)  # made with the seams: it hears the store's saves from the start
     slow_reads: SlowReads = field(init=False)
+    retired_dump: RetiredDump = field(default_factory=RetiredDump)
 
     def __post_init__(self) -> None:
         self.pull_reads = PullReads(self.services.pulls)

@@ -379,10 +379,6 @@ SEED = [
     ("waiting", "m-1", ["size-1"], 6, "@agent-fast-low", None),
     ("waiting", "m-1", ["size-2", "kind-bug"], 6, "", None),
     ("waiting", "m-2", ["size-2"], 6, "@agent-standard-high", None),
-    # Proposals an agent filed, waiting for the operator to promote or drop them; one has no profile, so Promote refuses it.
-    ("proposed", "", ["size-2", "kind-bug"], None, "@agent-standard-high", None),
-    ("proposed", "", ["size-3"], None, "", None),
-    ("proposed", "", ["size-1", "kind-feature"], None, "@agent-fast-low", None),
     # A merged task whose post-merge QA items still run, so the Star Map draws the Verifying lane.
     ("verifying", "m-2", ["size-2"], None, "@agent-standard-high", ("pass", True, 0)),
 ]
@@ -390,12 +386,11 @@ SEED = [
 
 #: The lanes `SEED` fills, as the Board machine a capture with no board of its own is drawn on: CI's native board has
 #: three lanes, which the Kanban would draw as three columns and leave every other seeded card without one.
-SEED_LANES = ("Proposed", "Ready", "Waiting", "In Progress", "Review", "Verifying", "Needs attention", "Done")
+SEED_LANES = ("Ready", "Waiting", "In Progress", "Review", "Verifying", "Needs attention", "Done")
 #: The roles the seeded lanes play, as a deployment's machine would declare them: a session starts a Ready task.
 SEED_ROLES = StateRoles(
     {
         "new": "initial",
-        "proposed": "proposed",
         "ready": "waiting_on_fact",
         "waiting": "waiting_on_fact",
         "in_progress": "resting",
@@ -420,7 +415,6 @@ DAY_S = 86400
 #: team's scale; the day's settled tasks it adds, by where they settled.
 FILL = {
     "new": 40,
-    "proposed": 97,
     "ready": 35,
     "waiting": 55,
     "in_progress": 5,
@@ -471,15 +465,8 @@ def _fill(line: list[str], start: int, now: float) -> list[tuple]:
     return rows
 
 
-def _description(title: str, state: str) -> str:
-    """A synthetic task's description; a proposal's names why it was filed and how its duplicate search resolved, which the
-    Proposals view reads."""
-    if state != "proposed":
-        return f"Synthetic demo task: {title.lower()}."
-    return (
-        f"## Why\n\nA session noticed this while working: {title.lower()}.\n\n"
-        "## Duplicate Resolution\n\nNo open task covers it; the nearest candidate is unrelated."
-    )
+def _description(title: str) -> str:
+    return f"Synthetic demo task: {title.lower()}."
 
 
 def _workable(i: int, state: str, after: int | None, now: float) -> dict:
@@ -588,7 +575,7 @@ def scrub(live: dict) -> dict:
                     "assignee": HELD.get(name, demo["assignee"]),
                     "labels": [x for x in a.get("labels", []) if LABELS.match(x)],
                     "dependencies": [names[d] for d in a.get("dependencies", []) if d in names],
-                    "description": _description(demo["title"], a["state"]),
+                    "description": _description(demo["title"]),
                     **({"follows": names[a["follows"]]} if a.get("follows") in names else {}),
                     **({"entered": a["entered"]} if "entered" in a else {}),
                     **({"workable_since": a["workable_since"]} if "workable_since" in a else {}),
@@ -674,22 +661,28 @@ def scrub(live: dict) -> dict:
 
 
 #: The lane a seeded task's trace detours through, every Nth task of the lane it ends in, so the demo draws a
-#: suggestion promoted out of Proposed and a merge closed through Verifying: {lane: (detour, every)}.
-DETOURS = {"ready": ("proposed", 3), "done": ("verifying", 3)}
+#: merge closed through Verifying: {lane: (detour, every)}.
+DETOURS = {"done": (("review", "verifying"), 3)}
 #: The seconds between two synthetic steps of a task's path, before each task's own spread.
 STEP_S = 3 * 3600
 
 
 def _route(machine: dict, state: str, start: str | None = None) -> list[tuple[str, str, str]]:
-    """The shortest (source, event, target) path from the machine's initial state, or `start`, to `state`; [] when
-    `state` is out of reach."""
+    """The shortest (source, event, target) path from the machine's initial state, or `start`, to `state`, over its main
+    line when one reaches `state` (a board's all-lane operator moves are no task's journey); [] when `state` is out of
+    reach."""
     start = start or next((s["id"] for s in machine["states"] if s.get("initial")), state)
+    line = {*machine.get("mainLine", ()), start, state}
+    return _shortest(machine, state, start, line) or _shortest(machine, state, start, None)
+
+
+def _shortest(machine: dict, state: str, start: str, only: set[str] | None) -> list[tuple[str, str, str]]:
     back: dict[str, tuple[str, str, str] | None] = {start: None}
     queue = collections.deque([start])
     while queue and state not in back:
         here = queue.popleft()
         for t in machine["transitions"]:
-            if t["source"] == here and t["target"] not in back:
+            if t["source"] == here and t["target"] not in back and (only is None or t["target"] in only):
                 back[t["target"]] = (here, t["event"], t["target"])
                 queue.append(t["target"])
     path, at = [], state
@@ -717,14 +710,16 @@ def _send_back(machine: dict, steps: list[tuple[str, str, str]]) -> list[tuple[s
     return steps
 
 
-def _walk(machine: dict, state: str, i: int, now: float, via: str | None = None, back: bool = False) -> list[dict]:
-    """Task `i`'s synthetic trail to `state`, on `_times`: the machine's shortest route, through `via` when `via` is
-    on the way, sent back once on the way when `back` is set."""
+def _walk(machine: dict, state: str, i: int, now: float, via: tuple[str, ...] = (), back: bool = False) -> list[dict]:
+    """Task `i`'s synthetic trail to `state`, on `_times`: the machine's shortest route, through each lane of `via` in
+    turn when all are on the way, sent back once on the way when `back` is set."""
     steps = _route(machine, state)
-    if via:
-        head, tail = _route(machine, via), _route(machine, state, start=via)
-        if head and tail:
-            steps = head + tail
+    legs, at = [], None
+    for stop in (*via, state) if via else ():
+        legs.append(_route(machine, stop, start=at))
+        at = stop
+    if legs and all(legs):
+        steps = [step for leg in legs for step in leg]
     if back:
         steps = _send_back(machine, steps)
     return [{"state": t, "event": e, "at": at} for (_, e, t), at in zip(steps, _times(len(steps), i, now))]
@@ -931,12 +926,12 @@ def _history(flows: list[dict], now: float) -> dict[str, list[dict]]:
     board = next(f for f in flows if f["name"] == "board")
     line = board["machine"].get("mainLine", [])
     # through the Board's first working lane rather than a creation shortcut, so a path has the hops a real task's has
-    via = line[1] if line[1:] else None
+    via = (line[1],) if line[1:] else ()
     states = {s["id"] for s in board["machine"].get("states", [])}
     history = {}
     for i, a in enumerate(board["agents"]):
         detour, every = DETOURS.get(a["state"], (via, 1))
-        detour = detour if i % every == 0 and detour in states else via
+        detour = detour if i % every == 0 and set(detour) <= states else via
         trail = _walk(board["machine"], a["state"], i, now, via=detour, back=i % 2 == 1)
         history[a["id"]] = [
             {"at": s["at"], "from": trail[k - 1]["state"] if k else None, "to": s["state"]} for k, s in enumerate(trail)
@@ -1004,7 +999,7 @@ def scrub_mockup(snap: dict) -> dict:
         **snap,
         **({"domains": domains} if "domains" in snap else {}),
         "dags": [{**d, "runId": f"demo-{i}"} for i, d in enumerate(snap["dags"])],
-        "descriptions": {t["id"]: _description(t["title"], t.get("state", "")) for t in board},
+        "descriptions": {t["id"]: _description(t["title"]) for t in board},
         "flows": flows,
     }
 

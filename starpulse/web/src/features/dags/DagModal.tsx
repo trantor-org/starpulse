@@ -1,10 +1,14 @@
 // A DAG's modal, opened from a row of the DAGs view in the Kanban task modal's frame, as wide as its graph needs: the title with its state dot and
 // declared rerun safety, the full step chart, each step's history, this or the last run, the pool's queue slots, every Board tie with its note, and Run now in the footer.
 import { useEffect, useState, type CSSProperties } from "react";
+import type { RunStatus } from "../../api";
 import { chartBox, LedgerNote, lastLine, Orb, StepHistory, Strip, TieChip, type LedgerGo } from "./DagParts";
-import { ago, refusal, rerunLine, runLine, short, ties, type DagData, type Row } from "./dagsModel";
+import { ago, jobRuns, refusal, rerunLine, short, ties, type DagData, type Row } from "./dagsModel";
 
 const STATE = (r: Row) => (r.phase === "ok" ? "healthy" : r.phase === "idle" ? "never run" : r.phase === "failed" ? r.d.status : r.phase);
+
+/** The colour class of a run's status word in the Runs list: `bad` for a failed or aborted run, `hot` while it runs, `q` while it waits. */
+const RUN_CLASS: Partial<Record<RunStatus, string>> = { failed: "bad", aborted: "bad", running: "hot", queued: "q" };
 
 /** The modal's narrowest width, and what its frame takes from the chart's: the body's side padding. */
 const MIN_WIDTH = 640, CHROME = 52;
@@ -28,7 +32,7 @@ export function DagModal({ data, r, now, starting, refused, run, close, ledger }
     return () => removeEventListener("resize", onResize);
   }, []);
   const pool = data.pools.find((p) => p.name === r.d.pool), board = ties(data, r.d.name), why = refusal(r, starting), box = chartBox(r, roomFor(vw)), rerun = rerunLine(r.d.rerun), live = r.d.active ?? [];
-  const jobRuns = [...live.map((x) => ({ key: x.runId, bad: false, line: runLine(x) })), ...(r.d.failed ?? []).map((x) => ({ key: x.runId, bad: true, line: runLine(x) }))].filter((x) => x.line);
+  const runs = jobRuns(r.d, now);
   return (
     <div id="kbm" onClick={(e) => e.target === e.currentTarget && close()}>
       <div className="modal tv dgm" role="dialog" aria-label={r.d.name} style={{ "--dgw": `${Math.max(MIN_WIDTH, Math.ceil(box.w) + CHROME)}px` } as CSSProperties}>
@@ -46,9 +50,12 @@ export function DagModal({ data, r, now, starting, refused, run, close, ledger }
           <section className="sec"><div className="sh"><span className="t">Step history</span></div>
             <StepHistory steps={r.d.steps} rerun={r.d.rerun} />
           </section>
-          {!!jobRuns.length && (
-            <section className="sec"><div className="sh"><span className="t">Runs</span><span className="n">{jobRuns.length}</span></div>
-              {jobRuns.map((x) => <div className="k" key={x.key}><b className={x.bad ? "bad" : "hot"}>{x.bad ? "failed" : "running"}</b> {x.line}</div>)}
+          {!!runs.length && (
+            <section className="sec runs"><div className="sh"><span className="t">Runs</span><span className="n">{runs.length}</span></div>
+              {runs.map((x) => (
+                <div className="k" key={x.key}><b className={RUN_CLASS[x.status]}>{x.status}</b> {[x.line, x.took].filter(Boolean).join(" · ")}
+                  {x.url && <> · <a href={x.url} target="_blank" rel="noreferrer">run ↗</a></>}</div>
+              ))}
             </section>
           )}
           <table><tbody>
