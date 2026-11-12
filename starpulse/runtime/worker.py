@@ -10,7 +10,7 @@ Runs context, run by `starpulse.runs.bin.runs_worker`; `dagu`, `github-actions`,
 `contexts` runs every one of those but `api` as threads of this one process (`starpulse.runtime.contexts`).
 
 `pulls` is run by `starpulse.pulls.bin.pulls_worker`. This module is the composition root of the workers: it builds the
-collaborators a worker needs (`runtime.assembly`, `runtime.hold`, `runtime.server`) and hands them to its `main`, as no
+collaborators a worker needs (`runtime.assembly`, `runtime.hold`, `runtime.wiring`) and hands them to its `main`, as no
 context imports `runtime`.
 """
 
@@ -20,15 +20,19 @@ import argparse
 import logging
 import os
 import threading
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
+from starpulse.event_log import heartbeat
 from starpulse.event_log.wake import StopEvent
-from starpulse.runtime.server import listen_options
+from starpulse.runtime.listen import listen_options
 
 logger = logging.getLogger(__name__)
 
 #: The run Adapters that run as their own workers (`starpulse.runs.bin.adapter_worker`): `serve`'s `contexts` child runs one as a thread for each that a `[[runs]]` instance names.
 OPT_IN = ("dagu", "github-actions", "systemd", "temporal")
+HEARTBEAT_CONTEXTS = ("api", "contexts")  # the processes `serve` supervises (`supervisor.WORKER_CONTEXTS`)
 CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", "sweeper", *OPT_IN, "contexts")
 
 
@@ -51,38 +55,50 @@ def worker_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _readiness(log: Any, feed: Any, config: Any) -> Callable[[], dict[str, Any]]:
+    """The reader of `/api/ready` over the contexts `config` makes `serve` supervise and the boot token it handed them."""
+    from starpulse.runtime.contexts import contexts_of  # noqa: PLC0415 - only the api worker pays for it
+    from starpulse.runtime.hold import BOOT_ENV  # noqa: PLC0415
+    from starpulse.runtime.readiness import readiness  # noqa: PLC0415
+
+    return readiness(log, feed, contexts_of(config), os.environ.get(BOOT_ENV))
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the worker `argv` names. Each bin is imported only for its own context: the other workers' closures hold no
     page, scheduler or run adapter module."""
     logging.basicConfig(level=logging.INFO)
     parser = worker_parser()
     args = parser.parse_args(argv)
+    if args.context in HEARTBEAT_CONTEXTS:  # a stalled process stops its ticker; the board writer beats from its own loop
+        heartbeat.keep(args.context, threading.Event())
     if args.context == "api":
         from starpulse.cli import doctor
-        from starpulse.runtime import read_model_follow, sched, server
+        from starpulse.runtime import listen, read_model_follow, sched, wiring
         from starpulse.runtime.assembly import assemble, history_store
         from starpulse.runtime.hold import LISTEN_FD_ENV, STATIC_ENV, announce_ready
         from starpulse.views.bin import api_worker
 
         sched.shorten_slice()  # before the page-server and request-worker threads start, which inherit it
         if static := os.environ.get(STATIC_ENV):
-            server._STATIC = Path(static)  # the page build `serve` checked, which `prepare` and the page app read
+            wiring.STATIC = Path(static)  # the page build `serve` checked, which `prepare` and the page app read
         host = api_worker.Host(
-            config=server._config,
-            resolve_listen=server.resolve_listen,
-            prepare=server.prepare,
-            inherited_socket=server.inherited_socket,
-            listen=server.listen,
-            announce=server.announce,
-            scheduler_remote=server.scheduler_remote,
-            serve_until_stopped=server.serve_until_stopped,
+            config=wiring.read_config,
+            resolve_listen=listen.resolve_listen,
+            prepare=wiring.prepare,
+            inherited_socket=listen.inherited_socket,
+            listen=listen.listen,
+            announce=wiring.announce,
+            scheduler_remote=wiring.scheduler_remote,
+            serve_until_stopped=wiring.serve_until_stopped,
             announce_ready=announce_ready,
             assemble=assemble,
             history_store=history_store,
             follow_read_model=read_model_follow.follow,
             contract=doctor.contract,
+            readiness=_readiness,
             probes=doctor.LIVE,
-            static=server._STATIC,
+            static=wiring.STATIC,
             listen_fd_env=LISTEN_FD_ENV,
         )
         return api_worker.main(argv, parser, host=host)
@@ -104,9 +120,10 @@ def main(argv: list[str] | None = None) -> None:
         except (OSError, ValueError) as exc:
             parser.exit(1, f"{path}: {exc}\n")
     if args.context == "scheduler":
-        from starpulse.runtime.server import _cached, trajectories_response
+        from starpulse.runtime.wiring import trajectories_response
         from starpulse.scheduler.bin import scheduler_worker
         from starpulse.sessions.adapters.outbound.session_start import starter
+        from starpulse.views.adapters.inbound.asgi_app import _cached
 
         return scheduler_worker.main(
             argv,
@@ -122,7 +139,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     if args.context == "runs":
         from starpulse.runs.bin import runs_worker
-        from starpulse.runtime.server import run_adapters
+        from starpulse.runtime.wiring import run_adapters
 
         return runs_worker.main(
             argv,
@@ -137,7 +154,7 @@ def main(argv: list[str] | None = None) -> None:
         args.context in OPT_IN
     ):  # a run adapter's worker: the `contexts` child runs it, the runs worker leaves it its instances
         from starpulse.runs.bin import adapter_worker
-        from starpulse.runtime.server import run_adapters
+        from starpulse.runtime.wiring import run_adapters
 
         return adapter_worker.main(
             argv, parser, args.context, **loader, run_adapters=run_adapters, worker_board=worker_board, hold=hold
@@ -155,12 +172,13 @@ def main(argv: list[str] | None = None) -> None:
             hold=hold,
         )
     if args.context == "sweeper":
-        from starpulse.runtime.assembly import prune_steps, runs_kind
-        from starpulse.runtime.server import run_adapters
+        from starpulse.runtime.assembly import github_kinds, prune_steps, runs_kind
+        from starpulse.runtime.wiring import run_adapters
         from starpulse.sweeper.bin import sweeper_worker
 
         def contexts(log, parser, config):
-            return [runs_kind(log, run_adapters(parser, config))]
+            base = args.config.parent if args.config else Path.cwd()
+            return [runs_kind(log, run_adapters(parser, config)), *github_kinds(config, base)]
 
         return sweeper_worker.main(argv, parser, **loader, prune=prune_steps, contexts=contexts, hold=hold)
     if args.context == "search":
@@ -176,7 +194,7 @@ def main(argv: list[str] | None = None) -> None:
             argv, parser, **loader, assemble=assemble, history_store=history_store, follow=follow, hold=hold
         )
     from starpulse.pulls.bin import pulls_worker
-    from starpulse.runtime.server import start_delivery
+    from starpulse.runtime.delivery_wiring import start_delivery
 
     return pulls_worker.main(
         argv,

@@ -8,7 +8,9 @@ split the two.
 
 `wte` weighs a step's tokens as the provider prices them against one uncached input token: a cache write 1.25, a
 cache read 0.1, an output token 5. `task_wte` sums a task's phases. A cell (kind x size) of at least `MIN_N` tasks
-has a `norm_wte`, the median `task_wte`, and a task over `FLAG_RATIO` times it is `above_norm`.
+has, per phase, a `phase_norm_wte`, the median `wte` of that phase over the cell's tasks that ran it (a phase over
+`FLAG_RATIO` times it is `phase_above_norm`). A task's `norm_wte` sums the norms of the phases it ran, so a qa round
+is weighed against peers' qa, and a task over `FLAG_RATIO` times it is `above_norm`.
 
 A row's `profile` is the `<model>-<effort>` of its first main-thread step, so a subagent's model does not stand for
 the session's; a row of subagent steps alone takes its first step's.
@@ -29,7 +31,7 @@ from starpulse.flow_metrics.model.cells import MIN_N, cell_of, profile_of
 from starpulse.flow_metrics.model.session_health import attributed, by_session, session_signals
 from starpulse.flow_metrics.model.steps import Owned, session_owned
 
-__all__ = ["FLAG_RATIO", "spend_report"]
+__all__ = ["FLAG_RATIO", "combine_spend", "fold_spend", "spend_report"]
 
 #: How many times its cell's median a task's weighted tokens must reach to be flagged.
 FLAG_RATIO = 3
@@ -46,41 +48,41 @@ def _edits(owned: Owned) -> bool:
     return any(call.kind == "tool" and call.name in _EDITS for call in owned.calls)
 
 
-def _owned_steps(found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None) -> list[Owned]:
-    """The captured, non-auxiliary steps of every session in `found` that belong to a task, oldest first."""
-    steps = [
-        o
-        for group in by_session(found)
-        for o in session_owned(group, keys, analytics)
+def fold_spend(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> dict[str, Any]:
+    """The fold of one session's `signals`: its `harness` and `session`, its captured, non-auxiliary steps that belong
+    to a task, each with whether it `edits`, and each task's compaction times, as plain JSON data `combine_spend` reads."""
+    owned = [
+        {**o.step, "edits": _edits(o)}
+        for o in session_owned(signals, keys, analytics)
         if o.step["captured"] and o.step["origin"] != "auxiliary" and o.step["task"]
     ]
-    return sorted(steps, key=lambda o: o.step["at"])
+    compactions: dict[str, list[float]] = defaultdict(list)
+    for task, s in attributed(session_signals(signals, keys, analytics), keys) if signals else ():
+        if task and s.kind == "compaction":
+            compactions[task].append(s.time)
+    first = signals[0] if signals else None
+    return {
+        "harness": first.harness if first else "",
+        "session": first.session if first else "",
+        "steps": owned,
+        "compactions": dict(compactions),
+    }
 
 
-def _compactions(found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None) -> dict[str, list[float]]:
-    """The times of each task's compactions."""
-    times: dict[str, list[float]] = defaultdict(list)
-    for group in by_session(found):
-        for task, s in attributed(session_signals(group, keys, analytics), keys):
-            if task and s.kind == "compaction":
-                times[task].append(s.time)
-    return times
-
-
-def _phase(o: Owned, editing: bool) -> str:
-    skill = o.step["skill"]
-    if skill == "deliver" and _edits(o):
+def _phase(step: Mapping[str, Any], editing: bool) -> str:
+    skill = step["skill"]
+    if skill == "deliver" and step["edits"]:
         return "implement"
     return _SKILL_PHASE.get(skill) or ("implement" if editing else "claim")
 
 
-def _phases(steps: list[Owned]) -> list[tuple[str, Owned]]:
+def _phases(steps: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
     """Each of `steps` with its phase."""
     first_edit: dict[str, float] = {}
-    for o in steps:
-        if _edits(o):
-            first_edit.setdefault(o.step["task"], o.step["at"])
-    return [(_phase(o, o.step["at"] >= first_edit.get(o.step["task"], 0)), o) for o in steps]
+    for step in steps:
+        if step["edits"]:
+            first_edit.setdefault(step["task"], step["at"])
+    return [(_phase(step, step["at"] >= first_edit.get(step["task"], 0)), step) for step in steps]
 
 
 def _row(task: str, phase: str) -> dict[str, Any]:
@@ -106,11 +108,16 @@ def spend_report(
 ) -> list[dict[str, Any]]:
     """One row per (task, phase) of the steps of `found`, by task then the phase's first step; see the module
     docstring."""
-    signals = list(found)
+    return combine_spend((fold_spend(group, keys, analytics) for group in by_session(found)), tasks)
+
+
+def combine_spend(folds: Iterable[Mapping[str, Any]], tasks: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """`spend_report` of the sessions whose `fold_spend` results `folds` holds, in the order the sessions are given."""
+    held = list(folds)
+    steps = sorted((step for fold in held for step in fold["steps"]), key=lambda step: step["at"])
     rows: dict[tuple[str, str], dict[str, Any]] = {}
     main_profiled: set[tuple[str, str]] = set()
-    for phase, o in _phases(_owned_steps(signals, keys, analytics)):
-        step = o.step
+    for phase, step in _phases(steps):
         key = (step["task"], phase)
         row = rows.setdefault(key, _row(step["task"], phase))
         tokens = step["tokens"]
@@ -127,7 +134,11 @@ def spend_report(
                 main_profiled.add(key)
         row.setdefault("first_at", step["at"])
         row["last_at"] = step["at"]
-    for task, times in _compactions(signals, keys, analytics).items():
+    compactions: dict[str, list[float]] = defaultdict(list)
+    for fold in held:
+        for task, times in fold["compactions"].items():
+            compactions[task] += times
+    for task, times in compactions.items():
         phases = sorted((r for (t, _), r in rows.items() if t == task), key=lambda r: r["first_at"])
         if not phases:
             continue
@@ -145,12 +156,19 @@ def _flagged(
     for (task, _), row in rows.items():
         total[task] += row["wte"]
     cells = {task: cell_of(tasks, task) or (None, None) for task in total}
-    in_cell: dict[Any, list[float]] = defaultdict(list)
-    for task, cell in cells.items():
-        in_cell[cell].append(total[task])
+    in_cell: dict[tuple[Any, str], list[float]] = defaultdict(list)
+    for (task, phase), row in rows.items():
+        in_cell[(cells[task], phase)].append(row["wte"])
     norm = {
-        cell: median(values) if cell[0] is not None and len(values) >= MIN_N else None
-        for cell, values in in_cell.items()
+        key: median(values) if key[0][0] is not None and len(values) >= MIN_N else None
+        for key, values in in_cell.items()
+    }
+    phase_norms: dict[str, list[float | None]] = defaultdict(list)
+    for task, phase in rows:
+        phase_norms[task].append(norm[(cells[task], phase)])
+    task_norm = {
+        task: None if None in norms else sum(n for n in norms if n is not None)
+        for task, norms in phase_norms.items()
     }
     return [
         {
@@ -158,8 +176,11 @@ def _flagged(
             "kind": cells[task][0],
             "size": cells[task][1],
             "task_wte": total[task],
-            "norm_wte": norm[cells[task]],
-            "above_norm": norm[cells[task]] is not None and total[task] > FLAG_RATIO * norm[cells[task]],
+            "norm_wte": task_norm[task],
+            "above_norm": task_norm[task] is not None and total[task] > FLAG_RATIO * task_norm[task],
+            "phase_norm_wte": norm[(cells[task], phase)],
+            "phase_above_norm": norm[(cells[task], phase)] is not None
+            and row["wte"] > FLAG_RATIO * norm[(cells[task], phase)],
         }
-        for (task, _), row in sorted(rows.items(), key=lambda kv: (kv[0][0], kv[1]["first_at"]))
+        for (task, phase), row in sorted(rows.items(), key=lambda kv: (kv[0][0], kv[1]["first_at"]))
     ]

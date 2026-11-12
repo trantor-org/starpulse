@@ -97,8 +97,11 @@ def start(
     """The `github-events` context: consume the inbox `[github]` names on a thread until `stop` is set. The listener's
     container holds no producer token, so this runs apart from it, over the same inbox, with the `ingest` that holds it.
 
+    The reconcile against GitHub is the sweeper's `github` kind, not a thread here.
+
     Returns the context's reload, which has nothing to re-read."""
     inbox, queue = open_queue(config, base, migrate)
+    settings = config.github
 
     def work() -> None:
         try:

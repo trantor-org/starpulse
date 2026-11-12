@@ -117,6 +117,15 @@ def _board(board: dict[str, Any], errors: list[str]) -> dict[str, str]:
     return _result("adapter:board", True, f"{len(board['agents'])} open tasks")
 
 
+def _ready(status: int, body: Any) -> dict[str, str]:
+    """The `ready` check: the server answered `/api/ready` 200, or the components it names as not ready."""
+    if status == 200:
+        return _result("ready", True, "every component ready")
+    components = body.get("components", {}) if isinstance(body, dict) else {}
+    named = [f"{name}: {part['detail']}" for name, part in components.items() if not part["ready"]]
+    return _result("ready", False, "; ".join(named) or f"/api/ready answered {status}")
+
+
 def _gh(probes: Probes) -> dict[str, str]:
     if not probes.which("gh"):
         return _result("gh", False, "gh is not installed, so a task's pull requests carry no state")
@@ -210,12 +219,14 @@ def run_checks(
     probes: Probes,
     server: str,
     served: dict[str, Any] | None = None,
+    ready: tuple[int, Any] | None = None,
 ) -> dict[str, Any]:
     """Every check as `{ok, checks: [{check, status, reason}]}`.
 
     `snapshot` is the server's snapshot, or the reason it could not be read; `config` is the loaded config, or the
     reason it could not be loaded; `server` is the address the snapshot was read from; `served` is the server's own
-    `/api/doctor` report, whose `poller:` checks join these because only the server reads the poller's beat."""
+    `/api/doctor` report, whose `poller:` checks join these because only the server reads the poller's beat; `ready` is
+    the status and body of its `/api/ready`, which the `ready` check judges."""
     beat = [check for check in (served or {}).get("checks", []) if check["check"].startswith("poller:")]
     checks = [
         _result(
@@ -223,6 +234,7 @@ def run_checks(
         ),
         _result("server", *((False, snapshot) if isinstance(snapshot, str) else (True, f"{server} answers"))),
         *([] if isinstance(snapshot, str) else _h3(probes, server)),
+        *([] if ready is None else [_ready(*ready)]),
         *_adapters(snapshot, config),
         _gh(probes),
         *_contract(snapshot, config, probes),

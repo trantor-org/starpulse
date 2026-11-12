@@ -12,6 +12,8 @@ events:
     - {from: [active, stopped], to: active}
   SESSION_STOPPED:
     - {from: active, to: stopped}
+  SESSION_SETTLED:
+    - {from: [idle, active, stopped], to: stopped}
 bindings:
   SessionStart: SESSION_STARTED
   UserPromptSubmit: SESSION_STARTED
@@ -21,3 +23,4 @@ bindings:
   skill_activated: SKILL_USED
   tool_result: TOOL_USED
   assistant_response: SESSION_STOPPED
+  settled: SESSION_SETTLED
