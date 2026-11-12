@@ -59,9 +59,7 @@ def worker_commands(config_path: Path | None) -> dict[str, list[str]]:
     """The command of each child `serve` supervises (`WORKER_CONTEXTS`): the Page API and the one `contexts` process,
     which runs the contexts the config names (`starpulse.runtime.contexts.contexts_of`)."""
     tail = ["--config", str(config_path)] if config_path else []
-    return {
-        context: [launch.interpreter(), "-m", "starpulse", "worker", context, *tail] for context in WORKER_CONTEXTS
-    }
+    return {context: [launch.interpreter(), "-m", "starpulse", "worker", context, *tail] for context in WORKER_CONTEXTS}
 
 
 def spawn_child(
@@ -131,6 +129,7 @@ class Supervisor:
     ) -> None:
         self._admit = admit
         self._adopted = dict(adopted or {})
+        self._handed: set[str] = set()
         self._children = {name: _Child(command) for name, command in commands.items()}
         self._spawn = spawn
         self._sockets = dict(sockets or {})
@@ -269,8 +268,10 @@ class Supervisor:
         live config block to re-read it, and keep the rest; report each as "replaced", "reloaded" or "kept".
 
         When `serve`'s own code changed the Page API is replaced first, beside the old one on the shared socket, from the
-        release now behind the launcher; every other child is ended and `supervisor` reports "re-executed": the caller
-        sends that report, then calls `reexec`, and the next image adopts the Page API. The report's `reads` is
+        release now behind the launcher; every other child whose code or config changed is ended, and `supervisor`
+        reports "re-executed": the caller sends that report, then calls `reexec`, and the next image adopts the Page API
+        and each child whose own code and config did not change, which stays running across the exec and is reported
+        as "kept". The report's `reads` is
         "launcher" when the code was read from the release behind the launcher, which a caller that probes code through
         its own interpreter (an older `starpulse reload`) lacks, and so cannot trust a "kept". Raises `ReloadError`,
         changing nothing, when a reading fails or `admit` refuses the definitions the config now names."""
@@ -286,8 +287,10 @@ class Supervisor:
                 os.environ.pop(STATIC_ENV, None)  # the next release serves the page build it ships
                 for name in self._sockets:
                     self._replace(name, self._children[name])
-                self._end([c.proc for n, c in self._children.items() if n not in self._sockets and c.proc is not None])
-                outcomes = dict.fromkeys(self._children, "replaced")
+                outcomes = {
+                    n: self._hand_over(n, c, after[n]) for n, c in self._children.items() if n not in self._sockets
+                }
+                outcomes.update(dict.fromkeys(self._sockets, "replaced"))
             else:
                 if self._retire and self._code_changed(after):
                     self._retire()
@@ -301,6 +304,11 @@ class Supervisor:
     def _apply(self, name: str, child: _Child, before: Reading | None, now: Reading) -> str:
         if before is None or not before.same_code(now) or before.restart != now.restart:
             return self._replace(name, child)
+        return self._keep(name, child, before, now)
+
+    def _keep(self, name: str, child: _Child, before: Reading, now: Reading) -> str:
+        """Leave a child whose code is unchanged running: "kept", or "reloaded" after a SIGHUP when only its live config
+        block changed (replaced where there is no SIGHUP to send)."""
         if before.live == now.live:
             return "kept"
         running = child.proc is not None and child.proc.poll() is None
@@ -309,6 +317,19 @@ class Supervisor:
         if running:
             child.proc.send_signal(_HANGUP)
         return "reloaded"
+
+    def _hand_over(self, name: str, child: _Child, now: Reading) -> str:
+        """Before a re-exec, keep a running child whose own code and config are unchanged for the next image to adopt
+        (`reexec`), and end any other: its code is not the next release's."""
+        before = self._seen.get(name)
+        alive = child.proc is not None and child.proc.poll() is None
+        if alive and before is not None and before.same_code(now) and before.restart == now.restart:
+            if _stdin_fd(child.proc) is not None:
+                self._handed.add(name)
+                return self._keep(name, child, before, now)
+        if child.proc is not None:
+            self._end([child.proc])
+        return "replaced"
 
     def _replace(self, name: str, child: _Child) -> str:
         old = child.proc
@@ -354,14 +375,21 @@ class Supervisor:
         and the Page API child that `reload` started beside the old one (`ADOPT_ENV`), which keeps answering meanwhile."""
         if self._control:
             self._control.stop()
+        handed = []
         for name, listening in self._sockets.items():  # only the Page API's: one descriptor to name
             listening.set_inheritable(True)
             os.environ[LISTEN_FD_ENV] = str(listening.fileno())
+            handed.append(name)
+        handed.extend(sorted(self._handed))
+        parts = []
+        for name in handed:
             proc = self._children[name].proc
             fd = None if proc is None or proc.poll() is not None else _stdin_fd(proc)
             if fd is not None:
                 os.set_inheritable(fd, True)
-                os.environ[ADOPT_ENV] = f"{proc.pid}:{fd}"
+                parts.append(f"{name}={proc.pid}:{fd}")
+        if parts:
+            os.environ[ADOPT_ENV] = ",".join(parts)
         self._execute()
 
     def _end(self, running: list[Any]) -> None:

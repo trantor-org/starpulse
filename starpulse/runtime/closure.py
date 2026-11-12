@@ -22,9 +22,9 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from starpulse.board.model.adapter_types import module_name
 from starpulse.runtime import launch
 from starpulse.runtime.config import Config, discover, load
+from starpulse.runtime.nats_server import CHILD
 
 SELF = "serve"
 
@@ -35,6 +35,8 @@ _ADAPTER_ENTRY = "starpulse.runs.bin.adapter_worker"
 #: process runs: its closure is the union of theirs.
 CONTEXT_ENTRIES = (
     "starpulse.runtime.contexts",
+    "starpulse.runtime.wiring",
+    "starpulse.runtime.delivery_wiring",
     "starpulse.pulls.bin.pulls_worker",
     "starpulse.scheduler.bin.scheduler_worker",
     "starpulse.runs.bin.runs_worker",
@@ -51,9 +53,11 @@ ENTRIES = {
     SELF: "starpulse.runtime.server",
     "api": "starpulse.views.bin.api_worker",
     "contexts": "starpulse.runtime.worker",
+    CHILD: "starpulse.runtime.nats_server",
 }
 
-_CHILDREN = tuple(name for name in ENTRIES if name != SELF)
+#: The children that read the config: the `nats` child reads none, as `serve` hands it its port and store directory.
+_CHILDREN = tuple(name for name in ENTRIES if name not in (SELF, CHILD))
 
 
 #: The keys `serve` alone reads: each child's memory limit, its refresh token and its take-over command,
@@ -70,6 +74,7 @@ _SERVE_KEYS = (
     "take_over_command",
     "slow_read_seconds",
     "worker_memory",
+    "bridge",
 )
 
 
@@ -84,7 +89,7 @@ def _owned_by(*contexts: str) -> tuple[str, ...]:
 CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "tracker_url": _owned_by(),
     "harnesses_file": _owned_by(),
-    "analytics": _owned_by(),
+    "analytics": _owned_by("contexts"),
     "telemetry_loki_url": _owned_by(),
     "cursor_context": _owned_by(),
     "claude_code": _owned_by("contexts"),
@@ -197,6 +202,8 @@ def adapter_module(board_type: str) -> str:
     closure holds it and an edit to it would reach no child unless it is read with the closure.
 
     Raises `ReloadError` when the type names no module."""
+    from starpulse.board.model.adapter_types import module_name  # noqa: PLC0415 - `serve`'s closure holds no board module
+
     try:
         return module_name(board_type)
     except ValueError as exc:
@@ -243,6 +250,7 @@ def _blocks(name: str, config: Config, base: Path) -> tuple[object, object]:
             board_built_blocks(config),
             sweeper_built_blocks(config),
             config.claude_code,
+            config.analytics,
             _machine_hash(config, base),
         )
         return restart, (pulls_delivery_blocks(config), scheduler_live_blocks(config))

@@ -61,14 +61,14 @@ def _line_of(text: str, parts: Iterable[str | int]) -> int:
 
 def load_machine(path: Path, registry: Registry = Registry()) -> Compiled:
     """Compile the machine file at `path`."""
-    return compile_document(_read(path), path, registry)
+    return compile_document(read_document(path), path, registry)
 
 
 #: Each read document by resolved path, with the modification time and size it was read at.
 _READ: dict[Path, tuple[int, int, dict[str, Any]]] = {}
 
 
-def _read(path: Path) -> dict[str, Any]:
+def read_document(path: Path) -> dict[str, Any]:
     """The validated document at `path`, a copy the caller may change."""
     try:
         stat = path.stat()
@@ -93,9 +93,21 @@ def _parse(path: Path) -> dict[str, Any]:
         raise MachineDefinitionError(
             f"{path}: `subflows:` is now `submachines:`; rename the key", path, _line_of(text, ["subflows"])
         )
+    if watching := _watching(document):
+        raise MachineDefinitionError(
+            f"{path}: states {watching} declare `waits:`, which the policy DB holds as watches (`starpulse policy show` prints them)",
+            path,
+            _line_of(text, ["states", watching[0], "waits"]),
+        )
     if (error := _schema_error(document)) is not None:
         raise MachineDefinitionError(f"{path}: {_describe(error)}", path, _line_of(text, error.absolute_path))
     return document
+
+
+def _watching(document: Any) -> list[str]:
+    """The states of a machine `document` that still declare `waits`."""
+    states = document.get("states") if isinstance(document, dict) else None
+    return [name for name, state in (states.items() if isinstance(states, dict) else ()) if isinstance(state, dict) and "waits" in state]
 
 
 def _spell_on(document: Any) -> None:
@@ -108,4 +120,4 @@ def _spell_on(document: Any) -> None:
 
 def definition(path: Path) -> Definition:
     """The definition of the machine file at `path`."""
-    return definition_of(_read(path))
+    return definition_of(read_document(path))

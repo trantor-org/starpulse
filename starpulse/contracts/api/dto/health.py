@@ -109,6 +109,7 @@ class SessionHealth(_Api):
     task: str | None
     kind: Literal["headless", "interactive", "unknown"]
     eval: str
+    origin: str
     first_at: float
     last_at: float
     prompts: int
