@@ -58,6 +58,7 @@ class PullStore:
         #: Counts saves, so a reader holding an answer knows when it is stale.
         self.rev = 0
         self._lock = threading.Lock()
+        self._saving = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
         self._save_listeners: list[Callable[[list[tuple[str, int]]], None]] = []
         require_migrated(engine)
@@ -91,7 +92,8 @@ class PullStore:
 
     def save(self, records: Iterable[dict[str, Any]]) -> None:
         """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository
-        and number."""
+        and number, except one that would take a merged pull request back from MERGED or a closed one back to OPEN
+        from before the close (`_takes_back`)."""
         rows = [
             {
                 **{column: record[name] for column, name in _FIELDS.items()},
@@ -102,16 +104,39 @@ class PullStore:
         ]
         if not rows:
             return
-        with self._engine.begin() as db:
+        with self._saving, self._engine.begin() as db:
+            rows = [row for row in rows if not self._takes_back(db, row)]
             for row in rows:
                 db.execute(
                     delete(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
                 )
-            db.execute(insert(pull_requests), rows)
+            if rows:
+                db.execute(insert(pull_requests), rows)
         keys = [(row["repo"], row["number"]) for row in rows]
-        self.refresh(keys)
-        for announce in self._save_listeners:
-            announce(keys)
+        if keys:
+            self.refresh(keys)
+            for announce in self._save_listeners:
+                announce(keys)
+
+    @staticmethod
+    def _takes_back(db: Any, row: dict[str, Any]) -> bool:
+        """Whether saving `row` would undo a pull request's end. A merged record never changes state, whichever writer
+        saves: a read begun before the merge, or an event or job entry built from the record before it, lands after it.
+        A closed one goes back to open only for a write no older than the close (a reopen). A ready one goes back to
+        draft only for a write no older than the ready event."""
+        stored = db.execute(
+            select(pull_requests.c.state, pull_requests.c.fetched_at, pull_requests.c.is_draft).where(
+                *(pull_requests.c[key] == row[key] for key in ("repo", "number"))
+            )
+        ).first()
+        if stored is None:
+            return False
+        state, fetched, draft = stored
+        if state == "MERGED":
+            return row["state"] != "MERGED"
+        if state == "OPEN" and not draft and row["is_draft"] and row["fetched_at"] < fetched:
+            return True  # a read begun while the PR was draft, saved after the ready event
+        return state == "CLOSED" and row["state"] == "OPEN" and row["fetched_at"] < fetched
 
     def refresh(self, keys: Iterable[tuple[str, int]]) -> None:
         """Take the database's rows of `keys` (repository, number) into memory, as after a save: the way a process that
