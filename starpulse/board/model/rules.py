@@ -5,25 +5,31 @@ which writes it judges, `require` is one primitive the task as it will be after 
 is the refusal every writer, the CLI's and the page's, answers with. A primitive is a one-key table naming its kind:
 `{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{body: {...}}`, `{block: {...}}`,
 `{post_merge_checks: {}}`, `{dependencies: {...}}`, `{checklist: {...}}`, `{readable: {...}}`, `{unique: {...}}`,
-`{names_ids: {...}}`, `{pulls_ready: {}}`, `{pulls_clear: {}}` or `{pulls_changed: {...}}` (these three read the stored pull requests the task's
+`{acyclic: {...}}`, `{names_ids: {...}}`, `{retained: {...}}`, `{no_implied_dependency: {}}`, `{pull_proof: {...}}`,
+`{matrix_profile: {}}`, `{pulls_ready: {}}`, `{pulls_failing: {}}`, `{pulls_clear: {}}` or `{pulls_changed: {...}}` (these four read the stored pull requests the task's
 `references` cite, never GitHub), or a combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives; `{before: <primitive>}` reads
 the task as it was before the write (a create had none, so it holds). A write carries the actor that makes it
 (`operator`, `agent`, or `<instance>/<workflow>` as a machine's `writers` spell it), which `unless_actor` exempts.
+
+`evaluate` is the one verdict on a write, `{refused, warned}`: the first broken rule refuses it, except that the rules
+of a lane move (`to`, `from`) an actor in `warned_actors` breaks are returned in `warned` and the write lands.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from collections import Counter
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from fnmatch import fnmatchcase
-from typing import Any
+from functools import lru_cache
+from typing import Any, NamedTuple
 
-from starpulse.board.model import post_merge_checks, readable
+from starpulse.board.model import entry, post_merge_checks, readable
 from starpulse.board.model.sections import fenced_list, under
 from starpulse.machine_engine.model.transitions import lane_id
 
-__all__ = ["Record", "Rule", "load", "readable_verdict", "refusal", "standing_refusal"]
+__all__ = ["Record", "Rule", "Verdict", "evaluate", "load", "readable_verdict", "refusal", "standing_refusal"]
 
 
 @dataclass(frozen=True)
@@ -38,9 +44,13 @@ class Record:
     earlier: Record | None = None
     #: The stored pull request `(repository, number)` as `{draft, checks, body, files}`, or None when the store holds
     #: none (`files` is None for a record saved before the store kept them); the `pulls_*` primitives read it.
-    pull_of: Callable[[str, int], Mapping[str, Any] | None] = lambda _repo, _number: None
+    pull_of: Callable[[str, int, bool], Mapping[str, Any] | None] = lambda _repo, _number, _settle: None
     #: The ids of the open tasks whose front matter field (first argument) holds a value (second), none for a board with no tasks.
     holders: Callable[[str, str], list[str]] = lambda _field, _value: []
+    #: Every task's `dependencies` by id, read when asked; the `no_implied_dependency` primitive walks it.
+    graph: Callable[[], Mapping[str, Sequence[str]]] = lambda: {}
+    #: The board's `default_profiles` (kind, then size, to a profile); the `matrix_profile` primitive reads it.
+    matrix: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     @property
     def state(self) -> str:
@@ -55,6 +65,8 @@ _REGIONS = {
     "plan": "SECTION:PLAN",
     "acceptance_criteria": "AC",
     "definition_of_done": "DOD",
+    "comments": "COMMENTS",
+    "final_summary": "SECTION:FINAL_SUMMARY",
 }
 #: The regions that hold a checklist.
 _CHECKLISTS = ("acceptance_criteria", "definition_of_done")
@@ -97,6 +109,11 @@ class Rule:
         if self.origin and (before is None or before.state not in self.origin):
             return False
         return self.staying or before is None or before.state != after.state
+
+    @property
+    def moves(self) -> bool:
+        """Whether the rule judges a move between lanes, its entry or its exit, and no write that holds in every lane."""
+        return not (self.always or self.created or self.staying)
 
     def explain(self, record: Record) -> str:
         """The refusal text for `record`: the reason, then what a `readable` requirement found broken, when it is one."""
@@ -289,6 +306,74 @@ def _unique(spec: Mapping[str, Any], where: str) -> Primitive:
     return holds
 
 
+def _acyclic(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"field", "self_only"}, where, "acyclic")
+    name = spec.get("field")
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"{where}: acyclic needs `field`, the front matter key whose values are task ids")
+
+    def holds(record: Record) -> bool:
+        own = str(record.front.get("id") or "").strip()
+        held = {value.casefold() for value in _values(record.front.get(name))}
+        if own.casefold() in held or spec.get("self_only"):
+            return own.casefold() not in held
+        kept = record.earlier and {value.casefold() for value in _values(record.earlier.front.get(name))}
+        if not held or (kept and held <= kept):
+            return True  # only an added value can close a loop; an older one is not this write's
+        seen, frontier = {own.casefold()}, [own]
+        while frontier:
+            frontier = [
+                task
+                for value in frontier
+                for task in record.holders(name, value)
+                if task.casefold() not in seen
+            ]
+            seen.update(task.casefold() for task in frontier)
+        return not held & seen
+
+    return holds
+
+
+def _unchanged(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"field", "region", "ignoring"}, where, "unchanged")
+    name, region = spec.get("field"), spec.get("region")
+    if (name is None) == (region is None):
+        raise ValueError(f"{where}: unchanged needs one of `field` (a front matter key) or `region`")
+    if region is not None and region not in _REGIONS:
+        raise ValueError(f"{where}: unchanged has no region {region}; known: {', '.join(_REGIONS)}")
+    try:
+        ignored = re.compile(spec.get("ignoring") or "(?!)")
+    except (re.error, TypeError) as error:
+        raise ValueError(f"{where}: unchanged `ignoring` is not a regular expression: {error}") from error
+    bounds = _region(region) if region else None
+
+    def read(record: Record) -> object:
+        if bounds is None:
+            return record.front.get(name)
+        found = bounds.search(record.body)
+        return ignored.sub("", found.group(1)) if found else ""
+
+    return lambda record: record.earlier is not None and read(record) == read(record.earlier)
+
+
+def _no_more(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"region", "matches"}, where, "no_more")
+    region, pattern = spec.get("region"), spec.get("matches")
+    if region not in _REGIONS:
+        raise ValueError(f"{where}: no_more needs a `region`; known: {', '.join(_REGIONS)}")
+    try:
+        found = re.compile(pattern)
+    except (re.error, TypeError) as error:
+        raise ValueError(f"{where}: no_more `matches` is not a regular expression: {error}") from error
+    bounds = _region(region)
+
+    def count(record: Record) -> int:
+        inside = bounds.search(record.body)
+        return len(found.findall(inside.group(1))) if inside else 0
+
+    return lambda record: record.earlier is not None and count(record) <= count(record.earlier)
+
+
 def _names_ids(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, {"from", "matches", "in"}, where, "names_ids")
     pattern = spec.get("matches")
@@ -306,6 +391,94 @@ def _names_ids(spec: Mapping[str, Any], where: str) -> Primitive:
         return {match.group(0).casefold() for value in _values(record.front.get(name)) for match in found.finditer(value)}
 
     return lambda record: ids(record, source) <= ids(record, target)
+
+
+def _retained(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"region", "matches"}, where, "retained")
+    region, pattern = spec.get("region"), spec.get("matches")
+    if region not in _REGIONS:
+        raise ValueError(f"{where}: retained needs a `region`, not {region}; known: {', '.join(_REGIONS)}")
+    try:
+        found = re.compile(pattern)
+    except (re.error, TypeError) as error:
+        raise ValueError(f"{where}: retained `matches` is not a regular expression: {error}") from error
+    bounds = _region(region)
+
+    def lines(record: Record) -> Counter[str]:
+        inside = bounds.search(record.body)
+        return Counter(line for line in (inside.group(1) if inside else "").splitlines() if found.search(line))
+
+    return lambda record: record.earlier is None or not lines(record.earlier) - lines(record)
+
+
+def _node(value: str) -> str:
+    """The task id a `dependencies` value names: `TASK-5#2` depends on `TASK-5`."""
+    return value.partition("#")[0].strip().casefold()
+
+
+def _reaches(graph: Mapping[str, list[str]], start: str, goal: str) -> bool:
+    seen, frontier = {start}, [start]
+    while frontier:
+        frontier = list({task for node in frontier for task in graph.get(node, ()) if task not in seen})
+        seen.update(frontier)
+    return goal in seen
+
+
+def _no_implied_dependency(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, set(), where, "no_implied_dependency")
+
+    def holds(record: Record) -> bool:
+        held = [_node(value) for value in _values(record.front.get("dependencies"))]
+        kept = {_node(value) for value in _values(record.earlier.front.get("dependencies"))} if record.earlier else set()
+        added = [task for task in held if task not in kept]  # only an added edge is this write's to judge
+        if not added:
+            return True
+        graph = {_node(task): [_node(value) for value in values] for task, values in record.graph().items()}
+        return not any(_reaches(graph, via, target) for target in added for via in held if via != target)
+
+    return holds
+
+
+def _pull_proof(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"region", "matches"}, where, "pull_proof")
+    region = spec.get("region", "comments")
+    if region not in _REGIONS:
+        raise ValueError(f"{where}: pull_proof has no region {region}; known: {', '.join(_REGIONS)}")
+    try:
+        selects = re.compile(spec["matches"])
+    except KeyError as error:
+        raise ValueError(f"{where}: pull_proof needs `matches`, the pattern that selects a proof line") from error
+    except (re.error, TypeError) as error:
+        raise ValueError(f"{where}: pull_proof `matches` is not a regular expression: {error}") from error
+    bounds = _region(region)
+
+    def named(line: str, repo: str, number: str, alone: bool) -> bool:
+        owner, _, name = repo.partition("/")
+        spelled = [rf"github\.com/{re.escape(repo)}/pull/{number}(?!\d)", rf"(?<![\w/#-])(?:{re.escape(owner)}/)?{re.escape(name)}#{number}(?!\d)"]
+        if alone:  # a bare number names the one pull request that holds it
+            spelled.append(rf"(?<![\w/#-])#{number}(?!\d)")
+        return any(re.search(text, line, re.I) for text in spelled)
+
+    def holds(record: Record) -> bool:
+        links = [link for url in _values(record.front.get("references")) if (link := _PULL_URL.fullmatch(url))]
+        inside = bounds.search(record.body)
+        proof = [line for line in (inside.group(1) if inside else "").splitlines() if selects.search(line)]
+        return all(
+            any(named(line, link[1], link[2], alone=all(other[1] == link[1] for other in links if other[2] == link[2])) for line in proof)
+            for link in links
+        )
+
+    return holds
+
+
+def _matrix_profile(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, set(), where, "matrix_profile")
+
+    def holds(record: Record) -> bool:
+        cell = entry.default_profile(_values(record.front.get("labels")), record.matrix)
+        return cell is None or _values(record.front.get("profile")) == [cell]
+
+    return holds
 
 
 def _checklist(spec: Mapping[str, Any], where: str) -> Primitive:
@@ -333,28 +506,38 @@ def _checklist(spec: Mapping[str, Any], where: str) -> Primitive:
     return holds
 
 
-def _pulls(record: Record) -> list[Mapping[str, Any] | None]:
-    """The stored pull request of each URL in the task's `references`, None for one the store does not hold."""
+def _pulls(record: Record, settle: bool = False) -> list[Mapping[str, Any] | None]:
+    """The stored pull request of each URL in the task's `references`, None for one the store does not hold; `settle`
+    asks the lookup to correct a stored `mergeable` from GitHub."""
     links = [_PULL_URL.fullmatch(url) for url in _values(record.front.get("references"))]
-    return [record.pull_of(link[1], int(link[2])) for link in links if link]
+    return [record.pull_of(link[1], int(link[2]), settle) for link in links if link]
 
 
 def _pulls_ready(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, set(), where, "pulls_ready")
     return lambda record: all(
-        pull is not None and not pull["draft"] and pull["checks"] == "pass" for pull in _pulls(record)
+        pull is not None and (pull["state"] == "MERGED" or (not pull["draft"] and pull["checks"] == "pass"))
+        for pull in _pulls(record)
+    )
+
+
+def _pulls_failing(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, set(), where, "pulls_failing")
+    return lambda record: any(
+        pull is not None and pull["state"] == "OPEN" and pull["checks"] == "failing" for pull in _pulls(record)
     )
 
 
 def _pulls_clear(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, set(), where, "pulls_clear")
     return lambda record: all(
-        pull is not None and not pull["threads"] and pull["mergeable"] == "MERGEABLE" for pull in _pulls(record)
+        pull is not None and (pull["state"] == "MERGED" or (not pull["threads"] and pull["mergeable"] == "MERGEABLE"))
+        for pull in _pulls(record, settle=True)
     )
 
 
 def _pulls_changed(spec: Mapping[str, Any], where: str) -> Primitive:
-    _unknown(spec, {"files", "matches"}, where, "pulls_changed")
+    _unknown(spec, {"files", "matches", "merged_matches"}, where, "pulls_changed")
     globs = spec.get("files")
     if not isinstance(globs, list) or not globs or not all(isinstance(glob, str) for glob in globs):
         raise ValueError(f"{where}: pulls_changed needs `files`, a list of globs a changed file is matched against")
@@ -364,16 +547,31 @@ def _pulls_changed(spec: Mapping[str, Any], where: str) -> Primitive:
         raise ValueError(f"{where}: pulls_changed needs `matches`, the regular expression the evidence carries") from error
     except (re.error, TypeError) as error:
         raise ValueError(f"{where}: pulls_changed `matches` is not a regular expression: {error}") from error
+    try:
+        merged_wanted = re.compile(spec.get("merged_matches", spec["matches"]))
+    except (re.error, TypeError) as error:
+        raise ValueError(f"{where}: pulls_changed `merged_matches` is not a regular expression: {error}") from error
     criteria = _region("acceptance_criteria")
 
     def holds(record: Record) -> bool:
         pulls = _pulls(record)
-        if any(pull is None or pull["files"] is None for pull in pulls):
-            return False  # the store cannot say what changed: the rule cannot clear, so it fails closed
-        changed = [pull for pull in pulls if any(fnmatchcase(path, glob) for path in pull["files"] for glob in globs)]
+        if any(pull is None for pull in pulls):
+            return False  # the store holds no such pull request: the rule cannot clear, so it fails closed
+        declared = _values(record.front.get("modified_files"))  # stands for a record no read of GitHub listed files for
+        if not declared and any(pull["files"] is None for pull in pulls):
+            return False  # no file list to match for a pull request: the rule cannot clear, so it fails closed
+        changed = [
+            pull
+            for pull in pulls
+            if any(fnmatchcase(path, glob) for path in (declared if pull["files"] is None else pull["files"]) for glob in globs)
+        ]
         found = criteria.search(record.body)
         checked = _CHECKED.findall(found.group(1)) if found else []
-        return not changed or any(wanted.search(line) for line in checked) or all(wanted.search(pull["body"]) for pull in changed)
+
+        def evidenced(pull: Mapping[str, Any]) -> bool:
+            return (merged_wanted if pull["state"] == "MERGED" else wanted).search(pull["body"]) is not None
+
+        return not changed or any(wanted.search(line) for line in checked) or all(evidenced(pull) for pull in changed)
 
     return holds
 
@@ -383,17 +581,23 @@ def _found(primitive: Primitive, record: Record) -> str:
     return primitive.broken(record) if isinstance(primitive, _Readable) else ""
 
 
+#: How many description verdicts a `readable` primitive keeps.
+_VERDICTS_KEPT = 2048
+
+
 class _Readable:
     """A `readable` primitive: holds when the description reads well, and `broken` says what it found otherwise."""
 
     def __init__(self, template: readable.Template) -> None:
         self._template = template
+        self._verdict = lru_cache(maxsize=_VERDICTS_KEPT)(lambda body: readable.broken(template, body))
 
     def _judged(self, record: Record) -> str:
         return readable.judged(self._template, record.body)
 
     def broken(self, record: Record) -> str:
-        return readable.broken(self._template, record.body)
+        """What the body breaks, remembered per body: the verdict depends on the template and the text alone."""
+        return self._verdict(record.body)
 
     def __call__(self, record: Record) -> bool:
         """Holds for a description the write left as it was: the rules judge a create and an edit, not an older text."""
@@ -423,9 +627,17 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "dependencies": _dependencies,
     "checklist": _checklist,
     "unique": _unique,
+    "acyclic": _acyclic,
+    "unchanged": _unchanged,
+    "no_more": _no_more,
     "names_ids": _names_ids,
+    "retained": _retained,
+    "no_implied_dependency": _no_implied_dependency,
+    "pull_proof": _pull_proof,
+    "matrix_profile": _matrix_profile,
     "readable": _readable,
     "pulls_ready": _pulls_ready,
+    "pulls_failing": _pulls_failing,
     "pulls_clear": _pulls_clear,
     "pulls_changed": _pulls_changed,
 }
@@ -496,34 +708,86 @@ def load(declared: object) -> tuple[Rule, ...]:
     return tuple(rules)
 
 
-def refusal(rules: tuple[Rule, ...], before: Record | None, after: Record, actor: str) -> Rule | None:
-    """The first rule the write by `actor` from `before` (None for a create) to `after` breaks, or None for none."""
+class Verdict(NamedTuple):
+    """What the rules say of one write: the rule that `refused` it, else the `warned` rules it broke and still lands."""
+
+    refused: Rule | None = None
+    warned: tuple[Rule, ...] = ()
+
+
+def evaluate(
+    rules: tuple[Rule, ...], before: Record | None, after: Record, actor: str, warned_actors: frozenset[str] = frozenset()
+) -> Verdict:
+    """The verdict on the write by `actor` from `before` (None for a create) to `after`.
+
+    The first broken rule refuses it. An actor in `warned_actors` is refused only by a rule that holds on every write, a
+    create or a task staying in its lane; a rule of lane entry or exit it breaks is a warning and the move lands."""
     after = replace(after, earlier=before)
-    return next((rule for rule in rules if rule.judges(before, after, actor) and not rule.require(after)), None)
+    broken = [rule for rule in rules if rule.judges(before, after, actor) and not rule.require(after)]
+    return _split_broken(broken, actor, warned_actors)
 
 
-def standing_refusal(
-    rules: tuple[Rule, ...], front: Mapping[str, Any], body: str, lane: str, actor: str = ""
-) -> Rule | None:
-    """The first rule that refuses moving the task to `lane` by `actor` whatever other tasks hold, or None.
+def _split_broken(broken: list[Rule], actor: str, warned_actors: frozenset[str]) -> Verdict:
+    """The `broken` rules as `actor` meets them: the first refuses, or for a warned actor the first that holds on every
+    write refuses and the rules of lane entry or exit are warned."""
+    if actor not in warned_actors:
+        return Verdict(next(iter(broken), None))
+    return Verdict(
+        next((rule for rule in broken if not rule.moves), None), tuple(rule for rule in broken if rule.moves)
+    )
 
-    A rule that reads another task's state can change its verdict without the task's file changing; the write still
-    enforces it, but a standing verdict recorded with the task leaves it out."""
+
+def refusal(rules: tuple[Rule, ...], before: Record | None, after: Record, actor: str) -> Rule | None:
+    """The first rule the write by `actor` from `before` (None for a create) to `after` breaks, or None for none.
+
+    Not new: `apps/commands`' review-fix gate test calls it through the installed starpulse pin, which has no `evaluate`
+    until the gitlink bump, so it stays until that caller moves."""
+    return evaluate(rules, before, after, actor).refused
+
+
+def standing_verdict(
+    rules: tuple[Rule, ...],
+    front: Mapping[str, Any],
+    body: str,
+    lane: str,
+    actor: str = "",
+    enter: Callable[[Mapping[str, Any]], Mapping[str, Any]] = lambda moved: moved,
+    warned_actors: frozenset[str] = frozenset(),
+) -> Verdict:
+    """What the rules say of moving the task to `lane` by `actor` whatever other tasks hold: `evaluate`'s verdict on the
+    move, naming every rule an `actor` in `warned_actors` is warned of. `enter` runs the lane's entry effects on the
+    moved task, as the write does.
+
+    A rule that reads another task can change its verdict without the task's file changing; the write still enforces
+    it, but a standing verdict recorded with the task leaves it out."""
     read: list[str] = []
 
     def unread(task: str) -> None:
         read.append(task)
 
-    def unread_pull(repo: str, number: int) -> None:
+    def unread_pull(repo: str, number: int, _settle: bool) -> None:
         read.append(f"{repo}#{number}")
 
     before = Record(front, body, unread, pull_of=unread_pull)
-    after = Record({**front, "status": lane}, body, unread, before, unread_pull)
+    after = Record(enter({**front, "status": lane}), body, unread, before, unread_pull)
+    broken = []
     for rule in rules:
         read.clear()
         if rule.judges(before, after, actor) and not rule.require(after) and not read:
-            return rule
-    return None
+            broken.append(rule)
+    return _split_broken(broken, actor, warned_actors)
+
+
+def standing_refusal(
+    rules: tuple[Rule, ...],
+    front: Mapping[str, Any],
+    body: str,
+    lane: str,
+    actor: str = "",
+    enter: Callable[[Mapping[str, Any]], Mapping[str, Any]] = lambda moved: moved,
+) -> Rule | None:
+    """The first rule that refuses moving the task to `lane` by `actor` whatever other tasks hold, or None."""
+    return standing_verdict(rules, front, body, lane, actor, enter).refused
 
 
 def readable_verdict(rules: tuple[Rule, ...], front: Mapping[str, Any], body: str) -> str:

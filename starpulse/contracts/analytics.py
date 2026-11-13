@@ -17,6 +17,10 @@ tasks or skills (`GET /api/analytics/sessions`):
 
 - `injected_openings`: prefixes of a prompt's text. A prompt that opens with one is labelled `injected` (a harness
   or scheduler wrote it), any other `human`; the label is stored and the text never is.
+- `[analytics.session_origins]`: per origin name, the prompt prefixes that open a session it names (a start service's
+  start prompt, a phase or wake `/clear`'s skill line). `GET /api/analytics/sessions` labels a session `origin` with the
+  first prompt's match, `operator` for any other `human` prompt and `injected` for an injected one (an injected
+  prompt stays `injected` even when it matches an origin).
 - `[analytics.labeller]`: the typed-decision endpoint (`url`, the checkpoint `model`, optional `instructions` and a
   `timeout` in seconds, 2 by default) that names a `human` Claude Code prompt's intent, one of the `criteria` table's
   labels (label to definition) or `unsure`. The prompt's text is sent to it and only the label is kept; an endpoint that
@@ -61,6 +65,7 @@ _KEYS = {
     "lifecycle_skills",
     "skill_loads",
     "injected_openings",
+    "session_origins",
     "operator_tools",
     "claims",
     "completion_skill",
@@ -136,6 +141,8 @@ class Analytics:
     """What should load each declared skill."""
     injected_openings: tuple[str, ...] = ()
     """Prefixes that label a prompt `injected`; none: every prompt is `human`."""
+    session_origins: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    """Per origin name, the prefixes of the prompt that opens a session it names; a prompt matching none is `operator`."""
     operator_tools: frozenset[str] = frozenset()
     """Tools whose result is an operator's answer; the silence before one is the operator's wait. None: no tool waits."""
     claims: tuple[re.Pattern[str], ...] = ()
@@ -166,6 +173,12 @@ def _texts(raw: Mapping[str, object], key: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
         raise AnalyticsError(f"analytics: {key} must be a list of text")
     return tuple(value)
+
+
+def _origins(raw: object) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    if not isinstance(raw, dict):
+        raise AnalyticsError("analytics: session_origins must map each origin name to a list of prompt prefixes")
+    return tuple((str(name), _texts({name: openings}, name)) for name, openings in raw.items())
 
 
 def _text(raw: Mapping[str, object], key: str) -> str:
@@ -322,6 +335,7 @@ def parse_analytics(raw: object) -> Analytics:
         lifecycle_skills=frozenset(_texts(raw, "lifecycle_skills")),
         skill_loads=tuple(_load(table, at) for at, table in enumerate(loads)),
         injected_openings=_texts(raw, "injected_openings"),
+        session_origins=_origins(raw.get("session_origins", {})),
         operator_tools=frozenset(_texts(raw, "operator_tools")),
         claims=_claims(raw),
         completion_skill=skill,
