@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, get_args
 
@@ -178,11 +178,25 @@ class PushRuns:
             logger.warning("StarPulse: replaying %s: the saved pushed runs cannot be read", stream)
             return None
         with self._lock:
-            self._dags |= {name: dict(dag) for name, dag in snapshot.dags.items()}
+            # a workflow saved before `rerun` joined the `Dag` contract lacks it, and the page refuses the whole instance
+            self._dags |= {name: {"rerun": None, **dag} for name, dag in snapshot.dags.items()}
             self._seen = self._saved = position
         self._publish()
         logger.warning("StarPulse: resuming %s after %s", stream, position)
         return position
+
+    def prune(self, instance: str, listed: Collection[str]) -> None:
+        """Drop the workflows named `<instance>/<workflow>` whose workflow `instance` no longer lists. A bare name is
+        no instance's to drop, and an empty listing is no evidence a workflow is gone."""
+        prefix = f"{instance}/"
+        with self._lock:
+            gone = [name for name in self._dags if name.startswith(prefix) and name[len(prefix) :] not in listed]
+            if not listed or not gone:
+                return
+            for name in gone:
+                del self._dags[name]
+            self._saved = -1  # the saved snapshot still holds them; the next save writes this state at the same position
+        self._publish()
 
     def save(self) -> None:
         """Write the workflows and the position they reflect to the store `resume` was given, unless nothing was read
