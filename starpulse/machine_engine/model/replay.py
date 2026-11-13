@@ -8,7 +8,7 @@ a task's facts is not judged, because the history keeps none.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from starpulse.machine_engine.model.transitions import Table
@@ -89,6 +89,14 @@ class EventJudge:
             self._where[key] = leads
             return None
         return " | ".join(sorted(here))
+
+    def held(self) -> dict[str, list[str]]:
+        """The states each key judged so far may be in, as plain data `restore` takes back."""
+        return {key: sorted(states) for key, states in self._where.items()}
+
+    def restore(self, held: Mapping[str, Iterable[str]]) -> None:
+        """Judge on from the states `held` gave each key, forgetting every other."""
+        self._where = {key: frozenset(states) for key, states in held.items()}
 
 
 def check_events(name: str, machine: dict, rows: Iterable[tuple[str, float, str]]) -> Report:
