@@ -3,7 +3,7 @@
     starpulse init                        # Claude Code, in the current directory
     starpulse init --dir demo --harness claude-code
 
-Writes `starpulse.toml` (a native `[board]` with one `[[board.guards]]` rule, a `[scheduler]` table and a `[[producers]]`
+Writes `starpulse.toml` (a native `[board]`, a `[scheduler]` table and a `[[producers]]`
 entry whose token is read from `STARPULSE_TOKEN`), `board.yaml` (a four-State machine with every role declared), `.starpulse/board/config.yml` (the board's lanes, the
 machine's States), an empty `tasks/` and the harness's telemetry export settings (`.claude/settings.json` for Claude Code, so its sessions reach the OTLP receiver
 and link to the Tasks they claim). It writes nothing when any of them exists, says which on stderr and exits 1; it
@@ -22,11 +22,6 @@ CONFIG = """\
 type = "native"
 path = ".starpulse/board"
 machine = "board.yaml"
-
-[[board.guards]]
-on = { to = "review" }
-require = { field = { field = "references", matches = "/pull/\\\\d+$", min = 1 } }
-reason = "Review needs a pull request in references"
 
 [scheduler]
 
@@ -50,7 +45,7 @@ events:
   FINISH: [{from: review, to: done}]
 """
 
-#: The board's lanes, spelled as `MACHINE`'s States: the native board refuses to open when the two disagree.
+#: The board's lanes, spelled as `MACHINE`'s States: `config check` fails when the two disagree.
 BOARD_CONFIG = """\
 project_name: demo
 statuses: [Backlog, In Progress, Review, Done]

@@ -13,7 +13,7 @@ export const task: KanbanTask = {
   moves: { in_progress: { allowed: true, reason: "", skill: "" }, review: { allowed: false, reason: "no review yet", skill: "completing-tasks" } },
 };
 export const record: TaskRecord = {
-  title: "Redraw the view", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
+  title: "Redraw the view", profile: "@agent-standard-high", priority: "High", tier: "leverage", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
   description: "the full description", plan: "1. Write the test\n2. Make it pass", notes: "Checked against the live config",
   acceptanceCriteria: [{ n: 1, text: "A Vitest test failed first", checked: true }, { n: 2, text: "make lint-changed passes", checked: false }],
   definitionOfDone: [{ n: 1, text: "The completing-tasks skill was invoked", checked: false }],
@@ -27,7 +27,7 @@ export const props = (over: Partial<Parameters<typeof TaskView>[0]> = {}): Param
   close: () => {}, hide: () => {}, constellation: () => {}, move: () => {}, start: () => {}, ...over,
 });
 
-/** Install `writer` as fetch, except that the dialog's Docs reads are answered "not found" and never reach it, so it sees only the writes. */
+/** Install `writer` as fetch, except that the dialog's Docs and spend reads are answered "not found" and never reach it, so it sees only the writes. The spend read is cached for a minute, so a loaded run lands it in whichever case runs when the cache expires. */
 export const stubWrites = (writer: typeof fetch) => vi.stubGlobal("fetch", (url: string | URL | Request, init?: RequestInit) => (
-  /^\/api\/(milestones\/|docs$)/.test(String(url)) ? Promise.resolve(new Response("{}", { status: 404 })) : writer(url, init)
+  /^\/api\/(milestones\/|docs$|analytics\/spend$)/.test(String(url)) ? Promise.resolve(new Response("{}", { status: 404 })) : writer(url, init)
 ));

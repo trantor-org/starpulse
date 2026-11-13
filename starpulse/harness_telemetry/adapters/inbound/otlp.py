@@ -5,8 +5,9 @@ typed attributes (`stringValue`, `intValue` as a string, `boolValue`). Only
 `user_prompt`, `tool_result`, `skill_activated` and `assistant_response` (bare or
 `claude_code.`-prefixed) are kept, and of each only what an adapter keys on: the
 account fields, prompt and reply text every such record also carries are never
-read into a `LogEvent`. The branch is the resource's `vcs.ref.head.name`, which a
-launch sets through `OTEL_RESOURCE_ATTRIBUTES`; the export names none itself.
+read into a `LogEvent`. The branch is the resource's `vcs.ref.head.name` and the entrypoint its
+`claude_code.entrypoint` (`cli`, `sdk-cli`), which a launch sets through `OTEL_RESOURCE_ATTRIBUTES`; the export names
+neither itself.
 
 `receiver` serves the export over OTLP/HTTP:
 
@@ -31,6 +32,8 @@ from typing import Any
 __all__ = [
     "ASSISTANT_RESPONSE",
     "BRANCH",
+    "ENTRYPOINT",
+    "SETTLED",
     "SKILL_ACTIVATED",
     "TOOL_RESULT",
     "USER_PROMPT",
@@ -45,18 +48,22 @@ USER_PROMPT = "user_prompt"
 TOOL_RESULT = "tool_result"
 SKILL_ACTIVATED = "skill_activated"
 ASSISTANT_RESPONSE = "assistant_response"
+#: The session settled: a `Stop` hook finished, the one record the export holds for a turn's end.
+SETTLED = "settled"
+HOOK_COMPLETE = "hook_execution_complete"
 _KINDS = {
     spelling: kind
     for kind in (USER_PROMPT, TOOL_RESULT, SKILL_ACTIVATED, ASSISTANT_RESPONSE)
     for spelling in (kind, f"claude_code.{kind}")
 }
 BRANCH = "vcs.ref.head.name"
+ENTRYPOINT = "claude_code.entrypoint"
 MAX_BODY = 8 * 1024 * 1024
 
 
 @dataclass(frozen=True)
 class LogEvent:
-    """One kept log record. `skill` is set for a skill activation; the tool fields for a tool result.
+    """One kept log record. `skill` is set for a skill activation; the tool fields for a tool result; `prompt` for a settle, the turn it ended.
 
     `time` is the record's `event.timestamp` in epoch seconds, and `branch` the export resource's
     `vcs.ref.head.name`; each is None when absent.
@@ -70,6 +77,7 @@ class LogEvent:
     success: bool = False
     tool_input: dict[str, Any] = field(default_factory=dict)
     skill: str = ""
+    prompt: str = ""
     time: float | None = None
     branch: str | None = None
 
@@ -92,8 +100,8 @@ def _attributes(record: dict[str, Any]) -> dict[str, Any]:
 
 def _records(
     payload: dict[str, Any], eval_attribute: str = ""
-) -> Iterator[tuple[str | None, str | None, dict[str, Any]]]:
-    """Each log record with the branch and eval purpose its resource names."""
+) -> Iterator[tuple[str | None, str | None, str, dict[str, Any]]]:
+    """Each log record with the branch, eval purpose and entrypoint its resource names."""
     resources = payload.get("resourceLogs")
     for resource in resources if isinstance(resources, list) else ():
         scopes = resource.get("scopeLogs") if isinstance(resource, dict) else None
@@ -101,11 +109,12 @@ def _records(
         attributes = _attributes(described) if isinstance(described, dict) else {}
         branch = attributes.get(BRANCH)
         purpose = attributes.get(eval_attribute) if eval_attribute else None
+        entrypoint = str(attributes.get(ENTRYPOINT) or "")
         for scope in scopes if isinstance(scopes, list) else ():
             records = scope.get("logRecords") if isinstance(scope, dict) else None
             for record in records if isinstance(records, list) else ():
                 if isinstance(record, dict):
-                    yield (str(branch) if branch else None), (str(purpose) if purpose else None), record
+                    yield (str(branch) if branch else None), (str(purpose) if purpose else None), entrypoint, record
 
 
 def _epoch(timestamp: Any) -> float | None:
@@ -124,14 +133,16 @@ def _tool_input(raw: Any) -> dict[str, Any]:
 
 
 def _kind(record: dict[str, Any], attributes: dict[str, Any]) -> str | None:
-    name = attributes.get("event.name") or _value(record.get("body"))
-    return _KINDS.get(str(name))
+    name = str(attributes.get("event.name") or _value(record.get("body")))
+    if name.removeprefix("claude_code.") == HOOK_COMPLETE:
+        return SETTLED if attributes.get("hook_event") == "Stop" else None
+    return _KINDS.get(name)
 
 
 def parse(payload: dict[str, Any]) -> list[LogEvent]:
     """The prompts, tool results, skill activations and replies in an OTLP logs payload, in the order it carries them."""
     events = []
-    for branch, _purpose, record in _records(payload):
+    for branch, _purpose, _entrypoint, record in _records(payload):
         attributes = _attributes(record)
         kind = _kind(record, attributes)
         session = attributes.get("session.id")
@@ -148,6 +159,7 @@ def parse(payload: dict[str, Any]) -> list[LogEvent]:
                 success=str(attributes.get("success")).lower() == "true",
                 tool_input=_tool_input(attributes.get("tool_input")),
                 skill=str(attributes.get("skill.name") or ""),
+                prompt=str(attributes.get("prompt.id") or ""),
                 time=_epoch(attributes.get("event.timestamp")),
                 branch=branch,
             )

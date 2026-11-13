@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanbanModel";
-import { offBoardTask, prReadState } from "./kanbanModel";
+import { climb, offBoardTask, prReadState } from "./kanbanModel";
+import type { Sky } from "../../render/sky";
 import { merge, midnight } from "../../render/sky";
 import { LIFECYCLE_COLUMNS, LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { TaskRecord } from "./taskViewModel";
@@ -58,6 +59,13 @@ describe("the columns", () => {
 
     expect(columnsOf(names, { ...LIFECYCLE_ROLES, lanes })).toEqual(lanes);
     expect(layout([task("TASK-1", "verifying")], names, { ...LIFECYCLE_ROLES, lanes }, NO_PREFS, NOW).columns.map((c) => [c.id, c.count])).toContainEqual(["verifying", 1]);
+  });
+
+  it("fall back to the machine's lifecycle States when an older server's snapshot has no lanes, so the tasks are still drawn", () => {
+    const { lanes: _lanes, ...roles } = LIFECYCLE_ROLES;
+    const v = layout([task("TASK-1", "ready"), task("TASK-2", "done")], NAMES, roles, NO_PREFS, NOW);
+
+    expect(v.shown).toBe(2);
   });
 
   it("never include the proposed State, which waits off the board until it is promoted", () => {
@@ -217,6 +225,18 @@ describe("the cards drawn from a snapshot", () => {
 
     expect(live(snap)).toMatchObject({ machine: "ci", state: "running", source: "GitHub" });
     expect(live(snapshot())!.source).toBeUndefined();
+  });
+
+  it("name the skill the machine's submachine link declares on the live line, and none when the link names none", () => {
+    const link = { state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" };
+    const snap = snapshot();
+    snap.flows[0].machine = { states: [], transitions: [], submachines: [{ ...link, skill: "review-fix" }] } as never;
+    const live = (s: Snapshot) => kanbanTasks(merge(s)).find((t) => t.id === "PROJ-1")!.live;
+
+    expect(live(snap)).toMatchObject({ machine: "in-progress", skill: "review-fix" });
+    snap.flows[0].machine = { states: [], transitions: [], submachines: [{ ...link, skill: "" }] } as never;
+    expect(live(snap)!.skill).toBeUndefined();
+    expect(live(snapshot())!.skill).toBeUndefined();
   });
 
   it("carry the verdict on each column the task may move to, and none for a task the snapshot gives none", () => {
@@ -713,6 +733,11 @@ describe("prReadState", () => {
     expect(prReadState(read({ checks: "failing", threads: 2 }))).toEqual({ read: true, state: "open", checks: "failing", unreviewed: 2 });
     expect(prReadState(read({ merged: true }))).toEqual({ read: true, state: "merged", checks: "pass", unreviewed: 0 });
   });
+
+  it("reads a closed pull request as closed and a merged one as merged, whatever its checks say", () => {
+    expect(prReadState(read({ closed: true, checks: "pass" }))).toMatchObject({ state: "closed" });
+    expect(prReadState(read({ merged: true, closed: true, checks: "failing" }))).toMatchObject({ state: "merged" });
+  });
 });
 
 describe("a Done task the snapshot leaves out", () => {
@@ -734,5 +759,98 @@ describe("a Done task the snapshot leaves out", () => {
   it("is nothing for a record that is not Done", () => {
     expect(offBoardTask("TASK-9", { ...record, status: "In Progress" }, LIFECYCLE_ROLES)).toBeNull();
     expect(offBoardTask("TASK-9", { ...record, status: undefined }, LIFECYCLE_ROLES)).toBeNull();
+  });
+});
+
+describe("climb", () => {
+  const st = (id: string, final = false) => ({ id, name: id, initial: false, final });
+  type Session = { task: string; state: string; active: number };
+  type Link = [state: string, machine: string];
+  const flow = (name: string, states: string[], agents: Session[] = [], links: Link[] = []) =>
+    ({ name, machine: { states: [...states.map((s) => st(s)), st("done", true)], transitions: [], submachines: links.map(([state, machine]) => ({ parent: name, state, machine })) }, agents });
+  const sky = (on: Record<string, Session[]>) => ({
+    board: flow("board", ["in_progress", "review"], [], [["in_progress", "in-progress"], ["in_progress", "ci"], ["review", "ci"]]),
+    flows: {
+      "in-progress": flow("in-progress", ["build", "deliver", "review_fix"], on["in-progress"], [["build", "build"], ["deliver", "deliver"], ["deliver", "triaging"], ["review_fix", "review_fix"]]),
+      build: flow("build", ["worktree_ready", "red_proven", "green"], on.build),
+      deliver: flow("deliver", ["start", "pushed", "ready"], on.deliver, [["ready", "ci"]]),
+      review_fix: flow("review_fix", ["triage", "fixed"], on.review_fix),
+      ci: flow("ci", ["pending", "pass"], on.ci, [["pass", "verify"]]),
+      verify: flow("verify", ["merged", "applied"], on.verify),
+      harness: flow("harness", ["active", "stopped"], on.harness),
+    },
+  }) as unknown as Sky;
+  const ip = (task: string, state: string, active = 1) => ({ "in-progress": [{ task, state, active }] });
+
+  it("names a task in a phase by that phase and its step over the phase's states", () => {
+    const at = climb(sky({ ...ip("PROJ-1", "build"), build: [{ task: "PROJ-1", state: "red_proven", active: 9 }] }), "PROJ-1");
+    expect(at).toEqual({ chain: ["build"], state: "red_proven", at: 9, track: [st("worktree_ready"), st("red_proven"), st("green"), st("done", true)] });
+  });
+
+  it("takes the phase with the newest row for a task with phase rows and no In Progress row", () => {
+    const rows = { build: [{ task: "PROJ-6", state: "green", active: 7 }], deliver: [{ task: "PROJ-6", state: "pushed", active: 9 }] };
+    expect(climb(sky({ build: rows.build }), "PROJ-6")).toMatchObject({ chain: ["build"], state: "green", at: 7 });
+    expect(climb(sky(rows), "PROJ-6")).toMatchObject({ chain: ["deliver"], state: "pushed", at: 9 });
+  });
+
+  it("takes the phase with the newest row when the In Progress row names a phase with no row", () => {
+    const at = climb(sky({ ...ip("PROJ-7", "review_fix", 2), deliver: [{ task: "PROJ-7", state: "pushed", active: 9 }] }), "PROJ-7");
+    expect(at).toMatchObject({ chain: ["deliver"], state: "pushed" });
+  });
+
+  it("chains a submachine after the phase when the phase's step declares it, outermost first", () => {
+    const at = climb(sky({
+      ...ip("PROJ-2", "deliver"),
+      deliver: [{ task: "PROJ-2", state: "ready", active: 4 }],
+      ci: [{ task: "PROJ-2", state: "pass", active: 5 }],
+      verify: [{ task: "PROJ-2", state: "applied", active: 6 }],
+    }), "PROJ-2");
+    expect(at?.chain).toEqual(["deliver", "ci", "verify"]);
+    expect(at?.track?.map((s) => s.id)).toEqual(["merged", "applied", "done"]);
+  });
+
+  it("keeps the phase step its task holds over a newer row of a machine that step does not declare", () => {
+    const at = climb(sky({
+      ...ip("PROJ-5", "deliver", 3),
+      deliver: [{ task: "PROJ-5", state: "pushed", active: 4 }],
+      build: [{ task: "PROJ-5", state: "green", active: 50 }],
+      review_fix: [{ task: "PROJ-5", state: "triage", active: 51 }],
+      ci: [{ task: "PROJ-5", state: "pass", active: 52 }],
+      verify: [{ task: "PROJ-5", state: "merged", active: 53 }],
+    }), "PROJ-5");
+    expect(at).toMatchObject({ chain: ["deliver"], state: "pushed", at: 4 });
+  });
+
+  it("follows the In Progress step to the phase that step declares, whatever another phase's row says", () => {
+    const at = climb(sky({
+      ...ip("PROJ-6", "review_fix", 30),
+      build: [{ task: "PROJ-6", state: "green", active: 40 }],
+      deliver: [{ task: "PROJ-6", state: "pushed", active: 20 }],
+      review_fix: [{ task: "PROJ-6", state: "triage", active: 31 }],
+    }), "PROJ-6");
+    expect(at).toMatchObject({ chain: ["review_fix"], state: "triage" });
+  });
+
+  it("takes the newest session among the machines one step declares", () => {
+    const s = sky({ ...ip("PROJ-7", "deliver"), deliver: [{ task: "PROJ-7", state: "start", active: 2 }] });
+    s.flows.triaging = { ...(s.flows["in-progress"] as object), name: "triaging", agents: [{ task: "PROJ-7", state: "fixed", active: 9 }] } as never;
+    expect(climb(s, "PROJ-7")).toMatchObject({ chain: ["triaging"], state: "fixed" });
+  });
+
+  it("skips a skill session's machine no step declares, however new its session", () => {
+    const at = climb(sky({ ...ip("PROJ-8", "build"), build: [{ task: "PROJ-8", state: "green", active: 10 }], harness: [{ task: "PROJ-8", state: "stopped", active: 40 }] }), "PROJ-8");
+    expect(at).toMatchObject({ chain: ["build"], state: "green" });
+    expect(climb(sky({ harness: [{ task: "PROJ-9", state: "active", active: 1 }] }), "PROJ-9")).toBeNull();
+  });
+
+  it("stops at a machine already on the chain when a declaration links back to it", () => {
+    const s = sky({ ...ip("PROJ-10", "deliver"), deliver: [{ task: "PROJ-10", state: "ready", active: 2 }], ci: [{ task: "PROJ-10", state: "pass", active: 3 }] });
+    s.flows.ci.machine.submachines = [{ parent: "ci", state: "pass", machine: "deliver" }, { parent: "ci", state: "pass", machine: "in-progress" }] as never;
+    expect(climb(s, "PROJ-10")).toMatchObject({ chain: ["deliver", "ci"], state: "pass" });
+  });
+
+  it("gives no track to a task in no phase: none at all, or only in the In Progress machine itself", () => {
+    expect(climb(sky({}), "PROJ-3")).toBeNull();
+    expect(climb(sky(ip("PROJ-4", "build")), "PROJ-4")).toBeNull();
   });
 });
