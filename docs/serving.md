@@ -97,7 +97,7 @@ requests it took and closes.
 
 ### Worker processes
 
-`serve` is a supervisor over two children, each a `starpulse worker <name>` process: `api` (the Page API) and `contexts`, the one process that runs every background context as a thread: `pulls` (Delivery), `scheduler`, `runs` with each run adapter a `[[runs]]` instance names (`dagu`, `github-actions`, `systemd`), `flow-metrics`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` starts each as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in the event log. No unit file is needed to run StarPulse, and no setting turns a child off: `starpulse reload` picks the children whose code or config moved. The set of children does not depend on the config: a config naming every run adapter still has two.
+`serve` is a supervisor over two children, each a `starpulse worker <name>` process: `api` (the Page API) and `contexts`, the one process that runs every background context as a thread: `pulls` (Delivery), `scheduler`, `runs` with each run adapter a `[[runs]]` instance names (`dagu`, `github-actions`, `systemd`), `flow-metrics`, `signal-folds` (the per-session folds of the harness signals the analytics routes read), `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` starts each as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in the event log. No unit file is needed to run StarPulse, and no setting turns a child off: `starpulse reload` picks the children whose code or config moved. The set of children does not depend on the config: a config naming every run adapter still has two.
 
 The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; it also tells the child, in `STARPULSE_STATIC`, which page build it checked. The child reads the Board from the read model the `contexts` child folds and starts no adapter watcher. A reload of the child starts the new one on the same socket, waits until it reports (`STARPULSE_READY_FD`) it is about to serve, or 30 s (`warm`) at most, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused. The child builds its first snapshot before it reports ready, so a connection that queued across a restart or a reload is answered by the warm snapshot, never by a cold build in its request; an agent client (`starpulse` verbs) sends a GET once more when the server answered it with an empty reply.
 
@@ -105,7 +105,7 @@ The background contexts share one process so the interpreter, the imports and th
 
 On Linux `serve` starts one preloaded process before any thread, `python -m starpulse.runtime.zygote`, that imports the `contexts` child's entry modules, those of every background context (the Page API's excepted), freezes what it imported out of the garbage collector's way and waits on a socket from `serve`. The `contexts` child is a fork of it that runs the same `starpulse worker contexts` main, so it shares the pages of the interpreter and imports until it writes to them. A child still dies with `serve`: it inherits the preloaded process's stdin pipe from `serve`. The Page API child is always a `subprocess` child, since it inherits `serve`'s listening socket. Where `fork` is not safe (macOS and Windows), or when the preloaded process fails to start or answer (`serve` logs one warning naming the preloaded process and starts every later child with `subprocess` instead), a child is a `subprocess` child with its own imports.
 
-`starpulse reload` replaces the children whose installed code or Board machine file (`[board] machine`, by content hash) changed, tells the `contexts` child whose only change is a live config block to re-read it, and re-executes `serve` when its own code changed, so a deploy restarts only what it changed. A reload that changes code any child runs also retires the preloaded process: it takes no more forks and exits when its last child has, and a new one that imports the installed code forks every replaced child, so a replaced child never runs the old preloaded code. See [Reloading a running serve](cli.md#reloading-a-running-serve).
+`starpulse reload` replaces the children whose installed code or Board machine file (`[board] machine`, by content hash) changed, tells the `contexts` child whose only change is a live config block to re-read it, and re-executes `serve` when its own code changed, handing every child whose own closure and config did not change to the new `serve` by pid and stdin pipe, so a deploy restarts only what it changed: a `serve`-only change never ends the `contexts` worker. A reload that changes code any child runs also retires the preloaded process: it takes no more forks and exits when its last child has, and a new one that imports the installed code forks every replaced child, so a replaced child never runs the old preloaded code. See [Reloading a running serve](cli.md#reloading-a-running-serve).
 
 `serve` also holds each child to a memory limit, sampled every 5 s. Past the soft limit it replaces the child: the new one starts, then the old one is stopped (killed after 10 s if it ignores `SIGTERM`). Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is the proportional set size on Linux (`Pss`, which divides each page the forked children share among the processes that map it, so the shared floor is not charged to every child) and the resident size on macOS, read with psutil; where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits.
 
@@ -115,6 +115,90 @@ On Linux `serve` starts one preloaded process before any thread, `python -m star
 | `contexts` | 1536 | 3072 |
 
 `[worker_memory.api]` and `[worker_memory.contexts]` override either key for a child (whole megabytes, 1 or more; `soft_mb` below `hard_mb`). An unknown child, an unknown key or a soft limit not below the hard one is refused at load by name, and so is a per-context key from before the contexts shared a process (`[worker_memory.pulls]`, `[worker_memory.scheduler]`, `[worker_memory.dagu]` and the rest): the message names `[worker_memory.contexts]` as the replacement. The `api` child holds the telemetry window and the read model, so its limit is set above the peak the deployment measures; Trantor's `starpulse.toml` does.
+
+`GET /api/ready` is the api child's readiness: each context stamps its start in the `ready` worker state with the boot
+token `serve` handed it (`STARPULSE_BOOT`), so a stamp left by an earlier boot, or copied with a store, never counts.
+`starpulse rehearse` reads it (see the CLI document).
+
+### The NATS server
+
+With `[bridge] enabled = true`, `serve` supervises a third child, `nats`, beside the Page API and the contexts worker
+(`starpulse/runtime/nats_server.py`). It fetches the pinned `nats-server` release for the platform (Linux and macOS
+`.tar.gz`, Windows `.zip`), checks the archive against the release's published `SHA256SUMS`, and keeps the binary in the
+user cache (`$XDG_CACHE_HOME/starpulse`, `~/Library/Caches/starpulse`, `%LOCALAPPDATA%\starpulse`) beside the digest it was
+verified as. It runs on `127.0.0.1:<port>` only, with JetStream on and its store in `store_dir`; the supervisor restarts
+it on exit, and it stops with `serve`. A download that fails its checksum, or a cached binary that no longer matches its
+digest, starts no server: the child exits naming the two digests and is retried with backoff. With no `[bridge]` table
+nothing starts and nothing is fetched. A change to `[bridge]` restarts `serve`.
+
+### The bridge
+
+With `[bridge] enabled = true` the `contexts` child also runs the bridge (`starpulse/bridge/`), which publishes the event
+log to the NATS server above. It reads `board:lanes` and `machine:events` in log order from its own checkpoint, `bridge:nats`,
+which it saves after each entry the server acknowledged; a restart resumes at the first entry not published. A first start
+has no checkpoint and starts at the newest entry, so a subscriber is given the latest state and never the history. The
+server being down, or its store deleted, only delays an entry: the bridge declares the stream `starpulse-<board>` again
+(`starpulse.<board>.>`, file storage, the newest 100 messages per subject) and retries until the entry lands. Delivery is
+at least once: each message carries its entry's event id as `Nats-Msg-Id`, which the stream drops a repeat of within its
+duplicate window, and a subscriber that must not act twice dedupes on the `event_id` in the body.
+
+A subject is `starpulse.<board>.<entity>.<id>.<event>`, `<board>` being `[bridge] board`:
+
+| Entry | Subject |
+| --- | --- |
+| `board:lanes` lane move | `starpulse.<board>.task.<task>.moved` |
+| `machine:events` naming a pull request | `starpulse.<board>.pr.<number>.<event>` |
+| `machine:events` of a task, no pull request | `starpulse.<board>.task.<task>.<event>` |
+
+`<event>` is the machine event lowercased without a leading `PR_` (`PR_MERGED` and `MERGED` are both `merged`;
+`CHECKS_FAILED` is `checks_failed`). A pull request number is the event's `data.pr`, else the `/pull/<n>` in the `ci`
+machine's event id. A machine event of a run alone, and every other stream, is not published. A character of a token that
+NATS reads as structure (`.`, `*`, `>`, a space) becomes `_`. The body is JSON: `event_id`, `stream`, `at` and the entry's
+`fields`.
+
+The same thread keeps one durable consumer per session on the stream (`starpulse/bridge/consumers.py`), named for the
+session (`--session`, else `STARPULSE_SESSION`, as a token) and starting from the newest message of each subject. Its filter
+subjects are the session's subscription, and the origins of each subject ride in the consumer's metadata, so StarPulse
+keeps no table of them. Three things add subjects:
+
+- A move of a task: the session holding it (the task's assignee) gets the `claim` subjects of the `[bridge.subscriptions.<kind>]`
+  table named for the task's `kind-*` label, with `{task}` the task id. A session that took subjects from the task and
+  no longer holds it, or whose task is done or archived, drops them.
+- A `PR_OPENED` machine event naming a task and a pull request: the holder gets the kind's `pr_opened` subjects, with
+  `{task}` and `{pr}`.
+- `starpulse subscribe <subject>`, which adds a full subject under the `explicit` origin until `starpulse unsubscribe
+  <subject>`; a task change leaves it alone.
+
+A kind with no table, or a rule with no subject, subscribes to nothing. A session left with no subject has no consumer.
+A subject in a rule is relative to the board and may not name `starpulse`; `serve` refuses a rule naming a value its
+event does not know. `subscribe` and `unsubscribe` read and write the consumer in two steps, so one that lands in the
+instant the bridge changes the same session's consumer can lose that change; the next move of the task restores the
+bridge's subjects.
+
+#### Notifying a session
+
+`starpulse subscribe`, run by a Claude Code session, also registers how to reach it: the inbox socket and token the
+harness gave its process (`CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`) and its working directory, in an
+owner-only file `starpulse-sessions/<session>.json` beside the config. The token never reaches NATS and no command prints
+it. A session that never ran `subscribe` has no registration, is not notified, and keeps its events on its consumer; a
+session subscribes explicitly to be woken, so a change reaches one session before any other.
+
+Once a second the bridge lists the consumers with messages waiting and, for each registered session, fetches a batch and
+notifies the session's harness (`starpulse/sessions/notify.py`). Claude Code's adapter
+(`starpulse/sessions/adapters/outbound/claude_code_notify.py`):
+
+- posts one line per event, `<subject>: <event> <task> <data> (<event id>)` (the first 20 data pairs; every key and value
+  loses `<`, `>` and line breaks and is cut at 120 characters, so none can close the envelope), to the session's inbox
+  socket, wrapped in the
+  `<cross-session-message from-mode="bypass">` envelope that Claude Code accepts from an attested sender in
+  `bypassPermissions`. It posts to the socket of the running process the sessions directory
+  (`$CLAUDE_CONFIG_DIR/sessions`, else `~/.claude/sessions`) names for the session id, else to the registered one;
+- resumes a session whose process has ended, under the same session id, with `[bridge] resume` and one prompt holding
+  the newest event of each subject, so ten events on one pull request read as one line. It does not resume the same
+  session again for 120 s, until the new process shows in the sessions directory;
+- leaves the events unacknowledged when the session did not take them, so the server redelivers them after its ack wait.
+
+A resumed process has a new socket and token: it registers again by running `starpulse subscribe` for any subject.
 
 ### The sweeper
 
@@ -249,7 +333,8 @@ incremental fold give the same rows. Given a `SearchIndex` as `search`, the proj
 row in that transaction, in lane `archived` when the row is archived and not Done (an archived Done Task keeps the `Done` lane); no non-test code constructs it yet, so `serve` does not.
 
 - `starpulse_tasks` (migration 0029) has a typed column per StarPulse field, JSON `fields`, `meta` and `comments`, and
-  `seq`, the position of the last event folded into the row. `starpulse_task_criteria` holds one row per Criterion.
+  `seq`, the position of the last event folded into the row; the projector skips an event at or before it, so a second
+  reader folding from a stale checkpoint adds no Criterion twice. `starpulse_task_criteria` holds one row per Criterion.
 - Partial indexes `WHERE archived = 0` (`ix_starpulse_tasks_live_{id,state,milestone,assignee}`) keep the live set small
   whatever the archive holds. `ix_starpulse_tasks_seq` serves the delta read.
 - `ReadModel(engine, declared)` is the query surface: `task(id)`, `snapshot(done, since)` (the live set: unarchived Tasks
@@ -268,9 +353,9 @@ Board and read only by id; `task`, `held` and `is_done` are single-row reads, `i
 `cold_page` pages `archived`, and the snapshot carries no archived Task (`cold_done` is empty). The Scheduler's
 `open_tasks` and the write guards go through the same reads. `follow_read_model()` publishes the Tasks changed since it last
 ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged. `serve`
-folds the History into the read tables every 0.5 s (`Projector.catch_up`, then `follow_read_model`), draws the board from them
+folds the History into the read tables every 0.5 s (`Projector.catch_up(index=False)`, then `follow_read_model`, then `Projector.index` for search, so the page never waits on the index), draws the board from them
 so the board reader opens no task file. The read model is the only read path: the old `read_model` config key is retired and ignored. Run `starpulse import-board` first. In this mode entered and workable-since times are approximated, and the overlays for runs,
-pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record, whose `createdBy` is the session that filed the task (`created_by` in its front matter, empty when none); an archived task is read from the archive too, its body `archived: true`. The search index is its
+pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record, whose `createdBy` is the session that filed the task (`created_by` in its front matter, empty when none); an archived task is read from the archive too, its body `archived: true` and `entered`, when the read model last changed its row (a Done task's entry into Done); the record carries the stored pull requests it cites as `pulls`. `GET /api/task-records?ids=A,B` returns those records in one read as `{records: [...]}`, leaving out a task the board cannot read; the Proposals view reads its proposals' details with it. The search index is its
 own FTS table, queried by term and never by loading Tasks; `put` still feeds it, so the cutover feeds it from the read model.
 `ci/test_read_model_latency.py` (nightly) serves 20,000 Tasks with 18,000 archived and holds every read surface to the page
 budget and the board to its soft memory limit.
@@ -280,7 +365,7 @@ budget and the board to its soft memory limit.
 The native board records every successful Task write in the Task's `task` stream (`board/task_history.py`), beside the
 task file it still writes. One wrapper around the board's `writer`, `assign`, `edit`, `archive`, `restore`, `complete`,
 `retire` and `create` covers every entry path: the `starpulse task` verbs, `/api/tasks`, `/api/edit`, the page, the
-Scheduler and the Unblocker, which all call those verbs.
+Scheduler and the task actor, which all call those verbs.
 
 - The Events are the intent the file's before and after show: `TaskCreated`, `FieldsEdited` (own columns and `meta`),
   `Transitioned` (both states), `CriterionAdded`, `CriterionChecked`, `CommentAdded`, `Claimed`/`Released`, `Archived` and
@@ -359,13 +444,16 @@ type = "native"
 # verifying = "my-verifying {id}"  # runs after the task actor moves a task on a merge that leaves post-merge QA to run (`pr_merged_planned`: the task carries a Verify plan), so the session that delivered it is woken to run that QA
 # closed = "my-closed {id}"  # runs after the task actor moves a task to Done, so the board can file what follows the close (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
-# claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task keeps its State with no Assignee, free for any session to claim, and the sweep gives it back to the released session, as a `Claimed`, when that session acts again (an Event or machine event after the release) while no session holds it; the sweep reads the board feed, and a release is refused when the task file has since left that State or another session holds it
+# claim_ttl = 1800   # seconds a claim lives without an Event by its session or a machine event of its run (harness telemetry keyed by the session id); past it StarPulse appends `Released` (naming the last renewal) and the Task keeps its State with no Assignee, free for any session to claim, and the sweep gives it back to the released session, as a `Claimed`, when that session acts again (an Event or machine event after the release) while no session holds it; once a full TTL passes after the release with no such action and no live session process, the sweep moves the unheld Task to the board's ready State (its initial State when the board has none); the sweep reads the board feed, and a release is refused when the task file has since left that State or another session holds it
 # transcripts = "~/.claude/projects"  # where Claude Code writes each session's transcript; a claim whose session's last turn there is a terminal halt (a synthetic error reply opening `Autocompact is thrashing`), with no renewal after it, is released at once rather than at `claim_ttl`, its comment naming the halt; only the transcript's last 64 KiB is read, and a missing transcript keeps the TTL
 # sessions = "~/.claude/sessions"  # where Claude Code registers each running session as `<pid>.json`; a claim whose session (or bridge) id is registered there with its process still running, the pid's start time matching, is kept past `claim_ttl` and expires `claim_ttl` after each pass that finds it so, since a session waiting on a background task emits nothing; a halt still releases it, and an unreadable or missing directory keeps the TTL
 # workflows = "http://localhost:8233"  # a Temporal server (its UI port) whose running workflows keep a claim: a workflow waiting on CI emits no Event, so a task that `workflows_query` matches a running workflow for, by the task id its workflow id ends in (`task-lifecycle/TASK-9`), renews its claim on every sweep pass, and the TTL runs from the last pass that saw it running; a pass that cannot read the server judges no claim; unset reads none
 # workflows_query = 'ExecutionStatus="Running"'  # the Temporal visibility query that lists those workflows, such as `WorkflowType="task_lifecycle" AND ExecutionStatus="Running"`
 # types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
+# complete_done = false     # true: a task landing in Done, and each Done task left in `tasks/` at start, moves on to `completed/`, which the reader and search still find
+# complete_keep_labels = "" # a regex: a Done task with a label that fully matches it stays in `tasks/`, Done and writable, where `complete_done` would move it
+# [board.complete_hold]     # with `complete_done`: a Done task stays in `tasks/` and the Done column until its local day (`tz`, an IANA zone) ends; start-up and each local midnight dehydrate earlier days'. A board read time past `p95_seconds` (1.0) or a task actor latency past `actor_seconds` (60) for `sustained` seconds (600) dehydrates every Done task on landing again until this table is edited; `p95_baseline` with `p95_ratio` (1.2) adds a ratio bound, `actor_metrics` is the URL of the serve's /metrics the actor latency is read from, `fallback = true` forces the fallback
 # proposal_prefix = "PROP"  # the id prefix of a task created in the proposed lane, numbered from its own sequence so a proposal takes no task number and keeps its id as an alias once promoted; unset: a proposal is numbered like any task
 
 # Task fields this deployment adds to StarPulse's own, checked on write and kept in the read model (see Task read model):
@@ -375,11 +463,16 @@ type = "native"
 # Rules every task write must satisfy, whoever makes it: the agent CLI, the page or a workflow (see Board guards in
 # docs/public-surface.md for every primitive). Each is judged on the task as it will be after the write, by the actor
 # that makes it, and the first one broken refuses the write with its `reason` (and `skill`), the same text to the CLI
-# and the page; nothing is written. A board with no rules accepts every write it accepted before.
+# and the page; nothing is written. A board with no rules accepts every write it accepted before. A move by an actor
+# the board's `warn_actors = ["operator"]` setting lists that breaks a lane rule (`to`, `from`) lands instead, and the
+# answer's `warnings` lists the rule's reason; a write rule (`write = true`, `create`) still refuses that actor. The
+# page reads the same rules beforehand from `GET /api/moves/<id>`, as `warnings` (`reason`, `skill`) on that actor's
+# verdict (the stream's snapshot leaves its moves unguarded), so the kanban asks the operator to confirm before it posts
+# the move.
 #   on       = { to = "Done" }                 a write that enters Done (`from = [...]` narrows it to those states)
 #            | { to = "Done", while = true }   ... and a write that leaves the task in Done
 #            | { write = true }                every write, whatever the task's state
-#   require  = one primitive: field, label, section, body, block, dependencies, checklist, readable, pulls_ready, pulls_clear, pulls_changed, or all_of, any_of, exactly_one,
+#   require  = one primitive: field, label, section, body, block, dependencies, checklist, readable, retained, no_implied_dependency, pull_proof, matrix_profile, pulls_ready, pulls_clear, pulls_changed, or all_of, any_of, exactly_one,
 #              none_of over a list of them
 #   unless_actor = ["dagu/reconciler"]         actors the rule does not judge: operator, agent, <instance>/<workflow>
 # [[board.guards]]
@@ -388,6 +481,14 @@ type = "native"
 # reason = "Done needs a pull request in references"
 # skill = "completing-tasks"
 # unless_actor = ["dagu/reconciler"]
+
+# Entry effects: what entering a lane does to a task, whoever moves it (the page, the agent CLI, the task actor, a
+# create). Each fills a front matter field the task holds none of; the one value is `{ matrix = true }`, which
+# reads `[board.default_profiles]` by the task's `kind-*` and `size-*` labels (`profile` only). It runs before the
+# lane's guards judge the write, so a Ready guard that wants a profile finds the one the matrix gives.
+# [[board.entry]]
+# lane = "Ready"
+# set = { profile = { matrix = true } }
 
 # Optional: move a task on the facts its lane waits on (see Task actor). Its presence turns the
 # actor on; optional `repo = "owner/name"` is the repository whose pull requests the board renders as a bare `PR #N`, and the board must edit tasks, else `serve` refuses to start. With it, the [release] polling pass does not run.
@@ -491,6 +592,8 @@ applied_by = "pin-bump"
 # title = "^(validate|verify|check)"                       # a regular expression over the task's title, case-insensitive
 # label = "validation"                                     # a label the task carries
 # injected_openings = ["<task-notification"]               # a prompt opening with one is labelled `injected`, any other `human`
+# [analytics.session_origins]                              # per origin name, the first-prompt prefixes that open a session it names
+# "start service" = ["Start TASK-"]                        # a session whose first prompt matches none is `operator`; the row reports it as `origin`
 # [analytics.labeller]                                     # names a human prompt's intent at ingest; with none, no prompt is labelled
 # url = "http://127.0.0.1:8006/v1/systemone"               # a typed-decision endpoint, sent the prompt's text; only its label is kept
 # model = "intent"                                         # the checkpoint it asks
@@ -550,6 +653,7 @@ applied_by = "pin-bump"
 # max_body_bytes = 5242880               # a larger body is answered 413 (default 5 MiB)
 # host = "127.0.0.1"                     # the address to bind (default 127.0.0.1)
 # port = 8767                            # the port to bind (default 8767)
+# reconcile_token_env = "GITHUB_APP_TOKEN"  # the environment variable that holds the token the sweeper's github kind reads GitHub with (unset: no kind)
 ```
 
 ### Runs adapters
@@ -612,8 +716,24 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `cursor_context` (table): Holds Cursor task sessions to a context limit (see docs/sources.md).
 - `claude_code` (table): Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).
 - `github` (table): Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).
+- `bridge` (`[bridge]` table): The optional NATS bridge's server that `serve` supervises (see The NATS server).
 - `sweeper` (table): Sets the sweeper's pass `interval_s` (default 3600) and declares its kinds (`[[sweeper.kinds]]`) and housekeeping (`[[sweeper.housekeeping]]`) as commands, each with a `name`, a `command` argv and an optional `timeout_s`; a kind prints its correction count (see docs/serving.md).
 - `read_model` (any value, retired): Retired: the read model is the only board reader; accepted so a config that still names it loads.
+
+#### SubscriptionRulesFile
+
+- `claim` (list of text): Subjects a session subscribes to when it claims a task of this kind, relative to the board and with the task as `{task}`: `task.{task}.>`.
+- `pr_opened` (list of text): Subjects the session holding the task adds when a pull request of the task opens, with `{task}` and the number `{pr}`: `pr.{pr}.>`.
+
+#### [bridge]
+
+- `enabled` (true or false, default `false`): `serve` supervises a `nats-server` (the official release, checked against its published checksum) on `127.0.0.1` with JetStream on, as its `nats` child; false: none starts. A change restarts `serve`.
+- `port` (whole number, 1 or more, default `4222`): The port the server listens on, on localhost only.
+- `store_dir` (text): Where JetStream keeps its streams. Default: `starpulse-nats` beside the config.
+- `sessions_dir` (text): Where `starpulse subscribe` and `starpulse register` record each session's inbox socket and token, and where `serve` reads them. Default: `starpulse-sessions` beside the config, which a CLI run from another checkout than the served one does not share; name a state path when they differ.
+- `board` (text, default `"trantor"`): The `<board>` token of the subjects the bridge publishes, `starpulse.<board>.<entity>.<id>.<event>`.
+- `subscriptions` (table of `SubscriptionRulesFile` table): The subjects a session subscribes to, by the `kind-*` label of the task it holds, `[bridge.subscriptions.<kind>]`. A kind with no table subscribes to nothing; a session leaving the task drops the task's subjects.
+- `resume` (list of text): The command that resumes a session that has ended when an event on its subjects arrives, ending in the flag that takes the session id; the id and the events follow it as arguments. `{session}` and `{cwd}` in an element are replaced by the session's id and working directory, and the command runs in that directory.
 
 #### [ci]
 
@@ -949,8 +1069,9 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   Ready. With no `unfinished` command, or an empty array, it never holds. A command that fails or prints no array
   holds it, with the error as the work left: a task is not closed on a board that cannot say what is unfinished.
 - `pr_ready`: the task cites a pull request and any cited one is merged (with a merge time) or open and not a draft.
-  The edit's comment names the ready and merged pull requests as the evidence. A state may declare
-  `waits: {pr_ready: REVIEW}` to move its tasks to Review once a pull request is ready.
+  The edit's comment names the ready and merged pull requests as the evidence. In the working lane a pull request
+  merged before the task's latest entry to that lane (a post-merge send back) is the shipped work and does not hold
+  the fact. A state may declare `waits: {pr_ready: REVIEW}` to move its tasks to Review once a pull request is ready.
   A task moved from `review` to its working lane holds, for each pull request it cites, the head it was moved on: an open
   pull request still on that head is the reviewed work, so the fact does not hold for it until a push changes the head
   or the lane changes (the actor remembers it in memory only, so a restart clears it).
@@ -987,7 +1108,7 @@ the Board's `writers` give to `starpulse/task-actor` (a Verifying task's `passed
 placement from before the task entered the lane, so a task sent back and merged again starts its next round clean.
 
 The actor evaluates a task's Start Criteria with the board's evaluator (`[board] criteria`) on a thread of its own, when
-the task is in a lane that waits on a criteria fact and has no result or one older than the evaluator's cache (30 s), and
+the task is in a lane that waits on a criteria fact and has no result or one past the `refresh.interval` it printed, and
 re-derives the task when the result changes. A board with no `criteria` command fires neither criteria fact. A criterion
 the evaluator cannot evaluate is not retried before its result is stale.
 
@@ -1003,12 +1124,14 @@ it re-derives every open task once, so a pull request that merged while the serv
 the actor on, the 30-second pass of Release does not start; the actor settles and releases on the same rules, so
 `[release]` still names the settle rule.
 
-Every `sweep_s` seconds (default 300, `0` off) after the first derive, the actor sweeps the lanes whose `waits` name
-`deps_done`: it derives each task there again, so a fact that changed with no event to carry it still releases the
-task, and it flags once, as a task-actor comment `Flagged in Waiting: <reason>`, a task waiting on a dependency nothing
-will finish, either a task the board does not hold or one in Proposed until the operator promotes it. A flag is not
-repeated while it is the task's latest flag, across restarts too. A task in any other lane, Needs attention included,
-is not read. The sweep runs on a thread of the server, with no systemd unit or Dagu DAG.
+The actor polls nothing: it sleeps until a task's next deadline (a Waiting service level, a claim) or an event. A fact moves a task only through an event its lane watches: a lane
+write, a dependency change, a store save, a merged pin bump, or a criteria invalidation (`criteria_changed`, called when a
+run or merge event invalidates a criterion's topic). A criterion with no event source is evaluated again once, at the
+`refresh.interval` its own result names. Start recovery re-derives every open task once; a move it finds that no event
+carried is logged as an error (`task actor: start recovery moved …, a move its lane's events missed`), and it flags once, as a task-actor comment `Flagged in Waiting:
+<reason>`, a task waiting on a dependency nothing will finish, either a task the board does not hold or one in Proposed
+until the operator promotes it. A flag is not repeated while it is the task's latest flag, across restarts too. A task in
+any other lane, Needs attention included, is not read.
 
 A park that names `TASK-X#K` records the criterion the dependent needs (`dependency_needs`). A dependee's state change or
 a criterion it checks re-derives its dependents. Once every criterion a dependent needs of an open dependency is checked,
@@ -1019,7 +1142,7 @@ the board's guards, so the comment lands) and the actor retries when the lint re
 A move from the working lane (the first resting State the lifecycle does not end in) to Waiting runs the board's
 `parked` command once, with `{id}` replaced by the task's id, so a board can tell the session that holds the task. A
 move from Waiting to Ready runs the board's `released` command the same way, so a board can resume the session that
-parked the task. A move whose last event is `DELIVER_FINISHED`, the machine event a delivery run publishes when it
+parked the task. A task In Progress whose holder settles idle (the harness machine's `SESSION_SETTLED`, from the session's Stop hook completing) runs the board's `idle` command with `{id}` and `{verdict}` `checkpoint` once, so a board can resume the holder to checkpoint; the next idle runs it with `confirm`, then releases the holder's claim in place (the task stays In Progress, with a comment naming why) and runs it with `restart`, so a board can start a session on the task; after three restarts, or when the release or the `restart` fails, the `holder_idle` fact moves the task to Needs attention (`HOLDER_IDLE`) and releases the holder's claim. A nonzero exit means the holder was busy or not reached, and that idle is not counted. A move whose last event is `DELIVER_FINISHED`, the machine event a delivery run publishes when it
 ends, runs the board's `delivered` command once per run, with `{id}` and `{verdict}` (the event's `verdict` and `step`,
 such as `red test`) replaced, so a board can resume the session that holds the task on the verdict. A move from the working lane to Review that the board refuses (an open review thread, a conflict, an unchecked criterion) runs `delivered` once more with `Review refused: <reason>`, until the task's facts change, so the holder is told why a ready pull request did not reach Review. A move from Review back to the working lane runs the board's `returned` command the same way, so a board can wake the session that delivered a pull request that turned draft or conflicting. A move on a `pr_merged_planned` fact runs the board's `verifying` command the same way, so a board can wake the session that delivered the task to run its post-merge QA. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
 check that waits on time after the merge. A command that exits nonzero is logged; the move stands.
@@ -1039,12 +1162,27 @@ labels or dependencies change. `GET /metrics` carries:
   the pin walk included.
 - `starpulse_task_actor_handoff_seconds`: a histogram of the seconds from a store save to the actor reading it. The
   bounds run to 600 s, so a handoff or projection past the 10 s bound shows.
+- `starpulse_task_merge_move_seconds`: a histogram of the seconds from a pull request's merge time to the actor's write
+  that moved a task citing it. Start recovery yields to a pending store save, task change or move before it takes its
+  next task, and a save derives the tasks citing a merged pull request first, so a merge during recovery lands in a
+  bucket of 10 s or less.
 - `starpulse_task_actor_criteria_errors{task}`: the Start Criteria of a gated task that could not be evaluated; such a
   gate never passes.
 - `starpulse_task_actor_pin_held`: a gauge of Waiting tasks whose dependencies are done but wait for a pin bump to
   merge (`PinGate.waiting_on`); one that stays above 0 is a pin that never merges. Each such hold comments the pull request
   and pin it waits on once. Only a cited pull request that can be the dependency's own delivery counts: one whose
   branch or title names another task is a reference.
+- `starpulse_task_actor_heartbeat_timestamp_seconds`: the Unix time of the actor's last turn. The actor beats every 30 s
+  when idle and once per task during start recovery, so a value minutes old is a stuck thread in a live process. Absent
+  until the first beat.
+- `starpulse_task_actor_recovery_finished`: 0 until start recovery has derived every task, then 1.
+- `starpulse_task_actor_merged_review_waiting`: a gauge of Review tasks whose cited pull request merged and that the
+  actor has not tried since it started; compare with the moves landed, the `starpulse_task_actor_latency_seconds_count`
+  rate. The actor reads its lock-held series (this one, `pin_held`, `criteria_errors`) with a 2 s timed acquire and
+  omits them when it cannot, so a stuck turn never blocks the scrape; the heartbeat and recovery gauge need no lock.
+
+A hold or flag comment lists the first three reasons and a count of the rest, and is clipped to 4000 characters
+(`COMMENT_CAP`), so a failed probe of hundreds of references does not write a 26 KB comment.
 
 Each move the actor writes names `starpulse/task-actor` on its `board:lanes` entry: the Delivery worker records the lane
 change when it writes it, in the history and the log in one transaction, and the file scan that places the change
@@ -1062,13 +1200,31 @@ counters for each machine the feed draws:
 
 - `starpulse_machine_conformance_events_total{machine}`: the moves judged.
 - `starpulse_machine_conformance_violations_total{machine}`: the moves no transition declares.
+- `starpulse_machine_event_occurrences_total{machine,event}`: the recorded occurrences of each event the machine declares, 0 until one arrives. A task parks on one with a `prom` criterion such as `sum(starpulse_machine_event_occurrences_total{machine="qa",event="LENS_SKIPPED"})`.
+- `starpulse_board_lane_entered_total{lane}`: the moves into the Board's done lane and into `archived`, a task's first sight in one included, 0 until one arrives. A task entering a lane again counts again, so `increase(...[1d])` is the day's Done count. The counts are saved in the same checkpoint, so a restart neither recounts nor drops a move.
 
 The `board` machine is judged on `board:lanes`, every other machine on `machine:events`. `serve` counts every entry
-the log still retains and follows new ones after, so a restart recounts the retained entries rather than starting at 0,
-and an entry pruned from the log leaves the count. The count of retained entries runs on a background thread, so the
+the log still retains and follows new ones after, saving the counts, each task's lane and each judged key's states every
+5 minutes in the `conformance:checkpoint` setting. A restart resumes from that checkpoint and reads only the entries
+appended since, so its counts go on from the last ones rather than starting at 0, and an entry pruned from the log
+since the checkpoint stays counted. With no checkpoint, one of another version or of other machines, or one whose last
+entry of a stream the log no longer retains, a restart recounts the retained entries, and the pruned ones leave the
+count. The count of retained entries runs on a background thread, so the
 banner does not wait on it: until it finishes, a scrape shows the counts so far. Every machine has both series from the
 first scrape, at 0 until a move arrives. The first lane seen for a task is placed unjudged, because the log keeps no
 earlier history; the stored-history replay judges it from the initial state. Guards are not judged.
+
+## History recorder lag
+
+The `contexts` child's flow-metrics recorders copy each stream's entries from the event log into the history store.
+`GET /metrics` reports how far behind each copy is: `starpulse_history_recorder_lag_seconds{stream}` for `machine:events`,
+the verdict stream and the breaking-change stream, the age of the oldest entry past the stream's saved checkpoint, 0 when
+the copy is caught up. A value that keeps growing means the recorder has stopped, and `starpulse task trace` shows a
+shorter path than the live machine holds. The scrape omits the series when the log cannot be read.
+
+`starpulse reload` that re-executes `serve` replies first and re-executes after. A caller that has timed out and left
+does not cancel the re-execution: the supervisor has halted and ended its non-socket children by then, so skipping the
+re-execution would leave `contexts` stopped.
 
 ## Event log archive
 
@@ -1162,7 +1318,7 @@ publishes nothing, so a page keeps a card until it reloads. The page's snapshot 
   the ids of the cold done tasks.
 
 `GET /api/done[?before=<entered>][&limit=20]` returns `{tasks, more}`, the next page of cold done tasks, newest done
-first, each `{id, title, state, model, labels, milestone, type, entered}` read from the board on request. `before` is
+first, each `{id, title, state, model, labels, milestone, type, entered}`, its card fields from the read model when the feed has one (no board file is opened), else read from the board on request. `before` is
 the `entered` of the last task held; `limit` is 1-100. A board that cannot read a task answers 404. A cold task has no
 `moves`, so moving it is a 409; `task show` and the held stream read it whole through its record.
 

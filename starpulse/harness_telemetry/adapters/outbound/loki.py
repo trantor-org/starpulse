@@ -61,7 +61,10 @@ class LokiSignals:
                 f"{self._url}/loki/api/v1/query_range?{query}", timeout=self._timeout
             ) as response:
                 streams = json.load(response)["data"]["result"]
-            page = sorted((int(stamp), json.loads(line)) for stream in streams for stamp, line in stream["values"])
+            page = sorted(
+                ((int(stamp), json.loads(line)) for stream in streams for stamp, line in stream["values"]),
+                key=lambda pair: pair[0],
+            )
             yield page
             if len(page) < PAGE:
                 return

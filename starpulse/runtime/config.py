@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
+import os
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -30,7 +32,9 @@ from pydantic import ValidationError
 
 from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
 from starpulse.board.model.commit_keys import CommitKeys
+from starpulse.board.model.policy import refuse_retired
 from starpulse.board.model.search_config import Search, SearchError, parse_search
+from starpulse.bridge.subscriptions import parse_rules
 from starpulse.cli.project import Project, ProjectError, parse_project
 from starpulse.contracts.analytics import Analytics, AnalyticsError, parse_analytics
 from starpulse.flow_metrics.model.level import Level, LevelError, parse_level
@@ -53,6 +57,7 @@ from starpulse.runtime.config_model import (
     memory_limit,
 )
 from starpulse.scheduler.model.config import Scheduler, SchedulerError, parse_scheduler
+from starpulse.runtime.nats_server import Bridge
 from starpulse.sweeper.config import Sweeper, SweeperError, parse_sweeper
 
 _DEFAULTS = ConfigFile()
@@ -235,6 +240,8 @@ class Config:
     """The Claude Code adapter the `contexts` child runs (`[claude_code]`); no table: none runs."""
     github: GitHub | None = None
     """The GitHub intake listener the `contexts` child runs (`[github]`); no table: none runs."""
+    bridge: Bridge = field(default_factory=Bridge)
+    """The NATS server `serve` supervises as its `nats` child (`[bridge]`); no table: none starts."""
     sweeper: Sweeper = field(default_factory=Sweeper)
     """The sweeper's pass interval and the kinds and housekeeping it runs as commands (`[sweeper]`); no table: an hourly pass."""
 
@@ -397,6 +404,10 @@ def _harnesses(file: ConfigFile, path: Path | None) -> Harnesses | None:
 def _board(table: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """The board adapter's type, and its table without `[board.actor]`; a type that names no adapter is a `ConfigError`."""
     board = {key: value for key, value in table.items() if key != "actor"}
+    try:
+        refuse_retired(board)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     kind = board.get("type", DEFAULT_TYPE)
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
         raise ConfigError(f"board type {kind!r} is not a module name")
@@ -409,9 +420,51 @@ def _board(table: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return kind, board
 
 
+#: Set to `{"database_url", "archive_dir"}` as JSON by `starpulse rehearse`: every process it starts then loads the config
+#: as `rehearsal` reshapes it.
+REHEARSE_ENV = "STARPULSE_REHEARSE"
+
+#: The keys that reach a service beyond the store or answer on a network address: a rehearsal drops each.
+_OUTBOUND = (
+    "tracker_url",
+    "telemetry_loki_url",
+    "tls_cert",
+    "tls_key",
+    "session_start_url",
+    "refresh_token_env",
+    "github_token_env",
+    "take_over_command",
+    "producers",
+    "claude_code",
+    "github",
+    "search",
+)
+
+
+def rehearsing() -> bool:
+    """Whether this process is a rehearsal's."""
+    return REHEARSE_ENV in os.environ
+
+
+def rehearsal(raw: dict[str, Any], spec: dict[str, str]) -> dict[str, Any]:
+    """`raw` as a rehearsal loads it: the copy of the store in `spec`, its pruned rows archived in `spec`'s scratch
+    directory, and TLS, telemetry, adapters, producers, pull requests and every outbound call off, and the claim sweep, which would release claims in the live board files. `repos` and `runs` stay: Board
+    assembly checks the writers and the release against them; `contexts_of` starts no context that reads them out."""
+    kept = {key: value for key, value in raw.items() if key not in _OUTBOUND}
+    return {
+        **kept,
+        "board": {**raw.get("board", {}), "claim_ttl": 0},  # the board's files are the live ones: no claim sweep
+        "pull_requests": False,
+        "database_url": spec["database_url"],
+        "event_log_archive_dir": spec["archive_dir"],
+    }
+
+
 def load(path: Path | None) -> Config:
-    """The config in `path`, or the defaults when there is none."""
+    """The config in `path`, or the defaults when there is none; under `REHEARSE_ENV` as `rehearsal` reshapes it."""
     raw = tomllib.loads(path.read_text()) if path else {}
+    if spec := os.environ.get(REHEARSE_ENV):
+        raw = rehearsal(raw, json.loads(spec))
     if "triggers" in raw:
         raise ConfigError("[[triggers]] removed in 0.4: start runs from your orchestrator", ["triggers"])
     try:
@@ -446,6 +499,15 @@ def load(path: Path | None) -> Config:
         cursor_context=_cursor_context(file.cursor_context),
         claude_code=_claude_code(file.claude_code),
         github=_github(file.github),
+        bridge=Bridge(
+            file.bridge.enabled,
+            file.bridge.port,
+            file.bridge.store_dir,
+            file.bridge.board,
+            parse_rules({kind: rules.model_dump() for kind, rules in file.bridge.subscriptions.items()}),
+            tuple(file.bridge.resume),
+            file.bridge.sessions_dir,
+        ),
         sweeper=_sweeper(file.sweeper),
         refresh_token_env=file.refresh_token_env,
         github_token_env=file.github_token_env,

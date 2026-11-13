@@ -34,6 +34,7 @@ from sqlalchemy.engine import Engine
 
 from starpulse.board import criteria
 from starpulse.board.adapters import native_docs, native_milestones
+from starpulse.board.adapters.done_hold import DoneHold
 from starpulse.board.adapters.task_history import TaskHistory, revises_plan
 from starpulse.board.adapters.upstream_backlog import (
     _CRITERIA,
@@ -54,10 +55,11 @@ from starpulse.board.adapters.upstream_backlog import (
 from starpulse.board.adapters.upstream_backlog import (
     _profile as _profile_of,
 )
-from starpulse.board.model import rules
+from starpulse.board.model import entry, rules
 from starpulse.board.model.claims import assignee_of, claimed, released
 from starpulse.board.model.guard import Guard, Validate
-from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
+from starpulse.board.model.policy import Policy, guards_of, profile_matrix
+from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
     ANONYMOUS,
     FLAGGED,
@@ -67,7 +69,6 @@ from starpulse.board.model.seam import (
     Board,
     MoveWriter,
     RetiredImporter,
-    RetiredProjector,
     RetiredReader,
     TaskArchiver,
     TaskCompleter,
@@ -79,8 +80,10 @@ from starpulse.board.model.seam import (
     TaskRetirer,
     Written,
 )
+from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.event_log.tables import pull_requests, retired_tasks
+from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.state_roles import StateRoles
 
 if TYPE_CHECKING:
@@ -92,11 +95,13 @@ DEFAULT_PATH = ".starpulse/board"
 #: The `[board]` settings this adapter reads: `path` is the board's directory, `machine` a machine file for the Board,
 #: relative to the config, `criteria` the command that evaluates a task's Start Criteria (`{id}` is the task's id),
 #: `validate` the `module:function` that may refuse a task write before it lands, `python_path` the directories, relative
-#: to the config, put at the front of `sys.path` before `validate` is imported, `guards` the record-level rules every
-#: task write must satisfy (the `rules` module of `starpulse.board.model`), `task_file_name` the form of the name a created task's
+#: to the config, put at the front of `sys.path` before `validate` is imported, `task_file_name` the form of the name a created task's
 #: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent),
 #: `proposal_prefix` the id prefix of a task created in the proposed lane (its own sequence, so a proposal takes no task
-#: number; absent, a proposal is numbered like any task).
+#: number; absent, a proposal is numbered like any task), `policy` the `[board.policy]` table `starpulse policy revision` reads, `claim_ttl` the seconds a claim
+#: lives without an event (0: no claim sweep), `transcripts` the directory of the sessions' transcripts, `complete_done` (boolean) that a task
+#: landing in Done, and each Done task `tasks/` holds when the board starts, moves on to `completed/`, `complete_keep_labels` (a regex) that a Done task with a label fully matching it stays in `tasks/`, `complete_hold` (a table, see `done_hold`) that a Done task stays in `tasks/` until its local day ends, `policy_rows` the stored policy
+#: (its guards, profiles and watches) that `assemble` hands the board; no config sets it.
 _SETTINGS = {
     "type",
     "path",
@@ -104,20 +109,29 @@ _SETTINGS = {
     "machine",
     "criteria",
     "holds",
+    "holds_labels",
     "unfinished",
     "parked",
     "released",
+    "idle",
     "delivered",
     "returned",
     "verifying",
     "closed",
     "validate",
     "python_path",
-    "guards",
     "task_file_name",
     "types",
-    "default_profiles",
+    "entry",
+    "warn_actors",
     "proposal_prefix",
+    "policy",
+    "claim_ttl",
+    "transcripts",
+    "complete_done",
+    "complete_keep_labels",
+    "complete_hold",
+    "policy_rows",
 }
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
@@ -137,6 +151,7 @@ _NOTES_END = re.compile(r"\s*<!-- SECTION:NOTES:END -->")
 _PLAN = re.compile(r"<!-- SECTION:PLAN:BEGIN -->(.*?)<!-- SECTION:PLAN:END -->", re.S)
 _DONE = re.compile(r"<!-- DOD:BEGIN -->(.*?)<!-- DOD:END -->", re.S)
 _FINAL_SUMMARY = re.compile(r"<!-- SECTION:FINAL_SUMMARY:BEGIN -->(.*?)<!-- SECTION:FINAL_SUMMARY:END -->", re.S)
+_NEEDS_ATTENTION = re.compile(r"<!-- SECTION:NEEDS_ATTENTION:BEGIN -->(.*?)<!-- SECTION:NEEDS_ATTENTION:END -->", re.S)
 _COMMENTS_SECTION = re.compile(r"<!-- COMMENTS:BEGIN -->(.*?)<!-- COMMENTS:END -->", re.S)
 _COMMENT_HEAD = re.compile(r"^created: (\S+ \S+)\n(?:author: (\S+)\n)?---\n", re.M)
 _SESSION_LINK = re.compile(r"^\*\*Session Link:\*\* (?:local \w+ session `([^`]+)`|(\S+))", re.M)
@@ -191,6 +206,21 @@ _SETTLED_NS = 1_000_000_000
 #: was listed does not list the folder again.
 _LISTED: dict[Path, list[str]] = {}
 
+#: The folders' modification times when `_find` last missed each task, so a repeat lookup of an id the board lacks reads
+#: no file until a task file is added, renamed or removed. Kept only once every folder is `_SETTLED_NS` old.
+_MISSED: dict[tuple[Path, str, tuple[str, ...]], tuple[int, ...]] = {}
+_MISSED_KEPT = 4096
+
+
+def _stamps(root: Path, folders: tuple[str, ...]) -> tuple[int, ...]:
+    stamps = []
+    for folder in folders:
+        try:
+            stamps.append((root / folder).stat().st_mtime_ns)
+        except FileNotFoundError:
+            stamps.append(-1)
+    return tuple(stamps)
+
 
 def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed")) -> Path | None:
     """The file under `tasks/`, or `completed/` once it is completed, whose front matter holds `id: <task>` in any case;
@@ -199,6 +229,7 @@ def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed
     A file named for the id is checked first; any other is parsed only when its raw front matter has an `id:` line
     spelling the id, so a lookup parses the file it returns rather than every file on the board. The file found last
     time is tried before the folders are listed; one that was renamed, moved or rewritten for another task is a miss.
+    A miss on folders unchanged since the last miss reads nothing.
     A file named for the id is first looked for in the folders as last listed; a miss there lists them again, so a
     file added or renamed since is found, and the others are only ever checked against a fresh listing.
     """
@@ -206,16 +237,30 @@ def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed
     spelled = _id_line(task)
     if (path := _FOUND.get(key)) is not None and _has_id(path, task, spelled, False):
         return path
+    stamps = _stamps(root, folders)
+    if _MISSED.get(key) == stamps:
+        return None
     for fresh in (False, True):
         listed = [(directory, _md_names(directory, fresh)) for directory in (root / folder for folder in folders)]
         named = (directory / name for directory, names in listed for name in names if _named_for(name, task))
-        others = (directory / name for directory, names in listed for name in names if not _named_for(name, task))
-        for candidates, prefilter in ((named, False), (others if fresh else (), True)):
+        others = (
+            directory / name
+            for (directory, names), stamp in zip(listed, stamps, strict=True)
+            if not _folder_lacks(directory, stamp, names, task)
+            for name in names
+            if not _named_for(name, task)
+        )
+        for candidates, held in ((named, False), (others if fresh else (), True)):
             for path in candidates:
-                if _has_id(path, task, spelled, prefilter):
+                if _spells_id(path, task, spelled) if held else _has_id(path, task, spelled, False):
                     _FOUND[key] = path
+                    _MISSED.pop(key, None)
                     return path
     _FOUND.pop(key, None)
+    if max(stamps) < time.time_ns() - _SETTLED_NS:
+        if len(_MISSED) >= _MISSED_KEPT:
+            _MISSED.clear()
+        _MISSED[key] = stamps
     return None
 
 
@@ -248,6 +293,58 @@ def _has_id(path: Path, task: str, spelled: re.Pattern[str], prefilter: bool) ->
     return task.casefold() in {found.casefold() for found in ids}
 
 
+#: Per file, the `id:` and list-item lines of its raw front matter as last seen at a stamp (mtime_ns, size), casefolded:
+#: a superset of its ids, so a miss on a settled board stats each file instead of reading it. Kept only once the file
+#: is `_SETTLED_NS` old, as `_FILE_IDS` is.
+_SPELLED: dict[Path, tuple[tuple[int, int], frozenset[str]]] = {}
+_SPELLED_KEPT = 16384
+_SPELLED_LINE = re.compile(r"^(?:id:|-)[ \t]*[\"']?(.*?)[\"']?[ \t]*$", re.M)
+
+#: Per folder, the union of its files' spelled lines at the folder's mtime. A write replaces a file, which moves the
+#: folder's mtime, so a folder settled at the same mtime holds the same lines and a miss skips it with no stat.
+_DIR_SPELLED: dict[Path, tuple[int, frozenset[str]]] = {}
+
+
+def _spelled_lines(path: Path) -> frozenset[str]:
+    stamp = _stamp(path)
+    held = _SPELLED.get(path)
+    if held is None or held[0] != stamp:
+        lines = _SPELLED_LINE.findall(_front_matter(path.read_text()))
+        held = (stamp, frozenset(line.casefold() for line in lines))
+        if stamp[0] < time.time_ns() - _SETTLED_NS:
+            if len(_SPELLED) >= _SPELLED_KEPT:
+                _SPELLED.clear()
+            _SPELLED[path] = held
+    return held[1]
+
+
+def _spells_id(path: Path, task: str, spelled: re.Pattern[str]) -> bool:
+    """Whether the file's front matter has `id: <task>`, reading the file only when it was written since its spelled
+    lines were held or when it spells the id."""
+    try:
+        lines = _spelled_lines(path)
+    except OSError:
+        return False  # moved or removed while looking
+    return task.casefold() in lines and _has_id(path, task, spelled, True)
+
+
+def _folder_lacks(directory: Path, stamp: int, names: list[str], task: str) -> bool:
+    """Whether no file of the folder, settled at `stamp` (its mtime read before `names` was listed), spells `task`."""
+    if stamp >= time.time_ns() - _SETTLED_NS:
+        return False
+    held = _DIR_SPELLED.get(directory)
+    if held is None or held[0] != stamp:
+        union: set[str] = set()
+        for name in names:
+            try:
+                union |= _spelled_lines(directory / name)
+            except OSError:
+                continue  # moved or removed while looking
+        held = (stamp, frozenset(union))
+        _DIR_SPELLED[directory] = held
+    return task.casefold() not in held[1]
+
+
 def _named_for(name: str, task: str) -> bool:
     """Whether the file's name starts with the id, as `task-5 - Title.md` does for `task-5` but not for `task-50`."""
     return name[: len(task)].lower() == task.lower() and not name[len(task) : len(task) + 1].isalnum()
@@ -272,16 +369,33 @@ def _aliases(frontmatter: Mapping[str, Any]) -> list[str]:
     return [str(alias).strip() for alias in aliases] if isinstance(aliases, list) else []
 
 
-def _pull_of(retired: _Retired) -> Callable[[str, int], dict[str, Any] | None]:
-    """A lookup of the stored pull request `(repository, number)` as `{draft, checks, threads, mergeable, body, files}`,
-    None when the store holds none; `files` is None for a record saved before the store kept them. A board that has not started has no store."""
+_GITHUB_MERGEABLE = {"true": "MERGEABLE", "false": "CONFLICTING"}
 
-    def read(repo: str, number: int) -> dict[str, Any] | None:
+
+def _github_mergeable(repo: str, number: int) -> str | None:
+    argv = ["gh", "api", f"repos/{repo}/pulls/{number}", "--jq", ".mergeable"]
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True, timeout=HOOK_TIMEOUT, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return _GITHUB_MERGEABLE.get(done.stdout.strip()) if done.returncode == 0 else None
+
+
+def _pull_of(retired: _Retired) -> Callable[[str, int, bool], dict[str, Any] | None]:
+    """A lookup of the stored pull request `(repository, number)` as `{state, draft, checks, threads, mergeable, body, files}`,
+    None when the store holds none; `files` is None for a record saved before the store kept them. A board that has not started has no store.
+    With `settle`, an open pull request whose stored `mergeable` is not `MERGEABLE` reads GitHub's answer instead: GitHub sends no event
+    when a push clears a conflict, so the stored flag can outlive it. An unreadable GitHub leaves the stored flag."""
+
+    def read(repo: str, number: int, settle: bool) -> dict[str, Any] | None:
         if retired.engine is None:
             return None
         columns = (
+            pull_requests.c.state,
             pull_requests.c.is_draft,
             pull_requests.c.checks,
+            pull_requests.c.head,
+            pull_requests.c.rollup,
             pull_requests.c.threads,
             pull_requests.c.mergeable,
             pull_requests.c.body,
@@ -292,11 +406,15 @@ def _pull_of(retired: _Retired) -> Callable[[str, int], dict[str, Any] | None]:
             row = db.execute(query).first()
         if row is None:
             return None
+        mergeable = row.mergeable
+        if settle and row.state == "OPEN" and mergeable != "MERGEABLE":
+            mergeable = _github_mergeable(repo, number) or mergeable
         return {
+            "state": row.state,
             "draft": row.is_draft,
-            "checks": row.checks,
+            "checks": checks_verdict(row.state, row.checks, row.head, row.rollup),
             "threads": row.threads,
-            "mergeable": row.mergeable,
+            "mergeable": mergeable,
             "body": row.body,
             "files": (row.detail or {}).get("files"),
         }
@@ -357,6 +475,14 @@ def _types(settings: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(declared)
 
 
+def _warn_actors(settings: Mapping[str, Any]) -> frozenset[str]:
+    """The actors the `warn_actors` setting declares, empty when it declares none."""
+    declared = settings.get("warn_actors", ())
+    if not isinstance(declared, (list, tuple)) or not all(isinstance(name, str) and name.strip() for name in declared):
+        raise ValueError("board: warn_actors must be a list of actors (`operator`, `agent`, `<instance>/<workflow>`)")
+    return frozenset(name.strip() for name in declared)
+
+
 def _stamped(frontmatter: dict, *, created: bool = False) -> dict:
     """`frontmatter` with `updated_date` (and `created_date` on a new task) set to now in UTC, after the profile or status."""
     now = f"{datetime.now(timezone.utc):{_STAMP}}"
@@ -381,20 +507,23 @@ _STALE = Written(False, "the task file changed while it was being written")
 _ATTEMPTS = 5
 
 
-def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: Guard, actor: str) -> Written | None:
+def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: Guard, actor: str) -> Written:
     """Write the task file at `path` in one rename, unless `guard` refuses `actor`'s write or the file no longer holds
-    `before`: the refusal (`_STALE` for a changed file), or None once it landed."""
-    text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}"
+    `before`: the refusal (`_STALE` for a changed file), or once it landed an ok `Written` naming the lane rules it
+    broke. The lane the write enters runs its entry effects first, whoever writes."""
     earlier = None if before is None else rules.Record(*_split_record(before))
-    if refused := guard.refusal(path, before, earlier, frontmatter, body, text, actor):
-        return refused
+    frontmatter = dict(guard.entered(frontmatter, None if earlier is None else earlier.front))
+    text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}"
+    judged = guard.verdict(path, before, earlier, frontmatter, body, text, actor)
+    if not judged.ok:
+        return judged
     if before is not None and path.read_text() != before:
         return _STALE
     # Unique per write, so concurrent writers never share a scratch file; not a `.md` file, so a scan never reads it half written.
     scratch = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     scratch.write_text(text)
     os.replace(scratch, path)
-    return None
+    return judged
 
 
 def _update(
@@ -412,10 +541,11 @@ def _update(
             before = path.read_text()
             frontmatter, body = _split(before)
             body = edit(frontmatter, body)
-            if (refused := _land(path, before, _stamped(frontmatter), body, guard, actor)) is None:
-                return Written(True, f"Updated task {task}")
-            if refused is not _STALE:
-                return refused
+            landed = _land(path, before, _stamped(frontmatter), body, guard, actor)
+            if landed.ok:
+                return Written(True, f"Updated task {task}", warnings=landed.warnings)
+            if landed is not _STALE:
+                return landed
     except OSError as error:
         return Written(False, f"{path}: {error}")
     return _STALE
@@ -504,6 +634,22 @@ def _reader(
     return read
 
 
+def _archived_reader(root: Path, retired: _Retired, done: str | None) -> TaskReader:
+    """A board reader of a task the board holds as archived: a retired one's record from the history store, else the
+    record of its file under `completed/` (a Done task completing archives its History) or `archive/tasks/`.
+
+    The store answers first, by key: a retired task has no file, so a file lookup would list and read every file in
+    both folders before missing."""
+    files = _reader(root, _no_criteria, done, ("completed", "archive/tasks"))
+
+    def read(task: str, /) -> dict[str, Any] | None:
+        if (text := retired.text(task)) is not None:
+            return {**_record_of(text, task, _no_criteria), "start_criteria": []}
+        return files(task)
+
+    return read
+
+
 def _stamp(path: Path) -> tuple[int, int]:
     """The file's modification time and size, which differ when it was written since."""
     stat = path.stat()
@@ -554,6 +700,7 @@ def _record_of(text: str, task: str, evaluate: Callable[[str, str], list[dict[st
         "plan": _section(_PLAN, body),
         "notes": notes,
         "finalSummary": _section(_FINAL_SUMMARY, body),
+        "needsAttention": _section(_NEEDS_ATTENTION, body),
         "comments": comments,
         "session": assignee_of(frontmatter) or _session(notes, comments),
         "createdBy": str(frontmatter.get("created_by") or ""),
@@ -827,15 +974,47 @@ def _editor(
     return edit
 
 
-def _open_tasks(root: Path, done: str | None) -> Iterator[tuple[str, dict]]:
-    """The id and front matter of each task under `tasks/` that is not Done, in file order."""
+def _open_tasks(root: Path, done: str | None, mentioning: str = "") -> Iterator[tuple[str, dict]]:
+    """The id and front matter of each task under `tasks/` that is not Done, in file order; with `mentioning`, only a
+    file whose front matter holds it in any case, so the YAML parse skips the rest."""
     for path in sorted((root / "tasks").glob("*.md")):
         try:
-            frontmatter, _ = _split(path.read_text())
+            text = path.read_text()
         except OSError:
             continue  # moved or removed while looking
+        closing = text.find("\n---", 3)
+        if mentioning and mentioning not in (text if closing < 0 else text[:closing]).casefold():
+            continue
+        frontmatter, _ = _split(text)
         if isinstance(frontmatter, dict) and lane_id(str(frontmatter.get("status") or "")) != done:
             yield str(frontmatter.get("id") or path.stem).strip(), frontmatter
+
+
+def _done_tasks(root: Path, done: str | None) -> Iterator[tuple[str, dict]]:
+    """The id and front matter of each task under `tasks/` that is Done, then each under `completed/`, in file order, that lists aliases."""
+    for folder in ("tasks", "completed"):
+        for path in sorted((root / folder).glob("*.md")):
+            try:
+                text = path.read_text()
+            except OSError:
+                continue  # moved or removed while looking
+            if "\naliases:" not in text:
+                continue  # the only reader asks for aliases: skip the YAML parse of the rest
+            frontmatter, _ = _split(text)
+            if isinstance(frontmatter, dict) and (
+                folder == "completed" or lane_id(str(frontmatter.get("status") or "")) == done
+            ):
+                yield str(frontmatter.get("id") or path.stem).strip(), frontmatter
+
+
+def _done_in_tasks(root: Path, done: str | None) -> list[tuple[str, Path]]:
+    """The id and file of each task under `tasks/` that is Done, in file order."""
+    return [
+        (str(frontmatter.get("id") or path.stem).strip(), path)
+        for path in sorted((root / "tasks").glob("*.md"))
+        if isinstance(frontmatter := _split(path.read_text())[0], dict)
+        and lane_id(str(frontmatter.get("status") or "")) == done
+    ]
 
 
 def _open_dependents(root: Path, task: str, done: str | None) -> list[str]:
@@ -843,7 +1022,7 @@ def _open_dependents(root: Path, task: str, done: str | None) -> list[str]:
     wanted = task.casefold()
     return [
         found
-        for found, frontmatter in _open_tasks(root, done)
+        for found, frontmatter in _open_tasks(root, done, wanted)
         if wanted in {dependency.casefold() for dependency in _strings(frontmatter.get("dependencies"))}
     ]
 
@@ -855,6 +1034,26 @@ def _holders(root: Path, done: str | None) -> Callable[[str, str], list[str]]:
         return [found for found, frontmatter in _open_tasks(root, done) if value in _strings(frontmatter.get(field))]
 
     return holders
+
+
+def _graph(root: Path) -> Callable[[], dict[str, list[str]]]:
+    """A lookup of the dependencies of every task under `tasks/` and `completed/`, by id."""
+
+    def graph() -> dict[str, list[str]]:
+        found: dict[str, list[str]] = {}
+        for folder in ("tasks", "completed"):
+            for path in sorted((root / folder).glob("*.md")):
+                try:
+                    frontmatter, _ = _split(path.read_text())
+                except OSError:
+                    continue  # moved or removed while looking
+                if isinstance(frontmatter, dict):
+                    found[str(frontmatter.get("id") or path.stem).strip()] = list(
+                        _strings(frontmatter.get("dependencies"))
+                    )
+        return found
+
+    return graph
 
 
 def _needs(need: str, task: str) -> bool:
@@ -904,7 +1103,9 @@ def _archiver(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
             return noted
         dependents = _open_dependents(root, task, roles.done)
         for dependent in dependents:
-            if not (unlinked := _update(root, dependent, _unlinker(task, reason, ready, roles.waiting), guard, actor)).ok:
+            if not (
+                unlinked := _update(root, dependent, _unlinker(task, reason, ready, roles.waiting), guard, actor)
+            ).ok:
                 return unlinked
         target = root / "archive" / "tasks" / path.name
         try:
@@ -926,6 +1127,7 @@ class _Retired:
 
     def __init__(self) -> None:
         self.engine: Engine | None = None
+        self._highest: dict[str, tuple[tuple[int, float | None], int]] = {}
 
     def rows(self, task: str = "", milestone: str = "") -> list[dict[str, str]]:
         """The retired task `task` as `[{task, name, text}]`, empty when it is not retired; every one, by id, for "".
@@ -959,6 +1161,16 @@ class _Retired:
                 return
             after = page[-1]["task"]
 
+    def text(self, task: str) -> str | None:
+        """The retired `task`'s file text, None when it is not retired. The id is looked up as spelled, upper-cased and
+        lower-cased, each a primary-key read, so asking for a task that is not retired reads no other row."""
+        if self.engine is None:
+            return None
+        spellings = {task, task.upper(), task.lower()}
+        query = select(retired_tasks.c.text).where(retired_tasks.c.task.in_(spellings)).limit(1)
+        with self.engine.connect() as db:
+            return db.execute(query).scalar()
+
     def aliases(self) -> list[str]:
         """The ids the retired tasks answer to besides their own: those their `aliases` front matter lists."""
         if self.engine is None:
@@ -989,6 +1201,13 @@ class _Retired:
                 return
             after = page[-1].task
 
+    def version(self) -> tuple[int, float | None]:
+        """The rows' count and newest `retired_at`, which a retire, an import or a restore moves."""
+        if self.engine is None:
+            return (0, None)
+        with self.engine.connect() as db:
+            return tuple(db.execute(select(func.count(), func.max(retired_tasks.c.retired_at))).one())
+
     def changes(self) -> Callable[[bool], Iterator[str] | None]:
         """A reader of every retired task's text that answers None while the rows are as it last read them, unless
         `force` asks for the text again; it keeps the rows' count and newest `retired_at`, never their text."""
@@ -998,14 +1217,28 @@ class _Retired:
             nonlocal seen
             if self.engine is None:
                 return None
-            with self.engine.connect() as db:
-                now = tuple(db.execute(select(func.count(), func.max(retired_tasks.c.retired_at))).one())
+            now = self.version()
             if now == seen and not force:
                 return None
             seen = now
             return self.texts()
 
         return read
+
+    def highest(self, number: re.Pattern[str]) -> int:
+        """The highest number `number` matches among the retired ids and their aliases, 0 for none. It is read again only
+        once the rows' count or newest `retired_at` moved, as a retire or a restore moves them; reading the aliases
+        searches every retired text."""
+        if self.engine is None:
+            return 0
+        now = self.version()
+        held = self._highest.get(number.pattern)
+        if held is not None and held[0] == now:
+            return held[1]
+        matched = (number.fullmatch(task) for task in [*self.ids(), *self.aliases()])
+        highest = max((int(found[1]) for found in matched if found), default=0)
+        self._highest[number.pattern] = (now, highest)
+        return highest
 
     def ids(self) -> list[str]:
         """Every retired task's id."""
@@ -1126,7 +1359,9 @@ def _restorer(
         spelled = {lane_id(status): status for status in statuses}
         landing = held if lane_id(held) in spelled else spelled.get(migrations.get(lane_id(held), ""))
         if landing is None:
-            return Written(False, f"{task} was archived in {held}, which the active definition lacks and no migrations entry names")
+            return Written(
+                False, f"{task} was archived in {held}, which the active definition lacks and no migrations entry names"
+            )
         target = root / "tasks" / path.name
         try:
             os.link(path, target)
@@ -1220,10 +1455,12 @@ def _releaser(root: Path, guard: Guard = Guard()) -> TaskReleaser:
     return release
 
 
-def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles) -> TaskCompleter:
+def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles, keep: object = None) -> TaskCompleter:
     """A board writer that moves a Done task's file to `completed/`, where the reader and the projection still find it.
 
-    The move enters the `completed` lane where the board has one; a board without it keeps the task in Done."""
+    The move enters the `completed` lane where the board has one; a board without it keeps the task in Done. A task
+    with a label that fully matches the regex `keep` stays in `tasks/`, Done and writable."""
+    kept = re.compile(str(keep)) if keep else None
     swept = COMPLETED if COMPLETED in {lane_id(status) for status in statuses} else None
 
     def complete(task: str, /) -> Written:
@@ -1231,9 +1468,12 @@ def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles) -> Task
             return Written(False, f"{task} has no task file in {root / 'tasks'}")
         if path.parent.name == "completed":
             return Written(False, f"{task} is already completed")
-        status = str(_split(path.read_text())[0].get("status") or "")
+        frontmatter = _split(path.read_text())[0]
+        status = str(frontmatter.get("status") or "")
         if lane_id(status) != roles.done:
             return Written(False, f"{task} is {status or 'without a status'}, not Done")
+        if kept is not None and any(kept.fullmatch(label) for label in _strings(frontmatter.get("labels"))):
+            return Written(False, f"{task} carries a label that keeps it in {root / 'tasks'}")
         target = root / "completed" / path.name
         try:
             target.parent.mkdir(exist_ok=True)
@@ -1259,10 +1499,11 @@ def _reidentified(root: Path, path: Path, new: str, file_name: str, *, restore: 
         aliases = held if restore else [*held, old]
         renamed = {**{key: value for key, value in frontmatter.items() if key != "aliases"}, "id": new}
         target = path.with_name(_file_name(new, str(frontmatter.get("title") or ""), file_name))
-        if refused := _land(
+        landed = _land(
             path, before, _stamped({**renamed, **({"aliases": aliases} if aliases else {})}), body, Guard(), OPERATOR
-        ):
-            return refused
+        )
+        if not landed.ok:
+            return landed
         os.replace(path, target)
         _repointed(root, old, new)
     except OSError as error:
@@ -1326,22 +1567,60 @@ def _promoter(
     return promote
 
 
+#: The ids each task file held when `_next_id` last parsed it, by path, with the file's `_stamp` then, so a create
+#: parses only the files written since. Kept only once the file is `_SETTLED_NS` old, as `_RECORDS` keeps a record.
+#: Keyed by the path's text: building and hashing thousands of `Path`s per create costs more than the stats.
+_FILE_IDS: dict[str, tuple[tuple[int, int], tuple[str, ...]]] = {}
+
+
+def _held_ids(path: str, stat: os.stat_result) -> tuple[str, ...]:
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    held = _FILE_IDS.get(path)
+    if held is not None and held[0] == stamp:
+        return held[1]
+    frontmatter, _ = _split(Path(path).read_text())
+    ids = (str(frontmatter.get("id") or "").strip(), *_aliases(frontmatter)) if isinstance(frontmatter, dict) else ()
+    if stamp[0] < time.time_ns() - _SETTLED_NS:
+        _FILE_IDS[path] = (stamp, ids)
+    return ids
+
+
+def _md_stats(directory: str) -> Iterator[tuple[str, os.stat_result]]:
+    try:
+        with os.scandir(directory) as entries:
+            listed = [entry for entry in entries if entry.name.endswith(".md")]
+    except FileNotFoundError:
+        return
+    for entry in listed:
+        try:
+            yield entry.path, entry.stat()
+        except FileNotFoundError:
+            continue  # moved or removed while looking
+
+
 def _next_id(root: Path, prefix: str, retired: _Retired) -> str:
-    """`<prefix>-N` with N one past the highest on the board, its completed, archived and retired tasks included."""
+    """`<prefix>-N` with N one past the highest on the board, its completed, archived and retired tasks included.
+
+    Every file is listed and stat'd each time, but only one written since the last call is parsed, so a create with
+    the board's thousands of files settled reads none of them."""
     number = re.compile(rf"{re.escape(prefix)}-(\d+)", re.I)
-    taken = [*retired.ids(), *retired.aliases()]
-    highest = max((int(found[1]) for task in taken if (found := number.fullmatch(task))), default=0)
-    for folder, _ in _FOLDERS:
-        for path in (root / folder).glob("*.md"):
+    highest = retired.highest(number)
+    folders = {str(root / folder) for folder, _ in _FOLDERS}
+    seen: set[str] = set()
+    for folder in folders:
+        for path, stat in _md_stats(folder):
+            seen.add(path)
             try:
-                frontmatter, _ = _split(path.read_text())
+                ids = _held_ids(path, stat)
             except OSError:
                 continue  # moved or removed while looking
-            if not isinstance(frontmatter, dict):
-                continue
-            for taken_id in (str(frontmatter.get("id") or "").strip(), *_aliases(frontmatter)):
-                if found := number.fullmatch(taken_id):
+            for taken in ids:
+                found = number.fullmatch(taken)
+                if found:
                     highest = max(highest, int(found[1]))
+    if len(_FILE_IDS) > len(seen):  # a file was removed or renamed since, or another board was numbered
+        for gone in [path for path in _FILE_IDS if os.path.dirname(path) in folders and path not in seen]:
+            _FILE_IDS.pop(gone, None)
     return f"{prefix}-{highest + 1}"
 
 
@@ -1448,13 +1727,16 @@ def _creator(
             rest = {field: value for field, value in details.items() if field not in _NEW_TASK_DETAILS}
             try:
                 body = _apply(task, frontmatter, body, link(rest), spelled)
-                if refused := _land(path, None, _stamped(frontmatter, created=True), body, guard, actor):
-                    return refused
+                landed = _land(path, None, _stamped(frontmatter, created=True), body, guard, actor)
+                if not landed.ok:
+                    return landed
             except ValueError as refusal:
                 return Written(False, f"{title}: {refusal}")
             except OSError as error:
                 return Written(False, f"{path}: {error}")
-        return _moved(Written(True, task), str(frontmatter.get("status") or config.statuses[0]))
+        return _moved(
+            Written(True, task, warnings=landed.warnings), str(frontmatter.get("status") or config.statuses[0])
+        )
 
     return create
 
@@ -1464,15 +1746,23 @@ def _creator(
 HOOK_TIMEOUT = 60.0
 
 
-def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
+def _holds(
+    command: object, base: Path, root: Path | None = None, labels: object = None
+) -> Callable[[str], list[str]] | None:
     """The `holds` or `unfinished` command, run in `base` with `{id}` replaced by the task's id: it prints a JSON array
     of the reasons the task's `deps_done` is withheld, or of the work a merged task has left. Output that is no such array
-    raises, which holds the task."""
+    raises, which holds the task. With `labels` (a regex) and the board `root`, a task found with no label that fully
+    matches it holds nothing and the command, a process spawn per call, does not run."""
     if not command:
         return None
     parts = shlex.split(str(command))
+    applies = re.compile(str(labels)) if labels and root is not None else None
 
     def holds(task: str) -> list[str]:
+        if applies is not None and (path := _find(root, task)) is not None:
+            frontmatter, _ = _split_record(path.read_text())
+            if not any(applies.fullmatch(label) for label in _strings(frontmatter.get("labels"))):
+                return []
         argv = [part.replace("{id}", task) for part in parts]
         done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=HOOK_TIMEOUT, check=False)
         try:
@@ -1488,9 +1778,9 @@ def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
 
 
 def _notice(command: object, base: Path) -> Callable[[str], None] | None:
-    """The `parked`, `released`, `delivered`, `returned`, `verifying` or `closed` command, run in `base` with `{id}`
-    replaced by the task's id, after the task actor moves a task from the working lane to Waiting, from Waiting to Ready,
-    sees its delivery finish (with `{verdict}` replaced by the run's verdict), sends it from Review back to the working
+    """The `parked`, `released`, `idle`, `delivered`, `returned`, `verifying` or `closed` command, run in `base` with
+    `{id}` replaced by the task's id, after the task actor moves a task from the working lane to Waiting, from Waiting to
+    Ready, sees its holder go idle or its delivery finish (with `{verdict}` replaced by the idle step or the run's verdict), sends it from Review back to the working
     lane, moves it on a merge that leaves its post-merge QA to run, or moves it to Done. A nonzero exit raises with what
     the command said."""
     if not command:
@@ -1513,10 +1803,13 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     Moves, profile changes, creates, edits and archives write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
     machine file, whose transitions and `writers` then decide which moves are offered, and to whom.
     """
-    if "rules" in settings:
-        raise ValueError("board: `[[board.rules]]` is now `[[board.guards]]`; rename the table")
     if unknown := sorted(settings.keys() - _SETTINGS):
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
+    rows = settings.get("policy_rows", Policy())
+    if not isinstance(rows, Policy):
+        raise ValueError(
+            "board: `policy_rows` is the stored policy StarPulse hands the board; a config does not set it"
+        )
     file_name = str(settings.get("task_file_name", _FILE_NAMES[0]))
     if file_name not in _FILE_NAMES:
         raise ValueError(f"board: task_file_name {file_name!r} is not one of {', '.join(sorted(_FILE_NAMES))}")
@@ -1529,18 +1822,22 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     migrations: Mapping[str, str] = {}
     if "machine" in settings:
         from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
-            _read,
+            read_document,
         )
 
-        migrations = _read(base / str(settings["machine"])).get("migrations", {})
+        migrations = read_document(base / str(settings["machine"])).get("migrations", {})
     retired = _Retired()
     claims = _Claims()
     guard = Guard(
-        rules.load(settings.get("guards")),
+        rules.load(guards_of(rows)),
         _hook(settings.get("validate")),
         _state_of(root, retired),
         pull_of=_pull_of(retired),
         types=_types(settings),
+        effects=entry.load(settings.get("entry"), profile_matrix(rows)),
+        warn_actors=_warn_actors(settings),
+        graph=_graph(root),
+        matrix=profile_matrix(rows),
     )
 
     def assign(task: str, profile: str, /, actor: str = OPERATOR) -> Written:
@@ -1555,42 +1852,44 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         gate = replace(guard, waiting=roles.waiting, ready=ready, holders=_holders(root, roles.done))
         proposals = (roles.proposed or "", proposal_prefix)
         return {
-                "writer": _writer(root, config.statuses, roles, gate, claims),
-                "release": _releaser(root, gate),
-                "assign": assign,
-                "create": _creator(root, config, retired, gate, file_name, link, proposals),
-                "read": _reader(
-                    root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate, roles.done
-                ),
-                "read_archived": _reader(root, _no_criteria, roles.done, ("archive/tasks",)),
-                "evaluate": evaluate,
-                "holds": _holds(settings.get("holds"), base),
-                "unfinished": _holds(settings.get("unfinished"), base),
-                "parked": _notice(settings.get("parked"), base),
-                "released": _notice(settings.get("released"), base),
-                "delivered": _notice(settings.get("delivered"), base),
-                "returned": _notice(settings.get("returned"), base),
-                "verifying": _notice(settings.get("verifying"), base),
-                "closed": _notice(settings.get("closed"), base),
-                "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles)),
-                "archive": _archiver(root, config.statuses, roles, gate),
-                "restore": _restorer(root, retired, config.statuses, migrations, gate),
-                "complete": _completer(root, config.statuses, roles),
-                "retire": _retirer(root, retired, roles),
-                "retired": _retired_reader(retired),
-                "retired_projected": retired.projected,
-                "import_retired": _importer(root, retired),
-                "docs": native_docs.lister(root),
-                "read_doc": native_docs.reader(root),
-                "create_doc": native_docs.creator(root),
-                "edit_doc": native_docs.editor(root),
-                "archive_doc": native_docs.archiver(root),
-                "restore_doc": native_docs.restorer(root),
-                "milestones": native_milestones.lister(root),
-                "read_milestone": native_milestones.reader(root),
-                "create_milestone": native_milestones.creator(root),
-                "edit_milestone": native_milestones.editor(root),
-                "archive_milestone": native_milestones.archiver(root),
+            "writer": _writer(root, config.statuses, roles, gate, claims),
+            "release": _releaser(root, gate),
+            "assign": assign,
+            "create": _creator(root, config, retired, gate, file_name, link, proposals),
+            "read": _reader(
+                root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate, roles.done
+            ),
+            "read_archived": _archived_reader(root, retired, roles.done),
+            "evaluate": evaluate,
+            "holds": _holds(settings.get("holds"), base, root, settings.get("holds_labels")),
+            "unfinished": _holds(settings.get("unfinished"), base),
+            "parked": _notice(settings.get("parked"), base),
+            "released": _notice(settings.get("released"), base),
+            "idle": _notice(settings.get("idle"), base),
+            "delivered": _notice(settings.get("delivered"), base),
+            "returned": _notice(settings.get("returned"), base),
+            "verifying": _notice(settings.get("verifying"), base),
+            "closed": _notice(settings.get("closed"), base),
+            "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles)),
+            "archive": _archiver(root, config.statuses, roles, gate),
+            "restore": _restorer(root, retired, config.statuses, migrations, gate),
+            "complete": _completer(root, config.statuses, roles, settings.get("complete_keep_labels")),
+            "retire": _retirer(root, retired, roles),
+            "retired": _retired_reader(retired),
+            "retired_projected": retired.projected,
+            "retired_version": retired.version,
+            "import_retired": _importer(root, retired),
+            "docs": native_docs.lister(root),
+            "read_doc": native_docs.reader(root),
+            "create_doc": native_docs.creator(root),
+            "edit_doc": native_docs.editor(root),
+            "archive_doc": native_docs.archiver(root),
+            "restore_doc": native_docs.restorer(root),
+            "milestones": native_milestones.lister(root),
+            "read_milestone": native_milestones.reader(root),
+            "create_milestone": native_milestones.creator(root),
+            "edit_milestone": native_milestones.editor(root),
+            "archive_milestone": native_milestones.archiver(root),
         }
 
     made = project_board(
@@ -1610,9 +1909,13 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         claims.log = log
         history.attach(log.engine)
         history.import_retired(retired.pairs(), lambda text: _record_of(text, "", lambda *_: []))
+        if settings.get("complete_done"):
+            hold.sweep()  # a Done file left in `tasks/` before a move completed it on landing, or whose day ended
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)
+        if settings.get("complete_done"):
+            hold.start(StopEvent(), lambda: list(_open_tasks(root, made.roles.done)))
         made.start(feed, group, log)
         sweep(feed, log, lambda _expiries: None)  # this process serves its own sweep's expiries
 
@@ -1630,22 +1933,58 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         renumber = history.renumbered(_renumberer(root, read_config(root).prefix, retired, file_name), read)
         return _promoter(write, read, renumber, (made.roles.proposed, made.roles.final or "", proposal_prefix))
 
+    complete = history.dehydrated(made.complete, read)
+    hold = DoneHold(root, lambda: _done_in_tasks(root, made.roles.done), complete, settings.get("complete_hold"))
+
+    def completing(write: MoveWriter) -> MoveWriter:
+        def land(task: str, status: str, actor: str, *session: str) -> Written:
+            written = write(task, status, actor, *session)
+            if written.ok and settings.get("complete_done") and lane_id(status) == made.roles.done:
+                hold.landed(task)
+            return written
+
+        return land
+
+    def completing_edit(edit: TaskEditor) -> TaskEditor:
+        def land(task: str, changes: Mapping[str, Any], *rest: Any, **named: Any) -> Written:
+            written = edit(task, changes, *rest, **named)
+            if (
+                written.ok
+                and settings.get("complete_done")
+                and lane_id(str(changes.get("status") or "")) == made.roles.done
+            ):
+                hold.landed(task)
+            return written
+
+        return land
+
     recorded = {
-        "writer": promoted(history.recorded(made.writer, read, actor_at=1)),
+        "writer": completing(promoted(history.recorded(made.writer, read, actor_at=1))),
         "assign": history.recorded(made.assign, read),
         "release": history.recorded(made.release, read, actor_at=1),
-        "edit": history.recorded(made.edit, read, unstarted=_unstarted(made.roles)),
+        "edit": completing_edit(history.recorded(made.edit, read, unstarted=_unstarted(made.roles))),
         "archive": history.recorded(
-            made.archive, read, reason_at=0, also=lambda task: _open_dependents(root, task, None)
+            made.archive, read, reason_at=0, also=lambda task: _open_dependents(root, task, made.roles.done)
         ),
         "restore": history.recorded(made.restore, read),
-        "complete": history.recorded(made.complete, read),
+        "complete": complete,
         "retire": history.recorded(made.retire, read),
         "create": history.created(made.create, read),
         "reconcile": history.reconciled(_own(root, read)),
         "files": lambda: [(task, _aliases(frontmatter)) for task, frontmatter in _open_tasks(root, made.roles.done)],
+        "done_files": lambda: [
+            (task, _aliases(frontmatter)) for task, frontmatter in _done_tasks(root, made.roles.done)
+        ],
     }
-    return replace(made, start=start, sweep=sweep, attach=attach, standing=_standing(root, guard), readable=guard.readable, **recorded)
+    return replace(
+        made,
+        start=start,
+        sweep=sweep,
+        attach=attach,
+        standing=_standing(root, guard),
+        readable=guard.readable,
+        **recorded,
+    )
 
 
 def _own(root: Path, read: Callable[[str], Any]) -> Callable[[str], Any]:
@@ -1667,13 +2006,24 @@ def _standing(root: Path, guard: Guard) -> Callable[[str, str], dict[str, Any] |
     """The board rules' verdict on moving the task `task` to `lane` as its file stands now, or None for a task with no
     file or no refusing rule."""
 
+    last: tuple[str, Path, tuple[int, int], dict, str] | None = None
+
     def standing(task: str, lane: str) -> dict[str, Any] | None:
+        nonlocal last
+        if last is not None and last[0] == task:
+            try:
+                if _stamp(last[1]) == last[2]:
+                    return guard.standing(last[3], last[4], lane)
+            except OSError:
+                pass
         if (path := _find(root, task)) is None:
             return None
         try:
+            stamp = _stamp(path)
             front, body = _split_record(path.read_text())
         except OSError:
             return None
+        last = (task, path, stamp, front, body)
         return guard.standing(front, body, lane)
 
     return standing
