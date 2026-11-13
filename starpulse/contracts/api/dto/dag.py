@@ -33,6 +33,9 @@ class DagBody(_Api):
     failed: list[RecentRun] | None = Field(
         default=None, description="The newest failed runs of the workflow, newest first; absent when none failed."
     )
+    closed: list[RecentRun] | None = Field(
+        default=None, description="The newest closed runs of the workflow of any status, newest first; absent when none ran."
+    )
     pool: str | None = Field(default=None, description="The name of the pool the workflow runs on; empty when none.")
 
 

@@ -21,7 +21,7 @@ EVENTS = frozenset(
     {
         "pull_request", "pull_request_review", "pull_request_review_comment", "push", "merge_group", "check_run",
         "check_suite", "workflow_job", "repository_dispatch", "create", "delete", "workflow_run", "merge_queue_entry",
-        "release", "deploy_key", "deployment", "deployment_review", "deployment_status",
+        "release", "deploy_key", "deployment", "deployment_review", "deployment_status", "status",
     }
 )  # fmt: skip
 #: The event label of a request whose signature did not match: its header is not trusted.
