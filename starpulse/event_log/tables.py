@@ -28,6 +28,11 @@ metadata = MetaData()
 #: Where the database records the revision it is at, named so it never meets a host project's own Alembic table.
 VERSION_TABLE = "starpulse_alembic_version"
 
+#: The one revision a release's chain must hold to read the store (the oldest that can); it sits beside the revision
+#: table, not in a migration, so recording it never moves the revision the previous release must know.
+READER_FLOOR_TABLE = "starpulse_reader_floor"
+reader_floor = Table(READER_FLOOR_TABLE, metadata, Column("revision", String, primary_key=True))
+
 #: The append-only event log. `id` is the readers' cursor: SQLite's AUTOINCREMENT never hands a pruned id out again,
 #: so a cursor only ever moves forward.
 events = Table(

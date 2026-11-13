@@ -34,7 +34,7 @@ import argparse
 import re
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -49,7 +49,7 @@ from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.adapters.outbound import step_seconds
 from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
 from starpulse.harness_telemetry.model.harness import HARNESS
-from starpulse.harness_telemetry.adapters.inbound.otlp import TOOL_RESULT, LogEvent, receiver
+from starpulse.harness_telemetry.adapters.inbound.otlp import SETTLED, TOOL_RESULT, LogEvent, receiver
 from starpulse.harness_telemetry.adapters.inbound.telemetry import redactor, signals, telemetry_log
 
 ACTOR = "claude-code"
@@ -62,10 +62,19 @@ class ClaudeCodeAdapter:
 
     keys: TaskKeys
     clock: Callable[[], float] = lambda: datetime.now().timestamp()
+    #: The turn each session last settled on: every `Stop` hook of one settle completes, and only the first counts.
+    settled: dict[str, str] = field(default_factory=dict, compare=False)
 
     def events(self, logs: list[LogEvent]) -> list[dict]:
         """The events `logs` move the harness machine by, in order."""
-        return [self._event(log) for log in logs if _moves(log)]
+        return [self._event(log) for log in logs if _moves(log) and self._first(log)]
+
+    def _first(self, log: LogEvent) -> bool:
+        if log.kind != SETTLED or not log.prompt:
+            return True
+        first = self.settled.get(log.session) != log.prompt
+        self.settled[log.session] = log.prompt
+        return first
 
     def _event(self, log: LogEvent) -> dict:
         task = self.keys.for_branch(log.branch)
