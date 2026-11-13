@@ -42,7 +42,7 @@ class Ledger:
 
     def __init__(self, log: EventLog) -> None:
         self.log = log
-        self._kept: tuple[tuple[int, int | None], dict[tuple[str, int], tuple[int, dict[str, float]]]] = ((0, None), {})
+        self._kept: tuple[int | None, dict[tuple[str, int], tuple[int, dict[str, float]]]] = (None, {})
 
     def record(self, run: RunRecord) -> None:
         """Keep `run`, stamped now. Raises when the store cannot be written."""
@@ -64,8 +64,9 @@ class Ledger:
         """The mean peak of the runs of `tier` and `points`, or None while fewer than `min_runs` exist or the store
         cannot be read, so admission falls back to the declared demand.
 
-        Admission asks for each eligible task on every pass, so a mean is read once and kept until the store's run count
-        or newest run changes, whichever ledger recorded it."""
+        Admission asks for each eligible task on every pass, so a mean is read once and kept until the store's newest run
+        changes, whichever ledger recorded it. Runs are only ever appended, so the newest id alone marks a change and
+        costs an index seek where a count of the runs scans them."""
         try:
             count, mean = self._mean(tier, points)
         except Exception as exc:  # an unreadable ledger measures nothing
@@ -76,7 +77,7 @@ class Ledger:
     def _mean(self, tier: str, points: int) -> tuple[int, dict[str, float]]:
         """How many runs of `tier` and `points` the store holds and the mean of their peaks."""
         with self.log.engine.connect() as db:
-            stamp = tuple(db.execute(select(func.count(), func.max(scheduler_runs.c.id))).one())
+            stamp = db.execute(select(func.max(scheduler_runs.c.id))).scalar()
             if self._kept[0] != stamp:
                 self._kept = (stamp, {})
             kept = self._kept[1]
