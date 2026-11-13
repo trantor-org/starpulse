@@ -11,8 +11,8 @@ holds no expressions or code, so a shared definition is never executable.
 A machine composes with another through `submachines:`, each naming a state, a sibling machine file's stem and the
 events that machine's final states fire; the loader compiles each file on its own.
 
-A state may list `waits`: a fact kind mapped to the event that leaves the state when the fact holds. The loader
-refuses an unknown fact kind and an event that is not a transition out of the state; it fires nothing.
+A state lists no `waits`: the facts the task actor watches, and the event each fires, are rows of the policy DB, and
+the loader refuses a file that still declares them.
 
 A top-level `source:` names the third party that moves the machine; StarPulse only observes it, and the snapshot
 carries the name so the page can draw it apart from a machine its own actors move.
@@ -60,7 +60,7 @@ __all__ = [
 
 #: The top-level keys that only change how the page draws a machine.
 DRAWING = ("tiers", "main_line", "rests", "submachines", "launches", "next")
-#: The fact kinds a state's `waits` may name: what the task actor derives from a task's pull request, Verify plan, dependencies and criteria.
+#: The fact kinds a lane's watch may name: what the task actor derives from a task's pull request, Verify plan, dependencies and criteria.
 WAIT_FACTS = (
     "pr_terminal",
     "pr_merged",
@@ -78,6 +78,7 @@ WAIT_FACTS = (
     "criteria_met",
     "criteria_unmet",
     "overdue",
+    "holder_idle",
 )
 #: Words that open a sentence, never a command: an agent trigger of a final event opening with one is prose no mapper matches.
 PROSE_HEADS = frozenset(
@@ -167,7 +168,7 @@ def role_of(compiled: Compiled, state: str) -> str | None:
 
 def compile_document(document: dict[str, Any], path: Path, registry: Registry = Registry()) -> Compiled:
     """Compile a machine `document` the schema has accepted; `path` names it in errors."""
-    states, bindings, waits = _compile(document, path, registry)
+    states, bindings = _compile(document, path, registry)
     writers = {
         event: tuple(Writer(**writer) for writer in declared) for event, declared in document.get("writers", {}).items()
     }
@@ -184,20 +185,20 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
         machine = create_machine_class_from_definition(document["name"], states=states)
     except InvalidDefinition as error:
         raise MachineDefinitionError(f"{path}: {error}", path) from error
-    setattr(machine, "writers", writers)
-    setattr(machine, "citations", _citations(document["events"]))
-    setattr(machine, "source", document.get("source"))
+    machine.writers = writers
+    machine.citations = _citations(document["events"])
+    machine.source = document.get("source")
     roles = {name: _role(state) for name, state in document["states"].items()}
-    setattr(machine, "roles", roles)
+    machine.roles = roles
     labels = {name: state.get("label", name) for name, state in document["states"].items()}
     drawing = {key: document[key] for key in DRAWING if key in document}
-    return Compiled(document["name"], machine, bindings, writers, cues, drawing, waits, roles, labels)
+    return Compiled(document["name"], machine, bindings, writers, cues, drawing, roles=roles, labels=labels)
 
 
 def _compile(
     document: dict[str, Any], path: Path, registry: Registry
-) -> tuple[dict[str, Any], dict[str, str], dict[str, dict[str, str]]]:
-    """The library's state definitions, bindings and waits for one machine file."""
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """The library's state definitions and bindings for one machine file."""
     declared = document["states"]
     if sum(bool(state.get("initial")) for state in declared.values()) != 1:
         raise MachineDefinitionError(f"{path}: a machine needs exactly one initial state", path)
@@ -224,9 +225,8 @@ def _compile(
             for source in sources:
                 states[source].setdefault("on", {}).setdefault(event, []).append(target)
 
-    waits = _waits(declared, document["events"], path)
     _refuse_proposed_leaks(declared, document["events"], path)
-    return states, bindings, waits
+    return states, bindings
 
 
 def _citations(events: Mapping[str, Any]) -> dict[tuple[str, str, str], Mapping[str, str]]:
@@ -260,40 +260,20 @@ def _sources(transition: Mapping[str, Any]) -> list[str]:
     return [transition["from"]] if isinstance(transition["from"], str) else transition["from"]
 
 
-def _waits(declared: Mapping[str, Any], events: Mapping[str, Any], path: Path) -> dict[str, dict[str, str]]:
-    """Each state's `waits` by id, refusing an unknown fact kind and an event that does not leave the state."""
-    waits: dict[str, dict[str, str]] = {}
-    for name, state in declared.items():
-        for fact, event in state.get("waits", {}).items():
-            if fact not in WAIT_FACTS:
-                raise MachineDefinitionError(
-                    f"{path}: state {name!r} waits on unknown fact {fact!r} for event {event}; known: {list(WAIT_FACTS)}",
-                    path,
-                )
-            if not any(name in _sources(transition) for transition in events.get(event, ())):
-                raise MachineDefinitionError(
-                    f"{path}: state {name!r} waits on {fact!r} for event {event}, which is not a transition out of it",
-                    path,
-                )
-        if "waits" in state:
-            waits[name] = dict(state["waits"])
-    return waits
-
-
 def _refuse_proposed_leaks(declared: Mapping[str, Any], events: Mapping[str, Any], path: Path) -> None:
     """Refuse a `proposed` state that is entered from anywhere but the initial state, or left to anywhere but a final
-    state (dropped) or a state that waits for its Start Criteria or its dependencies (promoted)."""
+    state (dropped) or a state that waits on a fact (promoted)."""
     proposed = {name for name, state in declared.items() if state.get("role") == "proposed"}
     for event, transitions in events.items():
         for transition in transitions:
             sources, target = _sources(transition), declared[transition["to"]]
             entered = transition["to"] in proposed and not all(declared[s].get("initial") for s in sources)
-            promoted = bool({"criteria_unmet", "deps_done"}.intersection(target.get("waits", {})))
+            promoted = target.get("role") == "waiting_on_fact"
             left = bool(proposed.intersection(sources)) and not (target.get("final") or promoted)
             if entered or left:
                 raise MachineDefinitionError(
                     f"{path}: event {event} breaks a proposed state's edges: it is entered only from the initial"
-                    " state and left only to a final state or a state waiting on criteria_unmet or deps_done",
+                    " state and left only to a final state or a state waiting on a fact",
                     path,
                 )
 

@@ -13,11 +13,20 @@ from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.breaking_changes import BreakingChanges
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps, TaskEventHistory
-from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
+from starpulse.contracts.api.dto.milestones import (
+    Docs,
+    DocShown,
+    Milestones,
+    MilestoneShown,
+    RetiredTasks,
+    TaskMoves,
+    TaskRecord,
+    TaskRecords,
+)
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
-from starpulse.contracts.api.dto.report import ContractReport
+from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
     ClaimRequest,
@@ -140,7 +149,10 @@ class ApiContract(_Api):
     windowState: WindowState
     schedulerStatus: SchedulerStatus
     contractReport: ContractReport
+    readyReport: ReadyReport
     taskRecord: TaskRecord
+    taskMoves: TaskMoves
+    taskRecords: TaskRecords
     milestones: Milestones
     milestoneShown: MilestoneShown
     docs: Docs

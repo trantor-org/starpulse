@@ -26,7 +26,7 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import Signal
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import signal_folds, signals
-from starpulse.flow_metrics.model import cells, flow, session_health, steps
+from starpulse.flow_metrics.model import cells, flow, session_health, spend, steps, traces
 from starpulse.harness_telemetry.adapters.inbound.telemetry import stored_signal
 
 __all__ = ["CURSOR", "VIEWS", "SignalFolds", "basis"]
@@ -43,6 +43,8 @@ VIEWS: dict[str, Fold] = {
     "steps": steps.fold_steps,
     "cost": cells.fold_cost,
     "runs": flow.fold_runs,
+    "cases": traces.fold_cases,
+    "spend": spend.fold_spend,
 }
 
 
@@ -62,12 +64,13 @@ def canonical(value: Any) -> Any:
 
 
 def basis(keys: TaskKeys | None, analytics: Analytics | None) -> str:
-    """The fingerprint a fold row is valid under: the model sources and the signal contract, the task keys and the
-    analytics config."""
+    """The fingerprint a fold row is valid under: the model sources and the signal contract, the task keys, the
+    analytics config and the views kept."""
     digest = hashlib.sha256()
     for path in sorted(Path(model.__file__).parent.glob("*.py")) + [Path(signal_contract.__file__)]:
         digest.update(path.name.encode() + path.read_bytes())
     digest.update(json.dumps([canonical(keys), canonical(analytics)], sort_keys=True, default=str).encode())
+    digest.update(json.dumps(sorted(VIEWS)).encode())  # a view added or dropped refolds every session for it
     return digest.hexdigest()
 
 
