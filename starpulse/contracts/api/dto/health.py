@@ -109,6 +109,13 @@ class SessionHealth(_Api):
     task: str | None
     kind: Literal["headless", "interactive", "unknown"]
     eval: str
+    origin: str
+    entrypoint: str = Field(
+        description="The launch's `claude_code.entrypoint` resource attribute (`cli`, `sdk-cli`); empty when it set none."
+    )
+    first_request_tokens: int | None = Field(
+        description="The prompt tokens (input, cache read and cache write) of the session's first main-thread request that sent any; None when it made none."
+    )
     first_at: float
     last_at: float
     prompts: int
@@ -204,7 +211,9 @@ class SessionStep(_Api):
     )
     tokens: TokenCounts
     captured: bool = Field(description="False for a harness the steps-per-completion ledger does not cover (Codex).")
-    eval: str = Field(description="The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.")
+    eval: str = Field(
+        description="The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request."
+    )
 
 
 class SessionSteps(_Api):

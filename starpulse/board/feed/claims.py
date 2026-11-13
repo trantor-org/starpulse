@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
@@ -11,9 +12,12 @@ from starpulse.event_log.wake import StopEvent
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     pass
 from starpulse.board.feed.shared import (
-    CRITERIA_INTERVAL,
+    CLAIM_EXPIRIES_STATE,
+    CRITERIA_MET_STATE,
     CriteriaStore,
+    DatesStore,
     ExpiriesStore,
+    StateLog,
     is_cold,
     logger,
 )
@@ -36,10 +40,27 @@ class ClaimMethods:
                     logger.warning("StarPulse: cannot read when Start Criteria were met: %s", exc)
             self._reassess(list(self._open))
 
-    def evaluate_criteria(self) -> None:
+    def unmet_criteria(self, task: str, description: str) -> list[str]:
+        """The ids of `task`'s Start Criteria that read `not-met`, `unmet` or `error` now; empty when it declares none, when
+        none is evaluated (`not evaluated` is no verdict), or when the evaluator raises.
+
+        A Ready task with such a criterion is returned to Waiting by the task actor, so a session started on it is
+        reaped as idle.
+        """
+        with self._lock:
+            evaluate = self._evaluate
+        try:
+            results = evaluate(task, description)
+        except Exception as exc:  # an evaluator is meant to return errors as results; this one raised
+            logger.warning("StarPulse: cannot evaluate the Start Criteria of %s: %s", task, exc)
+            return []
+        return [str(result["id"]) for result in results if result["status"] in ("not-met", "unmet", "error")]
+
+    def evaluate_criteria(self) -> int:
         """Evaluate the Start Criteria of every Waiting task whose dependencies are done, and publish each task whose
-        workability changed. A task whose criteria are all met keeps the moment it was first seen so; a task whose
-        criteria are not met, or that is no longer evaluated, is forgotten, so its next met moment is a new one."""
+        workability changed; the count of tasks it evaluated. A task whose criteria are all met keeps the moment it was
+        first seen so; a task whose criteria are not met, or that is no longer evaluated, is forgotten, so its next met
+        moment is a new one."""
         with self._lock:
             due = [(t, self._open[t]["description"]) for t in sorted(self._gated) if self._unblocked(self._open[t])]
             evaluate, now = self._evaluate, self._clock()
@@ -55,7 +76,7 @@ class ClaimMethods:
         with self._lock:
             kept = {task: self._met.get(task, now) for task in met}
             if kept == self._met:
-                return
+                return len(due)
             previous, self._met, store = self._met, kept, self._criteria_store
             self._reassess(previous.keys() | kept.keys())
         if store is not None:
@@ -63,45 +84,72 @@ class ClaimMethods:
                 store.save_criteria_met(kept)
             except Exception as exc:  # the store is down; the pass stands and the next change saves it
                 logger.warning("StarPulse: cannot save when Start Criteria were met: %s", exc)
+        return len(due)
 
-    def keep_criteria(self, stop: StopEvent, interval: float = CRITERIA_INTERVAL) -> None:
-        """Evaluate now and then every `interval` seconds until `stop` is set."""
-        while True:
+    def keep_criteria(self, stop: StopEvent) -> None:
+        """Evaluate now and then on each change to a task until `stop` is set; a result that no change or event ends is
+        sampled by the sweeper's `criteria` pass."""
+        changes = self.follow_changes()
+
+        def stopped() -> None:
+            changes.put(("stop", {}))
+
+        stop.listen(stopped)
+        try:
             self.evaluate_criteria()
-            if stop.wait(interval):
-                return
+            while not stop.is_set():
+                kind, _ = changes.get()
+                due = kind in ("task", "move")
+                while not changes.empty():  # one pass answers every change queued behind it
+                    kind, _ = changes.get_nowait()
+                    due = due or kind in ("task", "move")
+                if due:
+                    self.evaluate_criteria()
+        finally:
+            stop.unlisten(stopped)
 
-    def follow_criteria(self, store: CriteriaStore, stop: StopEvent, interval: float = CRITERIA_INTERVAL) -> None:
-        """Adopt, every `interval` seconds until `stop` is set, when `store` says each task's Start Criteria were met,
-        as the process that evaluates them keeps it there; this feed evaluates nothing. A store that cannot be read
-        leaves what the feed held. The first pass assesses every open task, as `track_criteria` does."""
-        first = True
-        while True:
-            try:
-                met = dict(store.criteria_met())
-            except Exception as exc:  # the store is down; the next pass reads it again
-                logger.warning("StarPulse: cannot read when Start Criteria were met: %s", exc)
-                met = None
-            with self._lock:
-                previous = self._met
-                if met is not None:
-                    self._met = met
-                if first or self._met != previous:
-                    self._reassess(list(self._open) if first else previous.keys() | self._met.keys())
-            first = False
-            if stop.wait(interval):
-                return
+    def adopt_criteria(self, store: CriteriaStore, *, first: bool = False) -> None:
+        """Adopt when `store` says each task's Start Criteria were met, as the process that evaluates them keeps it
+        there; this feed evaluates nothing. A store that cannot be read leaves what the feed held. The `first` pass
+        assesses every open task, as `track_criteria` does."""
+        try:
+            met = dict(store.criteria_met())
+        except Exception as exc:  # the store is down; the next change reads it again
+            logger.warning("StarPulse: cannot read when Start Criteria were met: %s", exc)
+            met = None
+        with self._lock:
+            previous = self._met
+            if met is not None:
+                self._met = met
+            if first or self._met != previous:
+                self._reassess(list(self._open) if first else previous.keys() | self._met.keys())
 
-    def follow_expiries(self, store: ExpiriesStore, stop: StopEvent, interval: float = CRITERIA_INTERVAL) -> None:
-        """Adopt, every `interval` seconds until `stop` is set, the claim expiries the board worker's sweep saved, as
-        `follow_criteria` adopts the dates. A store that cannot be read leaves what the feed held."""
-        while True:
-            try:
-                self.serve_expiries(store.claim_expiries())
-            except Exception as exc:  # the store is down; the next pass reads it again
-                logger.warning("StarPulse: cannot read the claim expiries: %s", exc)
-            if stop.wait(interval):
-                return
+    def adopt_expiries(self, store: ExpiriesStore) -> None:
+        """Adopt the claim expiries the board worker's sweep saved, as `adopt_criteria` adopts the dates. A store that
+        cannot be read leaves what the feed held."""
+        try:
+            self.serve_expiries(store.claim_expiries())
+        except Exception as exc:  # the store is down; the next change reads it again
+            logger.warning("StarPulse: cannot read the claim expiries: %s", exc)
+
+    def follow_dates(self, log: StateLog, store: DatesStore, stop: StopEvent) -> None:
+        """Adopt both dates now and each time the board worker saves them (`PushedDates`), until `stop` is set."""
+        adopting = (
+            threading.Lock()
+        )  # a read and its apply finish before the next starts, so an old read never lands last
+
+        def adopt_dates(*, first: bool = False) -> None:
+            with adopting:
+                self.adopt_criteria(store, first=first)
+
+        def adopt_claims() -> None:
+            with adopting:
+                self.adopt_expiries(store)
+
+        log.follow_state(CRITERIA_MET_STATE, adopt_dates, stop, thread_name="criteria-follow")
+        log.follow_state(CLAIM_EXPIRIES_STATE, adopt_claims, stop, thread_name="expiries-follow")
+        adopt_dates(first=True)  # the followers are watching first, so a save between is not missed
+        adopt_claims()
 
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
