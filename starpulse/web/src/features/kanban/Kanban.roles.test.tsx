@@ -52,6 +52,14 @@ describe("the Kanban page over renamed States", () => {
     ]);
   });
 
+  it("draws a column per role State and the cards when an older server's snapshot has no lanes", () => {
+    const { lanes: _lanes, ...older } = RENAMED_ROLES;
+    show({ ...board(cards), roles: older } as unknown as HudState);
+
+    expect(tabs().map((t) => t.dataset.lane)).toEqual(["todo", "parked", "doing", "checking", "on_me", "shipped"]);
+    expect(host.querySelectorAll("#cols .card").length).toBeGreaterThan(0);
+  });
+
   it("opens on the working column", () => {
     show(board(cards));
 
