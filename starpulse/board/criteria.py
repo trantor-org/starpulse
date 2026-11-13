@@ -11,6 +11,7 @@ marks every criterion `error`.
 from __future__ import annotations
 
 import json
+import math
 import re
 import shlex
 import subprocess
@@ -23,14 +24,10 @@ from typing import Any
 
 import yaml
 
-__all__ = ["CACHE_SECONDS", "TIMEOUT", "Evaluator", "authored", "unevaluated"]
+__all__ = ["TIMEOUT", "Evaluator", "authored", "interval", "unevaluated"]
 
 #: Seconds the evaluator command may run before every criterion is marked `error`.
 TIMEOUT = 10.0
-#: Seconds a task's evaluated criteria are reused before the command runs again, unless they name their own interval.
-CACHE_SECONDS = 30.0
-#: Seconds a failed run (timeout, no JSON) is reused: each retry costs a whole `backlog-task` start, up to `TIMEOUT` of CPU.
-FAILURE_SECONDS = 300.0
 _clock = time.monotonic
 
 _SECTION = re.compile(r"^## Start Criteria\s*$(.*?)(?=^## |\Z)", re.M | re.S)
@@ -128,24 +125,22 @@ def _run(command: list[str], cwd: Path, criteria: list[dict[str, Any]]) -> list[
     ]
 
 
-def _interval(results: list[dict[str, Any]]) -> float:
-    """Seconds `results` stay current: the shortest `interval` a criterion's `refresh` hint names, else `FAILURE_SECONDS`
-    for a failed run (a timeout costs 10 s of CPU per retry), else `CACHE_SECONDS`."""
+def interval(results: list[dict[str, Any]]) -> float:
+    """Seconds `results` stay current: the shortest `interval` a criterion's `refresh` hint names, else forever; an
+    event (`Evaluator.invalidate`) or a sweeper pass (`Evaluator.expire`) ends a result that names none."""
     named = [
         hint["interval"]
         for result in results
         if isinstance(hint := result.get("refresh"), dict) and isinstance(hint.get("interval"), int | float)
     ]
-    if named:
-        return float(min(named))
-    return FAILURE_SECONDS if any(result.get("status") == "error" for result in results) else CACHE_SECONDS
+    return float(min(named)) if named else math.inf
 
 
 class Evaluator:
     """Evaluates a task's criteria with `command`, run in `cwd`, reusing a task's result while it is current.
 
-    A result is current for the shortest `refresh.interval` its criteria print (`CACHE_SECONDS` for one that prints
-    none) until `invalidate` names an event one of them awaits (`refresh.on`).
+    A result is current for the shortest `refresh.interval` its criteria print (until the next event or sweeper pass for
+    one that prints none) until `invalidate` names an event one of them awaits (`refresh.on`) or `expire` ends them all.
 
     Calling it waits for a current result, as the feed's pass does; `latest` never waits, for a task read.
     Each task's command runs on its own thread, one at a time per task, so no task waits on another's."""
@@ -156,7 +151,12 @@ class Evaluator:
         self._cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]], float]] = {}
         self._running: dict[tuple[str, str], Future[list[dict[str, Any]]]] = {}
         self._stale: set[tuple[str, str]] = set()
+        self._listeners: list[Callable[[], None]] = []
         self._lock = threading.Lock()
+
+    def listen(self, callback: Callable[[], None]) -> None:
+        """Call `callback` after each `expire`, so a loop holding results for this evaluator evaluates them again."""
+        self._listeners.append(callback)
 
     def __call__(self, task: str, description: str) -> list[dict[str, Any]]:
         if not (criteria := authored(description)):
@@ -178,6 +178,16 @@ class Evaluator:
             if not (cached := self._cache.get(key)) or not self._current(cached):
                 self._refresh(key, task, criteria)
         return cached[1] if cached else [{**criterion, **_outcome(NOT_EVALUATED)} for criterion in criteria]
+
+    def expire(self) -> None:
+        """Make every task evaluate again on its next call, as the sweeper's `criteria` pass does; a run in flight is
+        a read from before the pass, so its result is not current either."""
+        with self._lock:
+            self._stale |= self._running.keys()
+            for key in self._cache.keys() - self._running.keys():
+                self._cache[key] = (float("-inf"), self._cache[key][1], 0.0)
+        for callback in self._listeners:
+            callback()
 
     def invalidate(self, event: str) -> bool:
         """Make every task whose criteria await `event` evaluate again on its next call; whether any does. A run in
@@ -223,7 +233,7 @@ class Evaluator:
         with self._lock:
             stale = key in self._stale
             self._stale.discard(key)
-            self._cache[key] = (float("-inf") if stale else _clock(), evaluated, _interval(evaluated))
+            self._cache[key] = (float("-inf") if stale else _clock(), evaluated, interval(evaluated))
             del self._running[key]
         running.set_result(evaluated)
 
