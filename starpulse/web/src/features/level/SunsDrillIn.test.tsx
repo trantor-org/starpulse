@@ -163,6 +163,13 @@ describe("SunsDrillIn", () => {
     expect(host.innerHTML).not.toMatch(/#fbbf24|#fcd34d|#fde68a|251,\s*191,\s*36/i);
   });
 
+  it("marks the page while open so the Star Map crumb hides without a page-wide :has() rule", () => {
+    mount();
+    expect(document.body.classList.contains("drilling")).toBe(true);
+    act(() => root.render(null));
+    expect(document.body.classList.contains("drilling")).toBe(false);
+  });
+
   it("closes from the Board crumb and on Escape", () => {
     const close = vi.fn();
     mount(close);
