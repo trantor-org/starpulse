@@ -25,15 +25,20 @@ function board(snap: Snapshot, { scale = 100, secs = 3, from = 0, W = 1920, H = 
 const run = (scene: Scene, from: number, secs: number) => {
   for (let t = from; t <= from + secs; t += 1 / 60) T.placeBranches(scene, t);
 };
-const live = () => structuredClone(capture) as unknown as Snapshot;
+// the capture's In Progress rows are cleared, so its tasks ride the newest phase machine they hold (build), the premise of the tests below that force their own deliver steps
+const live = () => {
+  const snap = structuredClone(capture) as unknown as Snapshot;
+  for (const f of snap.flows) if (f.name === "in-progress") f.agents = [];
+  return snap;
+};
 /** The preview's `?mock=1&extra=8&sim=3` at `scale`% on a `W`-wide canvas: phase tasks on build, deliver and review_fix, and the pair walked from Deliver into the
  *  CI it opens, which branches off Deliver's station. */
-function mock(scale = 100, W = 1920, H = 1080): Scene {
+function mock(scale = 100, W = 1920, H = 1080, snap: Snapshot = live()): Scene {
   vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
   const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-  board(live(), { scale, W, H });
+  board(snap, { scale, W, H });
   clock.mockReturnValue(60_000);
-  return board(live(), { scale, W, H, from: 3, secs: 6 });
+  return board(snap, { scale, W, H, from: 3, secs: 6 });
 }
 /** The share of phase branch `l`'s line, from the hub, out to its station `s`. */
 // a sub-machine's points leave out the parent station it forks from, so it passes that station as `fork`
@@ -63,6 +68,16 @@ describe("placeBranches", { timeout: 60_000 }, () => {
         const gap = Math.min(...a.pts.flatMap((p) => b.pts.map((q) => dist(p, q))));
         expect(gap, `${a.key} ~ ${b.key}`).toBeGreaterThan(8);
       }
+  });
+
+  it("labels each phase branch, a side branch too, with the skill its submachine link declares, as the kanban card does", () => {
+    const snap = live();
+    for (const f of snap.flows) for (const l of f.machine.submachines ?? []) l.skill = "skill-" + l.machine;
+    mock(100, 1920, 1080, snap);
+    const lines = T.branchLines();
+    expect(lines.some((l) => l.ring === 1)).toBe(true);
+    expect(lines.some((l) => l.ring === 2)).toBe(true);
+    for (const l of lines) expect(l.skill).toBe("skill-" + l.key.split("|").at(-1));
   });
 
   it("grows no branch into the room of a line still drawn while it leaves the sky", () => {
