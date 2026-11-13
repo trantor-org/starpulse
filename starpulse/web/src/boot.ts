@@ -12,6 +12,7 @@ import { loadLateFonts } from "./render/fonts";
 import { renderer } from "./render/renderer";
 import type { Renderer } from "./render/rendererTypes";
 import { NO_BOARD_MS, markDrawn } from "./shared/boardMark";
+import { watchModalMarks } from "./shared/modalMark";
 import { onPhone, renamedView, retired, shownView, viewOf, type ViewName } from "./shared/nav";
 
 /** What the page adopts from its boot. */
@@ -76,6 +77,7 @@ export function boot(mount: () => void, preload?: (view: ViewName) => void): Boo
   const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? drawn : undefined);
   held = { store, admin, theme, records, renderer: r, canvas, tip, panel };
   r.start();
+  watchModalMarks();
   if (!star) {
     for (const el of [canvas, tip, panel, frameOf("crumb")]) el.classList.add("off");
     r.show(false);

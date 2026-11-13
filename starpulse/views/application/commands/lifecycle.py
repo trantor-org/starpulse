@@ -23,6 +23,7 @@ from starpulse.views.application.commands.guard import (
     EDIT_LOCK,
     Who,
     held_task,
+    holder_refusal,
     not_held,
     record_written,
     who_of,
@@ -241,7 +242,7 @@ def review_task(
     review = feed.roles.review
     if review is None:
         return 409, {"error": f"this board's machine has no lane to move {task} to for review"}
-    if (refused := move_refusal(agent, task, review, who)) is not None:
+    if (refused := move_refusal(agent, task, review, who) or holder_refusal(feed, agent, task, who)) is not None:
         return refused
 
     def plan(current: dict[str, Any]) -> dict[str, Any]:
