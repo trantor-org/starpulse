@@ -6,12 +6,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from starpulse.board.adapters.session_activity import transcript_path
+
 
 def transcript_written(root: Path) -> Callable[[str], float | None]:
     """A reader of when `<root>/<project>/<session>.jsonl` was last written; None for no session or no transcript."""
 
     def written(session: str) -> float | None:
-        path = next(root.glob(f"*/{session}.jsonl"), None) if session else None
-        return path.stat().st_mtime if path is not None else None
+        path = transcript_path(root, session)
+        try:
+            return path.stat().st_mtime if path is not None else None
+        except FileNotFoundError:
+            return None
 
     return written
