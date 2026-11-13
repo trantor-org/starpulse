@@ -8,7 +8,7 @@ import { SpendRail, SpendRows, compactWte, fetchSpend, forgetSpend, phasesOf } f
 const phase = (over: Partial<SpendPhase>): SpendPhase => ({
   task: "TASK-1", phase: "implement", steps: 3, side_steps: 0, input: 0, output: 0, cache_read: 0, cache_write: 0, wte: 1000,
   peak_context: 0, compactions: 0, models: ["claude-sonnet-5-5"], first_at: 0, last_at: 0, kind: "execute", size: 3,
-  task_wte: 2500, norm_wte: null, above_norm: false, ...over,
+  task_wte: 2500, norm_wte: null, above_norm: false, phase_norm_wte: null, phase_above_norm: false, ...over,
 });
 const answer = (spend: SpendPhase[]) => vi.fn(async () => ({ ok: true, json: async () => ({ spend }) }) as unknown as Response);
 

@@ -61,10 +61,11 @@ def start(
     _, feed = worker_board(config, base, log, stop)
     store = history_store(config, base, feed.machines)
     publisher = Publisher(log)
-    for instance, adapter in adapters:
-        adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
     # The learned step graphs persist only in StarPulse's own store.
     pushed = PushRuns(publisher.runs(PUSHED_INSTANCE, feed.runs(PUSHED_INSTANCE)), store)
+    publisher.on_listing(pushed.prune)
+    for instance, adapter in adapters:
+        adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
     follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop)
     # Every entry path's run entries also land in the event store, one stream per run.
     streams = RunStreams(EventStore(log.engine))
