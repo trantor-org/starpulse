@@ -72,6 +72,8 @@ TASK_KEYS = (
     "assignee",
     "milestone",
     "type",
+    "impact",
+    "urgency",
     "labels",
     "dependencies",
     "waiting_on",

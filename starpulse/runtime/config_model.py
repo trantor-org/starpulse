@@ -14,7 +14,9 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
-from starpulse.views.ports.services import SLOW_READ_S
+from starpulse.bridge.subscriptions import parse_rules
+from starpulse.contracts.reads import SLOW_READ_S
+from starpulse.runtime.nats_server import DEFAULT_RESUME
 
 #: An environment variable's name: the setting holds the name, never the value.
 EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
@@ -88,7 +90,7 @@ class RunsInstanceFile(_Table):
         description=(
             "What the adapter reads. A built-in adapter is an opt-in worker: `serve`'s `contexts` child runs it "
             "as a thread, or you run `starpulse worker <adapter> --config <this file>`, and, with it down or not yet started, the page shows "
-            "this instance with the error \"the <adapter> worker has not reported\" or \"last reported Ns ago\" (its "
+            'this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its '
             "beat is older than 60s)."
         ),
     )
@@ -189,6 +191,81 @@ class MemoryFile(_Table):
     hard_mb: int | None = Field(
         default=None, ge=1, description="Past this the child is killed and restarted. Above `soft_mb`."
     )
+
+
+class SubscriptionRulesFile(_Table):
+    """The `[bridge.subscriptions.<kind>]` table."""
+
+    claim: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Subjects a session subscribes to when it claims a task of this kind, relative to the board and with the "
+            "task as `{task}`: `task.{task}.>`."
+        ),
+    )
+    pr_opened: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Subjects the session holding the task adds when a pull request of the task opens, with `{task}` and the "
+            "number `{pr}`: `pr.{pr}.>`."
+        ),
+    )
+
+
+class BridgeFile(_Table):
+    """The `[bridge]` table."""
+
+    model_config = ConfigDict(title="[bridge]")
+
+    enabled: bool = Field(
+        default=False,
+        description=(
+            "`serve` supervises a `nats-server` (the official release, checked against its pinned checksum) "
+            "on `127.0.0.1` with JetStream on, as its `nats` child; false: none starts. A change restarts `serve`."
+        ),
+    )
+    port: int = Field(default=4222, ge=1, le=65535, description="The port the server listens on, on localhost only.")
+    store_dir: str | None = Field(
+        default=None,
+        description="Where JetStream keeps its streams. Default: `starpulse-nats` beside the config.",
+    )
+    sessions_dir: str | None = Field(
+        default=None,
+        description=(
+            "Where `starpulse subscribe` and `starpulse register` record each session's inbox socket and token, and "
+            "where `serve` reads them. Default: `starpulse-sessions` beside the config, which a CLI run from "
+            "another checkout than the served one does not share; name a state path when they differ."
+        ),
+    )
+    board: str = Field(
+        default="trantor",
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="The `<board>` token of the subjects the bridge publishes, `starpulse.<board>.<entity>.<id>.<event>`.",
+    )
+    subscriptions: dict[str, SubscriptionRulesFile] = Field(
+        default_factory=dict,
+        description=(
+            "The subjects a session subscribes to, by the `kind-*` label of the task it holds, "
+            "`[bridge.subscriptions.<kind>]`. A kind with no table subscribes to nothing; a session leaving the task "
+            "drops the task's subjects."
+        ),
+    )
+
+    resume: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_RESUME),
+        min_length=1,
+        description=(
+            "The command that resumes a session that has ended when an event on its subjects arrives, ending in the "
+            "flag that takes the session id; the id and the events follow it as arguments. `{session}` and `{cwd}` in "
+            "an element are replaced by the session's id and working directory, and the command runs in that directory."
+        ),
+    )
+
+    @field_validator("subscriptions")
+    @classmethod
+    def _rules_name_known_values(cls, value: dict[str, SubscriptionRulesFile]) -> dict[str, SubscriptionRulesFile]:
+        parse_rules({kind: rules.model_dump() for kind, rules in value.items()})
+        return value
 
 
 class ReleaseFile(_Table):
@@ -302,6 +379,7 @@ class ConfigFile(_Table):
             + "."
         ),
     )
+
     @field_validator("worker_memory", mode="before")
     @classmethod
     def _no_retired_child(cls, memory: Any) -> Any:
@@ -464,6 +542,10 @@ class ConfigFile(_Table):
         default=None,
         description="Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).",
     )
+    bridge: BridgeFile = Field(
+        default_factory=BridgeFile,
+        description="The optional NATS bridge's server that `serve` supervises (see The NATS server).",
+    )
     sweeper: dict[str, Any] | None = Field(
         default=None,
         description=(
@@ -508,7 +590,9 @@ class ConfigFile(_Table):
         if (self.tls_cert is None) != (self.tls_key is None):
             raise ValueError("tls_cert and tls_key are set together")
         if self.release is not None and self.release.settle == "pin-bump" and not self.repos:
-            raise ValueError("release: settle = pin-bump needs a [[repos]] entry to say which repositories the parent pins")
+            raise ValueError(
+                "release: settle = pin-bump needs a [[repos]] entry to say which repositories the parent pins"
+            )
         for context, table in self.worker_memory.items():
             soft, hard = memory_limit(context, table)
             if soft >= hard:

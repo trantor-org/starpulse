@@ -39,12 +39,13 @@ class HeldSkill(_Api):
 
 
 class ClaimRelease(_Api):
-    """The claim a Board task's claim-TTL sweep released: when, and the session, last renewal and TTL it released."""
+    """The claim a Board task's claim-TTL sweep, or its idle holder's release, ended: when, and the session, last renewal and TTL."""
 
     at: float = Field(description="When the release was recorded, epoch seconds.")
     session: str
     last_renewal: float = Field(description="The session's last renewal before the release, epoch seconds.")
     ttl: float = Field(description="The claim TTL, in seconds, the session missed.")
+    idle: bool = Field(default=False, description="The task actor ended this claim because its holder sat idle, not the TTL sweep.")
 
 
 class RawTask(_Api):

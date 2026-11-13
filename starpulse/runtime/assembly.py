@@ -4,31 +4,43 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Collection, Mapping, Sequence
+import os
+import time
+from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Engine
 
+from starpulse.board.adapters import policy_store
 from starpulse.board.board_feed import BoardFeed
 from starpulse.board.machine_tasks import MachineDeltas
+from starpulse.board.model.policy import Policy, profile_matrix
 from starpulse.board.model.seam import Board
 from starpulse.board.model.seam import load as load_board
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.migrate import migrate_chain
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.github.adapters.inbound import reconcile
+from starpulse.github.adapters.inbound.listener import INBOX_FILE
+from starpulse.github.adapters.outbound.cursors import SqlCursors
+from starpulse.github.adapters.outbound.inbox import SqlInbox
+from starpulse.github.adapters.outbound.reconciled import Reconciled
+from starpulse.github.adapters.outbound.rest import Client, connect_client
+from starpulse.github.model.github_config import GitHub
 from starpulse.harness_telemetry.adapters.inbound.telemetry import KEEP_S
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
 from starpulse.pulls.model.ci import CiError, attach
-from starpulse.runtime import read_model_follow
 from starpulse.runs.application.queries.reconcile import Reconcile
 from starpulse.runs.model.config import RunsInstance
+from starpulse.runtime import read_model_follow
 from starpulse.runtime.config import Config, ConfigError, runs_adapter
 from starpulse.sweeper.passes import Outcome, Step
 
@@ -93,6 +105,10 @@ def domains_of(config: Config) -> dict[str, tuple[str, ...]]:
     return merged
 
 
+#: The board types whose guards, profile cells or watches the policy DB holds.
+POLICY_BOARDS = frozenset({"native", "upstream_backlog"})
+
+
 def assemble(
     config: Config,
     base: Path,
@@ -105,7 +121,9 @@ def assemble(
     A task whose latest move on a machine is older than `window_s` seconds (None: never) is not drawn there, and Run
     now is drawn on the `run_safe` workflows.
     """
-    board = load_board(config.board_type, config.board, base)
+    rows = _policy_rows(config, base)
+    settings = {**config.board, "policy_rows": rows} if rows is not None else config.board
+    board = load_board(config.board_type, settings, base)
     domains = domains_of(config)
     qualify = qualifier(domains)
     # `[board.actor]` makes the task actor a writer the machine may name beside the adapters' workflows.
@@ -145,17 +163,26 @@ def assemble(
         read_model=read_model,
         standing=board.standing or (lambda *_: None),
         readable=board.readable or (lambda *_: ""),
-        default_profiles=config.board.get("default_profiles", {}),
+        default_profiles=profile_matrix(rows or Policy()),
     )
     return board, feed
 
 
+def _policy_rows(config: Config, base: Path) -> Policy | None:
+    """The stored policy, for the board types that enforce it (their guards, profile cells and watches); None for the rest."""
+    if config.board_type not in POLICY_BOARDS:
+        return None
+    return policy_store.held(database_url(config.database_url, base))
+
+
 def worker_board(config: Config, base: Path, log: EventLog, stop: StopEvent) -> tuple[Board, BoardFeed]:
-    """The board and feed of a worker beside `serve`: the feed reads the read model the Board child folds, and the board
-    is attached to `log`, so its writes append the History events that read model folds.
+    """The board and feed of a worker beside `serve`: the feed reads the read model the Board child folds and publishes
+    its task and machine-row deltas, and the board is attached to `log`, so its writes append the History events that
+    read model folds. The task actor hands a finished delivery's verdict to its holder from a machine `move` delta.
     Raises ValueError as `assemble` does."""
-    board, feed, _ = _read_model_board(config, base, log)
+    board, feed, model = _read_model_board(config, base, log)
     read_model_follow.follow(None, feed, stop, log)
+    MachineDeltas(feed, model).follow(stop, log)
     return board, feed
 
 
@@ -244,3 +271,70 @@ def runs_kind(log: EventLog, adapters: Sequence[tuple[RunsInstance, ModuleType]]
         if hasattr(adapter, "read")
     }
     return _RunsKind(Reconcile(log, sources))
+
+
+class GithubKind:
+    """The sweeper's `github` kind: one reconcile pass of the inbox against GitHub. A list read is a sample, a
+    redelivery asked or an inbox row inserted a correction."""
+
+    name = "github"
+
+    def __init__(
+        self, client: Client, inbox: SqlInbox, cursors: SqlCursors, settings: GitHub, clock: Callable[[], float]
+    ) -> None:
+        self._arguments = (client, inbox, cursors, settings)
+        self._clock = clock
+        self._counted = Reconciled()
+
+    def run(self) -> Outcome:
+        reconcile.reconcile(*self._arguments, self._counted, self._clock)
+        sampled, corrected = self._counted.take()
+        return Outcome(corrected=corrected, sampled=sampled)
+
+
+def github_kinds(config: Any, base: Path) -> list[GithubKind]:
+    """The `github` kind over the inbox `[github]` names, as the list the sweeper's `contexts` joins; empty without the
+    table or its `reconcile_token_env`."""
+    settings = config.github
+    if settings is None or not settings.reconcile_token_env:
+        return []
+    inbox = SqlInbox(settings.database_url or f"sqlite:///{(base / INBOX_FILE).resolve()}", migrate_chain)
+    client = connect_client(lambda: os.environ.get(settings.reconcile_token_env or ""))
+    return [GithubKind(client, inbox, SqlCursors(inbox.engine), settings, time.time)]
+
+
+class _BoardKind:
+    """One of the sweeper's board kinds: `reconcile` looks again at what a push or a deadline should have settled and
+    returns (sampled, corrected)."""
+
+    def __init__(self, name: str, reconcile: Callable[[], tuple[int, int]]) -> None:
+        self.name = name
+        self._reconcile = reconcile
+
+    def run(self) -> Outcome:
+        sampled, corrected = self._reconcile()
+        return Outcome(corrected, sampled)
+
+
+def board_kinds(shared: Callable[[], tuple[Board, BoardFeed]]) -> list[_BoardKind]:
+    """The `claims`, `waiting` and `criteria` kinds over the board and feed `shared` hands out, read at the first pass
+    (the Board context may publish them after the sweeper starts). The adapter that keeps a claim's deadline and the task
+    actor that releases a Waiting task register their pass on the feed; a kind whose owner is not running in this process
+    samples nothing. `criteria` samples the external values a criterion reads, which no event announces: it counts the
+    tasks it evaluated and corrects none."""
+
+    def registered(name: str) -> Callable[[], tuple[int, int]]:
+        return lambda: shared()[1].reconcilers.get(name, lambda: (0, 0))()
+
+    def criteria_pass() -> tuple[int, int]:
+        board, feed = shared()
+        expire = getattr(board.evaluate, "expire", None)
+        if expire is not None:
+            expire()
+        return feed.evaluate_criteria(), 0
+
+    return [
+        _BoardKind("claims", registered("claims")),
+        _BoardKind("waiting", registered("waiting")),
+        _BoardKind("criteria", criteria_pass),
+    ]
