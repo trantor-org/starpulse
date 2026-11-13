@@ -39,11 +39,12 @@ class Served(NamedTuple):
 
 
 class _Warm(NamedTuple):
-    """The newest snapshot built, its body and when (the clock's seconds) it was built."""
+    """The newest snapshot built, its body, when (the clock's seconds) it was built, and the reads counted by then."""
 
     at: float
     served: Served
     encoded: Encoded
+    reads: int
 
 
 class Snapshots:
@@ -65,8 +66,11 @@ class Snapshots:
         #: The newest `take`, when the clock's seconds it was taken, and the full body made from it; both under `_taking`.
         self._taken: tuple[float, Served] | None = None
         self._full: tuple[Served, bytes] | None = None
-        #: Set by the first warm `full` read: the warmer then encodes the full body for each snapshot it builds.
-        self._full_wanted = False
+        #: Snapshot reads (`build`, `full`) so far; the warmer rebuilds only once a read is counted past its last build.
+        self._reads = 0
+        #: When (the clock's seconds) the last `full` read arrived; the warmer encodes the full body only within
+        #: `IDLE_REFRESH_S` of it.
+        self._full_read_at: float | None = None
         #: When (the clock's seconds) the snapshot `_full` was made from was built.
         self._full_at = 0.0
         self._taking = threading.Lock()
@@ -92,7 +96,8 @@ class Snapshots:
         encoded off the request path with each warm build, and a request serves the newest one while it is current;
         only the first request, or one after the warmer stalls, encodes inline."""
         if self._refresh_s > 0:
-            self._full_wanted = True
+            self._full_read_at = self._clock()
+            self._read()
             if (held := self._held_full()) is not None:
                 return held
             warm = self._current()
@@ -127,6 +132,7 @@ class Snapshots:
         warm one: an attach whose snapshot the feed log cannot replay needs a newer one."""
         if self._refresh_s <= 0:
             return self._encode()
+        self._read()
         if fresh:
             with self._building:
                 warm = self._store()
@@ -138,12 +144,21 @@ class Snapshots:
         return warm.served, warm.encoded
 
     def refresh(self) -> None:
-        """Rebuild the warm snapshot unless the feed is unchanged since it and it is younger than `IDLE_REFRESH_S`."""
+        """Build the first warm snapshot, then rebuild only once a read has arrived since its build, and then only if the
+        feed changed or it is `IDLE_REFRESH_S` old; encode the full body while a full read is within `IDLE_REFRESH_S`.
+        With no reader the warmer does nothing more, and the first read after an idle spell builds inline."""
         with self._building:
             warm = self._warm
-            if warm is None or warm.served.rev != self._feed.rev or self._clock() - warm.at >= IDLE_REFRESH_S:
+            if warm is None or (
+                self._reads != warm.reads
+                and (warm.served.rev != self._feed.rev or self._clock() - warm.at >= IDLE_REFRESH_S)
+            ):
                 warm = self._store()
-            if self._full_wanted:
+            if (
+                warm is not None
+                and self._full_read_at is not None
+                and self._clock() - self._full_read_at < IDLE_REFRESH_S
+            ):
                 self._encode_full(warm.served, warm.at)
 
     def keep_warm(self, stop: StopEvent) -> None:
@@ -166,11 +181,15 @@ class Snapshots:
         return None
 
     def _store(self) -> _Warm:
-        taken = self._clock()
+        taken, reads = self._clock(), self._reads
         served, encoded = self._encode()
         self._interval_s = max(self._refresh_s, WARM_IDLE_PER_BUILD * (self._clock() - taken))
-        self._warm = warm = _Warm(taken, served, encoded)
+        self._warm = warm = _Warm(taken, served, encoded, reads)
         return warm
+
+    def _read(self) -> None:
+        with self._lock:
+            self._reads += 1
 
     def _encode(self) -> tuple[Served, Encoded]:
         started = time.perf_counter()
