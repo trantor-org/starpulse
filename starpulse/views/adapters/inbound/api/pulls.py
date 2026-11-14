@@ -48,7 +48,7 @@ class PullReads:
         self._pulls = pulls
         self._held: OrderedDict[str, tuple[int, Encoded, int]] = OrderedDict()
         self._lock = threading.Lock()
-        self._computing = threading.Lock()
+        self._computing: dict[str, threading.Lock] = {}  # one per query, so a slow query never holds another
         self._asked = False  # a reader has taken the unfiltered answer since a save last built it
         if pulls:
             pulls.subscribe(self._rebuild)
@@ -75,7 +75,9 @@ class PullReads:
             return Encoded.of(body), status
         held = self._current(query)
         if held is None:
-            with self._computing:
+            with self._lock:
+                computing = self._computing.setdefault(query, threading.Lock())
+            with computing:
                 held = self._current(query)
                 if held is None:
                     rev = self._pulls.rev if self._pulls else 0
@@ -84,7 +86,8 @@ class PullReads:
                     with self._lock:
                         self._held[query] = held
                         while len(self._held) > self.KEEP:
-                            self._held.popitem(last=False)
+                            evicted, _ = self._held.popitem(last=False)
+                            self._computing.pop(evicted, None)
         return held[1], held[2]
 
 

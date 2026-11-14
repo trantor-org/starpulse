@@ -37,7 +37,7 @@ from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.api import metrics
-from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, target
+from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, WORKERS, target
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
 from starpulse.views.adapters.inbound.compression import Gzip
@@ -58,6 +58,10 @@ logger = logging.getLogger(__name__)
 
 #: Requests answered at once, each on a worker thread; the next waits for one to finish.
 REQUEST_THREADS = 128
+
+#: Further threads that only the board's own reads and writes (see `_light`) run on once the pool above is full, so
+#: a pool held by slow heavy reads still answers the snapshot, a task read, a write and the metrics scrape.
+RESERVE_THREADS = 16
 
 #: Streams open at once; a stream past the limit is refused with a 503.
 STREAM_LIMIT = 256
@@ -158,7 +162,7 @@ class _Gated:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http":
             refused = await to_thread.run_sync(
-                self._refusal, Incoming(scope), abandon_on_cancel=True, limiter=self._workers
+                self._refusal, Incoming(scope), abandon_on_cancel=True, limiter=scope.get(WORKERS, self._workers)
             )
             if refused is not None:
                 await refused(scope, receive, send)
@@ -177,6 +181,59 @@ class _Gated:
 
 
 _BUSY_RETRY_S = 1
+
+#: Seconds between the log lines that say what held the workers while requests were refused.
+_BUSY_LOG_S = 10.0
+
+
+def _light(scope: Scope) -> bool:
+    """Whether the request is one of the board's own reads and writes, which hold a thread only for a moment: the
+    snapshot, a task read, any write under `/api`, and the metrics scrape."""
+    path, method = scope["path"], scope["method"]
+    return path in ("/metrics", "/api/snapshot") or (
+        path.startswith("/api/") and (path.startswith("/api/task/") or method in ("POST", "PUT", "DELETE"))
+    )
+
+
+def _kind(scope: Scope) -> str:
+    """The method and the first two path segments, so a count by kind holds no id and a hostile path forges no log line."""
+    segments = "/".join(scope["path"].split("/")[1:3])
+    return f"{scope['method']} /{ascii(segments)[1:-1]}"
+
+
+class _Inflight:
+    """The requests being answered, counted by kind, so a refusal can say what held the workers."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counts: dict[str, int] = {}
+        self._logged = float("-inf")
+
+    def enter(self, kind: str) -> None:
+        with self._lock:
+            self._counts[kind] = self._counts.get(kind, 0) + 1
+
+    def leave(self, kind: str) -> None:
+        with self._lock:
+            if self._counts[kind] == 1:
+                del self._counts[kind]
+            else:
+                self._counts[kind] -= 1
+
+    def refused(self, scope: Scope) -> None:
+        """Log what is in flight, at most once in `_BUSY_LOG_S`."""
+        with self._lock:
+            now = time.monotonic()
+            if now - self._logged < _BUSY_LOG_S:
+                return
+            self._logged = now
+            held = sorted(self._counts.items(), key=lambda kv: -kv[1])
+        logger.warning(
+            "request workers busy: refused %s with %d in flight: %s",
+            _kind(scope),
+            sum(count for _, count in held),
+            ", ".join(f"{kind}={count}" for kind, count in held),
+        )
 
 
 class _Streams:
@@ -225,25 +282,41 @@ class _Place:
 
 
 class _Admitted:
-    """Refuses every request with a 503 while no request worker is free, and gives each request the `_Place` its stream
-    would take, which it gives back whenever the request ends."""
+    """Refuses a request with a 503 while no request worker is free, except a `_light` one, which runs on the reserve
+    while it has a thread; gives each request the `_Place` its stream would take, which it gives back whenever the
+    request ends, and counts the requests in flight by kind."""
 
-    def __init__(self, app: ASGIApp, workers: CapacityLimiter, streams: _Streams) -> None:
-        self.app, self._workers, self._streams = app, workers, streams
+    def __init__(
+        self,
+        app: ASGIApp,
+        workers: CapacityLimiter,
+        reserve: CapacityLimiter,
+        streams: _Streams,
+        inflight: _Inflight,
+    ) -> None:
+        self.app, self._workers, self._reserve, self._streams, self._inflight = app, workers, reserve, streams, inflight
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        if not self._workers.available_tokens:
+        pool = self._workers
+        if not pool.available_tokens and _light(scope):
+            pool = self._reserve
+        if not pool.available_tokens:
+            self._inflight.refused(scope)
             busy = encode("error", {"error": "too many requests in flight; retry shortly"})
             headers = {"content-type": "application/json", "cache-control": "no-store"}
             await Reply(busy, 503, {**headers, "retry-after": str(_BUSY_RETRY_S)})(scope, receive, send)
             return
         place = scope[PLACE] = _Place(self._streams)
+        scope[WORKERS] = pool
+        kind = _kind(scope)
+        self._inflight.enter(kind)
         try:
             await self.app(scope, receive, send)
         finally:
+            self._inflight.leave(kind)
             place.give()
 
 
@@ -290,6 +363,8 @@ class PageApp:
         self._flows = flows
         self._files = _Build(directory=static, check_dir=False)
         self._workers = CapacityLimiter(REQUEST_THREADS)
+        self._reserve = CapacityLimiter(RESERVE_THREADS)
+        self._inflight = _Inflight()
         self._frames = CapacityLimiter(
             math.inf
         )  # a stream's wait for its next frame is a thread the limit above counts
@@ -311,7 +386,9 @@ class PageApp:
             Route("/{path:served}", self._file, methods=["GET"]),
         ]
         gated = [] if gate is None else [Middleware(_Gated, gate=gate, workers=self._workers)]
-        admitted = Middleware(_Admitted, workers=self._workers, streams=self._streams)
+        admitted = Middleware(
+            _Admitted, workers=self._workers, reserve=self._reserve, streams=self._streams, inflight=self._inflight
+        )
         self._app = Starlette(routes=table, middleware=[Middleware(Gzip), admitted, *gated])
         self._app.state.api = seams  # what the read endpoints take their seams from
         self._app.state.workers = self._workers  # and the threads they run on
