@@ -69,7 +69,7 @@ internal and can change in any release.
   footprint the same whatever it holds.
 - The config file's keys, among them
   the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills`, `injected_openings`, `operator_tools`, `claims`,
-  `completion_skill`, `completion_call`, `eval_attribute`, `ladder`, `default_repo`, the `[analytics.weights]` table, the optional `[analytics.labeller]` table's `url`, `model`, `instructions`,
+  `completion_skill`, `completion_call`, `eval_attribute`, `ladder`, `phases`, `default_repo`, the `[analytics.weights]` table, the optional `[analytics.labeller]` table's `url`, `model`, `instructions`,
   `criteria` and `timeout`, each `[[analytics.skill_loads]]`'s
   `skill`, `activities`, `title` and `label`, and each `[[analytics.skill_machines]]`'s `skill` and `stages` (`name`,
   `activities`, `ok`), and the `[search]` table's optional `embeddings_url`, `model` and
@@ -91,7 +91,9 @@ internal and can change in any release.
 to the server as `Board.waits`, and the task actor (`[board.actor]`, [Task actor](serving.md#task-actor)) fires the event
 when the fact holds; `Board.holds` withholds `deps_done` with reasons; `Board.unfinished` lists the work a merged task still has, which holds `pr_merged_unfinished`. The actor's series on `GET /metrics` are
 `starpulse_task_actor_refusals_total`, `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds`,
-`starpulse_task_actor_handoff_seconds`, `starpulse_task_actor_criteria_errors` and `starpulse_task_actor_pin_held`.
+`starpulse_task_actor_handoff_seconds`, `starpulse_task_merge_move_seconds`, `starpulse_task_actor_criteria_errors`, `starpulse_task_actor_pin_held`,
+`starpulse_task_actor_heartbeat_timestamp_seconds`, `starpulse_task_actor_recovery_finished` and
+`starpulse_task_actor_merged_review_waiting`.
 `starpulse_board_lane_unattributed_total` counts the `board:lanes` entries appended since `serve` started that name no actor.
 `starpulse_autopilot_enabled` (0/1), `starpulse_autopilot_switch_changed_timestamp_seconds` (when the `scheduler.enabled`
 switch was last written), `starpulse_autopilot_ledger_runs` (rows in the run ledger) and
@@ -114,6 +116,8 @@ is public for the names listed here:
 - `starpulse.runtime.write_instance`: `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).
 - `starpulse.runtime.config`: loading the config file and the runs adapter a `type` names.
 - `starpulse.runtime.closure`: `CONFIG_OWNERS` (the processes that read each key) with `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).
+- `starpulse.bridge.subjects`: `subject_for(board, entry)`, the subject the bridge publishes an event-log entry on, or `None`.
+- `starpulse.bridge.subscriptions`: `parse_rules(table)`, the rules of each task kind from the `[bridge.subscriptions.<kind>]` tables, and `expand(board, templates, **values)`, their full subjects, for a consumer that checks its own subscription rules.
 - `starpulse.github.adapters.outbound.queue`: `SqlQueue(engine, consumer)`, the per-consumer queue over the durable GitHub
   inbox, for a consumer outside the package. Method contract: `claim(limit)` returns the due `Entry` list, oldest first;
   `complete(delivery_id)`, `skip(delivery_id, reason)` and `fail(delivery_id, error, fatal=, exhausted=)` settle one
@@ -123,7 +127,7 @@ is public for the names listed here:
 
 ### Moved in 0.y
 
-Release 0.y deleted the top-level facade modules and the `_internal` package; a context's package is its public path. Update each import as the table says. `python -m starpulse.claude_code`, `python -m starpulse.cursor` and `python -m starpulse.cursor_context` are now `python -m starpulse.runtime.claude_code`, `.cursor` and `.cursor_context`. The `starpulse.board_feed` logger is now `starpulse.board.board_feed`. `python -m starpulse.mermaid_import` is `python -m starpulse.machine_engine.adapters.mermaid_import`.
+Release 0.y deleted the top-level facade modules and the `_internal` package; a context's package is its public path. Update each import as the table says. `python -m starpulse.claude_code`, `python -m starpulse.cursor` and `python -m starpulse.cursor_context` are now `python -m starpulse.runtime.claude_code`, `.cursor` and `.cursor_context`. The `starpulse.board_feed` logger is now `starpulse.board.model.board_feed`. `python -m starpulse.mermaid_import` is `python -m starpulse.machine_engine.adapters.mermaid_import`.
 
 | Old path | New path |
 | --- | --- |
@@ -161,7 +165,17 @@ reports carries its `type` (empty when it has none). The Backlog.md adapter does
 `[[board.guards]]` in the config file (the native board's `guards` setting) declares record-level rules every task write
 must satisfy, whichever writer makes it: `starpulse task move` and the other agent verbs, the page, and a workflow.
 They are enforced where the native board lands a task file, so a move from the CLI and the same move from the page
-meet the same rule and are refused with the same `reason` and `skill`, and nothing is written. The Backlog.md adapter
+meet the same rule and are refused with the same `reason` and `skill`, and nothing is written. The `warn_actors` setting
+(a list of actors, empty by default) is the one exception: a move by an actor it lists that breaks a lane rule (`on` with
+`to` or `from`) lands, and the answer carries `"ok": true` and `warnings`, the `reason` of each rule it broke. A `write`
+or `create` rule still refuses that actor. `GET /api/moves/<id>` answers `{task, moves}` with the board's guarded verdict on every lane for one task, that
+actor's with the same rules as `warnings` (`reason`, `skill` each); the stream's snapshot leaves its `moves` unguarded
+(judging every card each cycle costs seconds), and `GET /api/task/<id>` carries none. The kanban reads the route when a
+card is dragged, dropped or opened, and lists the warnings in a confirm box before it posts the move; Cancel writes
+nothing.
+`[[board.entry]]` declares what entering a lane does to a task, for every writer: `{ lane, set }` fills the front matter
+fields the task holds none of, with `{ matrix = true }` (`profile` from `[board.default_profiles]` by the
+task's `kind-*` and `size-*` labels), before the lane's rules judge the write. The Backlog.md adapter
 writes through the upstream CLI and does not enforce them. A board with no rules accepts every write it accepted
 before, and a rule it cannot read (an unknown key or primitive, a missing `reason`, a bad pattern) is a startup error
 naming `guards[N]`.
@@ -192,15 +206,20 @@ the value under that key:
 | `dependencies` | `{ all_in = ["Done"] }` | every task in `dependencies` is in one of the named states; a dependency with no task file is in none, and no dependencies holds |
 | `checklist` | `{ sections = ["acceptance_criteria", "definition_of_done"], all_checked = true }` or `{ sections = ["acceptance_criteria"], min_items = 3 }` | every item of the named lists is checked (an empty or absent list holds), and/or the named lists hold at least `min_items` items between them; `all_checked` and `min_items` combine |
 | `unique` | `{ field = "source" }` | no other open task (under `tasks/`, not in the Done state) holds a value the task's scalar or list front matter `field` holds; a task with no value holds. A task's own id is not another task |
-| `names_ids` | `{ from = "dependencies", matches = "TASK-\\d+", in = "source" }` | every match of the pattern in the values of front matter field `from` is also a match of it in the values of field `in`, compared without regard to case; a `from` with no match holds |
+| `names_ids` | `{ from = "dependencies", matches = "TASK-\\d+", in = "source" }` | every match of the pattern in the values of front matter field `from` is also a match in the values of field `in` of `named` (optional, default the `matches` pattern), compared without regard to case; a `from` with no match holds, and a refusal names the IDs left out |
+| `retained` | `{ region = "acceptance_criteria", matches = "^- \\[[xX]\\] " }` | every line of the region that matches the pattern before the write (a checked criterion) is still there, unedited, after it; a create holds |
+| `no_implied_dependency` | `{}` | no dependency the write adds is already reached through another entry of `dependencies` (through the dependencies of the tasks it names, `TASK-N#K` counting as `TASK-N`); an edge recorded earlier is not judged |
+| `pull_proof` | `{ region = "comments", matches = "^Merge proof" }` | each pull request URL in `references` is named by a line of the region (`region` defaults to `comments`) that the pattern selects: by its URL, by `owner/repo#N` or `repo#N`, or by a bare `#N` when no other cited pull request has that number; a task citing none holds |
+| `matrix_profile` | `{}` | the task's `profile` is the one the board's `default_profiles` give its `kind-*` and `size-*` labels; a task lacking either label, or a cell, holds. It is the plain cell: the lifts the CLI adds for UI and attended work are not expressed, so a row that needs them leaves those tasks to its `any_of` alternative |
 | `before` | `{ section = { heading = "Needs attention", not_matching = "\\?" } }`, any primitive | the task as it was before the write satisfies the nested primitive; a create had no earlier task, so it holds |
-| `body` | `{ region = "description", matches = "AGENTS\\.md\\b" }` | the regular expression is found in the body, or in one region of it (`description`, `plan`, `acceptance_criteria`, `definition_of_done`, each between its `<!-- ...:BEGIN -->` and `:END -->` markers); an absent region holds nothing |
+| `body` | `{ region = "description", matches = "AGENTS\\.md\\b" }` | the regular expression is found in the body, or in one region of it (`description`, `plan`, `acceptance_criteria`, `definition_of_done`, `final_summary`, each between its `<!-- ...:BEGIN -->` and `:END -->` markers); an absent region holds nothing |
 | `block` | `{ heading = "Start Criteria", key = "start_criteria" }` | the section under the `## ` heading holds a fenced `yaml` block that parses to a mapping whose `key` is a non-empty list; an absent section, fence or list fails |
 | `readable` | `{ headings = [{ name = "Outcome", max_sentences = 1 }, { name = "Terms", optional = true }, { name = "Scope", no_paths = true }], commands = ["uv run", "git"], max_paths_per_sentence = 2, blast_radius = { heading = "Blast Radius", stops = "Stop Conditions", rollback = "Rollback" } }` | the description (the `DESCRIPTION` region, else the body) opens with its first `## ` heading and holds the `headings` in order, each required unless `optional`; in a section, a line starting with a `commands` prefix sits in a fenced block, the sentences number at most `max_sentences`, a `no_paths` section names no path, a path in prose sits in backticks, and no sentence names more than `max_paths_per_sentence` paths; the `blast_radius` section opens with `reach N · data N · undo N · detect N. <sentence>`, N 0 to 3, an axis at `stop_at` (default 3) or more is named in a `stops` section line, and `undo` at `rollback_at` (default 2) or more needs the `rollback` section. `board_written` lists `## ` headings the board writes (`Needs attention`, `Start Criteria`), which are stripped before the older-description comparison and the judging, in any position. The refusal is the rule's `reason`, a colon and the first broken rule with its line in the description |
 | `post_merge_checks` | `{}` | the body's `## Post-merge Checks` section is absent, or holds a fenced `yaml` block whose `post_merge_checks` list is valid (see Post-merge checks); a malformed check fails |
-| `pulls_ready` | `{}` | every pull request URL in `references` is in the PR store (`GET /api/pulls`), not a draft, and its `checks` are `pass`; a task citing none holds. A pull request the store lacks, or a board not yet started, fails the rule; `starpulse pull show OWNER/NAME#N` tells which cause refused it. Only a URL of the form `https://github.com/OWNER/NAME/pull/N` counts as a citation: one with a suffix such as `/files` or `#fragment` is not read. It reads the store, never GitHub, so the standing verdict leaves it out |
-| `pulls_clear` | `{}` | every pull request URL in `references` is in the PR store, has no unresolved review thread and is `MERGEABLE` (a `CONFLICTING` or `UNKNOWN` one fails); a task citing none holds. It reads the store, never GitHub, so the standing verdict leaves it out. Paired with `pulls_ready` on `to = "Review"`, a ready pull request with a finding is refused and the task actor hands the holder the refusal through `delivered` |
-| `pulls_changed` | `{ files = ["src/web/**", "*.html"], matches = "render evidence" }` | no cited pull request changed a file matching a glob of `files` (`fnmatch`, `*` crosses `/`); otherwise a checked `- [x]` line of the task body matches `matches` (a regular expression), or every pull request with a matching file has a body that matches. A pull request whose changed files the store does not know (saved before they were kept, opened by an event no read of GitHub has followed, or with more than 100 files) fails the rule; `starpulse pull show OWNER/NAME#N` prints its `files`. Both keys are required, `files` non-empty; it reads the store, never GitHub |
+| `pulls_ready` | `{}` | every pull request URL in `references` is in the PR store (`GET /api/pulls`) and is either merged, whatever its `checks`, or not a draft with `checks` `pass`; a task citing none holds. A pull request the store lacks, or a board not yet started, fails the rule; `starpulse pull show OWNER/NAME#N` tells which cause refused it. Only a URL of the form `https://github.com/OWNER/NAME/pull/N` counts as a citation: one with a suffix such as `/files` or `#fragment` is not read. It reads the store, never GitHub, so the standing verdict leaves it out |
+| `pulls_failing` | `{}` | some pull request URL in `references` is in the PR store, `OPEN`, and has `checks` `failing`; a task citing none, or only pending, passing or merged ones, fails |
+| `pulls_clear` | `{}` | every pull request URL in `references` is in the PR store and either `MERGED` or has no unresolved review thread and is `MERGEABLE` (an open `CONFLICTING` or `UNKNOWN` one fails; GitHub reports a merged one `UNKNOWN`); a task citing none holds. It reads the store, except that an open pull request whose stored `mergeable` is not `MERGEABLE` is settled from GitHub (`gh api`; an uncomputed or unreadable answer keeps the stored value), since no event clears a stored conflict after a push; the standing verdict leaves it out. Paired with `pulls_ready` on `to = "Review"`, a ready pull request with a finding is refused and the task actor hands the holder the refusal through `delivered` |
+| `pulls_changed` | `{ files = ["src/web/**", "*.html"], matches = "render evidence" }` | no cited pull request changed a file matching a glob of `files` (`fnmatch`, `*` crosses `/`); otherwise a checked `- [x]` line of the task body matches `matches` (a regular expression), or every pull request with a matching file has a body that matches. A checked `- [x]` line matching `matches` clears the rule first, even when a file list is unknown. A pull request whose changed files the store does not know (saved before they were kept, opened by an event no read of GitHub has followed, or with more than 100 files) fails the rule; `starpulse pull show OWNER/NAME#N` prints its `files`. Both keys are required, `files` non-empty; it reads the store, never GitHub |
 | `all_of`, `any_of`, `exactly_one`, `none_of` | a non-empty list of primitives | all, at least one, exactly one or none of them hold |
 
 `readable` counts and prefix-matches; it judges no meaning. Its blind spots: a command outside the `commands` prefix list
@@ -211,7 +230,7 @@ score passes. Each board task also carries the rules' standing verdict as `reada
 its line, so a page can badge a description written before the rules without refusing it until its next edit.
 
 A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/edit`, `/api/archive`, `/api/verdict`, `/api/miss` and `/api/tasks`
-take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). Every write parses its body through the request model of its route, so a body that is not a JSON object, names a key the route does not take or holds a field of the wrong type is a 400 `invalid request: <field>: <reason>` for its first fault. The page names
+take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). Every write parses its body through the request model of its route, so a body that is not a JSON object, names a key the route does not take or holds a field of the wrong type is a 400 `invalid request: <field>: <reason>` for its first fault, a key the route does not take before any other. The page names
 `operator`; `starpulse` verbs name `agent`, their session and their harness. A write naming no actor is `agent` when it
 names a session and `anonymous` when it names none, never `operator`, so an unnamed write is not judged as the
 operator's. The write's `board:lanes` row carries all three, and a create stamps `created_by: <harness>:<session>` in

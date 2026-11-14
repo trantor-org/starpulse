@@ -101,6 +101,11 @@ class TokenCounts(_Api):
     reasoning: int
 
 
+class AgentSpend(TokenCounts):
+    subagents: int = Field(0, description="The subagents of this type whose requests named their instance id.")
+    first_request_cache_write: int = Field(0, description="The cache_write of each such subagent's first request, summed.")
+
+
 class SessionHealth(_Api):
     """One harness session's work on one task (`task` None: a branch that names none), from its OTLP signals."""
 
@@ -109,6 +114,13 @@ class SessionHealth(_Api):
     task: str | None
     kind: Literal["headless", "interactive", "unknown"]
     eval: str
+    origin: str
+    entrypoint: str = Field(
+        description="The launch's `claude_code.entrypoint` resource attribute (`cli`, `sdk-cli`); empty when it set none."
+    )
+    first_request_tokens: int | None = Field(
+        description="The prompt tokens (input, cache read and cache write) of the session's first main-thread request that sent any; None when it made none."
+    )
     first_at: float
     last_at: float
     prompts: int
@@ -134,6 +146,12 @@ class SessionHealth(_Api):
     raises: int
     lowers: int
     tokens: TokenCounts
+    agents: dict[str, AgentSpend] = Field(
+        description="Each subagent type's token totals among `tokens` (`qa-<lens>` for a qa lens); only a subagent that names its type."
+    )
+    role: str = Field(
+        description="The furthest phase skill (`starting-task`, `tdd`, `qa`, `deliver`, `fix-checks`, `review-fix`, `verify`) the session loaded on this task; `other` when it loaded none."
+    )
     cost_usd: float | None
     agent_s: float
     operator_wait_s: float
@@ -204,7 +222,9 @@ class SessionStep(_Api):
     )
     tokens: TokenCounts
     captured: bool = Field(description="False for a harness the steps-per-completion ledger does not cover (Codex).")
-    eval: str = Field(description="The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.")
+    eval: str = Field(
+        description="The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request."
+    )
 
 
 class SessionSteps(_Api):

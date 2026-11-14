@@ -95,6 +95,13 @@ a board that keeps none answers exit 3. A `--spec` or `--adr` on `milestone edit
 bodies out, `doc show` returns one with its `body`, and a board that keeps no docs answers exit 3. `doc restore`
 returns an archived doc's file, unchanged, to `--folder` under the docs (the docs folder itself by default), refusing a doc
 that is open or a destination that exists (exit 1).
+`session records` reads no server: it prints a session's Claude Code transcript records grouped by the task each belongs to,
+read from the transcript files and never stored.
+`subscribe <subject>` and `unsubscribe <subject>` read no server: they add a subject of the board's NATS stream to the calling
+session's consumer, or remove it, beside the subjects its task's kind gives (`[bridge.subscriptions.<kind>]`).
+`subscribe` also registers the calling session's Claude Code inbox socket and token (owner-only, beside the config) so the bridge can notify it.
+`incident open <type> <key>` publishes the fault to NATS without the server and then files its owner task there; a
+board that is down leaves the task for the finder's rerun.
 `skills` reads no server: it copies the bundled skills into the project or, with `--user`, the home directory.
 """
 
@@ -504,14 +511,18 @@ def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
         config = load(path)
     except (OSError, ValueError) as exc:
         config = f"{path}: {exc}"
-    served = None
+    else:
+        if lanes := _lane_errors(config, path.parent if path else Path()):
+            config = "; ".join(lanes)
+    served = ready = None
     try:
         snapshot: dict[str, Any] | str = agent_wire.get_snapshot(base)
         status, report = agent_wire.get(base, "/api/doctor")
         served = report if status == 200 and isinstance(report, dict) else None
+        ready = agent_wire.get(base, "/api/ready")
     except agent_wire.CliError as exc:
         snapshot = str(exc)
-    return doctor.run_checks(snapshot, config, doctor.LIVE, base, served)
+    return doctor.run_checks(snapshot, config, doctor.LIVE, base, served, ready)
 
 
 def _skills_root(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[str, Path]:
@@ -572,9 +583,9 @@ def _checked(path: Path) -> dict[str, Any]:
 
 def _dead_migrations(path: Path, held: set[str]) -> list[dict[str, Any]]:
     """An error per `migrations` entry of `path` whose source State no live Task holds."""
-    from starpulse.machine_engine.adapters.machine_loader import _read  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.adapters.machine_loader import read_document  # noqa: PLC0415 - import cost, paid on first use
 
-    mapping = _read(path).get("migrations", {})
+    mapping = read_document(path).get("migrations", {})
     return [
         {
             "file": str(path),
@@ -643,9 +654,46 @@ def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     except (OSError, ValueError) as exc:  # a file that is missing or not TOML
         return {**checked, "ok": False, "errors": [f"{path}: {exc}"]}
     effective = json.loads(json.dumps(dataclasses.asdict(config), default=_plain))
-    if refused := _unlisted_writers(config, path.parent if path else Path()):
+    base = path.parent if path else Path()
+    if refused := [*_unlisted_writers(config, base), *_lane_errors(config, base)]:
         return {**checked, "ok": False, "errors": refused, "config": effective}
     return {**checked, "ok": True, "config": effective}
+
+
+def _session_records(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """One session's transcript records grouped by the task each belongs to, in the order the tasks are first named,
+    read from the transcript files under `--transcripts`, else `[board] transcripts`, else Claude Code's own directory."""
+    from starpulse.board.adapters.session_activity import DEFAULT_TRANSCRIPTS  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.contracts.adapters import TaskKeys  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.contracts.analytics import Analytics  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.sessions.adapters.outbound.transcript_records import records_by_task, session_records  # noqa: PLC0415 - import cost, paid on first use
+
+    path = discover(args.config)
+    try:
+        config = load(path)
+    except (ConfigError, OSError, ValueError) as exc:
+        raise agent_wire.CliError("refused", f"{path}: {exc}") from exc
+    root = Path(args.transcripts or config.board.get("transcripts", DEFAULT_TRANSCRIPTS)).expanduser()
+    records = session_records(root, args.session)
+    if records is None:
+        raise agent_wire.CliError("not_found", f"no transcript of session {args.session} under {root}")
+    settings = config.claude_code or ClaudeCode()
+    keys = TaskKeys(key=re.compile(settings.key), branch=re.compile(settings.branch), key_format=settings.key_format)
+    groups = records_by_task(records, keys, config.analytics or Analytics())
+    return {
+        "session": args.session,
+        "records": len(records),
+        "groups": [{"task": task, "records": found} for task, found in groups.items()],
+    }
+
+
+def _lane_errors(config: Config, base: Path) -> list[str]:
+    """What `serve` tolerates with a warning and a gate refuses: the Board's machine and statuses disagreeing on a lane."""
+    from starpulse.board.adapters.upstream_backlog import lane_errors  # noqa: PLC0415 - import cost, paid on first use
+
+    return lane_errors(config.board_type, config.board, base)
 
 
 def _unlisted_writers(config: Config, base: Path) -> list[str]:
@@ -837,6 +885,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     show.add_argument("task", help="the task's key (`PROJ-45`)")
     show.add_argument("--markdown", action="store_true", help="the task rendered as markdown, in `markdown`, instead")
+    show.add_argument("--text", action="store_true", help="the task and its comments as plain text, in `text`, instead")
     moves = leaf(
         task_verbs,
         "moves",
@@ -974,6 +1023,10 @@ def _parser() -> argparse.ArgumentParser:
     edit.add_argument("--follows", help="the id of the finished task this one follows up; blank removes it")
     edit.add_argument("--label", action="append", help="a label; given at all, replaces the whole list (blank clears)")
     edit.add_argument("--dependency", action="append", help="a task it depends on; replaces the whole list")
+    edit.add_argument(
+        "--status",
+        help="the lane to move it to in the same write as the other fields, as a move would (a Ready task given an open dependency)",
+    )
     edit.add_argument("--reference", action="append", help="a reference; replaces the whole list")
     edit.add_argument(
         "--documentation",
@@ -1538,6 +1591,72 @@ def _parser() -> argparse.ArgumentParser:
     )
     command_show.add_argument("name", help="the step's name (`deliver`)")
     command_show.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    for name, summary, handler in (
+        (
+            "subscribe",
+            "add a subject to the calling session's NATS consumer, kept until `unsubscribe` and beside the subjects its "
+            "task gives; needs `[bridge] enabled`",
+            "subscribe",
+        ),
+        ("unsubscribe", "remove a subject from the calling session's NATS consumer", "unsubscribe"),
+    ):
+        subject = leaf(
+            verbs,
+            name,
+            summary,
+            _later("starpulse.cli.agent_subscribe", handler),
+            ("session", "subject", "changed", "subjects"),
+            (0, 1, 2, 3),
+            reads_server=False,
+        )
+        subject.add_argument("subject", help="a subject of the board's stream (`starpulse.trantor.alert.disk.>`)")
+        subject.add_argument("--session", help="the session subscribing (else `STARPULSE_SESSION`)")
+        subject.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    register = leaf(
+        verbs,
+        "register",
+        "record the calling session's inbox socket and token for the bridge's delivery, with no subject: a session "
+        "rerun this when it resumes, since a resumed session has a new socket and token",
+        _later("starpulse.cli.agent_subscribe", "register"),
+        ("session", "registered"),
+        (0, 1, 2),
+        reads_server=False,
+    )
+    register.add_argument("--session", help="the session registering (else `STARPULSE_SESSION`)")
+    register.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    incident = verbs.add_parser("incident", description="a fault several sessions share", help="a fault several sessions share")
+    incident_verbs = incident.add_subparsers(dest="verb", required=True, metavar="verb")
+    incident_open = leaf(
+        incident_verbs,
+        "open",
+        "publish `incident.<type>.<key>` straight to NATS, working while the board is down, and create and claim its "
+        "owner task: one per type and key, joined (nothing published) when another session holds it, left null while "
+        "the board is down until the finder reruns the verb",
+        _later("starpulse.cli.agent_incident", "open_incident"),
+        ("subject", "task", "holder", "published"),
+        (0, 1, 2, 3),
+    )
+    incident_open.add_argument("type", help="the kind of fault (`ci`)")
+    incident_open.add_argument("key", help="which one (`wedged`)")
+    incident_open.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    agent_flags.writer_flags(incident_open)
+    session = verbs.add_parser("session", description="one agent session", help="one agent session")
+    session_verbs = session.add_subparsers(dest="verb", required=True, metavar="verb")
+    session_records = leaf(
+        session_verbs,
+        "records",
+        "a Claude Code session's transcript records, grouped by the task each belongs to (a claim or a task branch starts "
+        "a task), read from the transcript files and never stored",
+        _session_records,
+        ("session", "records", "groups"),
+        (0, 1, 2, 4),
+        reads_server=False,
+    )
+    session_records.add_argument("session", help="the Claude Code session id")
+    session_records.add_argument(
+        "--transcripts", type=Path, help="the directory of `<project>/<session>.jsonl` files (default: `[board] transcripts`)"
+    )
+    session_records.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(

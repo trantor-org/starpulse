@@ -9,7 +9,7 @@ from starpulse.contracts.api._base import _Api
 
 class RequiredCheck(_Api):
     name: str
-    result: Literal["pass", "failing", "pending"]
+    result: Literal["pass", "failing", "pending", "missing"]
 
 
 class PullThread(_Api):
