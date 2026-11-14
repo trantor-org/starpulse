@@ -32,6 +32,8 @@ INTERVAL = 60.0
 class _Feed(Protocol):
     def open_tasks(self) -> list[dict]: ...
 
+    def done_tasks(self) -> list[str]: ...
+
     def alias(self, alias: str, task: str) -> None: ...
 
 
@@ -60,13 +62,16 @@ class LaneSweep:
 
     def _place(self) -> None:
         """Bring the read model to the files where a rename left them apart: a listed file it lacks is reconciled, which
-        seeds its History, and each alias a file lists answers its id; an open task whose file is absent on two passes in
+        seeds its History, and each alias a file lists, a done task's included, answers its id; an open task, or a Done one the live set has cooled out of, whose file is absent on two passes in
         a row, or whose id is only an alias another file lists (a rename's ghost), is reconciled, which archives it. With no files listed nothing is judged absent."""
+        for task, aliases in self._board.done_files() if self._board.done_files is not None else ():
+            for alias in aliases:
+                self._feed.alias(alias, task)
         files = list(self._board.files()) if self._board.files is not None else []
         if not files:
             self._absent = set()
             return
-        known = {agent["id"] for agent in self._feed.open_tasks()}
+        known = {agent["id"] for agent in self._feed.open_tasks()} | set(self._feed.done_tasks())
         for task, aliases in files:
             if task not in known:
                 self._board.reconcile(task)

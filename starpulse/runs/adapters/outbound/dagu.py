@@ -432,11 +432,13 @@ def recent_runs(base_url: str, name: str, finished: dict | None = None) -> list[
 
 #: The window of a DAG's run statistics, how long they are kept before the DAG's runs are read again, and how many DAGs
 #: are read at once. Dagu answers a DAG's week of runs slowly (a busy DAG's takes a minute and more, each page costing a
-#: scan of the window) yet no slower for several at once, so `refresh_stats` reads the DAGs in parallel, off the
-#: listing: a listing serves what is kept and shows a DAG not read yet with no statistics.
+#: scan of the window), so `refresh_stats` reads the DAGs off the listing: a listing serves what is kept and shows a DAG
+#: not read yet with no statistics. One at a time: the cold pass after a restart decodes every run's status file, and
+#: eight readers at once put dagu-server at 5-8 cores for a minute (TASK-14342); one spreads the same work over about
+#: 150 s at under 2 cores.
 STATS_WINDOW = 7 * 86400
 STATS_TTL = 300.0
-STATS_WORKERS = 8
+STATS_WORKERS = 1
 
 #: The labels a DAG declares its rerun safety with: `rerun=safe`, `rerun-key=<key>` (its effects are keyed, so a rerun for
 #: the same key repeats none), or `rerun-repeats=<why>` with the `rerun-step=<step>` that repeats. Dagu allows only

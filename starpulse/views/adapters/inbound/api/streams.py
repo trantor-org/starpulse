@@ -22,7 +22,7 @@ from starpulse.views.application.queries.responses import _error
 from starpulse.views.model.encoding import encode, event
 
 if TYPE_CHECKING:  # annotation only: `snapshots` and the feed are built by the caller
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.views.adapters.inbound.snapshots import Snapshots
 
 logger = logging.getLogger(__name__)
