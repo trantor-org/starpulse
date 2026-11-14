@@ -9,8 +9,6 @@ launch. Its **parent** is the machine its leading tie enters it from, else the I
 `derive` is pure over the snapshot's `flows`, so the same tasks and the same clock always give the same answer.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from typing import Any
 

@@ -24,8 +24,6 @@ use), 413 (`data` over the cap) or 503 (the log did not take an entry; every ent
 posts the batch again).
 """
 
-from __future__ import annotations
-
 import json
 import time
 from collections.abc import Callable, Mapping
