@@ -1,8 +1,6 @@
 """What every write route shares: the refusal of a request another web page may have sent, the body read, the answer
 and the token-guarded push."""
 
-from __future__ import annotations
-
 import functools
 from collections.abc import Awaitable, Callable
 
