@@ -16,18 +16,21 @@ import argparse
 import dataclasses
 import os
 import socket
-import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from starpulse.event_log.wake import StopEvent
+from starpulse.board.adapters import done_hold
 from starpulse.board.adapters.history_window import HistoryWindow
+from starpulse.board.adapters.lane_policy import lane_surfaces
 from starpulse.board.adapters.lane_sweep import LaneSweep
 from starpulse.board.claim_refusals import CLAIMS_STREAM
+from starpulse.bridge.metrics import metrics_of as bridge_metrics_of
 from starpulse.event_log import lane_events, verdict_events
 from starpulse.event_log.conformance_monitor import Conformance
+from starpulse.event_log.recorder_lag import metrics_of as history_lag_metrics_of
+from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.inbound.delivery import (
     Projected,
     follow_saves,
@@ -46,8 +49,9 @@ from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.outbound.gc_pauses import install as collect_on_a_timer
-from starpulse.views.adapters.outbound.take_over import command_take_over
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
+from starpulse.views.adapters.outbound.take_over import command_take_over
+from starpulse.views.adapters.outbound.webhook_command import command_webhook
 from starpulse.views.application.queries.answers import Answers
 from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
@@ -59,7 +63,8 @@ SNAPSHOT_REFRESH_S = 2.0
 @dataclasses.dataclass(frozen=True)
 class Host:
     """What the page needs from `starpulse.runtime`, the composition root that builds it: no context imports `runtime`,
-    so `runtime` passes these in. `probes` is the live health probes, `contract` the doctor's reading of them."""
+    so `runtime` passes these in. `probes` is the live health probes, `contract` the doctor's reading of them, `readiness`
+    the reader of `/api/ready` over the log, the feed and the config."""
 
     config: Callable[..., ApiConfig]
     resolve_listen: Callable[..., None]
@@ -74,6 +79,7 @@ class Host:
     history_store: Callable[..., Any]
     follow_read_model: Callable[..., object]
     contract: Callable[..., Any]
+    readiness: Callable[..., Callable[[], dict[str, Any]]]
     probes: Any
     static: Path
     listen_fd_env: str
@@ -135,14 +141,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     feed.date_lanes(store.lane_path)
     feed.record_lanes(store, log)
     feed.record_ratings(log)
-    # `starpulse worker board` dates when each task's Start Criteria were met; this process rereads the dates it keeps.
-    threading.Thread(
-        target=feed.follow_criteria, args=(store, StopEvent()), name="criteria-follow", daemon=True
-    ).start()
-    # the board worker sweeps and saves each pass's expiries; serve follows them
-    threading.Thread(
-        target=feed.follow_expiries, args=(store, StopEvent()), name="expiries-follow", daemon=True
-    ).start()
     feed.read_lanes(store.lane_rows)
     # the instance indexes its board for search
     search = SearchIndex.open(log.engine, config.search)
@@ -155,6 +153,9 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     projector.catch_up()
     feed.follow_read_model()
     feed.ready.set()
+    # `starpulse worker board` dates when each task's Start Criteria were met and when each claim expires and pushes both
+    # to the log; this process adopts them on each push
+    feed.follow_dates(log, store, stop)
     host.follow_read_model(projector, feed, stop, log)
     MachineDeltas(feed, model).follow(stop, log)
     refusals = ClaimRefusals(feed)
@@ -173,19 +174,20 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     unattributed = lane_events.Unattributed()
     unattributed.follow(log, stop)
     # a move no transition of its machine declares is counted per machine
-    conformance = Conformance(feed.machines)
+    conformance = Conformance(feed.machines, entered=(feed.roles.done, lane_events.ARCHIVED))
     conformance.follow(log, stop)
     # a task whose file lane differs from the board's is reconciled, and exported if it stays so
+    board_root = base / str(config.board.get("path", ".starpulse/board"))
     lane_sweep = LaneSweep(feed, board)
     lane_stop = StopEvent()
     lane_sweep.start(lane_stop)
-    # the analytics routes read the per-session folds of the signal table; this thread keeps them current
+    # the analytics routes read the per-session folds of the signal table; the `signal-folds` context of
+    # `starpulse worker contexts` keeps them current, so no fold runs in this process
     signal_folds = SignalFolds(log, feed.keys, config.analytics)
-    threading.Thread(target=signal_folds.follow, args=(stop,), name="signal-folds", daemon=True).start()
     # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks; an opt-in
-    # worker's instance also shows the page whether that worker is beating
-    watched = {name: opt_in.problem(log, name) for name in opted_in}
+    # worker's instance also shows the page whether that worker's process runs
+    watched = {name: opt_in.Liveness(log, name) for name in opted_in}
     runs_projection.Projected(log, feed, watched).follow(stop)
     if config.task_actor:
         actor_metrics = metrics_of(log)
@@ -213,6 +215,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         events=cloudevents,
         scheduler=scheduler_runtime,
         contract=_cached(lambda: host.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
+        ready=host.readiness(log, feed, config),
         pulls=pulls,
         telemetry=signal_folds,
         search=search,
@@ -220,13 +223,20 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         answers=Answers(log.engine),
         pull_refresh=pull_refresh,
         take_over=command_take_over(config.take_over_command) if config.take_over_command else None,
+        webhook=command_webhook(config.webhook_command, os.environ[config.webhook_token_env or ""])
+        if config.webhook_command
+        else None,
+        lanes=lambda: lane_surfaces(log.engine, config.board, base),
         slow_read_s=config.slow_read_seconds,
         actor_metrics=actor_metrics,
         lane_metrics=unattributed.exposition,
         conformance_metrics=conformance.exposition,
         lane_sweep_metrics=lane_sweep.exposition,
+        done_hold_metrics=lambda: done_hold.exposition(board_root),
         autopilot_metrics=lambda: autopilot_exposition(log),
         sweeper_metrics=sweeper_metrics_of(log),
+        bridge_metrics=bridge_metrics_of(log),
+        history_lag_metrics=history_lag_metrics_of(log),
         autopilot_log=lambda: autopilot_log(log),
     )
     app = page_app(feed, host.static, store, window, board, services, snapshot_refresh_s=SNAPSHOT_REFRESH_S)
