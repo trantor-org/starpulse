@@ -15,12 +15,21 @@ from starpulse.board.feed.shared import (
 
 #: How many of a workflow's newest failed runs the page draws.
 FAILED_SHOWN = 10
+#: How many of a workflow's newest closed runs, of any status, the page draws.
+CLOSED_SHOWN = 8
+_ACTIVE = frozenset({"not_started", "queued", "running"})
 
 
 def _failed(dag: dict) -> dict:
     """`{"failed": [...]}` with the newest failed runs of `dag`'s recent runs (listed newest first), else nothing."""
     failed = [run for run in dag.get("recent") or [] if run.get("status") == "failed"][:FAILED_SHOWN]
     return {"failed": failed} if failed else {}
+
+
+def _closed(dag: dict) -> dict:
+    """`{"closed": [...]}` with the newest runs of `dag`'s recent runs (listed newest first) that are not active, else nothing."""
+    closed = [run for run in dag.get("recent") or [] if run.get("status") not in _ACTIVE][:CLOSED_SHOWN]
+    return {"closed": closed} if closed else {}
 
 
 class RunMethods:
@@ -131,6 +140,7 @@ class RunMethods:
             {**{key: value for key, value in dag.items() if key != "recent"}, "name": f"{instance}/{dag['name']}"}
             | ({"pool": f"{instance}/{dag['pool']}"} if dag.get("pool") else {})
             | _failed(dag)
+            | _closed(dag)
             for instance, dags in self._dags.items()
             for dag in dags
             if instance != PUSHED_INSTANCE or dag["name"] not in listed

@@ -72,14 +72,16 @@ def move_task(
         return _move_one(feed, request.task, request.to, who, writer, start)
     if request.tasks is None:
         return 400, {"error": "invalid request: task: Field required"}
-    moved, refused = [], {}
+    moved, refused, warned = [], {}, {}
     for task in request.tasks or ():
         status, body = _move_one(feed, task, request.to, who, writer, None)
         if status == 200:
             moved.append(task)
+            if body.get("warnings"):
+                warned[task] = body["warnings"]
         else:
             refused[task] = body["error"]
-    return 200, {"moved": moved, "refused": refused}
+    return 200, {"moved": moved, "refused": refused, **({"warnings": warned} if warned else {})}
 
 
 def _move_one(
@@ -111,7 +113,7 @@ def move_refusal(agent: dict, task: str, column: str, who: Who) -> tuple[int, di
     if column not in moves:
         offered = f"its moves are {', '.join(sorted(moves))}" if moves else "it has no moves"
         return 409, {"error": f"{task} cannot move from {agent['state']} to {column}: {offered}"}
-    if not (move := Move.model_validate(agent["moves"][column])).permits(who.actor):
+    if not (move := Move.read(agent["moves"][column])).permits(who.actor):
         return 409, {"error": move.for_actor(who.actor).reason, "skill": move.skill}
     return None
 
@@ -125,7 +127,7 @@ def _move(
     return _write_move(feed, task, column, who, writer)
 
 
-def _write_move(feed: BoardFeed, task: str, column: str, who: Who, writer: MoveWriter) -> tuple[int, dict[str, str]]:
+def _write_move(feed: BoardFeed, task: str, column: str, who: Who, writer: MoveWriter) -> tuple[int, dict[str, Any]]:
     """Write `task` into `column` as `who` through `writer`, unjudged by the machine: the HTTP status and JSON body."""
     status = column_status(column)
     written = record_written(
@@ -139,8 +141,10 @@ def _write_move(feed: BoardFeed, task: str, column: str, who: Who, writer: MoveW
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {
+        "ok": True,
         "task": written.renumbered or task,
         "to": column,
+        **({"warnings": list(written.warnings)} if written.warnings else {}),
         **({"was": task} if written.renumbered else {}),
         **({"advice": written.advice} if written.advice else {}),
     }
@@ -152,14 +156,16 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
 
     The holder is an opaque string. A task already In Progress under that holder answers 200 without a write; under
     another, or when the holder already has another task In Progress, it is refused 409 naming the holder or the task.
-    A task In Progress held by no session is adopted: the holder is recorded without a move.
+    A task In Progress held by no session, or under its own task name (a label, never a session), is adopted: the
+    holder is recorded without a move.
     """
     task, who = request.task, who_of(request)
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     working = feed.roles.working
     held = {"task": task, "to": working, "assignee": who.session}
-    adopt = agent["state"] == working and not agent.get("assignee")
+    named_for_task = str(agent.get("assignee")).casefold() == task.casefold()
+    adopt = agent["state"] == working and (not agent.get("assignee") or named_for_task)
     if agent["state"] == working and not adopt:
         if agent.get("assignee") == who.session:
             return 200, held
@@ -178,9 +184,7 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
 
 
 @with_request(ReleaseRequest, "Releasing a claim")
-def release_task(
-    request: ReleaseRequest, feed: BoardFeed, release: TaskReleaser | None
-) -> tuple[int, dict[str, str]]:
+def release_task(request: ReleaseRequest, feed: BoardFeed, release: TaskReleaser | None) -> tuple[int, dict[str, str]]:
     """End the claim on the task `request` names, whoever holds it: the HTTP status and JSON body.
 
     The task loses its assignee, records the session as released and keeps its lane, so the next claim adopts it. A task
@@ -198,6 +202,26 @@ def release_task(
     if not written.ok:
         return 409, {"error": written.output}
     return 200, {"task": task, "to": state, "releasedFrom": holder}
+
+
+def _start_refusal(feed: BoardFeed, task: str, agent: dict[str, Any]) -> str | None:
+    """Why a session cannot start on `agent`, or None: it is held, outside the startable states, or a Ready task whose
+    unmet Start Criteria the task actor returns to Waiting (`CRITERIA_UNMET`), where the reaper ends the session."""
+    startable = feed.roles.startable
+    if agent["state"] == feed.roles.working:
+        if (holder := agent.get("assignee")) and holder != RELEASED_ASSIGNEE:
+            return f"{task} is held by {holder}: a session starts an In Progress task only once its claim is released"
+        return None
+    if agent["state"] not in startable:
+        listed = [state for state in feed.roles.roles if state in startable]
+        names = " or ".join(filter(None, [", ".join(listed[:-1]), *listed[-1:]]))
+        return f"{task} is in {agent['state']}: a session starts only a {names} task"
+    if agent["state"] != feed.roles.ready or not (unmet := feed.unmet_criteria(task, agent.get("description", ""))):
+        return None
+    return (
+        f"{task} is in {agent['state']} with its Start Criteria unmet ({', '.join(unmet)}): "
+        f"the task actor returns it to {feed.roles.waiting}"
+    )
 
 
 def start_requested(
@@ -238,16 +262,8 @@ def start_requested(
             return 409, {"error": chosen.reason or f"{harness} cannot start a session"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
-    startable = feed.roles.startable
-    if agent["state"] == feed.roles.working:
-        if (holder := agent.get("assignee")) and holder != RELEASED_ASSIGNEE:
-            return 409, {
-                "error": f"{task} is held by {holder}: a session starts an In Progress task only once its claim is released"
-            }
-    elif agent["state"] not in startable:
-        listed = [state for state in feed.roles.roles if state in startable]
-        names = " or ".join(filter(None, [", ".join(listed[:-1]), *listed[-1:]]))
-        return 409, {"error": f"{task} is in {agent['state']}: a session starts only a {names} task"}
+    if reason := _start_refusal(feed, task, agent):
+        return 409, {"error": reason}
     at = clock()
     if profile != agent["model"] and not (written := assign(task, profile, **named)).ok:
         return 409, {"error": written.output, "skill": written.skill}

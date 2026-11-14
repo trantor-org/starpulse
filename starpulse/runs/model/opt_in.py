@@ -1,29 +1,19 @@
-"""The run adapters that run as opt-in workers, and the Liveness of each: a beat the worker keeps in the event log.
-
-An adapter module whose `WORKER` names a context (`starpulse worker <context>`) runs there and not in the supervised
-`runs` worker: `serve` supervises one child for each such context a `[[runs]]` instance configures, and restarts it like
-any other context worker. An adapter that stopped or never started silently is the failure to show: the worker writes
-the time to the log every `BEAT_S`, and `problem` says why `serve` counts it as down, which the page draws as the
-instance's error.
-"""
+"""The run adapters that run as opt-in workers, and the Liveness of each: the process the worker announces in the event log."""
 
 from __future__ import annotations
 
-import logging
+import os
 import threading
-import time
 from collections.abc import Callable, Sequence
 from types import ModuleType
 from typing import TYPE_CHECKING
 
+from starpulse.event_log.process_exit import ExitWatch, exited
+
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
+    from starpulse.event_log.wake import StopEvent
     from starpulse.runs.model.config import RunsInstance
-
-logger = logging.getLogger(__name__)
-
-BEAT_S = 15.0
-DOWN_S = 60.0
 
 
 def worker_of(adapter: ModuleType) -> str | None:
@@ -39,42 +29,59 @@ def followed_by(
 
 
 def _key(instance: str) -> str:
-    return f"runs.beat.{instance}"
+    return f"runs.worker.{instance}"
 
 
-def beat(log: EventLog, instance: str, clock: Callable[[], float] = time.time) -> None:
-    """Write the time to the log as `instance`'s worker's latest beat."""
-    log.put_state(_key(instance), {"at": clock()})
+def announce(log: EventLog, instance: str, pid: int | None = None) -> None:
+    """Write the process id that runs `instance`'s worker to the log, once per start."""
+    log.put_state(_key(instance), {"pid": os.getpid() if pid is None else pid})
 
 
-def keep_beating(log: EventLog, instance: str, stop: threading.Event) -> threading.Thread:
-    """Beat every `BEAT_S` on a thread until `stop`; a log that cannot be written is tried again at the next beat."""
+class Liveness:
+    """Whether the process `instance`'s worker announced is running, read from its exit and never from a clock."""
 
-    def run() -> None:
-        while not stop.is_set():
-            try:
-                beat(log, instance)
-            except Exception:
-                logger.warning("runs: the %s worker's beat was not kept", instance, exc_info=True)
-            stop.wait(BEAT_S)
+    def __init__(self, log: EventLog, instance: str, gone: Callable[[int], bool] = exited) -> None:
+        self._log = log
+        self._instance = instance
+        self._gone = gone
 
-    thread = threading.Thread(target=run, name=f"runs-beat-{instance}", daemon=True)
-    thread.start()
-    return thread
+    def _pid(self) -> int | None:
+        _, kept = self._log.state(_key(self._instance))
+        pid = kept.get("pid") if isinstance(kept, dict) else None
+        return pid if isinstance(pid, int) else None
 
-
-def problem(log: EventLog, instance: str, clock: Callable[[], float] = time.time) -> Callable[[], str | None]:
-    """Why `instance`'s worker counts as down, or None while its beat is under `DOWN_S` old."""
-
-    def read() -> str | None:
+    def problem(self) -> str | None:
+        """Why the worker counts as down, or None while its process runs."""
         try:
-            _, kept = log.state(_key(instance))
+            pid = self._pid()
         except Exception as exc:
             return f"the event log cannot be read: {exc}"
-        at = kept.get("at") if isinstance(kept, dict) else None
-        if not isinstance(at, int | float):
-            return f"the {instance} worker has not reported"
-        age = clock() - at
-        return None if age <= DOWN_S else f"the {instance} worker last reported {age:.0f}s ago"
+        if pid is None:
+            return f"the {self._instance} worker has not reported"
+        return f"the {self._instance} worker (pid {pid}) exited" if self._gone(pid) else None
 
-    return read
+    def follow(self, changed: Callable[[], None], stop: StopEvent) -> None:
+        """Call `changed` when the announced process exits and when a worker announces itself, on threads until `stop`."""
+        watching: set[int] = set()
+
+        def announced() -> None:
+            try:
+                pid = self._pid()
+            except Exception:
+                return
+            if pid is not None and pid not in watching:
+                watching.add(pid)
+                threading.Thread(target=exit_of, args=(pid,), name=f"runs-exit-{self._instance}", daemon=True).start()
+            changed()
+
+        def exit_of(pid: int) -> None:
+            watch = ExitWatch(pid)
+            try:
+                watch.wait()
+            finally:
+                watch.close()
+            if not stop.is_set():
+                changed()
+
+        self._log.follow_state(_key(self._instance), announced, stop, thread_name=f"runs-worker-{self._instance}")
+        announced()
