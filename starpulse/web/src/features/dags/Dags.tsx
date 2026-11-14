@@ -16,7 +16,7 @@ import { SearchClear } from "../../shared/SearchClear";
 import { PHONE } from "../../shared/nav";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
 import { refused, startRun } from "../../render/panels";
-import { Viewport } from "../../shared/ViewportRows";
+import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 
 type Post = Parameters<typeof startRun>[1];
 
@@ -61,6 +61,9 @@ function RunBtn({ r, why, run }: { r: Row; why: string | null; run: (r: Row) => 
   );
 }
 
+/** The rows a pane draws before the stage reports what is on screen; a row's body mounts when it nears the viewport, so the first open builds a screenful rather than every job. */
+const ROWS_AT_OPEN = 14;
+
 interface RowProps { r: Row; now: number; spot: boolean; why: string | null; f: DagFacts | undefined; run: (r: Row) => void; open: (r: Row) => void; pane: Pane; col: number; hs: number; slot: number; k: number; band: boolean; caption: string | null; glide: Glide | undefined }
 
 /** One DAG's row, a slot on the stage: where it sits is three custom properties, so a move between panes is its transform's transition and the one element is the whole animation. It draws again only when what it shows changed: its row's reference holds while its DAG does, and its facts are compared by what they say. */
@@ -71,6 +74,7 @@ const DagRow = memo(function DagRow({ r, now, spot, why, f, run, open, pane, col
     <div className={`drow p-${r.phase}${r.runSafe ? " startable" : ""}${spot ? " spot" : ""}`} data-dag={r.d.name} data-pane={pane} data-glide={glide} style={at} tabIndex={0} onClick={() => open(r)}
       onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && open(r)}>
       {caption && <span className="cap">{caption}</span>}
+      <ViewportRow initial={slot < ROWS_AT_OPEN} estimate={0} force={spot}>
       <div className="body">
         <Orb phase={r.phase} />
         <span className="who"><span className="nm" title={r.d.name}>{short(r.d.name)}</span>
@@ -79,6 +83,7 @@ const DagRow = memo(function DagRow({ r, now, spot, why, f, run, open, pane, col
         {pane === "processing" ? <RunCells r={r} now={now} /> : <IdleCells r={r} f={f} now={now} />}
         <RunBtn r={r} why={why} run={run} />
       </div>
+      </ViewportRow>
     </div>
   );
 }, (a, b) => (Object.keys(a) as (keyof RowProps)[]).every((k) => (k === "f" ? same(a.f, b.f) : a[k] === b[k])));

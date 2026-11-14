@@ -5,8 +5,6 @@ raises and never waits past the labeller's `timeout`: an endpoint that is down, 
 the label empty, so ingest goes on without it.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

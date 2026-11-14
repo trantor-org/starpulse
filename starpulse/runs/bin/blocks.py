@@ -1,8 +1,6 @@
 """The config blocks the runs worker is built from or re-reads, in a leaf module so `runtime.closure` names them without
 importing the worker."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 

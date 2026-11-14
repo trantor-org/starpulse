@@ -15,8 +15,6 @@ Subagent transcripts name no parent step, so they are not read. No signal is `ca
 it is left out of every ranking (decision 8 of Agent Tasks Are Optimized on Steps per Clean Completion).
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import re

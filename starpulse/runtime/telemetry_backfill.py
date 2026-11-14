@@ -6,8 +6,6 @@ Loki lacks; Loki stamps a line with its push time, so the serving process reads 
 a repeated key. A rerun finds every key present and pushes nothing. The summary is one JSON line on stdout.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

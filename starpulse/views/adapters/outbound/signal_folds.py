@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, func, insert, literal_column, select
+from sqlalchemy import bindparam, delete, func, insert, literal_column, select, text
 
 import starpulse.contracts.signals as signal_contract
 import starpulse.flow_metrics.model as model
@@ -26,7 +26,7 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import Signal
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import signal_folds, signals
-from starpulse.flow_metrics.model import cells, flow, session_health, steps
+from starpulse.flow_metrics.model import cells, flow, session_health, spend, steps, traces
 from starpulse.harness_telemetry.adapters.inbound.telemetry import stored_signal
 
 __all__ = ["CURSOR", "VIEWS", "SignalFolds", "basis"]
@@ -43,6 +43,8 @@ VIEWS: dict[str, Fold] = {
     "steps": steps.fold_steps,
     "cost": cells.fold_cost,
     "runs": flow.fold_runs,
+    "cases": traces.fold_cases,
+    "spend": spend.fold_spend,
 }
 
 
@@ -62,13 +64,23 @@ def canonical(value: Any) -> Any:
 
 
 def basis(keys: TaskKeys | None, analytics: Analytics | None) -> str:
-    """The fingerprint a fold row is valid under: the model sources and the signal contract, the task keys and the
-    analytics config."""
+    """The fingerprint a fold row is valid under: the model sources and the signal contract, the task keys, the
+    analytics config and the views kept."""
     digest = hashlib.sha256()
     for path in sorted(Path(model.__file__).parent.glob("*.py")) + [Path(signal_contract.__file__)]:
         digest.update(path.name.encode() + path.read_bytes())
     digest.update(json.dumps([canonical(keys), canonical(analytics)], sort_keys=True, default=str).encode())
+    digest.update(json.dumps(sorted(VIEWS)).encode())  # a view added or dropped refolds every session for it
     return digest.hexdigest()
+
+
+_WINDOW = text(
+    "SELECT view, harness, session, first_at, result FROM starpulse_signal_folds"
+    " INDEXED BY ix_starpulse_signal_folds_last_at"  # SQLAlchemy's SQLite dialect renders no table hint
+    " WHERE view IN :views AND basis = :basis AND last_at >= :since ORDER BY first_at, harness, session"
+).bindparams(bindparam("views", expanding=True)).columns(
+    signal_folds.c.view, signal_folds.c.harness, signal_folds.c.session, signal_folds.c.first_at, signal_folds.c.result
+)
 
 
 class SignalFolds:
@@ -119,24 +131,11 @@ class SignalFolds:
     def window(self, since: float, views: Iterable[str] = tuple(VIEWS)) -> dict[str, list[Any]]:
         """The per-session results of the `views` for the sessions that have a signal at or after `since`, oldest
         first, to combine; no other view's rows are read. A session that began before `since` is folded again from its
-        signals inside the window."""
+        signals inside the window. The read names the `last_at` index: left to itself SQLite walks the whole primary-key
+        range of each view (every session ever folded) to test `last_at`, seconds for the `steps` view."""
         wanted = tuple(views)
         with self._engine.connect() as db:
-            rows = db.execute(
-                select(
-                    signal_folds.c.view,
-                    signal_folds.c.harness,
-                    signal_folds.c.session,
-                    signal_folds.c.first_at,
-                    signal_folds.c.result,
-                )
-                .where(
-                    signal_folds.c.view.in_(wanted),
-                    signal_folds.c.basis == self.basis,
-                    signal_folds.c.last_at >= since,
-                )
-                .order_by(signal_folds.c.first_at, signal_folds.c.harness, signal_folds.c.session)
-            ).all()
+            rows = db.execute(_WINDOW, {"views": wanted, "basis": self.basis, "since": since}).all()
         answer: dict[str, list[Any]] = {view: [] for view in wanted}
         began = {(row.harness, row.session): row.first_at for row in rows}
         partial = [key for key, first_at in began.items() if first_at < since]

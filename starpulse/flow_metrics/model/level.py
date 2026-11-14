@@ -7,8 +7,6 @@ its orbit view circles (`orbit`), the `facets` a viewer groups and filters by, a
 by facet.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any

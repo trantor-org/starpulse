@@ -5,8 +5,6 @@ every child for the whole shared floor. Linux reads the proportional set size, w
 processes that map it; macOS starts its children with `subprocess`, so its resident size is the child's own.
 """
 
-from __future__ import annotations
-
 import sys
 from collections.abc import Callable
 

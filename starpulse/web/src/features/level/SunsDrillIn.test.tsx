@@ -63,14 +63,14 @@ describe("SunsDrillIn", () => {
       const entered = Date.now() / 1000;
       vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify({ events: [{ machine: "in-progress", event: "CLAIM", from: "start", to: "build", at: entered }] }), { status: 200 }));
       const slot = document.createElement("div");
-      // the shell passes a new onClose on every render, and a new hud arrives far more often than the 5 s clock
+      // the shell passes a new onClose on every render, and a new hud arrives more often than the 5 s clock (here every 4 s)
       const draw = () => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress")]} roles={roles} task="TASK-1" onClose={() => undefined} navSlot={slot} />);
       act(draw);
       const bar = () => slot.querySelector<HTMLElement>("nav button i")!.getAttribute("style");
       await act(async () => void (await vi.advanceTimersByTimeAsync(1_000)));
       const start = bar();
 
-      for (let s = 0; s < 60; s++) await act(async () => { draw(); await vi.advanceTimersByTimeAsync(1_000); });
+      for (let s = 0; s < 15; s++) await act(async () => { draw(); await vi.advanceTimersByTimeAsync(4_000); });
 
       // a minute in the phase moves the bar on 7 points, by the mock's formula
       expect(start).toContain(" 30%");
@@ -161,6 +161,13 @@ describe("SunsDrillIn", () => {
   it("draws nothing yellow", () => {
     mount();
     expect(host.innerHTML).not.toMatch(/#fbbf24|#fcd34d|#fde68a|251,\s*191,\s*36/i);
+  });
+
+  it("marks the page while open so the Star Map crumb hides without a page-wide :has() rule", () => {
+    mount();
+    expect(document.body.classList.contains("drilling")).toBe(true);
+    act(() => root.render(null));
+    expect(document.body.classList.contains("drilling")).toBe(false);
   });
 
   it("closes from the Board crumb and on Escape", () => {

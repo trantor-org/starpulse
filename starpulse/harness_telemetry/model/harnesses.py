@@ -5,8 +5,6 @@ harness-agnostic. This file says, per harness, whether it can start a session, t
 which tiers take an effort. Callers that start a session resolve a profile here; the server hands the page `as_json()`.
 """
 
-from __future__ import annotations
-
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path

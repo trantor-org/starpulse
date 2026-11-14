@@ -5,8 +5,6 @@ its record.
 A lane history that ends elsewhere than the record, or that a Task lacks, is a gap the old writes left: the Task is
 imported as the record shows it and listed in the report's `gaps`."""
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
