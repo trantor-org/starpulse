@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.ledger import PAGE
+from starpulse.board.model.ledger import PAGE
 from starpulse.board.model.seam import (
     TaskReader,
 )
@@ -21,7 +21,7 @@ from starpulse.flow_metrics.model.cells import cell_report, combine_cost, estima
 from starpulse.flow_metrics.model.flow import combine_cost_to_go, combine_diff, combine_edges, combine_stages
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
 from starpulse.flow_metrics.model.session_health import combine_health, slice_health
-from starpulse.flow_metrics.model.spend import spend_report
+from starpulse.flow_metrics.model.spend import combine_spend
 from starpulse.flow_metrics.model.steps import combine_steps
 from starpulse.machine_engine.model.stays import lane_stays
 from starpulse.views.model.encoding import encode, encode_rows
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.views.ports.signal_folds import SignalFoldReader
@@ -67,8 +67,11 @@ def ledger_response(feed: BoardFeed, event: str, query: dict[str, list[str]]) ->
     return encode("ledger", found), 200
 
 
-def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes, int]:
-    """The body and status for `/api/machines`: the next page of machines entered from `open`, older than `before`."""
+def machines_response(
+    feed: BoardFeed, query: dict[str, list[str]], lanes: Callable[[], dict[str, Any]] | None = None
+) -> tuple[bytes, int]:
+    """The body and status for `/api/machines`: the next page of machines entered from `open`, older than `before`,
+    and each lane's surface (`lanes`: none when it is not configured)."""
     asked = _page_query(query, "machines")
     if isinstance(asked, bytes):
         return asked, 400
@@ -76,7 +79,7 @@ def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[byt
     found = feed.machine_rows(open_, *asked)
     if found is None:
         return _error(f"{open_} is not a machine here"), 404
-    return encode("machines", found), 200
+    return encode("machines", {**found, "lanes": lanes() if lanes else {}}), 200
 
 
 def done_response(feed: BoardFeed, read: TaskReader | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
@@ -87,7 +90,10 @@ def done_response(feed: BoardFeed, read: TaskReader | None, query: dict[str, lis
     if isinstance(asked, bytes):
         return asked, 400
     stubs, more = feed.cold_page(*asked)
-    tasks = [_done_card(stub, read(stub["id"]) or {}) for stub in stubs]
+    tasks = []
+    for stub in stubs:
+        record = stub["record"] if "record" in stub else (read(stub["id"]) or {})
+        tasks.append(_done_card(stub, record))
     return encode("done", {"tasks": tasks, "more": more}), 200
 
 
@@ -409,17 +415,16 @@ def spend_response(
     analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/spend`: each task's tokens by phase (`spend.spend_report`) over the
-    last `hours`, read from the window's sessions; refusals as `steps_response`."""
+    last `hours`, combined from the window's `spend` fold rows; refusals as `steps_response`."""
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot report spend"), 501
-    held = _held_folds(telemetry, window, "spend", now, "spend")
+    held = _held_folds(telemetry, window, "spend", now, "spend", ("spend",))
     if isinstance(held, tuple):
         return held
-    found = [signal for group in telemetry.sessions(now - window * 3600) for signal in group]
-    report = spend_report(found, keys, titled(), analytics)
+    report = combine_spend(sorted(held["spend"], key=lambda fold: (fold["harness"], fold["session"])), titled())
     return encode("spend", {"now": now, "window_s": window * 3600, "spend": report}), 200
 
 

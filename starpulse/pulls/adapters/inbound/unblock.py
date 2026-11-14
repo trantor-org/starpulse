@@ -1,4 +1,4 @@
-"""Unblock a Waiting task to Ready when every task it depends on has merged.
+"""The gate on a Waiting task's release: every task it depends on has merged.
 
 A dependency is merged when its task is Done (completed, or in the `done` lane). With the `[release]` pin-bump rule a
 dependency that cites a pull request in a `[[repos]]` repository is merged only once the parent's pin bump has merged:
@@ -15,26 +15,16 @@ once the running build's commit contains the merge commit (`PinGate._built`); a 
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board import criteria
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.model.seam import TaskEditor
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, delivers
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo, link
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
     from starpulse.pulls.adapters.outbound.pulls import PullStore
-
-logger = logging.getLogger(__name__)
-
-#: Seconds between passes over the Waiting tasks.
-UNBLOCK_S = 30.0
-COMMENT = "Every dependency has merged; StarPulse moved this task to Ready."
-
 
 class PinGate:
     """Whether a dependency's merge has not reached live state: the parent's pin under `[release]` pin-bump, or the
@@ -126,54 +116,6 @@ class PinGate:
             for record in self._store.find(repo=repo, state="MERGED", detailed=True)
             if record["detail"]
         ]
-
-
-class Unblocker:
-    """Moves each Waiting task whose dependencies have merged to Ready, through the board's task editor."""
-
-    def __init__(
-        self,
-        feed: BoardFeed,
-        store: PullStore,
-        edit: TaskEditor,
-        repos: Sequence[Repo] = (),
-        pin_rule: str | None = None,
-        pins: Pins | None = None,
-        live: LiveBuild | None = None,
-    ) -> None:
-        self._feed = feed
-        self._edit = edit
-        self._gate = PinGate(feed, store, repos, pin_rule, pins, live)
-        #: Tasks unblocked that the feed still shows Waiting, so the board's next read is not written over again.
-        self._sent: set[str] = set()
-
-    def unblock(self) -> list[str]:
-        """Move every unblockable Waiting task to Ready once; the ids moved. A refused or failed write is logged and
-        tried again on the next pass."""
-        waiting = [
-            agent
-            for agent in sorted(self._feed.open_tasks(), key=lambda agent: agent["id"])
-            if agent["state"] == self._feed.roles.waiting and agent["dependencies"]
-        ]
-        self._sent &= {agent["id"] for agent in waiting}
-        moved: list[str] = []
-        for agent in waiting:
-            name = agent["id"]
-            if name in self._sent or not agent["workable"] or criteria.authored(agent["description"]):
-                continue
-            if self._gate.waiting_on(agent):
-                continue
-            try:
-                written = self._edit(name, {"status": self._feed.roles.ready}, COMMENT)
-            except Exception:  # one task's write must not end the pass
-                logger.exception("unblock: cannot move %s to Ready", name)
-                continue
-            if written.ok:
-                self._sent.add(name)
-                moved.append(name)
-            else:
-                logger.warning("unblock: %s was not moved to Ready: %s", name, written.output)
-        return moved
 
 
 def _projected(record: dict[str, Any]) -> dict[str, Any]:
