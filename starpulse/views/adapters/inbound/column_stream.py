@@ -105,8 +105,8 @@ def column_view(columns: list[dict[str, Any]], assignee: str | None, states: Seq
 
 
 class Interest:
-    """The changes that alter a stream's view: those to a task it shows, to one a shown task waits on, or to one that
-    its `assignee` and `states` would show after the change."""
+    """The changes that alter a stream's view: those to a task it shows, to one a shown task waits on, a machine step
+    of a shown task, or to one that its `assignee` and `states` would show after the change."""
 
     def __init__(self, view: dict[str, Any], assignee: str | None, states: Sequence[str]) -> None:
         tasks = [task for column in view["columns"] for task in column["tasks"]]
@@ -126,6 +126,8 @@ class Interest:
             return True
         if kind == "pulls":
             return self._pulled
+        if kind == "move":
+            return data["agent"]["task"] in self._ids
         return kind == "task" and (
             data["id"] in self._ids or (data["agent"] is not None and self._shows(data["agent"]))
         )
