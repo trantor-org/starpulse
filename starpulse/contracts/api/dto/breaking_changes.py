@@ -1,7 +1,5 @@
 """`/api/breaking-changes`: the commits that broke the default branch."""
 
-from __future__ import annotations
-
 from starpulse.contracts.api._base import _Api
 
 

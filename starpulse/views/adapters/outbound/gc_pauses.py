@@ -5,10 +5,12 @@ threads: an automatic collection mid-request stalls the whole worker for tens of
 `/api/task/{id}` p95 tail. A worker therefore turns automatic collection off and collects on a timer.
 """
 
+import ctypes
 import gc
 import os
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from starpulse.event_log.wake import StopEvent
@@ -63,8 +65,25 @@ def first_collection_delay_s(interval_s: float, pid: int) -> float:
     return interval_s * ((pid * _GOLDEN) % 1.0)
 
 
-def install(stop: StopEvent, interval_s: float = COLLECT_EVERY_S, pauses: GcPauses = PAUSES) -> threading.Thread:
-    """Turn automatic collection off, time every collection into `pauses`, and collect each `interval_s` (first after a per-worker phase) until `stop`."""
+def release_native_heap() -> None:
+    """Hand glibc's freed arena pages back to the kernel (`malloc_trim`); a no-op where glibc is absent.
+
+    The free-threaded build's objects live in mimalloc, which `MIMALLOC_PURGE_DELAY=0` already purges; what this
+    reclaims is the 50-75 MB of freed native allocations (SQLite, OpenSSL, buffers) the worker would otherwise keep.
+    """
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        return
+
+
+def install(
+    stop: StopEvent,
+    interval_s: float = COLLECT_EVERY_S,
+    pauses: GcPauses = PAUSES,
+    trim: Callable[[], None] = release_native_heap,
+) -> threading.Thread:
+    """Turn automatic collection off, time every collection into `pauses`, and collect then `trim` each `interval_s` (first after a per-worker phase) until `stop`."""
     gc.callbacks.append(pauses.callback)
     gc.disable()
 
@@ -72,6 +91,7 @@ def install(stop: StopEvent, interval_s: float = COLLECT_EVERY_S, pauses: GcPaus
         wait_s = first_collection_delay_s(interval_s, os.getpid())
         while not stop.wait(wait_s):
             gc.collect()
+            trim()
             wait_s = interval_s
 
     timer = threading.Thread(target=collect_each_interval, name="gc-collect", daemon=True)

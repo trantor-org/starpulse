@@ -1,7 +1,5 @@
 """Tell a start failure no retry can cure from one that may pass later."""
 
-from __future__ import annotations
-
 import re
 
 _PERMANENT = re.compile(r"binary is missing|needs \S+ on PATH", re.I)

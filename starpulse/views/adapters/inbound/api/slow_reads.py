@@ -1,7 +1,5 @@
 """The `slow_read` line a timed read route logs when a read takes long."""
 
-from __future__ import annotations
-
 import logging
 import threading
 import time
