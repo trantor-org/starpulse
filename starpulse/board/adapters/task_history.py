@@ -57,7 +57,7 @@ _OWN = {
 }
 _LISTS = ("labels", "dependencies", "references", "documentation", "modifiedFiles")
 #: The record's keys the fold keeps in `meta`.
-_META = ("profile", "impact", "urgency", "tier", "start_criteria", "source")
+_META = ("profile", "impact", "urgency", "tier", "start_criteria", "source", "needsAttention")
 #: The record's criteria lists, by the kind the fold keeps them under.
 _KINDS = {"ac": "acceptanceCriteria", "dod": "definitionOfDone"}
 
@@ -179,8 +179,8 @@ def _events(before: Record, after: Record | None, note: str) -> list[Event]:
         events.append(("Transitioned", {"from": before.get("status"), "to": after.get("status")}))
     events += _criteria_events(before, after)
     events += [("CommentAdded", {"text": item.get("text", "")}) for item in _comments(after)[len(_comments(before)) :]]
-    if before.get("session") != after.get("session"):
-        held = after.get("session")
+    if before.get("assignee") != after.get("assignee"):
+        held = after.get("assignee")
         events.append(("Claimed", {"assignee": held}) if held else ("Released", {}))
     return events
 
@@ -265,6 +265,21 @@ class TaskHistory:
             if written.ok:
                 self._append(task, before, None, OPERATOR, "")
                 self._append(written.output, read(written.output), read(written.output), OPERATOR, "")
+            return written
+
+        return run
+
+    def dehydrated(
+        self, complete: Callable[[str], Written], read: Callable[[str], Record | None]
+    ) -> Callable[[str], Written]:
+        """`complete` (a verb moving a Done task out of the active board) that records an `Archived`
+        once it succeeds: the task stays in its History, and replaying that rehydrates it."""
+
+        def run(task: str) -> Written:
+            before = read(task)
+            written = complete(task)
+            if written.ok:
+                self._append(task, before, None, OPERATOR, "")
             return written
 
         return run
