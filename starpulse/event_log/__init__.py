@@ -4,8 +4,6 @@ It imports no context. The history store, summaries and level metrics kept in th
 The names load on first use, so importing a light module of the package loads no database stack.
 """
 
-from __future__ import annotations
-
 import importlib
 from typing import TYPE_CHECKING, Any
 

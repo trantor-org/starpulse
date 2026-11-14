@@ -19,8 +19,6 @@ and branch examples against the adapter's `TaskKeys`, and hands the records to S
 feeds to see that each is placed.
 """
 
-from __future__ import annotations
-
 import json
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -34,7 +32,7 @@ import jsonschema
 from pydantic import BaseModel
 
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import (
     Board,
     MoveWriter,

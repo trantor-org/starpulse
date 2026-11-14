@@ -6,8 +6,6 @@ Event under the definition that wrote it. A change that drops a State holding li
 new version: one stale Task rolls the whole change back.
 """
 
-from __future__ import annotations
-
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace

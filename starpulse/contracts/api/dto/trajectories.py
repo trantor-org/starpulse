@@ -1,7 +1,5 @@
 """Trajectories and forecasts, the scheduler's ranks read."""
 
-from __future__ import annotations
-
 from pydantic import Field
 
 from starpulse.contracts.api._base import _Api

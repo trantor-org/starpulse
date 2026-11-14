@@ -43,7 +43,7 @@ describe("a drop", () => {
     await store.drop(task("PROJ-1", "ready", { in_progress: OK }), "ready");
 
     expect(post).not.toHaveBeenCalled();
-    expect(store.get()).toEqual({ pending: {}, refused: {} });
+    expect(store.get()).toEqual({ pending: {}, refused: {}, asking: null });
   });
 
   it("on an allowed column lands at once, marked saving, while the writer is still asked", () => {
@@ -239,5 +239,132 @@ describe("a move a guard refuses the agent but exempts the operator", () => {
   it("stays a guard refusal for a move that names no verdict for the operator", () => {
     const t = task("PROJ-1", "needs_attention", { ready: { allowed: false, reason: "asks", skill: "" } });
     expect(targets(t, columns).ready).toMatchObject({ kind: "guard", reason: "asks" });
+  });
+});
+
+describe("a drop on a column whose rules the move breaks, for the operator", () => {
+  const WARNINGS = [{ reason: "Review needs every Acceptance Criterion checked", skill: "" }, { reason: "a Review task needs a pull request", skill: "deliver" }];
+  const WARNS = { allowed: false, reason: WARNINGS[0].reason, skill: "", actors: { operator: { allowed: true, reason: "", skill: "", warnings: WARNINGS } } };
+  const t = task("PROJ-1", "in_progress", { review: WARNS });
+
+  it("is a drop target that asks first, with no request and the card left where it is", async () => {
+    const { post } = writer();
+    const store = new MoveStore(post, () => 900);
+    await store.drop(t, "review");
+
+    expect(targets(t, ["in_progress", "review"]).review).toEqual({ kind: "ok" });
+    expect(post).not.toHaveBeenCalled();
+    expect(store.get().pending).toEqual({});
+    expect(store.get().asking).toMatchObject({ task: { id: "PROJ-1" }, to: "review", warnings: WARNINGS, busy: false, refused: null });
+  });
+
+  it("writes nothing when cancelled", async () => {
+    const { post } = writer();
+    const store = new MoveStore(post, () => 900);
+    await store.drop(t, "review");
+    store.cancel();
+
+    expect(post).not.toHaveBeenCalled();
+    expect(store.get()).toEqual({ pending: {}, refused: {}, asking: null });
+  });
+
+  it("writes the move when confirmed: the card waits in the target lane while the dialog is busy, then both settle", async () => {
+    const { post, settle } = writer();
+    const store = new MoveStore(post, () => 900);
+    await store.drop(t, "review");
+    const done = store.confirm();
+
+    expect(post).toHaveBeenCalledWith("PROJ-1", "review");
+    expect(store.get().pending["PROJ-1"]).toMatchObject({ to: "review", saving: true });
+    expect(store.get().asking?.busy).toBe(true);
+    store.cancel();
+    expect(store.get().asking).not.toBeNull();
+    settle({ ok: true });
+    await done;
+
+    expect(store.get().asking).toBeNull();
+    expect(store.get().pending["PROJ-1"]).toMatchObject({ saving: false });
+  });
+
+  it("keeps the dialog on a refused confirm, the card home and no refusal on the card", async () => {
+    const { post, settle } = writer();
+    const store = new MoveStore(post, () => 900);
+    await store.drop(t, "review");
+    const done = store.confirm();
+    settle({ ok: false, reason: "changed", skill: "" });
+    await done;
+
+    expect(store.get().pending).toEqual({});
+    expect(store.get().refused).toEqual({});
+    expect(store.get().asking).toMatchObject({ busy: false, refused: "changed" });
+    await store.confirm();
+    expect(post).toHaveBeenCalledTimes(1);
+    store.cancel();
+    expect(store.get().asking).toBeNull();
+  });
+
+  it("stays open when an unwarned drop settles while it waits", async () => {
+    const { post, settle } = writer();
+    const store = new MoveStore(post, () => 900);
+    const other = task("PROJ-2", "in_progress", { review: OK });
+    const dropped = store.drop(other, "review");
+    await store.drop(t, "review");
+    settle({ ok: true });
+    await dropped;
+
+    expect(store.get().asking).toMatchObject({ task: { id: "PROJ-1" }, busy: false });
+    expect(store.get().pending["PROJ-2"]).toMatchObject({ saving: false });
+  });
+
+  it("closes when the streamed board moves the card out of its lane, unless the write is running", async () => {
+    const { post } = writer();
+    const store = new MoveStore(post, () => 900);
+    await store.drop(t, "review");
+    store.sync([{ ...t, lane: "review" }]);
+
+    expect(store.get().asking).toBeNull();
+  });
+});
+
+describe("a drop judged by the board's standing guards", () => {
+  const WARNINGS = [{ reason: "a Review task needs a pull request", skill: "deliver" }];
+  const WARNS = { allowed: false, reason: WARNINGS[0].reason, skill: "", actors: { operator: { allowed: true, reason: "", skill: "", warnings: WARNINGS } } };
+  const unjudged = task("PROJ-1", "in_progress", { review: OK, ready: OK });
+
+  it("asks with the warnings the guarded read names, though the streamed card carried none", async () => {
+    const { post } = writer();
+    const standing = vi.fn(async () => ({ review: WARNS }));
+    const store = new MoveStore(post, () => 900, standing);
+    await store.drop(unjudged, "review");
+
+    expect(standing).toHaveBeenCalledWith("PROJ-1");
+    expect(post).not.toHaveBeenCalled();
+    expect(store.get().asking).toMatchObject({ to: "review", warnings: WARNINGS });
+  });
+
+  it("refuses on the card when the guarded read says a guard refuses the operator", async () => {
+    const { post } = writer();
+    const store = new MoveStore(post, () => 900, async () => ({ review: GUARD }));
+    await store.drop(unjudged, "review");
+
+    expect(post).not.toHaveBeenCalled();
+    expect(store.get().refused["PROJ-1"].reason).toBe(GUARD.reason);
+  });
+
+  it("falls back to the card's own verdict when the guarded read fails", async () => {
+    const { post } = writer();
+    const store = new MoveStore(post, () => 900, async () => null);
+    void store.drop(unjudged, "ready");
+    await vi.waitFor(() => expect(post).toHaveBeenCalledWith("PROJ-1", "ready"));
+  });
+
+  it("reads the guarded moves once for a drop that lands on an unwarned column", async () => {
+    const { post } = writer();
+    const standing = vi.fn(async () => ({ ready: OK }));
+    const store = new MoveStore(post, () => 900, standing);
+    void store.drop(unjudged, "ready");
+    await vi.waitFor(() => expect(post).toHaveBeenCalled());
+
+    expect(standing).toHaveBeenCalledTimes(1);
   });
 });

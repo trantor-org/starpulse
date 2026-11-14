@@ -5,15 +5,14 @@ later user or assistant entry means a turn is running. tmux redraws and the sess
 reliable about it, so only the transcript decides.
 """
 
-from __future__ import annotations
-
 import json
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-__all__ = ["DEFAULT_SESSIONS", "DEFAULT_TRANSCRIPTS", "holder_activity", "holder_key", "same_holder", "session_activity"]
+__all__ = ["DEFAULT_SESSIONS", "DEFAULT_TRANSCRIPTS", "holder_activity", "local_id", "same_holder", "session_activity"]
 
 DEFAULT_TRANSCRIPTS = "~/.claude/projects"
 """Where Claude Code writes each session's transcript, read for a terminal halt: `[board] transcripts`."""
@@ -26,8 +25,15 @@ INTERRUPT = "[Request interrupted"
 SESSION_ID = re.compile(r"[\w-]+")
 BRIDGE_ID = re.compile(r"(?:https?://\S+/)?(?:session|cse)_(\w+)/?")
 BRIDGE_FIELD = re.compile(r'"bridgeSessionId"\s*:\s*"([^"]+)"')
+NAME_FIELD = re.compile(r'"agentName"\s*:\s*"([^"]+)"')
 HEAD_BYTES = 16 * 1024
-_BRIDGES: dict[tuple[Path, str], str] = {}
+TAIL_BYTES = 64 * 1024
+MISS_TTL_S = 30.0
+"""How long a session with no transcript stays unlooked-for: each lookup globs every transcript-project directory."""
+_BRIDGES: dict[tuple[Path, str], tuple[float, frozenset[str]]] = {}
+_PATHS: dict[tuple[Path, str], Path] = {}
+_MISSES: dict[tuple[Path, str], float] = {}
+_clock = time.monotonic
 
 
 def _seconds(stamp: str) -> float:
@@ -61,10 +67,27 @@ def _tail(path: Path, size: int) -> list[str]:
     return lines[1:] if start else lines  # a read from mid-file starts inside a line
 
 
-def session_activity(root: Path, session: str, *, now: float, tail: int = 64 * 1024) -> dict[str, Any] | None:
+def transcript_path(root: Path, session: str) -> Path | None:
+    if not SESSION_ID.fullmatch(session):
+        return None
+    key = (root, session)
+    known = _PATHS.get(key)
+    if known is not None and known.exists():
+        return known
+    if _clock() < _MISSES.get(key, 0.0):
+        return None
+    path = next(root.glob(f"*/{session}.jsonl"), None)
+    if path is None:
+        _MISSES[key] = _clock() + MISS_TTL_S
+    else:
+        _PATHS[key] = path
+    return path
+
+
+def session_activity(root: Path, session: str, *, now: float, tail: int = TAIL_BYTES) -> dict[str, Any] | None:
     """`{"state": "idle", "last_turn_at", "idle_s"}` after a finished turn, `{"state": "working", "last_turn_at"}`
     mid-turn; None when `session` names no transcript under `root` or none of its last `tail` bytes is a turn."""
-    path = next(root.glob(f"*/{session}.jsonl"), None) if SESSION_ID.fullmatch(session) else None
+    path = transcript_path(root, session)
     if path is None:
         return None
     for line in reversed(_tail(path, tail)):
@@ -80,7 +103,7 @@ def session_activity(root: Path, session: str, *, now: float, tail: int = 64 * 1
     return None
 
 
-def _local_id(sessions: Path, assignee: str) -> str:
+def local_id(sessions: Path, assignee: str) -> str:
     """The transcript id of the running session `assignee` names: itself, or the session whose record carries the
     bridge id a claude.ai URL ends in; empty when no running session's record names it."""
     bridge = assignee.rstrip("/").rsplit("/", 1)[-1] if assignee.startswith("http") else ""
@@ -99,34 +122,41 @@ def _local_id(sessions: Path, assignee: str) -> str:
 def holder_activity(transcripts: Path, sessions: Path, assignee: str, *, now: float) -> dict[str, Any] | None:
     """`session_activity` of the session holding a task, whether its assignee is the local session id or the claude.ai
     URL of its bridge; None when the holder is not a running session with a transcript."""
-    return session_activity(transcripts, _local_id(sessions, assignee), now=now)
+    return session_activity(transcripts, local_id(sessions, assignee), now=now)
 
 
-def _bridge_of(transcripts: Path, session: str) -> str:
-    """The bridge key a local session's transcript names in its first lines (a `bridge-session` entry); empty when it
-    has no transcript or no bridge. A found key is kept, a miss is not: the transcript may not be written yet."""
-    if (found := _BRIDGES.get((transcripts, session))) is not None:
-        return found
-    path = next(transcripts.glob(f"*/{session}.jsonl"), None) if SESSION_ID.fullmatch(session) else None
-    if path is None:
-        return ""
+def _head(path: Path) -> str:
     with path.open("rb") as transcript:
-        field = BRIDGE_FIELD.search(transcript.read(HEAD_BYTES).decode(errors="replace"))
-    bridge = BRIDGE_ID.fullmatch(field[1]) if field else None
-    if bridge:
-        _BRIDGES[transcripts, session] = bridge[1]
-    return bridge[1] if bridge else ""
+        return transcript.read(HEAD_BYTES).decode(errors="replace")
 
 
-def holder_key(assignee: str, transcripts: Path | None = None) -> str:
-    """One identity for a session however a claim names it: its local Claude UUID, its bridge id (`session_x`,
-    `cse_x`) or its Remote Control URL. A UUID whose transcript names no bridge is its own key."""
+def _aliases_of(transcripts: Path, session: str) -> frozenset[str]:
+    key = (transcripts, session)
+    kept = _BRIDGES.get(key)
+    if kept is not None and _clock() < kept[0]:
+        return kept[1]
+    paths = transcripts.glob(f"*/{session}.jsonl") if SESSION_ID.fullmatch(session) else ()
+    texts = [_head(path) + "\n".join(_tail(path, TAIL_BYTES)) for path in paths]
+    fields = BRIDGE_FIELD.findall("\n".join(texts))
+    bridges = (match[1] for match in map(BRIDGE_ID.fullmatch, fields) if match)
+    names = (name.lower() for name in NAME_FIELD.findall("\n".join(texts)))
+    aliases = frozenset((*bridges, *names))
+    _BRIDGES[key] = (_clock() + MISS_TTL_S, aliases)
+    return aliases
+
+
+def holder_keys(assignee: str, transcripts: Path | None = None) -> frozenset[str]:
+    """Every identity a session's claim may name: for its local Claude UUID, the UUID, each bridge id
+    (`session_x`, `cse_x`) and the lowercased name (`task-11650`) its transcripts give it; for a bridge id or Remote
+    Control URL, that bridge id; for a session name, its lowercase."""
     if bridge := BRIDGE_ID.fullmatch(assignee):
-        return bridge[1]
-    return _bridge_of(transcripts or Path(DEFAULT_TRANSCRIPTS).expanduser(), assignee) or assignee
+        return frozenset({bridge[1]})
+    return _aliases_of(transcripts or Path(DEFAULT_TRANSCRIPTS).expanduser(), assignee) | {assignee, assignee.lower()}
 
 
 def same_holder(held: str | None, wanted: str, transcripts: Path | None = None) -> bool:
     """Whether the assignee `held` and the session `wanted` name one session, in any of its forms."""
     held = held or ""
-    return held == wanted or (bool(held) and holder_key(held, transcripts) == holder_key(wanted, transcripts))
+    if not held:
+        return False
+    return held == wanted or not holder_keys(held, transcripts).isdisjoint(holder_keys(wanted, transcripts))

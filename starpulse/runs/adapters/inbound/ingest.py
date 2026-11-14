@@ -1,7 +1,5 @@
 """The token and run-event helpers every push route shares."""
 
-from __future__ import annotations
-
 import hmac
 import math
 from collections.abc import Iterable, Mapping
