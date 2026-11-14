@@ -46,7 +46,8 @@ class Signal:
     `turn` is the export's `prompt.id`, the one user prompt every event it caused shares; empty where the harness
     names none. A `prompt` signal's `detail` is its origin, `human` or `injected` (empty when the export carried no
     prompt text to read it from), and its `label` the intent the instance's labeller gave a `human` one (empty when
-    none is configured or it did not answer); the text itself is never a field.
+    none is configured or it did not answer); the text itself is never a field. `entrypoint` is the launch's
+    `claude_code.entrypoint` resource attribute (`cli`, `sdk-cli`), empty when the launch set none.
     """
 
     harness: str
@@ -78,6 +79,7 @@ class Signal:
     turn: str = ""
     label: str = ""
     eval: str = ""
+    entrypoint: str = ""
 
 
 def claim_key(tool_key: str) -> str:

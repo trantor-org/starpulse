@@ -19,6 +19,7 @@ from starpulse.board import criteria
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log import lane_events, rating_events
+from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.stays import LaneRow
@@ -112,10 +113,15 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
     ) -> None:
         self._hint = hint
         #: Set by `stop`: every thread an adapter runs for this feed (`spawn`) waits on it.
-        self.stopped = threading.Event()
+        self.stopped = StopEvent()
+        #: The sweeper's board passes by kind name, each registered by the adapter that keeps the deadlines it re-reads:
+        #: a call returns (sampled, corrected).
+        self.reconcilers: dict[str, Callable[[], tuple[int, int]]] = {}
         self._threads: list[threading.Thread] = []
         #: When set, the Board's Tasks are read from it on each request and `_open` stays empty (D3: the feed holds no board).
         self._read_model = read_model
+        #: The `open_tasks` list this thread's `one_read` built, None outside one.
+        self._pinned = threading.local()
         #: The read model's position the page's deltas have been published up to; the snapshot carries what came before.
         self._followed = read_model.position() if read_model is not None else 0
         #: Which of the Board's States play which part (`Board.roles`); the default is Backlog.md's default statuses.
@@ -226,8 +232,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         #: The pages with a Ledger open: the event each watches and the queue of that event's changed rows.
         self._watchers: list[tuple[str, queue.Queue]] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too
-        #: True from the machine events stream's start until its replay has placed every task.
-        self._machines_reading = False
         self._expected: int | None = None
         self._seen = 0
         self._saved = 0
