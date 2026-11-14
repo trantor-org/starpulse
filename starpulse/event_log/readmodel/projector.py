@@ -70,8 +70,9 @@ class Projector:
         self._placer = Placer(drawn, keys) if drawn is not None else None
         self._checkpoints = Checkpoints(engine)
 
-    def catch_up(self) -> int:
-        """Fold every Task Event appended since the last checkpoint; the number folded.
+    def catch_up(self, *, index: bool = True) -> int:
+        """Fold every Task Event appended since the last checkpoint; the number folded. `index=False` leaves the search
+        index to a later `index()`, so a caller that tells a page of the fold does so first.
 
         Each batch commits its rows and the checkpoint together, so a stop between batches resumes at the next Event
         and a stop inside one folds nothing.
@@ -85,9 +86,14 @@ class Projector:
                 self._checkpoints.save(CHECKPOINT, position, conn=db)
             folded += len(batch)
         self._fold_machines()
+        if index:
+            self.index()
+        return folded
+
+    def index(self) -> None:
+        """Make the search index hold every row folded since it last did; nothing without a search index."""
         if self._search is not None:
             self._index_changed()
-        return folded
 
     def rebuild(self) -> int:
         """Drop every row and the checkpoint and fold the whole History again; the number of Events folded."""
@@ -157,9 +163,13 @@ class Projector:
         return (row.agent, row.seq) if row else (None, 0)
 
     def _fold(self, db, batch: list[StoredEvent]) -> None:
+        """Fold each Event onto its Task's row, then save each row once. A row remembers the position it last folded
+        (`seq`): an Event at or before it was folded already, so a second reader from a stale checkpoint adds nothing."""
         touched: dict[str, tuple[dict | None, int]] = {}
         for event in batch:
-            row = touched[event.subject_id][0] if event.subject_id in touched else rows.load(db, event.subject_id)
+            row, seq = touched[event.subject_id] if event.subject_id in touched else rows.load_at(db, event.subject_id)
+            if event.position <= seq:
+                continue
             touched[event.subject_id] = (fold(row, event), event.position)
         for row, seq in touched.values():
             rows.save(db, row, seq)
