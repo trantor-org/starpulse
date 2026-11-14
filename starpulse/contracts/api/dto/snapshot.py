@@ -1,7 +1,5 @@
 """The snapshot `/api/snapshot` sends, its pieces, and the `/api/events` deltas and events."""
 
-from __future__ import annotations
-
 from typing import Literal
 
 from pydantic import Field

@@ -67,6 +67,31 @@ describe("the DAGs view's panes by width", () => {
     document.documentElement.style.removeProperty("--fs");
   });
 
+  it("sets the rows two lines high when the stacked stage is narrower than one pane's columns, and not when it holds them", async () => {
+    phone(false);
+    const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get");
+    const compact = () => host.querySelector("#stage .dstage")!.classList.contains("compact");
+    const widths = (page: number, stage: number) => width.mockImplementation(function (this: HTMLElement) { return this.id === "dg" ? page : stage; });
+    widths(1024, 484);
+    await draw();
+    expect(compact()).toBe(true);
+    widths(1024, 900);
+    await act(async () => window.dispatchEvent(new Event("resize")));
+    await act(async () => void document.documentElement.style.setProperty("--fs", "1.01"));
+    expect(compact()).toBe(false);
+    widths(1500, 484);
+    await act(async () => void document.documentElement.style.setProperty("--fs", "1"));
+    expect(compact()).toBe(false);
+    width.mockRestore();
+    document.documentElement.style.removeProperty("--fs");
+  });
+
+  it("sets the rows two lines high on a phone", async () => {
+    phone(true);
+    await draw();
+    expect(host.querySelector("#stage .dstage")!.classList.contains("compact")).toBe(true);
+  });
+
   it("keeps a slot for the empty Processing pane's hint, so Idle starts below it", async () => {
     phone(true);
     const idle = { ...data, dags: [dag("runs/job-0")] };

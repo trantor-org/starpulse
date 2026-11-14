@@ -1,7 +1,5 @@
 """The settings StarPulse Admin writes to the server: a declared default, an override kept in the history store, and Reset."""
 
-from __future__ import annotations
-
 import logging
 import threading
 from typing import TYPE_CHECKING, Any, Protocol, TypeGuard

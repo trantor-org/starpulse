@@ -6,7 +6,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../../api/apiFetch";
+import { useViewActive } from "../../shared/Kept";
 import { SearchClear } from "../../shared/SearchClear";
+import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 import type { Roles } from "../../api";
 import type { KanbanTask } from "../kanban/kanbanModel";
 import type { Reply } from "../kanban/move";
@@ -44,6 +46,9 @@ const detailOf = (record: Partial<Detail> | null | undefined): Detail | null =>
       }
     : null;
 
+/** Cards drawn before the box reports what is on screen, and the height a card not yet drawn holds; a card's body (its profile list is the bulk of it) mounts when it nears the viewport. */
+const CARDS_AT_OPEN = 12;
+const CARD_ESTIMATE = 240;
 const SECTIONS = [
   { key: "preapproved", title: "Pre-approved", empty: "Nothing pre-approved" },
   { key: "unapproved", title: "Unapproved", empty: "Nothing awaiting triage" },
@@ -61,21 +66,26 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, se
   const [sort, setSort] = useState<SortBy>("newest");
   const searchBox = useRef<HTMLInputElement>(null);
 
+  const active = useViewActive();
   useEffect(() => {
+    if (!active) return;
     let live = true;
     const missing = ids.split(" ").filter((id) => id && !details[id]);
-    void (async () => {
-      for (const id of missing) {
-        const detail = await fetcher(`/api/task/${encodeURIComponent(id)}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((body: { record?: Partial<Detail> | null } | null) => detailOf(body?.record))
-          .catch(() => null);
-        if (live && detail) setDetails((d) => ({ ...d, [id]: detail }));
-      }
-    })();
+    if (!missing.length) return undefined;
+    void fetcher(`/api/task-records?ids=${encodeURIComponent(missing.join(","))}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { records?: { task: string; record?: Partial<Detail> | null }[] } | null) => {
+        const read: Record<string, Detail> = {};
+        for (const { task, record } of body?.records ?? []) {
+          const detail = detailOf(record);
+          if (detail) read[task] = detail;
+        }
+        if (live) setDetails((d) => ({ ...d, ...read }));
+      })
+      .catch(() => undefined);
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch for ids that appear, not again for each detail that lands
-  }, [ids, fetcher]);
+  }, [ids, fetcher, active]);
 
   const decide = async (id: string, act: () => Promise<Reply>) => {
     setBusy((b) => ({ ...b, [id]: true }));
@@ -88,6 +98,7 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, se
 
   const shown = proposals.filter((p) => matchesQuery(p, query, details[p.id]?.description ?? p.description));
 
+  let drawn = 0;
   const card = (p: KanbanTask) => {
     const detail = details[p.id];
     const { why, duplicate } = sectionsOf(detail?.description ?? p.description ?? "");
@@ -99,7 +110,8 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, se
     const size = sizeOf(p.labels);
     const verdict = verdictOf(detail?.comments);
     return (
-      <article className={`prop${isPreapproved(p) ? " ok" : ""}`} key={p.id} data-task={p.id}>
+      <ViewportRow key={p.id} initial={drawn++ < CARDS_AT_OPEN} estimate={CARD_ESTIMATE}>
+      <article className={`prop${isPreapproved(p) ? " ok" : ""}`} data-task={p.id}>
         <h4><span className="id">{p.id}</span> {p.title}</h4>
         <div className="chips">
           {kind && <span className="chip kind">{kind}</span>}
@@ -132,6 +144,7 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, se
         </div>
         {refused[p.id] && <p className="refused" role="alert">{refused[p.id]}</p>}
       </article>
+      </ViewportRow>
     );
   };
 
@@ -141,7 +154,7 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, se
   );
 
   return (
-    <div id="proposals">
+    <Viewport id="proposals">
       {searchSlot && createPortal(
         <div className="fw">{searchInput}<SearchClear input={searchBox} value={query} clear={() => setQuery("")} /></div>,
         searchSlot,
@@ -185,6 +198,6 @@ export function Proposals({ cards, roles, profiles, harnesses = NO_HARNESSES, se
           </section>
         );
       })}
-    </div>
+    </Viewport>
   );
 }

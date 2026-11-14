@@ -4,8 +4,6 @@ It draws every file under `.starpulse/machines/` as the native board draws them,
 places no task: it reads no board directory and writes nothing.
 """
 
-from __future__ import annotations
-
 from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -14,7 +12,7 @@ from starpulse.board.adapters import project_machines
 from starpulse.board.model.seam import Board
 
 if TYPE_CHECKING:
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log import EventLog
     from starpulse.machine_engine.model.snapshot import Qualify
 

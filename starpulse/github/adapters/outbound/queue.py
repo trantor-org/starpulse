@@ -4,8 +4,6 @@ A row is one delivery's state for one consumer: `pending` until it is `done`, `s
 operator requeues or dismisses it). A delivery the consumer has not seen has no row; `claim` makes it one.
 """
 
-from __future__ import annotations
-
 import time
 from collections.abc import Callable
 
@@ -94,6 +92,9 @@ class SqlQueue:
                 )  # fmt: skip
             )
         return status
+
+    def defer(self, delivery_id: str, error: str, until: float) -> None:
+        self._set(delivery_id, status="pending", last_error=error, next_attempt_at=until)
 
     def requeue(self, delivery_id: str) -> bool:
         """Make a dead row pending again with its attempts spent anew; `False` for a row that is not dead."""

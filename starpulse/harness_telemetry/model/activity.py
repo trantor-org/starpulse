@@ -15,8 +15,6 @@ Shell keywords are syntax, not commands: `do make test` is `make test`, and a st
 tool name that is not a name (a model once named a tool with a shell pipeline) is `tool_other`.
 """
 
-from __future__ import annotations
-
 import hashlib
 import re
 from collections.abc import Iterator, Mapping
