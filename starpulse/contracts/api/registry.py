@@ -1,7 +1,5 @@
 """The route tables: the model of each event, response, request and body the API names."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from pydantic import BaseModel
@@ -10,11 +8,20 @@ from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.breaking_changes import BreakingChanges
 from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps, TaskEventHistory
-from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
+from starpulse.contracts.api.dto.milestones import (
+    Docs,
+    DocShown,
+    Milestones,
+    MilestoneShown,
+    RetiredTasks,
+    TaskMoves,
+    TaskRecord,
+    TaskRecords,
+)
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
-from starpulse.contracts.api.dto.report import ContractReport
+from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
     ClaimRequest,
@@ -135,7 +142,10 @@ RESPONSES: dict[str, Any] = {
     "/api/harnesses": Harnesses,
     "/api/history-window": WindowState,
     "/api/doctor": ContractReport,
+    "/api/ready": ReadyReport,
     "/api/task/": TaskRecord,
+    "/api/moves/": TaskMoves,
+    "/api/task-records": TaskRecords,
     "/api/milestones": Milestones,
     "/api/milestones/": MilestoneShown,
     "/api/docs": Docs,
@@ -208,7 +218,10 @@ BODIES: dict[str, Any] = {
     "window": WindowState | ApiError,
     "scheduler": SchedulerStatus | ApiError,
     "doctor": ContractReport,
+    "ready": ReadyReport,
     "task": TaskRecord | ApiError,
+    "moves": TaskMoves | ApiError,
+    "task_records": TaskRecords,
     "move": Moved | MovedEach | SkillRefusal | ApiError,
     "start": Started | SkillRefusal | ApiError,
     "edit": Edited | StaleEdit | SkillRefusal | ApiError,

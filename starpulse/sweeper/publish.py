@@ -1,7 +1,5 @@
 """The sweeper's metrics across the event log: the worker keeps its exposition, the Page API relays it on `/metrics`."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable
 

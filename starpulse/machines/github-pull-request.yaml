@@ -27,6 +27,10 @@ events:
     - {from: open, to: open}
     - {from: checks_failed, to: checks_failed}
     - {from: checks_passed, to: checks_passed}
+  PR_EDITED:
+    - {from: open, to: open}
+    - {from: checks_failed, to: checks_failed}
+    - {from: checks_passed, to: checks_passed}
   THREADS_CHANGED:
     - {from: open, to: open}
     - {from: checks_failed, to: checks_failed}
@@ -36,8 +40,13 @@ writers:
   PR_MERGED: [{actor: github, trigger: "the events consumer, from a saved GitHub pull_request closed as merged delivery"}]
   PR_CLOSED: [{actor: github, trigger: "the events consumer, from a saved GitHub pull_request closed delivery"}]
   PR_REOPENED: [{actor: github, trigger: "the events consumer, from a saved GitHub pull_request reopened delivery"}]
-  CHECKS_PASSED: [{actor: github, trigger: "the events consumer, from a saved GitHub check_suite success delivery"}]
-  CHECKS_FAILED: [{actor: github, trigger: "the events consumer, from a saved GitHub check_suite or check_run failure delivery"}]
+  PR_EDITED: [{actor: github, trigger: "the events consumer, from a saved GitHub pull_request edited delivery that changed the body"}]
+  CHECKS_PASSED:
+    - {actor: github, trigger: "the events consumer, from a saved GitHub check_suite success delivery"}
+    - {actor: ci, trigger: "pr-checks-wait, when a task branch's checks settle green"}
+  CHECKS_FAILED:
+    - {actor: github, trigger: "the events consumer, from a saved GitHub check_suite or check_run failure delivery"}
+    - {actor: ci, trigger: "pr-checks-wait, when a task branch's checks settle red"}
   CONFLICTED: [{actor: ci, trigger: "the pre-push hook on a task branch and main-follow, from a local git merge-tree"}]
   MERGEABLE: [{actor: ci, trigger: "the pre-push hook on a task branch and main-follow, from a local git merge-tree"}]
   THREADS_CHANGED:

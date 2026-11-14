@@ -1,7 +1,5 @@
 """`HttpIngest`: posts one CloudEvent to the server's `/api/machine-events` as the `github` producer."""
 
-from __future__ import annotations
-
 import json
 import urllib.error
 import urllib.request

@@ -12,8 +12,6 @@ and 2 for a config that cannot be read or a board that does not assemble. A seco
 `--dry-run` imports into a scratch store and leaves the real one untouched. Stop `serve` first for a real run.
 """
 
-from __future__ import annotations
-
 import argparse
 import dataclasses
 import json

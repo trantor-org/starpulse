@@ -1,7 +1,5 @@
 """PSI triggers: the kernel wakes the sampler when CPU or memory stalls cross a threshold, so it never samples on a timer."""
 
-from __future__ import annotations
-
 import logging
 import os
 import select

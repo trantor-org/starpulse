@@ -1,7 +1,5 @@
 """The request a gate (the test host's write watch) judges and answers through, without a socket or `http.server`."""
 
-from __future__ import annotations
-
 import io
 from typing import Protocol
 

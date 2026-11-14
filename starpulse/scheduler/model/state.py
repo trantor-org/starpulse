@@ -1,7 +1,5 @@
 """Scheduler rows in the history store that a restart restores: in-flight runs, start times, last sample."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Mapping
 from typing import Any
