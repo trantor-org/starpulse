@@ -34,6 +34,8 @@ class ApiConfig(Protocol):
     slow_read_seconds: float
     task_actor: bool
     take_over_command: tuple[str, ...] | None
+    webhook_command: tuple[str, ...] | None
+    webhook_token_env: str | None
     tls: tuple[Path, Path] | None
 
 

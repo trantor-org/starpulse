@@ -549,7 +549,7 @@ class Loop:
                 continue
             minutes = f"its session was idle for {idle / 60:.0f} minutes (limit {self._policy.idle_minutes:g}) with the task still open"
             returns = self._kept_state(IDLE_KEY) or {}
-            if self._requeue is not None and not returns.get(task) and not (self._feed.task(task) or {}).get("prs"):
+            if self._requeue is not None and not returns.get(task) and not (self._feed.task(task, lean=True) or {}).get("prs"):
                 self._keep_state(IDLE_KEY, {**returns, task: 1})
                 written, outcome = (
                     self._requeue(task, f"Scheduler returned {task} to Ready: {minutes}. It has no pull request."),
