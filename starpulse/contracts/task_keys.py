@@ -28,4 +28,4 @@ class TaskKeys:
     def canonical(self, task: str) -> str:
         """`task` spelled as this scheme names it (`task-45` is `TASK-45` under a `TASK-{}` format); text that is no
         key, or that no branch pattern reads, comes back as it was."""
-        return (self.for_branch(task) if self.matches(task) else None) or task
+        return self.for_branch(task) or task

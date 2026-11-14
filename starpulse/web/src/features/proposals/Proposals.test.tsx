@@ -23,6 +23,10 @@ let calls: { url: string; body?: Record<string, unknown> }[];
 const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
   const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined;
   calls.push({ url, body });
+  if (url.startsWith("/api/task-records?ids=")) {
+    const ids = decodeURIComponent(url.split("ids=")[1]).split(",");
+    return { ok: true, json: async () => ({ records: ids.filter((i) => records[i]).map((i) => ({ task: i, record: records[i] })) }) } as Response;
+  }
   const id = decodeURIComponent(url.split("/api/task/")[1] ?? "");
   return { ok: true, json: async () => ({ record: records[id] ?? null }) } as Response;
 });
@@ -68,6 +72,11 @@ describe("the Proposals view", () => {
     expect(text).not.toContain("Duplicate Search");
   });
 
+  it("reads every proposal's detail in one request, not one read per proposal", async () => {
+    await draw();
+    expect(calls.map((c) => c.url)).toEqual(["/api/task-records?ids=TASK-3%2CTASK-1"]);
+  });
+
   it("says so when nothing is proposed", async () => {
     await draw([card("TASK-2", "ready")]);
     expect(host.textContent).toContain("No proposals");
@@ -96,8 +105,7 @@ describe("the Proposals view", () => {
   });
 
   it("keeps a refused promotion on its row with the reason", async () => {
-    fetcher.mockImplementationOnce(async () => ({ ok: true, json: async () => ({ record: records["TASK-3"] }) }) as Response);
-    fetcher.mockImplementationOnce(async () => ({ ok: true, json: async () => ({ record: null }) }) as Response);
+    fetcher.mockImplementationOnce(async () => ({ ok: true, json: async () => ({ records: [{ task: "TASK-3", record: records["TASK-3"] }] }) }) as Response);
     await draw();
     fetcher.mockImplementationOnce(async () => ({ ok: false, status: 409, json: async () => ({ error: "ready needs a profile" }) }) as Response);
     await act(async () => button("Promote", row("TASK-3")).click());
@@ -175,8 +183,8 @@ describe("sections, search, grouping and richer cards", () => {
     await act(async () => {});
     const tiers = [...section("preapproved").querySelectorAll(".group")];
     expect(tiers.map((t) => t.querySelector(".lb")?.textContent)).toEqual(["high"]);
-    expect([...tiers[0].querySelectorAll(".strip > article.prop")].map((a) => a.getAttribute("data-task"))).toEqual(["TASK-5"]);
-    expect(section("unapproved").querySelector(".strip > [data-task=TASK-6]")).not.toBeNull();
+    expect([...tiers[0].querySelectorAll(".strip > .viewport-row > article.prop")].map((a) => a.getAttribute("data-task"))).toEqual(["TASK-5"]);
+    expect(section("unapproved").querySelector(".strip > .viewport-row > [data-task=TASK-6]")).not.toBeNull();
   });
 
   it("draws the search box in the navigator's slot when it has one and filters from there", async () => {

@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy.exc import OperationalError
 
-from starpulse.event_log.event_log import Entry, EventLog, Tail
+from starpulse.event_log.event_log import Entry, EventLog
 from starpulse.event_log.wake import StopEvent
 from starpulse.event_log.store import EventStore, NewEvent, StaleVersion, StoredEvent
 from starpulse.runs.model import run_events
@@ -21,6 +21,8 @@ from starpulse.runs.model import run_events
 SUBJECT = "run"
 #: The writer of an entry no producer posted: a run adapter's.
 ADAPTER = "adapter"
+#: The checkpoint name of the position `record_run_streams` has reached in `runs:events`.
+CHECKPOINT = "run-streams"
 
 
 class RunStreams:
@@ -74,13 +76,19 @@ class RunStreams:
 
 
 def record_run_streams(streams: RunStreams, log: EventLog, stop: StopEvent) -> None:
-    """Copy the log's run entries into `streams` until `stop`, from the oldest the log retains.
+    """Copy the log's run entries into `streams` until `stop`, from the entry after the last one recorded (the oldest retained when none).
 
-    A replay repeats nothing: `RunStreams.record` skips an entry the stream holds. A database that cannot be reached is
-    the sink down, not the entry bad, so the entry is read again on the next poll.
+    The position is kept after every entry, so a restart does not read each retained entry's stream again. An entry
+    read twice (a transient failure, a crash between the append and the save) repeats nothing: `RunStreams.record` skips
+    an entry the stream holds. A database that cannot be reached is the sink down, not the entry bad, so the entry is
+    read again on the next poll.
     """
+    checkpoints = log.checkpoints
+    position, _ = checkpoints.load(CHECKPOINT)
+    tail = log.tail(run_events.STREAM, after=position)
 
     def record(entry: Entry) -> None:
         streams.record(entry.event_id, entry.fields)
+        checkpoints.save(CHECKPOINT, entry.id)
 
-    Tail.replay(log, run_events.STREAM).run(record, stop, transient=(OperationalError,))
+    tail.run(record, stop, transient=(OperationalError,))
