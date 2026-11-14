@@ -5,8 +5,6 @@ It opens `claude --remote-control` in a detached tmux session named for the task
 its assignee's profile sets `session_start_url` instead.
 """
 
-from __future__ import annotations
-
 import shutil
 import subprocess
 from collections.abc import Callable

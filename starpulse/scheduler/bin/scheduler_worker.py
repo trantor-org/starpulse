@@ -8,8 +8,6 @@ resumes where the last stopped. `SIGTERM` stops it; `SIGHUP` re-reads the config
 process when a Scheduler setting changed.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import threading
@@ -17,7 +15,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url

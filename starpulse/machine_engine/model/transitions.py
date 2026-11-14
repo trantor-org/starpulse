@@ -1,7 +1,5 @@
 """Where an event leaves a task: one machine's transitions by event, and the Board state id a status names."""
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING

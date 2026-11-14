@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { archiveDialogKey, withoutArchived } from "./archive";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { ArchiveDialog } from "./ArchiveConfirm";
+import { WarnConfirm } from "./WarnConfirm";
 import { useViewActive } from "../../shared/Kept";
 import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 import { ago } from "../../shared/clock";
@@ -12,11 +13,11 @@ import type { HudState } from "../../render/hud";
 import {
   CLOSED, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainOf, claimChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
   offBoardTask, stacked as stacksState, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
-  type ClaimChip, type KanbanTask, type Layout, type Prefs, type Stack, type StackEvent, type StackOpen,
+  type ClaimChip, type KanbanTask, type Layout, type PhaseAt, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
 import { sessionNickname } from "./nickname";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
-import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
+import { codeParts, judgedBy, place, targets, warnsOf, type MoveStore, type Refusal, type Target } from "./move";
 import { browserStorage, PHONE } from "../../shared/nav";
 import {
   canDrag, dropAsks, placeClaims, profileOf, profilesOf, runsOn, startLane, startable,
@@ -160,9 +161,11 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
         <div className="mach released" title="Left Waiting when its dependencies finished">
           <span className="p" /><b>released</b>
         </div>
+      ) : live && task.phase && task.lane === roles.working ? (
+        <PhaseTrack at={task.phase} hot={now - task.phase.at < HOT_S} age={ago(now - task.phase.at)} />
       ) : live && (
         <div className={`mach${now - live.at < HOT_S ? " hot" : ""}`}>
-          <span className={["p", live.source && "mapped", live.machine === "ci" && ciTone(live.state) !== "phase" && ciTone(live.state)].filter(Boolean).join(" ")} title={live.source ? `mapped from ${live.source}` : undefined} /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
+          <span className={["p", live.source && "mapped", live.machine === "ci" && ciTone(live.state) !== "phase" && ciTone(live.state)].filter(Boolean).join(" ")} title={live.source ? `mapped from ${live.source}` : undefined} /><b>{live.machine}</b>{live.skill && <span className="s skill" title="The skill this phase runs">· {live.skill}</span>}<span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
         </div>
       )}
       {task.lane === roles.verifying && (
@@ -199,8 +202,73 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
   );
 }
 
+type Rail = { machine: string; phase: boolean; i: number; states: PhaseAt["track"] };
+/** A station's place along its rail, in percent: the first at the left end, the last at the right, a lone one centred. */
+const along = (k: number, n: number) => (n > 1 ? (k / (n - 1)) * 100 : 50);
+
+/**
+ * The phase track: the phase and any submachine the task is in, chained outermost first, over the live machine's states as stations, final ones
+ * as hollow rings. The marker glides at one speed to each new step, a whole rail in 1.6 s, leaving a fading streak; a new machine's rail draws on
+ * from the left while the one it replaces tears down under it. A phase's rail is the Star Map's phase colour and a submachine's its ray colour.
+ */
+function PhaseTrack({ at, hot, age }: { at: PhaseAt; hot: boolean; age: string }) {
+  const machine = at.chain[at.chain.length - 1], phase = at.chain.length === 1, n = at.track.length;
+  const i = Math.max(0, at.track.findIndex((s) => s.id === at.state));
+  const cur: Rail = { machine, phase, i, states: at.track };
+  // the rail drawn last render: a new step streaks the glide to it, a new machine sends the old rail out
+  const [was, setWas] = useState(cur);
+  const [streak, setStreak] = useState<{ from: number; to: number; n: number } | null>(null);
+  const [leaving, setLeaving] = useState<Rail | null>(null);
+  const [glide, setGlide] = useState(0.3);
+  if (was.machine !== machine || was.i !== i) {
+    setWas(cur);
+    if (was.machine !== machine) {
+      setStreak(null);
+      setLeaving(was);
+      setGlide(0.3);
+    } else {
+      const from = along(was.i, n), to = along(i, n);
+      setStreak((s) => ({ from, to, n: (s?.n ?? 0) + 1 }));
+      setGlide(Math.max(0.25, (1.6 * Math.abs(to - from)) / 100));
+    }
+  }
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(() => setLeaving(null), 650);
+    return () => clearTimeout(t);
+  }, [leaving]);
+  const rail = (r: Rail, cls: "on" | "out") => (
+    <div key={`${r.machine}-${cls}`} className={`trk ${cls}${r.phase ? " phase" : ""}`}>
+      <span className="ln" />
+      {r.states.map((s, j) => <span key={s.id} title={s.name} className={`st${s.final ? " fin" : ""}${j < r.i ? " past" : ""}`} style={{ left: `${along(j, r.states.length)}%`, "--k": j } as CSSProperties} />)}
+      {cls === "on" && <>
+        {streak && <span key={streak.n} className={`sk${streak.to < streak.from ? " back" : ""}`} style={{ left: `${Math.min(streak.from, streak.to)}%`, width: `${Math.abs(streak.to - streak.from)}%`, animationDuration: `${glide + 0.4}s` }} />}
+        <span className={`mk${hot ? " hot" : ""}`} style={{ left: `${along(r.i, n)}%`, transitionDuration: `${glide}s` }} />
+      </>}
+    </div>
+  );
+  return (
+    <div className="ph" title={`${at.chain.join(" › ")} · ${at.state.replace(/_/g, " ")}`}>
+      <div className="chain">
+        {at.chain.map((m, k) => <Fragment key={m}>{k > 0 && <span className="sep">›</span>}<b className={k === at.chain.length - 1 ? "cur" : undefined}>{m}</b></Fragment>)}
+        <span className="s">· {at.state.replace(/_/g, " ")}</span><span className="ago">{age}</span>
+      </div>
+      <div className="rail">
+        {leaving && rail(leaving, "out")}
+        {rail(cur, "on")}
+      </div>
+    </div>
+  );
+}
+
 /** The footer chip of a working card whose claim lapsed or is about to: the expired session struck through, or the held one's minutes left. */
 function ClaimWho({ chip }: { chip: ClaimChip }) {
+  if (chip.kind === "idle")
+    return (
+      <span className="who unheld" title={`Idle: its holder went idle ${chip.age} ago and a session is started on it. Any session may claim it.`}>
+        <span className="tl">idle {chip.age}</span>
+      </span>
+    );
   const session = shortProfile(chip.session);
   if (chip.kind === "near")
     return (
@@ -235,9 +303,9 @@ const same = (a: unknown, b: unknown) => {
   }
   return false;
 };
-/** The clock only reaches a card through its machine line and its claim chip: whether the line is hot, its age text and the chip's. */
+/** The clock only reaches a card through its machine line or phase track and its claim chip: whether each is hot, its age text and the chip's. */
 const stamp = (t: KanbanTask, roles: Roles, now: number) =>
-  `${t.live ? `${now - t.live.at < HOT_S} ${ago(now - t.live.at)}` : ""} ${JSON.stringify(claimChip(t, roles, now))}`;
+  `${[t.live, t.phase].map((c) => (c ? `${now - c.at < HOT_S} ${ago(now - c.at)}` : "")).join(" ")} ${JSON.stringify(claimChip(t, roles, now))}`;
 /**
  * A card redraws when something it shows changes. Its handlers are rebuilt on every board render yet act on the same task through stable stores,
  * so only whether one is set counts, and a tick of the clock redraws only the cards whose stamp text moved.
@@ -327,11 +395,19 @@ export function HeldBy({ holders: held, roles, open, hover }: {
   );
 }
 
-function Modal({ task, tasks, records, stack, names, roles, marks, now, profiles, milestones, capabilities, close, open, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
-  task: KanbanTask; tasks: KanbanTask[]; records: RecordCache; stack?: ReactNode; names: Record<string, string>; roles: Roles; marks: Marks; now: number; profiles: string[]; milestones: string[];
+function Modal({ task: streamed, guarded, tasks, records, stack, names, roles, marks, now, profiles, milestones, capabilities, close, open, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
+  task: KanbanTask; guarded: (id: string) => Promise<KanbanTask["moves"] | null>; tasks: KanbanTask[]; records: RecordCache; stack?: ReactNode; names: Record<string, string>; roles: Roles; marks: Marks; now: number; profiles: string[]; milestones: string[];
   capabilities?: Capabilities; close: () => void; open: (id: string) => void; hide: () => void; archive: () => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
+  // the snapshot's moves leave the board's guards unjudged: the menu offers the verdicts read when the task opens
+  const [judged, setJudged] = useState<{ id: string; lane: string; moves: KanbanTask["moves"] } | null>(null);
+  useEffect(() => {
+    let current = true;
+    void guarded(streamed.id).then((moves) => current && setJudged(moves && { id: streamed.id, lane: streamed.lane, moves }));
+    return () => { current = false; };
+  }, [guarded, streamed.id, streamed.lane]);
+  const task = judged && judged.id === streamed.id && judged.lane === streamed.lane ? judgedBy(streamed, judged.moves) : streamed;
   // the snapshot's entry lacks the plan, notes and checks: a record read while the pointer rested on the card draws at once;
   // otherwise it is read when the task opens, and the entry draws meanwhile
   const [held] = useState(() => records.fresh(task.id));
@@ -536,17 +612,25 @@ function ModalHost({ store, cards, roles, draw }: { store: OpenTask; cards: Kanb
   const [ahead, setAhead] = useState(store.ahead);
   useEffect(() => store.subscribe(() => startTransition(() => setAhead(store.ahead()))), [store]);
   const card = cards.find((t) => t.id === (id ?? ahead));
-  const [offBoard, setOffBoard] = useState<KanbanTask | null>(null);
+  const [offBoard, setOffBoard] = useState<{ id: string; task: KanbanTask | null; active: boolean } | null>(null);
+  const [shown, setShown] = useState<KanbanTask | undefined>(undefined);
   const missing = id !== null && !card ? id : null;
   useEffect(() => {
     if (missing === null) return;
     let current = true;
     void fetchRecord(missing).then((record) => {
-      if (current) setOffBoard(record && offBoardTask(missing, record, roles));
+      if (!current) return;
+      const task = record && offBoardTask(missing, record, roles);
+      setOffBoard({ id: missing, task, active: !!record && !task && (record.status ?? "").toLowerCase() !== "archived" });
     });
     return () => { current = false; };
   }, [missing, roles]);
-  const task = card ?? (offBoard && offBoard.id === missing ? offBoard : undefined);
+  if (missing === null && offBoard) setOffBoard(null);
+  const settled = offBoard && offBoard.id === missing ? offBoard : null;
+  // a snapshot that leaves the open task out holds its last draw until its record answers, and past it while the record is still active, so a live update never unmounts the dialog
+  const held = (!settled || (!settled.task && settled.active)) && shown?.id === missing ? shown : undefined;
+  const task = card ?? settled?.task ?? held;
+  if (task !== shown) setShown(task);
   // the same element while the task and `draw` hold, so the click that shows the modal drawn ahead changes `inert` and leaves its tree undrawn
   const modal = useMemo(() => task && draw(task), [task, draw]);
   return task ? <div className="mh" inert={id === null}>{modal}</div> : null;
@@ -614,7 +698,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const moved = useSyncExternalStore(moves.subscribe, moves.get);
   const started = useSyncExternalStore(starts.subscribe, starts.get);
   // a card dropped on In progress waits where it was dropped until the start question is answered
-  const [held, setHeld] = useState<{ id: string; rect: DOMRect; w: number } | null>(null);
+  const [held, setHeld] = useState<{ id: string; rect: DOMRect; w: number; shown?: boolean } | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
   const columns = useRef<HTMLDivElement>(null);
   const ghost = useRef<HTMLDivElement>(null);
@@ -651,6 +735,28 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     setHeld(null);
     return true;
   }, [starts, held]);
+  /** Answer the warn-and-confirm box: a held card flies to the target lane on Confirm, or shakes back home on Cancel, which returns focus to it. */
+  const settleWarn = (confirmed: boolean) => {
+    const asked = moved.asking;
+    if (!asked) return;
+    if (held && asked.task.id === held.id) {
+      if (confirmed) dropRect.current = { id: held.id, rect: held.rect };
+      else {
+        setBounced(held.id);
+        setTimeout(() => setBounced(null), 650);
+      }
+      setHeld(null);
+    }
+    if (confirmed) void moves.confirm();
+    else {
+      moves.cancel();
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(`#cols .card[data-id="${asked.task.id}"]`)?.focus());
+    }
+  };
+  // a card held for a question goes home when the box closes without an answer, such as a card the stream moved; not while the question is still being read
+  const asking = !!(moved.asking || started.asking);
+  if (held && !held.shown && asking) setHeld({ ...held, shown: true });
+  else if (held?.shown && !asking) setHeld(null);
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
@@ -693,11 +799,13 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     if (!c || (!c.holds.size && !c.waitsOn.size && hovered !== spot)) return null;
     return (id: string): Chain | undefined => (id === hovered ? "self" : c.holds.has(id) ? "holds" : c.waitsOn.has(id) ? "waits" : undefined);
   }, [cards, hovered, lift, roles, spot]);
+  const hiddenWhy = useMemo(() => (spot ? whyHidden(cards, hud.names, roles, prefs, spot, now) : null), [spot, cards, hud.names, roles, prefs, now]);
+  useEffect(() => void note?.(hiddenWhy), [hiddenWhy, note]);
+  // a new spot, or its card first drawn, scrolls: a board event or clock tick must not yank the operator's scroll back to a card already shown
+  const spotDrawn = !!spot && hiddenWhy === null;
   useEffect(() => {
-    if (!spot) return void note?.(null);
-    note?.(whyHidden(cards, hud.names, roles, prefs, spot, now));
-    document.querySelector<HTMLElement>(`#cols .card[data-id="${spot}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [spot, cards, hud.names, roles, prefs, note, now]);
+    if (spotDrawn) document.querySelector<HTMLElement>(`#cols .card[data-id="${spot}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [spot, spotDrawn]);
   // each click is a new object, so the same line clicked twice opens it twice; a task with no card opens no modal
   const opened = useRef(opening);
   useLayoutEffect(() => {
@@ -770,6 +878,13 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     const box = e.currentTarget.getBoundingClientRect();
     const p: Press = { task: t, kinds: targets(t, lanes), x: e.clientX, y: e.clientY, dx: e.clientX - box.left, dy: e.clientY - box.top, w: box.width, lifted: false };
     press.current = p;
+    // the streamed card leaves the guards unjudged: the drag offers the verdicts read when it was pressed, once they arrive
+    void moves.guarded(t.id).then((fresh) => {
+      if (!fresh || press.current !== p) return;
+      p.task = judgedBy(t, fresh);
+      p.kinds = targets(p.task, lanes);
+      setLift((l) => (l && l.id === t.id ? { ...l, kinds: p.kinds } : l));
+    });
     const overOf = (x: number, y: number) => document.elementFromPoint(x, y)?.closest<HTMLElement>(".col")?.dataset.lane ?? null;
     const end = () => {
       removeEventListener("pointermove", onMove);
@@ -810,8 +925,12 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
         if (rect) setHeld({ id: t.id, rect, w: p.w });
         starts.ask(t, "drop", roles);
       } else if (to && (kind === "ok" || kind === "guard")) {
-        if (rect) dropRect.current = { id: t.id, rect };
-        void moves.drop(t, to);
+        if (rect && to && warnsOf(p.task, to).length) setHeld({ id: t.id, rect, w: p.w });
+        else if (rect) dropRect.current = { id: t.id, rect };
+        void moves.drop(t, to).then(() => {
+          if (!moves.get().pending[t.id] && dropRect.current?.id === t.id) dropRect.current = null; // refused: no card lands to fly
+          if (!moves.get().asking) setHeld((h) => (h?.id === t.id ? null : h));
+        });
       } else {
         setBounced(t.id);
         setTimeout(() => setBounced(null), 650);
@@ -906,7 +1025,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           </button>
         ))}
       </div>
-      <div id="cols" ref={columns} data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
+      <div id="cols" ref={columns} style={{ "--cols": view.columns.length } as CSSProperties}>
         {drawBoard && view.columns.map((col) => {
           let row = 0;
           const target = lift?.kinds[col.id];
@@ -970,7 +1089,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       {active && (
         <ModalHost store={openTask} cards={cards} roles={roles} draw={(task) => {
           const taskStack = stackOf(view, task.id);
-          return <Modal key={task.id} task={task} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} roles={roles} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
+          return <Modal key={task.id} task={task} guarded={moves.guarded} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} roles={roles} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
           profiles={profilesOf(started.harnesses)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task)} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to, roles)) return void moves.drop(task, to); starts.ask(task, "modal", roles); setOpen(null); }}
@@ -987,6 +1106,10 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
             setOpen(null);
             setToast({ text: `${archiveTask.id} archived`, sub: reason ? "reason saved as a task comment" : "no reason given" });
           }} />
+      )}
+      {active && moved.asking && (
+        <WarnConfirm key={moved.asking.task.id} task={moved.asking.task} from={hud.names[moved.asking.task.lane] ?? moved.asking.task.lane} to={hud.names[moved.asking.to] ?? moved.asking.to}
+          warnings={moved.asking.warnings} busy={moved.asking.busy} refused={moved.asking.refused} cancel={() => settleWarn(false)} confirm={() => settleWarn(true)} />
       )}
       {toast && <div id="ef-toast" role="status">{toast.text}<span>  ·  {toast.sub}</span></div>}
     </main>

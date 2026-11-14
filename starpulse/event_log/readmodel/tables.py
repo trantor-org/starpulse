@@ -1,8 +1,6 @@
 """The Task read model's tables. Only this package imports them (the `readmodel-table-private` import contract), so
 every row is written by the projector and read through `ReadModel`."""
 
-from __future__ import annotations
-
 from sqlalchemy import JSON, Boolean, Column, Float, ForeignKey, Index, Integer, MetaData, String, Table, Text, text
 
 metadata = MetaData()

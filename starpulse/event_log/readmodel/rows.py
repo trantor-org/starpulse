@@ -1,7 +1,5 @@
 """A Task row as the tables hold it: `fold`'s row in, the same row out, with the criteria in their own table."""
 
-from __future__ import annotations
-
 from sqlalchemy import Connection, delete, insert, select
 from sqlalchemy.dialects import sqlite
 
@@ -11,15 +9,21 @@ from starpulse.event_log.readmodel.tables import criteria, tasks
 
 def load(db: Connection, task_id: str) -> Row | None:
     """The Task's row, or None when it has none."""
+    return load_at(db, task_id)[0]
+
+
+def load_at(db: Connection, task_id: str) -> tuple[Row | None, int]:
+    """The Task's row and the position of the last Event folded into it, or (None, 0) when it has no row."""
     found = db.execute(select(tasks).where(tasks.c.id == task_id)).mappings().first()
     if found is None:
-        return None
+        return None, 0
     items = db.execute(
         select(criteria).where(criteria.c.task_id == task_id).order_by(criteria.c.kind, criteria.c.n)
     ).mappings()
-    return {key: value for key, value in found.items() if key != "seq"} | {
+    row = {key: value for key, value in found.items() if key != "seq"} | {
         "criteria": [{key: value for key, value in item.items() if key != "task_id"} for item in items]
     }
+    return row, found["seq"]
 
 
 def after(db: Connection, seq: int, limit: int) -> list[tuple[Row, int]]:

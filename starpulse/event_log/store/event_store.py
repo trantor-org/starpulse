@@ -1,7 +1,5 @@
 """The event store's envelope, its append and its read."""
 
-from __future__ import annotations
-
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence

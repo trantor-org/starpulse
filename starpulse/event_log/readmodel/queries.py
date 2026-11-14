@@ -4,8 +4,6 @@
 predicate the partial indexes carry, so the cost of a read follows the live board, not the whole History.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, String, and_, cast, column, exists, false, func, or_, select, true
@@ -47,6 +45,12 @@ def live(done: str, since: float) -> ColumnElement[bool]:
 def held_states() -> Select[Any]:
     """The states unarchived Tasks hold, Done ones of any age included."""
     return select(tasks.c.state).where(tasks.c.archived == false()).distinct()
+
+
+def held_done(done: str) -> Select[Any]:
+    """The ids of unarchived Done Tasks of any age, in id order."""
+    lane = func.lower(func.replace(tasks.c.state, " ", "_"))
+    return select(tasks.c.id).where(tasks.c.archived == false(), lane.in_(done_lanes(done))).order_by(tasks.c.id)
 
 
 def citing(url: str) -> Select[Any]:
@@ -92,8 +96,9 @@ def with_field(field_column: str, value: object) -> Select[Any]:
     return select(tasks.c.id).where(tasks.c.archived == false(), column(field_column) == value).order_by(tasks.c.id)
 
 
-def ready(state: str, done: str) -> Select[Any]:
-    """The ids of unarchived Tasks in `state` none of whose dependencies is outside `done_lanes(done)`.
+def ready(state: str, done: str, only: str | None = None) -> Select[Any]:
+    """The ids of unarchived Tasks in `state` none of whose dependencies is outside `done_lanes(done)`; with `only`,
+    just that Task's id when it is one.
 
     `state` is a stored status (`Ready`) and `done` a lane id (`done`), as `lane_id` makes one; a dependency with no
     row blocks too: it is a Task the board has not imported yet.
@@ -105,11 +110,10 @@ def ready(state: str, done: str) -> Select[Any]:
         .select_from(dependency.outerjoin(target, target.c.id == dependency.c.value))
         .where(or_(target.c.id.is_(None), func.lower(func.replace(target.c.state, " ", "_")).not_in(done_lanes(done))))
     )
-    return (
-        select(tasks.c.id)
-        .where(tasks.c.archived == false(), tasks.c.state == state, ~exists(blocked.correlate(tasks)))
-        .order_by(tasks.c.id)
+    ready_tasks = select(tasks.c.id).where(
+        tasks.c.archived == false(), tasks.c.state == state, ~exists(blocked.correlate(tasks))
     )
+    return (ready_tasks if only is None else ready_tasks.where(tasks.c.id == only)).order_by(tasks.c.id)
 
 
 def since(seq: int, limit: int) -> Select[Any]:

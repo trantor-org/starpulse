@@ -40,6 +40,18 @@
           "default": null,
           "description": "The attempt of the step the run is on (or failed on); None when the engine counts none."
         },
+        "commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The commit the run built, as the engine names it; None when it names none."
+        },
         "failure": {
           "anyOf": [
             {
@@ -51,6 +63,19 @@
           ],
           "default": null,
           "description": "The last failure's message (the step's, or the run's); None when nothing failed."
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The pull request the run was started for; None when it was not started for one."
         },
         "raw": {
           "anyOf": [
@@ -120,6 +145,11 @@
           ],
           "default": null,
           "description": "The Board task the run works on (`TASK-N`); None when it names none."
+        },
+        "url": {
+          "default": "",
+          "description": "A link to the run in the scheduler's own page; empty when it has none.",
+          "type": "string"
         }
       },
       "required": [
@@ -147,6 +177,44 @@
         "count"
       ],
       "title": "ActivityCount",
+      "type": "object"
+    },
+    "AgentSpend": {
+      "properties": {
+        "cache_read": {
+          "type": "integer"
+        },
+        "cache_write": {
+          "type": "integer"
+        },
+        "first_request_cache_write": {
+          "default": 0,
+          "description": "The cache_write of each such subagent's first request, summed.",
+          "type": "integer"
+        },
+        "input": {
+          "type": "integer"
+        },
+        "output": {
+          "type": "integer"
+        },
+        "reasoning": {
+          "type": "integer"
+        },
+        "subagents": {
+          "default": 0,
+          "description": "The subagents of this type whose requests named their instance id.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "cache_read",
+        "cache_write",
+        "reasoning"
+      ],
+      "title": "AgentSpend",
       "type": "object"
     },
     "ApiError": {
@@ -680,11 +748,16 @@
       "type": "object"
     },
     "ClaimRelease": {
-      "description": "The claim a Board task's claim-TTL sweep released: when, and the session, last renewal and TTL it released.",
+      "description": "The claim a Board task's claim-TTL sweep, or its idle holder's release, ended: when, and the session, last renewal and TTL.",
       "properties": {
         "at": {
           "description": "When the release was recorded, epoch seconds.",
           "type": "number"
+        },
+        "idle": {
+          "default": false,
+          "description": "The task actor ended this claim because its holder sat idle, not the TTL sweep.",
+          "type": "boolean"
         },
         "last_renewal": {
           "description": "The session's last renewal before the release, epoch seconds.",
@@ -1236,6 +1309,20 @@
           ],
           "default": null
         },
+        "request_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The client's key for this send: a create sent again with it answers the first send's answer."
+        },
         "session": {
           "anyOf": [
             {
@@ -1773,6 +1860,21 @@
           ],
           "default": null,
           "description": "Every running or queued run of the workflow, including concurrent ones."
+        },
+        "closed": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RecentRun"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The newest closed runs of the workflow of any status, newest first; absent when none ran."
         },
         "failed": {
           "anyOf": [
@@ -2379,6 +2481,20 @@
           ],
           "default": null
         },
+        "request_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The client's key for this send: an edit sent again with it answers the first send's answer."
+        },
         "session": {
           "anyOf": [
             {
@@ -2521,6 +2637,32 @@
         "estimates"
       ],
       "title": "Estimates",
+      "type": "object"
+    },
+    "ExitTool": {
+      "description": "A typed exit tool of a lane: the event it fires and the JSON schema of its arguments.",
+      "properties": {
+        "event": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "schema": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "event",
+        "to",
+        "schema"
+      ],
+      "title": "ExitTool",
       "type": "object"
     },
     "FlowEdge": {
@@ -3315,6 +3457,40 @@
         "to"
       ],
       "title": "LaneStep",
+      "type": "object"
+    },
+    "LaneSurface": {
+      "description": "What a session holding the lane may call: its tools, its exit tools and the skill bound on entry.",
+      "properties": {
+        "exits": {
+          "items": {
+            "$ref": "#/$defs/ExitTool"
+          },
+          "type": "array"
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tools",
+        "exits",
+        "skill"
+      ],
+      "title": "LaneSurface",
       "type": "object"
     },
     "Launch": {
@@ -4127,8 +4303,14 @@
       "type": "object"
     },
     "Machines": {
-      "description": "`GET /api/machines`: the next page of machines entered from `open`.",
+      "description": "`GET /api/machines`: the next page of machines entered from `open`, and each lane's surface by lane name.",
       "properties": {
+        "lanes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/LaneSurface"
+          },
+          "type": "object"
+        },
         "machines": {
           "items": {
             "$ref": "#/$defs/MachineRow"
@@ -4531,7 +4713,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/Verdict"
           },
-          "description": "The verdict for an actor a guard treats apart from the rest, such as one it exempts, by actor; any other actor meets the move's own.",
+          "description": "The verdict for an actor a guard treats apart from the rest, such as one it exempts or warns, by actor; any other actor meets the move's own.",
           "type": "object"
         },
         "allowed": {
@@ -4547,6 +4729,14 @@
           "default": "",
           "description": "The skill that produces what the guard needs; empty when allowed.",
           "type": "string"
+        },
+        "warnings": {
+          "default": [],
+          "description": "The lane rules the move breaks that the actor is warned of and may still make.",
+          "items": {
+            "$ref": "#/$defs/RuleBreak"
+          },
+          "type": "array"
         },
         "writers": {
           "default": [],
@@ -4671,6 +4861,10 @@
           ],
           "default": null
         },
+        "ok": {
+          "default": true,
+          "type": "boolean"
+        },
         "startError": {
           "anyOf": [
             {
@@ -4692,6 +4886,20 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "warnings": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             {
               "type": "null"
@@ -4721,6 +4929,23 @@
             "type": "string"
           },
           "type": "object"
+        },
+        "warnings": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -5835,6 +6060,43 @@
       "title": "RawTask",
       "type": "object"
     },
+    "ReadyComponent": {
+      "description": "One part of the server `/api/ready` judges.",
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ready",
+        "detail"
+      ],
+      "title": "ReadyComponent",
+      "type": "object"
+    },
+    "ReadyReport": {
+      "description": "Whether the server can serve the board; `components` names `store`, `board`, `writer` and `contexts`, and the route\nanswers 503 with this body when any is not ready.",
+      "properties": {
+        "components": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ReadyComponent"
+          },
+          "type": "object"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ready",
+        "components"
+      ],
+      "title": "ReadyReport",
+      "type": "object"
+    },
     "RecentRun": {
       "additionalProperties": false,
       "description": "One run of a DAG within the last day, running or over, with the parameters it started with.",
@@ -5851,6 +6113,18 @@
           ],
           "default": null,
           "description": "The attempt of the step the run is on (or failed on); None when the engine counts none."
+        },
+        "commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The commit the run built, as the engine names it; None when it names none."
         },
         "failure": {
           "anyOf": [
@@ -5874,6 +6148,19 @@
           },
           "description": "The `KEY=value` parameters the run started with, by name; empty when it had none.",
           "type": "object"
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The pull request the run was started for; None when it was not started for one."
         },
         "raw": {
           "anyOf": [
@@ -6009,7 +6296,8 @@
           "enum": [
             "pass",
             "failing",
-            "pending"
+            "pending",
+            "missing"
           ],
           "type": "string"
         }
@@ -6500,6 +6788,26 @@
         }
       },
       "title": "Roles",
+      "type": "object"
+    },
+    "RuleBreak": {
+      "additionalProperties": false,
+      "description": "One board rule a move breaks: what it needs and the skill that produces it.",
+      "properties": {
+        "reason": {
+          "description": "What the broken rule needs.",
+          "type": "string"
+        },
+        "skill": {
+          "default": "",
+          "description": "The skill that produces what the rule needs; empty when none.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "RuleBreak",
       "type": "object"
     },
     "RunDiff": {
@@ -7327,6 +7635,13 @@
         "agent_s": {
           "type": "number"
         },
+        "agents": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AgentSpend"
+          },
+          "description": "Each subagent type's token totals among `tokens` (`qa-<lens>` for a qa lens); only a subagent that names its type.",
+          "type": "object"
+        },
         "compactions": {
           "additionalProperties": {
             "type": "integer"
@@ -7355,11 +7670,26 @@
           },
           "type": "array"
         },
+        "entrypoint": {
+          "description": "The launch's `claude_code.entrypoint` resource attribute (`cli`, `sdk-cli`); empty when it set none.",
+          "type": "string"
+        },
         "eval": {
           "type": "string"
         },
         "first_at": {
           "type": "number"
+        },
+        "first_request_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The prompt tokens (input, cache read and cache write) of the session's first main-thread request that sent any; None when it made none."
         },
         "gates": {
           "additionalProperties": {
@@ -7425,6 +7755,9 @@
         "operator_wait_s": {
           "type": "number"
         },
+        "origin": {
+          "type": "string"
+        },
         "prompt_labels": {
           "additionalProperties": {
             "type": "integer"
@@ -7445,6 +7778,10 @@
         },
         "requests": {
           "type": "integer"
+        },
+        "role": {
+          "description": "The furthest phase skill (`starting-task`, `tdd`, `qa`, `deliver`, `fix-checks`, `review-fix`, `verify`) the session loaded on this task; `other` when it loaded none.",
+          "type": "string"
         },
         "session": {
           "type": "string"
@@ -7503,6 +7840,9 @@
         "task",
         "kind",
         "eval",
+        "origin",
+        "entrypoint",
+        "first_request_tokens",
         "first_at",
         "last_at",
         "prompts",
@@ -7528,6 +7868,8 @@
         "raises",
         "lowers",
         "tokens",
+        "agents",
+        "role",
         "cost_usd",
         "agent_s",
         "operator_wait_s",
@@ -8312,7 +8654,7 @@
               "type": "null"
             }
           ],
-          "description": "The median `task_wte` of the task's kind and size; null under five tasks in the cell."
+          "description": "The sum of `phase_norm_wte` over the task's phases; null when any is null."
         },
         "output": {
           "type": "integer"
@@ -8324,6 +8666,21 @@
         "phase": {
           "description": "`claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.",
           "type": "string"
+        },
+        "phase_above_norm": {
+          "description": "`wte` is over three times `phase_norm_wte`.",
+          "type": "boolean"
+        },
+        "phase_norm_wte": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The median `wte` of this phase over the tasks of the task's kind and size that ran it; null under five."
         },
         "profile": {
           "default": "",
@@ -8380,7 +8737,9 @@
         "last_at",
         "task_wte",
         "norm_wte",
-        "above_norm"
+        "above_norm",
+        "phase_norm_wte",
+        "phase_above_norm"
       ],
       "title": "SpendPhase",
       "type": "object"
@@ -8804,6 +9163,11 @@
           "description": "Inner event to the Board event it fires; empty when the link routes none.",
           "type": "object"
         },
+        "skill": {
+          "default": "",
+          "description": "The skill a session runs while the inner machine does; empty when the link names none.",
+          "type": "string"
+        },
         "state": {
           "type": "string"
         },
@@ -8924,6 +9288,27 @@
       "title": "TaskEventHistory",
       "type": "object"
     },
+    "TaskMoves": {
+      "description": "`GET /api/moves/<id>`: the verdict on each column one open task may move to, judged by the board's guards now.",
+      "properties": {
+        "moves": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Move"
+          },
+          "description": "The verdict on each Board column, by state id, with the warnings an actor the guards warn instead of refuse would meet. A snapshot's `move_sets` leave these unjudged.",
+          "type": "object"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "moves"
+      ],
+      "title": "TaskMoves",
+      "type": "object"
+    },
     "TaskRecord": {
       "description": "`GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.",
       "properties": {
@@ -8931,6 +9316,18 @@
           "default": false,
           "description": "The task was archived: read from the archive, off the board's lanes.",
           "type": "boolean"
+        },
+        "entered": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "When an archived task last changed in the read model: a Done task's entry into Done."
         },
         "record": {
           "additionalProperties": true,
@@ -8945,6 +9342,22 @@
         "record"
       ],
       "title": "TaskRecord",
+      "type": "object"
+    },
+    "TaskRecords": {
+      "description": "`GET /api/task-records?ids=A,B`: the `TaskRecord` of each named task the board can read, in the order named.",
+      "properties": {
+        "records": {
+          "items": {
+            "$ref": "#/$defs/TaskRecord"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "records"
+      ],
+      "title": "TaskRecords",
       "type": "object"
     },
     "TaskRun": {
@@ -9587,6 +10000,14 @@
           "default": "",
           "description": "The skill that produces what the guard needs; empty when allowed.",
           "type": "string"
+        },
+        "warnings": {
+          "default": [],
+          "description": "The lane rules the move breaks that this actor is warned of and may still make, each with its skill.",
+          "items": {
+            "$ref": "#/$defs/RuleBreak"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -9981,6 +10402,9 @@
     "pulls": {
       "$ref": "#/$defs/Pulls"
     },
+    "readyReport": {
+      "$ref": "#/$defs/ReadyReport"
+    },
     "requests": {
       "items": {
         "anyOf": [
@@ -10096,8 +10520,14 @@
     "taskEventHistory": {
       "$ref": "#/$defs/TaskEventHistory"
     },
+    "taskMoves": {
+      "$ref": "#/$defs/TaskMoves"
+    },
     "taskRecord": {
       "$ref": "#/$defs/TaskRecord"
+    },
+    "taskRecords": {
+      "$ref": "#/$defs/TaskRecords"
     },
     "traceClusters": {
       "$ref": "#/$defs/TraceClusters"
@@ -10145,7 +10575,10 @@
     "windowState",
     "schedulerStatus",
     "contractReport",
+    "readyReport",
     "taskRecord",
+    "taskMoves",
+    "taskRecords",
     "milestones",
     "milestoneShown",
     "docs",

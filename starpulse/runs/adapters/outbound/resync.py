@@ -1,7 +1,5 @@
 """Follows the `runs:resync` entries the sweeper's `runs` kind writes, so an adapter lists its source again."""
 
-from __future__ import annotations
-
 import threading
 from collections.abc import Callable
 from typing import Any

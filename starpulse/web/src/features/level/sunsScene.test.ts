@@ -47,6 +47,11 @@ describe("sunsScene", () => {
     expect(j).toMatchObject({ phase: "qa", round: 1, lenses: { security: { state: "PASS" }, ux: { state: "CHANGES" } } });
   });
 
+  it("reads an upheld or disputed qa finding as CHANGES at its lens", () => {
+    const j = jobOf("T", "t", undefined, [lens(9, "LENS_UPHELD", "security", "ux"), lens(8, "LENS_DISPUTED", "ux", "ui")], NOW);
+    expect(j.lenses).toMatchObject({ security: { state: "CHANGES" }, ux: { state: "CHANGES" } });
+  });
+
   it("shows the lens under review as live and the lenses still to come as queued, and counts the reported ones", () => {
     const j = jobOf("T", "t", undefined, [lens(9, "LENS_PASSED", "security", "ux")], NOW);
     expect(j.lenses).toEqual({
