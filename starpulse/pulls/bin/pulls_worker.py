@@ -79,7 +79,7 @@ class Delivery:
             stop.set()
             raise
         if sync:
-            follow_refreshes(log, sync.request, stop)
+            follow_refreshes(log, lambda repo, number: sync.request(repo, number, urgent=True), stop)
             projection = RecordProjection(pulls, feed, sync.project, sync.request)
             handlers = {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}
             follow_events(log, feed, handlers, stop, resume=self._resume)

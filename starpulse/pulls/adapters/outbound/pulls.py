@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import Engine, delete, insert, or_, select, tuple_
 
+from starpulse.board.model.rollup import checks_verdict
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.tables import pull_requests
 
@@ -33,7 +34,7 @@ _FIELDS = {
     "fetched_at": "fetchedAt",
 }
 #: The names of columns an older refresh did not fill: a record may lack them, and is served with them null.
-_LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads", "title": "title"}
+_LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads", "title": "title", "rollup": "rollup"}
 
 
 #: How long after its last update a closed or merged pull request stays in memory: about 250 a day, 12 KB each.
@@ -58,6 +59,7 @@ class PullStore:
         #: Counts saves, so a reader holding an answer knows when it is stale.
         self.rev = 0
         self._lock = threading.Lock()
+        self._saving = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
         self._save_listeners: list[Callable[[list[tuple[str, int]]], None]] = []
         require_migrated(engine)
@@ -91,7 +93,9 @@ class PullStore:
 
     def save(self, records: Iterable[dict[str, Any]]) -> None:
         """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository
-        and number."""
+        and number, except one that would take a merged pull request back from MERGED or a closed one back to OPEN
+        from before the close (`_takes_back`). An open record's `checks` are its head's rollup (`checks_verdict`),
+        whatever the record says."""
         rows = [
             {
                 **{column: record[name] for column, name in _FIELDS.items()},
@@ -102,16 +106,65 @@ class PullStore:
         ]
         if not rows:
             return
-        with self._engine.begin() as db:
+        with self._saving, self._engine.begin() as db:
+            rows = [self._guarded(db, row) for row in rows]
+            rows = [
+                row | {"checks": checks_verdict(row["state"], row["checks"], row["head"], row["rollup"])}
+                for row in rows
+                if row
+            ]
             for row in rows:
                 db.execute(
                     delete(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
                 )
-            db.execute(insert(pull_requests), rows)
+            if rows:
+                db.execute(insert(pull_requests), rows)
         keys = [(row["repo"], row["number"]) for row in rows]
-        self.refresh(keys)
-        for announce in self._save_listeners:
-            announce(keys)
+        if keys:
+            self.refresh(keys)
+            for announce in self._save_listeners:
+                announce(keys)
+
+    @staticmethod
+    def _guarded(db: Any, row: dict[str, Any]) -> dict[str, Any] | None:
+        """`row` as it may be saved, or None when it would undo a pull request's end. A merged record never changes
+        state, whichever writer saves: a read begun before the merge, or an event or job entry built from the record
+        before it, lands after it. A closed one goes back to open only for a write no older than the close (a reopen).
+        A ready one goes back to draft only for a write no older than the ready event. A write older than the stored
+        record of the same head keeps its required checks and `fetched_at`: a read begun while Validate ran, saved after
+        the job result event, must not put the check back to pending. A row with no rollup, or an older one than the stored, keeps
+        the stored one: only a `pr-checks` rollup event writes it, never a read of GitHub or a snapshot taken before it. A read of the rollup's head begun before the rollup
+        passed it never leaves a required check unposted: the push's read can land after the rollup, which names the new
+        head before the record holds it, and no later rollup event comes to settle them."""
+        stored = db.execute(
+            select(
+                *(pull_requests.c[name] for name in ("state", "fetched_at", "is_draft", "head", "required", "rollup"))
+            ).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
+        ).first()
+        if stored is None:
+            return row
+        if row["rollup"] is None or (stored.rollup or {}).get("at", 0) > row["rollup"].get("at", 0):
+            row = row | {"rollup": stored.rollup}
+        rolled = row["rollup"] or {}
+        if (
+            rolled.get("state") == "passed"
+            and rolled.get("sha") == row["head"]
+            and row["fetched_at"] < rolled.get("at", 0)
+        ):
+            unposted = {"pending", "missing"}
+            passed = [
+                {**check, "result": "pass"} if check["result"] in unposted else check for check in row["required"]
+            ]
+            row = row | {"required": passed}
+        if stored.state == "MERGED":
+            return row if row["state"] == "MERGED" else None
+        if stored.state == "OPEN" and not stored.is_draft and row["is_draft"] and row["fetched_at"] < stored.fetched_at:
+            return None  # a read begun while the PR was draft, saved after the ready event
+        if stored.state == "CLOSED" and row["state"] == "OPEN" and row["fetched_at"] < stored.fetched_at:
+            return None
+        if stored.head == row["head"] and row["fetched_at"] < stored.fetched_at:
+            return row | {"required": stored.required, "fetched_at": stored.fetched_at}
+        return row
 
     def refresh(self, keys: Iterable[tuple[str, int]]) -> None:
         """Take the database's rows of `keys` (repository, number) into memory, as after a save: the way a process that
