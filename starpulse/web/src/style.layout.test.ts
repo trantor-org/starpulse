@@ -99,7 +99,7 @@ describe("the Jobs view at rest", () => {
   it("streams links only in a Processing row, the row the keyboard or a Recent line rests on and in the open DAG's chart: stroke-dashoffset repaints every frame", () => {
     const streams = css.split("\n").filter((l) => l.includes("animation: dag-stream"));
     expect(streams).toEqual([
-      "@media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.drow:is([data-pane=processing], .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }",
+      "@media (prefers-reduced-motion: no-preference) { #dg :is(.drow:is([data-pane=processing], .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }",
     ]);
   });
 });
