@@ -5,8 +5,6 @@ adapter publishes the signal, and the adapter serves them at `/metrics` for Prom
 seconds included, goes to `TelemetryLog`; this is the aggregate Grafana reads.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Histogram, generate_latest

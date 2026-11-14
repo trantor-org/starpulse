@@ -9,8 +9,6 @@ event is `starpulse.contracts.CloudEvent`: the same model the ingest reads, so a
 before anything is sent. Exits 0 when the ingest answers 201, else 1 with the reason on stderr.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import sys

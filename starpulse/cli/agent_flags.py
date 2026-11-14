@@ -1,7 +1,5 @@
 """The argparse flags the task and doc verbs share, apart from `agent_tasks` so building the parser imports none of the board."""
 
-from __future__ import annotations
-
 import argparse
 
 

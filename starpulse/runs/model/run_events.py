@@ -11,8 +11,6 @@ carries `instance`, the producer that posted it: it is that instance's, so anoth
 reader ignores it.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 STREAM = "runs:events"

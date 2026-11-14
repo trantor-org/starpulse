@@ -10,8 +10,6 @@ The result is the one scikit-learn's `TfidfVectorizer` and `AgglomerativeCluster
 standard library alone: the case matrix is sparse, and a pair of cases that share no feature is a distance of 1.
 """
 
-from __future__ import annotations
-
 import hashlib
 import heapq
 import math

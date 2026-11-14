@@ -1,7 +1,5 @@
 """The pull records `/api/pulls` lists."""
 
-from __future__ import annotations
-
 from typing import Literal
 
 from starpulse.contracts.api._base import _Api
@@ -9,7 +7,7 @@ from starpulse.contracts.api._base import _Api
 
 class RequiredCheck(_Api):
     name: str
-    result: Literal["pass", "failing", "pending"]
+    result: Literal["pass", "failing", "pending", "missing"]
 
 
 class PullThread(_Api):

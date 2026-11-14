@@ -6,8 +6,6 @@ is a normal (flat prior, Welch standard error), so both probabilities are normal
 worse by less than the margin is still non-inferior. Fewer than two tasks on either side is `continue`, with no posterior.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from math import sqrt
 from statistics import NormalDist, mean, variance

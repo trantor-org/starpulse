@@ -20,8 +20,6 @@ functions of those runs: a fixture gives answers that can be worked out by hand.
   calibration report scores it on the latest fifth of the ended runs against a chain fitted without them.
 """
 
-from __future__ import annotations
-
 from collections import Counter, defaultdict, deque
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import Any

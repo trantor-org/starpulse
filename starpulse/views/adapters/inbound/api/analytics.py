@@ -4,8 +4,6 @@
   `missed-loads` and `trace-clusters`: each filtered by the query.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 
 from starlette.requests import Request

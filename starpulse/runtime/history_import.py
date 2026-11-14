@@ -10,8 +10,6 @@ code is 1 for a file with a line that is not a change and 2 for a flag the comma
 that cannot be read, or a board the config does not assemble. Stop `serve` first: a row it records while the summaries rebuild is missing from them.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

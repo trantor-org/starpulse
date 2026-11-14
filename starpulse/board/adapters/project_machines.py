@@ -6,8 +6,6 @@ stem. A file may also declare how the page draws it (`tiers`,
 the workflows among them are drawn beside those.
 """
 
-from __future__ import annotations
-
 from collections.abc import Collection, Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -110,5 +108,6 @@ def _link(name: str, link: Mapping[str, Any], states: set[str], events: set[str]
         "exits": dict(link["exits"]),
         "parent": name,
         "when": link.get("when", ""),
+        "skill": link.get("skill", ""),
     }
     return drawn_link | {"routes": routes} if routes else drawn_link

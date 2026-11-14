@@ -1,7 +1,5 @@
 """The autopilot's decision log, kept in the store so a gauge reads StarPulse and not the service manager's journal."""
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
