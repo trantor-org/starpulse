@@ -11,7 +11,8 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Callable, MutableMapping
+import uuid
+from collections.abc import Callable, Mapping, MutableMapping
 
 from starpulse.event_log.wake import StopEvent
 
@@ -36,9 +37,17 @@ LISTEN_FD_ENV = "STARPULSE_LISTEN_FD"
 #: to it when it is about to serve, and `serve` ends the old child on that byte (`announce_ready`).
 READY_FD_ENV = "STARPULSE_READY_FD"
 
-#: Set to `<pid>:<descriptor>` by a `serve` that re-executes: the Page API child it started beside the old one, and the
-#: write end of that child's stdin pipe. The next image adopts the child in place of starting its own (`adopted_from_env`).
+#: Set by `serve` to one token per start before it starts a worker: each context stamps it once started (`readiness`).
+BOOT_ENV = "STARPULSE_BOOT"
+
+#: Set by a `serve` that re-executes to `<child>=<pid>:<descriptor>` for each child it hands over, comma separated: the
+#: Page API child it started beside the old one, and the `contexts` child when its code and config did not change, each
+#: with the write end of its stdin pipe. The next image adopts them in place of starting its own (`adopted_from_env`). An
+#: image before the contexts could be handed over wrote a bare `<pid>:<descriptor>`, the Page API's.
 ADOPT_ENV = "STARPULSE_ADOPT"
+
+#: The child a bare `<pid>:<descriptor>` in `ADOPT_ENV` names.
+PAGE_API = "api"
 
 #: The directory of the page build `serve` checked, handed to the Page API child so both serve the same one.
 STATIC_ENV = "STARPULSE_STATIC"
@@ -49,8 +58,9 @@ _watching = False
 class Adopted:
     """A child of this process that an earlier image of `serve` started, shaped like the `Popen` the `Supervisor` drives.
 
-    A re-executed process keeps its pid and so its children: the child is waited for by pid, and `fd` is the write end of
-    the stdin pipe it exits on, which stays open across the exec."""
+    A re-executed process keeps its pid and so its children: a child of `serve` is waited for by pid, and `fd` is the
+    write end of the stdin pipe it exits on, which stays open across the exec. A child of the preloaded process is not
+    `serve`'s: it is alive while its pid is, and its exit code is lost with the preloaded process that reaped it."""
 
     def __init__(self, pid: int, fd: int) -> None:
         self.pid = pid
@@ -61,10 +71,11 @@ class Adopted:
         if self.returncode is None:
             try:
                 done, status = os.waitpid(self.pid, os.WNOHANG)
-            except ChildProcessError:  # reaped elsewhere
-                done, status = self.pid, 0
-            if done:
-                self.returncode = os.waitstatus_to_exitcode(status)
+                code = os.waitstatus_to_exitcode(status) if done else None
+            except ChildProcessError:  # not ours, or reaped elsewhere
+                code = None if running(self.pid) else -1
+            if code is not None:
+                self.returncode = code
                 self._close()
         return self.returncode
 
@@ -94,14 +105,36 @@ class Adopted:
         return code
 
 
-def adopted_from_env(environ: MutableMapping[str, str]) -> Adopted | None:
-    """The Page API child the previous image handed over (`ADOPT_ENV`), consuming the variable; None when it named none."""
-    handed = environ.pop(ADOPT_ENV, None)
+def running(pid: int) -> bool:
     try:
-        pid, fd = (int(part) for part in (handed or "").split(":"))
-    except ValueError:
-        return None
-    return Adopted(pid, fd)
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def boot_token(environ: MutableMapping[str, str], adopted: Mapping[str, Adopted]) -> str:
+    """The boot token of this image of `serve` (`BOOT_ENV`): the one the previous image left in `environ` when it handed
+    over children (`adopted`), whose readiness checks that token for as long as they run; a new one otherwise."""
+    inherited = environ.get(BOOT_ENV)
+    return inherited if adopted and inherited else uuid.uuid4().hex
+
+
+def adopted_from_env(environ: MutableMapping[str, str]) -> dict[str, Adopted]:
+    """The children the previous image handed over (`ADOPT_ENV`) by name, consuming the variable; empty when it named
+    none. A part that is no `<pid>:<descriptor>` is skipped."""
+    handed = environ.pop(ADOPT_ENV, None) or ""
+    adopted = {}
+    for part in handed.split(","):
+        name, _, ids = part.rpartition("=")
+        try:
+            pid, fd = (int(number) for number in ids.split(":"))
+        except ValueError:
+            continue
+        adopted[name or PAGE_API] = Adopted(pid, fd)
+    return adopted
 
 
 def announce_ready(environ: MutableMapping[str, str]) -> None:

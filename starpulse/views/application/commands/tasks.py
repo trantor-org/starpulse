@@ -37,17 +37,20 @@ from starpulse.contracts.api.dto.requests import (
     VerdictRequest,
 )
 from starpulse.event_log import rating_events
+from starpulse.machine_engine.model.transitions import lane_id
 from starpulse.views.application.commands.guard import (
     EDIT_LOCK,
+    REPLAY_WAIT_S,
     Who,
     held_task,
     holder_refusal,
-    is_held,
     not_held,
     record_written,
     who_of,
     with_request,
 )
+from starpulse.views.application.commands.moves import move_refusal
+from starpulse.views.application.commands.replays import Replays
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     pass
@@ -75,14 +78,19 @@ def task_record(
     """
     if read is None:
         return 404, {"error": "this board cannot read a task's full record"}
-    archived = read_archived is not None and not is_held(feed, task) and feed.is_archived(task)
-    if not archived and not is_held(feed, task):
+    held, archived = feed.placement(task)
+    if not (held or archived) and not feed.wait_replayed(0) and feed.wait_replayed(REPLAY_WAIT_S):
+        held, archived = feed.placement(task)
+    archived = not held and archived and read_archived is not None
+    if not held and not archived:
         return not_held(feed, task)
     reader = read_archived if archived and read_archived is not None else read
     if (record := reader(task)) is None:
         return 404, {"error": f"{task} has no record to read"}
-    return 200, {"task": task, "record": record, "archived": archived}
+    return 200, {"task": task, "record": record, "archived": archived, "entered": feed.entered_at(task) if archived else None}
 
+
+_REPLAYS = Replays()
 
 #: The edit change that adds a line to the task's notes rather than setting a record field.
 _APPEND_NOTES = "appendNotes"
@@ -95,6 +103,17 @@ def edit_task(
     request: EditRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
 ) -> tuple[int, dict[str, Any]]:
     """Apply the edit `request` names to a task through `edit` in one write: the HTTP status and JSON body.
+
+    A `request_key` that an earlier send of the edit carried answers that send's answer and writes nothing, so a
+    client that timed out sends the same key again without appending its comment a second time.
+    """
+    return _REPLAYS.run(request.request_key, lambda: _edited(request, feed, read, edit))
+
+
+def _edited(
+    request: EditRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+) -> tuple[int, dict[str, Any]]:
+    """One edit, as `edit_task` runs it.
 
     `base` holds the value each changed field had when the page read the task. The edit is refused 409 when any
     changed field's current value differs, naming those fields with their current values, so another writer's
@@ -115,8 +134,11 @@ def edit_task(
         return 404, {"error": "this board does not edit tasks"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
-    if "acceptanceCriteria" in changes and (refused := holder_refusal(feed, agent, task, who)) is not None:
-        return refused
+    if holder_refusal(feed, agent, task, who) is not None and not comment.strip():
+        comment = f"Edited by session {who.session}, not the holder: {', '.join(sorted(changes))}"
+    lane = lane_id(str(changes["status"])) if "status" in changes else agent["state"]
+    if lane != agent["state"] and (refused := move_refusal(agent, task, lane, who) or holder_refusal(feed, agent, task, who)) is not None:
+        return refused  # a status written beside other fields is a move: the machine offers it to `who` or it is refused
     with EDIT_LOCK:
         if (current := read(task)) is None:
             return 404, {"error": f"{task} has no record to read"}
@@ -179,6 +201,8 @@ def _archive_one(
 ) -> tuple[int, dict[str, Any]]:
     """Archive one `task` for `archive_task`: the HTTP status and JSON body a single-task request answers."""
     if held_task(feed, task) is None:
+        if feed.is_archived(task):
+            return 200, {"task": task}  # a retry of a write that applied
         return not_held(feed, task)
     written = record_written(feed, task, who, lambda: archive(task, reason, actor=who.actor))
     if not written.ok:
@@ -450,8 +474,15 @@ def create_task(
     refusal leaves the others created; a spec naming a `ref:<label>` dependency on an earlier spec's `ref` gets that
     spec's new id, and is refused when that spec was.
 
+    A `request_key` that an earlier send of the create carried answers that send's answer and files nothing, so a
+    client that timed out sends the same key again without filing a second task.
+
     The card appears in its column when the board adapter next reports the task, not on this answer.
     """
+    return _REPLAYS.run(request.request_key, lambda: _created(request, create, feed))
+
+
+def _created(request: CreateRequest, create: TaskCreator | None, feed: BoardFeed | None) -> tuple[int, dict[str, Any]]:
     who = who_of(request)
     if request.tasks is None:
         return _create(request, who, create, feed, {})
