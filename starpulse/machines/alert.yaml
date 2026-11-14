@@ -1,0 +1,17 @@
+# One Grafana alert rule. FIRING and RESOLVED are keyed by the rule's alertname as their run and carry `severity`,
+# `fingerprint` and `summary` in their data. The bridge publishes them as `alert.<rule>.firing` and `.resolved`.
+name: alert
+source: Grafana
+states:
+  quiet: {initial: true}
+  firing: {}
+events:
+  FIRING:
+    - {from: [quiet, firing], to: firing}
+  RESOLVED:
+    - {from: [quiet, firing], to: quiet}
+writers:
+  FIRING:
+    - {actor: grafana, trigger: "a Grafana contact point delivers the rule's firing alert to alert-intake"}
+  RESOLVED:
+    - {actor: grafana, trigger: "a Grafana contact point delivers the rule's resolved alert to alert-intake"}

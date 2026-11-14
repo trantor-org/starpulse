@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from starpulse.board import criteria
-from starpulse.board.snapshot import BoardSnapshot
+from starpulse.board.model import criteria
+from starpulse.board.model.snapshot import BoardSnapshot
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.machine_engine.model.state_roles import StateRoles
 

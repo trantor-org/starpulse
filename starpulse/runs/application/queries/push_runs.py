@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, get_args
 
 from pydantic import BaseModel
 
-from starpulse.board.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
+from starpulse.board.model.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
 from starpulse.contracts.adapters import LAST_OUTCOMES, RunStatus
 from starpulse.contracts.stamps import iso_utc
 from starpulse.event_log.wake import StopEvent
@@ -134,13 +134,16 @@ class PushRuns:
         self._dags = {name: _dag(name, steps) for name, steps in (store.learned_graphs() if store else {}).items()}
         self._replay_end: int | None = None
         self._lock = threading.Lock()
+        self._publishing = threading.Lock()  # one publish at a time, each reading the workflows as they stand then
+        self._pruned = 0  # prunes so far, which a save in flight compares to see its copy is no longer current
         #: The id of the last entry read, which `_dags` reflects, and the one last saved.
         self._seen = self._saved = 0
         self._store_at: tuple[BoardStore, str] | None = None
         self._publish()
 
     def _publish(self) -> None:
-        self._runs.set_dags(list(self._dags.values()), None)
+        with self._publishing:
+            self._runs.set_dags(list(self._dags.values()), None)
 
     def handle_entry(self, entry_id: str, fields: dict) -> None:
         """Move one workflow by an entry; a malformed one, or one for a run that is not the one drawn, is dropped.
@@ -178,11 +181,26 @@ class PushRuns:
             logger.warning("StarPulse: replaying %s: the saved pushed runs cannot be read", stream)
             return None
         with self._lock:
-            self._dags |= {name: dict(dag) for name, dag in snapshot.dags.items()}
+            # a workflow saved before `rerun` joined the `Dag` contract lacks it, and the page refuses the whole instance
+            self._dags |= {name: {"rerun": None, **dag} for name, dag in snapshot.dags.items()}
             self._seen = self._saved = position
         self._publish()
         logger.warning("StarPulse: resuming %s after %s", stream, position)
         return position
+
+    def prune(self, instance: str, listed: Collection[str]) -> None:
+        """Drop the workflows named `<instance>/<workflow>` whose workflow `instance` no longer lists. A bare name is
+        no instance's to drop, and an empty listing is no evidence a workflow is gone."""
+        prefix = f"{instance}/"
+        with self._lock:
+            gone = [name for name in self._dags if name.startswith(prefix) and name[len(prefix) :] not in listed]
+            if not listed or not gone:
+                return
+            for name in gone:
+                del self._dags[name]
+            self._pruned += 1
+            self._saved = -1  # the saved snapshot still holds them; the next save writes this state at the same position
+        self._publish()
 
     def save(self) -> None:
         """Write the workflows and the position they reflect to the store `resume` was given, unless nothing was read
@@ -191,7 +209,7 @@ class PushRuns:
             return
         store, stream = self._store_at
         with self._lock:
-            seen, dags = (self._seen, dict(self._dags))  # a workflow is replaced, never changed in place
+            seen, dags, pruned = (self._seen, dict(self._dags), self._pruned)  # a workflow is replaced, never changed in place
         if seen == self._saved:
             return
         try:
@@ -199,7 +217,9 @@ class PushRuns:
         except Exception as exc:  # the store is down; the workflows still draw and the next save retries
             logger.warning("StarPulse: cannot save the pushed runs of %s: %s", stream, exc)
             return
-        self._saved = seen
+        with self._lock:
+            if self._pruned == pruned:  # a prune since the copy left the saved state behind; the next save writes it
+                self._saved = seen
 
     def keep_saved(self, stop: StopEvent, interval: float = SAVE_INTERVAL) -> None:
         """Save every `interval` seconds, and once more when `stop` is set."""

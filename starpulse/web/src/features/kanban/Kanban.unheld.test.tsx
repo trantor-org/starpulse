@@ -117,3 +117,20 @@ describe("the In Progress card's footer chip", () => {
     expect(chip("TASK-5")).toBe("unassigned");
   });
 });
+
+describe("an idle holder's released card", () => {
+  const idle = (seconds: number) => ({ at: NOW - seconds, last_renewal: NOW - seconds, session: "", ttl: 0, idle: true });
+
+  it("counts up from under a minute: <1m, 1m, 2m", () => {
+    mount([card("TASK-1", "in_progress", "", { release: idle(20) })]);
+    expect(chip("TASK-1")).toBe("idle <1m");
+    act(() => root.unmount());
+    root = createRoot(host);
+    mount([card("TASK-1", "in_progress", "", { release: idle(65) })]);
+    expect(chip("TASK-1")).toBe("idle 1m");
+    act(() => root.unmount());
+    root = createRoot(host);
+    mount([card("TASK-1", "in_progress", "", { release: idle(130) })]);
+    expect(chip("TASK-1")).toBe("idle 2m");
+  });
+});
