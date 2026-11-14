@@ -78,6 +78,8 @@ def _empty(s: Signal, task: str | None, kind: str) -> dict[str, Any]:
         "task": task,
         "kind": kind,
         "eval": s.eval,
+        "entrypoint": "",
+        "first_request_tokens": None,
         "first_at": s.time,
         "last_at": s.time,
         "prompts": 0,
@@ -103,6 +105,8 @@ def _empty(s: Signal, task: str | None, kind: str) -> dict[str, Any]:
         "raises": 0,
         "lowers": 0,
         "tokens": dict.fromkeys(_TOKENS, 0),
+        "agents": {},
+        "role": "other",
         "cost_usd": None,
         "agent_s": 0.0,
         "operator_wait_s": 0.0,
@@ -152,8 +156,11 @@ def _note_request(row: dict[str, Any], s: Signal, last: dict[str, str], ladder: 
                 row[change] += 1
             if value:
                 last[field] = value
+    spend = row["agents"].setdefault(s.agent, dict.fromkeys(_TOKENS, 0)) if s.origin == "side" and s.agent else None
     for token in _TOKENS:
         row["tokens"][token] += getattr(s, token)
+        if spend is not None:
+            spend[token] += getattr(s, token)
     if s.cost is not None:
         row["cost_usd"] = (row["cost_usd"] or 0.0) + s.cost
 
@@ -253,6 +260,17 @@ def _asked_since(ordered: list[Signal], at: int) -> float:
     return ordered[before].time
 
 
+def _prompt_tokens(request: Signal) -> int:
+    """The tokens a request sent as its prompt: uncached input, cache reads and cache writes."""
+    return request.input + request.cache_read + request.cache_write
+
+
+def _origin(first: Signal | None) -> str:
+    if first is None or not first.detail:
+        return "unknown"
+    return "operator" if first.detail == "human" else first.detail
+
+
 def session_rows(
     ordered: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
 ) -> list[dict[str, Any]]:
@@ -260,11 +278,16 @@ def session_rows(
     completion = analytics.completion_skill if analytics else ""
     operator_tools = analytics.operator_tools if analytics else frozenset()
     ladder = analytics.ladder if analytics else ()
+    phases = analytics.phases if analytics else ()
     kind = session_kind(ordered)
     ids = _turn_ids(ordered)
     ends: dict[str, float] = {}
     for turn, s in zip(ids, ordered, strict=True):
         ends[turn] = max(ends.get(turn, s.time), s.time)
+    first_prompt = next((s for s in ordered if s.kind == "prompt"), None)
+    origin = _origin(first_prompt)
+    entrypoint = next((s.entrypoint for s in ordered if s.entrypoint), "")
+    first_request = next((s for s in ordered if s.kind == "request" and s.origin == "main" and _prompt_tokens(s)), None)
     row: dict[str, Any] | None = None
     by_task: dict[str | None, dict[str, Any]] = {}
     last: dict[str, dict[str, str]] = defaultdict(dict)
@@ -318,6 +341,11 @@ def session_rows(
         _note(row, s, last[task or ""], ladder)
     for opened in open_turns.values():
         opened["interrupts"] += 1
+    for row in by_task.values():
+        row["origin"] = origin
+        row["entrypoint"] = entrypoint
+        row["role"] = next((p for p in reversed(phases) if p in row["skills"]), "other")
+        row["first_request_tokens"] = _prompt_tokens(first_request) if first_request else None
     return list(by_task.values())
 
 

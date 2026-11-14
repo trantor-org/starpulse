@@ -2,6 +2,7 @@
 
 - `POST /api/run/{name}`, `/api/runs/{instance}/{workflow}/rerun`: start a workflow, or run a finished one again.
 - `POST /api/machine-events`: the token-guarded push of machine events; 404 where a deployment leaves it unconfigured.
+- `POST /api/webhook`: the token-guarded push a sender's own JSON, handed to the deployment's `webhook_command`; 404 where unset.
 """
 
 from __future__ import annotations
@@ -39,8 +40,13 @@ def routes(api: Api) -> list[ApiRoute]:
         content_type = request.headers.get("Content-Type")
         return pushed(request, "ingest", lambda auth, raw: events(auth, content_type, raw), MAX_BATCH_BODY)
 
+    def webhook(request: Request) -> Response | None:
+        hook = services.webhook
+        return None if hook is None else pushed(request, "ingest", hook, MAX_BATCH_BODY)
+
     return [
         WriteRoute("/run/{name:path}", ("POST",), guarded("run", run)),
         WriteRoute("/runs/{instance}/{workflow}/rerun", ("POST",), guarded("run", rerun)),
         WriteRoute("/machine-events", ("POST",), writing(machine_events)),
+        WriteRoute("/webhook", ("POST",), writing(webhook)),
     ]

@@ -1,6 +1,6 @@
 """The PR store as a projection of the lifecycle events our own writers publish on `machine:events`.
 
-Nothing here reads GitHub; an event that may have moved a head (`_MOVES_HEAD`) asks `PullSync` to read the pull
+Nothing here reads GitHub; an event after which the record may be stale (`_REREADS`: a push, an opening, a body edit) asks `PullSync` to read the pull
 request. A task's events name the task, never the pull request, so each one lands on the pull
 requests the Board says the task cites (`BoardFeed.cited`); an event of a task that cites none is dropped. An event
 patches the fields it causes on the stored record, or on a new one it opens, and dates the record by its own time
@@ -14,7 +14,10 @@ validated and its check's result on a record the store already holds. The same j
 
 A task's events cannot say which of two open pull requests they are about, so one that closes a pull request is
 applied only when the task cites a single open one, unless its `repository` and `pr` fields name the pull request it
-closed: it then applies to that one alone, and to none once the store holds it closed. A reopen
+closed: it then applies to that one alone, and to none once the store holds it closed. A head's rollup
+(`ROLLUP_*` of the `pr-checks` machine) is applied the same way, to the pull request it names, and stored as `{sha, state}`
+whatever the record's age: the board reads a pull request as checks passed only when the rollup of its current head
+says so. A reopen
 (`PR_REOPENED`) is the reverse: it applies to a closed record, never a merged one, by the same naming. A record a manual refresh
 (`POST /api/pulls/refresh`) reads from GitHub carries what the events cannot: head branch, base, body, merge commit and
 changed files.
@@ -37,11 +40,14 @@ JOBS_STREAM = "ci:jobs"
 MACHINE_STREAM = "machine:events"
 GITHUB_MACHINE = "github-pull-request"
 JOB_MACHINE = "ci-job"
+CHECKS_MACHINE = "pr-checks"
 TASK_MACHINES = ("deliver", "in-progress")  # `in-progress` keeps replayed history that predates the deliver machine
 JOB_RESULTS = {"succeeded": "pass", "failed": "failing"}  # a canceled or unknown job says nothing of its check
 JOB_EVENTS = {"JOB_SUCCEEDED": "succeeded", "JOB_FAILED": "failed"}  # a `ci-job` event as the result `ci:jobs` names
 CLOSING = {(GITHUB_MACHINE, "PR_MERGED"), (GITHUB_MACHINE, "PR_CLOSED")}
 REOPENING = (GITHUB_MACHINE, "PR_REOPENED")
+MERGING = (GITHUB_MACHINE, "PR_MERGED")
+ROLLUPS = {(CHECKS_MACHINE, f"ROLLUP_{state}") for state in ("PASSED", "FAILING", "PENDING")}
 
 Record = dict[str, Any]
 
@@ -71,6 +77,7 @@ def _opened(repo: str, number: int, body: str, at: float) -> Record:
         "headRefOid": "",
         "body": body,
         "checks": "none",
+        "rollup": None,
         "requiredChecks": [],
         "threads": 0,
         "updatedAt": iso_utc(at),
@@ -99,12 +106,15 @@ def _threads(_record: Record, fields: Mapping[str, Any], _at: float) -> Record:
     return {"threads": count} | ({"unresolvedThreads": []} if count == 0 else {})
 
 
+def _rollup(record: Record, fields: Mapping[str, Any], _at: float) -> Record:
+    data = fields["data"]
+    return {"rollup": {"sha": str(data["sha"]), "state": str(data["state"])}}  # the store derives `checks` from it
+
+
 #: What each event causes in the record, by (machine, event); a push leaves the head to the next `ci:jobs` entry.
 _DELTAS: dict[tuple[str, str], Callable[[Record, Mapping[str, Any], float], Record]] = {
     (GITHUB_MACHINE, "PR_OPENED"): lambda *_: {"state": "OPEN"},
     REOPENING: lambda *_: {"state": "OPEN"},
-    (GITHUB_MACHINE, "CHECKS_PASSED"): lambda *_: {"checks": "pass"},
-    (GITHUB_MACHINE, "CHECKS_FAILED"): lambda *_: {"checks": "failing"},
     (GITHUB_MACHINE, "CONFLICTED"): lambda *_: {"mergeable": "CONFLICTING"},
     (GITHUB_MACHINE, "MERGEABLE"): lambda *_: {"mergeable": "MERGEABLE"},
     (GITHUB_MACHINE, "THREADS_CHANGED"): _threads,
@@ -114,15 +124,18 @@ _DELTAS: dict[tuple[str, str], Callable[[Record, Mapping[str, Any], float], Reco
 
 _TASK_DELTAS = {
     "PR_READY": lambda *_: {"isDraft": False},
-    "PUSHED": lambda *_: {"checks": "pending", "requiredChecks": [], "mergeable": "UNKNOWN"},
+    "PUSHED": lambda *_: {"headRefOid": "", "requiredChecks": [], "mergeable": "UNKNOWN"},  # no head: `checks` pending until the re-read
 }
+_DELTAS |= dict.fromkeys(ROLLUPS, _rollup)
 for _machine in TASK_MACHINES:
     _DELTAS |= {(_machine, event): delta for event, delta in _TASK_DELTAS.items()}
 
-#: The events after which the head may have moved, and with it the conflicts and the commits behind main: only a read
+#: The events after which the head may have moved (or, for `PR_EDITED`, the body changed), and with it the conflicts and the commits behind main: only a read
 #: of GitHub says what the push left, so the record is read once more. A delivery that rebases and force-pushes publishes
 #: `PR_OPENED` (it opens or updates), never `PUSHED`.
-_MOVES_HEAD = {(machine, event) for machine in TASK_MACHINES for event in ("PUSHED", "PR_OPENED")}
+_REREADS = {(machine, event) for machine in TASK_MACHINES for event in ("PUSHED", "PR_OPENED")}
+#: A body edit moves no head, but only a read of GitHub says what the body now holds, and the Review render guard reads it.
+_REREADS.add((GITHUB_MACHINE, "PR_EDITED"))
 
 
 class RecordProjection:
@@ -149,7 +162,7 @@ class RecordProjection:
     def _body(self, key: str) -> str:
         """The body a record opened by events carries: the task and the session holding it, so the lookups readers make
         by either find it."""
-        assignee = (self._feed.task(key) or {}).get("assignee") or ""
+        assignee = (self._feed.task(key, lean=True) or {}).get("assignee") or ""
         return f"{key} {assignee}".strip()
 
     def handle(self, entry: Entry) -> None:
@@ -161,23 +174,31 @@ class RecordProjection:
             return
         name = (fields.get("machine"), fields.get("event"))
         key = fields.get("task")
-        if (name not in _DELTAS and name not in _MOVES_HEAD) or not key:
+        if (name not in _DELTAS and name not in _REREADS) or not key or (name in ROLLUPS and not self._rolled(fields)):
             return
         try:
             at = float(fields["time"])
         except KeyError, TypeError, ValueError:
             return
         saved, moved = [], []
-        for repo, number in self._targets(key, name, fields):
+        targets = self._targets(key, name, fields)
+        named = self._named(fields)
+        if named and name[0] == GITHUB_MACHINE and name not in CLOSING and named not in targets:
+            # the task's citation may reach this worker after the event does: read the pull request the event names
+            # rather than drop it, which would leave the store without it until a later event of its own
+            if not self._store.find(repo=named[0], number=named[1]):
+                moved.append(named)
+        for repo, number in targets:
             found = self._store.find(repo=repo, number=number, detailed=True)
-            if found and at < found[0]["fetchedAt"]:
-                continue  # the record already holds what a later event or read says
-            if not found and name in _DELTAS or found and name in _MOVES_HEAD:
+            if found and at < found[0]["fetchedAt"] and name != MERGING and name not in ROLLUPS:
+                continue  # the record already holds what a later event or read says; a merge or a rollup, which names its head, is never older than that
+            if not found and name in _DELTAS or found and name in _REREADS:
                 moved.append((repo, number))  # a record the events open holds no files until GitHub is read
             if name not in _DELTAS:
                 continue
             record = found[0] if found else _opened(repo, number, self._body(key), at)
-            patched = record | _DELTAS[name](record, fields, at) | {"fetchedAt": at, "updatedAt": iso_utc(at)}
+            stamps = {"fetchedAt": max(at, record["fetchedAt"]), "updatedAt": iso_utc(at)}  # a late event never ages it
+            patched = record | _DELTAS[name](record, fields, at) | stamps
             if not found or patched != record:
                 saved.append(patched)
         if saved:
@@ -187,23 +208,34 @@ class RecordProjection:
         for repo, number in moved if self._refresh else ():
             self._refresh(repo, number)
 
+    @staticmethod
+    def _rolled(fields: Mapping[str, Any]) -> bool:
+        """Whether a rollup event carries the head and state it stores."""
+        data = fields.get("data")
+        return isinstance(data, Mapping) and bool(data.get("sha")) and bool(data.get("state"))
+
     def _targets(self, key: str, name: tuple[str, str], fields: Mapping[str, Any]) -> list[tuple[str, int]]:
         """The task's pull requests an event applies to: those still open, for a reopen those closed unmerged, and for a
-        close or a reopen the one it names, at the top level or under `data`; one naming none applies only to a lone
-        candidate."""
+        close or a reopen the one it names (`pr`, or the intake's `pull_request`), at the top level or under `data`;
+        one naming none applies only to a lone candidate."""
         pulls = self._cited(key)
         stored = {pull: self._store.find(repo=pull[0], number=pull[1]) for pull in pulls}
         wanted = "CLOSED" if name == REOPENING else "OPEN"
         candidates = [pull for pull in pulls if not stored[pull] or stored[pull][0]["state"] == wanted]
-        if name not in CLOSING | {REOPENING}:
+        if name not in CLOSING | ROLLUPS | {REOPENING}:
             return candidates
-        data = fields.get("data")
-        naming = data if isinstance(data, Mapping) and "pr" in data else fields
-        number = str(naming.get("pr", ""))
-        if number.isdigit():
-            named = (str(naming.get("repository")), int(number))
+        if named := self._named(fields):
             return [named] if named in candidates else []
         return candidates if len(candidates) == 1 else []
+
+    @staticmethod
+    def _named(fields: Mapping[str, Any]) -> tuple[str, int] | None:
+        """The pull request an event names (`pr`, or the intake's `pull_request`), at the top level or under `data`, as
+        (repository, number)."""
+        data = fields.get("data")
+        naming = data if isinstance(data, Mapping) and ("pr" in data or "pull_request" in data) else fields
+        number = str(naming.get("pr", naming.get("pull_request", "")))
+        return (str(naming.get("repository")), int(number)) if number.isdigit() else None
 
     def handle_job(self, entry: Entry) -> None:
         """Apply one `ci:jobs` entry to the record of the pull request it ran for; one for a pull request the store does
