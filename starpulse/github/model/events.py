@@ -11,6 +11,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from starpulse.github.model.checks import FAILED, PASSED
+
 __all__ = [
     "BUDGET", "CAP", "CONSUMER", "MACHINE", "REFUSED", "RETENTION", "SOURCE", "Fact", "backoff", "cloudevent", "event_id", "facts_of", "run_event_of",
 ]  # fmt: skip
@@ -27,8 +29,6 @@ CAP = 300
 RETENTION = 7 * 86400
 #: The ingest answers that no retry can repair: the event is invalid (400), forbidden (403) or too large (413).
 REFUSED = frozenset({400, 403, 413})
-_PASSED = frozenset({"success", "neutral", "skipped"})
-_FAILED = frozenset({"failure", "timed_out", "cancelled", "action_required", "startup_failure", "stale"})
 
 
 def backoff(attempts: int) -> int:
@@ -88,6 +88,13 @@ def _pull_request(repository: str, action: str, payload: dict[str, Any]) -> list
     if action == "closed" and pull.get("merged") is True:
         merge = _text(pull.get("merge_commit_sha"))
         return [Fact("PR_MERGED", repository, number, merge, bot)] if merge else []
+    if action == "edited":  # only a body edit matters, and the update time tells one edit from the next
+        stamp = _text(pull.get("updated_at"))
+        return (
+            [Fact("PR_EDITED", repository, number, stamp, bot)]
+            if "body" in _dict(payload.get("changes")) and stamp
+            else []
+        )
     named = {"opened": "PR_OPENED", "reopened": "PR_REOPENED", "closed": "PR_CLOSED"}.get(action)
     return [Fact(named, repository, number, head, bot)] if named and head else []
 
@@ -98,8 +105,8 @@ def _checks(repository: str, event: str, action: str, payload: dict[str, Any]) -
     thing = _dict(payload.get(event))
     suite = _dict(thing.get("check_suite")) if event == "check_run" else thing
     conclusion, key = _text(thing.get("conclusion")), suite.get("id")
-    passed = conclusion in _PASSED and event == "check_suite"
-    if action != "completed" or not (passed or conclusion in _FAILED) or _number(key) is None:
+    passed = conclusion in PASSED and event == "check_suite"
+    if action != "completed" or not (passed or conclusion in FAILED) or _number(key) is None:
         return []
     named = "CHECKS_PASSED" if passed else "CHECKS_FAILED"
     pulls = thing.get("pull_requests")
@@ -126,7 +133,13 @@ def facts_of(event: str, body: bytes) -> list[Fact]:
 
 
 #: A run's `status` before it completes, and each `conclusion` after, as the runs projection's status.
-_RUN_STATUS = {"requested": "queued", "pending": "queued", "queued": "queued", "waiting": "queued", "in_progress": "running"}
+_RUN_STATUS = {
+    "requested": "queued",
+    "pending": "queued",
+    "queued": "queued",
+    "waiting": "queued",
+    "in_progress": "running",
+}
 _RUN_CONCLUSION = {
     "success": "succeeded", "neutral": "succeeded", "failure": "failed", "timed_out": "failed",
     "startup_failure": "failed", "cancelled": "aborted", "stale": "aborted", "action_required": "aborted",

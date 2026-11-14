@@ -33,9 +33,14 @@ RETIRED_SUFFIX = ".imported"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Migrate the store the config names, import its old files and build its summaries; 0 once it is at the head."""
+    """Migrate the store the config names, import its old files and build its summaries; 0 once it is at the head.
+
+    `--floor` instead prints the store's revision and reader floor and changes nothing."""
     parser = argparse.ArgumentParser(prog="starpulse migrate", description="bring the store to its current schema")
     parser.add_argument("--config", type=Path, help="the TOML config the server runs with (default starpulse.toml)")
+    parser.add_argument(
+        "--floor", action="store_true", help="print the store's revision and reader floor as JSON and migrate nothing"
+    )
     args = parser.parse_args(argv)
     # The store, the board and the config cost over a second to import: `--help` and a flag error pay none of it.
     from sqlalchemy.engine import make_url  # noqa: PLC0415 - import cost, paid only by a run that migrates
@@ -51,6 +56,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ConfigError, OSError, ValueError) as exc:
         parser.error(f"{path}: {exc}")
     base = path.parent if path else Path.cwd()
+    if args.floor:
+        from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
+        from starpulse.event_log.migrate import store_state  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
+        engine = create_engine(database_url(config.database_url, base))
+        print(json.dumps(store_state(engine)))
+        return 0
     try:
         board, feed = assemble(config, base, None, [])
     except (OSError, ValueError) as exc:

@@ -8,13 +8,29 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import fields
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import JSON, Column, Connection, Engine, Integer, PrimaryKeyConstraint, String, Table, Text, select
+from sqlalchemy import (
+    JSON,
+    Column,
+    Connection,
+    Engine,
+    Integer,
+    PrimaryKeyConstraint,
+    String,
+    Table,
+    Text,
+    create_engine,
+    inspect,
+    select,
+)
+from sqlalchemy.engine import make_url
+
 from starpulse.board.model.policy import Exit, Lane, LaneTool, Policy, PolicyRule, Profile, Route, Vocabulary, Watch
 from starpulse.event_log.tables import metadata
 
-__all__ = ["exits", "lanes", "load", "profiles", "routes", "rules", "stored", "tools", "vocabularies", "watches"]
+__all__ = ["exits", "held", "lanes", "load", "profiles", "routes", "rules", "stored", "tools", "vocabularies", "watches"]
 
 lanes = Table(
     "starpulse_policy_lanes",
@@ -111,3 +127,18 @@ def load(engine: Engine, files: Callable[[], Policy]) -> tuple[str, Policy]:
     with engine.connect() as db:
         held = stored(db)
     return ("database", held) if held != Policy() else ("files", files())
+
+
+def held(url: str) -> Policy:
+    """The policy the store at `url` holds; empty when the store is absent or not yet migrated, which leaves the board
+    with no guard, profile cell or watch until the policy chain fills it. A SQLite file that does not exist is not created;
+    any other database error propagates, so a board never starts unguarded on a fault."""
+    target = make_url(url)
+    if target.get_backend_name() == "sqlite" and target.database not in (None, ":memory:") and not Path(target.database).exists():
+        return Policy()
+    engine = create_engine(url)
+    try:
+        with engine.connect() as db:
+            return stored(db) if inspect(db).has_table(lanes.name) else Policy()
+    finally:
+        engine.dispose()

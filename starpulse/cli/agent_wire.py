@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,6 +15,10 @@ from starpulse.cli.agent_keys import NEWER_SNAPSHOT_KEYS, SNAPSHOT_KEYS
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
+#: A read the server refuses with a 503 and `Retry-After` is sent again after that wait, at most this many sends in all,
+#: each wait capped at `BUSY_PAUSE_MAX_S` seconds: a refusal is a saturated pool, over within moments.
+BUSY_SENDS = 4
+BUSY_PAUSE_MAX_S = 8
 
 
 class CliError(Exception):
@@ -60,15 +65,27 @@ def _open_get(request: urllib.request.Request, timeout: float) -> Any:
 
 def get(base: str, path: str, timeout: float = 10.0) -> tuple[int, Any]:
     """The status and JSON body the server at `base` answers `path` with; None for a body that is no JSON. `timeout`
-    is the seconds the server may take to answer; an empty reply is sent once more."""
+    is the seconds the server may take to answer; an empty reply is sent once more, and a 503 that carries
+    `Retry-After` is waited out and sent again, up to `BUSY_SENDS` sends."""
+    for send in range(1, BUSY_SENDS + 1):
+        status, document, wait = _get_once(base, path, timeout)
+        if status != 503 or not wait.isdigit() or send == BUSY_SENDS:
+            return status, document
+        time.sleep(min(int(wait), BUSY_PAUSE_MAX_S))
+    raise AssertionError("unreachable")
+
+
+def _get_once(base: str, path: str, timeout: float) -> tuple[int, Any, str]:
+    """One read's status, JSON body and `Retry-After` header (empty when absent)."""
     try:
         with _open_get(urllib.request.Request(f"{base}{path}", headers=auth(base)), timeout) as resp:
-            return resp.status, json.load(resp)
+            return resp.status, json.load(resp), ""
     except urllib.error.HTTPError as exc:
+        wait = exc.headers.get("Retry-After", "") if exc.headers else ""
         try:
-            return exc.code, json.load(exc)
+            return exc.code, json.load(exc), wait
         except ValueError:
-            return exc.code, None
+            return exc.code, None, wait
     except TimeoutError as exc:  # before OSError: a slow search is not an unreachable server
         if path.startswith("/api/search"):
             raise CliError("unavailable", f"slow search at {base}: timed out after 10s") from exc

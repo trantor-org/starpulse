@@ -40,13 +40,16 @@ class Signal:
     a closed vocabulary with no arguments, and the `reads` and `writes` it named, as the export gave them. `shell_write` is
     True for a shell command that writes a file, which names no path (`starpulse.harness_telemetry.model.activity.writes_file`,
     set when the stored signal is read). `agent` is
-    the subagent that made a `request` or `tool` step, empty for the main thread. `captured` is False for a harness the
-    steps-per-completion ledger does not cover yet (Codex, Cursor): its rows are kept and left out of every ranking.
+    the subagent that made a `request` or `tool` step, empty for the main thread; `agent_id` is the subagent instance
+    a Claude Code `request` came from, empty for the main thread or an export that names none. `captured` is False
+    for a harness the steps-per-completion ledger does not cover yet (Codex, Cursor): its rows are kept and left out
+    of every ranking.
 
     `turn` is the export's `prompt.id`, the one user prompt every event it caused shares; empty where the harness
     names none. A `prompt` signal's `detail` is its origin, `human` or `injected` (empty when the export carried no
     prompt text to read it from), and its `label` the intent the instance's labeller gave a `human` one (empty when
-    none is configured or it did not answer); the text itself is never a field.
+    none is configured or it did not answer); the text itself is never a field. `entrypoint` is the launch's
+    `claude_code.entrypoint` resource attribute (`cli`, `sdk-cli`), empty when the launch set none.
     """
 
     harness: str
@@ -78,6 +81,8 @@ class Signal:
     turn: str = ""
     label: str = ""
     eval: str = ""
+    entrypoint: str = ""
+    agent_id: str = ""
 
 
 def claim_key(tool_key: str) -> str:

@@ -128,6 +128,11 @@ def _label(text: Any, injected: tuple[str, ...]) -> str:
     return "injected" if opening.startswith(injected) else "human"
 
 
+def _named(text: Any, origins: tuple[tuple[str, tuple[str, ...]], ...]) -> str:
+    opening = str(text or "").lstrip()
+    return next((name for name, prefixes in origins if opening.startswith(prefixes)), "")
+
+
 # A reply asks the operator when its first sentence ends in a question mark.
 _OPENING_QUESTION = re.compile(r"(?:[^.!?\n]|[.!?](?!\s))*\?(?:\s|$)")
 
@@ -156,6 +161,7 @@ def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
             "effort": str(a.get("effort") or ""),
             "origin": origin,
             "agent": str(a.get("agent.name") or (source if origin == "side" else "")),
+            "agent_id": str(a.get("agent_id") or ""),
             "detail": source,
             "seconds": _seconds(a.get("duration_ms")),
             "input": _number(a.get("input_tokens")),
@@ -289,7 +295,7 @@ def signals(
     A Claude Code shell result keeps its command, passed through `redact`; with none, no command is kept."""
     reading = analytics or Analytics()
     found: list[Signal] = []
-    for resource_branch, resource_eval, record in _records(payload, reading.eval_attribute):
+    for resource_branch, resource_eval, entrypoint, record in _records(payload, reading.eval_attribute):
         a = _attributes(record)
         harness, session, read = _identity(a)
         at = _epoch(a.get("event.timestamp"))
@@ -310,7 +316,13 @@ def signals(
                 intent = (
                     intent_label(reading.labeller, str(a["prompt"])) if reading.labeller and origin == "human" else ""
                 )
-                fields = {**fields, "detail": origin, "label": intent}
+                fields = {
+                    **fields,
+                    "detail": origin
+                    if origin == "injected"
+                    else _named(a.get("prompt"), reading.session_origins) or origin,
+                    "label": intent,
+                }
             found.append(
                 Signal(
                     harness,
@@ -321,6 +333,7 @@ def signals(
                     captured=harness == CLAUDE_CODE,
                     turn=turn,
                     eval=purpose,
+                    entrypoint=entrypoint,
                     **fields,
                 )
             )
@@ -337,15 +350,39 @@ def signals(
                     captured=harness == CLAUDE_CODE,
                     turn=turn,
                     eval=purpose,
+                    entrypoint=entrypoint,
                 )
             )
         if harness == CLAUDE_CODE and name == "tool_result" and (text := _named_text(a)):
             if (task := claimed(text, reading.claims, keys)) is not None:
                 found.append(
-                    Signal(harness, session, "claim", at, claim_key(key), branch, name=task, turn=turn, eval=purpose)
+                    Signal(
+                        harness,
+                        session,
+                        "claim",
+                        at,
+                        claim_key(key),
+                        branch,
+                        name=task,
+                        turn=turn,
+                        eval=purpose,
+                        entrypoint=entrypoint,
+                    )
                 )
             if reading.completion_call and str(a.get("tool_name")) in SHELLS and reading.completion_call.search(text):
-                found.append(Signal(harness, session, "deliver", at, f"{key}:deliver", branch, turn=turn, eval=purpose))
+                found.append(
+                    Signal(
+                        harness,
+                        session,
+                        "deliver",
+                        at,
+                        f"{key}:deliver",
+                        branch,
+                        turn=turn,
+                        eval=purpose,
+                        entrypoint=entrypoint,
+                    )
+                )
     return found
 
 
@@ -367,6 +404,7 @@ _SHARED = frozenset(
         "turn",
         "label",
         "eval",
+        "entrypoint",
     )
 )
 

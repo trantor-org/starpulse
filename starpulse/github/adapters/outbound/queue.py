@@ -95,6 +95,9 @@ class SqlQueue:
             )
         return status
 
+    def defer(self, delivery_id: str, error: str, until: float) -> None:
+        self._set(delivery_id, status="pending", last_error=error, next_attempt_at=until)
+
     def requeue(self, delivery_id: str) -> bool:
         """Make a dead row pending again with its attempts spent anew; `False` for a row that is not dead."""
         return self._set(delivery_id, only="dead", status="pending", attempts=0, next_attempt_at=self._clock(), last_error=None)

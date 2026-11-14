@@ -38,7 +38,7 @@ CREATE_TEXT = (
     "duplicateResolution",
     "follows",
 )
-CREATE_LISTS =("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
+CREATE_LISTS = ("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
 #: The lists whose every item must be nonblank, rather than dropped when blank.
 _CREATE_NONBLANK = ("acceptanceCriteria", "definitionOfDone")
 _PRIORITIES = frozenset({"high", "medium", "low"})  # also the levels of Impact and Urgency
@@ -100,6 +100,12 @@ class EditRequest(_Writer):
     changes: dict[str, Any]
     comment: str | None = None
     break_glass: bool = Field(False, alias="breakGlass")  # an editor import: its Events are marked break-glass (D5)
+    request_key: str | None = Field(
+        None,
+        min_length=1,
+        max_length=128,
+        description="The client's key for this send: an edit sent again with it answers the first send's answer.",
+    )
 
 
 class ArchiveRequest(_Writer):
@@ -254,6 +260,12 @@ class CreateRequest(_Writer, CreateSpec):
 
     title: str | None = None
     tasks: list[CreateSpec] | None = Field(None, min_length=1)
+    request_key: str | None = Field(
+        None,
+        min_length=1,
+        max_length=128,
+        description="The client's key for this send: a create sent again with it answers the first send's answer.",
+    )
 
     @model_validator(mode="after")
     def _one_target(self) -> CreateRequest:

@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import Field
 
+from starpulse.contracts.adapters import Move
 from starpulse.contracts.api._base import _Api
 
 
@@ -15,6 +16,23 @@ class TaskRecord(_Api):
     task: str
     record: dict[str, Any]
     archived: bool = Field(False, description="The task was archived: read from the archive, off the board's lanes.")
+    entered: float | None = Field(None, description="When an archived task last changed in the read model: a Done task's entry into Done.")
+
+
+class TaskMoves(_Api):
+    """`GET /api/moves/<id>`: the verdict on each column one open task may move to, judged by the board's guards now."""
+
+    task: str
+    moves: dict[str, Move] = Field(
+        description="The verdict on each Board column, by state id, with the warnings an actor the guards warn "
+        "instead of refuse would meet. A snapshot's `move_sets` leave these unjudged."
+    )
+
+
+class TaskRecords(_Api):
+    """`GET /api/task-records?ids=A,B`: the `TaskRecord` of each named task the board can read, in the order named."""
+
+    records: list[TaskRecord]
 
 
 class MilestoneRecord(_Api):

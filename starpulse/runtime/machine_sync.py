@@ -20,7 +20,7 @@ from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore
 from starpulse.event_log.store.machine_registry import LiveTask, MachineRegistry, StrandedTasks
-from starpulse.machine_engine.adapters.machine_loader import _read
+from starpulse.machine_engine.adapters.machine_loader import read_document
 from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
 
 __all__ = ["REFUSED", "STRANDED", "main", "sync_definitions"]
@@ -50,14 +50,14 @@ def sync_definitions(config: Config, base: Path) -> dict[str, str]:
     hashes: dict[str, str] = {}
     stranded: StrandedTasks | None = None
     if board is not None:
-        document = _read(board)
+        document = read_document(board)
         try:
             hashes[document["name"]] = registry.activate(document, live)
         except StrandedTasks as exc:
             stranded = exc
     for path in sorted((base / DIRECTORY).glob("*.yaml")):
         if board is None or path.resolve() != board.resolve():
-            document = _read(path)
+            document = read_document(path)
             hashes[document["name"]] = registry.activate(document, [])
     if stranded is not None:
         raise stranded

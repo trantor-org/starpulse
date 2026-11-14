@@ -58,14 +58,17 @@ _HIT_COLUMN = (
 _LOCATED = f"{_HIT_COLUMN} AS field, snippet({_TABLE}, {_HIT_COLUMN}, '', '', '…', 16) AS snippet"
 _SNIPPET_CHARS = 160
 #: The lexical query: MATCH first into a MATERIALIZED CTE, then `{filtered}` (facets) on those rowids. ANDing the
-#: facets IN onto MATCH makes SQLite look up each facet rowid in FTS (`0:=M`) and cost grows with rows × words.
-_SEARCH = (
+#: facets IN onto MATCH makes SQLite look up each facet rowid in FTS (`0:=M`) and cost grows with rows × words. Only the
+#: `best` rows are located (`snippet` runs seven times a row, and a word most tasks hold matches thousands).
+_BEST = (
     f"WITH matched AS MATERIALIZED ("
     f"SELECT {_TABLE}.rowid AS row, task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, "
-    f"{_LOCATED}, bm25({_TABLE}, {_WEIGHTS}) AS rank "
-    f"FROM {_TABLE} WHERE {_TABLE} MATCH :query"
-    f") SELECT task, title, lane, score, snippet, field FROM matched WHERE 1{{filtered}} "
-    f"ORDER BY rank, task LIMIT :limit"
+    f"bm25({_TABLE}, {_WEIGHTS}) AS rank FROM {_TABLE} WHERE {_TABLE} MATCH :query"
+    f"), best AS MATERIALIZED (SELECT * FROM matched WHERE 1{{filtered}} ORDER BY rank, task LIMIT :limit) "
+)
+_SEARCH = (
+    f"{_BEST}SELECT best.task, best.title, best.lane, best.score, {_LOCATED} FROM best JOIN {_TABLE} "
+    f"ON {_TABLE}.rowid = best.row WHERE {_TABLE} MATCH :query ORDER BY best.rank, best.task"
 )
 _DIGEST = text(f"SELECT digest FROM {_TABLE} WHERE rowid = :row")
 _DELETE = text(f"DELETE FROM {_TABLE} WHERE rowid = :row")
@@ -93,14 +96,10 @@ _DROP_OTHER_RECIPES = text(f"DELETE FROM {_VECTORS} WHERE model != :model")
 #: task-like sentence, and changing it makes every vector again.
 _EMBEDDED_TEXT = "title+description"
 _RANKED = (
-    f"WITH matched AS MATERIALIZED ("
-    f"SELECT {_TABLE}.rowid AS row, task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, "
-    f"{_LOCATED}, bm25({_TABLE}, {_WEIGHTS}) AS rank, "
-    f"{_VECTORS}.vector AS vector FROM {_TABLE} LEFT JOIN {_VECTORS} "
-    f"ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model "
-    f"WHERE {_TABLE} MATCH :query"
-    f") SELECT task, title, lane, score, snippet, field, vector FROM matched WHERE 1{{filtered}} "
-    f"ORDER BY rank, task LIMIT :limit"
+    f"{_BEST}SELECT best.task, best.title, best.lane, best.score, {_LOCATED}, {_VECTORS}.vector AS vector "
+    f"FROM best JOIN {_TABLE} ON {_TABLE}.rowid = best.row LEFT JOIN {_VECTORS} "
+    f"ON {_VECTORS}.task_row = best.row AND {_VECTORS}.model = :model "
+    f"WHERE {_TABLE} MATCH :query ORDER BY best.rank, best.task"
 )
 #: Every embedded task, for a query whose meaning (not its words) is what is wanted; `snippet` is the task's opening.
 _EMBEDDED_SELECT = (

@@ -63,14 +63,18 @@ class ReadModel:
         """The states unarchived Tasks hold, Done ones of any age included."""
         return set(self._ids(queries.held_states()))
 
+    def held_done(self, done: str) -> list[str]:
+        """The ids of unarchived Done Tasks of any age, in id order."""
+        return self._ids(queries.held_done(done))
+
     def milestone_done(self, done: str, since: float) -> dict[str, int]:
         """How many Done Tasks last changed before `since` each milestone holds, the ones `snapshot` leaves out."""
         with self._engine.connect() as db:
             return {milestone: count for milestone, count in db.execute(queries.milestone_done(done, since))}
 
-    def ready(self, state: str, done: str) -> list[str]:
-        """The ids of unarchived Tasks in `state` whose dependencies are all in `done`."""
-        return self._ids(queries.ready(state, done))
+    def ready(self, state: str, done: str, only: str | None = None) -> list[str]:
+        """The ids of unarchived Tasks in `state` whose dependencies are all in `done`; `only` limits it to that id."""
+        return self._ids(queries.ready(state, done, only))
 
     def since(self, seq: int, limit: int = 1000) -> list[dict[str, Any]]:
         """Summaries of the Tasks changed after `seq`, archived ones included, in the order they changed."""

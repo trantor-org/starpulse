@@ -9,6 +9,9 @@ to the `github_inbox` table before it answers; without it no listener runs.
 - `database_url`: the inbox's database (default a SQLite file `github.sqlite` beside the config).
 - `max_body_bytes`: the largest body accepted (default 5 MiB).
 - `host`, `port`: where to bind (default `127.0.0.1:8767`; a container that publishes the port needs a wider host).
+- `reconcile_token_env`: the name of the environment variable that holds a GitHub token able to read the App's deliveries
+  and redeliver them, and to read the accepted repositories' pull requests and checks. With it, the sweeper's `github`
+  kind reconciles the inbox against GitHub on each sweeper pass; without it, none runs.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from dataclasses import dataclass
 
 __all__ = ["GitHub", "GitHubConfigError", "parse_github"]
 
-_KEYS = {"secret_env", "organisation", "repositories", "database_url", "max_body_bytes", "host", "port"}
+_KEYS = {"secret_env", "organisation", "repositories", "database_url", "max_body_bytes", "host", "port", "reconcile_token_env"}
 
 
 class GitHubConfigError(ValueError):
@@ -33,6 +36,7 @@ class GitHub:
     max_body_bytes: int = 5 * 1024 * 1024
     host: str = "127.0.0.1"
     port: int = 8767
+    reconcile_token_env: str | None = None
 
     def accepts(self, repository: str) -> bool:
         """Whether `repository` (`owner/name`) belongs to the organisation or is listed."""
@@ -81,4 +85,5 @@ def parse_github(raw: object) -> GitHub | None:
         max_body_bytes=_whole(raw, "max_body_bytes", defaults.max_body_bytes),
         host=_text(raw, "host") or defaults.host,
         port=_whole(raw, "port", defaults.port, 65535),
+        reconcile_token_env=_text(raw, "reconcile_token_env"),
     )

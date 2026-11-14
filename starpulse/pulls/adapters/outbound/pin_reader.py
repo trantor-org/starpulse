@@ -99,7 +99,9 @@ class GitHub:
         return sha
 
     def answers(self) -> dict[str, list[list]]:
-        """Every answer kept, as JSON a saved Board can hold; `restore` takes it back."""
+        """Every answer kept, as JSON a saved Board can hold; `restore` takes it back. The saved answers come first, so
+        a projection that publishes before its first read does not replace them with none."""
+        self._restored()
         return {
             "pointers": [[*key, found] for key, found in self._pointers.items()],
             "reaches": [[*key, contained] for key, contained in self._reaches.items()],

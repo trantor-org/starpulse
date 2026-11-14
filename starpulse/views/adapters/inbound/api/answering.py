@@ -23,6 +23,7 @@ if TYPE_CHECKING:  # annotation only
 logger = logging.getLogger(__name__)
 
 PLACE = "starpulse.place"  # in a request's scope: its place among the streams open
+WORKERS = "starpulse.workers"  # in a request's scope: the limiter of the threads it runs on, the reserve for a light one
 RAN = "starpulse.ran"  # in a timed request's scope: what its worker thread calls once it has the request
 
 
@@ -91,7 +92,7 @@ def _built[T](request: Request, work: Callable[[], T]) -> T | Response:
 async def on_worker(request: Request, work: Callable[[], Response]) -> Response:
     """Run `work` for `request` on a worker thread."""
     return await to_thread.run_sync(
-        lambda: _built(request, work), abandon_on_cancel=True, limiter=request.app.state.workers
+        lambda: _built(request, work), abandon_on_cancel=True, limiter=request.scope.get(WORKERS, request.app.state.workers)
     )
 
 

@@ -31,7 +31,12 @@ def starter(url: str | None, by: str | None = None) -> Callable[..., str] | None
     base = url.rstrip("/")
 
     def start(
-        task: str, *, harness: str = "claude", mode: str = "interactive", verb: str = "Start", profile: str | None = None
+        task: str,
+        *,
+        harness: str = "claude",
+        mode: str = "interactive",
+        verb: str = "Start",
+        profile: str | None = None,
     ) -> str:
         params: dict[str, str] = {"harness": harness, "mode": mode}
         if by:

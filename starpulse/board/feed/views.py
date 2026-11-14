@@ -8,7 +8,7 @@ from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.ledger import (
+from starpulse.board.model.ledger import (
     PAGE,
 )
 from starpulse.machine_engine.model.machine_ties import derive, entries
@@ -287,7 +287,7 @@ class ViewMethods:
             "ratings": {} if self._ratings is None else self._ratings.latest(),
             "interactive": dict.fromkeys(self._interactive, True),
             "error": self._error(),
-            "reading": self._replaying() or self._machines_reading,
+            "reading": self._replaying(),
             **declared(self._domains, self._runnable(), self._cues, self._processes),
             "boardUrl": self._board_url,
             "hint": self._hint,

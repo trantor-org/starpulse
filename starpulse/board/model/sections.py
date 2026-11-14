@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 import yaml
 
@@ -14,9 +15,14 @@ _HEADING = re.compile(r"^##[ \t]+(.*?)[ \t]*$", re.M)
 _FENCE = re.compile(r"```ya?ml\n(.*?)\n```", re.S)
 
 
+@lru_cache(maxsize=2048)
+def _heads(body: str) -> tuple[re.Match[str], ...]:
+    return tuple(_HEADING.finditer(body))
+
+
 def under(body: str, heading: str) -> str | None:
     """The text under the body's `## <heading>` up to the next `##` heading, or None when it has no such section."""
-    heads = list(_HEADING.finditer(body))
+    heads = _heads(body)
     for number, head in enumerate(heads):
         if head[1].casefold() == heading.casefold():
             end = heads[number + 1].start() if number + 1 < len(heads) else len(body)

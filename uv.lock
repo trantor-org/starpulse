@@ -1265,6 +1265,15 @@ wheels = [
 ]
 
 [[package]]
+name = "nats-py"
+version = "2.16.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/c8/739b72c9201081e48000884d476231873ac82f7247c43b33823eaf3c0bfb/nats_py-2.16.0.tar.gz", hash = "sha256:1d137ed7afc9b59033b3199324c6237df2016a5091935871344a787eba6b72fc", size = 79731, upload-time = "2026-09-16T07:47:21.843Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/a3/16cec37172144d3362d7551bb823a098b2b2903281fc095dfe4480b8c2fd/nats_py-2.16.0-py3-none-any.whl", hash = "sha256:aeb1ff123966c05833d26c7df7e1d54c1c6d32b612428b21677a2e921f1fecae", size = 93578, upload-time = "2026-09-16T07:47:20.799Z" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2092,6 +2101,7 @@ dependencies = [
     { name = "connect-python" },
     { name = "hypercorn", extra = ["h3"] },
     { name = "jsonschema" },
+    { name = "nats-py" },
     { name = "numpy" },
     { name = "prometheus-client" },
     { name = "protobuf" },
@@ -2130,6 +2140,7 @@ requires-dist = [
     { name = "connect-python", specifier = "==0.9.0" },
     { name = "hypercorn", extras = ["h3"], specifier = ">=0.18.0" },
     { name = "jsonschema", specifier = ">=4.25.1" },
+    { name = "nats-py", specifier = ">=2.10" },
     { name = "numpy", specifier = ">=2.5.4" },
     { name = "prometheus-client", specifier = ">=0.26.0" },
     { name = "protobuf", specifier = ">=7.36.2" },

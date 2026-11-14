@@ -5,7 +5,7 @@ A write that names a task the feed has not placed waits up to `REPLAY_WAIT_S` fo
 with `Retry-After`, which a client sends again, never 404 for a task the replay has yet to reach. Every handler parses its
 body through the request model it is declared with (`with_request`, `contracts.api.dto.requests`): a body that is not
 JSON, not an object, or holds an unnamed key, a field of the wrong type or a blank `actor`, `session` or `harness` answers
-400 `invalid request: <field>: <reason>` for its first fault, whatever the route's own "400 for" list names."""
+400 `invalid request: <field>: <reason>` for its first fault (a key the route does not take first), whatever the route's own "400 for" list names."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ValidationError
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import (
     AGENT,
     ANONYMOUS,
@@ -79,12 +79,6 @@ def held_task(feed: BoardFeed, task: str) -> dict | None:
     return agent
 
 
-def is_held(feed: BoardFeed, task: str) -> bool:
-    """Whether the feed holds the open task `task`, as `held_task` finds it but without building the moves it offers,
-    which a read of the task's record does not use."""
-    return feed.is_open(task) or (feed.wait_replayed(REPLAY_WAIT_S) and feed.is_open(task))
-
-
 def not_held(feed: BoardFeed, task: str) -> tuple[int, dict[str, str]]:
     """The refusal for a task `held_task` did not find: 503, which a client sends again, while the replay has not ended,
     else 404."""
@@ -103,8 +97,9 @@ def lan_refusal(what: str) -> tuple[int, dict[str, str]]:
 
 
 def _invalid(error: ValidationError) -> tuple[int, dict[str, str]]:
-    """The 400 for a body its request model refuses: the first fault, with the field it is in."""
-    fault = error.errors()[0]
+    """The 400 for a body its request model refuses: its first fault, a key the route does not take before any other, with the field it is in."""
+    faults = error.errors()
+    fault = next((f for f in faults if f["type"] == "extra_forbidden"), faults[0])
     where = ".".join(str(part) for part in fault["loc"])
     return 400, {"error": f"invalid request: {where + ': ' if where else ''}{fault['msg']}"}
 

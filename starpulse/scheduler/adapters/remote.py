@@ -19,7 +19,7 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent
 from starpulse.scheduler.model.capacity_limits import CapacityLimitSetting

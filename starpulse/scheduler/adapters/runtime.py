@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -17,9 +18,9 @@ from typing import Any
 from starpulse.board.model.seam import Written
 from starpulse.scheduler.model.capacity_limits import NAMES, CapacityLimitSetting
 from starpulse.scheduler.model.config import Scheduler
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.scheduler.model.harness_setting import HarnessSetting
-from starpulse.scheduler.model.inputs import review_points, sessions_held
+from starpulse.scheduler.model.inputs import STALE_S, review_points, sessions_held
 from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.adapters.loop import GATE_HISTORY_SERVED, Loop
 from starpulse.scheduler.adapters.probe import LocalProbe
@@ -46,6 +47,8 @@ class Runtime:
     loop: Loop | None = None
     _push_status: Callable[[], None] | None = None
     _served: dict[str, Any] | None = None
+    #: Brackets one `status`, so its dozen reads of the board's open tasks share one build (`BoardFeed.one_read`).
+    reading: Callable[[], AbstractContextManager[None]] = nullcontext
 
     def set_enabled(self, value: bool) -> None:
         """Set the switch; turning it on wakes the loop, which admits what capacity allows without waiting for an event."""
@@ -91,12 +94,16 @@ class Runtime:
         With a dispatch loop it also lists the sessions in flight, the next pick, per-harness session use and any
         credit pauses; without one those keys are absent.
         """
+        with self.reading():
+            return self._status()
+
+    def _status(self) -> dict[str, Any]:
         readings, at = self.sampler.readings()
         selected = self.harness.get()
+        by = self.loop.sessions_by_harness() if self.loop is not None else {}  # one pass: it reads every open task
         dimensions = []
         for reading in readings:
             if reading.name == "sessions" and self.loop is not None:
-                by = self.loop.sessions_by_harness()
                 row = by.get(selected, {"use": 0.0, "limit": self.policy.session_limit(selected)})
                 dimensions.append({"name": "sessions", "use": row["use"], "limit": row["limit"]})
             elif reading.name == "sessions":
@@ -117,7 +124,7 @@ class Runtime:
         if self.loop is not None:
             body["inFlight"] = self.loop.in_flight()
             body["next"] = self.loop.next_pick()
-            body["sessionsByHarness"] = self.loop.sessions_by_harness()
+            body["sessionsByHarness"] = by
             body["blockedBy"] = self.loop.blocks()
             body["gateHistory"] = self.loop.gate_history(GATE_HISTORY_SERVED)
             body["needsOperator"] = self.loop.needs_operator()
@@ -213,12 +220,16 @@ def build(
         policy.effective_limits,
         probe or LocalProbe(),
         sessions=lambda: sessions_held(
-            feed.open_tasks(), feed.roles.working, feed.machine_tasks(HARNESS.name), clock()
+            feed.open_tasks(),
+            feed.roles.working,
+            feed.machine_tasks(HARNESS.name, since=clock() - STALE_S),
+            clock(),
         ),
         review=lambda: review_points(feed.open_tasks(), policy.reviewed_lane(feed.roles.review), policy.unsized_points),
         on_crossing=crossed,
         clock=clock,
         remember=remember_sample,
+        hold=feed.one_read,
     )
     if saved := state.sample():
         try:
@@ -250,4 +261,4 @@ def build(
             harness=harness,
             transcript=transcript,
         )
-    return Runtime(toggle, sampler, quiet_hours, harness, policy, session_caps, capacity_limits, loop)
+    return Runtime(toggle, sampler, quiet_hours, harness, policy, session_caps, capacity_limits, loop, reading=feed.one_read)

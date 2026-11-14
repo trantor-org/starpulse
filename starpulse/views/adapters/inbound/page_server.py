@@ -24,14 +24,11 @@ from hypercorn.asyncio.tcp_server import TCPServer
 from hypercorn.config import Config, Sockets
 from hypercorn.utils import wrap_app
 
+from starpulse.contracts.reads import BACKLOG
 from starpulse.views.adapters.inbound.asgi_app import PageApp
 
 logger = logging.getLogger(__name__)
 
-
-#: Connections the kernel queues for the server to accept: a crowd of pages connecting at once fits in it, where the
-#: stock 5 drops the rest's SYNs and each waits out a 1 s retransmit before its first byte.
-BACKLOG = 128
 
 #: The backlog a socket handed in keeps: `starpulse.socket`'s `Backlog=1024`. Hypercorn calls `listen` with its config's
 #: backlog on every socket it serves, so a handed socket gets this number, not `BACKLOG`, or the unit's queue shrinks to 128.

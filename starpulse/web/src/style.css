@@ -208,7 +208,7 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #sd header .crumb { all: unset; cursor: pointer; font-size: calc(11px * var(--fs)); color: var(--slate); }
 #sd header .crumb:hover, #sd header .crumb:focus-visible { color: var(--ink-hi); }
 /* the drill-in's header is its own breadcrumb: the Star Map's, which the shell toggles imperatively, would overprint it */
-body:has(#sd) #crumb { visibility: hidden; }
+body.drilling #crumb { visibility: hidden; }
 /* the board's motion, the approved mockup's: suns breathe, flows march, the current node pulses, bright stars twinkle */
 @keyframes sd-pulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(2.6); opacity: 0; } }
 @keyframes sd-twinkle { 0%, 100% { opacity: .25; } 50% { opacity: .75; } }
@@ -310,6 +310,34 @@ body:has(#sd) #crumb { visibility: hidden; }
 #kb .mach .ago { flex: none; margin-left: auto; color: var(--faint); }
 @keyframes kb-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(2.4); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #kb .mach.hot .p::after { animation: none; } }
+/* the phase track: the phase and submachine chain over the live machine's states, in the Star Map's phase and submachine colours */
+#kb .ph { margin-bottom: 6px; --phase-text: color-mix(in srgb, var(--phase) 70%, var(--white)); --submachine-text: color-mix(in srgb, var(--submachine) 60%, var(--white)); }
+#kb .ph .chain { display: flex; align-items: baseline; gap: 5px; font-size: calc(10.5px * var(--fs)); color: var(--slate-3); white-space: nowrap; overflow: hidden; }
+#kb .ph .chain b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; color: color-mix(in srgb, var(--submachine-text) 60%, transparent); }
+#kb .ph .chain b:first-child { color: color-mix(in srgb, var(--phase-text) 60%, transparent); }
+#kb .ph .chain b.cur { color: var(--submachine-text); }
+#kb .ph .chain b.cur:first-child { color: var(--phase-text); }
+#kb .ph .chain .sep { flex: none; color: var(--faint); }
+#kb .ph .chain .s { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#kb .ph .chain .ago { flex: none; margin-left: auto; color: var(--faint); }
+#kb .ph .rail { position: relative; height: calc(14px * var(--fs)); margin: 3px 6px 0; }
+#kb .ph .trk { position: absolute; inset: 0; --mc: var(--submachine); }
+#kb .ph .trk.phase { --mc: var(--phase); }
+#kb .ph .ln { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: color-mix(in srgb, var(--mc) 40%, var(--track)); transform-origin: left center; animation: ph-draw 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+#kb .ph .st { position: absolute; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: color-mix(in srgb, var(--mc) 45%, transparent); animation: ph-pop 0.35s ease-out both; animation-delay: calc(var(--k) * 60ms + 0.15s); }
+#kb .ph .st.past { background: color-mix(in srgb, var(--mc) 85%, transparent); box-shadow: 0 0 4px color-mix(in srgb, var(--mc) 50%, transparent); }
+#kb .ph .st.fin { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; background: var(--bg0); box-shadow: 0 0 0 1px color-mix(in srgb, var(--muted) 75%, transparent); }
+#kb .ph .mk { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--agent); box-shadow: 0 0 6px var(--agent); transition: left 0.9s cubic-bezier(0.22, 1, 0.36, 1); animation: ph-pop 0.4s ease-out 0.45s both; }
+#kb .ph .mk.hot { background: var(--run); box-shadow: 0 0 0 3px color-mix(in srgb, var(--run) 25%, transparent), 0 0 10px var(--run); }
+#kb .ph .sk { position: absolute; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: linear-gradient(to right, transparent, color-mix(in srgb, var(--run) 70%, transparent)); animation: ph-fade 1.2s ease-out forwards; }
+#kb .ph .sk.back { background: linear-gradient(to left, transparent, color-mix(in srgb, var(--run) 70%, transparent)); }
+#kb .ph .trk.out { transform-origin: right center; animation: ph-tear 0.6s ease-in forwards; }
+#kb .ph .trk.out .ln, #kb .ph .trk.out .st { animation: none; }
+@keyframes ph-draw { from { transform: scaleX(0); } }
+@keyframes ph-pop { from { transform: scale(0); opacity: 0; } }
+@keyframes ph-fade { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ph-tear { to { transform: scaleX(0); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #kb .ph .ln, #kb .ph .st, #kb .ph .mk { animation: none; transition: none; } #kb .ph .sk, #kb .ph .trk.out { display: none; } }
 #kb .foot { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: calc(10px * var(--fs)); color: var(--muted); }
 #kb .lab { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 5px; border-radius: 3px; background: color-mix(in srgb, var(--slate) 10%, transparent); color: var(--slate); line-height: 15px; }
 #kb .lab.nh { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail-text); }
@@ -466,7 +494,7 @@ body:has(#sd) #crumb { visibility: hidden; }
 #kbm .tvrail .pull { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 2px 0; }
 #kbm .chk { display: inline-flex; align-items: center; gap: 5px; font-size: calc(11px * var(--fs)); color: var(--ink-3); }
 #kbm .chk i { width: 7px; height: 7px; border-radius: 50%; background: var(--slate); }
-#kbm .chk.pass i { background: var(--ok); } #kbm .chk.fail i { background: var(--fail); } #kbm .chk.pending i { background: var(--run); } #kbm .chk.merged i { background: var(--agent); } #kbm .chk.phase i { background: var(--mapped); }
+#kbm .chk.pass i { background: var(--ok); } #kbm .chk.fail i { background: var(--fail); } #kbm .chk.pending i { background: var(--run); } #kbm .chk.merged i { background: var(--agent); } #kbm .chk.closed i { background: var(--slate); } #kbm .chk.phase i { background: var(--mapped); }
 #kbm .thr { font-size: calc(11px * var(--fs)); color: var(--run); }
 /* Start Criteria (approved mockup): a card per criterion, tinted by its result; an error is not in the mockup and is a ledger deviation. */
 #kbm .tvrail .crit { display: flex; flex-direction: column; gap: 8px; }
@@ -673,6 +701,9 @@ body:has(#sd) #crumb { visibility: hidden; }
 #kbm .tvhead .mvmenu div.on { background: color-mix(in srgb, var(--agent) 16%, transparent); color: var(--agent-hi); }
 #kbm .tvhead .mvmenu div[aria-disabled=true] { opacity: .4; }
 #kbm .tvhead .mvmenu .g { width: 14px; text-align: center; color: var(--muted); }
+/* A move that breaks a lane's rules stays on offer to the operator in the ok rows' ink, unlike the amber ⊘ guard rows: an amber ⚠ and the count of rules it breaks, then the warn-and-confirm box */
+#kbm .tvhead .mvmenu div.warn .g { color: var(--run); }
+#kbm .tvhead .mvmenu .n { color: var(--muted); margin-left: 4px; }
 @keyframes kb-scrim { from { background: transparent; } } @keyframes kb-modal { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 @media (prefers-reduced-motion: reduce) { #kbm, #kbm .modal { animation: none; } }
 /* Narrow windows: one column, the rail first so the task's live state stays on top. */
@@ -795,7 +826,7 @@ body.dragging, body.dragging * { user-select: none; }
 #proposals .grp .ct { margin-left: 6px; }
 #proposals .ct, #proposals .none { font-size: calc(11px * var(--fs)); color: var(--muted); }
 #proposals .strip { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; min-width: 0; padding-bottom: 6px; }
-#proposals .strip > .prop { flex: 0 1 360px; max-width: 100%; }
+#proposals .strip > .viewport-row { flex: 0 1 360px; max-width: 100%; min-width: 0; }
 @media (max-width: 719px) { #proposals .group { grid-template-columns: minmax(0, 1fr); gap: 8px 0; } }
 #proposals .prop { box-sizing: border-box; min-width: 0; overflow-wrap: anywhere; padding: 12px 16px; border-radius: 10px; background: color-mix(in srgb, var(--surface) 85%, transparent);
   border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
@@ -934,6 +965,14 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #efa button.danger:hover, #efa button.danger:focus-visible { background: color-mix(in srgb, var(--danger) 26%, transparent); }
 #efa button:disabled { opacity: .45; }
 #efa .refused { padding: 7px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); background: color-mix(in srgb, var(--danger) 8%, transparent); color: var(--danger-text); font-size: calc(12px * var(--fs)); }
+/* The warn-and-confirm box: one .warn row per broken rule, its skill under it; a long list scrolls inside the box, which keeps its buttons on screen */
+#efa .box:has(.rules) { max-height: 86dvh; overflow: hidden; }
+#efa .box:has(.rules) > :not(.rules) { flex: none; }
+#efa .rules { min-height: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
+#efa .rules:focus-visible { box-shadow: 0 0 0 1px var(--agent); border-radius: 6px; }
+#efa .warn .g { flex: none; color: var(--run); }
+#efa .warn code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10.5px * var(--fs)); color: var(--white); overflow-wrap: anywhere; }
+#efa .lead { color: var(--ink-2); }
 #ef-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 70; padding: 8px 14px; border-radius: 8px; background: color-mix(in srgb, var(--surface) 98%, transparent);
   border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); color: var(--ok-text); font: calc(12px * var(--fs)) Inter, system-ui, sans-serif; box-shadow: 0 12px 30px color-mix(in srgb, var(--shadow) 50%, transparent); animation: kb-modal .2s ease-out; }
 #ef-toast span { color: var(--muted); }
@@ -1001,7 +1040,7 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 /* a dependency streams toward the step that waits, as the Star Map's DAG links do, in a Processing row, the row the keyboard or a
    Recent line rests on and in the open DAG's chart only: stroke-dashoffset repaints on the main thread every frame, and a
    whole catalog streaming kept an idle page's main thread busy 40% of the time */
-@media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.drow:is([data-pane=processing], .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
+@media (prefers-reduced-motion: no-preference) { #dg :is(.drow:is([data-pane=processing], .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
 @keyframes dag-stream { to { stroke-dashoffset: -6; } }
 /* The stage: one box of absolutely placed slots. A row's place is three custom properties, --c its column, --hs the header slots above it and --s its slot, so a DAG that changes pane is the one element and its transform's transition: nothing is cloned and nothing stays behind.
    A row's top is hs * header + s * pitch in both columns, so a Processing row and the Idle row of its slot share a top at every text size. */
@@ -1112,7 +1151,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 
 /* Every scrolling box on the page, in one place: it scrolls only vertically, never sideways, and wears the Kanban
    columns' thin, quiet scrollbar. A box that needs to scroll joins this list rather than setting its own overflow. */
-#nav .matches, #nav .outline, #nav .leaderboard, #nav .drill-tasks, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tv .md.desc, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #proposals, #admin, #sd .sd-details {
+#nav .matches, #nav .outline, #nav .leaderboard, #nav .drill-tasks, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tv .md.desc, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #proposals, #admin, #sd .sd-details, #efa .rules {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 /* a machine a third party moves (machine.source) is drawn like a local one, in blue instead of purple */
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
@@ -1124,22 +1163,8 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 /* A view left behind stays mounted and laid out (shared/Kept): its root becomes a transparent layer, so showing it is compositing only. */
 .kept { display: contents; }
 .kept > * { will-change: opacity; }
-.kept[inert] #kb .mach.hot .p::after, .kept[inert] #dg svg.dstrip path.link { animation-play-state: paused; }
-/* A view warmed before it is first shown is laid out unseen, one part (a Kanban column) more a frame, the count in data-warm. */
-.kept[inert][data-warm] > * { visibility: hidden; }
-.kept[data-warm] [data-warm-parts] > * { content-visibility: hidden; }
-.kept[data-warm="1"] [data-warm-parts] > :nth-child(-n+1),
-.kept[data-warm="2"] [data-warm-parts] > :nth-child(-n+2),
-.kept[data-warm="3"] [data-warm-parts] > :nth-child(-n+3),
-.kept[data-warm="4"] [data-warm-parts] > :nth-child(-n+4),
-.kept[data-warm="5"] [data-warm-parts] > :nth-child(-n+5),
-.kept[data-warm="6"] [data-warm-parts] > :nth-child(-n+6),
-.kept[data-warm="7"] [data-warm-parts] > :nth-child(-n+7),
-.kept[data-warm="8"] [data-warm-parts] > :nth-child(-n+8),
-.kept[data-warm="9"] [data-warm-parts] > :nth-child(-n+9),
-.kept[data-warm="10"] [data-warm-parts] > :nth-child(-n+10),
-.kept[data-warm="11"] [data-warm-parts] > :nth-child(-n+11),
-.kept[data-warm="12"] [data-warm-parts] > :nth-child(-n+12) { content-visibility: visible; }
+/* A view left behind is not styled, laid out or animated while hidden, and the rule names no descendant, so toggling `inert` never re-matches its thousands of nodes; showing it again does that work in the click's own frame. */
+.kept[inert] > * { content-visibility: hidden; }
 /* Showing the Kanban or the DAGs styles and paints only the cards and rows on screen; one scrolled out of sight keeps the
    size it last drew at. */
 #kb .card { content-visibility: auto; contain-intrinsic-size: auto 64px; }
@@ -1248,6 +1273,11 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .ask .seg { max-width: 100%; }
   #kbm .ask .seg button { padding: 2px 9px; }
   #kbm .ask .afoot { flex-wrap: wrap; }
+
+  /* The warn-and-confirm box's Cancel and Confirm split its width at a thumb's height; the keyboard hint is dropped */
+  #efa .rules ~ .row { display: grid; grid-template-columns: 1fr 1fr; }
+  #efa .rules ~ .row :is(.hint, .sp) { display: none; }
+  #efa .rules ~ .row button { box-sizing: border-box; min-height: 44px; display: flex; align-items: center; justify-content: center; }
 
   /* A DAG's view fills the phone and covers the bar as the task view does. Its chart keeps the size its step names are read at and scrolls
      inside its own box, the one place the page scrolls sideways; scaled to the phone's width the names were 4px tall. */

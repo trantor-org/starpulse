@@ -7,7 +7,6 @@
 <p align="center"><strong>Declarative state machines for agent work, with an enforced task board and a live view of every task, workflow run and agent session.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/trantor-org/starpulse/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/trantor-org/starpulse/ci.yml?branch=main&style=flat-square&label=ci" alt="CI status"></a>
   <a href="https://pypi.org/project/starpulse/"><img src="https://img.shields.io/pypi/v/starpulse?style=flat-square&label=pypi" alt="PyPI version"></a>
   <a href="https://pypi.org/project/starpulse/"><img src="https://img.shields.io/pypi/pyversions/starpulse?style=flat-square" alt="Python version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License: MIT"></a>
@@ -82,7 +81,7 @@ install the copy under its own name:
 
 ```sh
 dir=$(mktemp -d)
-curl -fsSL -o "$dir/starpulse-latest-py3-none-any.whl" \
+curl -fsSL --max-time 120 -o "$dir/starpulse-latest-py3-none-any.whl" \
   https://github.com/trantor-org/starpulse/releases/latest/download/starpulse-latest-py3-none-any.whl
 name=$(python3 -c "import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); print(next(n for n in z.namelist() if n.endswith('/WHEEL')).split('/')[0][:-len('.dist-info')])" "$dir/starpulse-latest-py3-none-any.whl")
 mv "$dir/starpulse-latest-py3-none-any.whl" "$dir/$name-py3-none-any.whl"

@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 
 from starpulse.event_log.wake import StopEvent
@@ -58,6 +59,7 @@ class Sampler:
         on_crossing: Callable[[Crossing], object],
         clock: Callable[[], float],
         remember: Callable[[list[Reading], float], object] | None = None,
+        hold: Callable[[], AbstractContextManager[object]] = nullcontext,
     ) -> None:
         self._limits = limits
         self._probe = probe
@@ -65,6 +67,7 @@ class Sampler:
         self._on_crossing = on_crossing
         self._clock = clock
         self._remember = remember
+        self._hold = hold
         self._latest: tuple[list[Reading], float | None] = ([], None)
 
     def restore(self, readings: list[Reading], at: float) -> None:
@@ -82,7 +85,9 @@ class Sampler:
         """Read every dimension once; a probe that fails keeps the readings of the pass before."""
         try:
             host = self._probe()
-            use = {"cpu": host["cpu"], "memory": host["memory"]} | {name: read() for name, read in self._uses.items()}
+            with self._hold():  # the sessions and review reads share one build of the board's open tasks
+                reads = {name: read() for name, read in self._uses.items()}
+            use = {"cpu": host["cpu"], "memory": host["memory"]} | reads
             limits = self._limits()
             now = [Reading(name, use[name], limits[name]) for name in DIMENSIONS]
         except Exception:  # a probe is third-party code; the next period goes again

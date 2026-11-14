@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from fnmatch import fnmatchcase
 from typing import Any
 
@@ -23,7 +23,7 @@ from starpulse.contracts.analytics import Analytics, SkillLoad
 from starpulse.contracts.signals import Signal
 from starpulse.flow_metrics.model.session_health import attributed, grouped, session_kind
 
-__all__ = ["Case", "Missed", "case_order", "cases", "missed_loads"]
+__all__ = ["Case", "Missed", "case_order", "cases", "combine_cases", "fold_cases", "missed_loads"]
 
 #: Components of an area: `lib/store` for `lib/store/src/x.py`.
 _AREA_DEPTH = 2
@@ -122,6 +122,30 @@ def cases(
                     labels=tuple(entry.get("labels") or ()),
                 )
             )
+    return sorted(built, key=case_order)
+
+
+#: The `Case` fields a fold row keeps as JSON lists, made tuples again when it is read.
+_TUPLES = ("activities", "reads", "writes", "skills")
+
+
+def fold_cases(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> list[dict[str, Any]]:
+    """The fold of one session's `signals`: its `cases` under `analytics.roots`, as plain JSON data without the board's
+    `title` and `labels`, which `combine_cases` takes from the board as it reads."""
+    roots = analytics.roots if analytics is not None else ()
+    found = cases(signals, keys, roots=roots, analytics=analytics)
+    return [{k: v for k, v in asdict(case).items() if k not in ("title", "labels")} for case in found]
+
+
+def combine_cases(folds: Iterable[list[dict[str, Any]]], tasks: Mapping[str, Mapping[str, Any]] | None = None) -> list[Case]:
+    """The cases of the sessions' `fold_cases` results, each with the `title` and `labels` of its task in `tasks`, in
+    `case_order`: what `cases` gives for the signals of all those sessions."""
+    built = []
+    for rows in folds:
+        for row in rows:
+            entry = (tasks or {}).get(row["task"] or "", {})
+            held = {**row, **{name: tuple(row[name]) for name in _TUPLES}}
+            built.append(Case(**held, title=entry.get("title"), labels=tuple(entry.get("labels") or ())))
     return sorted(built, key=case_order)
 
 

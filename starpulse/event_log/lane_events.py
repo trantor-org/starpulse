@@ -14,10 +14,14 @@ description or a holder.
 
 from __future__ import annotations
 
+import logging
 import threading
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from starpulse.event_log.wake import StopEvent
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from starpulse.contracts import BoardTask
@@ -68,6 +72,28 @@ def append(log: EventLog, event_id: str, task: str, lane: str, at: float, actor:
     return log.publish(STREAM, change(task, lane, at, actor), event_id=event_id)
 
 
+def _follow(log: EventLog, handle: Callable[[Entry], None], name: str, stop: StopEvent) -> threading.Thread:
+    from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
+
+    thread = threading.Thread(target=Tail.live(log, STREAM).run, args=(handle, stop), name=name, daemon=True)
+    thread.start()
+    return thread
+
+
+def follow_entered(entered: Callable[[str], None], log: EventLog, stop: StopEvent) -> threading.Thread:
+    """Call `entered` with the task of each entry appended from now on, on a thread until `stop`; a raise is logged."""
+
+    def handle(entry: Entry) -> None:
+        task = entry.fields.get("task")
+        try:
+            if task:
+                entered(task)
+        except Exception as error:  # a hook that fails leaves the move and the next entry alone
+            logger.warning("board:lanes: the entered command failed for %s: %s", task, error)
+
+    return _follow(log, handle, "lane-entered", stop)
+
+
 class Unattributed:
     """Counts the entries appended to the stream from now on that name no actor, whichever process wrote them."""
 
@@ -91,9 +117,5 @@ class Unattributed:
 
     def follow(self, log: EventLog, stop: StopEvent) -> threading.Thread:
         """Count the entries `log` takes from now on, on a thread until `stop`."""
-        from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
-        tail = Tail.live(log, STREAM)
-        thread = threading.Thread(target=tail.run, args=(self.handle, stop), name="lane-unattributed", daemon=True)
-        thread.start()
-        return thread
+        return _follow(log, self.handle, "lane-unattributed", stop)
 

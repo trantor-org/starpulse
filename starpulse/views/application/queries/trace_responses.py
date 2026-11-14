@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics.model.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
-from starpulse.flow_metrics.model.traces import Case, case_order, missed_loads
+from starpulse.flow_metrics.model.traces import Case, case_order, combine_cases, missed_loads
 from starpulse.flow_metrics.model.traces import cases as trace_cases
 from starpulse.views.application.queries.responses import _HEALTH_HOURS, _error, _held_folds, _hours
 from starpulse.views.model.encoding import encode
@@ -66,6 +66,23 @@ def _telemetry_cases(
     return sorted(found, key=case_order)
 
 
+def _folded_cases(
+    telemetry: SignalFoldReader | None,
+    window: float,
+    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    now: float,
+    kind: str,
+) -> list[Case] | tuple[bytes, int]:
+    """The cases of the last `window` hours combined from the sessions' `cases` fold rows, a session that began before
+    the window folded from its signals inside it, or the 501, 503 or 400 response `_telemetry_cases` gives."""
+    if telemetry is None:
+        return _error("this instance receives no harness telemetry, so it cannot read what its sessions did"), 501
+    held = _held_folds(telemetry, window, kind, now, "analytics", ("cases",))
+    if isinstance(held, tuple):
+        return held
+    return combine_cases(held["cases"], titled())
+
+
 def missed_loads_response(
     telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
@@ -80,7 +97,7 @@ def missed_loads_response(
     window, listed = _hours(query, "hours", _HEALTH_HOURS), _whole(query, "list", _LISTED)
     if window is None or listed is None:
         return _error("hours must be a positive number and list a whole number"), 400
-    found = _telemetry_cases(telemetry, window, keys, titled, analytics, now, "missed_loads")
+    found = _folded_cases(telemetry, window, titled, now, "missed_loads")
     if isinstance(found, tuple):
         return found
     wanted = query.get("skill", [""])[0]

@@ -10,7 +10,7 @@ The module's `board(settings, base)` returns a `Board`; `settings` is the rest o
 from __future__ import annotations
 
 import importlib
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
@@ -20,7 +20,7 @@ from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES
 
 if TYPE_CHECKING:
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.contracts.task_keys import TaskKeys
     from starpulse.event_log.event_log import EventLog
     from starpulse.machine_engine.model.snapshot import Qualify
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 __all__ = [
     "AGENT",
     "ANONYMOUS",
+    "COMMENT_CAP",
     "DEFAULT_TYPE",
     "FLAGGED",
     "HELD",
@@ -65,6 +66,8 @@ __all__ = [
 
 #: Who the page acts for, which it names on every write it makes.
 OPERATOR = "operator"
+#: The most characters one board comment holds: the agent CLI refuses a longer one, and the task actor clips its own.
+COMMENT_CAP = 4000
 #: What a close comment of merge evidence starts with; a board writes the same one once per task.
 MERGE_EVIDENCE = "Closed on merge evidence:"
 #: What a hold comment starts with; a board does not repeat the task's latest one, so a restart writes nothing new.
@@ -99,6 +102,8 @@ class Written(NamedTuple):
     """Whether a declared guard or the board's validate hook refused the write: a defect in the task record an editor of the record repairs."""
     renumbered: str = ""
     """The id the write gave the task when it renumbered it (a promoted proposal takes a task number); empty when the id stands."""
+    warnings: tuple[str, ...] = ()
+    """The reasons of the lane rules the write broke and landed anyway, which only an operator's move may; empty for a clean write."""
 
 
 class MoveWriter(Protocol):
@@ -124,6 +129,8 @@ class TaskReleaser(Protocol):
 
 #: One task's full record keyed by its editable fields, or None when the board has no such task.
 TaskReader = Callable[[str], Mapping[str, Any] | None]
+
+
 class TaskEditor(Protocol):
     """Apply every change to a task in one write, with a comment or a list of them."""
 
@@ -158,6 +165,8 @@ RetiredImporter = Callable[[str, str], Written]
 #: Move a Done task out of the lanes into the board's completed tasks; one that is not Done, is already completed or has
 #: no file is refused. A completed task is still read and edited.
 TaskCompleter = Callable[[str], Written]
+
+
 class TaskCreator(Protocol):
     """Create a task with this title and details in the starting lane. `details` holds only the fields the page filled
     (`description`, `priority`, `impact`, `urgency`, `tier`, `labels`, `milestone`, `assignee`, `dependencies`,
@@ -189,6 +198,8 @@ DocCreator = Callable[[str, Mapping[str, Any]], Written]
 DocEditor = Callable[[str, Mapping[str, Any]], Written]
 #: Archive a doc.
 DocArchiver = Callable[[str], Written]
+
+
 class DocRestorer(Protocol):
     """Return an archived doc's file, unchanged, to the board's docs under `folder` (a path of plain names under
     `docs/`, `docs/` itself when blank). An archive keeps no folder, so the caller names where the doc goes; a doc with
@@ -257,12 +268,17 @@ class Board:
     """Reads the retired tasks; None when the board keeps none."""
     retired_projected: RetiredProjector | None = None
     """Reads the retired tasks through a projection of each text; None when the board keeps none."""
+    retired_version: Callable[[], Hashable] | None = None
+    """A token that is equal while the retired tasks are as they were, as a retire, an import or a restore moves it; None
+    when the board cannot tell, which leaves a reader of every retired task to read them again each time."""
     import_retired: RetiredImporter | None = None
     """Keeps a task retired elsewhere among the retired tasks; None refuses every import."""
     reconcile: Callable[[str], bool] | None = None
     """Brings a task's History to its file and says whether it had to; None when the board keeps no History."""
     files: Callable[[], Iterable[tuple[str, list[str]]]] | None = None
     """Lists each open task file's id and the aliases it answers to; None when the board keeps no files to list."""
+    done_files: Callable[[], Iterable[tuple[str, list[str]]]] | None = None
+    """Lists each done task file's id and the aliases it answers to, which the board keeps answering; None when the board keeps none."""
     create: TaskCreator | None = None
     """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
     milestones: MilestoneLister | None = None
@@ -302,6 +318,10 @@ class Board:
     released: Callable[[str], None] | None = None
     """Tells whoever held a task that the task actor moved it from Waiting to Ready, given its id, so a task that was
     parked mid-work is resumed whatever admits Ready tasks; a raise is logged and the move stands. None tells no one."""
+    idle: Callable[[str, str], None] | None = None
+    """Tells the session holding a task In Progress that it went idle, given the task's id and `checkpoint` (the first
+    idle: resume the holder to checkpoint) or `confirm` (the second); a raise says the holder is busy or was not reached,
+    and that idle is not counted. None tells no one, and an idle holder is never counted."""
     delivered: Callable[[str, str], None] | None = None
     """Tells whoever holds a task that its delivery run finished, given its id and the run's verdict (`green`, or
     `<red|blocked> <step>`), so the session resumes on the verdict without waiting on the run; a raise is logged. None
@@ -310,6 +330,12 @@ class Board:
     """Tells whoever held a task that the task actor moved it from Review back to the working lane, given its id, so the
     session that delivered it fixes the pull request that turned draft or conflicting; a raise is logged and the move
     stands. None tells no one."""
+    alive: Callable[[str], bool] | None = None
+    """Whether the session holding a task is running, given its id, so a Review task whose pull request is not green goes
+    back to that session when it is and to the queue when it is not. None reads every holder as gone."""
+    enqueued: Callable[[str], None] | None = None
+    """Puts a Review task's ready pull request in the merge queue, given the task's id, when the task actor reads
+    `pr_ready` in Review; the task stays in Review and a raise is logged. None enqueues nothing."""
     verifying: Callable[[str], None] | None = None
     """Tells whoever held a task that the task actor moved it on a merge that leaves post-merge QA to run (its Verify
     plan), given its id, so the session that delivered it runs that QA; a raise is logged and the move stands. None tells
@@ -317,6 +343,9 @@ class Board:
     closed: Callable[[str], None] | None = None
     """Tells the board that the task actor moved a task to Done, given its id, so it can file what follows the close; a
     raise is logged and the close stands. None tells no one."""
+    entered: Callable[[str], None] | None = None
+    """Tells the board that a task entered a lane, given its id, for every lane change `board:lanes` records whoever
+    wrote it; a raise is logged and the move stands. None tells no one."""
     attach: Callable[[EventLog], None] | None = None
     """What a context that reads the Board from the read model, and so never calls `start`, needs of the event log the
     adapter would have been handed there; None needs nothing."""

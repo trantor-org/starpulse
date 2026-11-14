@@ -17,7 +17,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.board_feed import follow
+from starpulse.board.model.board_feed import follow
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.store import EventStore
@@ -61,10 +61,11 @@ def start(
     _, feed = worker_board(config, base, log, stop)
     store = history_store(config, base, feed.machines)
     publisher = Publisher(log)
-    for instance, adapter in adapters:
-        adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
     # The learned step graphs persist only in StarPulse's own store.
     pushed = PushRuns(publisher.runs(PUSHED_INSTANCE, feed.runs(PUSHED_INSTANCE)), store)
+    publisher.on_listing(pushed.prune)
+    for instance, adapter in adapters:
+        adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
     follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop)
     # Every entry path's run entries also land in the event store, one stream per run.
     streams = RunStreams(EventStore(log.engine))

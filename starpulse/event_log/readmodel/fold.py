@@ -98,6 +98,10 @@ def _claimed(row: Row, event: StoredEvent) -> None:
     row.update(assignee=event.payload["assignee"], released=None)
 
 
+#: The actor of a release the task actor makes: an idle holder's claim, ended in place so a session is started on the task.
+IDLE_RELEASER = "starpulse/task-actor"
+
+
 def _released(row: Row, event: StoredEvent) -> None:
     payload = event.payload
     row["assignee"] = ""
@@ -109,6 +113,8 @@ def _released(row: Row, event: StoredEvent) -> None:
             "last_renewal": payload["last_renewal"],
             "ttl": payload["ttl"],
         }
+    elif event.actor == IDLE_RELEASER:
+        row["released"] = {"at": event.at, "session": "", "last_renewal": event.at, "ttl": 0, "idle": True}
 
 
 def _nothing(row: Row, event: StoredEvent) -> None:

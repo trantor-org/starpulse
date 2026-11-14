@@ -4,7 +4,7 @@
 `systemctl --user`; a name without `.timer` means `<name>.timer`. `Timers.read` reads each timer and its service with
 `systemctl show` into the `runs` contract's `Dag` records. `follow` reads the allowlist once, then re-reads only the timer
 whose unit systemd reports as changed (a D-Bus `PropertiesChanged` signal, watched through one `gdbus monitor` per
-manager); a monitor that exits is started again and its timers read again. A `runs:resync` entry naming the instance
+manager, with `Manager.Subscribe` held beside it, which systemd needs before it sends them); a monitor that exits is started again and its timers read again. A `runs:resync` entry naming the instance
 reads them all again. `start` is None, since starting a root unit needs a
 polkit grant, so a timer has no Run now.
 """
@@ -14,10 +14,13 @@ from __future__ import annotations
 import os
 import queue
 import re
+import socket
+import struct
 import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from starpulse.contracts.adapters import RunsSink, RunStatus
@@ -223,16 +226,69 @@ def serve(timers: Timers, events: queue.Queue, stop: StopEvent, debounce: float 
             timers.read(changed)
 
 
+def _bus_path(user: bool) -> str:
+    """The socket of the system bus, or of the user's session bus, as `gdbus` finds it."""
+    if user:
+        address = os.environ.get("DBUS_SESSION_BUS_ADDRESS") or f"unix:path={os.environ['XDG_RUNTIME_DIR']}/bus"
+    else:
+        address = os.environ.get("DBUS_SYSTEM_BUS_ADDRESS") or "unix:path=/run/dbus/system_bus_socket"
+    return address.removeprefix("unix:path=").split(",")[0]
+
+
+def _call(serial: int, member: str, path: str, interface: str, destination: str) -> bytes:
+    """A D-Bus method call with no arguments, as its bytes on the wire (little-endian, version 1)."""
+    fields = b""
+    for code, sig, value in ((1, b"o", path), (2, b"s", interface), (3, b"s", member), (6, b"s", destination)):
+        raw = value.encode()
+        fields += b"\0" * (-len(fields) % 8) + bytes([code, 1]) + sig + b"\0" + struct.pack("<I", len(raw)) + raw + b"\0"
+    head = b"l\x01\x00\x01" + struct.pack("<III", 0, serial, len(fields))
+    return head + fields + b"\0" * (-len(fields) % 8)
+
+
+@contextmanager
+def _subscribed(user: bool) -> Iterator[None]:  # pragma: no mutate block — process boundary
+    """Hold `Manager.Subscribe` on one manager's bus for the block. systemd sends a unit's `PropertiesChanged` signals on
+    that bus only while some client is subscribed, and `gdbus monitor` never subscribes: the system manager has other
+    subscribers (logind), the user manager has none, so its units' signals would never come. systemd drops the
+    subscription when this connection closes. Raises `OSError` when the manager refuses or the bus does not answer."""
+    with socket.socket(socket.AF_UNIX) as bus:
+        bus.settimeout(10)
+        bus.connect(_bus_path(user))
+        reader = bus.makefile("rb")
+        bus.sendall(b"\0AUTH EXTERNAL " + str(os.getuid()).encode().hex().encode() + b"\r\n")
+        if not reader.readline().startswith(b"OK"):
+            raise OSError("the bus refused the EXTERNAL authentication")
+        bus.sendall(b"BEGIN\r\n")
+        bus.sendall(_call(1, "Hello", "/org/freedesktop/DBus", "org.freedesktop.DBus", "org.freedesktop.DBus"))
+        bus.sendall(_call(2, "Subscribe", "/org/freedesktop/systemd1", f"{_MONITORED}.Manager", _MONITORED))
+        answered = 0
+        while answered < 2:
+            head = reader.read(16)
+            if len(head) < 16:
+                raise OSError("the bus closed before answering Subscribe")
+            body, _, array = struct.unpack("<III", head[4:])
+            reader.read(array + -(16 + array) % 8 + body)
+            if head[1] == 3:
+                raise OSError("the bus refused Subscribe")
+            answered += head[1] == 2
+        bus.settimeout(None)
+        yield
+
+
 def monitor(user: bool) -> Iterator[str]:  # pragma: no mutate block — process boundary
-    """The lines `gdbus monitor` prints for one manager's bus until it exits; closing the generator ends the child.
-    `setpriv` sets the parent-death signal and execs, so no Python runs between fork and exec."""
+    """The lines `gdbus monitor` prints for one manager's bus until it exits, with the manager subscribed meanwhile;
+    closing the generator ends the child. `setpriv` sets the parent-death signal and execs, so no Python runs between
+    fork and exec."""
     bus = "--session" if user else "--system"
-    with subprocess.Popen(
-        ["setpriv", "--pdeathsig", "TERM", "gdbus", "monitor", bus, "--dest", _MONITORED],
-        stdout=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    ) as process:
+    with (
+        _subscribed(user),
+        subprocess.Popen(
+            ["setpriv", "--pdeathsig", "TERM", "gdbus", "monitor", bus, "--dest", _MONITORED],
+            stdout=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        ) as process,
+    ):
         try:
             yield from process.stdout
         finally:

@@ -20,13 +20,13 @@ def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
     from starpulse.contracts.adapters import Move  # pydantic models cost ~0.25 CPU-s, so only a move verdict pays them
 
     return {
-        column: Move.model_validate(raw).for_actor(AGENT).model_dump(include={"allowed", "reason", "skill"})
+        column: Move.read(raw).for_actor(AGENT).model_dump(include={"allowed", "reason", "skill"})
         for column, raw in agent["moves"].items()
     }
 
 
 #: What the board says of a pull request whose checks keep a task out of the review lane.
-_CHECKS_SAID = {"pending": "has checks still running", "failing": "has failing checks"}
+_CHECKS_SAID = {"pending": "required checks not all passed", "failing": "has failing checks"}
 
 
 def _review_held(
@@ -54,8 +54,22 @@ def done_ids(snapshot: dict[str, Any]) -> set[str]:
     return done | {task_id for task_id, entry in snapshot["settled"].items() if entry["state"] == "completed"}
 
 
-def cold_agent(task_id: str, record: dict[str, Any], done: str) -> dict[str, Any]:
-    """A cold done task as a snapshot agent, built from its board record (`GET /api/task`) for a verb to view whole."""
+def _stored_pull(pull: dict[str, Any]) -> dict[str, Any] | None:
+    """A pull request as a task record stores it (repo, number, state and a check list, no url) in the shape a view
+    reads; one with a url is kept as stored, one naming neither a url nor a repo and number is dropped."""
+    if pull.get("url"):
+        return pull
+    if not (pull.get("repo") and pull.get("number")):
+        return None
+    state = pull.get("state")
+    url = f"https://github.com/{pull['repo']}/pull/{pull['number']}"
+    return {**pull, "url": url, "merged": state == "MERGED", "closed": state == "CLOSED", "checks": ""}
+
+
+def cold_agent(task_id: str, record: dict[str, Any], done: str, entered: float | None = None) -> dict[str, Any]:
+    """A cold done task as a snapshot agent, built from its board record (`GET /api/task`) for a verb to view whole:
+    `entered` is when it entered its lane, and the record's stored pull requests ride as `pulls`."""
+    pulls = [row for pull in record.get("pulls", []) if (row := _stored_pull(pull))]
     return {
         "id": task_id,
         "title": record["title"],
@@ -64,11 +78,15 @@ def cold_agent(task_id: str, record: dict[str, Any], done: str) -> dict[str, Any
         "profile": record["profile"],
         "milestone": record["milestone"],
         "type": record["type"],
+        "impact": record.get("impact", ""),
+        "urgency": record.get("urgency", ""),
         "source": record.get("source", ""),
         "labels": record["labels"],
         "dependencies": record["dependencies"],
         "criteria": [{"text": item["text"], "checked": item["checked"]} for item in record["acceptanceCriteria"]],
-        "prs": [],
+        "entered": entered,
+        "prs": [pull["url"] for pull in pulls],
+        "pulls": pulls,
         "moves": {},
         "description": record["description"],
     }
@@ -129,7 +147,7 @@ def _lane(agent: dict[str, Any], phase: str | None) -> str:
 def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | None = None) -> dict[str, Any]:
     """A Board task as a verb reports it. It waits on each dependency not in `done`, read from `snapshot` when absent:
     a caller viewing many tasks passes it once rather than rescanning the board per task."""
-    pulls = {pull["url"]: pull for pull in snapshot["pulls"].get(agent["id"], [])}
+    pulls = {pull["url"]: pull for pull in [*snapshot["pulls"].get(agent["id"], []), *agent.get("pulls", [])]}
     if done is None:
         done = done_ids(snapshot)
     phase, substate, flow = _phase(agent, snapshot)
@@ -147,6 +165,8 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "assignee": agent.get("assignee", ""),
         "milestone": agent["milestone"],
         "type": agent.get("type", ""),
+        "impact": agent.get("impact", ""),
+        "urgency": agent.get("urgency", ""),
         "labels": agent["labels"],
         "dependencies": agent["dependencies"],
         "waiting_on": [dependency for dependency in agent["dependencies"] if dependency not in done],

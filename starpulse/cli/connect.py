@@ -66,6 +66,8 @@ def _board_files(settings: dict[str, Any], base: Path, *, create: bool) -> str:
                 raise ValueError(f"{root} is not a directory")
             upstream_backlog.board(settings, base)
         found = _read_files(root)
+        if lanes := upstream_backlog.lane_errors("native" if create else "upstream_backlog", settings, base):
+            raise ValueError(lanes[0])
     except (OSError, ValueError) as error:
         raise ConnectError(str(error)) from error
     return f"{found} from {path.rstrip('/')}/"

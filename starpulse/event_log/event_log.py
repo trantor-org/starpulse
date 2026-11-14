@@ -58,9 +58,17 @@ _NO_WATCH_LOGGED = threading.Event()
 #: outlasts the multi-second disk stalls of the host's weekly snapshot backup, which held writes past a 5 s wait.
 _SQLITE_BUSY_TIMEOUT = 30.0
 
-#: How many times a new SQLite connection tries to switch to WAL, which fails at once, without waiting on the busy
+#: How many times the log tries to switch its SQLite database to WAL, which fails at once, without waiting on the busy
 #: timeout, while another connection opens or closes the database.
 _PRAGMA_ATTEMPTS = 20
+
+#: How many idle connections a file database's pool keeps. Every append wakes every tail and `follow_state` thread
+#: (~66 in the contexts worker), each checking out a connection at once; a pool smaller than that burst closes the
+#: extra connections as they come back and opens them again on the next append, which cost 8-10 % of the worker's CPU
+#: in the 2026-11-09 profile. An idle connection holds about 250 KB.
+_POOL_SIZE = 64
+#: How many connections a burst past `_POOL_SIZE` may open beyond it; those are closed again as they come back.
+_POOL_OVERFLOW = 16
 
 #: How many rows a prune archives and deletes at a time, so a long backlog is never held in memory at once.
 _PRUNE_BATCH = 1000
@@ -139,7 +147,8 @@ def _watch_commits(
         watch.close()
 
 
-def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+def _sqlite_wal(dbapi_connection: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+    """Switch the database to WAL. The mode is kept in the database file, so the log does it once, not per connection."""
     cursor = dbapi_connection.cursor()
     for attempt in range(_PRAGMA_ATTEMPTS):
         try:
@@ -149,6 +158,12 @@ def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no 
             if attempt == _PRAGMA_ATTEMPTS - 1:
                 raise
             time.sleep(0.05)
+    cursor.close()
+
+
+def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+    """The pragmas each connection keeps for itself: `synchronous` is not kept in the database file."""
+    cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
 
@@ -181,6 +196,8 @@ class EventLog:
                 if self._engine is None:
                     self._engine = _create_engine(self.url)
                 event.listen(self._engine, "connect", _sqlite_pragmas)
+                with self._engine.connect() as db:
+                    _sqlite_wal(db.connection.dbapi_connection)
                 require_migrated(self._engine)
                 self._ready = True
             assert self._engine is not None
@@ -412,6 +429,11 @@ class EventLog:
         """The cursor of `stream`'s newest row, or None when it has none; raises when the database does."""
         with self.engine.connect() as db:
             return db.execute(select(func.max(events.c.id)).where(events.c.stream == stream)).scalar()
+
+    def first(self, stream: str) -> int | None:
+        """The cursor of `stream`'s oldest retained row, or None when it has none; raises when the database does."""
+        with self.engine.connect() as db:
+            return db.execute(select(func.min(events.c.id)).where(events.c.stream == stream)).scalar()
 
     def head(self) -> int | None:
         """The cursor of the newest row of any stream, or None when the log holds none; raises when the database does."""
@@ -646,4 +668,8 @@ def insert_event(db: Connection, stream: str, fields: Mapping[str, Any], key: st
 
 
 def _create_engine(url: str) -> Engine:
-    return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
+    if make_url(url).database in (None, "", ":memory:"):  # one in-memory database per connection: no pool to size
+        return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
+    return create_engine(
+        url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT}, pool_size=_POOL_SIZE, max_overflow=_POOL_OVERFLOW
+    )

@@ -56,9 +56,13 @@ class SpendPhase(_Api):
     last_at: float
     task_wte: float = Field(description="`wte` summed over the task's phases.")
     norm_wte: float | None = Field(
-        description="The median `task_wte` of the task's kind and size; null under five tasks in the cell."
+        description="The sum of `phase_norm_wte` over the task's phases; null when any is null."
     )
     above_norm: bool = Field(description="`task_wte` is over three times `norm_wte`.")
+    phase_norm_wte: float | None = Field(
+        description="The median `wte` of this phase over the tasks of the task's kind and size that ran it; null under five."
+    )
+    phase_above_norm: bool = Field(description="`wte` is over three times `phase_norm_wte`.")
 
 
 class Spend(_Api):

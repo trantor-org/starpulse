@@ -1,7 +1,7 @@
 """The Temporal adapter: each of a server's workflow types as a workflow, its running executions as active runs and the last day's closed ones as recent runs.
 
 `url` is the Temporal UI server's address (`http://host:8233`), whose HTTP API lists executions of the default namespace.
-`Poller.listing` reads the three engine-run types, `task_lifecycle`, `task_phases` and `AlertInvestigationWorkflow`, into
+`Poller.listing` reads the four engine-run types, `task_lifecycle`, `task_phases`, `AlertInvestigationWorkflow` and `CommandWorkflow`, into
 the `runs` contract's `Dag` records: a running execution is an `ActiveRun` with the activity it is on, that activity's
 attempt and the failure its last attempt ended in; a closed one is a `RecentRun`, and a failed one carries the activity
 it failed on, that activity's attempt and the failure. A closed execution never changes, so its history is read once.
@@ -22,17 +22,18 @@ from datetime import UTC, datetime, timedelta
 
 from starpulse.contracts.adapters import RunsSink, RunStatus
 from starpulse.event_log.event_log import EventLog
+from starpulse.runs.adapters.outbound import Unreported
 
 #: The workflow types shown, in the order the page lists them.
-TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow")
+TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow", "CommandWorkflow")
 
 #: Seconds between two listings of the server.
-POLL_INTERVAL = 15.0
+POLL_INTERVAL = 2.0
 #: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
 WORKER = "temporal"
 
 #: How many closed runs, failed and of any status, each listing asks for; the server answers newest first.
-RECENT_LIMIT = 40
+RECENT_LIMIT = 100
 #: How many running executions a listing asks for.
 ACTIVE_LIMIT = 200
 _HISTORY_EVENTS = 20
@@ -122,6 +123,7 @@ class Poller:
         current = entered[-1] if entered else {}
         return {
             "runId": run_id,
+            "url": f"{self.base}/namespaces/default/workflows/{quoted}/{run_id}",
             "status": "running",
             "raw": None,
             "startedAt": _iso(execution["startTime"]),
@@ -208,14 +210,9 @@ def _failure_of(events: list[dict]) -> dict:
     return details
 
 
-class _Unreported:
-    def set_dags(self, *args: object) -> None:
-        return
-
-
 def read(url: str) -> list[dict]:
     """The workflows of the server at `url`, as the sweeper's `runs` kind compares them with the projection."""
-    return Poller(_Unreported(), get, url).listing(datetime.now(UTC))
+    return Poller(Unreported(), get, url).listing(datetime.now(UTC))
 
 
 def start(url: str) -> None:

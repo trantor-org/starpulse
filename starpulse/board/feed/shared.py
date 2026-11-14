@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
-from starpulse.board import criteria
+from starpulse.board.model.entry import default_profile
 from starpulse.board.model.markdown import needs_attention_reason
 from starpulse.contracts.adapters import DEFAULT_TIER, BoardTask
 from starpulse.machine_engine.model.machine_definition import Writer
@@ -33,7 +33,7 @@ FEED_EVENT_RESEND = {
 }
 
 # The feed's name, not this module's: operators and a host project's tests filter the feed's records by it.
-logger = logging.getLogger("starpulse.board.board_feed")
+logger = logging.getLogger("starpulse.board.model.board_feed")
 
 _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 
@@ -43,8 +43,9 @@ PUSHED_INSTANCE = "pushed"
 #: How often a running reader saves the Board, in seconds; a restart reads again what arrived since.
 SAVE_INTERVAL = 60.0
 
-#: Seconds between passes that evaluate the Start Criteria of the Waiting tasks, as long as the evaluator caches a result.
-CRITERIA_INTERVAL = criteria.CACHE_SECONDS
+#: The worker states the board worker writes when it saves the dates a serving process adopts.
+CRITERIA_MET_STATE = "board:criteria-met"
+CLAIM_EXPIRIES_STATE = "board:claim-expiries"
 
 #: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
 LEDGER_WINDOW = 86400.0
@@ -131,13 +132,6 @@ def read_model_lane_moves(machine: dict) -> dict[str, dict[str, dict]]:
     }
 
 
-def default_profile(labels: Sequence[str], defaults: Mapping[str, Mapping[str, str]]) -> str | None:
-    """The board's default profile for the `kind-*` and `size-*` labels, None when the labels or the defaults lack them."""
-    kinds = [label.removeprefix("kind-") for label in labels if label.startswith("kind-")]
-    sizes = [label.removeprefix("size-") for label in labels if label.startswith("size-")]
-    return defaults.get(kinds[0], {}).get(sizes[0]) if len(kinds) == 1 and len(sizes) == 1 else None
-
-
 def summary_agent(
     summary: Mapping[str, Any],
     workable: bool = False,
@@ -196,7 +190,14 @@ def read_model_detail(row: Mapping[str, Any], attention: str | None = None) -> d
 
 
 def _cold_stub(summary: Mapping[str, Any]) -> dict:
-    return {"id": summary["id"], "state": lane_id(summary["state"]), "entered": summary["updated_at"]}
+    record = {
+        "title": summary["title"],
+        "profile": (summary.get("meta") or {}).get("profile") or "",
+        "labels": list(summary["labels"]),
+        "milestone": summary["milestone"],
+        "type": summary["type"],
+    }
+    return {"id": summary["id"], "state": lane_id(summary["state"]), "entered": summary["updated_at"], "record": record}
 
 
 def settled_entry(task: BoardTask) -> dict | None:
@@ -260,3 +261,33 @@ class ExpiriesStore(Protocol):
     def claim_expiries(self) -> dict[str, float]: ...
 
     def save_claim_expiries(self, expiries: dict[str, float]) -> None: ...
+
+
+class StateLog(Protocol):
+    """The event log's worker states: a write is what wakes the processes following the name."""
+
+    def put_state(self, name: str, state: Any) -> None: ...
+
+
+class DatesStore(CriteriaStore, ExpiriesStore, Protocol):
+    """Both dates the board worker keeps (`HistoryStore`)."""
+
+
+class PushedDates:
+    """A history store whose date saves also write the worker state a serving process follows, so it adopts them at
+    once; every other call goes to the store."""
+
+    def __init__(self, store: DatesStore, log: StateLog) -> None:
+        self._store = store
+        self._log = log
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._store, name)
+
+    def save_criteria_met(self, met: dict[str, float]) -> None:
+        self._store.save_criteria_met(met)
+        self._log.put_state(CRITERIA_MET_STATE, sorted(met.items()))
+
+    def save_claim_expiries(self, expiries: dict[str, float]) -> None:
+        self._store.save_claim_expiries(expiries)
+        self._log.put_state(CLAIM_EXPIRIES_STATE, sorted(expiries.items()))
