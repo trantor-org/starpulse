@@ -4,8 +4,6 @@ A queried field gets a virtual generated column over the `fields` JSON and a par
 a query by it is an index seek however many Tasks the board holds.
 """
 
-from __future__ import annotations
-
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass

@@ -4,8 +4,6 @@
 imported at the top of `starpulse.runtime.server`, so the Delivery worker's import closure holds no scheduler module.
 """
 
-from __future__ import annotations
-
 import json
 import threading
 import time
@@ -14,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.adapters.claim_ttl import DEFAULT_TRANSCRIPTS
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent

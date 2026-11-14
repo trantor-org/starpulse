@@ -6,8 +6,6 @@ under `docs/` (such as `specs/`) are kept: a doc stays in the folder it was file
 matter lines and the body it is given, so any other line, and a doc nobody changes, stay byte for byte.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import threading

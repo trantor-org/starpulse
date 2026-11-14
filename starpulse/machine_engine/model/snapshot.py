@@ -4,8 +4,6 @@ A machine's tasks come from `machine_tasks` (the `machine:events` stream) and th
 board adapter (`starpulse.board.model.seam`); this module holds the shape of each machine.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import Any

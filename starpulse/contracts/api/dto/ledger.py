@@ -1,7 +1,5 @@
 """The ledgers: runs, resolutions, failures and their strips."""
 
-from __future__ import annotations
-
 from typing import Literal
 
 from pydantic import Field

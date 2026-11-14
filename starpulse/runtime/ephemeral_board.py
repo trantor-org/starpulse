@@ -6,8 +6,6 @@ Board's validation judge a seed as they judge a served board's write, and each r
 reply, the shape any client of the board reads.
 """
 
-from __future__ import annotations
-
 import json
 import tempfile
 from collections.abc import Generator, Iterable

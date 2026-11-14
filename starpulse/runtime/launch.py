@@ -6,8 +6,6 @@ on it, and a `serve` that re-executes on it, run the release a deploy moved the 
 fixed to the release `serve` itself started in.
 """
 
-from __future__ import annotations
-
 import os
 import sys
 from pathlib import Path

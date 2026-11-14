@@ -30,7 +30,9 @@ export function css(s: string): CSSProperties {
 /** The in-progress machine's states as the engine's phases. */
 const PHASE_OF: Record<string, string> = { build: "build", qa: "qa", deliver: "deliver", review_fix: "review_fix", needs_attention: "parked", parked: "parked", review_recorded: "done", finalized: "done" };
 /** The qa machine's verdict events: a lens that times out has asked for changes. */
-const VERDICT: Record<string, string> = { LENS_PASSED: "PASS", LENS_CHANGED: "CHANGES", LENS_TIMED_OUT: "CHANGES" };
+const VERDICT: Record<string, string> = {
+  LENS_PASSED: "PASS", LENS_CHANGED: "CHANGES", LENS_UPHELD: "CHANGES", LENS_DISPUTED: "CHANGES", LENS_TIMED_OUT: "CHANGES",
+};
 const TIER_OF = /@agent-(deep|standard|fast)-/;
 
 interface Visit {

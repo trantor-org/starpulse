@@ -7,8 +7,6 @@ counted to `now` and flagged (`open`, `counted_to_now`). History begins at a tas
 task was before it is unknown, so that earlier stay is not counted.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from typing import Any
 

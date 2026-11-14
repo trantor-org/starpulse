@@ -10,8 +10,6 @@ there is nothing to embed, and the worker holds idle rather than exit under the 
 `SIGTERM` stops it; `SIGHUP` re-reads the config and, as the thread is built once, only says whether a restart is needed.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import threading
