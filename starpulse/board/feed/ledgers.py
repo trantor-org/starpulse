@@ -5,7 +5,7 @@ from __future__ import annotations
 import queue
 from typing import TYPE_CHECKING
 
-from starpulse.board.ledger import (
+from starpulse.board.model.ledger import (
     MERGE_EVENT,
     NEXT,
     PAGE,
@@ -31,7 +31,7 @@ from starpulse.board.feed.shared import (
 class LedgerMethods:
     def _ledger(self, pulls: dict[str, list[dict]], recent: dict[str, list], since: float) -> dict[str, list[dict]]:
         """Every tied Board event's occurrences since `since`, newest first, with the run of every workflow tied to it
-        among the `recent` runs (`starpulse.board.ledger`).
+        among the `recent` runs (`starpulse.board.model.ledger`).
 
         The merge event's occurrences are the merged `pulls`; any other event's are the tasks that made one of its
         moves, a lane it leaves and the lane it reaches, read from the lane history `read_lanes` was given. A move

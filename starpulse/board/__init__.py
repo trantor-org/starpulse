@@ -36,7 +36,7 @@ from starpulse.board.model.seam import (
 )
 
 if TYPE_CHECKING:
-    from starpulse.board.board_feed import BoardFeed, BoardStore, Followed, Resumable
+    from starpulse.board.model.board_feed import BoardFeed, BoardStore, Followed, Resumable
 
 #: The feed's names load on first use: it reads the whole ledger, which an adapter that only needs the seam does not.
 _FEED = frozenset({"BoardFeed", "BoardStore", "Followed", "Resumable"})
@@ -81,4 +81,4 @@ __all__ = [
 def __getattr__(name: str) -> object:
     if name not in _FEED:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    return getattr(importlib.import_module("starpulse.board.board_feed"), name)
+    return getattr(importlib.import_module("starpulse.board.model.board_feed"), name)

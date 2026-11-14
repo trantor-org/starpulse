@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
@@ -79,7 +79,7 @@ class Delivery:
             stop.set()
             raise
         if sync:
-            follow_refreshes(log, sync.request, stop)
+            follow_refreshes(log, lambda repo, number: sync.request(repo, number, urgent=True), stop)
             projection = RecordProjection(pulls, feed, sync.project, sync.request)
             handlers = {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}
             follow_events(log, feed, handlers, stop, resume=self._resume)
