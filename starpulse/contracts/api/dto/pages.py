@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import Field
 
 from starpulse.contracts.api._base import _Api
@@ -43,12 +45,30 @@ class MachineRow(FlowSnapshot):
     stuck: Stuck | None
 
 
+class ExitTool(_Api):
+    """A typed exit tool of a lane: the event it fires and the JSON schema of its arguments."""
+
+    name: str
+    event: str
+    to: str
+    schema_: dict[str, Any] = Field(alias="schema")
+
+
+class LaneSurface(_Api):
+    """What a session holding the lane may call: its tools, its exit tools and the skill bound on entry."""
+
+    tools: list[str]
+    exits: list[ExitTool]
+    skill: str | None
+
+
 class Machines(_Api):
-    """`GET /api/machines`: the next page of machines entered from `open`."""
+    """`GET /api/machines`: the next page of machines entered from `open`, and each lane's surface by lane name."""
 
     open: str | None
     machines: list[MachineRow]
     more: bool
+    lanes: dict[str, LaneSurface] = Field(default_factory=dict)
 
 
 class LaneStep(_Api):
