@@ -5,8 +5,6 @@ entry is kept and none supersedes another. An entry carries `task`, `lens`, `rou
 seconds) and the `source` producer that posted it. A producer posts one as a CloudEvent of type `EVENT` through the ingest.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 STREAM = "task:verdicts"

@@ -6,8 +6,6 @@ the `authorization` metadata (`Bearer <token>`); the checks and the append are `
 status it answers is the gRPC code of the same refusal.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Mapping
 from datetime import UTC

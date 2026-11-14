@@ -9,8 +9,6 @@ skipped, and a field beyond these four is ignored, so an exporter may carry its 
 them into the store.
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import NamedTuple
