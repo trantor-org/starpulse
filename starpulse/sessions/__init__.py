@@ -13,8 +13,6 @@ for a command that is not a name.
 imports them and one that reads the route get the same rows from the same exports.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol

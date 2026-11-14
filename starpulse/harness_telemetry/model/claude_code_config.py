@@ -10,8 +10,6 @@ it maps to the event log; without it no adapter runs. Every key is optional.
   command text is kept.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 

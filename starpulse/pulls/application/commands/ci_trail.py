@@ -10,8 +10,6 @@ a conflict, so a conflict is stamped by the poll that first saw it and an earlie
 before it. A conflict is left only by a new head, because the machine leaves Conflicting by REBASED alone.
 """
 
-from __future__ import annotations
-
 import logging
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
