@@ -390,6 +390,13 @@ describe("the demo server", () => {
     expect((await body(s.fetch("/api/history?task=DEMO-1"))).path.at(-1)).toEqual({ at: 30, from: "in_progress", to: "review" });
   });
 
+  it("answers the moves of a board card on demand, and 404s a card that is not on the board", async () => {
+    const s = new DemoServer(fixture());
+
+    expect(await body(s.fetch("/api/moves/DEMO-1"))).toEqual({ task: "DEMO-1", moves: s.snapshot.flows[0].agents[0].moves });
+    expect((await s.fetch("/api/moves/NOPE-1")).status).toBe(404);
+  });
+
   it("refuses a move to a column the card's lane does not exit to", async () => {
     const s = new DemoServer(fixture());
 

@@ -23,6 +23,8 @@ vi.mock("./lazyViews", async (original) => ({ ...(await original<typeof import("
 let host: HTMLDivElement, root: Root, frames: FrameRequestCallback[];
 const mounted = (selector: string) => host.querySelector(selector) !== null;
 const frame = () => act(() => void frames.splice(0).forEach((f) => f(0)));
+// React holds a render a lazy view's load schedules until the enclosing act ends, so a poll inside one act never sees it: each poll opens its own act
+const eventually = (check: () => void) => vi.waitFor(async () => { await act(async () => {}); check(); }, { timeout: 25_000 });
 const marked = () => performance.getEntriesByName(BOARD_DRAWN).length > 0;
 
 beforeEach(() => {
@@ -62,8 +64,9 @@ describe("the page's first tree", () => {
     act(() => root.render(<App />));
     act(() => held.store!.set({ tree: { states: ["In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards: [{ id: "TASK-1", title: "T", lane: "In Progress", dependencies: [] } as unknown as KanbanTask] }));
     await act(async () => void (await import("./features/level/SunsDrillIn")));
-    const card = () => host.querySelector('[aria-label="In Progress drill-in"] nav[aria-label="In Progress tasks"] button')?.getAttribute("aria-label");
-    await act(async () => vi.waitFor(() => expect(card()).toMatch(/^TASK-1 T, /), { timeout: 5000 })); // the lazy view resolves late on a loaded shard
+    // the drill-in fills the navigator's slot once the shell has it, else its own strip: the query takes either
+    const card = () => host.querySelector('nav[aria-label="In Progress tasks"] button')?.getAttribute("aria-label");
+    await eventually(() => expect(card()).toMatch(/^TASK-1 T, /)); // the lazy view resolves late on a loaded shard
     frame();
     expect(mounted("#rail #feed, #rail section")).toBe(true);
     expect(mounted("#rail #legend")).toBe(false); // the mock's rule: no legends on this board
@@ -81,8 +84,20 @@ describe("the page's first tree", () => {
     frame();
     await act(async () => void (await import("./features/proposals/Proposals")));
     const box = () => host.querySelector('#nav input[aria-label="Search proposals"]');
-    await act(async () => vi.waitFor(() => expect(box()).not.toBeNull(), { timeout: 5000 }));
+    await eventually(() => expect(box()).not.toBeNull());
     expect(host.querySelector('#proposals input[aria-label="Search proposals"]:not(.mq)')).toBeNull();
+  });
+
+  it("draws the Proposals entry only on a board whose lifecycle has a proposed lane", () => {
+    const entry = () => host.querySelector('#nav button[title="Proposals"]');
+    act(() => root.render(<App />));
+    act(() => held.store!.set({ tree: { states: ["In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards: [] }));
+    frame();
+    expect(entry()).toBeNull();
+
+    act(() => held.store!.set({ tree: { states: ["Proposed"], subs: {}, children: {} }, roles: { proposed: "Proposed" }, cards: [] }));
+    frame();
+    expect(entry()).not.toBeNull();
   });
 
   it("offers no create command on an empty board that cannot create a task", () => {

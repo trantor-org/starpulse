@@ -54,11 +54,9 @@ describe("the task view in read mode", () => {
     expect(draw({ capabilities: undefined })).not.toContain("Archive…");
   });
 
-  it("selects the priority's own option when the board stores it in lower case", () => {
-    const html = draw({ record: { ...record, priority: "high" }, initialEditing: "details" });
-
-    expect(html).toContain('<option value="High" selected="">High</option>');
-    expect(html).not.toContain('<option value="high"');
+  it("selects the tier's own option, and standard when the task names none", () => {
+    expect(draw({ record: { ...record, tier: "bug" }, initialEditing: "details" })).toContain('<option value="bug" selected="">bug</option>');
+    expect(draw({ record: { ...record, tier: "" }, initialEditing: "details" })).toContain('<option value="standard" selected="">standard</option>');
   });
 
   it("falls back to the snapshot's fields until the record arrives", () => {
@@ -115,6 +113,16 @@ describe("the task view's header", () => {
     expect(head).toMatch(/class="mvmenu"[^>]*hidden=""/);
   });
 
+  it("marks a lane the operator may override ⚠ with the count of rules the move breaks, and keeps ⊘ for a lane nobody may take", () => {
+    const warns = { allowed: false, reason: "r", skill: "", actors: { operator: { allowed: true, reason: "", skill: "", warnings: [{ reason: "a", skill: "" }, { reason: "b", skill: "" }] } } };
+    const one = { ...warns, actors: { operator: { ...warns.actors.operator, warnings: [{ reason: "a", skill: "" }] } } };
+    const head = headOf(draw({ task: { ...task, moves: { ready: warns, review: one, done: { allowed: false, reason: "no writer", skill: "" } } } }));
+
+    expect(head).toMatch(/class="warn"[^>]*><span class="g">⚠<\/span>[^<]*<span class="n">· breaks 2 rules<\/span>/);
+    expect(head).toContain("· breaks 1 rule<");
+    expect(head).toMatch(/class="guard"[^>]*title="no writer"[^>]*><span class="g">⊘<\/span>/);
+  });
+
   it("moves the task on the menu's Enter and closes the menu on Escape without closing the task", () => {
     expect(menuKey({ open: true, on: 1 }, "Enter", [true, true])).toEqual({ state: { open: false, on: -1 }, pick: 1, handled: true });
     expect(menuKey({ open: true, on: 0 }, "Escape", [true, true])).toMatchObject({ pick: null, handled: true, state: { open: false } });
@@ -148,7 +156,7 @@ describe("the task view's body", () => {
     const rail = html.slice(html.indexOf('class="tvcol tvrail"'));
 
     for (const text of ["Description", "Acceptance criteria", "1/2", "Implementation plan", "<li>Write the test</li>", "Notes", "Checked against the live config"]) expect(left, text).toContain(text);
-    for (const text of ["Pull requests", "priority"]) expect(rail, text).toContain(text);
+    for (const text of ["Pull requests", "tier"]) expect(rail, text).toContain(text);
     expect(left).not.toContain("Pull requests");
   });
 
@@ -359,15 +367,15 @@ describe("the task view's right rail", () => {
   it("draws the details as a read table, and when the task was created", () => {
     const html = rows(draw({ task: { ...task, created: 400 } }), "Details");
 
-    for (const text of ["profile", "@agent-standard-high", "priority", "High", "labels", "milestone", "m-89", "created", "10m ago"]) expect(html, text).toContain(text);
+    for (const text of ["profile", "@agent-standard-high", "tier", "leverage", "labels", "milestone", "m-89", "created", "10m ago"]) expect(html, text).toContain(text);
     expect(html).toContain('<span class="chip">needs-review</span>');
     expect(rows(draw({ task: { ...task, created: null } }), "Details")).toMatch(/created<\/td><td><span class="k">—<\/span>/);
   });
 
-  it("edits kind, size, area, mode, priority, profile and milestone in Details, and leaves Dependencies read-only", () => {
+  it("edits kind, size, area, mode, tier, profile and milestone in Details, and leaves Dependencies read-only", () => {
     const html = draw({ initialEditing: "details", tasks: many });
 
-    expect(rows(html, "Details")).toMatch(/data-field="priority"[\s\S]*data-field="profile"[\s\S]*data-field="milestone"/);
+    expect(rows(html, "Details")).toMatch(/data-field="tier"[\s\S]*data-field="profile"[\s\S]*data-field="milestone"/);
     expect(rows(html, "Dependencies")).not.toContain("data-field");
     expect(rows(html, "Dependencies")).toContain('<span class="id">TASK-1</span>');
   });
@@ -465,6 +473,14 @@ describe("the task view's Pull requests section carries each pull request's CI h
   const section = (html: string) => railOf(html).split("<section").find((s) => s.includes('<span class="t">Pull requests</span>')) ?? "";
   const rowOf = (html: string, ref: string) => section(html).split('<div class="pull">').find((r) => r.includes(`${ref} ↗`)) ?? "";
   const two = { prs: [pull(15), pull(12)], machines: ci() };
+
+  it("draws a merged pull request as merged while its CI trail has not yet recorded the merge", () => {
+    const behind = { prs: [{ ...pull(12), merged: true }], machines: [{ ...ci()[0], state: "passing", trail: trail.slice(0, 8) }] };
+    const row = rowOf(draw({ task: { ...task, ...behind } }), "o/r#12");
+
+    expect(row).toContain('class="chk merged"');
+    expect(row).not.toContain("passing");
+  });
 
   it("draws no CI history section, so each pull request is listed once", () => {
     const html = draw({ task: { ...task, ...two } });
