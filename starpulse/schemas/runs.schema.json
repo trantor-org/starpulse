@@ -9,6 +9,12 @@
           "title": "Runid",
           "type": "string"
         },
+        "url": {
+          "default": "",
+          "description": "A link to the run in the scheduler's own page; empty when it has none.",
+          "title": "Url",
+          "type": "string"
+        },
         "status": {
           "description": "The run's status: `running` or `queued`.",
           "enum": [
@@ -80,6 +86,33 @@
           "default": null,
           "description": "The Board task the run works on (`TASK-N`); None when it names none.",
           "title": "Task"
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The pull request the run was started for; None when it was not started for one.",
+          "title": "Pr"
+        },
+        "commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The commit the run built, as the engine names it; None when it names none.",
+          "title": "Commit"
         },
         "attempt": {
           "anyOf": [
@@ -209,6 +242,33 @@
           "description": "Each step the run reached by name with its status in this run.",
           "title": "Steps",
           "type": "object"
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The pull request the run was started for; None when it was not started for one.",
+          "title": "Pr"
+        },
+        "commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The commit the run built, as the engine names it; None when it names none.",
+          "title": "Commit"
         },
         "attempt": {
           "anyOf": [

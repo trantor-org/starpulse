@@ -9,8 +9,6 @@ The adapter only reads: it has no writer, so the page offers the workflow's move
 It is the `[board] type = "jira"` adapter.
 """
 
-from __future__ import annotations
-
 import base64
 import json
 import logging
@@ -34,7 +32,7 @@ from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import board_moves, lane_id
 
 if TYPE_CHECKING:
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)

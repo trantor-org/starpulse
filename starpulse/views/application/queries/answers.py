@@ -9,8 +9,6 @@ read of a query nobody has asked since its row was saved waits for a fold, all r
 refusal (400, 501, 503) is returned and never kept.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 import time

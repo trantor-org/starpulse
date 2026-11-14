@@ -6,8 +6,6 @@ cloud, and with it set the instance embeds each task's text and blends the vecto
 (the token itself is never in this file). With no `embeddings_url` nothing calls out.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from urllib.parse import urlsplit

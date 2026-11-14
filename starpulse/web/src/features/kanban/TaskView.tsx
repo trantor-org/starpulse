@@ -9,10 +9,11 @@ import { StartCriteria } from "./StartCriteria";
 import { DocReader, DocRows, useDocs } from "./DocReader";
 import { Inline, Md, RepoBase } from "./Markdown";
 import { sessionNickname } from "./nickname";
+import { asOperator, warnsOf } from "./move";
 import { SpendRail } from "./spend";
 import type { Capabilities, Pull, Roles } from "../../api";
 import {
-  LABEL_FIELDS, LABEL_RULE, repoBase, PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem, unlistedPulls,
+  LABEL_FIELDS, LABEL_RULE, repoBase, SECTION_NAMES, TIERS, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem, unlistedPulls,
   type ActivityEvent, type CiPull, type DepRow, type DocLink, type Item, type LabelField, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskViewModel";
 
@@ -121,7 +122,7 @@ const runStart = (iso: string) => (Number.isNaN(Date.parse(iso)) ? "—" : fmtAt
 /** A task carrying a label with this prefix is a deviated sample: its run drew a profile off the matrix, so the operator rates it. */
 const TRIAL = "trial-";
 
-const checkClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
+const checkClass = (p: Pull) => (p.merged ? "merged" : p.closed ? "closed" : p.checks === "failing" ? "fail" : p.checks);
 
 /** One pull request's row: one state beside its link, the CI state when `ci` is recorded, and its unread review count, or "not read yet" with the reason; its CI counts go on the line below. */
 function PullRow({ p, ci, mapped }: { p: Pull; ci?: CiPull; mapped?: string | null }) {
@@ -131,7 +132,7 @@ function PullRow({ p, ci, mapped }: { p: Pull; ci?: CiPull; mapped?: string | nu
       <a href={p.url} target="_blank" rel="noopener">{p.repo}#{p.number} ↗</a>
       {read.read ? (
         <>
-          {ci ? <CiState c={ci} mapped={mapped} /> : <span className={`chk ${checkClass(p)}`}><i />{read.state === "merged" ? "merged" : `checks ${read.checks}`}</span>}
+          {ci && !p.merged ? <CiState c={ci} mapped={mapped} /> : <span className={`chk ${checkClass(p)}`}><i />{read.state === "open" ? `checks ${read.checks}` : read.state}</span>}
           {read.unreviewed > 0 && <span className="rd">{plural(read.unreviewed, "unread review")}</span>}
         </>
       ) : (
@@ -268,7 +269,7 @@ function Checks({ name, field, items, editing, canToggle, bad, evidenceFor, evid
 
 const SHUT: MenuState = { open: false, on: -1 };
 
-function MoveMenu({ items, disabled, move }: { items: { to: string; text: string; allowed: boolean; reason: string }[]; disabled: boolean; move: (to: string) => void }) {
+function MoveMenu({ items, disabled, move }: { items: { to: string; text: string; allowed: boolean; reason: string; breaks: number }[]; disabled: boolean; move: (to: string) => void }) {
   const [menu, setMenu] = useState<MenuState>(SHUT);
   const enabled = items.map(() => !disabled);
   const pick = (i: number) => { setMenu(SHUT); move(items[i].to); };
@@ -283,9 +284,10 @@ function MoveMenu({ items, disabled, move }: { items: { to: string; text: string
     <div className="mv" onKeyDown={onKeyDown}>
       <div className="mvmenu" role="menu" hidden={!menu.open}>
         {items.map((it, i) => (
-          <div key={it.to} role="menuitem" className={`${it.allowed ? "ok" : "guard"}${i === menu.on ? " on" : ""}`} aria-disabled={disabled} title={it.allowed ? undefined : it.reason}
+          <div key={it.to} role="menuitem" className={`${!it.allowed ? "guard" : it.breaks ? "warn" : "ok"}${i === menu.on ? " on" : ""}`} aria-disabled={disabled} title={it.allowed ? undefined : it.reason}
             onMouseMove={() => setMenu((m) => m.open && m.on === i ? m : { open: true, on: i })} onClick={(e) => { e.stopPropagation(); if (!disabled) pick(i); }}>
-            <span className="g">{it.allowed ? "→" : "⊘"}</span>{it.text}
+            <span className="g">{!it.allowed ? "⊘" : it.breaks ? "⚠" : "→"}</span>{it.text}
+            {it.breaks > 0 && <span className="n">· breaks {it.breaks} {it.breaks === 1 ? "rule" : "rules"}</span>}
           </div>
         ))}
       </div>
@@ -297,11 +299,10 @@ function MoveMenu({ items, disabled, move }: { items: { to: string; text: string
 }
 
 const fromSnapshot = (task: KanbanTask): TaskRecord => ({
-  title: task.title, profile: task.profile ?? "", priority: "", labels: task.labels, milestone: task.milestone,
+  title: task.title, profile: task.profile ?? "", priority: "", tier: "", labels: task.labels, milestone: task.milestone,
   dependencies: task.dependencies, description: task.description, plan: "", notes: "",
   acceptanceCriteria: task.acceptanceCriteria ?? [], definitionOfDone: task.definitionOfDone ?? [],
 });
-const priorityValue = (value: string) => PRIORITIES.find((v) => v.toLowerCase() === value.toLowerCase()) ?? value;
 
 const CHECKLIST_FIELDS = ["acceptanceCriteria", "definitionOfDone"] as const;
 const unnumbered = (r: TaskRecord) => CHECKLIST_FIELDS.some((field) => r[field].some((item) => !item.n));
@@ -476,9 +477,10 @@ export function TaskView(p: TaskViewProps) {
     </div>
   );
   const deps = dependencyRows(p.tasks, p.task, p.record?.follows ?? "");
-  const offered = columnsOf(names, roles).filter((c) => c in p.task.moves).map((c) => ({
-    to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason ?? "",
-  }));
+  const offered = columnsOf(names, roles).filter((c) => c in p.task.moves).map((c) => {
+    const verdict = asOperator(p.task.moves[c]);
+    return { to: c, text: names[c] ?? c, allowed: verdict.allowed, reason: verdict.reason ?? "", breaks: warnsOf(p.task, c).length };
+  });
   const startVisible = startLane(p.task, roles) && !p.claiming;
   const working = roles.working ? p.task.moves[roles.working] : undefined;
   const unavailable = p.saving || writing;
@@ -663,7 +665,7 @@ export function TaskView(p: TaskViewProps) {
                   {row("size", live ? field("size", LABEL_FIELDS.size) : fields.size ? <span className="sz">{fields.size}</span> : "—")}
                   {row("area", live ? field("area", areas) : fields.area || "—")}
                   {(live || fields.mode) && row("mode", live ? field("mode", LABEL_FIELDS.mode) : fields.mode)}
-                  {row("priority", live ? <Select {...fp("priority", "details")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /> : priorityValue(draft.priority) || "—")}
+                  {row("tier", live ? <Select {...fp("tier", "details")} label="Tier" value={draft.tier || "standard"} options={TIERS} onChange={(value) => change("tier", value)} /> : draft.tier || "standard")}
                   {row("profile", live ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...(draft.profile && !p.profiles.includes(draft.profile) ? [...p.profiles, draft.profile] : p.profiles).map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—")}
                   {!live && draft.type && row("type", draft.type)}
                   {row("labels", live ? <>

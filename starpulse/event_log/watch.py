@@ -2,8 +2,6 @@
 ctypes) and a kqueue adapter (macOS and the BSDs), both standard library. A watch is a descriptor that turns readable
 when the store's database or `-wal` file changes; whether the change was a commit is the reader's to find out."""
 
-from __future__ import annotations
-
 import ctypes
 import os
 import select

@@ -7,8 +7,6 @@ commands). It keeps the pass metrics in the event log for the Page API's `/metri
 the kinds are built once, only says whether a restart is needed.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import threading

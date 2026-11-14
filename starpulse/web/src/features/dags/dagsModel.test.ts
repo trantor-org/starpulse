@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, order, panes, place, places, refusal, rows, runHours, runNote, stepLabels, ties, type DagData } from "./dagsModel";
+import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, jobRuns, order, panes, place, places, refusal, rows, runHours, runNote, stepLabels, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
@@ -432,5 +432,37 @@ describe("runNote", () => {
 
   it("is empty for a job with nothing running or failed", () => {
     expect(runNote(dag("dagu/build", "succeeded"))).toBe("");
+  });
+});
+
+describe("jobRuns", () => {
+  const T = (m: number) => `1970-01-01T00:${String(m).padStart(2, "0")}:00Z`;
+  const live = { runId: "31", url: "http://ci/31", status: "running", startedAt: T(10), step: "tests", stepStartedAt: T(11), steps: {}, task: "TASK-9", pr: 9052, commit: "abcdef0123456789", attempt: null, failure: null } as const;
+  const closed = (n: number, over: object = {}) => ({ runId: String(n), url: `http://ci/${n}`, status: "succeeded", startedAt: T(n), finishedAt: T(n + 3), params: {}, steps: {}, ...over }) as const;
+
+  it("lists the live runs first, then the closed ones newest first, each with its status, task, pull request, short commit, duration and link", () => {
+    const d = dag("woodpecker/pull_request", "running", { active: [live], closed: [closed(20, { status: "failed", task: "TASK-8", pr: 9050, commit: "1152cc200628", steps: { tests: "failed" }, failure: "step tests exited 2" }), closed(5)] });
+
+    expect(jobRuns(d, 15 * 60)).toEqual([
+      { key: "31", status: "running", line: "TASK-9 · #9052 · abcdef0 · tests", took: "5m 0s", url: "http://ci/31" },
+      { key: "20", status: "failed", line: "TASK-8 · #9050 · 1152cc2 · tests · step tests exited 2", took: "3m 0s", url: "http://ci/20" },
+      { key: "5", status: "succeeded", line: "", took: "3m 0s", url: "http://ci/5" },
+    ]);
+  });
+
+  it("lists a failed run once when it is among both the closed and the failed runs, and keeps a failed run older than the closed ones", () => {
+    const d = dag("temporal/task_phases", "succeeded", { closed: [closed(20), closed(10, { status: "failed" })], failed: [closed(10, { status: "failed" }), closed(2, { status: "failed" })] });
+
+    expect(jobRuns(d, 0).map((x) => x.key)).toEqual(["20", "10", "2"]);
+  });
+
+  it("leaves the duration empty for a run that has no start time", () => {
+    const d = dag("temporal/task_phases", "succeeded", { closed: [closed(20, { startedAt: "" })] });
+
+    expect(jobRuns(d, 0).map((x) => x.took)).toEqual([""]);
+  });
+
+  it("lists nothing for a job that has no runs", () => {
+    expect(jobRuns(dag("dagu/x", "not_started"), 0)).toEqual([]);
   });
 });

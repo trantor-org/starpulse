@@ -11,8 +11,6 @@ asks it to checkpoint its working doc, then ends it and starts a fresh session o
   (default 600).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 __all__ = ["CursorContext", "CursorContextError", "parse_cursor_context"]
