@@ -22,11 +22,13 @@ import yaml
 
 from starpulse.board.adapters.session_activity import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS, holder_activity, same_holder
 from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
+from starpulse.board.model.plain_text import render as render_text
 from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
 from starpulse.cli import agent_wire
 from starpulse.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS, RELEASE_KEYS
 from starpulse.event_log.lane_events import ARCHIVED
+from starpulse.machine_engine.model.transitions import lane_id
 
 #: What a task route's 404 says when the board has no such task, as opposed to a board that cannot read or write tasks.
 _TASK_MISSING = ("is not on the board", "has no record to read")
@@ -45,6 +47,7 @@ _TASK_EDIT_FIELDS = {
     "follows": "follows",
     "label": "labels",
     "dependency": "dependencies",
+    "status": "status",
     "reference": "references",
     "documentation": "documentation",
     "modified_file": "modifiedFiles",
@@ -81,7 +84,8 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     for column in board["columns"]:
         column["tasks"] = [_active(task, snapshot) for task in column["tasks"]]
     finished = roles_of(snapshot).done
-    if args.milestone and snapshot.get("cold_done") and args.state in (None, finished):
+    # an unfiltered board skips the cold pages (147 requests); a milestone or the done state asks for them
+    if finished and args.state in (None, finished) and (args.state or (args.milestone and snapshot.get("cold_done"))):
         done = done_ids(snapshot)
         column = next(column for column in board["columns"] if column["state"] == finished)
         bare = {"milestone": "", "labels": [], "dependencies": [], "prs": [], "moves": {}}
@@ -134,13 +138,27 @@ def _described(view: dict[str, Any], description: str, base: str) -> dict[str, A
     return {**view, "description": linkify(description, base, view["prs"])}
 
 
+def _carrier(base: str, task_id: str) -> str | None:
+    """The id of the task whose file lists `task_id` as an alias (a migrated proposal's old TASK id, a promoted one's
+    PROP id); None when `task_id` is a task's own id or no task carries it."""
+    status, document = agent_wire.get(base, f"/api/task/{urllib.parse.quote(task_id, safe='')}")
+    held = str(document.get("record", {}).get("id") or "") if status == 200 else ""
+    return None if held.casefold() in {"", task_id.casefold()} else held
+
+
 def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     if getattr(args, "markdown", False):
         return {"task": args.task, "markdown": render(_read_record(args, environ))}
+    if getattr(args, "text", False):
+        record = _read_record(args, environ)
+        done = lane_id(record["status"]) == roles_of(agent_wire.snapshot(args, environ)).done
+        return {"task": args.task, "text": render_text(record, done=done)}
     snapshot = agent_wire.snapshot(args, environ)
     wanted = args.task.casefold()
     agents = {agent["id"].casefold(): agent for agent in board_flow(snapshot)["agents"]}
     if (agent := agents.get(wanted)) is None:
+        if carrier := _carrier(agent_wire.server_url(args.server, environ), args.task):
+            return show(argparse.Namespace(**{**vars(args), "task": carrier}), environ)
         cold = next((task for task in snapshot.get("cold_done", ()) if task.casefold() == wanted), None)
         if cold is not None:
             return _show_cold(agent_wire.server_url(args.server, environ), cold, snapshot)
@@ -163,7 +181,19 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             "description": "",
         }
     base = agent_wire.server_url(args.server, environ)
-    return _described(_active(task_view(agent, snapshot), snapshot), agent["description"], base)
+    view = _without_done_dependencies(base, task_view(agent, snapshot), snapshot)
+    return _described(_active(view, snapshot), agent["description"], base)
+
+
+def _without_done_dependencies(base: str, view: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
+    done = roles_of(snapshot).done
+
+    def finished(dependency: str) -> bool:
+        status, document = agent_wire.get(base, f"/api/task/{urllib.parse.quote(dependency, safe='')}")
+        record = document.get("record") if status == 200 else None
+        return record is not None and lane_id(record["status"]) == done
+
+    return {**view, "waiting_on": [dependency for dependency in view["waiting_on"] if not finished(dependency)]}
 
 
 def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -174,9 +204,13 @@ def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, A
         raise agent_wire.CliError("not_found", f"{task_id} is not on the board")
     if status != 200:
         raise agent_wire.CliError("unavailable", f"{base} answered {status} for the record of {task_id}")
-    state = ARCHIVED if document.get("archived") else roles_of(snapshot).done
-    agent = cold_agent(task_id, document["record"], state)
-    return _described(task_view(agent, snapshot), agent["description"], base)
+    record = document["record"]
+    lane = lane_id(record["status"])
+    done = roles_of(snapshot).done
+    # settled rows read archived whatever their file says: a Done file is Done, only another status is truly archived
+    state = lane if lane == done or not document.get("archived") else ARCHIVED
+    agent = cold_agent(record["id"], record, state, document.get("entered"))
+    return _described(_without_done_dependencies(base, task_view(agent, snapshot), snapshot), agent["description"], base)
 
 
 def moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -184,7 +218,7 @@ def moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     return {"task": shown["id"], "lane": shown["lane"], "moves": shown["moves"]}
 
 
-def _writer(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, str]:
+def writer(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, str]:
     """Who a task write names as its writer: the agent, with the session and harness `--session` and `--harness` give,
     else `STARPULSE_SESSION` and `STARPULSE_HARNESS`; one neither gives is left out, and the server records it anonymous."""
     named = {
@@ -200,7 +234,7 @@ def move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     base = agent_wire.server_url(args.server, environ)
     if len(args.task) > 1:
         return _move_each(args, environ, base)
-    body = {"task": args.task[0], "to": args.to, **_writer(args, environ)}
+    body = {"task": args.task[0], "to": args.to, **writer(args, environ)}
     status, reply = agent_wire.post(base, "/api/move", body)
     message = reply.get("error") or f"{base} answered {status} for /api/move"
     if status == 200:
@@ -230,9 +264,9 @@ def move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
 
 def _move_each(args: argparse.Namespace, environ: Mapping[str, str], base: str) -> dict[str, Any]:
     """Move each of `args.task` to `args.to` in one request: the tasks moved, or a refusal naming each refused task."""
-    body = {"tasks": args.task, "to": args.to, **_writer(args, environ)}
+    body = {"tasks": args.task, "to": args.to, **writer(args, environ)}
     status, reply = agent_wire.post(base, "/api/move", body)
-    answer = _record_call(base, "/api/move", status, reply, missing=_TASK_MISSING)
+    answer = record_call(base, "/api/move", status, reply, missing=_TASK_MISSING)
     moved, refused = answer["moved"], answer["refused"]
     if refused:
         message = f"{len(refused)} of {len(args.task)} tasks refused: {', '.join(refused)}"
@@ -246,7 +280,7 @@ def _lifecycle(
     """Post the lifecycle verb `verb` (`claim`, `park`, `review`) for the task as the agent: the server's answer, with a
     refusal as `ok: false` and its reason and skill, or an error when no board writer can answer."""
     base, path = agent_wire.server_url(args.server, environ), f"/api/{verb}"
-    status, reply = agent_wire.post(base, path, {"task": args.task, **fields, **_writer(args, environ)})
+    status, reply = agent_wire.post(base, path, {"task": args.task, **fields, **writer(args, environ)})
     message = reply.get("error") or f"{base} answered {status} for {path}"
     if status == 200:
         return {
@@ -320,7 +354,7 @@ def task_review(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
     return _kept(_lifecycle(args, environ, "review", given), LIFECYCLE_KEYS)
 
 
-def _record_call(
+def record_call(
     base: str,
     path: str,
     status: int,
@@ -376,16 +410,16 @@ def task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
         return _create_batch(args, environ, base, path)
     if args.title is None:
         raise agent_wire.CliError("usage", "name the task's title, or --batch FILE for several")
-    status, reply = agent_wire.post(base, path, {**_created_task(args), **_writer(args, environ)})
-    return {"task": _record_call(base, path, status, reply, ok=(201,))["task"]}
+    status, reply = agent_wire.post(base, path, {**_created_task(args), **writer(args, environ)})
+    return {"task": record_call(base, path, status, reply, ok=(201,))["task"]}
 
 
 def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: str, path: str) -> dict[str, Any]:
     """The batch create of the JSON list `args.batch` names (`-` for stdin) for `task_create`."""
     text = sys.stdin.read() if args.batch == "-" else Path(args.batch).read_text()
     specs = json.loads(text)
-    status, reply = agent_wire.post(base, path, {"tasks": specs, **_writer(args, environ)})
-    results = _record_call(base, path, status, reply)["results"]
+    status, reply = agent_wire.post(base, path, {"tasks": specs, **writer(args, environ)})
+    results = record_call(base, path, status, reply)["results"]
     created = [result["task"] for result in results if "task" in result]
     refused = {str(position): result["error"] for position, result in enumerate(results, 1) if "error" in result}
     if refused:
@@ -401,24 +435,24 @@ def task_verdict(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
     body = {"task": args.task, "check": args.check, "verdict": args.verdict, "evidence": args.evidence}
     if args.fix:
         body["fix"] = args.fix
-    status, reply = agent_wire.post(base, path, {**body, **_writer(args, environ)})
-    judged = _record_call(base, path, status, reply, missing=_TASK_MISSING)
+    status, reply = agent_wire.post(base, path, {**body, **writer(args, environ)})
+    judged = record_call(base, path, status, reply, missing=_TASK_MISSING)
     return {key: judged[key] for key in ("task", "check", "verdict")}
 
 
 def task_rate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/rating"
     body = {"task": args.task, "verdict": "cleared" if args.verdict == "clear" else args.verdict, "reason": args.reason}
-    status, reply = agent_wire.post(base, path, {**body, **_writer(args, environ)})
-    rated = _record_call(base, path, status, reply, missing=_TASK_MISSING)
+    status, reply = agent_wire.post(base, path, {**body, **writer(args, environ)})
+    rated = record_call(base, path, status, reply, missing=_TASK_MISSING)
     return {key: rated[key] for key in ("task", "verdict", "reason", "changes")}
 
 
 def task_miss(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/miss"
     body = {"task": args.task, "check": args.check, "fix": _created_task(args), "evidence": args.evidence}
-    status, reply = agent_wire.post(base, path, {**body, **_writer(args, environ)})
-    return _record_call(base, path, status, reply, missing=_TASK_MISSING)
+    status, reply = agent_wire.post(base, path, {**body, **writer(args, environ)})
+    return record_call(base, path, status, reply, missing=_TASK_MISSING)
 
 
 def _task_edit_call(
@@ -439,17 +473,17 @@ def _task_edit_call(
     if base_record is None:
         current = _read_record(args, environ)
         base_record = {field: current.get(field) for field in changes}
-    writer = {"actor": OPERATOR, "breakGlass": True} if break_glass else _writer(args, environ)
-    body = {"task": args.task, "base": base_record, "changes": changes, "comment": comment, **writer}
+    who = {"actor": OPERATOR, "breakGlass": True} if break_glass else writer(args, environ)
+    body = {"task": args.task, "base": base_record, "changes": changes, "comment": comment, **who}
     status, reply = agent_wire.post(base, "/api/edit", body)
-    return _record_call(base, "/api/edit", status, reply, missing=_TASK_MISSING)["changed"]
+    return record_call(base, "/api/edit", status, reply, missing=_TASK_MISSING)["changed"]
 
 
 def _read_record(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The task `args.task` as the board's reader gives it."""
     base, path = agent_wire.server_url(args.server, environ), f"/api/task/{urllib.parse.quote(args.task, safe='')}"
     status, reply = agent_wire.get(base, path)
-    return _record_call(base, path, status, reply, missing=_TASK_MISSING)["record"]
+    return record_call(base, path, status, reply, missing=_TASK_MISSING)["record"]
 
 
 def _checklist_flags(args: argparse.Namespace, key: str) -> tuple[list[Any], ...]:
@@ -585,8 +619,8 @@ def task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
     key's reason when any key was refused."""
     base, path = agent_wire.server_url(args.server, environ), "/api/archive"
     target = {"task": args.task[0]} if len(args.task) == 1 else {"tasks": args.task}
-    status, reply = agent_wire.post(base, path, {**target, "reason": args.reason, **_writer(args, environ)})
-    answer = _record_call(base, path, status, reply, missing=_TASK_MISSING)
+    status, reply = agent_wire.post(base, path, {**target, "reason": args.reason, **writer(args, environ)})
+    answer = record_call(base, path, status, reply, missing=_TASK_MISSING)
     if "task" in answer:
         return {"archived": [answer["task"]]}
     archived, refused = answer["archived"], answer["refused"]
@@ -598,14 +632,14 @@ def task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
 
 def task_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/restore"
-    status, reply = agent_wire.post(base, path, {"task": args.task, **_writer(args, environ)})
-    return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+    status, reply = agent_wire.post(base, path, {"task": args.task, **writer(args, environ)})
+    return {"task": record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 
 def task_retire(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/retire"
     status, reply = agent_wire.post(base, path, {"task": args.task})
-    return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+    return {"task": record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 
 def task_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -613,14 +647,14 @@ def task_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
     params = {key: value for key, value in (("task", args.task), ("milestone", args.milestone)) if value}
     path = f"/api/retired?{urllib.parse.urlencode(params)}" if params else "/api/retired"
     status, reply = agent_wire.get(base, path)
-    return {"tasks": _record_call(base, path, status, reply, noun="retired task")["tasks"]}
+    return {"tasks": record_call(base, path, status, reply, noun="retired task")["tasks"]}
 
 
 def breaking_change_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base = agent_wire.server_url(args.server, environ)
     path = "/api/breaking-changes?open=1" if args.open else "/api/breaking-changes"
     status, reply = agent_wire.get(base, path)
-    return {"changes": _record_call(base, path, status, reply, noun="breaking change")["changes"]}
+    return {"changes": record_call(base, path, status, reply, noun="breaking change")["changes"]}
 
 
 def task_import_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -631,14 +665,14 @@ def task_import_retired(args: argparse.Namespace, environ: Mapping[str, str]) ->
     tasks = []
     for file in files:  # the bytes as kept: read_text would turn a CRLF file's line ends into LF
         status, reply = agent_wire.post(base, path, {"name": file.name, "text": file.read_bytes().decode()})
-        tasks.append(_record_call(base, path, status, reply, noun="retired task")["task"])
+        tasks.append(record_call(base, path, status, reply, noun="retired task")["task"])
     return {"tasks": tasks}
 
 
 def task_complete(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/complete"
     status, reply = agent_wire.post(base, path, {"task": args.task})
-    return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+    return {"task": record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 
 def task_checkpoint_ac(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -671,7 +705,7 @@ def pull_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     query = urllib.parse.urlencode({"repo": cited[1], "number": cited[2]})
     base, path = agent_wire.server_url(args.server, environ), f"/api/pulls?{query}"
     status, reply = agent_wire.get(base, path)
-    found = _record_call(base, path, status, reply, noun="pull request")["pulls"]
+    found = record_call(base, path, status, reply, noun="pull request")["pulls"]
     if not found:
         raise agent_wire.CliError("not_found", f"the store holds no pull request {cited[1]}#{cited[2]}")
     return found[0]
@@ -680,7 +714,7 @@ def pull_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 def milestone_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/milestones"
     status, reply = agent_wire.get(base, path)
-    return {"milestones": _record_call(base, path, status, reply)["milestones"]}
+    return {"milestones": record_call(base, path, status, reply)["milestones"]}
 
 
 def milestone_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -689,7 +723,7 @@ def milestone_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict
         f"/api/milestones/{urllib.parse.quote(args.milestone, safe='')}",
     )
     status, reply = agent_wire.get(base, path)
-    return _record_call(base, path, status, reply)["milestone"]
+    return record_call(base, path, status, reply)["milestone"]
 
 
 def milestone_add(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -697,7 +731,7 @@ def milestone_add(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     body: dict[str, Any] = {"title": args.title}
     body.update(_milestone_fields(args))
     status, reply = agent_wire.post(base, path, body)
-    return {"milestone": _record_call(base, path, status, reply, ok=(201,))["milestone"]}
+    return {"milestone": record_call(base, path, status, reply, ok=(201,))["milestone"]}
 
 
 def milestone_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -706,26 +740,26 @@ def milestone_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict
     if not changes:
         raise agent_wire.CliError("usage", "name what to change: --title, --outcome, --spec, --adr or --retro")
     status, reply = agent_wire.post(base, path, {"milestone": args.milestone, "changes": changes})
-    document = _record_call(base, path, status, reply)
+    document = record_call(base, path, status, reply)
     return {"milestone": document["milestone"], "changed": document["changed"]}
 
 
 def milestone_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/milestones/archive"
     status, reply = agent_wire.post(base, path, {"milestone": args.milestone})
-    return {"milestone": _record_call(base, path, status, reply)["milestone"]}
+    return {"milestone": record_call(base, path, status, reply)["milestone"]}
 
 
 def doc_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/docs"
     status, reply = agent_wire.get(base, path)
-    return {"docs": _record_call(base, path, status, reply, noun="doc")["docs"]}
+    return {"docs": record_call(base, path, status, reply, noun="doc")["docs"]}
 
 
 def doc_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), f"/api/docs/{urllib.parse.quote(args.doc, safe='')}"
     status, reply = agent_wire.get(base, path)
-    return _record_call(base, path, status, reply, noun="doc")["doc"]
+    return record_call(base, path, status, reply, noun="doc")["doc"]
 
 
 def _doc_fields(args: argparse.Namespace) -> dict[str, Any]:
@@ -737,7 +771,7 @@ def doc_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str
     base, path = agent_wire.server_url(args.server, environ), "/api/docs"
     body = {"title": args.title, **_doc_fields(args), **({"folder": args.folder} if args.folder is not None else {})}
     status, reply = agent_wire.post(base, path, body)
-    doc = _record_call(base, path, status, reply, ok=(201,), noun="doc")["doc"]
+    doc = record_call(base, path, status, reply, ok=(201,), noun="doc")["doc"]
     if args.task is None:
         return {"doc": doc}
     linked = _read_record(args, environ)["documentation"]  # the server reads the id as the doc's file
@@ -751,20 +785,20 @@ def doc_update(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str
     if not changes:
         raise agent_wire.CliError("usage", "name what to change: --title, --type or --body")
     status, reply = agent_wire.post(base, path, {"doc": args.doc, "changes": changes})
-    document = _record_call(base, path, status, reply, noun="doc")
+    document = record_call(base, path, status, reply, noun="doc")
     return {"doc": document["doc"], "changed": document["changed"]}
 
 
 def doc_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/docs/archive"
     status, reply = agent_wire.post(base, path, {"doc": args.doc})
-    return {"doc": _record_call(base, path, status, reply, noun="doc")["doc"]}
+    return {"doc": record_call(base, path, status, reply, noun="doc")["doc"]}
 
 
 def doc_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/docs/restore"
     status, reply = agent_wire.post(base, path, {"doc": args.doc, **({"folder": args.folder} if args.folder else {})})
-    return {"doc": _record_call(base, path, status, reply, noun="doc")["doc"]}
+    return {"doc": record_call(base, path, status, reply, noun="doc")["doc"]}
 
 
 def search(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -773,7 +807,7 @@ def search(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
     query = {"q": " ".join(args.query), **{key: value for key, value in given.items() if value is not None}}
     path = f"/api/search?{urllib.parse.urlencode(query, doseq=True)}"
     status, reply = agent_wire.get(base, path)
-    found = _record_call(base, path, status, reply, noun="search")
+    found = record_call(base, path, status, reply, noun="search")
     return {"query": found["query"], "hits": found["hits"]}
 
 

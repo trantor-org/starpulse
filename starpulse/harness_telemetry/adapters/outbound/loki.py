@@ -46,14 +46,19 @@ class LokiSignals:
         return [pair for page in self.pages(after) for pair in page]
 
     def pages(self, after: int) -> Iterator[list[tuple[int, dict[str, Any]]]]:
-        """`fetch` one page at a time, so a reader folds a long history without holding every row at once."""
+        """`fetch` one page at a time, so a reader folds a long history without holding every row at once.
+
+        A full page ends on a stamp that more lines may share, so the next one starts at that stamp and skips the lines
+        already read; a page of lines all read already doubles the limit until a new line or the end shows.
+        """
+        start, limit, edge = after + 1, PAGE, set()
         while True:
             query = urllib.parse.urlencode(
                 {
                     "query": f'{{job="{JOB}"}}',
-                    "start": after + 1,
+                    "start": start,
                     "end": time.time_ns() + 1,
-                    "limit": PAGE,
+                    "limit": limit,
                     "direction": "forward",
                 }
             )
@@ -61,8 +66,14 @@ class LokiSignals:
                 f"{self._url}/loki/api/v1/query_range?{query}", timeout=self._timeout
             ) as response:
                 streams = json.load(response)["data"]["result"]
-            page = sorted((int(stamp), json.loads(line)) for stream in streams for stamp, line in stream["values"])
-            yield page
-            if len(page) < PAGE:
+            rows = sorted(
+                ((int(stamp), line) for stream in streams for stamp, line in stream["values"]),
+                key=lambda row: row[0],
+            )
+            fresh = [(stamp, json.loads(line)) for stamp, line in rows if (stamp, line) not in edge]
+            yield fresh
+            if len(rows) < limit:
                 return
-            after = page[-1][0]
+            start = rows[-1][0]
+            edge = {row for row in rows if row[0] == start}
+            limit = limit if fresh else limit * 2

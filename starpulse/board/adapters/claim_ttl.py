@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
@@ -28,6 +29,7 @@ import psutil
 from starpulse.board.adapters.running_workflows import DEFAULT_QUERY, running_tasks
 from starpulse.board.adapters.session_activity import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS
 from starpulse.board.model.seam import Board
+from starpulse.event_log.deadlines import Deadlines
 from starpulse.event_log.store import EventStore, NewEvent, StoredEvent
 from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.transitions import lane_id
@@ -136,16 +138,43 @@ def _reattach(
     board: Board, store: EventStore, row: Mapping[str, Any], activity: Callable[[str, str], float | None]
 ) -> bool:
     """Gives an unheld working Task back to the session this sweep released it from, once that session acts again."""
-    events = store.read("task", row["id"])
-    swept = [i for i, event in enumerate(events) if event.type == "Released" and "ttl" in event.payload]
-    if not swept or any(event.type == "Claimed" for event in events[swept[-1] :]):
+    released = _released_unheld(store, row)
+    if released is None:
         return False
-    release = events[swept[-1]]
-    session = release.payload["session"]
-    later = (event for event in events[swept[-1] :] if event.at > release.at and event.actor != ACTOR)
+    release, session, later = released
     acted = (last_renewal(later, session), activity(session, row["id"]))
     renewed = max((at for at in acted if at is not None), default=0.0)
     return renewed > release.at and board.writer(row["id"], row["state"], ACTOR, session).ok
+
+
+def _lapsed(
+    store: EventStore,
+    row: Mapping[str, Any],
+    now: float,
+    ttl: float,
+    activity: Callable[[str, str], float | None],
+    alive: Callable[[str], bool],
+) -> bool:
+    """Whether an unheld working Task's release went a full TTL with its session neither acting nor running."""
+    released = _released_unheld(store, row)
+    if released is None:
+        return False
+    release, session, later = released
+    acted = (last_renewal(later, session), activity(session, row["id"]))
+    return now - release.at >= ttl and not alive(session) and all(at is None or at <= release.at for at in acted)
+
+
+def _released_unheld(store: EventStore, row: Mapping[str, Any]) -> tuple[StoredEvent, str, list[StoredEvent]] | None:
+    """The sweep's last release of an unheld Task, its session and the later Events by others; None when none stands.
+
+    A later claim or move retires the release: it belonged to a visit to the working lane that has ended."""
+    events = store.read("task", row["id"])
+    swept = [i for i, event in enumerate(events) if event.type == "Released" and "ttl" in event.payload]
+    if not swept or any(event.type in ("Claimed", "Transitioned") for event in events[swept[-1] :]):
+        return None
+    release = events[swept[-1]]
+    later = [event for event in events[swept[-1] :] if event.at > release.at and event.actor != ACTOR]
+    return release, release.payload["session"], later
 
 
 def sweep(
@@ -182,7 +211,13 @@ def sweep(
         if lane_id(row.get("state") or "") != working:
             continue
         if not session:
-            _reattach(board, store, row, activity)
+            waiting = board.roles.ready or board.roles.initial
+            if (
+                not _reattach(board, store, row, activity)
+                and waiting
+                and _lapsed(store, row, now, ttl, activity, alive)
+            ):
+                board.writer(row["id"], waiting, ACTOR, "")
             continue
         workflow = (seen_running or {}).get(row["id"].lower())
         renewals = (last_renewal(store.read("task", row["id"]), session), activity(session, row["id"]), workflow)
@@ -208,6 +243,10 @@ def sweep(
     return released
 
 
+#: How long a claim whose workflow server cannot be read, or whose release failed, waits for its next judgement, in seconds.
+RETRY_S = 60.0
+
+
 def start(
     board: Board,
     feed: BoardFeed,
@@ -215,14 +254,17 @@ def start(
     settings: Mapping[str, Any],
     persist: Callable[[dict[str, float]], None] = lambda _expiries: None,
 ) -> None:
-    """Sweeps the feed's open tasks on a daemon thread every sixth of the TTL, at most every minute, for `[board]
-    claim_ttl` seconds, until the feed stops. The feed holds the board's tasks whether or not a read model folds them.
-    `persist` keeps each pass's expiries where the serving process reads them. `[board] workflows` is a Temporal
-    server's URL: a Task that `[board] workflows_query` matches a running workflow for keeps its claim, and a pass that
-    cannot read the server judges no claim."""
+    """Judges each held claim at its own expiry on a daemon thread, for `[board] claim_ttl` seconds, until the feed
+    stops. A change to a task judges it at once and moves or cancels its deadline; the claim's renewal plus the TTL is
+    when it is judged next, so a held claim costs no poll. The feed holds the board's tasks whether or not a read model
+    folds them. `persist` keeps the held claims' expiries where the serving process reads them. `[board] workflows` is
+    a Temporal server's URL: a Task that `[board] workflows_query` matches a running workflow for keeps its claim, and
+    a judgement that cannot read the server releases no claim."""
     from starpulse.event_log.opening import last_run_event  # noqa: PLC0415 — keeps the board's import light
 
     ttl = float(settings.get("claim_ttl", DEFAULT_TTL))
+    if ttl <= 0:
+        return  # a rehearsal runs on the live board's files and must release none of its claims
     store = EventStore(log.engine)
     activity = partial(last_run_event, log.engine)
     halted = partial(transcript_halt, Path(settings.get("transcripts", DEFAULT_TRANSCRIPTS)).expanduser())
@@ -230,18 +272,33 @@ def start(
     workflows = str(settings.get("workflows", ""))
     query = str(settings.get("workflows_query", DEFAULT_QUERY))
     seen: dict[str, float] = {}
+    held: dict[str, float] = {}
+    judging = threading.Lock()
+    read = [
+        not workflows
+    ]  # whether the workflow server's last answer is held: a judgement without one releases nothing
 
-    def run(stop: StopEvent) -> None:
-        while not stop.wait(min(60.0, ttl / 6)):
+    def judge(tasks: Iterable[str], *, reread: bool) -> tuple[int, list[str]]:
+        """Judge `tasks` and arm each one's next deadline; `reread` asks the workflow server which tasks it runs. The
+        working tasks judged and the ids released."""
+        with judging:
+            ids = set(tasks)
+            rows = feed.open_tasks() if len(ids) > 1 else [row for task in ids if (row := feed.task(task, lean=True))]
+            working = [row for row in rows if row["id"] in ids and lane_id(row["state"]) == board.roles.working]
+            if working and (reread or not read[0]):
+                try:
+                    seen.update(dict.fromkeys(running_tasks(workflows, query) if workflows else (), time.time()))
+                    read[0] = True
+                except OSError, ValueError, KeyError:
+                    read[0] = False
+                    for row in working:  # Temporal unread: a claim its workflow may be holding is not judged now
+                        deadlines.arm(row["id"], time.time() + RETRY_S)
+                    return len(working), []
             expiries: dict[str, float] = {}
-            try:
-                seen.update(dict.fromkeys(running_tasks(workflows, query) if workflows else (), time.time()))
-            except OSError, ValueError, KeyError:
-                continue  # Temporal unread: a claim its workflow may be holding is not judged this pass
-            sweep(
+            released = sweep(
                 board,
                 store,
-                feed.open_tasks(),
+                working,
                 ttl=ttl,
                 activity=activity,
                 expiries=expiries,
@@ -249,7 +306,51 @@ def start(
                 seen_running=seen,
                 alive=alive,
             )
-            persist(expiries)
-            feed.serve_expiries(expiries)
+            for task in ids:
+                held.pop(task, None)
+                deadlines.cancel(task)
+            held.update(expiries)
+            now = time.time()
+            for task, at in expiries.items():
+                deadlines.arm(
+                    task, at if at > now else now + RETRY_S
+                )  # an expiry a failed release left is retried later
+            for task in released:
+                deadlines.arm(task, now + ttl)  # the released task returns to waiting once its session stays gone a TTL
+            for row in working:  # a later judgement of that released task keeps the deadline its release armed
+                standing = None if row.get("assignee") else _released_unheld(store, row)
+                if standing:
+                    lapses = standing[0].at + ttl
+                    deadlines.arm(row["id"], lapses if lapses > now else now + ttl)
+            persist(dict(held))
+            feed.serve_expiries(dict(held))
+            return len(working), released
+
+    deadlines = Deadlines(lambda task: judge([task], reread=True))
+
+    def reconcile() -> tuple[int, int]:
+        """The sweeper's `claims` pass: judge every open task again; a claim it releases outlived its deadline unseen."""
+        sampled, released = judge([row["id"] for row in feed.open_tasks()], reread=True)
+        return sampled, len(released)
+
+    feed.reconcilers["claims"] = reconcile
+
+    def run(stop: StopEvent) -> None:
+        feed.wait_replayed()
+        changes = feed.follow_changes()
+        deadlines.start(stop, thread_name="claim-ttl-deadlines")
+        judge([row["id"] for row in feed.open_tasks()], reread=True)
+
+        def stopped() -> None:
+            changes.put(("stop", {}))
+
+        stop.listen(stopped)
+        try:
+            while not stop.is_set():
+                kind, data = changes.get()
+                if kind in ("task", "move") and data.get("id"):
+                    judge([data["id"]], reread=False)
+        finally:
+            stop.unlisten(stopped)
 
     feed.spawn(run, "claim-ttl")
