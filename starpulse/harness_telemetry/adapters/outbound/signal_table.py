@@ -4,8 +4,6 @@
 leave one row. The adapters write it alone and the views read it through `SignalFolds`.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from itertools import batched
 from typing import Any

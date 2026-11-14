@@ -13,8 +13,6 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
   down once that is older than `DOWN_S` (`poller_problem`).
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import math

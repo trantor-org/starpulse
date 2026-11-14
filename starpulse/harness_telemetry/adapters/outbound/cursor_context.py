@@ -1,7 +1,5 @@
 """Context use of live Cursor sessions, read from the agent's pane footer."""
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import re

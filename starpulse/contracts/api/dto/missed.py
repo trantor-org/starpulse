@@ -1,7 +1,5 @@
 """The missed loads and trace clusters."""
 
-from __future__ import annotations
-
 from pydantic import Field
 
 from starpulse.contracts.api._base import _Api

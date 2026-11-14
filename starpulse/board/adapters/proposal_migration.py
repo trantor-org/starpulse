@@ -1,7 +1,5 @@
 """Move a native board's Proposed tasks to their own `PROP-N` ids and back, keeping every old id as an alias."""
 
-from __future__ import annotations
-
 import json
 import re
 from pathlib import Path

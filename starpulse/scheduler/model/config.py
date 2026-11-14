@@ -7,8 +7,6 @@ attention. `lane`, `review_lane`, `unsized_points`, `idle_minutes`, `state_dir`,
 `[scheduler.priority_matrix]` and `[scheduler.limits]` each override one default; a key left out keeps its default.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from typing import Any
