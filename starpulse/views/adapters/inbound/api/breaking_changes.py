@@ -3,8 +3,6 @@
 - `GET /api/breaking-changes`: each commit once with its detections, oldest first; `?open=1` keeps those with no postmortem.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from starlette.requests import Request

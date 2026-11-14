@@ -3,7 +3,7 @@
 // A row is its status indicator, its name over its schedule and pool, its steps as the Star Map's DAG body (StarPulse's glyphs and flow lines),
 // the pane's columns (a run's progress, or its last run and statistics) and, on a run-safe DAG, the Kanban's ▶ edge strip. A row has no hover; a click anywhere on it opens its modal. The rows are the stage's
 // children, placed by transform, so a DAG whose state changes glides to its other pane rather than being drawn there afresh.
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { same } from "../../api/same";
 import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
@@ -16,7 +16,7 @@ import { SearchClear } from "../../shared/SearchClear";
 import { PHONE } from "../../shared/nav";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
 import { refused, startRun } from "../../render/panels";
-import { Viewport } from "../../shared/ViewportRows";
+import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 
 type Post = Parameters<typeof startRun>[1];
 
@@ -34,21 +34,23 @@ const sideBySide = (fs: number) => {
   return 14 + Math.max(2.25 * (166 + 346 * fs + edge), 1.8 * (176 + 492 * fs + edge));
 };
 
-/** Whether the view is too narrow for two panes at this text size; a window too small for them stacks them, as a phone does. */
-function useNarrow(ref: RefObject<HTMLElement | null>, live: boolean) {
+/** The width one stacked pane's fixed columns need: Idle's tracks (the wider pane) and their gaps, the row's left padding and its ▶ strip's room. Text size moves it. */
+const stackedNeed = (fs: number) => 13 + 10 + Math.max(30, 30 * fs) + 60 + 100 + 592 * fs;
+
+/** Whether `el` is narrower than `need` at this text size; it reads again when `el` resizes or the text size changes. */
+function useNarrow(el: HTMLElement | null, need: (fs: number) => number) {
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
     const root = document.documentElement;
-    const fit = () => setNarrow(el.clientWidth > 0 && el.clientWidth < sideBySide(parseFloat(root.style.getPropertyValue("--fs")) || 1));
+    const fit = () => setNarrow(el.clientWidth > 0 && el.clientWidth < need(parseFloat(root.style.getPropertyValue("--fs")) || 1));
     fit();
     const size = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
     size?.observe(el);
     const scale = new MutationObserver(fit);
     scale.observe(root, { attributes: true, attributeFilter: ["style"] });
     return () => { size?.disconnect(); scale.disconnect(); };
-  }, [ref, live]);
+  }, [el, need]);
   return narrow;
 }
 
@@ -61,6 +63,9 @@ function RunBtn({ r, why, run }: { r: Row; why: string | null; run: (r: Row) => 
   );
 }
 
+/** The rows a pane draws before the stage reports what is on screen; a row's body mounts when it nears the viewport, so the first open builds a screenful rather than every job. */
+const ROWS_AT_OPEN = 14;
+
 interface RowProps { r: Row; now: number; spot: boolean; why: string | null; f: DagFacts | undefined; run: (r: Row) => void; open: (r: Row) => void; pane: Pane; col: number; hs: number; slot: number; k: number; band: boolean; caption: string | null; glide: Glide | undefined }
 
 /** One DAG's row, a slot on the stage: where it sits is three custom properties, so a move between panes is its transform's transition and the one element is the whole animation. It draws again only when what it shows changed: its row's reference holds while its DAG does, and its facts are compared by what they say. */
@@ -71,6 +76,7 @@ const DagRow = memo(function DagRow({ r, now, spot, why, f, run, open, pane, col
     <div className={`drow p-${r.phase}${r.runSafe ? " startable" : ""}${spot ? " spot" : ""}`} data-dag={r.d.name} data-pane={pane} data-glide={glide} style={at} tabIndex={0} onClick={() => open(r)}
       onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && open(r)}>
       {caption && <span className="cap">{caption}</span>}
+      <ViewportRow initial={slot < ROWS_AT_OPEN} estimate={0} force={spot}>
       <div className="body">
         <Orb phase={r.phase} />
         <span className="who"><span className="nm" title={r.d.name}>{short(r.d.name)}</span>
@@ -79,6 +85,7 @@ const DagRow = memo(function DagRow({ r, now, spot, why, f, run, open, pane, col
         {pane === "processing" ? <RunCells r={r} now={now} /> : <IdleCells r={r} f={f} now={now} />}
         <RunBtn r={r} why={why} run={run} />
       </div>
+      </ViewportRow>
     </div>
   );
 }, (a, b) => (Object.keys(a) as (keyof RowProps)[]).every((k) => (k === "f" ? same(a.f, b.f) : a[k] === b[k])));
@@ -155,10 +162,14 @@ export function Dags({ data, post, openPath, spot = null, opening = null, filter
   // each snapshot decides the panes again, so a DAG whose run ended with no event to say so leaves Processing with the next one
   const rs = useMemo(() => filterRows(all, { q, dom }), [all, q, dom]);
   const split = useMemo(() => panes(rs), [rs]);
-  const page = useRef<HTMLElement>(null);
+  const [page, setPage] = useState<HTMLElement | null>(null);
+  const [stageEl, setStageEl] = useState<HTMLElement | null>(null);
   const phoned = useSyncExternalStore(onPhone, phone);
-  const narrow = useNarrow(page, !!data);
+  const narrow = useNarrow(page, sideBySide);
   const small = phoned || narrow;
+  // stacked, a stage narrower than one pane's columns takes the phone's two-line rows rather than clip them
+  const tight = useNarrow(stageEl, stackedNeed);
+  const compact = phoned || (narrow && tight);
   const { at, bands } = useMemo(() => places(split, small), [split, small]);
   const pane = useMemo(() => new Map<string, Pane>([...split.processing.map((r) => [r.d.name, "processing"] as const), ...split.idle.map((r) => [r.d.name, "idle"] as const)]), [split]);
   const caps = useMemo(() => new Map([...captions(split.processing, split.fresh).map((c, i) => [split.processing[i].d.name, c] as const), ...captions(split.idle, split.fresh).map((c, i) => [split.idle[i].d.name, c] as const)]), [split]);
@@ -181,7 +192,7 @@ export function Dags({ data, post, openPath, spot = null, opening = null, filter
     const level = go.current && ev && flows ? ledgerLevel({ flows, cues }, ev) : null;
     return level ? () => go.current!([...BOARD, level]) : null;
   }, [flows, cues]);
-  if (!data) return <main id="dg" ref={page}><header><span className="title">Jobs</span><span className="count">no jobs read</span></header></main>;
+  if (!data) return <main id="dg" ref={setPage}><header><span className="title">Jobs</span><span className="count">no jobs read</span></header></main>;
 
   const why = (r: Row) => refusal(r, starting.has(r.d.name));
   const shown = opened ? all.find((r) => r.d.name === opened) : undefined;
@@ -205,7 +216,7 @@ export function Dags({ data, post, openPath, spot = null, opening = null, filter
   };
 
   return (
-    <main id="dg" ref={page}>
+    <main id="dg" ref={setPage}>
       <header>
         <span className="title">Jobs</span>
         <span className="count">{plural(all.length, "job")} · {plural(new Set(all.map((r) => r.domain)).size, "domain")}</span>
@@ -231,7 +242,7 @@ export function Dags({ data, post, openPath, spot = null, opening = null, filter
       </div>
       {rs.length ? (
         <Viewport id="stage">
-          <div className={`dstage${small ? " stack" : ""}`} style={stage}>
+          <div ref={setStageEl} className={`dstage${small ? " stack" : ""}${compact ? " compact" : ""}`} style={stage}>
             {head("processing", "Processing", split.processing.length)}
             {head("idle", "Idle", split.idle.length)}
             {!split.processing.length && <div className="phint" style={{ "--c": 0, "--hs": 1, "--s": 0, "--k": at.get("processing-hint")!.k } as CSSProperties}>Nothing is running</div>}

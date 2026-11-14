@@ -1,8 +1,6 @@
 """The fold of one `machine:events` entry into its machine's task row: the machine's transition table decides the state,
 and the trail keeps the task's latest steps. Only the Board child's projector calls it."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from typing import Any
 

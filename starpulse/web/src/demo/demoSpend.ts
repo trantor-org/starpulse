@@ -5,7 +5,7 @@ const MODELS = ["claude-sonnet-5-5"];
 
 const phase = (task: string, name: string, steps: number, wte: number, over: Partial<SpendPhase> = {}): SpendPhase => ({
   task, phase: name, steps, side_steps: 0, input: 0, output: 0, cache_read: 0, cache_write: 0, wte, peak_context: 60_000,
-  compactions: 0, models: MODELS, first_at: 0, last_at: 0, kind: "execute", size: 3, task_wte: 0, norm_wte: 900_000, above_norm: false, ...over,
+  compactions: 0, models: MODELS, first_at: 0, last_at: 0, kind: "execute", size: 3, task_wte: 0, norm_wte: 900_000, above_norm: false, phase_norm_wte: null, phase_above_norm: false, ...over,
 });
 
 /** Board task i of the demo: none for every fourth, one phase for the next, a full lifecycle at the norm after, and the fifth far above it. */

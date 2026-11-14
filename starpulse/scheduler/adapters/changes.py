@@ -1,7 +1,5 @@
 """Follow the read model for the Scheduler's change deltas: the task and move events its loop wakes on, without folding a board."""
 
-from __future__ import annotations
-
 import threading
 from typing import TYPE_CHECKING, Protocol
 

@@ -21,8 +21,6 @@ the adapter's tests rather than the page.
 The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.md` or its branch names.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import re
@@ -47,7 +45,9 @@ MACHINES = Path(__file__).parents[3] / "machines"
 PULL_REQUEST = load_machine(MACHINES / "github-pull-request.yaml")
 COPILOT = load_machine(MACHINES / "copilot.yaml")
 CI_JOB = load_machine(MACHINES / "ci-job.yaml")
-GITHUB_MACHINES = {m.name: describe(m.machine) for m in (PULL_REQUEST, COPILOT, CI_JOB)}
+PR_CHECKS = load_machine(MACHINES / "pr-checks.yaml")
+ALERT = load_machine(MACHINES / "alert.yaml")
+GITHUB_MACHINES = {m.name: describe(m.machine) for m in (PULL_REQUEST, COPILOT, CI_JOB, PR_CHECKS, ALERT)}
 
 
 #: The timeline events GitHub records when Copilot's coding agent starts and stops work on a pull request; the actor is

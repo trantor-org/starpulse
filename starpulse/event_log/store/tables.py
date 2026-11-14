@@ -1,8 +1,6 @@
 """The event store's tables. Only this package imports them (the `store-table-private` import contract), so every
 write to a stream goes through `EventStore`."""
 
-from __future__ import annotations
-
 from sqlalchemy import JSON, Column, Float, ForeignKey, Index, Integer, MetaData, String, Table, UniqueConstraint
 
 metadata = MetaData()

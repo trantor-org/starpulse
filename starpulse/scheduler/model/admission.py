@@ -14,8 +14,6 @@ each task's forecast P(goal); the loop that acts on it is not here. It reads the
 again, with that task's demand in them, before deciding the next.
 """
 
-from __future__ import annotations
-
 import logging
 import math
 import re

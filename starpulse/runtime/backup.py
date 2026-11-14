@@ -5,8 +5,6 @@ is proven with `PRAGMA integrity_check` before it counts, and only the newest `-
 A store that is not SQLite exits 2: its own backup tool owns that. The summary is one JSON line on stdout.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sqlite3

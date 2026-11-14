@@ -5,8 +5,6 @@ A snapshot is read only when it was saved under the model's current `SCHEMA_VERS
 reader gets its position and no snapshot, and replays from the log.
 """
 
-from __future__ import annotations
-
 import time
 
 from pydantic import BaseModel, ValidationError
