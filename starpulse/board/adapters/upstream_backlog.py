@@ -19,7 +19,7 @@ import shlex
 import subprocess
 import threading
 from collections.abc import Callable, Collection, Iterable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -34,6 +34,7 @@ except ImportError:
 from starpulse.board.adapters import project_machines
 from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.markdown import needs_attention_reason
+from starpulse.board.model.policy import Policy, waits_of
 from starpulse.board.model.seam import Board, MoveWriter, Written
 from starpulse.contracts.task_keys import TaskKeys
 from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
@@ -465,7 +466,7 @@ def _listing(folder: Path) -> list[tuple[str, tuple[int, int]]]:
 
 #: The `[board]` settings this adapter reads: `path` is the project's `backlog/` directory, relative to the config;
 #: `machine` a machine file for the Board, relative to the config; `command` the `backlog` CLI that writes moves.
-_SETTINGS = {"type", "path", "interval", "machine", "command"}
+_SETTINGS = {"type", "path", "interval", "machine", "command", "policy_rows"}
 
 
 def cli_writer(root: Path, statuses: tuple[str, ...], roles: StateRoles, command: list[str]) -> MoveWriter:
@@ -490,21 +491,58 @@ def cli_writer(root: Path, statuses: tuple[str, ...], roles: StateRoles, command
     return write
 
 
-def _machine(path: Path, config: BacklogConfig) -> tuple[Compiled, dict, list[dict]]:
-    """The Board machine a file declares, compiled and drawn, with its cues, each beside the lane its event reaches;
-    refused unless every lane is a state, every other state is initial or final, and each cued event reaches a lane."""
+def lane_mismatch(statuses: Iterable[str], drawn: Mapping[str, Any]) -> list[str]:
+    """The lanes a drawn Board machine and the project's `statuses` disagree on: a status the machine has no state for,
+    and a state that is no status and neither initial nor final."""
+    ids = {lane_id(status) for status in statuses}
+    states = {state["id"]: state for state in drawn["states"]}
+    extra = {i for i, state in states.items() if i not in ids and not (state["initial"] or state["final"])}
+    return sorted(extra | (ids - set(states)))
+
+
+def lane_errors(board_type: str, settings: Mapping[str, Any], base: Path) -> list[str]:
+    """What `serve` only warns of (`_machine`) and `config check`, `doctor` and `rehearse` refuse: the Markdown board
+    `settings` names beside `base`, whose machine file and statuses disagree on lanes. Empty when the board has no
+    machine, no project or no readable machine, which other checks name."""
+    from starpulse.board.adapters.native import DEFAULT_PATH  # noqa: PLC0415 - native imports this module
+    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
+        load_machine,
+    )
+    from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
+        MachineDefinitionError,
+    )
+    from starpulse.machine_engine.model.snapshot import describe  # noqa: PLC0415 - import cost, paid on first use
+
+    if board_type not in {"native", "upstream_backlog"} or "machine" not in settings:
+        return []
+    root = base / str(settings.get("path", DEFAULT_PATH if board_type == "native" else "backlog"))
+    path = base / str(settings["machine"])
+    if not (root / "config.yml").is_file():
+        return []
+    try:
+        drawn = describe(load_machine(path).machine)
+    except (MachineDefinitionError, OSError):
+        return []
+    mismatch = lane_mismatch(read_config(root).statuses, drawn)
+    return [f"board: machine {path} and the project's statuses disagree on lanes {mismatch}"] if mismatch else []
+
+
+def _machine(path: Path, config: BacklogConfig, waits: Mapping[str, Mapping[str, str]]) -> tuple[Compiled, dict, list[dict]]:
+    """The Board machine a file declares, compiled and drawn, with the lanes' `waits` the policy DB holds, with its cues, each beside the lane its event reaches;
+    refused when a cued event reaches no lane or several.
+
+    A lane the machine and the statuses disagree on is tolerated: a state no status names is drawn empty, and a status no
+    state names is off the board, so its tasks sit in no column and no move reaches it (`lane_errors` is the strict form,
+    which `serve` warns with once).
+    """
     from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
         load_machine,
     )
     from starpulse.machine_engine.model.snapshot import describe  # noqa: PLC0415 - import cost, paid on first use
 
-    compiled = load_machine(path)
+    compiled = replace(load_machine(path), waits=waits)
     drawn = describe(compiled.machine)
     ids = [lane_id(status) for status in config.statuses]
-    states = {state["id"]: state for state in drawn["states"]}
-    extra = {i for i, state in states.items() if i not in ids and not (state["initial"] or state["final"])}
-    if mismatch := sorted(extra | (set(ids) - set(states))):
-        raise ValueError(f"board: machine {path} and the project's statuses disagree on lanes {mismatch}")
     cues = []
     for cue in compiled.cues:
         if len(lanes := {t["target"] for t in drawn["transitions"] if t["event"] == cue.event} & set(ids)) != 1:
@@ -535,17 +573,19 @@ def project_board(
     board_file = base / str(settings["machine"]) if "machine" in settings else None
     lane_ids = [lane_id(status) for status in config.statuses]
     if board_file:
-        compiled, drawn, cues = _machine(board_file, config)
+        compiled, drawn, cues = _machine(board_file, config, waits_of(settings.get("policy_rows") or Policy()))
         declared = compiled.writers
     else:
         compiled, drawn, cues, declared = None, board_machine(config.statuses), [], {}
     roles = StateRoles.of_machine(compiled) if compiled else StateRoles.of_statuses(config.statuses)
 
+    states = {state["id"] for state in drawn["states"]}
+
     def machines(qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
         flows = {**({"board": compiled} if compiled else {}), **project_machines.load(base, board_file)}
         drawn_flows = project_machines.draw(flows, qualify, workflows)
         if compiled:
-            drawn_flows["board"].setdefault("mainLine", [lane_id(status) for status in config.statuses])
+            drawn_flows["board"].setdefault("mainLine", [lane for lane in lane_ids if lane in states])
         return {"board": drawn, **drawn_flows}
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:

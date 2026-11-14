@@ -65,6 +65,8 @@ export interface Sky {
   child: Record<string, Record<string, ChildLink>>;
   /** Each Backlog task's latest session on a lifecycle machine: the machine it is in and the state that machine left it in. */
   latest: Record<string, { flow: string; state: string; at: number }>;
+  /** Each Board task's place on the Star Map: the deepest phase machine declared under its Board state that it holds a session in, and that machine's state; none for a task only a machine no link opens (the harness) has placed. */
+  rides: Record<string, { flow: string; state: string; at: number }>;
   /** Each open task's pull requests, by task id. */
   pulls: Record<string, Pull[]>;
   /** Each task's latest In Progress claim the board writer refused an agent, and when. */
@@ -143,6 +145,24 @@ function arrivals(board: FlowSnapshot, settled: Record<string, Settled>, since: 
   return out;
 }
 
+/** A task's rows down the phase machines declared from `root`: its newest row in `root`, then in the newest machine linked on that row's state and so on down, never a machine already on the way or `root` again. `root` records only some phase moves, so a task whose row there names no phase with a row (or has none) takes whichever phase holds its newest row; null for a task with no row anywhere. */
+export function descend(flows: Sky["flows"], id: string, root: string): { chain: string[]; machine: string; row: RawTask } | null {
+  const newest = (machine: string) =>
+    (flows[machine]?.agents ?? []).reduce<RawTask | null>((n, a) => (a.task === id && (!n || (a.active ?? 0) > (n.active ?? 0)) ? a : n), null);
+  const chain: string[] = [];
+  const down = (from: string, at?: RawTask | null) => {
+    const links = (flows[from]?.machine.submachines ?? []).filter((l) => (!at || l.state === at.state) && l.machine !== root && !chain.includes(l.machine));
+    const inner = links.map((l) => ({ machine: l.machine, row: newest(l.machine) }));
+    return inner.reduce<(typeof inner)[number] | null>((n, c) => (c.row && (!n || (c.row.active ?? 0) > (n.row?.active ?? 0)) ? c : n), null);
+  };
+  let machine = root, row = newest(machine);
+  for (let next = down(machine, row) ?? down(machine); next?.row; next = down(machine, row)) {
+    ({ machine, row } = next);
+    chain.push(machine);
+  }
+  return row ? { chain, machine, row } : null;
+}
+
 export function merge(raw: Snapshot, since = midnight()): Sky {
   const snap = mocked(raw);
   const boardTasks = new Map((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((a) => [a.id, a]));
@@ -150,11 +170,16 @@ export function merge(raw: Snapshot, since = midnight()): Sky {
   const board = flows.board ?? EMPTY, t = tree(snap), groups = (snap.domains ?? []).map((d): Group => ({ name: d.name, dags: d.dags.map((x) => x.name), ...(d.processes && { processes: d.processes.map((p) => ({ name: p.name, dags: p.dags.map((x) => x.name) })) }) }));
   // the writers the Star Map draws on a Board path are the ones that are no DAG; a DAG's own are on the DAGs view and a Ledger
   const actors = new Set([...(board.machine.dagActors ?? []), ...snap.dags.map((d) => d.name)]);
-  const child: Sky["child"] = {}, latest: Sky["latest"] = {}, active: Record<string, number> = {};
+  const child: Sky["child"] = {}, latest: Sky["latest"] = {}, rides: Sky["rides"] = {}, active: Record<string, number> = {};
   for (const f of Object.values(flows))
     if (f.name !== "board")
       for (const a of f.agents)
         if (a.task && (active[a.task] === undefined || (a.active ?? 0) > active[a.task])) [active[a.task], latest[a.task]] = [a.active ?? 0, { flow: f.name, state: a.state, at: a.active ?? 0 }];
+  // a task rides the deepest declared phase machine it is in under its Board state, never a machine no link opens (the harness session machine)
+  for (const a of board.agents) {
+    const root = board.machine.submachines?.find((l) => l.state === a.state)?.machine, at = root && descend(flows, a.id, root);
+    if (at) rides[a.id] = { flow: at.machine, state: at.row.state, at: at.row.active ?? 0 };
+  }
   for (const [parent, kids] of Object.entries(t.children)) for (const c of kids) (child[parent] ??= {})[c.state] = { machine: c.machine, when: c.when && `while ${c.when}` };
   return {
     now: snap.now,
@@ -179,6 +204,7 @@ export function merge(raw: Snapshot, since = midnight()): Sky {
     subs: t.subs,
     child,
     latest,
+    rides,
     pulls: snap.pulls ?? {},
     claims: snap.claims ?? {},
     settled: snap.settled,
