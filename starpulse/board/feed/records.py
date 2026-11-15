@@ -1,12 +1,11 @@
 """Feed writes: placing a task's lane, its pulls, ratings and saved state."""
 
-from __future__ import annotations
-
 import threading
+import time
 from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board import criteria
+from starpulse.board.model import criteria, write_steps
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log import lane_events, rating_events
 from starpulse.event_log.wake import StopEvent
@@ -14,6 +13,7 @@ from starpulse.machine_engine.model.stays import LaneRow
 from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse.board.model.seam import Written
     from starpulse.event_log.event_log import EventLog
 from starpulse.board.feed.shared import (
     SAVE_INTERVAL,
@@ -56,7 +56,7 @@ class RecordsMixin:
             self.save()
         self.save()
 
-    def spawn(self, target: Callable[[threading.Event], None], name: str) -> None:
+    def spawn(self, target: Callable[[StopEvent], None], name: str) -> None:
         """Run `target(stopped)` on a daemon thread that `stop` ends: `target` returns once `stopped` is set."""
         thread = threading.Thread(target=target, args=(self.stopped,), name=name, daemon=True)
         self._threads.append(thread)
@@ -172,6 +172,19 @@ class RecordsMixin:
         except Exception as exc:  # the history is down; the task is placed and its change recorded then
             logger.warning("StarPulse: cannot record the lane change of %s: %s", task_id, exc)
 
+    def record_write(self, task: str | None, who: tuple[str, str, str], write: Callable[[], "Written"]) -> "Written":
+        """Run `write` of `task` (None: the task the write makes, named by its output) holding `recording`, and record
+        the lane it put the task in with `record_written`: a write refused, or one that moves no lane, records nothing."""
+        with self.recording:
+            write_steps.step("feed")
+            written = write()
+            if written.ok and written.lane:
+                self.record_written(
+                    written.renumbered or task or written.output, written.lane, written.at or time.time(), who
+                )
+                write_steps.step("record")
+        return written
+
     def _place(self, task: BoardTask) -> tuple[str, float] | None:
         """Place `task`; the lane it entered and when, if that is a change of lane, else None.
 
@@ -223,7 +236,7 @@ class RecordsMixin:
             self._link(task.id, (before or {}).get("dependencies", ()), (agent or {}).get("dependencies", ()))
             if agent is None or not is_cold(agent):  # a page keeps a task that cooled until it reloads
                 self._publish("task", {"id": task.id, "agent": agent, "settled": settled})
-            self._reassess(self._dependents.get(task.id, ()))
+            self._reassess(self._dependents_of(task.id))
             if settling:
                 return settled["state"], settled["at"] or self._clock()
             if agent and (before is None or before["state"] != agent["state"]):
@@ -247,7 +260,7 @@ class RecordsMixin:
             self._gated.discard(task_id)
             self._link(task_id, (gone or {}).get("dependencies", ()), ())
             self._publish("task", {"id": task_id, "agent": None, "settled": None})
-            self._reassess(self._dependents.get(task_id, ()))
+            self._reassess(self._dependents_of(task_id))
 
     def _entered(self, task: BoardTask, before: dict | None) -> float:
         """When `task` entered its lane: kept while it stays there, for a move read live the time the board gives (else
@@ -272,8 +285,15 @@ class RecordsMixin:
         for dependency in set(after) - set(before):
             self._dependents.setdefault(dependency, set()).add(task_id)
 
+    def _dependents_of(self, task_id: str) -> set[str]:
+        """The tasks that depend on `task_id`, spelled as it is now or as it was before a rename."""
+        spellings = (task_id, *self._renamed.get(task_id, ()))
+        return {dependent for spelling in spellings for dependent in self._dependents.get(spelling, ())}
+
     def _done_at(self, task_id: str) -> float | None:
-        """When the task was done, or None when it is not: completed (0 when the board does not say when) or in the done lane."""
+        """When the task was done, or None when it is not: completed (0 when the board does not say when) or in the done lane.
+        An id the task held before a rename reads as the task."""
+        task_id = self._aliases.get(task_id, task_id)
         if (settled := self._settled.get(task_id)) is not None:
             return (settled["at"] or 0.0) if settled["state"] == "completed" else None
         agent = self._open.get(task_id)

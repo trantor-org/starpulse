@@ -5,8 +5,6 @@ The adapters write the table alone; a signal from before the cutover lives in Lo
 summary is one JSON line on stdout.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

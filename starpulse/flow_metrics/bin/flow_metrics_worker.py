@@ -8,8 +8,6 @@ drops nor repeats a history row. `SIGTERM` stops it; `SIGHUP` re-reads the confi
 only says whether a restart is needed.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import threading

@@ -11,8 +11,6 @@ and 2 for a flag the command does not allow, a `--machine` the project does not 
 or a board the config does not assemble.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 from collections.abc import Sequence

@@ -23,25 +23,24 @@ The export marks no turn end, and a reply is exported as each text answer lands,
 so every reply stops the session and its next tool call starts it again. A `Skill` tool result moves
 nothing: the `skill_activated` record for the same call already did. The export names no working
 directory or branch, so an event is keyed by the task the `vcs.ref.head.name` resource attribute's
-branch names under the adapter's `TaskKeys`, else by the session as a run.
+branch names under the adapter's `TaskKeys`, else by the task the session last claimed, else by the session as a run.
+A session resumed after the adapter restarted claims nothing anew, so its last claim is read once from the stored signals.
 
 The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.md` or its branch names.
 """
 
-from __future__ import annotations
-
 import argparse
 import re
 import threading
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.contracts.signals import Signal
+from starpulse.contracts.signals import CLAUDE_CODE, Signal
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
@@ -49,7 +48,7 @@ from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.adapters.outbound import step_seconds
 from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
 from starpulse.harness_telemetry.model.harness import HARNESS
-from starpulse.harness_telemetry.adapters.inbound.otlp import TOOL_RESULT, LogEvent, receiver
+from starpulse.harness_telemetry.adapters.inbound.otlp import SETTLED, TOOL_RESULT, LogEvent, receiver
 from starpulse.harness_telemetry.adapters.inbound.telemetry import redactor, signals, telemetry_log
 
 ACTOR = "claude-code"
@@ -62,13 +61,46 @@ class ClaudeCodeAdapter:
 
     keys: TaskKeys
     clock: Callable[[], float] = lambda: datetime.now().timestamp()
+    #: The turn each session last settled on: every `Stop` hook of one settle completes, and only the first counts.
+    #: Any other event of the session that moves the harness clears it, so a turn a blocking `Stop` hook resumed settles again on its next stop.
+    settled: dict[str, str] = field(default_factory=dict, compare=False)
+    #: The task each session last claimed: a session whose export names no branch works it all the same.
+    claimed: dict[str, str | None] = field(default_factory=dict, compare=False)
+    #: The task a session claimed before this adapter started, read once per session: a resumed session claims nothing.
+    recall: Callable[[str], str | None] = lambda _session: None
+    #: When each session's noted claim was made: a batch that arrives late never replaces a newer claim.
+    claimed_at: dict[str, float] = field(default_factory=dict, compare=False)
+
+    def claim(self, found: Iterable[Signal]) -> None:
+        """Note the task each `claim` signal in `found` names for its session."""
+        for signal in found:
+            if (
+                signal.kind == "claim"
+                and signal.name
+                and signal.time >= self.claimed_at.get(signal.session, signal.time)
+            ):
+                self.claimed[signal.session] = signal.name
+                self.claimed_at[signal.session] = signal.time
 
     def events(self, logs: list[LogEvent]) -> list[dict]:
         """The events `logs` move the harness machine by, in order."""
-        return [self._event(log) for log in logs if _moves(log)]
+        return [self._event(log) for log in logs if _moves(log) and self._first(log)]
+
+    def _first(self, log: LogEvent) -> bool:
+        if log.kind != SETTLED or not log.prompt:
+            self.settled.pop(log.session, None)
+            return True
+        first = self.settled.get(log.session) != log.prompt
+        self.settled[log.session] = log.prompt
+        return first
+
+    def _claimed(self, session: str) -> str | None:
+        if session not in self.claimed:
+            self.claimed[session] = self.recall(session)
+        return self.claimed[session]
 
     def _event(self, log: LogEvent) -> dict:
-        task = self.keys.for_branch(log.branch)
+        task = self.keys.for_branch(log.branch) or self._claimed(log.session)
         return {
             "machine": HARNESS.name,
             "event": HARNESS.bindings[log.kind],
@@ -123,14 +155,17 @@ def bind(settings: ClaudeCode, config: Any, log: EventLog) -> ThreadingHTTPServe
     redact = redactor(settings.redactor) if settings.redactor else None
     telemetry = telemetry_log(log)
 
+    adapter = ClaudeCodeAdapter(keys, recall=lambda session: telemetry.last_claim(CLAUDE_CODE, session))
+
     def publish_signals(found: list[Signal]) -> None:
+        adapter.claim(found)
         step_seconds.observe(found)
         telemetry.publish(found)
 
     return ThreadingHTTPServer(
         (settings.host, settings.port),
         handler(
-            ClaudeCodeAdapter(keys),
+            adapter,
             publisher(log),
             lambda payload: publish_signals(signals(payload, redact, analytics=config.analytics, keys=keys)),
             (step_seconds.CONTENT_TYPE, step_seconds.exposition),

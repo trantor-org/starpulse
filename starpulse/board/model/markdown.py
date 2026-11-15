@@ -4,8 +4,6 @@ The rendering is never state. `render` draws the record; `imported` reads an edi
 field changes, which the board writes as Events by the operator, marked break-glass. A rendering the reader cannot map
 back (a section removed or added, a status changed) is refused whole, naming what it cannot map."""
 
-from __future__ import annotations
-
 import re
 from collections.abc import Mapping
 from typing import Any

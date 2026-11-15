@@ -9,6 +9,8 @@ from alembic import op
 
 revision = "0047"
 down_revision = "0046"
+#: The first reader floor: a release older than this was never rehearsed against a store this far on.
+CONTRACT = True
 
 _TABLES = (
     "starpulse_policy_lanes",

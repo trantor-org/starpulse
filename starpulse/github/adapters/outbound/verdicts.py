@@ -1,7 +1,5 @@
 """The intake's verdict counter, one registry per listener, in the Prometheus text format the listener serves at `/metrics`."""
 
-from __future__ import annotations
-
 from collections.abc import Callable, Iterator
 
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, generate_latest

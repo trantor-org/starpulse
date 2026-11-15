@@ -1,15 +1,15 @@
 """What every write route shares: the refusal of a request another web page may have sent, the body read, the answer
 and the token-guarded push."""
 
-from __future__ import annotations
-
 import functools
+import time
 from collections.abc import Awaitable, Callable
 
 from anyio import from_thread
 from starlette.requests import ClientDisconnect, Request
 from starlette.responses import PlainTextResponse, Response
 
+from starpulse.board.model import write_steps
 from starpulse.board.model.seam import OPERATOR, Written
 from starpulse.views.adapters.inbound.api.answering import answer, client, on_worker
 from starpulse.views.application.commands.guard import RETRY_AFTER_S, write_refusal
@@ -46,17 +46,20 @@ class _Body:
 
 def writing(work: Callable[[Request], Response | None]) -> Callable[[Request], Awaitable[Response]]:
     """`work`, which blocks, as a Starlette endpoint that runs it on a worker thread; it answers None where a deployment
-    leaves the route unconfigured. A write is answered once the snapshot read after it holds what it published."""
+    leaves the route unconfigured. A write is answered once the snapshot read after it holds what it published, and
+    one that takes `write_steps.SLOW_WRITE_S` or more logs its steps' timings."""
 
     @functools.wraps(work)
     async def endpoint(request: Request) -> Response:
         request.scope[_BODY] = _Body(request)
+        arrived = time.monotonic()
 
         def run() -> Response:
-            try:
-                response = work(request)
-            except ClientDisconnect:
-                return Response(status_code=400)  # the client left mid-body; nobody reads this
+            with write_steps.timed(request.url.path, arrived):
+                try:
+                    response = work(request)
+                except ClientDisconnect:
+                    return Response(status_code=400)  # the client left mid-body; nobody reads this
             if response is None:
                 return PlainTextResponse("Not Found", 404)
             return response
