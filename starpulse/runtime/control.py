@@ -7,8 +7,6 @@ removed when the supervisor stops. `starpulse reload` reads that file, so it rea
 config, even when another config shares the directory, and finds none when `serve` is not running.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -82,9 +80,11 @@ def _handler(supervisor: Reloadable, token: str) -> type[BaseHTTPRequestHandler]
                 return self._reply(HTTPStatus.CONFLICT, {"error": str(exc)})
             except Exception as exc:  # noqa: BLE001 - any reload fault is a failed reload, never a dropped connection
                 return self._reply(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"reload failed: {exc!r}"})
-            self._reply(HTTPStatus.OK, report)
-            if report["supervisor"] == "re-executed":
-                supervisor.reexec()  # after the reply: the caller has its answer before this process is replaced
+            try:
+                self._reply(HTTPStatus.OK, report)
+            finally:  # a caller gone under load must not leave the halted supervisor without its children
+                if report["supervisor"] == "re-executed":
+                    supervisor.reexec()  # after the reply: the caller has its answer before this process is replaced
 
         def _reply(self, status: HTTPStatus, body: dict[str, Any]) -> None:
             payload = json.dumps(body).encode()

@@ -19,8 +19,6 @@ and branch examples against the adapter's `TaskKeys`, and hands the records to S
 feeds to see that each is placed.
 """
 
-from __future__ import annotations
-
 import json
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -34,7 +32,7 @@ import jsonschema
 from pydantic import BaseModel
 
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import (
     Board,
     MoveWriter,
@@ -294,10 +292,12 @@ def serve(
     gate: Callable[[GateRequest], bool] | None = None,
     port: int = 0,
     tls: tuple[Path, Path] | None = None,
+    migrated: bool = False,
     **services: Any,
 ) -> Iterator[PageServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends. `board` is the Board the routes write through (a
-    bare one when None; a move or start it has no writer for fails the test); `services` are the `Services` fields."""
+    bare one when None; a move or start it has no writer for fails the test); `services` are the `Services` fields.
+    `migrated` says the stores in `tmp_path` are already migrated, so the serve skips the pass that migrates them."""
     static = tmp_path / "static"
     (static / "assets").mkdir(parents=True, exist_ok=True)
     (static / "index.html").write_text("<!doctype html>")
@@ -306,7 +306,7 @@ def serve(
     served = feed or BoardFeed()
     machines = feed.machines if feed else {}
     settings, kept = f"sqlite:///{tmp_path / 'settings.sqlite'}", f"sqlite:///{tmp_path / 'history.sqlite'}"
-    for store in (settings, kept):
+    for store in () if migrated else (settings, kept):
         maintain(store, machines, None)
     log = EventLog(settings)
     board = board or _bare_board()

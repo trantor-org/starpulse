@@ -4,8 +4,6 @@
 inbox are reached from here: never the event store, the page or a producer token.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 import threading

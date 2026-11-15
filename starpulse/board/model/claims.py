@@ -2,8 +2,6 @@
 
 A release removes `assignee` and writes `released_from`, the session it ended. No notes marker records a claim."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping, MutableMapping
 from typing import Any
 

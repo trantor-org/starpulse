@@ -6,8 +6,6 @@ A file holds `id` and `title` in its front matter and, under `## Description`, t
 verbs do not name, and prose before the first heading, are kept as they are when a milestone is edited.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import re

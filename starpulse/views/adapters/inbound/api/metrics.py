@@ -5,13 +5,12 @@ path by its convention.
 without bound. It answers 404 on an instance that keeps no store for it.
 """
 
-from __future__ import annotations
-
 import json
 
 from starlette.requests import Request
 from starlette.responses import Response
 
+from starpulse.event_log import heartbeat
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute
 from starpulse.views.adapters.outbound.gc_pauses import PAUSES
@@ -27,12 +26,15 @@ def prometheus(request: Request) -> Response:
         services.lane_metrics,
         services.conformance_metrics,
         services.lane_sweep_metrics,
+        services.done_hold_metrics,
         services.autopilot_metrics,
         services.sweeper_metrics,
+        services.bridge_metrics,
+        services.history_lag_metrics,
         api.snapshots.metrics,
         api.page_gauge,
     )
-    text = "".join(gauge() for gauge in gauges if gauge) + process_gauges() + PAUSES.exposition()
+    text = "".join(gauge() for gauge in gauges if gauge) + process_gauges() + heartbeat.exposition() + PAUSES.exposition()
     return answer(request, text.encode(), content_type="text/plain; version=0.0.4; charset=utf-8")
 
 
@@ -44,4 +46,21 @@ def autopilot_log(request: Request) -> Response:
     return answer(request, json.dumps(read()).encode())
 
 
-routes: list[ApiRoute] = [ReadRoute("/metrics", prometheus), ReadRoute("/autopilot-log", autopilot_log)]
+@reading
+def actor_view(request: Request) -> Response:
+    read = seams(request).services.actor_view
+    if read is None:
+        return answer(request, b'{"error": "this instance keeps no task actor view"}', 404)
+    views = read()
+    if task := request.query_params.get("task"):
+        views = views.get(task)
+        if views is None:
+            return answer(request, b'{"error": "the actor holds no view of that Review task"}', 404)
+    return answer(request, json.dumps(views).encode())
+
+
+routes: list[ApiRoute] = [
+    ReadRoute("/metrics", prometheus),
+    ReadRoute("/autopilot-log", autopilot_log),
+    ReadRoute("/actor-view", actor_view),
+]

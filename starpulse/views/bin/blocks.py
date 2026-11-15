@@ -1,8 +1,6 @@
 """The config blocks the views worker is built from or re-reads, in a leaf module so `runtime.closure` names them without
 importing the worker."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from hashlib import sha256
 from typing import TYPE_CHECKING, Protocol
@@ -30,10 +28,11 @@ class ApiConfig(Protocol):
     repos: tuple[Repo, ...]
     search: Search
     session_start_url: str | None
-    telemetry_loki_url: str | None
     slow_read_seconds: float
     task_actor: bool
     take_over_command: tuple[str, ...] | None
+    webhook_command: tuple[str, ...] | None
+    webhook_token_env: str | None
     tls: tuple[Path, Path] | None
 
 

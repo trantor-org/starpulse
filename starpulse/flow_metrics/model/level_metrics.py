@@ -8,8 +8,6 @@ stay runs from one step to the next, and the stay a run is still in has no end a
 the first step any run holds: a window that reaches before it is refused, never answered with the missing days as zero.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass

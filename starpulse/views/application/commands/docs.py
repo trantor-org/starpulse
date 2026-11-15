@@ -1,7 +1,5 @@
 """The board's docs: list, read, create, edit, archive and restore."""
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Any
 

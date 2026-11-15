@@ -1,8 +1,6 @@
 """Gzip for what the server writes to a page that accepts it: a body over `MIN_BYTES` and every stream event, by
 Starlette's `GZipMiddleware`, and the snapshot bodies held once, gzipped, for many pages."""
 
-from __future__ import annotations
-
 import gzip
 from typing import NamedTuple
 

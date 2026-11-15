@@ -7,8 +7,6 @@ optional `id`; StarPulse evaluates none, so any kind is accepted. A check's verd
 `[post-merge-check] <id> PASS` or `... MISS`, the one line a client that reads comments can match.
 """
 
-from __future__ import annotations
-
 import re
 from typing import Any
 
