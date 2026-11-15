@@ -9,8 +9,6 @@ gap. It also keeps the step graphs `push_runs` learns from the pushed run events
 `/api/history` reads the paths back through `lane_path` and `machine_path`.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import threading

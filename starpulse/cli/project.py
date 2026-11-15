@@ -5,8 +5,6 @@ caller), and the whole element `{args}` splices the caller's trailing arguments.
 does the step as the project's AGENTS.md says.
 """
 
-from __future__ import annotations
-
 import re
 import string
 from collections.abc import Mapping

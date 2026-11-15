@@ -4,8 +4,6 @@
 - `GET`, `PUT` and `DELETE` `/api/history-window`: the window the history covers, set or reset by a write.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from starlette.requests import Request

@@ -30,8 +30,6 @@ below (negative) the label. Effort past the largest band has no size and steps t
 label that is no band's size, the step is None; with no bands the effort size is too.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from math import ceil
