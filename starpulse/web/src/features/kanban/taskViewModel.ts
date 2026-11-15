@@ -23,6 +23,8 @@ export interface TaskRecord {
   title: string;
   profile: string;
   priority: string;
+  /** The board's tier (`regression` … `decide`); empty when the task names none, which the view draws as `standard`. */
+  tier?: string;
   labels: string[];
   milestone: string;
   /** The files of the docs the task links, as the board writes them. Read-only: an edit never carries it. */
@@ -191,7 +193,7 @@ export async function saveTask(
 export type Section = "title" | "description" | "acceptanceCriteria" | "definitionOfDone" | "plan" | "notes" | "details";
 export const SECTION_FIELDS: Record<Section, TaskField[]> = {
   title: ["title"], description: ["description"], acceptanceCriteria: ["acceptanceCriteria"], definitionOfDone: ["definitionOfDone"],
-  plan: ["plan"], notes: ["notes"], details: ["profile", "priority", "labels", "milestone"],
+  plan: ["plan"], notes: ["notes"], details: ["profile", "tier", "labels", "milestone"],
 };
 
 /** How a section is named in its ✎ label and in the toast that confirms its save. */
@@ -227,6 +229,8 @@ export function editKey(key: string, ctrl: boolean, meta: boolean): EditAction |
 }
 
 export const PRIORITIES = ["High", "Medium", "Low"];
+/** The tiers a task takes, highest first, each with the label its Select draws. */
+export const TIERS: [string, string][] = [["regression", "regression"], ["bug", "bug"], ["leverage", "leverage"], ["standard", "standard"], ["decide", "decide (leftover only)"]];
 
 /** The first-class fields the board stores as a `<field>-<value>` label, with the values the Details select offers (doc-993 D10). */
 export const LABEL_FIELDS = { kind: ["execute", "decide", "investigate", "verify"], size: ["1", "2", "3", "5", "8"], area: [] as string[], mode: ["attended", "unattended"] };

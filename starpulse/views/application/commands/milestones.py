@@ -1,7 +1,5 @@
 """The board's milestones: list, read, create, edit and archive."""
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Any
 

@@ -1,7 +1,5 @@
 """`/api/search`: hits and results."""
 
-from __future__ import annotations
-
 from starpulse.contracts.api._base import _Api
 
 

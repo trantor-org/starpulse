@@ -8,8 +8,6 @@ The answers: 202 when the request is queued; 401 for a missing or wrong token; 4
 not track; 400 for a body that is not a repository and a pull request number. A refusal queues nothing.
 """
 
-from __future__ import annotations
-
 import hmac
 import json
 import re

@@ -1,15 +1,13 @@
 """Park a task for a typed reason and move it to Review with the evidence it ships."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.model.markdown import section_set
+from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.model.markdown import section_drop, section_set
 from starpulse.board.model.seam import (
     TaskEditor,
     TaskReader,
@@ -23,6 +21,7 @@ from starpulse.views.application.commands.guard import (
     EDIT_LOCK,
     Who,
     held_task,
+    holder_refusal,
     not_held,
     record_written,
     who_of,
@@ -146,7 +145,12 @@ def _wait_on_criteria(feed: BoardFeed, task: str, current: dict[str, Any], found
         and len({item["id"] for item in found}) == len(found)
     ):
         raise _RefusalError(
-            400, {"error": 'until needs a non-empty list of criteria, each with a unique "id" and a "kind"'}
+            400,
+            {
+                "error": 'until needs a non-empty list of criteria, each with a unique "id" and a "kind", as in '
+                '`--until "{id: soak, kind: prom, query: up == 1}"`; to wait on a task use `--until-task TASK-N`, '
+                "and use `--operator` only for a question the operator must answer"
+            },
         )
     if open_ := [name for name in current["dependencies"] if not feed.is_done(name)]:
         raise _RefusalError(
@@ -158,6 +162,12 @@ def _wait_on_criteria(feed: BoardFeed, task: str, current: dict[str, Any], found
         "description": section_set(current["description"], "Start Criteria", block),
         **({"dependencies": []} if current["dependencies"] else {}),  # Done dependencies gate nothing
     }
+
+
+def _without_question(current: dict[str, Any]) -> dict[str, Any]:
+    """The edit that drops a Needs attention task's question when the task parks on the task that makes it moot."""
+    dropped = section_drop(current["description"], "Needs attention")
+    return {"description": dropped} if dropped != current["description"].strip() else {}
 
 
 def _wait_on_operator(current: dict[str, Any], reason: Any) -> dict[str, Any]:
@@ -201,16 +211,17 @@ def park_task(
         return 404, {"error": "this board does not edit tasks"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
-    if agent["state"] != feed.roles.working:
-        return 409, {"error": f"only an In Progress task can be parked: {task} is {agent['state']}"}
     reason = reasons[0]
+    parkable = (feed.roles.working, feed.roles.attention) if reason == "untilTask" else (feed.roles.working,)
+    if agent["state"] not in parkable:
+        return 409, {"error": f"only an In Progress task can be parked (a Needs attention one only on a task): {task} is {agent['state']}"}
     column, value = _park_lane(feed, reason), getattr(request, reason)
     if column is None:
         return 409, {"error": f"this board's machine has no lane to park {task} in for {reason}"}
     if (refused := move_refusal(agent, task, column, who)) is not None:
         return refused
     plans = {
-        "untilTask": lambda current: _wait_on_tasks(feed, task, current, value),
+        "untilTask": lambda current: _wait_on_tasks(feed, task, current, value) | _without_question(current),
         "until": lambda current: _wait_on_criteria(feed, task, current, value),
         "operator": lambda current: _wait_on_operator(current, value),
     }
@@ -241,7 +252,7 @@ def review_task(
     review = feed.roles.review
     if review is None:
         return 409, {"error": f"this board's machine has no lane to move {task} to for review"}
-    if (refused := move_refusal(agent, task, review, who)) is not None:
+    if (refused := move_refusal(agent, task, review, who) or holder_refusal(feed, agent, task, who)) is not None:
         return refused
 
     def plan(current: dict[str, Any]) -> dict[str, Any]:

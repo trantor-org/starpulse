@@ -1,7 +1,5 @@
 """The `readers` kind: a log reader with entries waiting and no progress since the last pass is woken and counted."""
 
-from __future__ import annotations
-
 from collections.abc import Callable
 
 from sqlalchemy import func, select
