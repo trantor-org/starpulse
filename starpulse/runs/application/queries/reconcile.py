@@ -5,8 +5,6 @@ Each run source is listed and compared with the workflows the projection holds f
 corrected and a `RESYNC` entry names it, so the worker that owns its adapter reads the source again.
 """
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable, Mapping
 

@@ -1,7 +1,5 @@
 """The scheduler's selected harness: the one it starts and whose session cap and credit pause apply."""
 
-from __future__ import annotations
-
 import logging
 
 from starpulse.event_log.event_log import EventLog

@@ -1,8 +1,6 @@
 """The config blocks the sweeper is built from, in a leaf module so `runtime.closure` names them without importing the
 worker."""
 
-from __future__ import annotations
-
 from typing import Protocol
 
 from starpulse.sweeper.config import Sweeper

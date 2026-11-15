@@ -1,7 +1,5 @@
 """Where a lifecycle's points are, read from the roles a machine declares and never from a State's name."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any

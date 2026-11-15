@@ -11,8 +11,6 @@ takes no more than `CUT_SHARE` of them: the agent chose there, and every edge le
 with one way on is a deterministic stretch.
 """
 
-from __future__ import annotations
-
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from fnmatch import fnmatchcase

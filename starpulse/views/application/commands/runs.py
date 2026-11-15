@@ -1,12 +1,10 @@
 """Start a run-safe workflow, or start it again."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.views.application.commands.guard import on_lan
 

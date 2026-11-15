@@ -25,8 +25,6 @@ lacks (its interval is kept all the same). `HistoryStore.rebuild_summaries` fold
 through the same steps a write takes, in memory (`Fold`) so it holds the write lock only to swap the result in.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from collections.abc import Callable, Mapping

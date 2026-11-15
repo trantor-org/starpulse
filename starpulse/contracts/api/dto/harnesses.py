@@ -1,7 +1,5 @@
 """`/api/harnesses` and `/api/history-window`."""
 
-from __future__ import annotations
-
 from starpulse.contracts.api._base import _Api
 
 
