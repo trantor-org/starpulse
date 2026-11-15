@@ -1,0 +1,28 @@
+# The checks of a pull request's current head against its base branch's required checks. CHECK_REPORTED is one check's
+# state (`name`, `state`, `sha`, `required` in its data); ROLLUP_* is the head's rollup, which is `passed` only when every
+# required check passed, and `pending` while one has posted nothing. The bridge publishes them as
+# `pr.<n>.check.<name>` and `pr.<n>.checks.<passed|failing|pending>`.
+name: pr-checks
+source: GitHub
+states:
+  unknown: {initial: true}
+  pending: {}
+  failing: {}
+  passed: {}
+events:
+  CHECK_REPORTED:
+    - {from: unknown, to: unknown}
+    - {from: pending, to: pending}
+    - {from: failing, to: failing}
+    - {from: passed, to: passed}
+  ROLLUP_PASSED:
+    - {from: [unknown, pending, failing, passed], to: passed}
+  ROLLUP_FAILING:
+    - {from: [unknown, pending, failing, passed], to: failing}
+  ROLLUP_PENDING:
+    - {from: [unknown, pending, failing, passed], to: pending}
+writers:
+  CHECK_REPORTED: [{actor: github, trigger: "the events consumer, from a saved GitHub check_run, check_suite or status delivery"}]
+  ROLLUP_PASSED: [{actor: github, trigger: "the events consumer, when every required check of the current head passed"}]
+  ROLLUP_FAILING: [{actor: github, trigger: "the events consumer, when a required check of the current head failed"}]
+  ROLLUP_PENDING: [{actor: github, trigger: "the events consumer, when a required check of the current head has not passed or posted"}]

@@ -6,8 +6,6 @@ gives the feed its write routes, and `run` is a `starpulse` verb called in-proce
 process.
 """
 
-from __future__ import annotations
-
 import contextlib
 import io
 import re

@@ -24,8 +24,8 @@ let host: HTMLDivElement, root: Root;
 const moves = new MoveStore(async () => ({ ok: true }) as never);
 const starts = new StartStore((async () => ({})) as never, moves);
 const noop = () => {};
-const show = (h: HudState) =>
-  act(() => root.render(<Kanban hud={h} moves={moves} starts={starts} compact={false} constellation={noop} searchSlot={null} outlineSlot={null} />));
+const show = (h: HudState, spot: string | null = null) =>
+  act(() => root.render(<Kanban hud={h} moves={moves} starts={starts} compact={false} constellation={noop} searchSlot={null} outlineSlot={null} spot={spot} />));
 const drawn = () => vi.mocked(startLane).mock.calls.length;
 
 beforeEach(() => {
@@ -61,5 +61,31 @@ describe("a column while it scrolls", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("a spotted card", () => {
+  it("scrolls into view when spotted, and keeps the operator's scroll across a task change", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    show(hud, "TASK-2");
+    expect(scroll).toHaveBeenCalledTimes(1);
+
+    show({ ...hud, cards: [card("TASK-1", "renamed"), ...hud.cards.slice(1)] } as HudState, "TASK-2");
+    expect(scroll).toHaveBeenCalledTimes(1);
+
+    show(hud, "TASK-3");
+    expect(scroll).toHaveBeenCalledTimes(2);
+  });
+
+  it("scrolls once when the spotted card reaches the board after the spot was set", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const without = { ...hud, cards: hud.cards.slice(0, 2) } as HudState;
+    show(without, "TASK-3");
+    expect(scroll).not.toHaveBeenCalled();
+
+    show(hud, "TASK-3");
+    expect(scroll).toHaveBeenCalledTimes(1);
   });
 });

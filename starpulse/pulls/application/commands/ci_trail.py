@@ -10,8 +10,6 @@ a conflict, so a conflict is stamped by the poll that first saw it and an earlie
 before it. A conflict is left only by a new head, because the machine leaves Conflicting by REBASED alone.
 """
 
-from __future__ import annotations
-
 import logging
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -104,7 +102,7 @@ def parse(url: str, node: dict) -> PullHistory:
         url=url,
         opened=epoch_of(node["createdAt"]),
         heads=tuple(sorted(heads.values(), key=lambda head: head.at)),
-        conflicting=node.get("mergeable") == "CONFLICTING" and not node.get("merged"),
+        conflicting=node.get("mergeable") == "CONFLICTING" and not node.get("merged") and not node.get("closed"),
         merged_at=epoch_of(node["mergedAt"]) if node.get("mergedAt") else None,
     )
 

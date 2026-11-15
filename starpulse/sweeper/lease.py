@@ -1,7 +1,5 @@
 """The sweeper's lease: a row of `starpulse_leases` that one process holds, taken over only from a dead holder."""
 
-from __future__ import annotations
-
 import os
 import time
 from collections.abc import Callable

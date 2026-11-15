@@ -1,7 +1,5 @@
 """Following a board's event stream into the feed, and the resume and run hooks around it."""
 
-from __future__ import annotations
-
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -10,7 +8,7 @@ from starpulse.board.feed.shared import BoardStore, logger
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
 
 

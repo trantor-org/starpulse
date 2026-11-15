@@ -4,8 +4,6 @@ The command is engine-neutral: StarPulse appends the task id to the configured a
 workflow engine stays in the command.
 """
 
-from __future__ import annotations
-
 import subprocess
 from collections.abc import Callable, Sequence
 

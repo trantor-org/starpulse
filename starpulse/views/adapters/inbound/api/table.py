@@ -1,7 +1,5 @@
 """The route tables' types: each route is a path and the Starlette endpoint that answers it."""
 
-from __future__ import annotations
-
 from collections.abc import Awaitable, Callable, Generator
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, NamedTuple

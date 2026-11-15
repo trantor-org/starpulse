@@ -1,7 +1,5 @@
 """One sweeper pass: each kind in order, then the housekeeping, with the counts kept as metrics and one journal line."""
 
-from __future__ import annotations
-
 import logging
 import threading
 import time

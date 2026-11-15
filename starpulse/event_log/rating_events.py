@@ -6,8 +6,6 @@ and the `session` and `harness` the write named, and `reason` when given. `Ratin
 latest entry with its change count, and refolds only when the stream has grown.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from typing import TYPE_CHECKING, Any

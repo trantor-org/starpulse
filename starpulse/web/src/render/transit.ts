@@ -13,7 +13,9 @@ export interface HPlace {
   /** Every state its machine is in at once: a dot rides the station of each. Absent, it is the one step `j`. */
   config?: string[];
   ring1: boolean;
-  side?: { machine: string; steps: string[]; j: number };
+  /** The skill its machine runs, when the board's machine config names one; its branch label prints it in place of the machine. */
+  skill?: string;
+  side?: { machine: string; steps: string[]; j: number; skill?: string };
 }
 /** The stations a task's dots sit on its machine's line: one per state of its configuration, in step order, or the step it is on. */
 export function stationOf(h: HPlace): number[] {
@@ -29,6 +31,8 @@ interface Branch {
   sun: string;
   ring: 1 | 2;
   machine: string;
+  /** The skill its machine runs; the label prints it in place of the machine name. */
+  skill?: string;
   steps: string[];
   parent?: string;
   pj: number;
@@ -71,7 +75,7 @@ interface Mem {
   t0: number;
   dur: number;
   fade: { x: number; y: number } | null;
-  last?: { sun: string; machine: string; steps: string[]; j: number };
+  last?: { sun: string; machine: string; steps: string[]; j: number; skill?: string };
   x: number;
   y: number;
   hold: string[];
@@ -167,7 +171,7 @@ function fitter(b: Branch, sc: Scene, spare: (o: Branch) => boolean = () => fals
   // a sub-machine keeps off the name its parent prints at its end, which drawBranches sets down first
   const par = b.parent ? branches.get(b.parent) : undefined, tag: Box[] = [];
   if (par && par.route.length) {
-    const end = par.route.at(-1)!, a = angle(g, end) + par.dir * 0.12, h = 9.5 / v.k, w = textW(par.machine, 9.5) / v.k, sp = stepSpot(g, a, Math.hypot(end.x - g.x, end.y - g.y));
+    const end = par.route.at(-1)!, a = angle(g, end) + par.dir * 0.12, h = 9.5 / v.k, w = textW((par.skill ?? par.machine).replace(/_/g, " "), 9.5) / v.k, sp = stepSpot(g, a, Math.hypot(end.x - g.x, end.y - g.y));
     const x0 = sp.align === "left" ? sp.x : sp.align === "right" ? sp.x - w : sp.x - w / 2;
     tag.push({ x0, y0: sp.y - h / 2, x1: x0 + w, y1: sp.y + h / 2 });
   }
@@ -333,7 +337,7 @@ function spot(sc: Scene, nodes: Map<string, Node>, k: string): Node | undefined 
 /** Each branch drawn at least `min` of the way out to where it stops (by default all the way), with its own line from its landing (or the hub) to its last station:
  *  what the overlap check measures. Siblings share the station they open from, so a ring-2 line starts past it. */
 export const branchLines = (min = 1) =>
-  [...branches.values()].filter((b) => b.ext >= min * b.to - 1e-9 && (b.to > 0 || !min) && b.route.length).map((b) => ({ key: b.key, sun: b.sun, ring: b.ring, parent: b.parent, th: +b.th.toFixed(3), lane: b.lane, dir: b.dir, n: b.steps.length, pj: b.pj, loose: b.loose, ext: b.ext, leaving: b.leaving, pts: b.route.slice(b.own + (b.parent ? 1 : 0)) }));
+  [...branches.values()].filter((b) => b.ext >= min * b.to - 1e-9 && (b.to > 0 || !min) && b.route.length).map((b) => ({ key: b.key, sun: b.sun, ring: b.ring, parent: b.parent, th: +b.th.toFixed(3), lane: b.lane, dir: b.dir, n: b.steps.length, pj: b.pj, loose: b.loose, ext: b.ext, leaving: b.leaving, skill: b.skill, pts: b.route.slice(b.own + (b.parent ? 1 : 0)) }));
 /** How far `p` sits from the segment a–b. */
 function seg(p: Pt, a: Pt, b: Pt) {
   const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy, u = l ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l)) : 0;
@@ -459,8 +463,10 @@ export function placeBranches(sc: Scene, now: number): boolean {
     else {
       const p = ensure(`${sun}|${par.machine}`, sun, 1, par.machine, par.steps);
       p.seen = Math.max(p.seen, par.j);
+      p.skill = par.skill;
       b = ensure(`${p.key}|${h.machine}`, sun, 2, h.machine, h.steps, p.key, par.j);
     }
+    b.skill = h.skill;
     const js = stationOf(h);
     b.seen = Math.max(b.seen, ...js);
     // a task in parallel states has a dot on each station of its configuration: the first is the task's own, the rest are copies of its body
@@ -621,7 +627,7 @@ export function placeBranches(sc: Scene, now: number): boolean {
       m.fade = null;
     } else busy = true;
     [m.x, m.y] = [q.x, q.y];
-    if (w && !w.b.parent) m.last = { sun, machine: w.b.machine, steps: w.b.steps, j: w.j };
+    if (w && !w.b.parent) m.last = { sun, machine: w.b.machine, steps: w.b.steps, j: w.j, skill: w.b.skill };
     const i = w ? stacks.get(`${w.b.key}#${w.j}`)!.indexOf(k.id) : 0, age = (now - m.t0 - m.dur) / RING;
     // the dot rides the branch's lines, never the Board hop's curve the frame set up for it
     k.x = q.x;
@@ -640,7 +646,8 @@ export function placeBranches(sc: Scene, now: number): boolean {
 /** Where each dot of task `id` sits: its own, then one for each further state of its machine's configuration. */
 export const dotsOf = (id: string): Pt[] => [...mems].filter(([d]) => d === id || d.startsWith(`${id}~`)).map(([, m]) => ({ x: m.x, y: m.y }));
 
-/** The live branches and their stations, the step and machine names of each the pointer (`at`) or a hovered dot is on, then the movers' comet
+/** The live branches and their stations, each grown branch's skill name and occupied step names, the empty steps' names of the branch the
+ *  pointer (`at`) or a hovered dot is on, then the movers' comet
  *  tails, each bending with its line; drawTasks draws the heads. */
 export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) {
   const { cx } = dc, lw = 1.1 / Math.max(1, dc.ZS * 0.8), suns = new Map<string, number>();
@@ -662,28 +669,31 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) 
     cx.beginPath();
     line.forEach((p, i) => (i ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y)));
     cx.stroke();
-    // a branch names itself only while it is out as far as it goes and wanted: one retracting drops its names with its line
-    const hot = b.alive && b.to > 0 && b.ext >= b.to - 1e-6 && (hover?.includes(b.key) || (at && line.some((p, i) => i && seg(at, line[i - 1], p) <= reach)));
+    // a branch out as far as it goes names its skill and its occupied steps; an empty step's name waits for the pointer on its line or on a dot
+    // riding it; one retracting drops its names with its line
+    const out = b.alive && b.to > 0 && b.ext >= b.to - 1e-6, hot = out && (hover?.includes(b.key) || (at && line.some((p, i) => i && seg(at, line[i - 1], p) <= reach)));
     b.steps.forEach((name, s) => {
       const p = b.route[b.st[s]], n = occ.get(`${b.key}#${s}`) ?? 0;
       if (cum[b.st[s] - b.own] > tip + 0.01) return;
       if (s <= b.seen) d.dot(p.x, p.y, 2.2 / Math.max(1, dc.ZS * 0.5), rgba(kind(b), 0.85));
       else d.circle(p.x, p.y, 2.2 / Math.max(1, dc.ZS * 0.5), rgba(kind(b), 0.55), lw);
-      if (!hot) return;
+      if (!out) return;
       pins.push(p);
-      // a step's name prints square off its line: outward from an arc, to the branch's side of a ray
+      if (!n && !hot) return;
+      // a step's name prints square off its line: outward from an arc, to the branch's side of a ray, else on the line's far side
       const i = b.st[s], u = b.route[Math.min(i + 1, b.route.length - 1)], v = b.route[Math.max(i - 1, b.own)], r = angle(g, p);
       const a = Math.abs(Math.sin(Math.atan2(u.y - v.y, u.x - v.x) - r)) > 0.7 ? r : r + (b.dir * Math.PI) / 2;
-      labs.push({ s: name.replace(/_/g, " "), ts: [stepSpot(p, a, d.labPx(5))], pin: p, px: 9, rank: n ? 1 : 2, n, a, e: full(b) });
+      labs.push({ s: name.replace(/_/g, " "), ts: [stepSpot(p, a, d.labPx(5)), stepSpot(p, a + Math.PI, d.labPx(5))], pin: p, px: 9, rank: n ? 1 : 2, n, a, e: full(b) });
     });
-    if (!hot) continue;
+    if (!out) continue;
     // a name centred above or below the sun would sit on its own arc, so it moves a line further out;
     // a sub-machine running beside the tip takes its place there, so the name then steps out past it a line at a time
     const end = line.at(-1)!, a = angle(g, end) + b.dir * 0.12, R = Math.hypot(end.x - g.x, end.y - g.y) + (Math.abs(Math.cos(a)) <= 0.2 ? d.labPx(9.5) : 0);
     const ts = [0, 1.5, 3, 4.5].map((n) => stepSpot(g, a, R + n * d.labPx(9.5)));
-    labs.push({ s: b.machine, ts, px: 9.5, rank: 0, n: 0, a, e: full(b) });
+    labs.push({ s: (b.skill ?? b.machine).replace(/_/g, " "), ts, px: 9.5, rank: 0, n: 0, a, e: full(b) });
   }
-  // names print machine first, then occupied steps, each only where it clears every name and every station but its own
+  // names print skill first, then occupied steps, then hovered empty ones, each where it clears every name and every station but its own;
+  // a skill or occupied step with no clear spot takes the one it covers least, so a running branch is never unnamed
   const taken: Box[] = [];
   for (const l of labs.sort((x, y) => x.rank - y.rank)) {
     const h = d.labPx(l.px), w = (textW(l.s, l.px) * h) / l.px;
@@ -691,8 +701,9 @@ export function drawBranches(dc: DrawCtx, d: Drawing, sc: Scene, at: Pt | null) 
       const x0 = t.align === "left" ? t.x : t.align === "right" ? t.x - w : t.x - w / 2;
       return { x0, y0: t.y - h / 2, x1: x0 + w, y1: t.y + h / 2 };
     };
-    const clear = (box: Box) => !taken.some((o) => box.x0 < o.x1 && o.x0 < box.x1 && box.y0 < o.y1 && o.y0 < box.y1) && !pins.some((p) => p !== l.pin && inBox(p, box, h / 4));
-    const t = l.ts.find((o) => clear(boxOf(o)));
+    const hits = (box: Box) => taken.filter((o) => box.x0 < o.x1 && o.x0 < box.x1 && box.y0 < o.y1 && o.y0 < box.y1).length + pins.filter((p) => p !== l.pin && inBox(p, box, h / 4)).length;
+    const scored = l.ts.map((o) => ({ o, n: hits(boxOf(o)) })), best = scored.reduce((x, y) => (y.n < x.n ? y : x));
+    const t = best.n === 0 || l.rank < 2 ? best.o : undefined;
     if (!t) continue;
     taken.push(boxOf(t));
     d.text(l.s, t.x, t.y, h, rgba(LABEL, 0.85 * l.e), t.align, 300);

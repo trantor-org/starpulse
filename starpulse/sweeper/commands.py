@@ -1,7 +1,5 @@
 """A kind or housekeeping step a project declares as a command in its StarPulse config."""
 
-from __future__ import annotations
-
 import json
 import subprocess
 from pathlib import Path
