@@ -8,8 +8,6 @@ the Board (`answers`), and `GitHub` takes them back before its first read (`save
 asks GitHub for none of them again.
 """
 
-from __future__ import annotations
-
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass

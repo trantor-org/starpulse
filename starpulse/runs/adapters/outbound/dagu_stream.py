@@ -4,8 +4,6 @@ The stream opens with a `message` carrying every run, so each connection starts 
 heartbeat every 10 seconds, so a read that waits `READ_TIMEOUT` seconds is a connection that died.
 """
 
-from __future__ import annotations
-
 import threading
 import urllib.parse
 import urllib.request
