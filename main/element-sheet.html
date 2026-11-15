@@ -218,7 +218,7 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #sd header .crumb { all: unset; cursor: pointer; font-size: calc(11px * var(--fs)); color: var(--slate); }
 #sd header .crumb:hover, #sd header .crumb:focus-visible { color: var(--ink-hi); }
 
-body:has(#sd) #crumb { visibility: hidden; }
+body.drilling #crumb { visibility: hidden; }
 
 @keyframes sd-pulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(2.6); opacity: 0; } }
 @keyframes sd-twinkle { 0%, 100% { opacity: .25; } 50% { opacity: .75; } }
@@ -236,7 +236,7 @@ body:has(#sd) #crumb { visibility: hidden; }
 #sd .fchip { cursor: pointer; background: none; font-family: inherit; }
 #sd .fchip b { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: calc(11px * var(--fs)); }
 #sd .fchip span { color: var(--muted); }
-#sd .sd-body { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+#sd .sd-body { position: relative; flex: 1; min-height: 0; overflow: auto; }
 #sd .sd-stage { position: relative; overflow: hidden; }
 #sd .sd-details { position: absolute; top: 0; right: 0; bottom: 0; width: min(320px, 100%); box-sizing: border-box; padding: 20px 18px; background: var(--glass); border-left: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); z-index: 6; font-size: calc(12px * var(--fs)); }
 :is(#kb, #dg) .filters { position: relative; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-height: 34px; flex: none; margin-bottom: 12px; }
@@ -320,6 +320,34 @@ body:has(#sd) #crumb { visibility: hidden; }
 #kb .mach .ago { flex: none; margin-left: auto; color: var(--faint); }
 @keyframes kb-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(2.4); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #kb .mach.hot .p::after { animation: none; } }
+
+#kb .ph { margin-bottom: 6px; --phase-text: color-mix(in srgb, var(--phase) 70%, var(--white)); --submachine-text: color-mix(in srgb, var(--submachine) 60%, var(--white)); }
+#kb .ph .chain { display: flex; align-items: baseline; gap: 5px; font-size: calc(10.5px * var(--fs)); color: var(--slate-3); white-space: nowrap; overflow: hidden; }
+#kb .ph .chain b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; color: color-mix(in srgb, var(--submachine-text) 60%, transparent); }
+#kb .ph .chain b:first-child { color: color-mix(in srgb, var(--phase-text) 60%, transparent); }
+#kb .ph .chain b.cur { color: var(--submachine-text); }
+#kb .ph .chain b.cur:first-child { color: var(--phase-text); }
+#kb .ph .chain .sep { flex: none; color: var(--faint); }
+#kb .ph .chain .s { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#kb .ph .chain .ago { flex: none; margin-left: auto; color: var(--faint); }
+#kb .ph .rail { position: relative; height: calc(14px * var(--fs)); margin: 3px 6px 0; }
+#kb .ph .trk { position: absolute; inset: 0; --mc: var(--submachine); }
+#kb .ph .trk.phase { --mc: var(--phase); }
+#kb .ph .ln { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: color-mix(in srgb, var(--mc) 40%, var(--track)); transform-origin: left center; animation: ph-draw 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+#kb .ph .st { position: absolute; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: color-mix(in srgb, var(--mc) 45%, transparent); animation: ph-pop 0.35s ease-out both; animation-delay: calc(var(--k) * 60ms + 0.15s); }
+#kb .ph .st.past { background: color-mix(in srgb, var(--mc) 85%, transparent); box-shadow: 0 0 4px color-mix(in srgb, var(--mc) 50%, transparent); }
+#kb .ph .st.fin { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; background: var(--bg0); box-shadow: 0 0 0 1px color-mix(in srgb, var(--muted) 75%, transparent); }
+#kb .ph .mk { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--agent); box-shadow: 0 0 6px var(--agent); transition: left 0.9s cubic-bezier(0.22, 1, 0.36, 1); animation: ph-pop 0.4s ease-out 0.45s both; }
+#kb .ph .mk.hot { background: var(--run); box-shadow: 0 0 0 3px color-mix(in srgb, var(--run) 25%, transparent), 0 0 10px var(--run); }
+#kb .ph .sk { position: absolute; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: linear-gradient(to right, transparent, color-mix(in srgb, var(--run) 70%, transparent)); animation: ph-fade 1.2s ease-out forwards; }
+#kb .ph .sk.back { background: linear-gradient(to left, transparent, color-mix(in srgb, var(--run) 70%, transparent)); }
+#kb .ph .trk.out { transform-origin: right center; animation: ph-tear 0.6s ease-in forwards; }
+#kb .ph .trk.out .ln, #kb .ph .trk.out .st { animation: none; }
+@keyframes ph-draw { from { transform: scaleX(0); } }
+@keyframes ph-pop { from { transform: scale(0); opacity: 0; } }
+@keyframes ph-fade { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ph-tear { to { transform: scaleX(0); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #kb .ph .ln, #kb .ph .st, #kb .ph .mk { animation: none; transition: none; } #kb .ph .sk, #kb .ph .trk.out { display: none; } }
 #kb .foot { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: calc(10px * var(--fs)); color: var(--muted); }
 #kb .lab { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 5px; border-radius: 3px; background: color-mix(in srgb, var(--slate) 10%, transparent); color: var(--slate); line-height: 15px; }
 #kb .lab.nh { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail-text); }
@@ -471,7 +499,7 @@ body:has(#sd) #crumb { visibility: hidden; }
 #kbm .tvrail .pull { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 2px 0; }
 #kbm .chk { display: inline-flex; align-items: center; gap: 5px; font-size: calc(11px * var(--fs)); color: var(--ink-3); }
 #kbm .chk i { width: 7px; height: 7px; border-radius: 50%; background: var(--slate); }
-#kbm .chk.pass i { background: var(--ok); } #kbm .chk.fail i { background: var(--fail); } #kbm .chk.pending i { background: var(--run); } #kbm .chk.merged i { background: var(--agent); } #kbm .chk.phase i { background: var(--mapped); }
+#kbm .chk.pass i { background: var(--ok); } #kbm .chk.fail i { background: var(--fail); } #kbm .chk.pending i { background: var(--run); } #kbm .chk.merged i { background: var(--agent); } #kbm .chk.closed i { background: var(--slate); } #kbm .chk.phase i { background: var(--mapped); }
 #kbm .thr { font-size: calc(11px * var(--fs)); color: var(--run); }
 
 #kbm .tvrail .crit { display: flex; flex-direction: column; gap: 8px; }
@@ -678,6 +706,9 @@ body:has(#sd) #crumb { visibility: hidden; }
 #kbm .tvhead .mvmenu div.on { background: color-mix(in srgb, var(--agent) 16%, transparent); color: var(--agent-hi); }
 #kbm .tvhead .mvmenu div[aria-disabled=true] { opacity: .4; }
 #kbm .tvhead .mvmenu .g { width: 14px; text-align: center; color: var(--muted); }
+
+#kbm .tvhead .mvmenu div.warn .g { color: var(--run); }
+#kbm .tvhead .mvmenu .n { color: var(--muted); margin-left: 4px; }
 @keyframes kb-scrim { from { background: transparent; } } @keyframes kb-modal { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 @media (prefers-reduced-motion: reduce) { #kbm, #kbm .modal { animation: none; } }
 
@@ -797,7 +828,7 @@ body.dragging, body.dragging * { user-select: none; }
 #proposals .grp .ct { margin-left: 6px; }
 #proposals .ct, #proposals .none { font-size: calc(11px * var(--fs)); color: var(--muted); }
 #proposals .strip { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; min-width: 0; padding-bottom: 6px; }
-#proposals .strip > .prop { flex: 0 1 360px; max-width: 100%; }
+#proposals .strip > .viewport-row { flex: 0 1 360px; max-width: 100%; min-width: 0; }
 @media (max-width: 719px) { #proposals .group { grid-template-columns: minmax(0, 1fr); gap: 8px 0; } }
 #proposals .prop { box-sizing: border-box; min-width: 0; overflow-wrap: anywhere; padding: 12px 16px; border-radius: 10px; background: color-mix(in srgb, var(--surface) 85%, transparent);
   border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
@@ -936,6 +967,14 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #efa button.danger:hover, #efa button.danger:focus-visible { background: color-mix(in srgb, var(--danger) 26%, transparent); }
 #efa button:disabled { opacity: .45; }
 #efa .refused { padding: 7px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); background: color-mix(in srgb, var(--danger) 8%, transparent); color: var(--danger-text); font-size: calc(12px * var(--fs)); }
+
+#efa .box:has(.rules) { max-height: 86dvh; overflow: hidden; }
+#efa .box:has(.rules) > :not(.rules) { flex: none; }
+#efa .rules { min-height: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
+#efa .rules:focus-visible { box-shadow: 0 0 0 1px var(--agent); border-radius: 6px; }
+#efa .warn .g { flex: none; color: var(--run); }
+#efa .warn code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10.5px * var(--fs)); color: var(--white); overflow-wrap: anywhere; }
+#efa .lead { color: var(--ink-2); }
 #ef-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 70; padding: 8px 14px; border-radius: 8px; background: color-mix(in srgb, var(--surface) 98%, transparent);
   border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); color: var(--ok-text); font: calc(12px * var(--fs)) Inter, system-ui, sans-serif; box-shadow: 0 12px 30px color-mix(in srgb, var(--shadow) 50%, transparent); animation: kb-modal .2s ease-out; }
 #ef-toast span { color: var(--muted); }
@@ -1000,7 +1039,7 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 @keyframes orb-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .orb .spin { animation: none; } }
 
-@media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.drow:is([data-pane=processing], .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
+@media (prefers-reduced-motion: no-preference) { #dg :is(.drow:is([data-pane=processing], .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
 @keyframes dag-stream { to { stroke-dashoffset: -6; } }
 
 #dg .dstage { --H: calc(68px * var(--fs)); --R: calc(64px * var(--fs)); --C: calc(22px * var(--fs)); --gap: 20px; --wp: calc((100% - var(--gap)) / 2.25); --wi: calc((100% - var(--gap)) * 1.25 / 2.25); position: relative; box-sizing: border-box; margin-bottom: 16px; height: calc(var(--hsum) * var(--H) + var(--n) * var(--R) + var(--K) * var(--C)); }
@@ -1044,16 +1083,14 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #dg .num.bad { color: var(--fail-text); }
 #dg .k { color: var(--muted); }
 
-@media (max-width: 900px) {
-  #dg .dstage { --H: calc(44px * var(--fs)); }
-  #dg .phead .cols, #dg .drow .sub, #dg .drow .body > .num, #dg .drow .body > span:empty { display: none; }
-  #dg [data-pane] { --grid: 20px minmax(0, 1fr) minmax(60px, 34%); }
-  #dg .drow .body { row-gap: 2px; align-content: center; }
-  #dg .drow .body > :first-child { grid-row: 1 / 3; }
-  #dg .drow .who { grid-column: 2; grid-row: 1; }
-  #dg .drow .last { grid-column: 2; grid-row: 2; }
-  #dg .drow svg.dstrip { grid-column: 3; grid-row: 1 / 3; }
-}
+#dg .dstage.compact { --H: calc(44px * var(--fs)); }
+#dg .compact .phead .cols, #dg .compact .drow .sub, #dg .compact .drow .body > .num, #dg .compact .drow .body > span:empty { display: none; }
+#dg .compact [data-pane] { --grid: 20px minmax(0, 1fr) minmax(60px, 34%); }
+#dg .compact .drow .body { row-gap: 2px; align-content: center; }
+#dg .compact .drow .body > :first-child { grid-row: 1 / 3; }
+#dg .compact .drow .who { grid-column: 2; grid-row: 1; }
+#dg .compact .drow .last { grid-column: 2; grid-row: 2; }
+#dg .compact .drow svg.dstrip { grid-column: 3; grid-row: 1 / 3; }
 #dg .tie, #kbm .dgm .tie { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: 3px; line-height: 15px; font-size: calc(10.5px * var(--fs));
   color: var(--tc); background: color-mix(in srgb, var(--tc) 12%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 35%, transparent); }
 #dg a.tie, #kbm .dgm a.tie { text-decoration: none; }
@@ -1108,7 +1145,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #legend svg { vertical-align: middle; }
 
 
-#nav .matches, #nav .outline, #nav .leaderboard, #nav .drill-tasks, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tv .md.desc, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #proposals, #admin, #sd .sd-details {
+#nav .matches, #nav .outline, #nav .leaderboard, #nav .drill-tasks, #nav .card .body, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tv .md.desc, #kbm .tvcol, #kbm .tvrail .box, #kbm .tv textarea.fv.long, #dg #stage, #proposals, #admin, #sd .sd-details, #efa .rules {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
@@ -1120,22 +1157,8 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 
 .kept { display: contents; }
 .kept > * { will-change: opacity; }
-.kept[inert] #kb .mach.hot .p::after, .kept[inert] #dg svg.dstrip path.link { animation-play-state: paused; }
 
-.kept[inert][data-warm] > * { visibility: hidden; }
-.kept[data-warm] [data-warm-parts] > * { content-visibility: hidden; }
-.kept[data-warm="1"] [data-warm-parts] > :nth-child(-n+1),
-.kept[data-warm="2"] [data-warm-parts] > :nth-child(-n+2),
-.kept[data-warm="3"] [data-warm-parts] > :nth-child(-n+3),
-.kept[data-warm="4"] [data-warm-parts] > :nth-child(-n+4),
-.kept[data-warm="5"] [data-warm-parts] > :nth-child(-n+5),
-.kept[data-warm="6"] [data-warm-parts] > :nth-child(-n+6),
-.kept[data-warm="7"] [data-warm-parts] > :nth-child(-n+7),
-.kept[data-warm="8"] [data-warm-parts] > :nth-child(-n+8),
-.kept[data-warm="9"] [data-warm-parts] > :nth-child(-n+9),
-.kept[data-warm="10"] [data-warm-parts] > :nth-child(-n+10),
-.kept[data-warm="11"] [data-warm-parts] > :nth-child(-n+11),
-.kept[data-warm="12"] [data-warm-parts] > :nth-child(-n+12) { content-visibility: visible; }
+.kept[inert] > * { content-visibility: hidden; }
 
 #kb .card { content-visibility: auto; contain-intrinsic-size: auto 64px; }
 
@@ -1241,6 +1264,11 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kbm .ask .seg { max-width: 100%; }
   #kbm .ask .seg button { padding: 2px 9px; }
   #kbm .ask .afoot { flex-wrap: wrap; }
+
+  
+  #efa .rules ~ .row { display: grid; grid-template-columns: 1fr 1fr; }
+  #efa .rules ~ .row :is(.hint, .sp) { display: none; }
+  #efa .rules ~ .row button { box-sizing: border-box; min-height: 44px; display: flex; align-items: center; justify-content: center; }
 
   
   #kbm .modal.tv.dgm { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border-inline: 0; }
@@ -1402,6 +1430,8 @@ figcaption code { font: 10.5px "JetBrains Mono", ui-monospace, monospace; color:
 #kb .card { max-width: 300px; }
 #kb .filters { height: auto; flex-wrap: wrap; max-width: 760px; margin: 0; }
 #nav .head { width: auto; }
+#kbm .modal.tv.mvspec { width: auto; height: auto; max-width: 100%; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); }
+#kbm .mvspec .mvmenu { position: static; width: max-content; margin-bottom: 6px; }
 iframe.phone { display: block; width: 390px; max-width: 100%; border: 0; border-radius: 8px; outline: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
 </style>
 </head>
@@ -1593,8 +1623,39 @@ iframe.phone { display: block; width: 390px; max-width: 100%; border: 0; border-
         </div></div></div>
       </figure>
     </div>
+    <div class="specimens">
+      <figure>
+        <figcaption><b>Move to menu with rule-breaking moves</b><code>#kbm .tvhead .mvmenu</code>: <code>div.ok</code> →, <code>div.warn</code> ⚠ with <code>.n</code> counting the rules the move breaks (it opens the warn-and-confirm box), and <code>div.guard</code> ⊘ for a move no one may make.</figcaption>
+        <div class="modal tv mvspec" role="dialog" aria-label="Specimen Move to menu"><div class="tvhead"><div class="tvmeta"><div class="acts"><div class="mv">
+          <div class="mvmenu" role="menu">
+            <div role="menuitem" class="ok on"><span class="g">→</span>Ready</div>
+            <div role="menuitem" class="warn"><span class="g">⚠</span>Waiting<span class="n">· breaks 1 rule</span></div>
+            <div role="menuitem" class="warn"><span class="g">⚠</span>Review<span class="n">· breaks 2 rules</span></div>
+            <div role="menuitem" class="ok"><span class="g">→</span>Verifying</div>
+            <div role="menuitem" class="guard" title="only the task actor closes a task that references a pull request"><span class="g">⊘</span>Done</div>
+          </div>
+          <button class="mvbtn" aria-haspopup="menu" aria-expanded="true">Move to</button>
+        </div></div></div></div></div>
+      </figure>
+    </div>
   </div>
   <div id="efa">
+    <div class="specimens wide">
+      <figure>
+        <figcaption><b>Warn-and-confirm box</b>An operator move that breaks a lane's rules: <code>.lead</code>, one <code>.warn</code> per rule in the scrolling <code>.rules</code> (<code>tabindex="0"</code> when it overflows, so the keyboard scrolls it) with its <code>code</code> and skill link, then <code>.refused</code> when the confirmed write is refused, which disables Confirm and says to cancel.</figcaption>
+        <div class="box" role="alertdialog" aria-label="Specimen warn-and-confirm">
+          <h3>Move DEMO-1234 to Review?</h3>
+          <div class="k">Trim unused dashboard panels · In Progress → Review</div>
+          <div class="lead">This move breaks 2 rules of the Review lane. An agent making it would be refused.</div>
+          <div class="rules" role="list" aria-label="Broken rules">
+            <div class="warn" role="listitem"><span class="g" aria-hidden="true">⚠</span><div>Review needs every referenced pull request ready with passing checks: ready a draft with <code>starpulse command run ready</code><span class="k3">Satisfied by <a href="#">starpulse:deliver</a></span></div></div>
+            <div class="warn" role="listitem"><span class="g" aria-hidden="true">⚠</span><div>Review and Done need every Acceptance Criterion checked: verify each gate and check it in the same update</div></div>
+          </div>
+          <div class="refused" role="alert">Not moved: DEMO-1234 changed since the board was read. Cancel, then move it again to see the current rules.</div>
+          <div class="row"><span class="hint">Esc cancels · Ctrl+Enter confirms</span><span class="sp"></span><button>Cancel</button><button class="danger" disabled>Confirm</button></div>
+        </div>
+      </figure>
+    </div>
     <div class="specimens">
       <figure>
         <figcaption><b>Confirmation box and the danger button</b><code>#efa .box</code>, <code>#efa button.danger</code> beside the quiet default.</figcaption>
