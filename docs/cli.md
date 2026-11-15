@@ -34,6 +34,7 @@ starpulse runs list                              # each workflow as <instance>/<
 starpulse runs start prod/nightly                # start a run-safe workflow through Run now; its run id
 starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
 starpulse analytics health --hours 72            # dwell and WIP per state, throughput and stuck tasks, with gap warnings
+starpulse analytics liveness                     # each working task's idle times, the stalled ones and why, Review moves per hour
 starpulse analytics steps --hours 24             # one row per model request: skill in force, activities, keys, tokens
 starpulse analytics transitions --hours 168      # per kind x size x skill: steps, wasted-step rate, agent seconds, peak context
 starpulse analytics cells --hours 720            # per kind x size: median steps per clean completion on a latest-fifth holdout
@@ -45,6 +46,7 @@ starpulse analytics stages --hours 168           # sub-stages of the stretches n
 starpulse analytics diff --hours 168             # per transition: the reference run against the slowest clean run
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
+starpulse rehearse --config starpulse.toml --database-url copy.sqlite  # start serve on a COPY of the store and wait for /api/ready
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
 starpulse help --agent                           # every verb with its arguments, output keys and exit codes
 ```
@@ -55,6 +57,7 @@ Four verbs work on files, and only `demo` without `--mockup` reads the server; e
 starpulse machine validate .starpulse/machines/*.yaml   # schema and compile errors, each with its file and line
 starpulse machine import mermaid flow.mmd               # draft a machine file from a stateDiagram-v2 diagram
 starpulse config check --config starpulse.toml          # unknown keys by name, and the effective config with defaults
+starpulse session records <session-id>                  # a session's transcript records grouped by task, read from the files
 starpulse demo --out demo.html                          # the self-contained demo page (reads the server's snapshot)
 ```
 
@@ -71,8 +74,8 @@ lists exactly the verbs there are.
 |---|---|---|
 | `snapshot` | | the server's full snapshot (`/api/snapshot?view=full`, [Cold done tasks](serving.md#cold-done-tasks)): `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it; `machinePage` and `machineStrip` page and count the machines entered from the In Progress one ([Machine rows](serving.md#machine-rows)) |
 | `board` | `--state`, `--milestone`, `--label`, `--profile`, `--assignee`, `--type` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, phase, substate, done_at, profile, assignee, milestone, type, labels, dependencies, waiting_on, criteria, pause_reason, readable, source, prs, moves}`, `phase` the state of an `in_progress` task's In Progress machine and `substate` the state of that phase's submachine (null when it has none; only the current phase's submachines count); while a submachine holds the task and the In Progress machine has no state for it, `phase` is the state that submachine is linked to, `done_at` the ISO time a `done` task entered the lane (null otherwise), `profile` the agent profile it is routed to and `assignee` the session that last claimed it (empty when none has), `criteria` each acceptance criterion as `{text, checked}`, `pause_reason` why a `needs_attention` task waits for a person (empty otherwise), `--profile` keeping only tasks routed to that profile, `--assignee` only that session's tasks (`--holder` and a `--assignee` value starting with `@` are the one-release aliases of the old keys) and `--type` only tasks of that type; `--milestone` also lists the milestone's done tasks past their hot day (`/api/done` cards: no `dependencies`, `criteria`, `prs` or `moves`) |
-| `search` | `QUERY...`, `--limit`, `--label`, `--finished-within-days` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet, field}, `field` naming the part that matched (`title`, `description`, `criteria`, `notes`, `comments` or `task`)`, best match first, at most `--limit` (1 to 100, default 10); each `--label` keeps only the tasks carrying it, and `--finished-within-days N` drops a task that finished more than `N` days ago; a blank query, a limit out of range or a window that is not a positive integer exits 1, and a server that keeps no index exits 3 |
-| `task show` | `TASK` | a task as above, with its `description`, in which each bare `TASK-N` is a link to the task's card on the Board and each `#N` (three digits or more) a link to the task's pull request of that number, while code spans, existing links and bare URLs stay as written; a task done over 24 h ago is read whole from its board record; a completed or archived task has only its `id` and where it settled as `lane` |
+| `search` | `QUERY...`, `--limit`, `--label`, `--finished-within-days`, `--before` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet, field}, `field` naming the part that matched (`title`, `description`, `criteria`, `notes`, `comments` or `task`)`, best match first, at most `--limit` (1 to 100, default 10); each `--label` keeps only the tasks carrying it, and `--finished-within-days N` drops a task that finished more than `N` days ago; `--before TASK` keeps only tasks of `TASK`'s prefix with a lower number, applied before `--limit` cuts; a blank query, a limit out of range or a window that is not a positive integer or a `--before` that is no task key exits 1, and a server that keeps no index exits 3 |
+| `task show` | `TASK` | a task as above, with its `description`, in which each bare `TASK-N` is a link to the task's card on the Board and each `#N` (three digits or more) a link to the task's pull request of that number, while code spans, existing links and bare URLs stay as written; a task done over 24 h ago is read whole from its board record, lane `done` with its `done_at` and merged `prs` (a settled row reads `archived` only when its file is not Done); a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
 | `task move` | `TASK...`, `TO`, `--session` | `ok`, `task`, `to`, `reason`, `skill` and `advice`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer. Several tasks move in one write (`POST /api/move` with `tasks`), each judged on its own: the output is `moved` and `refused`, each refused task with its reason, and a refused task exits 1 while the others stay moved. An agent session that does not hold an In Progress task another session holds is refused, naming the holder; the operator, a workflow and a write naming no session are not |
 | `task trace` | `TASK`, `--machine` | `task`, `machine` (null without `--machine`), `path` and `steps`, and with the Board's lane changes `plan_revisions`, the count of `PlanRevised` Events; the Board's `{at, from, to}` lane changes, or with `--machine` that machine's `{at, event, state}`, oldest first; an unknown flow exits 4, a task never seen has an empty `path` |
@@ -84,13 +87,14 @@ lists exactly the verbs there are.
 | `task restore` | `TASK` | `task`: the archived task's file moved back to the board's tasks, byte for byte; a task whose number is already open, whose file name is taken or that is not archived exits 1, a retired task is returned the same way; a board that does not restore tasks exits 3 |
 | `task retire` | `TASK` | `task`: a finished task (Done, in the completed tasks or archived) taken off the board into the server's history store, its file kept byte for byte under its name, so the board's reads and numbering scan fewer files while a new task still numbers past it and a transition rule's dependency on it keeps the state it was retired in; an open or unknown task, a number already kept with other text, or a board not yet started on its store exits 1 and keeps the file; a board that does not retire tasks exits 3 |
 | `task retired` | `TASK` (optional) | `tasks`: every retired task, or the one `TASK` names (matched ignoring case), each `{task, name, text}` with its file name and text; an unretired task gives `[]`; a board that keeps no retired tasks exits 3 |
+| `task cold-done` | none | `tasks`: every Done task past its hot day, newest first, each card from `/api/done`, paged until the server has no more; exit 3 when the server cannot list them |
 | `task import-retired` | `FILE...` | `tasks`: the id each file's front matter names, each file kept in the history store as `task retire` keeps one, under its own name and byte for byte; the same file again is accepted, so a run a refusal stopped can be given the same files again; a file that is not there exits 2 before any is sent, a file with no id, a task on the board or other text under a kept number exits 1, a board that does not import retired tasks exits 3 |
 | `task complete` | `TASK` | `task`: a Done task moved to the board's completed tasks, where it is still read and edited; a task that is not Done (or already completed) is refused with the board's reason and skill (exit 1), an unknown task exits 4, a board that does not complete tasks exits 3 |
 | `task claim` | `TASK`, `--session`, `--harness` | `ok`, `task`, `to`, `assignee`, `reason` and `skill`: the task moved to In Progress with the session (an opaque string; `--session`, else `STARPULSE_SESSION`, required) recorded as its `assignee`; a claim by the holder it already has succeeds without a write; a task held by another session (or In Progress with no holder), or a session already holding another In Progress task, is refused with the holder or task named (exit 1) and nothing written; an unknown task exits 4, a board that cannot move tasks exits 3 |
 | `task release` | `TASK`, `--session`, `--harness` | `ok`, `task`, `to`, `releasedFrom`, `reason` and `skill`: the claim on the task ended whoever holds it (`POST /api/release`): it loses its `assignee`, records the session as `released_from` and keeps its lane, so the next `task claim` adopts it. The caller judges whether the holder is gone; a task no session holds is refused (exit 1) with nothing written; an unknown task exits 4, a board that cannot release claims exits 3 |
 | `task park` | `TASK`, one of `--until-task TASK` or `TASK#K` (repeatable), `--until CRITERION` (repeatable YAML or JSON) and `--operator REASON`, and `--comment` | `ok`, `task`, `to`, `reason` and `skill`: the task paused for exactly one typed reason, which picks the lane in the same write: `--until-task` adds the named tasks to its dependencies (`TASK#K` also records that it needs only criterion K of that task, and is refused when K is absent or already checked) and `--until` replaces its start criteria (each with a unique `id` and a `kind`), both moving it to `waiting`; `--operator` moves it to `needs_attention` with the reason as its pause reason. No reason or more than one exits 2; a named task that is already Done or is the task itself, criteria on a task that already waits on a task, or criteria of the wrong shape is refused (exit 1) with nothing written; an unknown task exits 4, a board that cannot edit tasks exits 3 |
 | `task review` | `TASK`, `--ref` (repeatable), `--summary`, `--comment` | `ok`, `task`, `to`, `reason` and `skill`: the task moved to Review with the `--ref` evidence added to its references and `--summary` as its final summary; the board's `[[board.guards]]` judge the record the move would leave, and a rule's refusal exits 1 with its reason and skill and writes nothing; an unknown task exits 4, a board that cannot edit tasks exits 3 |
-| `task checkpoint-ac` | `TASK`, `CRITERION`, `EVIDENCE` | `task`, `criterion` and `changed` (`["acceptanceCriteria"]`, or empty when the criterion was already checked): the criterion `#CRITERION` checked and the comment `Verified AC #N: <evidence>` appended in one write, with the refusals of `task edit` and the holder refusal of `task move`; a criterion the task lacks exits 1 and writes nothing, blank evidence exits 2, an unknown task exits 4, a board that cannot read or edit tasks exits 3 |
+| `task checkpoint-ac` | `TASK`, `CRITERION`, `EVIDENCE` | `task`, `criterion` and `changed` (`["acceptanceCriteria"]`, or empty when the criterion was already checked): the criterion `#CRITERION` checked and the comment `Verified AC #N: <evidence>` appended in one write, with the refusals of `task edit` (a session that does not hold the task may check a criterion; the write names it in a comment); a criterion the task lacks exits 1 and writes nothing, blank evidence exits 2, an unknown task exits 4, a board that cannot read or edit tasks exits 3 |
 | `task edit --editor` | `TASK` | `task` and `changed`: opens the task rendered as markdown (the same rendering as `task show --markdown`) in `$VISUAL`, else `$EDITOR`, else `vi`, and imports what the operator changed as the events of an edit, by actor `operator` with writer `break-glass`; an edit that removes or adds a section or field line the rendering cannot map back, or changes `Status` (a move is not an edit), is refused naming it with code `refused` and writes nothing; no change writes nothing |
 | `task profile` | `TASK`, `PROFILE` | `task`, `profile` and `changed` (`["profile"]`, or empty when the profile already is that value): the edit of the profile alone, with the refusals of `task edit`; a blank profile clears it |
 | `machine list` | | `machines`: each `{name, states, tasks}` with its state ids and its live task count |
@@ -113,6 +117,7 @@ lists exactly the verbs there are.
 | `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network, as JSON with no foreign `Origin` (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
 | `analytics health` | `--hours`, `--stuck-hours` | `now`, `window_s`, `stuck_after_s`, `states`, `throughput`, `stuck` and `warnings`, below |
+| `analytics liveness` | `--hours`, `--stalled-minutes` | `now`, `window_s`, `stalled_after_s`, `tasks`, `review`, `in_progress_s`, `slot_s`, `slots`, `stages` and `stalls`, below; a window or threshold that is no positive number exits 1 as `refused` |
 | `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, effort, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number or is longer than the telemetry history exits 1 and a server that receives no telemetry exits 3 |
 | `analytics transitions` | `--hours` | `now`, `window_s` and `transitions`, each `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`, below; refusals as `analytics steps` |
 | `analytics cells` | `--hours` | `now`, `window_s` and `cells`, each `{kind, size, n, completions, clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, below; refusals as `analytics steps` |
@@ -127,11 +132,12 @@ lists exactly the verbs there are.
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load (a malformed `[project.commands]` entry included), or when a built-in board's machine names a writer workflow no `[[runs]]` domain lists, which `serve` refuses to start on |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
+| `session records` | `SESSION`, `--transcripts`, `--config` | `session`, `records` (the count) and `groups`, each `{task, records}` in the order the tasks are first named, `task` null for a session that names none; the records are the transcript's own JSON lines, read from `<transcripts>/<project>/<session>.jsonl` (`--transcripts`, else `[board] transcripts`, else `~/.claude/projects`) and never stored; a task is claimed by a branch the key scheme names or by a shell command or `Skill` call a `claims` pattern matches, and the records before the first claim join the first task; offline; exit 4 when no transcript of the session exists, 1 when the config does not load |
 | `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |
 | `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |
 | `help --agent` | | `exit_codes` and `verbs` |
 
-`search` reads `GET /api/search?q=QUERY[&limit=N][&label=L]...[&finished_within_days=N]`: the words of `q` are each a quoted phrase and all must match, so
+`search` reads `GET /api/search?q=QUERY[&limit=N][&label=L]...[&finished_within_days=N][&before=TASK]`: the words of `q` are each a quoted phrase and all must match, so
 punctuation (`PROJ-45`, `NEAR`, `title:`) is text and never query syntax. A task is searchable by its key, title,
 description, acceptance criteria, notes and comments (a Backlog.md board's `**Assignee:**` claim marker is not text), and a match in the title
 ranks above one in the description, which ranks above one in a criterion, a note or a comment; words are matched by their
@@ -146,7 +152,8 @@ tasks carrying that label, matched whole (`disk` does not match `disk-usage`). `
 open task and drops one that finished more than `N` days ago: a completed or archived task finished when it settled
 (a settled task the board gives no time for counts as older than any window), and a task in the done lane when it
 entered that lane (when the lane history does not date that entry, the first time the index saw it there). A task
-keeps its earliest finish time until it reopens, so a restart moves none later. Both narrow the lexical and the vector hits alike. The index keeps each task's labels and finish
+keeps its earliest finish time until it reopens, so a restart moves none later. `before=TASK` keeps only the tasks
+of `TASK`'s prefix with a lower number, so `before=PROJ-11` keeps `PROJ-9` and not `PROJ-SUB-3`. All narrow the lexical and the vector hits alike. The index keeps each task's labels and finish
 time beside its text, outside the text's digest, so an index written before them gains them as each task is next
 placed, as every task is on a restart, without embedding anything again.
 
@@ -174,6 +181,30 @@ counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive
 does not list every task's lane changes through `lane_rows(since=None)` and `gaps()`; `since`
 is an epoch the Ledger passes so it reads only its last 24 hours, and None asks for every change.
 
+`analytics liveness` reads `GET /api/analytics/liveness[?hours=N][&stalled_minutes=N]` (a window of 24 hours and a
+stalled threshold of 5 minutes by default). `tasks` lists every task in the working State, longest without a state
+change first, each `{task, since, state_idle_s, command_idle_s, stalled, cause, waits_in}`. A task's state changes when
+it changes lane or a work machine takes an event for it: the machine the Board's working State links with `exits`, and
+every machine linked beneath it. It issues a command when the `harness` machine takes `TOOL_USED` for it;
+`command_idle_s` is null when no such event names the task. A task is `stalled` once both are older than the
+threshold, and its `cause` is read from its events: `slow_process` when a machine outside the work (a pipeline, a
+check) moved it inside the threshold, `waits_in` that machine's `machine:state`, or when the session's turn is still
+open, `waits_in` the stage the task works in; `waiting_checks` when the turn ended (`SESSION_STOPPED` or
+`SESSION_SETTLED`) and the last `pr-checks` rollup of the task's stay, whatever its age, is pending (`waits_in` is
+`pr-checks:pending`; a rollup from before the stay is not read); `idle` when the turn ended and nothing outside moves
+it; `unattributed` when no `harness` event names the task. `review` is `{count, per_hour, per_slot_hour, hours}`:
+the moves from the working State into Review in the window, a change recorded twice counted once, with one
+`{at, count}` bucket per hour from the window's start; `per_slot_hour` divides the count by `slot_s` in hours (null
+when it is 0). `slot_s` is every working stay's seconds inside the window, an open stay to `now`, and `slots` splits it
+into `{cause, slot_s, share}`, largest first: a silence (no state change, no command) inside the threshold, a quiet
+after a turn end included, is `working`; a longer one is wholly the cause it stalled on. `stages` and `stalls` read the stays those moves ended. `stages`
+lists the time spent after each work-machine event, `{stage, visits, task_s, mean_s, share}` with `stage` a
+`machine:state` (the lane before the first event), summing to `in_progress_s`. `stalls` lists each
+`{cause, waits_in, count, stalled_s}`, the seconds each silence ran past the threshold. Both are largest first. The
+read replays the events of every task it lists, so it takes seconds on a busy Board and no page asks for it. The
+endpoint is 400 for an `hours` or `stalled_minutes` that is no positive number or an `hours` past 8784 (a year of hourly buckets), and 501 when the history does not
+answer `lane_rows` and `task_events`.
+
 `analytics steps` reads `GET /api/analytics/steps[?hours=N]` (168 hours by default, 400 with `history_s` for a window
 longer than the telemetry history): one row per model request of the
 window, oldest first, that [Connect sources](sources.md#read-each-step-of-a-session) defines. `skill` is the skill
@@ -187,7 +218,7 @@ board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither r
 
 `analytics spend` reads `GET /api/analytics/spend[?hours=N]` with the window and refusals of `analytics steps`: each task's
 tokens by phase (`claim`, `implement`, `qa`, `deliver`, `review_fix`), their weighted total `wte`, peak context,
-compactions, models and `profile` (`<model>-<effort>` of its first main-thread step), with the task's total against its kind and size `norm_wte` and `above_norm`. A task with no
+compactions, models and `profile` (`<model>-<effort>` of its first main-thread step), with each phase against its kind and size `phase_norm_wte` and `phase_above_norm`, and the task's total against `norm_wte` (the phase norms summed) and `above_norm`. A task with no
 labels is listed with no norm; [Connect sources](sources.md#report-each-tasks-spend-by-phase) defines the phases.
 
 `analytics estimates` reads `GET /api/analytics/estimates[?hours=N][&milestone=m-N]`: one row per completed task with a
@@ -231,7 +262,7 @@ exactly one state, beside which the page draws the cue; a file with no block has
 the one `[board] machine` names: each other file is a flow named by its file stem, drawn
 with the same writer check as the Board's (`refuse_unlisted` against the configured workflows). A file may declare how
 the page draws it: `tiers` (state ids per stage), `main_line` (the Board's axis; its lanes in order when absent) and
-`rests` (states drawn final though an event leaves them); `submachines` (`{state, machine, exits, routes, when}`, `machine` a sibling's
+`rests` (states drawn final though an event leaves them); `submachines` (`{state, machine, skill, exits, routes, when}`, `skill` the skill a session runs while the inner machine does, which the Kanban card and the Star Map branch use as their label, or the machine's own name when `skill` is absent; `machine` a sibling's
 file stem, `exits` mapping each of its final states to the event of this machine that leaves `state`, and `routes`
 mapping a phase state to the event that leaves `state` toward it when the task type's `[sequences]` entry (see
 [serving](serving.md)) lists that phase next, the exit's own event otherwise); and
@@ -242,9 +273,9 @@ A batch move names `tasks` in place of `task`: one `POST /api/move` with `{tasks
 
 A move may also name the mover's session: `POST /api/move` takes `{task, to, actor, session, harness}`, and
 `starpulse task move` sends `--session`, else `STARPULSE_SESSION`, and `--harness`, else `STARPULSE_HARNESS`; the
-task `create`, `edit`, `assign`, `archive` and `checkpoint` verbs send the same two. A move that names one calls the writer with it as a fourth argument,
-`writer(task, status, actor, session)`; one that names none calls it with three, so a writer written before sessions
-keeps working. The writer records the session as the task's assignee when the move is a claim, `BoardTask.assignee`
+task `create`, `edit`, `assign`, `archive` and `checkpoint` verbs send the same two. Only a claim (`POST /api/claim`) calls the writer with the session as a fourth argument,
+`writer(task, status, actor, session)`; a move, even one that names a session, calls it with three, so a move from a session
+that does not work the task, such as an answer's resume, never makes that session the holder. The writer records the session as the task's assignee when the call is a claim, `BoardTask.assignee`
 carries it back, and a `Written.advice` string rides in the move's answer (`advice` in the CLI document, empty when
 the writer has none). The native adapter's writer records the assignee as the task's frontmatter `assignee` (a release removes it and writes `released_from`) and adds no line to its notes; the Backlog.md adapter's writer appends a `**Assignee:** <session>` line to the task's notes, in the same edit as the `In Progress` status, because the Backlog CLI drops a frontmatter key it
 does not know.
@@ -271,19 +302,31 @@ check from `GET /api/doctor`.
 the server's own snapshot, config and log and held for a minute; the page draws it as the Ledger's doctor banner. A
 server with no contract to read answers `{ok: true, checks: []}`.
 
+`GET /api/ready` answers 200 when the server can serve the board and 503 when it cannot, with the same body:
+`{ready, components: {<name>: {ready, detail}}}`. The components are `store` (the event log is at the schema head),
+`board` (the Board is assembled), `writer` (the Board context, which dates the Start Criteria, has started) and
+`contexts` (every other supervised context has started in this boot). `doctor` adds a `ready` check that fails naming
+each component that is not ready.
+
+`rehearse --config <c> --database-url <copy>` is the dress rehearsal of a release: it migrates the COPY, starts
+`serve` on it at a loopback ephemeral port, polls `/api/ready` and stops the server. It exits 0 when the server was
+ready within `--budget` seconds (default 120) and 1 otherwise, printing the unready components and the end of the
+server's log. The server runs with `STARPULSE_REHEARSE` set: the config drops its TLS, telemetry, session start,
+tokens, take-over command, producers and `[bridge]` (no `nats` child) and polls no pull requests, only the `board`, `flow-metrics` and `signal-folds` contexts run
+(none polls a service, starts a run or session, or listens on a port), pruned rows go to a scratch directory, and no
+control endpoint is published beside the config. A Board that does not assemble against the copy (a lane mismatch)
+fails the rehearsal.
+
 `skills` reads no server. The package bundles four skills about StarPulse itself: `operating-starpulse-board` (what to
 work next, why a task cannot move, moving it), `authoring-starpulse-machines` (machine YAML, writers, guards,
 submachines, `machine validate` and `machine import mermaid`), `writing-starpulse-adapters` (the board, machine-events
 and runs contracts, the adapter kit, the CloudEvents ingest) and `setting-up-starpulse` (starting the server, config,
-`doctor`). It also bundles six task phase skills, each with its phase machine: `starting-task` (find or file the task,
-claim it, make its worktree), `tdd` (red, green and refactor cycles, criteria checkpoints, docs), `deliver` (final
-gates, commit, push, PR and green checks, or the no-PR finalize), `review-fix` (review threads and conflicts
-until the task moves to review), `fix-checks` (read a red check's log, fix a branch fault through delivery, or park
-on the owner of a base or flaky fault) and `mitigate` (stop a failing service's growing impact, recheck its health, and
-diagnose only once it is green). They reach a project's own behavior only through StarPulse verbs and
+`doctor`). It also bundles two task phase skills, each with its phase machine: `fix-checks` (read a red check's log, fix a branch
+fault through delivery, or park on the owner of a base or flaky fault) and `mitigate` (stop a failing service's growing
+impact, recheck its health, and diagnose only once it is green). They reach a project's own behavior only through StarPulse verbs and
 `starpulse command run` with the `start`, `test`, `check`, `deliver`, `pr-status`, `finalize`, `check-logs`, `health`, `snapshot` and
 `mitigate` commands; a command
-the project does not map exits 4, and the skill does that step as the project's `AGENTS.md` says. `starpulse command show NAME` reads the same table without running it: it prints the `--arg` names the command's argv needs and, for a command with a `{body}`, the project's pull request template (the first of `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/pull_request_template.md`, `pull_request_template.md` beside the config), so the `deliver` skill's body keeps the project's sections on the first attempt. `skills install`
+the project does not map exits 4, and the skill does that step as the project's `AGENTS.md` says. `starpulse command show NAME` reads the same table without running it: it prints the `--arg` names the command's argv needs and, for a command with a `{body}`, the project's pull request template (the first of `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/pull_request_template.md`, `pull_request_template.md` beside the config), so a delivery skill's body keeps the project's sections on the first attempt. `skills install`
 copies them to `.claude/skills` (`--claude`) or `.agents/skills` (`--codex`) in the working directory, or with `--user`
 to `~/.claude/skills` or `~/.agents/skills`. An install records what it wrote, so a copy you edited afterwards is
 refused (exit 1) until you pass `--force`, while one the package has since updated is replaced; `skills list` reports
@@ -333,6 +376,7 @@ repositories a refresh may name are those of open tasks' pull request links, the
 At each start the worker reads every record it holds OPEN the same way, one pull request at a time, so a record whose close no event
 reached (one an older listing poll wrote) closes once and the OPEN set matches GitHub's. It reads every MERGED record with no merge
 commit too (a lifecycle event wrote it bare), which the `pin-bump` release gate needs to release a task waiting on that pull request.
+A read that finds an OPEN pull request with `mergeable` still `UNKNOWN` (GitHub computes it lazily after a push) is asked again on the same bounded delays as a failed read, so the `pulls_clear` Review guard, which refuses anything but `MERGEABLE`, is not held by a value no event will replace. Every five minutes the sync also queues a read of each held OPEN record still `UNKNOWN`, so a lost read or spent retries does not hold the guard for good.
 
 `GET /api/pulls[?repo=owner/name][&number=N][&state=OPEN|MERGED|CLOSED][&body_contains=text]` serves the store,
 `{pulls: [...]}`, ordered by repository then number. Each record holds `repo`, `number`, `state`, `isDraft`,
@@ -410,6 +454,81 @@ the policy then comes from the board machine (`states`, `events`, `writers`) and
 (a `lanes` row is `{name, role, position, skill}`). The exit code is 0 once printed, 1 for a store not at the schema head
 (run `starpulse migrate`) and 2 for a flag the command does not allow or a config that cannot be read.
 
+## Revising the board policy
+
+`starpulse policy revision [--config starpulse.toml] [-m MESSAGE]` writes the data migration that brings the store to the
+policy the operator declares. The operator declares a `starpulse.board.model.policy.Policy` (frozen dataclasses: `Lane`,
+`Route`, `Exit`, `Watch`, `PolicyRule`, `Vocabulary`, `Profile`, `LaneTool`) in a Python file and names it in the config:
+
+```toml
+[board.policy]
+declared = "policy/declared.py:POLICY"   # the file, and the Policy or zero-argument function in it (default POLICY)
+migrations = "policy/migrations"         # the operator's Alembic chain; created on the first run
+version_table = "starpulse_operator_policy_version"   # optional; this is the default
+```
+
+The chain is a second Alembic chain beside StarPulse's, versioned in its own table. Each migration carries `CHANGES`: for every
+table whose rows differ, the rows added, the rows removed, and for each changed row its key and only the columns that differ
+(old and new values), so a one-rule edit writes a migration of tens of lines. Its `upgrade` and `downgrade` apply those rows by
+key, a second run leaves the same rows, and a downgrade restores the prior policy. A row is identified by these columns:
+
+| Table | Key |
+| --- | --- |
+| `lanes` | `name` |
+| `routes` | `event`, `source`, `target` |
+| `exits` | `event`, `actor`, `trigger` |
+| `watches` | `lane`, `fact` |
+| `rules` | `position` (declare positions explicitly; inserting a rule mid-list renumbers the later ones) |
+| `vocabularies` | `name`, `value` |
+| `profiles` | `kind`, `size` |
+| `tools` | `lane`, `tool` |
+
+A table falls back to `{"before": [...], "after": [...]}`, the whole table on each side (the form older migrations hold, which
+stay readable), when a key repeats in it or the keyed rows would not rebuild a side in order: `routes` and `exits` are read in
+insert order, so only rows appended at the end, edited in place or removed from the end stay keyed. The chain's head therefore records the policy The chain's head therefore records the policy
+the store should hold. The first run scaffolds the chain's `env.py` and an `alembic.ini` (`script_location` and the store's `sqlalchemy.url`, password hidden) beside it; apply
+the chain with `alembic -c <migrations>/alembic.ini upgrade head`. A title (`-m`) may hold backslashes and quotes: they are escaped in the migration's docstring.
+
+The verb prints the written migration's path, or says the store already matches and writes nothing; both exit 0. It exits 1
+for a store not at either chain's head, 2 for a flag, config or declaration it cannot read, and 3 for drift: the store holds
+rows the chain never wrote (a hand SQL edit). The drift prints to stderr, a `-` line for each row the chain records and the
+store lacks and a `+` line for each stored row the chain does not record; nothing is written, so the edit is never overwritten.
+Revert the edit, then declare the change and revise again.
+
+## Serving a lane's tools to the session that holds it
+
+`GET /api/machines` carries a top-level `lanes` map from the board policy (the database when its tables hold rows, else the
+files): each lane's allowed harness `tools`, its typed `exits` and its bound `skill`. An exit tool exists for each event an
+agent may fire from the lane: `board_review`, `board_park(reason, until)`, `board_defer(question)`, `board_finalize`, and
+`board_<event>` for any other. Each carries the JSON schema generated from the lane's exits; `until` is a task id
+(`TASK-9`, `TASK-9#2`; sent as `--until-task`) or a condition a check can observe, as YAML or JSON (sent as `--until`).
+Every argument is text, and each is passed as `--flag=value`, so a value that starts with a dash stays a value. The tools run
+the agent CLI's verbs (`task move`, `task park`, `command run finalize`): a policy exit's `trigger` is prose, so the verb
+for each typed tool is fixed here, and only the tool's existence, route target and schema come from the policy.
+
+`starpulse mcp` serves those tools to the session over stdio (MCP, one JSON-RPC message a line). It takes its task from
+the `claude/task-<n>-…` branch of the working directory, or `STARPULSE_TASK`, and reads the task's lane on every
+request; a lane it cannot read lists no exit tools, leaves the scope as it was and says so in `initialize`'s
+`instructions`, which also carry the held lane's bound skill. It lists only that lane's exit tools and refuses any other call before anything runs. An exit that lands the
+task in a lane answers with that lane's bound skill, sends `notifications/tools/list_changed`, and rewrites the
+worktree's `.claude/settings.local.json` `permissions.deny` so the harness's own tools (`Agent`, `Bash`, `Edit`, …) are the
+lane's `tools` and no more. A lane that declares no tools denies nothing. A denial the
+operator wrote stays: the server replaces only the denials it added, which it records in `.claude/lane_scope.json` (git-ignored, like `settings.local.json`).
+
+Nothing registers the server: it is opt-in per project (`mcpServers` in `.mcp.json`), so a project that does not name it
+sees no change.
+
+## Migrating the store
+
+`starpulse migrate --config <c>` brings the event log to the head of its Alembic chain, builds it when empty, and runs the
+one-time imports. Migrations are expand/contract: one that only adds keeps the store readable by the release before it, and
+one that drops or renames sets `CONTRACT = True` in its file. The store records a reader floor in `starpulse_reader_floor`,
+the latest contract revision at or below its own (the chain's base when none). A release whose chain holds the floor opens a
+store ahead of it as it is; a release that lacks the floor refuses it with `StoreNotMigrated` naming the floor.
+`starpulse migrate --floor --config <c>` prints `{"revision": ..., "floor": ...}` for the store and changes nothing;
+`floor` is null for a store no release has recorded one in. A test fails a migration after 0047 that both adds and
+drops, or that drops without `CONTRACT = True`.
+
 ## Backing up the store
 
 `starpulse backup --to DIR [--keep N] [--config starpulse.toml]` writes a `VACUUM INTO` copy of the SQLite store the config
@@ -417,24 +536,9 @@ names into `DIR` as `starpulse-<local time>.db`, proves it with `PRAGMA integrit
 (default 14). It prints one JSON line with the copy's path, `integrity` and the `kept` count, and exits 2 for a store that
 is not SQLite, which its own backup tool owns. The read lock is held only for the copy, so `serve` keeps answering.
 
-## Backfilling telemetry into Loki
+## Signals in the history database
 
-`starpulse backfill-telemetry [--days N] [--config starpulse.toml]` copies the last `N` days (default 8) of the event
-log's `telemetry:signals` rows into the Loki the config's `telemetry_loki_url` names, skipping each key Loki already holds,
-so a rerun pushes nothing. Use it after setting `telemetry_loki_url` on an instance that already held signals: the
-adapters no longer write Loki and the stream no longer receives signals, so this verb is for a Loki that still needs filling. It prints one JSON line with `days` and
-`pushed`, and exits 1 for a config with no `telemetry_loki_url` or a Loki it cannot reach. It is not an agent verb.
-
-## Copying signals into the signal table
-
-`starpulse copy-signals [--days N] [--config starpulse.toml]` copies the last `N` days (default 8) of the signals in the
-Loki the config's `telemetry_loki_url` names into `starpulse_signals` in the history database, by signal time, skipping
-each key the table already holds, so a rerun inserts nothing. The deploy and every adapter start run it before the adapters
-write the table alone, so a line Loki took late lands in the table. The analytics and trace routes read the fold rows;
-`SignalFolds` folds the table
-per session into `starpulse_signal_folds` from a rowid cursor in the settings, and the hourly prune of the event log
-deletes the rows of both tables older than 8 days. It prints one JSON line with `days` and `copied`, and exits 1 for a config with no
-`telemetry_loki_url` or a Loki it cannot reach. It is not an agent verb.
+The adapters write each harness signal into `starpulse_signals` in the history database, once per key, so a replayed export adds no row. `SignalFolds` folds the table per session into `starpulse_signal_folds` from a rowid cursor in the settings, and the hourly prune of the event log deletes the rows of both tables older than 8 days. No verb fills or reads them: the analytics and trace routes read the fold rows.
 
 ## Reloading a running serve
 
@@ -456,8 +560,11 @@ process's config blocks with the last reading, taken when `serve` started or at 
   `task_actor` for `pulls`; `scheduler`, `level`, `session_start_url` for `scheduler`) keeps its pid and re-reads the
   config on `SIGHUP`. Where the platform has no `SIGHUP`, it is replaced instead.
 - **kept**: a child with no change.
-- **re-executed**: `serve` replaced itself, in place, because its own closure changed. Every child is ended first, so each
-  is `replaced`: the new `serve` starts them again.
+- **re-executed**: `serve` replaced itself, in place, because its own closure changed. The `api` child is replaced
+  beside the old one on the shared socket, as every reload does. Each other child whose own closure and config blocks did
+  not change is `kept`: the new `serve` adopts the running process by pid and its stdin pipe, so its worker, and the
+  task actor's start recovery, are not interrupted. A child that changed is ended first, so it is `replaced`: the new
+  `serve` starts it again.
 
 A closure that cannot be read, such as a half-written module, or a config that does not load, changes nothing.
 So does a machine definition change that drops a State holding live Tasks without a `migrations` mapping; the refusal

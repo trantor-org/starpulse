@@ -7,8 +7,6 @@ hog. No unit directive sets it and `ExecStart` stays `serve --config`, so the pr
 `sched_setattr` keeps the policy and nice level and sets only `sched_runtime`. Threads started afterwards inherit it.
 """
 
-from __future__ import annotations
-
 import ctypes
 import os
 import platform

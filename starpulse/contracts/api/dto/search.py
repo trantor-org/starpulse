@@ -1,7 +1,5 @@
 """`/api/search`: hits and results."""
 
-from __future__ import annotations
-
 from starpulse.contracts.api._base import _Api
 
 
@@ -17,8 +15,9 @@ class SearchHit(_Api):
 
 
 class SearchResults(_Api):
-    """`GET /api/search?q=&limit=&label=&finished_within_days=`: the tasks holding every word of `q`, best match first,
-    each carrying every `label` and, with `finished_within_days`, open or finished within that many days."""
+    """`GET /api/search?q=&limit=&label=&finished_within_days=&before=`: the tasks holding every word of `q`, best
+    match first, each carrying every `label`, with `finished_within_days` open or finished within that many days, and
+    with `before` (a task key) of its prefix and created before it."""
 
     query: str
     hits: list[SearchHit]

@@ -9,8 +9,6 @@ Each entry carries `event_id` plus these string fields (absent when empty): `mac
 fired it), and `time` (epoch seconds).
 """
 
-from __future__ import annotations
-
 import time
 from typing import TYPE_CHECKING, Any
 

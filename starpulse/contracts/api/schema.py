@@ -1,7 +1,5 @@
 """The JSON Schema of every body, as `api.schema.json` holds it."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import Any
@@ -12,12 +10,21 @@ from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.breaking_changes import BreakingChanges
-from starpulse.contracts.api.dto.health import Health, MachineHistory, Sessions, SessionSteps, TaskEventHistory
-from starpulse.contracts.api.dto.milestones import Docs, DocShown, Milestones, MilestoneShown, RetiredTasks, TaskRecord
+from starpulse.contracts.api.dto.health import Health, Liveness, MachineHistory, Sessions, SessionSteps, TaskEventHistory
+from starpulse.contracts.api.dto.milestones import (
+    Docs,
+    DocShown,
+    Milestones,
+    MilestoneShown,
+    RetiredTasks,
+    TaskMoves,
+    TaskRecord,
+    TaskRecords,
+)
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
-from starpulse.contracts.api.dto.report import ContractReport
+from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
     ClaimRequest,
@@ -123,6 +130,7 @@ class ApiContract(_Api):
     pulls: Pulls
     searchResults: SearchResults
     health: Health
+    liveness: Liveness
     sessions: Sessions
     sessionSteps: SessionSteps
     transitions: Transitions
@@ -140,7 +148,10 @@ class ApiContract(_Api):
     windowState: WindowState
     schedulerStatus: SchedulerStatus
     contractReport: ContractReport
+    readyReport: ReadyReport
     taskRecord: TaskRecord
+    taskMoves: TaskMoves
+    taskRecords: TaskRecords
     milestones: Milestones
     milestoneShown: MilestoneShown
     docs: Docs

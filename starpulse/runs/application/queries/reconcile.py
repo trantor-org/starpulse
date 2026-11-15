@@ -2,10 +2,10 @@
 
 Each run source is listed and compared with the workflows the projection holds for its instance
 (`starpulse.runs.application.queries.projection`). An instance whose runs differ missed a pushed event: it is counted as
-corrected and a `RESYNC` entry names it, so the worker that owns its adapter reads the source again.
+corrected and a `RESYNC` entry names it, so the worker that owns its adapter reads the source again. A process's first
+pass compares nothing: the projection predates a restart and each adapter lists its source at start, so a difference
+there is catch-up, not a missed push.
 """
-
-from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
@@ -33,9 +33,14 @@ class Reconcile:
     def __init__(self, log: EventLog, sources: Mapping[str, Callable[[], list[dict]]]) -> None:
         self._log = log
         self._sources = dict(sources)
+        self._started = False
 
     def run(self) -> tuple[int, int]:
-        """The `(corrected, sampled)` of one pass; a source that cannot be read is skipped, never counted as a miss."""
+        """The `(corrected, sampled)` of one pass, `(0, 0)` for the process's first; a source that cannot be read is skipped,
+        never counted as a miss."""
+        if not self._started:
+            self._started = True
+            return 0, 0
         _, body = self._log.state(PROJECTION)
         kept = body if isinstance(body, dict) else {}
         corrected = sampled = 0

@@ -1,15 +1,13 @@
 """The answers of the telemetry analytics views, kept past a restart so a read never waits on the fold of its window.
 
-Folding a 168 h window of the harnesses' signals takes minutes on a cold process (the log is fetched from Loki and every
-signal read) and tens of seconds on a warm one, longer than the CLI waits. `Answers` keeps the last good body of each
+Folding a 168 h window of the harnesses' signals takes minutes on a cold process (every signal of the window is read
+from the table) and tens of seconds on a warm one, longer than the CLI waits. `Answers` keeps the last good body of each
 view and query in the `starpulse_answers` table, one row per view and query: a read answers with its row at once, and
 one older than `fresh_s` also starts a refold in the background, so the answer is at most one refold behind and at most
 `fresh_s` plus a fold old. A restarted process answers from the saved rows before it has read a signal. Only the first
 read of a query nobody has asked since its row was saved waits for a fold, all readers of it for the same one. A
 refusal (400, 501, 503) is returned and never kept.
 """
-
-from __future__ import annotations
 
 import logging
 import threading

@@ -1,7 +1,5 @@
 """Encoding of the API's bodies: each one validated through its model before it is sent."""
 
-from __future__ import annotations
-
 import json
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator

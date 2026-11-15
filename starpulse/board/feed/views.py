@@ -1,14 +1,12 @@
 """Feed views: the snapshot, its deltas and subscribers."""
 
-from __future__ import annotations
-
 import queue
 import time
 from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.ledger import (
+from starpulse.board.model.ledger import (
     PAGE,
 )
 from starpulse.machine_engine.model.machine_ties import derive, entries
@@ -263,12 +261,14 @@ class ViewMethods:
                 return self._snapshot(now, modelled)
 
     def _modelled_fields(self, now: float) -> dict[str, Any]:
-        """The snapshot's fields made of tasks: the flows, the machine page and strip, and the Done account."""
+        """The snapshot's fields read from a store: the flows, the machine page and strip, the Done account, and the
+        ratings (a read of their own stream behind their own lock)."""
         flows, derived = self._flows(now)
         return {
             "flows": [{**f, **derived.get(f["name"], {})} for f in flows],
             **self._machine_fields(flows, derived, now),
             **self._done_fields(),
+            "ratings": {} if self._ratings is None else self._ratings.latest(),
         }
 
     def _snapshot(self, now: float, modelled: dict[str, Any]) -> dict[str, Any]:
@@ -284,10 +284,9 @@ class ViewMethods:
             "claims": dict(self._claims),
             "roles": self._roles.wire(),
             "capabilities": dict(self._capabilities),
-            "ratings": {} if self._ratings is None else self._ratings.latest(),
             "interactive": dict.fromkeys(self._interactive, True),
             "error": self._error(),
-            "reading": self._replaying() or self._machines_reading,
+            "reading": self._replaying(),
             **declared(self._domains, self._runnable(), self._cues, self._processes),
             "boardUrl": self._board_url,
             "hint": self._hint,
