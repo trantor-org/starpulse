@@ -1,7 +1,5 @@
 """The output keys each agent verb documents in `starpulse help --agent`, and the snapshot keys a server must answer."""
 
-from __future__ import annotations
-
 SNAPSHOT_KEYS = (
     "graphs",
     "flows",
@@ -35,6 +33,9 @@ NEWER_SNAPSHOT_KEYS = ("cpu", "milestone_done")
 
 
 HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
+
+
+LIVENESS_KEYS = ("now", "window_s", "stalled_after_s", "tasks", "review", "in_progress_s", "stages", "stalls")
 
 
 STEP_KEYS = ("now", "window_s", "steps")
@@ -72,6 +73,8 @@ TASK_KEYS = (
     "assignee",
     "milestone",
     "type",
+    "impact",
+    "urgency",
     "labels",
     "dependencies",
     "waiting_on",

@@ -1,10 +1,8 @@
 """The analytics the page reads over the flow history and the sessions' telemetry.
 
-- `GET /api/analytics/health`, `sessions`, `steps`, `transitions`, `spend`, `cells`, `estimates`, `graph`, `stages`, `cost-to-go`, `diff`,
+- `GET /api/analytics/health`, `liveness`, `sessions`, `steps`, `transitions`, `spend`, `cells`, `estimates`, `graph`, `stages`, `cost-to-go`, `diff`,
   `missed-loads` and `trace-clusters`: each filtered by the query.
 """
-
-from __future__ import annotations
 
 from collections.abc import Callable
 
@@ -22,6 +20,7 @@ from starpulse.views.application.queries.responses import (
     estimates_response,
     graph_response,
     health_response,
+    liveness_response,
     refuses_at_once,
     sessions_response,
     spend_response,
@@ -58,6 +57,13 @@ def _kept(
 def health(request: Request) -> Response:
     api = seams(request)
     return answer(request, *health_response(api.history, query(request), api.feed.machines, api.clock()))
+
+
+@reading
+def liveness(request: Request) -> Response:
+    api = seams(request)
+    feed = api.feed
+    return answer(request, *liveness_response(api.history, query(request), feed.roles, feed.machines, api.clock()))
 
 
 def _sessions(respond: _Respond) -> Endpoint:
@@ -127,6 +133,7 @@ def _ranked(respond: _Respond) -> Endpoint:
 
 routes: list[ApiRoute] = [
     ReadRoute("/analytics/health", health),
+    ReadRoute("/analytics/liveness", liveness),
     ReadRoute("/analytics/sessions", _sessions(sessions_response)),
     ReadRoute("/analytics/steps", _sessions(steps_response)),
     ReadRoute("/analytics/transitions", _titled(transitions_response)),

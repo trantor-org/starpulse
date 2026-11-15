@@ -1,7 +1,5 @@
 """Parse a harness usage or credit limit from the text a start or stop names."""
 
-from __future__ import annotations
-
 import re
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError

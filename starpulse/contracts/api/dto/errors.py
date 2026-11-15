@@ -1,7 +1,5 @@
 """The bodies a route answers with when it refuses."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from starpulse.contracts.api._base import _Api

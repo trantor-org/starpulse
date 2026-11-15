@@ -4,8 +4,6 @@ A workflow waiting on CI emits no Event and no machine event for its task, so th
 that started it. Temporal's visibility API lists the running workflows whose id ends in the task id
 (`task-lifecycle/TASK-N`)."""
 
-from __future__ import annotations
-
 import json
 import urllib.parse
 import urllib.request

@@ -1,7 +1,5 @@
 """A task's stays in the Board's lanes, folded from the lane changes a history keeps."""
 
-from __future__ import annotations
-
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
