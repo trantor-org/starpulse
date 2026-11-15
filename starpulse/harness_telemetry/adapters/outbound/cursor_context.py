@@ -1,7 +1,5 @@
 """Context use of live Cursor sessions, read from the agent's pane footer."""
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import re
@@ -31,7 +29,7 @@ def context_tokens(pane: str, window: int) -> int | None:
 
 
 #: The stream each reading is appended to: `{session, task, tokens, window}`, one row per session per minute. Private
-#: like `telemetry:signals`: no `EVENT_STREAMS` entry, no consumer tails it.
+#: no `EVENT_STREAMS` entry, no consumer tails it.
 CONTEXT_STREAM = "cursor:context"
 _STALE = 3  # a wrap-up request older than this many deadlines belongs to a session since gone
 

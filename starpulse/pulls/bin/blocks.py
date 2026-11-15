@@ -1,8 +1,6 @@
 """The config blocks the pulls worker is built from or re-reads, in a leaf module so `runtime.closure` names them without
 importing the worker."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 
@@ -22,6 +20,7 @@ class PullsConfig(Protocol):
     pull_requests: bool
     ci: tuple[str, ...]
     sequences: Mapping[str, tuple[str, ...]]
+    awaits: tuple[str, ...]
 
 
 def pulls_fixed_blocks(config: PullsConfig) -> tuple:
@@ -31,4 +30,4 @@ def pulls_fixed_blocks(config: PullsConfig) -> tuple:
 
 def pulls_delivery_blocks(config: PullsConfig) -> tuple:
     """What of `config` the Delivery loops are built from; a change to anything else needs no rebuild."""
-    return (config.task_actor, config.release, config.repos, config.pull_requests, config.ci, config.sequences)
+    return (config.task_actor, config.release, config.repos, config.pull_requests, config.ci, config.sequences, config.awaits)

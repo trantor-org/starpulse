@@ -4,8 +4,6 @@ Each is read from the store on every scrape, so a server that does not run the l
 wrote there.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Any
 

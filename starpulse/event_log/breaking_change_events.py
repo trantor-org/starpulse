@@ -5,8 +5,6 @@ optionally `pr`, `task`, `evidence`) and a `POSTMORTEMED` one (subject: the comm
 StarPulse names no detector and no outcome: both are the producer's strings.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 STREAM = "breaking-change:events"

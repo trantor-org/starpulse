@@ -3,8 +3,6 @@
 `database_url` in the config names the SQLite database; without one it is a file beside the config.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from sqlalchemy import Engine, func, or_, select

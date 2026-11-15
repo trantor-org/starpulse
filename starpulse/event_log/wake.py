@@ -1,7 +1,5 @@
 """What ends an event-log reader's wait: stdlib only, so importing it loads no database stack."""
 
-from __future__ import annotations
-
 import threading
 from collections.abc import Callable
 

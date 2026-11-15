@@ -4,8 +4,6 @@
 - `POST /api/docs`, `/api/docs/edit`, `/api/docs/archive`, `/api/docs/restore`: create, edit, archive and restore one.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from starlette.requests import Request

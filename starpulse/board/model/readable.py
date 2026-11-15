@@ -6,8 +6,6 @@ and a `blast_radius` format whose axis and rollback rules read the headings it n
 backticks. The verdict is the first broken rule with its line in the description, or "" when it reads well.
 """
 
-from __future__ import annotations
-
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
