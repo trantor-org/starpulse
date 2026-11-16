@@ -321,22 +321,23 @@ body.drilling #crumb { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) { #kb .mach.hot .p::after { animation: none; } }
 
 #kb .ph { margin-bottom: 6px; --phase-text: color-mix(in srgb, var(--phase) 70%, var(--white)); --submachine-text: color-mix(in srgb, var(--submachine) 60%, var(--white)); }
-#kb .ph .chain { display: flex; align-items: baseline; gap: 5px; font-size: calc(10.5px * var(--fs)); color: var(--slate-3); white-space: nowrap; overflow: hidden; }
+#kb .ph .chain { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 5px; font-size: calc(10.5px * var(--fs)); color: var(--slate-3); white-space: nowrap; overflow: hidden; }
 #kb .ph .chain b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; color: color-mix(in srgb, var(--submachine-text) 60%, transparent); }
 #kb .ph .chain b:first-child { color: color-mix(in srgb, var(--phase-text) 60%, transparent); }
 #kb .ph .chain b.cur { color: var(--submachine-text); }
 #kb .ph .chain b.cur:first-child { color: var(--phase-text); }
 #kb .ph .chain .sep { flex: none; color: var(--faint); }
 #kb .ph .chain .s { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-#kb .ph .chain .ago { flex: none; margin-left: auto; color: var(--faint); }
+#kb .ph .chain .skill, #kb .ph .chain b.skill:first-child { color: var(--phase-text); }
 #kb .ph .rail { position: relative; height: calc(14px * var(--fs)); margin: 3px 6px 0; }
 #kb .ph .trk { position: absolute; inset: 0; --mc: var(--submachine); }
 #kb .ph .trk.phase { --mc: var(--phase); }
 #kb .ph .ln { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: color-mix(in srgb, var(--mc) 40%, var(--track)); transform-origin: left center; animation: ph-draw 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+#kb .ph .trk.phase .ln { background: color-mix(in srgb, var(--mc) 75%, var(--track)); } 
 #kb .ph .st { position: absolute; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: color-mix(in srgb, var(--mc) 45%, transparent); animation: ph-pop 0.35s ease-out both; animation-delay: calc(var(--k) * 60ms + 0.15s); }
 #kb .ph .st.past { background: color-mix(in srgb, var(--mc) 85%, transparent); box-shadow: 0 0 4px color-mix(in srgb, var(--mc) 50%, transparent); }
 #kb .ph .st.fin { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; background: var(--bg0); box-shadow: 0 0 0 1px color-mix(in srgb, var(--muted) 75%, transparent); }
-#kb .ph .mk { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--agent); box-shadow: 0 0 6px var(--agent); transition: left 0.9s cubic-bezier(0.22, 1, 0.36, 1); animation: ph-pop 0.4s ease-out 0.45s both; }
+#kb .ph .mk { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: color-mix(in srgb, var(--mc) 70%, var(--white)); box-shadow: 0 0 6px var(--mc); transition: left 0.9s cubic-bezier(0.22, 1, 0.36, 1); animation: ph-pop 0.4s ease-out 0.45s both; }
 #kb .ph .mk.hot { background: var(--run); box-shadow: 0 0 0 3px color-mix(in srgb, var(--run) 25%, transparent), 0 0 10px var(--run); }
 #kb .ph .sk { position: absolute; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: linear-gradient(to right, transparent, color-mix(in srgb, var(--run) 70%, transparent)); animation: ph-fade 1.2s ease-out forwards; }
 #kb .ph .sk.back { background: linear-gradient(to left, transparent, color-mix(in srgb, var(--run) 70%, transparent)); }
@@ -1243,10 +1244,10 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 }
 
 
-#kb .who.near, #kb .who.unheld { flex-wrap: wrap; justify-content: flex-end; column-gap: 4px; row-gap: 0; max-width: 100%; }
+#kb .who.near, #kb .who.idle { flex-wrap: wrap; justify-content: flex-end; column-gap: 4px; row-gap: 0; max-width: 100%; }
 #kb .who s, #kb .who .tl { white-space: nowrap; }
 #kb .who.near, #kb .who .tl { color: var(--run-text); }
-#kb .who.unheld { color: var(--fail-text); } #kb .who.unheld s { color: var(--muted); } #kb .who.unheld .tl { color: inherit; }
+#kb .who.idle { color: var(--fail-text); } #kb .who.idle s { color: var(--muted); } #kb .who.idle .tl { color: inherit; }
 #kb .who i.o { box-sizing: border-box; background: none; border: 1.5px solid var(--muted); }
 #kb h2 .uh { margin-left: 6px; padding: 0 6px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--fail) 40%, transparent); background: color-mix(in srgb, var(--fail) 10%, transparent); color: var(--fail-text); font: inherit; font-size: calc(10.5px * var(--fs)); cursor: pointer; }
 #kb h2 .uh.on { background: color-mix(in srgb, var(--fail) 30%, transparent); color: var(--fail-hi); }
@@ -1405,6 +1406,37 @@ iframe.phone { display: block; width: 390px; max-width: 100%; border: 0; border-
             <span class="holds">⛓2</span><span class="dep">⧗1</span>
             <span class="who"><i style="background: var(--agent)"></i>deep-high</span>
           </div>
+        </div>
+      </figure>
+      <figure>
+        <figcaption><b>In Progress card, phase line</b><code>#kb .ph</code>: the phase chain, <code>· skill</code> and <code>· step</code> over one rail, no time. A skill phase machine's rail (<code>.trk.phase</code>) draws <code>--phase</code>; a submachine's (<code>deliver › ci</code>) draws <code>--submachine</code>. The marker <code>.mk</code> sits on the step, <code>.mk.hot</code> <code>--run</code> when it just moved. The footer chip is the session alone, then <code>.who.near</code> <code>· Nm left</code> in the last 10 minutes, then <code>.who.idle</code> <code>· idle Xm</code> in <code>--fail</code>, the session struck once swept.</figcaption>
+        <div class="card">
+          <div class="top"><span class="id">DEMO-1240</span></div>
+          <div class="t">Skill phase machine: build running tdd</div>
+          <div class="ph"><div class="chain"><b class="cur">build</b><span class="s skill">· tdd</span><span class="s">· red proven</span></div>
+            <div class="rail"><div class="trk on phase"><span class="ln"></span><span class="st past" style="left: 0%; --k: 0"></span><span class="st" style="left: 33.3%; --k: 1"></span><span class="st" style="left: 66.7%; --k: 2"></span><span class="st fin" style="left: 100%; --k: 3"></span><span class="mk" style="left: 33.3%"></span></div></div></div>
+          <div class="foot"><span class="who"><i style="background: var(--agent)"></i>deep-high</span></div>
+        </div>
+        <div class="card">
+          <div class="top"><span class="id">DEMO-1241</span></div>
+          <div class="t">Skill phase machine: skill-authoring</div>
+          <div class="ph"><div class="chain"><b class="cur skill">skill-authoring</b><span class="s">· lint failed</span></div>
+            <div class="rail"><div class="trk on phase"><span class="ln"></span><span class="st past" style="left: 0%; --k: 0"></span><span class="st past" style="left: 25%; --k: 1"></span><span class="st" style="left: 50%; --k: 2"></span><span class="st" style="left: 75%; --k: 3"></span><span class="st fin" style="left: 100%; --k: 4"></span><span class="mk hot" style="left: 50%"></span></div></div></div>
+          <div class="foot"><span class="who near"><i style="background: var(--agent)"></i>deep-high<span class="tl">· 4m left</span></span></div>
+        </div>
+        <div class="card">
+          <div class="top"><span class="id">DEMO-1242</span></div>
+          <div class="t">Submachine: deliver › ci</div>
+          <div class="ph"><div class="chain"><b class="skill">deliver</b><span class="sep">›</span><b class="cur">ci</b><span class="s">· pending</span></div>
+            <div class="rail"><div class="trk on"><span class="ln"></span><span class="st" style="left: 0%; --k: 0"></span><span class="st" style="left: 50%; --k: 1"></span><span class="st fin" style="left: 100%; --k: 2"></span><span class="mk" style="left: 0%"></span></div></div></div>
+          <div class="foot"><span class="who idle"><i style="background: var(--agent)"></i>deep-high<span class="tl">· idle 3m</span></span></div>
+        </div>
+        <div class="card">
+          <div class="top"><span class="id">DEMO-1243</span></div>
+          <div class="t">Submachine: deliver › implementing-ui, claim swept</div>
+          <div class="ph"><div class="chain"><b class="skill">deliver</b><span class="sep">›</span><b class="cur">implementing-ui</b><span class="s">· rendered</span></div>
+            <div class="rail"><div class="trk on"><span class="ln"></span><span class="st past" style="left: 0%; --k: 0"></span><span class="st" style="left: 33.3%; --k: 1"></span><span class="st" style="left: 66.7%; --k: 2"></span><span class="st fin" style="left: 100%; --k: 3"></span><span class="mk" style="left: 33.3%"></span></div></div></div>
+          <div class="foot"><span class="who idle"><i class="o" style="border-color: var(--agent)"></i><s>deep-high</s><span class="tl">· idle 12m</span></span></div>
         </div>
       </figure>
       <figure>
