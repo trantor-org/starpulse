@@ -216,8 +216,9 @@ def default_starters(
     def flow_metrics(own: threading.Event) -> Callable[[], None]:
         from starpulse.flow_metrics.bin import flow_metrics_worker
 
+        # its own cheap assemble, never `shared`: the recorder needs only the machines, and the shared board waits for the Board context's fold, minutes after a restart
         return flow_metrics_worker.start(
-            config, path, base, log, own, load=load, assemble=shared, history_store=history_store,
+            config, path, base, log, own, load=load, assemble=assemble, history_store=history_store,
         )  # fmt: skip
 
     def signal_folds(own: threading.Event) -> Callable[[], None]:

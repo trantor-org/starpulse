@@ -77,8 +77,8 @@ _PRUNE_BATCH = 1000
 RETAINED_STREAMS = ("machine:events", "task:ratings")
 # Built once: a statement made per poll recompiles its lazy attributes every time, which dominated the server's CPU
 # at ~45 live sessions (every commit wakes every tail).
-# Scalar subqueries: SQLite answers a lone min or max from the primary key, but scans an index for both.
-_OLDEST_AND_HEAD = select(select(func.min(events.c.id)).scalar_subquery(), select(func.max(events.c.id)).scalar_subquery())
+# SQLite answers a lone min or max from the primary key.
+_HEAD = select(func.max(events.c.id))
 _WORKER_VERSION = select(worker_state.c.version).where(worker_state.c.name == bindparam("name"))
 
 
@@ -553,12 +553,13 @@ class Tail:
         """
         engine = self.log.engine
         with engine.connect() as db:
-            oldest, head = db.execute(_OLDEST_AND_HEAD).one()
+            head = db.scalar(_HEAD)
             cursor = self.cursor
             if head is None or head == cursor:  # idle: the one query above is the whole poll
                 return []
-            gap = cursor is not None and oldest > cursor + 1
-            start = oldest - 1 if gap else cursor or 0
+            following = None if cursor is None else db.scalar(select(func.min(events.c.id)).where(events.c.id > cursor))
+            gap = following is not None and following > cursor + 1
+            start = following - 1 if gap else cursor or 0
             rows = db.execute(
                 select(events)
                 .where(events.c.stream.in_(self.streams), events.c.id > start, events.c.id <= head)
@@ -566,7 +567,7 @@ class Tail:
                 .limit(self.batch)
             ).all()
         if gap:
-            self.log.record_gap(self.stream, cursor, oldest, oldest - cursor - 1)
+            self.log.record_gap(self.stream, cursor, following, following - cursor - 1)
         self.cursor = rows[-1].id if len(rows) == self.batch else head
         return [Entry(r.id, r.stream, r.event_id, r.fields, r.at) for r in rows]
 
