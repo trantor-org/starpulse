@@ -18,8 +18,8 @@ from starpulse.runtime import launch, wiring
 from starpulse.runtime.closure import CONTEXT_ENTRIES, ENTRIES, Reader
 from starpulse.runtime.config import Config, rehearsing
 from starpulse.runtime.control import control_file
-from starpulse.runtime.hold import BOOT_ENV, LISTEN_FD_ENV, adopted_from_env, boot_token
-from starpulse.runtime.listen import inherited_socket, listen, listen_options, resolve_listen
+from starpulse.runtime.hold import BOOT_ENV, GITHUB_FD_ENV, LISTEN_FD_ENV, adopted_from_env, boot_token
+from starpulse.runtime.listen import github_socket, inherited_socket, listen, listen_options, resolve_listen
 from starpulse.runtime.nats_server import bridge_commands
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 from starpulse.runtime.zygote import Forker
@@ -169,10 +169,15 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         listening = listening or listen(parser, args)
         commands["api"] += ["--hours", str(args.hours)]
     admit_at_start(parser, args)
-    # the preloaded process inherits the bound socket, so the Page API child forks from it like every other worker
+    # the contexts child is handed the github webhook socket, which outlives it: a delivery posted while it is replaced
+    # waits in the backlog
+    webhook = github_socket(os.environ, config.github) if "contexts" in commands and config.github else None
+    os.environ.pop(GITHUB_FD_ENV, None)
+    held = {"contexts": webhook} if webhook else {}
+    # the preloaded process inherits the bound sockets, so the children they are handed fork from it like every other worker
     forker = Forker(
         [*DATABASE_STACK, *(ENTRIES[context] for context in commands), *CONTEXT_ENTRIES],
-        listening=listening if "api" in commands else None,
+        held=[*([listening] if listening and "api" in commands else []), *held.values()],
     )
     if commands:
         forker.start(forked=True)  # once the port is bound: a refused start leaves no process behind
@@ -180,6 +185,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     supervisor = Supervisor(
         commands,
         sockets={"api": listening} if "api" in commands else {},
+        held=held,
         spawn=forker,
         retire=forker.retire,
         read=reader,

@@ -217,6 +217,11 @@ class ReadMethods:
         bounds = [bound for bound in (self._window_since(), since) if bound is not None]
         return [] if self._read_model is None else self._read_model.machine_tasks(flow, max(bounds, default=None))
 
+    def machine_task_ids(self, flow: str) -> list[str]:
+        """The ids of the tasks `machine_tasks` holds for `flow`, read without their records."""
+        window = self._window_since()
+        return [] if self._read_model is None else self._read_model.machine_task_ids(flow, window)
+
     @property
     def window_s(self) -> float | None:
         """The seconds back a machine's task counts, or None for no limit."""

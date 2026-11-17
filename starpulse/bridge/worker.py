@@ -1,5 +1,6 @@
 """The bridge context: a thread of the `contexts` child that publishes the event log to the supervised NATS server and
-keeps each session's consumer on the subjects of the task it holds.
+keeps each session's consumer on the subjects of the task it holds, applying `subscribe` and `unsubscribe` too
+(`bridge.requests`).
 
 It resumes from its own checkpoint (`bridge:nats`), saved after each acknowledged entry; a first start begins at the
 newest entry. A down server only delays an entry: the publish is retried until it lands.
@@ -18,6 +19,7 @@ from starpulse.bridge.delivery import Delivery, JetStreamMailbox, Route
 from starpulse.bridge.delivery import run as deliver
 from starpulse.bridge.metrics import Published
 from starpulse.bridge.publisher import Publisher, Unavailable
+from starpulse.bridge.requests import serve
 from starpulse.bridge.subjects import STREAMS, payload, subject_for
 from starpulse.bridge.subscriber import Subscriber
 from starpulse.bridge.subscriptions import Rules
@@ -116,6 +118,7 @@ def start(
     publisher = Publisher(url, stream, f"starpulse.{board}.>")
     subscriber = Subscriber(board, rules, Consumers(publisher, stream), feed, end, end_lanes)
     threading.Thread(target=run, args=(log, publisher, board, subscriber, stop), name="bridge", daemon=True).start()
+    threading.Thread(target=serve, args=(url, board, subscriber, stop), name="bridge-requests", daemon=True).start()
     if route:
         link = Publisher(url, stream, f"starpulse.{board}.>")
         delivery = Delivery(JetStreamMailbox(link, stream), route)

@@ -8,8 +8,9 @@ import stat
 from collections.abc import Mapping
 
 from starpulse.contracts.reads import BACKLOG
+from starpulse.github.model.github_config import GitHub
 from starpulse.runtime.config import Config
-from starpulse.runtime.hold import LISTEN_FD_ENV
+from starpulse.runtime.hold import GITHUB_FD_ENV, LISTEN_FD_ENV
 
 logger = logging.getLogger(__name__)
 
@@ -76,3 +77,24 @@ def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.
         # the errno's own text: `create_server` appends the address the line already names
         reason = os.strerror(exc.errno) if exc.errno and exc.errno > 0 else exc.strerror
         parser.exit(1, f"cannot listen on {args.host}:{args.port}: {reason}; pass --port to serve elsewhere\n")
+
+
+def github_socket(environ: Mapping[str, str], settings: GitHub) -> socket.socket | None:
+    """The GitHub webhook socket `serve` holds for the `contexts` child: the one the previous image handed over on the
+    descriptor `GITHUB_FD_ENV` names when it listens on `settings`' port, else one bound now. `None` when the address
+    cannot be bound, which leaves the child to bind it and retry as it does without `serve` holding the socket."""
+    if (handed := environ.get(GITHUB_FD_ENV)) is not None:
+        try:
+            adopted = socket.socket(fileno=int(handed))
+        except (OSError, ValueError):
+            logger.warning("%s=%s is no socket; binding the github port instead", GITHUB_FD_ENV, handed)
+        else:
+            adopted.set_inheritable(False)
+            if adopted.getsockname()[:2] == (settings.host, settings.port):
+                return adopted
+            adopted.close()  # the table now names another address: the contexts child that held this one is replaced
+    try:
+        return socket.create_server((settings.host, settings.port), backlog=BACKLOG)
+    except OSError as exc:
+        logger.warning("serve cannot hold the github port %s:%s: %s", settings.host, settings.port, exc.strerror)
+        return None

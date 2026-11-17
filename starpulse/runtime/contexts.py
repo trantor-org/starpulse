@@ -26,7 +26,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.config import Config, rehearsing
-from starpulse.runtime.hold import BOOT_ENV
+from starpulse.runtime.hold import BOOT_ENV, LISTEN_FD_ENV
 from starpulse.runtime.readiness import stamp
 
 logger = logging.getLogger(__name__)
@@ -296,11 +296,18 @@ def default_starters(
 
         return receiver.start(config, log, own)
 
+    listening = None
+    if "github" in names:  # once: a second socket object on the descriptor would close it when the first is collected
+        from starpulse.runtime.listen import inherited_socket
+
+        listening = inherited_socket(os.environ)
+        os.environ.pop(LISTEN_FD_ENV, None)  # a process this one starts must not read a descriptor it does not hold
+
     def github(own: threading.Event) -> Callable[[], None]:
         from starpulse.event_log.migrate import migrate_chain
         from starpulse.github.adapters.inbound import listener
 
-        return listener.start(config, base, own, migrate_chain)
+        return listener.start(config, base, own, migrate_chain, listening)
 
     def github_events(own: threading.Event) -> Callable[[], None]:
         from starpulse.event_log.migrate import migrate_chain

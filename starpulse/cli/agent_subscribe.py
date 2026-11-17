@@ -1,4 +1,5 @@
-"""`starpulse subscribe|unsubscribe`: add a subject to, or remove it from, the calling session's JetStream consumer."""
+"""`starpulse subscribe|unsubscribe`: ask the bridge to add a subject to, or remove it from, the calling session's
+JetStream consumer."""
 
 import argparse
 from collections.abc import Mapping
@@ -8,8 +9,9 @@ from typing import Any
 
 from starpulse.bridge.consumers import Consumers
 from starpulse.bridge.publisher import Publisher, Unavailable
+from starpulse.bridge.requests import ask
 from starpulse.bridge.subjects import token
-from starpulse.bridge.subscriptions import EXPLICIT, covers, explicit_subject
+from starpulse.bridge.subscriptions import covers, explicit_subject
 from starpulse.cli.agent_wire import CliError
 from starpulse.runtime.config import ConfigError, discover, load
 from starpulse.sessions.ports.notify import Registration
@@ -27,7 +29,7 @@ def bridge(args: argparse.Namespace) -> Any:
     return config.bridge
 
 
-def _target(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[Publisher, Consumers, str, list[str]]:
+def _target(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[Any, str, list[str]]:
     config = bridge(args)
     session = args.session or environ.get("STARPULSE_SESSION", "")
     if not session:
@@ -36,9 +38,7 @@ def _target(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[Publi
         subjects = [explicit_subject(config.board, subject) for subject in args.subject]
     except ValueError as exc:
         raise CliError("refused", str(exc)) from exc
-    stream = f"starpulse-{config.board}"
-    link = Publisher(f"nats://127.0.0.1:{config.port}", stream, f"starpulse.{config.board}.>")
-    return link, Consumers(link, stream), token(session), subjects
+    return config, token(session), subjects
 
 
 def _register(args: argparse.Namespace, environ: Mapping[str, str]) -> bool:
@@ -61,20 +61,15 @@ def _register(args: argparse.Namespace, environ: Mapping[str, str]) -> bool:
 
 
 def _change(args: argparse.Namespace, environ: Mapping[str, str], add: bool) -> dict[str, Any]:
-    link, consumers, session, subjects = _target(args, environ)
-    with closing(link):
-        try:
-            subscription = consumers.get(session)
-            if add:
-                changed = subscription.add(EXPLICIT, subjects)
-            else:
-                removed = [subscription.remove(subject) for subject in subjects]
-                changed = any(removed)
-            if changed:
-                consumers.put(session, subscription)
-        except Unavailable as exc:
-            raise CliError("unavailable", f"the NATS server did not answer: {exc}") from exc
-    return {"session": session, "subject": subjects, "changed": changed, "subjects": subscription.filters}
+    """Ask the bridge to make the change, so it alone writes the consumer and no grant of its own races this one."""
+    config, session, subjects = _target(args, environ)
+    try:
+        answer = ask(f"nats://127.0.0.1:{config.port}", config.board, session, subjects, add)
+    except Unavailable as exc:
+        raise CliError("unavailable", f"the bridge did not answer: {exc}") from exc
+    except ValueError as exc:
+        raise CliError("refused", str(exc)) from exc
+    return {"session": session, "subject": subjects, "changed": answer["changed"], "subjects": answer["subjects"]}
 
 
 def subscribe(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
