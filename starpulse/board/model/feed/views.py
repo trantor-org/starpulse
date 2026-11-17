@@ -285,8 +285,13 @@ class ViewMethods:
             "flows": [{**f, **derived.get(f["name"], {})} for f in flows],
             **self.machine_fields(flows, derived, now),
             **self._done_fields(),
-            "ratings": {} if self._ratings is None else self._ratings.latest(),
+            "ratings": self.ratings(),
         }
+
+    def ledger_marks(self) -> dict:
+        """The snapshot's merge strip and pins as of the clock now."""
+        with self._lock:
+            return self._ledger_marks(self._ledger_full)
 
     def _snapshot(self, now: float, modelled: dict[str, Any]) -> dict[str, Any]:
         """The snapshot from `modelled` and the state the feed holds; the caller holds the lock."""

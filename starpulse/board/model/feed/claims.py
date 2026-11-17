@@ -85,6 +85,12 @@ class ClaimMethods:
                 if (agent := self._open.get(task_id)) is not None:
                     self._open[task_id] = self._expiring(agent)
                     self._publish("task", {"id": task_id, "agent": self._open[task_id], "settled": None})
+        if self._read_model is None:
+            return
+        for task_id in changed:  # a read model holds no open task: its change is announced as the Task a build draws
+            if (agent := self.drawn_task(task_id)[0]) is not None:
+                with self._lock:
+                    self._publish("task", {"id": task_id, "agent": agent, "settled": None})
 
     def _expiring(self, agent: dict) -> dict:
         """A copy of the agent with its task's claim expiry from the claim-TTL sweep's latest pass; no key when it has none."""

@@ -77,6 +77,10 @@ class RecordsMixin:
         """Show the ratings `log` holds in each snapshot, and append the changes `rate` records to it."""
         self._ratings = rating_events.Ratings(log)
 
+    def ratings(self) -> dict[str, dict]:
+        """Each rated task's latest rating; none when the feed records none."""
+        return {} if self._ratings is None else self._ratings.latest()
+
     def rate(self, fields: dict[str, Any]) -> dict[str, Any] | None:
         """Record a change of a task's rating (`rating_events.change`): the task's rating now with its change count,
         or None when the change is not recorded (no ratings log, or the append failed)."""
