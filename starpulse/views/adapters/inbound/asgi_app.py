@@ -41,6 +41,7 @@ from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRo
 from starpulse.views.adapters.inbound.compression import Gzip
 from starpulse.views.adapters.inbound.gate_request import GateRequest
 from starpulse.views.adapters.inbound.snapshots import Snapshots
+from starpulse.views.adapters.outbound import request_durations
 from starpulse.views.model.encoding import encode, event
 from starpulse.views.ports.services import Services
 
@@ -340,6 +341,21 @@ class _Timed:
             await self.app(scope, receive, answering)
 
 
+class _Observed:
+    """Observes each read of its route in `starpulse_request_duration_seconds`, from the request's arrival to the last
+    byte sent."""
+
+    def __init__(self, app: ASGIApp, route: str) -> None:
+        self.app, self._route = app, route
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        started = time.monotonic()
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            request_durations.observe(self._route, time.monotonic() - started)
+
+
 class PageApp:
     """The ASGI app of the page: `api` are the routes under `/api` (one module a resource, mounted together), `metrics`
     the route beside them and the rest is the build's static files. `gate`, when set, answers or admits each request
@@ -377,7 +393,7 @@ class PageApp:
         # In match order: `/api` and `/metrics` first, the pages, and the files last, since a request a route matches
         # by path alone is that route's 405 only while no later route matches it in full.
         table = [
-            Mount("/api", routes=[self._route(route) for route in api]),
+            Mount("/api", routes=[self._route(route, "/api") for route in api]),
             *(self._route(route) for route in metrics),
             *(Route(path, self._page, methods=["GET"]) for path in ("/", "/board", "/runs")),
             Route("/flow/{flow}", self._flow, methods=["GET"]),
@@ -478,8 +494,9 @@ class PageApp:
                 return
             yield frame
 
-    def _route(self, route: ApiRoute) -> Route:
-        """`route` as a Starlette route at its own path."""
+    def _route(self, route: ApiRoute, observed_under: str | None = None) -> Route:
+        """`route` as a Starlette route at its own path; a read is observed in the request-duration histogram under
+        `observed_under` and its path template, when given."""
         at = route.path
         match route:
             case ReadRoute(_, handler, watch):
@@ -488,6 +505,8 @@ class PageApp:
                     if watch is None
                     else [Middleware(_Timed, watch=watch, workers=self._workers, streams=self._streams)]
                 )
+                if observed_under is not None:
+                    timed = [Middleware(_Observed, route=observed_under + at), *timed]
                 return Route(at, handler, methods=["GET"], middleware=timed)
             case WriteRoute(_, methods, handler):
                 return Route(at, handler, methods=list(methods))

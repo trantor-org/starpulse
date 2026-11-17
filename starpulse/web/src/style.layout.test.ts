@@ -187,12 +187,16 @@ describe("the Kanban board's lane width", () => {
     expect(rule("#kb #cols")).toContain("grid-template-columns: repeat(var(--cols, 6), minmax(var(--lane-min), 1fr))");
   });
 
-  it("fits six lanes of the minimum width on a wide window", () => {
-    expect(need(6)).toBeLessThanOrEqual(board(2560));
+  it("never lets a lane shrink below 475px, the width TASK-11986 set", () => {
+    expect(min).toBe(475);
   });
 
-  it("scrolls the board sideways once the window cannot hold the minimum widths", () => {
-    expect(need(6)).toBeGreaterThan(board(1280));
+  it("fits six lanes of the minimum width at 3440px, so they fill the board with no empty strip", () => {
+    expect(need(6)).toBeLessThanOrEqual(board(3440));
+  });
+
+  it.each([1366, 1920])("scrolls the board sideways at %ipx, where six lanes of the minimum width do not fit", (viewport) => {
+    expect(need(6)).toBeGreaterThan(board(viewport));
     expect(rule("#kb #cols")).toContain("overflow-x: auto");
   });
 });

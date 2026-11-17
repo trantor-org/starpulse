@@ -81,52 +81,71 @@ class HeldSnapshot:
         self.snapshot = snapshot
 
     def run(self, stop: StopEvent) -> None:
-        """Build the snapshot, then fold each change as it is published and a tick every `TICK`, until `stop`."""
+        """Build the snapshot, then fold the changes published since each publish as one, and a tick every `TICK`, until `stop`."""
         stop.listen(lambda: self._changes.put(None))  # type: ignore[arg-type]
         self.build()
         due = time.monotonic() + TICK  # a deadline, so a steady run of changes cannot keep the tick off
         while not stop.is_set():
             try:
-                change = self._changes.get(timeout=max(0.0, due - time.monotonic()))
+                batch = [self._changes.get(timeout=max(0.0, due - time.monotonic()))]
             except queue.Empty:
-                change = None
-            if change is not None:
-                self._folded(*change)
+                batch = []
+            while not self._changes.empty():
+                batch.append(self._changes.get_nowait())
+            changes = [change for change in batch if change is not None]
             if time.monotonic() >= due:
-                self._folded("tick", {})
+                changes.append(("tick", {}))
                 due = time.monotonic() + TICK
+            if changes:
+                self._folded(changes)
 
-    def _folded(self, kind: str, data: dict) -> None:
+    def _folded(self, changes: list[tuple[str, dict]]) -> None:
         try:
-            self.fold(kind, data)
+            self.fold_all(changes)
         except Exception:
-            logger.exception("StarPulse: the held snapshot could not fold a %s change; it is built again", kind)
+            logger.exception("StarPulse: the held snapshot could not fold %d changes; it is built again", len(changes))
             self.build()
 
     def fold(self, kind: str, data: dict) -> None:
-        """Fold a change of one of `FOLDS`; any other kind feeds no snapshot key and changes nothing."""
-        if kind not in FOLDS:
-            return
-        if kind == "snapshot" or local_midnight(self._clock()) != self._day:
-            return self.build()
+        self.fold_all([(kind, data)])
+
+    def fold_all(self, changes: list[tuple[str, dict]]) -> None:
+        """Fold changes of `FOLDS` in order, then publish once: a publish derives every flow, so one per change starves a
+        start that finds hundreds. Any other kind feeds no snapshot key and changes nothing."""
         fields: dict[str, Any] = {}
+        archived_today, folded = None, False
+        for kind, data in changes:
+            if kind not in FOLDS:
+                continue
+            if kind == "snapshot" or local_midnight(self._clock()) != self._day:
+                self.build()
+                fields, archived_today, folded = {}, None, False
+                continue
+            self._apply(kind, data, fields)
+            if kind == "task" and data.get("archived_today") is not None:
+                archived_today = data["archived_today"]
+            folded = True
+        if folded:
+            self._publish(archived_today, fields)
+
+    def _apply(self, kind: str, data: dict, fields: dict[str, Any]) -> None:
         if kind == "task":
             self._task(data["id"])
         elif kind == "move":
             if data["machine"] in self._lanes:
                 self._lanes[data["machine"]][data["id"]] = data["agent"]
         elif kind == "pulls":
-            fields = {"pulls": data["pulls"]}
+            fields["pulls"] = data["pulls"]
         elif kind == "claim":
-            fields = {"claims": {**self.snapshot["claims"], data["task"]: {"reason": data["reason"], "at": data["at"]}}}
+            claims = fields.get("claims", self.snapshot["claims"])
+            fields["claims"] = {**claims, data["task"]: {"reason": data["reason"], "at": data["at"]}}
         elif kind == "dags":
-            fields = {key: data[key] for key in ("dags", "pools", "cpu", "error")}
+            fields.update({key: data[key] for key in ("dags", "pools", "cpu", "error")})
         elif kind == "ledgers":
-            fields = {key: data[key] for key in ("mergeStrip", "mergePins")}
+            fields.update({key: data[key] for key in ("mergeStrip", "mergePins")})
         else:
             self._age()
-            fields = self._feed.ledger_marks()
-        self._publish(data.get("archived_today") if kind == "task" else None, fields)
+            fields.update(self._feed.ledger_marks())
 
     def _age(self) -> None:
         """Drop the machine tasks the window has moved past, as a whole build reads only those placed inside it."""

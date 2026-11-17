@@ -6,7 +6,8 @@ it drops them, and the holder gets the subjects its task kind's `claim` rule nam
 each pull request the task already cites. A pull request opening adds its `pr_opened` subjects to the holder. A kind with no rules, or a rule with no subject, subscribes the session to nothing.
 Both are idempotent, so the bridge replaying an entry after a restart changes nothing. A task in a finished lane has no
 holder though its file keeps the assignee, so its move to one drops the session's subjects; `reconcile` does the same for
-every task a session's subscription holds and the session no longer does, such as those an older release left, and grants
+every task a session's subscription holds and the session no longer does, such as those an older release left (a task
+the read model does not return is skipped, never read as unheld), and grants
 each holder the `claim` subjects now named, so a claim list that grew reaches a session that claimed before. That drop
 deletes the session's consumer before the delivery route can read the move, so a move into a finished lane `end_lanes`
 names runs `end` here, before the drop so a retried entry runs it again, whether or not a consumer held the task: a
@@ -91,6 +92,8 @@ class Subscriber:
             for session, subscription in self._store.sessions().items():
                 changed = False
                 for origin in [origin for origin in subscription.origins if origin != EXPLICIT]:
+                    if self._feed().task(origin, lean=True) is None:
+                        continue
                     holder, rules = self._holder(origin)
                     if holder != session:
                         changed |= subscription.drop(origin)

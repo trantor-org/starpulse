@@ -519,14 +519,16 @@ class TaskActor:
         self._heartbeat = self._wall()
 
     def _held_counts(self) -> tuple[int, int, list[str]] | None:
-        """The series that read the actor's state under its lock: the tasks held for a pin and the merged Review tasks. None when another thread holds the lock past `_LOCK_WAIT_S`:
-        a scrape must answer then, since a held lock is what the heartbeat and the recovery gauge report."""
+        """The series that read the actor's state under its lock (the tasks held for a pin) and the merged Review tasks,
+        read after it is released. None when another thread holds the lock past `_LOCK_WAIT_S`: a scrape must answer
+        then, since a held lock is what the heartbeat and the recovery gauge report."""
         if not self._lock.acquire(timeout=_LOCK_WAIT_S):
             return None
         try:
-            return len(self._pin_held), self._merged_waiting(), sorted(self._stalled)
+            pin_held, stalled = len(self._pin_held), sorted(self._stalled)
         finally:
             self._lock.release()
+        return pin_held, self._merged_waiting(), stalled  # the feed read holds no lock
 
     def _merged_waiting(self) -> int:
         counted_at, waiting = self._waiting
@@ -1164,11 +1166,12 @@ class TaskActor:
 
     def view(self, name: str) -> dict[str, Any] | None:
         """The actor's view of one task: the lane the feed and the actor each hold, the pull requests it saw, the move it
-        last tried, and the evidence of each fact its lane waits on (None when the fact does not hold). Writes nothing."""
+        last tried, and the evidence of each fact its lane waits on (None when the fact does not hold). Writes nothing.
+        The feed is read before the actor lock is taken, so a contended feed never holds a move."""
+        agent = self._feed.task(name, lean=True)
+        if agent is None:
+            return None
         with self._lock:
-            agent = self._feed.task(name, lean=True)
-            if agent is None:
-                return None
             seen = self._seen.get(name)
             tried = self._tried.get(name)
             self._probing = True
@@ -1190,9 +1193,8 @@ class TaskActor:
 
     def views(self) -> dict[str, Any]:
         """The `view` of each open task in Review, by name: the lane whose merged task waits on the operator unseen."""
-        with self._lock:
-            names = [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == self._review]
-            return {name: found for name in names if (found := self.view(name))}
+        names = [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == self._review]
+        return {name: found for name in names if (found := self.view(name))}
 
     def _timed_derive(self, lane: str, hooked: bool, seconds: float) -> None:
         with self._metrics:

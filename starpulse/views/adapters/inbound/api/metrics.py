@@ -13,6 +13,7 @@ from starlette.responses import Response
 from starpulse.event_log import heartbeat
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute
+from starpulse.views.adapters.outbound import request_durations
 from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound.process_metrics import process_gauges
 
@@ -31,7 +32,13 @@ def prometheus(request: Request) -> Response:
         api.snapshots.metrics,
         api.page_gauge,
     )
-    text = "".join(gauge() for gauge in gauges if gauge) + process_gauges() + heartbeat.exposition() + PAUSES.exposition()
+    text = (
+        "".join(gauge() for gauge in gauges if gauge)
+        + process_gauges()
+        + heartbeat.exposition()
+        + PAUSES.exposition()
+        + request_durations.exposition()
+    )
     return answer(request, text.encode(), content_type="text/plain; version=0.0.4; charset=utf-8")
 
 
