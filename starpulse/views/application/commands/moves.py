@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board.model import criteria
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import (
+    AGENT,
     OPERATOR,
+    TASK_ACTOR,
     AssigneeWriter,
     MoveWriter,
     TaskReleaser,
@@ -161,6 +163,14 @@ def _write_move(
     }
 
 
+def _claimer(who: Who, agent: dict, working: str) -> Who:
+    """`who` as the claim's writer: the task actor's when the machine names no agent writer for the move into `working`,
+    so an agent session never moves its own task in."""
+    if who.actor != AGENT or (raw := agent.get("moves", {}).get(working)) is None:
+        return who
+    return who if Move.read(raw).permits(AGENT) else who._replace(actor=TASK_ACTOR)
+
+
 @with_request(_ClaimBody, "Claiming a task")
 def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
     """Move the task `request` names to In Progress holding the session it names: the HTTP status and JSON body.
@@ -170,10 +180,11 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
     A task In Progress held by no session, or under its own task name (a label, never a session), is adopted: the
     holder is recorded without a move.
     """
-    task, who = request.task, who_of(request)
+    task = request.task
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     working = feed.roles.working
+    who = _claimer(who_of(request), agent, working)
     held = {"task": task, "to": working, "assignee": who.session}
     named_for_task = str(agent.get("assignee")).casefold() == task.casefold()
     adopt = agent["state"] == working and (_unheld(agent) or named_for_task)

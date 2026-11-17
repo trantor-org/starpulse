@@ -167,11 +167,13 @@ def default_starters(
 
     def board(own: threading.Event) -> Callable[[], None]:
         from starpulse.board.bin import board_worker
+        from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
         from starpulse.runtime.writer_followers import feed_followers
+        from starpulse.views.model.encoding import stored_bodies
 
         return board_worker.start(
             config, path, base, log, own, load=load, assemble=assemble, history_store=history_store, follow=follow,
-            followers=feed_followers(adapters), ready=shared.publish,
+            followers=feed_followers(adapters), ready=shared.publish, snapshots=SnapshotStore(log.engine, stored_bodies),
         )  # fmt: skip
 
     def pulls(own: threading.Event) -> Callable[[], None]:

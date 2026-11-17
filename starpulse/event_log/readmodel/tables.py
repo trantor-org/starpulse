@@ -1,7 +1,7 @@
 """The Task read model's tables. Only this package imports them (the `readmodel-table-private` import contract), so
 every row is written by the projector and read through `ReadModel`."""
 
-from sqlalchemy import JSON, Boolean, Column, Float, ForeignKey, Index, Integer, MetaData, String, Table, Text, text
+from sqlalchemy import JSON, Boolean, Column, Float, ForeignKey, Index, Integer, LargeBinary, MetaData, String, Table, Text, text
 
 metadata = MetaData()
 
@@ -47,8 +47,6 @@ tasks = Table(
 
 #: One row per (machine, task): the state the task holds on that lifecycle machine, the drawn agent as JSON and when the
 #: machine last placed it. `seq` is the `machine:events` position folded in, the cursor `/api/events` resumes from.
-#: One row per (machine, task): the state the task holds on that lifecycle machine, the drawn agent as JSON and when the
-#: machine last placed it. `seq` is the `machine:events` position folded in, the cursor `/api/events` resumes from.
 machine_tasks = Table(
     "starpulse_machine_tasks",
     metadata,
@@ -72,4 +70,25 @@ criteria = Table(
     Column("text", Text, nullable=False),
     Column("checked", Boolean, nullable=False),
     Column("evidence", Text, nullable=False),
+)
+
+#: The Board writer's encoded snapshot, one row per view (`slim`, `full`): `seq` is the last `starpulse_snapshot_deltas`
+#: row the body reflects.
+snapshots = Table(
+    "starpulse_snapshots",
+    metadata,
+    Column("view", String, primary_key=True),
+    Column("seq", Integer, nullable=False),
+    Column("body", LargeBinary, nullable=False),
+    Column("stored_at", Float, nullable=False),
+)
+
+#: Each change the Board writer's feed published, numbered in the order it was folded; the rows behind the retained
+#: window are pruned, so a cursor older than the first row reads a fresh snapshot.
+snapshot_deltas = Table(
+    "starpulse_snapshot_deltas",
+    metadata,
+    Column("seq", Integer, primary_key=True, autoincrement=False),
+    Column("kind", String, nullable=False),
+    Column("data", JSON, nullable=False),
 )

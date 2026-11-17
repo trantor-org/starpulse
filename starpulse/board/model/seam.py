@@ -75,6 +75,8 @@ FLAGGED = "Flagged in Waiting:"
 AGENT = "agent"
 #: Who a write is made by when it names no actor and no session: never the operator.
 ANONYMOUS = "anonymous"
+#: The task actor, who writes the moves no agent or operator makes (`pulls.adapters.inbound.task_actor.ACTOR`).
+TASK_ACTOR = "starpulse/task-actor"
 
 
 class Written(NamedTuple):

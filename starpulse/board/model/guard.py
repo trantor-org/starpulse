@@ -9,15 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.model import entry, rules
-from starpulse.board.model.seam import Written
+from starpulse.board.model.seam import TASK_ACTOR, Written
 from starpulse.machine_engine.model.transitions import lane_id
 
 #: A task write's check: the file's path, its text before (None for a create) and the text about to be written; it
 #: returns why the write is refused, or None to let it land.
 Validate = Callable[[Path, "str | None", str], "str | None"]
-
-#: The actor that moves a Waiting task to Ready once its dependencies are Done (`pulls.adapters.inbound.task_actor.ACTOR`).
-_TASK_ACTOR = "starpulse/task-actor"
 
 
 @dataclass(frozen=True)
@@ -116,9 +113,9 @@ class Guard:
                 return Written(False, verdict.refused.explain(after), verdict.refused.skill, lint=True)
             warnings = tuple(rule.explain(after) for rule in verdict.warned)
         staying = lane_id(str(frontmatter.get("status") or "")) == self.waiting
-        if self.waiting and self.ready and staying and actor != _TASK_ACTOR:
+        if self.waiting and self.ready and staying and actor != TASK_ACTOR:
             released = rules.standing_refusal(
-                self.rules, frontmatter, body, self.ready, _TASK_ACTOR, lambda moved: self.entered(moved, frontmatter)
+                self.rules, frontmatter, body, self.ready, TASK_ACTOR, lambda moved: self.entered(moved, frontmatter)
             )
             if released:  # the task actor would never release it: a Waiting task nothing can ready is a stuck one
                 return Written(False, released.explain(rules.Record(frontmatter, body)), released.skill, lint=True)

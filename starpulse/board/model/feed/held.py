@@ -7,6 +7,8 @@ the machine window and the merge strip. A rating is announced by no change, so e
 A task delta re-reads its Task through the whole build's query (`drawn_task`), not from the delta's own agent: a
 guarded move, the Definition of Done and the readable verdict differ between the two, and the held snapshot must equal
 a whole build. Each fold replaces the snapshot and the objects it changes and edits none, so a reader keeps the one it has.
+
+With a `store`, each fold also saves the encoded bodies and the changes it took, in one transaction (`SnapshotStore.save`).
 """
 
 import logging
@@ -17,6 +19,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.feed.shared import local_midnight
+from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
 from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.machine_ties import derive
 
@@ -62,8 +65,12 @@ RULES: dict[str, tuple[str, ...]] = {
 
 
 class HeldSnapshot:
-    def __init__(self, feed: "BoardFeed", clock: Callable[[], float] = time.time) -> None:
-        self._feed, self._clock = feed, clock
+    def __init__(
+        self, feed: "BoardFeed", clock: Callable[[], float] = time.time, store: SnapshotStore | None = None
+    ) -> None:
+        self._feed, self._clock, self._store = feed, clock, store
+        self._stored: dict[str, Any] | None = None  # the snapshot the store holds
+        self._unsaved: list[tuple[str, dict]] = []  # the changes a failed save left
         self._changes = feed.follow_changes()  # before `build`, so a change it overlaps is folded again, and ends the same
         self._heads: list[tuple[str, Any]] = []
         self._lanes: dict[str, dict[str, dict]] = {}
@@ -84,6 +91,7 @@ class HeldSnapshot:
         """Build the snapshot, then fold the changes published since each publish as one, and a tick every `TICK`, until `stop`."""
         stop.listen(lambda: self._changes.put(None))  # type: ignore[arg-type]
         self.build()
+        self._save([])
         due = time.monotonic() + TICK  # a deadline, so a steady run of changes cannot keep the tick off
         while not stop.is_set():
             try:
@@ -105,6 +113,20 @@ class HeldSnapshot:
         except Exception:
             logger.exception("StarPulse: the held snapshot could not fold %d changes; it is built again", len(changes))
             self.build()
+            self._save(changes)
+
+    def _save(self, changes: list[tuple[str, dict]]) -> None:
+        """Store the snapshot if it is not the one stored, and every change taken since the last save. A save that fails
+        is logged and its changes go with the next, which stores the snapshot whole."""
+        if self._store is None:
+            return
+        self._unsaved += changes
+        try:
+            self._store.save(self._unsaved, None if self.snapshot is self._stored else self.snapshot, self._clock())
+        except Exception:
+            logger.exception("StarPulse: the held snapshot could not be stored; it is stored with the next fold")
+            return
+        self._unsaved, self._stored = [], self.snapshot
 
     def fold(self, kind: str, data: dict) -> None:
         self.fold_all([(kind, data)])
@@ -127,6 +149,7 @@ class HeldSnapshot:
             folded = True
         if folded:
             self._publish(archived_today, fields)
+        self._save(changes)
 
     def _apply(self, kind: str, data: dict, fields: dict[str, Any]) -> None:
         if kind == "task":
