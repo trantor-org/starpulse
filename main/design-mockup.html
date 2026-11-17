@@ -389,8 +389,8 @@ const moving = (flow) => EVENTS.filter((e) => e.flow === flow && e.from && e.at 
 let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const STARS = Array.from({ length: 160 }, () => ({ x: rnd(), y: rnd(), r: rnd() * 1.1 + 0.2, p: rnd() * TAU }));
 
-// ---- fan-out: every run of a DAG in flight at once, against its Dagu queue's cap. Mockup: simulated at 10x from the scenario ?s= names,
-// on its own clock beside the replay; the build reads Dagu's /queues and each run's step from /dag-runs ----
+// ---- fan-out: every run of a DAG in flight at once, against its Temporal queue's cap. Mockup: simulated at 10x from the scenario ?s= names,
+// on its own clock beside the replay; the build reads each queue's cap and each run's step from Temporal ----
 const FAN_SPEED = 10, STEP_SECS = { refuse: 2, lint: 140, commit: 2, push: 2, open_pr: 3, wait_ci: 620, ready: 2 }; // deliver's typical seconds per step
 const QUEUES = { deliver: 32, default: 2, models: 1, "alert-investigation": 3, "dependency-update-investigation": 2, "gpu-1": 1, healthcheck: 1, "renovate-ci-fix": 1 };
 const QUEUE_OF = { deliver: "deliver", "alert-investigation": "alert-investigation", healthcheck: "healthcheck" }, queueOf = (n) => QUEUE_OF[n] || "default";
@@ -1521,7 +1521,7 @@ setInterval(() => { const i = EVENTS.findLastIndex((e) => e.at <= T), dn = S.dag
   const fan = fanEvents.map((e) => `<div${e.fresh ? ' class="new"' : ""}><em>${hhmm(e.at)}</em> ${e.html}</div>`); fanEvents.forEach((e) => (e.fresh = false));
   document.getElementById("feed").innerHTML = fan.join("") + ev.slice(0, 40 - fan.length).map((e) => `<div><em>${hhmm(e.at)}</em> ${e.html}</div>`).join(""); }, 250);
 
-// the navigator's queues: each Dagu queue's running runs against its cap, with any waiting
+// the navigator's queues: each Temporal queue's running runs against its cap, with any waiting
 function renderQueues() {
   document.getElementById("queues").innerHTML = Object.entries(QUEUES).map(([q, cap]) => { const live = liveIn(q), wait = runs.filter((r) => queueOf(r.dag) === q && r.status === "queued").length, c = live >= cap ? DAG_COLOR.failed : ACT;
     return `<div class="q"><span>${esc(q)}</span><b style="color:${live ? c : "inherit"};font-weight:500">${live}/${cap}${wait ? ` +${wait}` : ""}</b></div><div class="m"><i style="width:${(live / cap) * 100}%;background:${c}"></i></div>`; }).join("");
@@ -2029,12 +2029,12 @@ const SKIP = "#3b4760", RED = DAG_COLOR.failed, CROSS = "#c4b5fd", AMB = "#fbbf2
 const RES = { mf: "next", aom: "forced", gr: "next" };
 const RULE = { forced: "clears only on a forced rerun whose BEFORE..AFTER covers it (resolves: forced)", next: "clears on the next successful run (resolves: next)" };
 const CONTRACT = {
-  mf: "# board machine YAML\nwriters:\n  MERGED:\n    - actor: dagu/main-follow\n      trigger: bin/board_reconcile_merged.py",
-  aom: "# board machine YAML\ncues:\n  - event: MERGED\n    dag: dagu/apply-on-merge\n    on: push to main\n    resolves: forced",
-  gr: "# board machine YAML\ncues:\n  - event: MERGED\n    dag: dagu/graph-refresh\n    on: push to main\n    resolves: next",
+  mf: "# board machine YAML\nwriters:\n  MERGED:\n    - actor: temporal/main-follow\n      trigger: bin/board_reconcile_merged.py",
+  aom: "# board machine YAML\ncues:\n  - event: MERGED\n    dag: temporal/apply-on-merge\n    on: push to main\n    resolves: forced",
+  gr: "# board machine YAML\ncues:\n  - event: MERGED\n    dag: temporal/graph-refresh\n    on: push to main\n    resolves: next",
 };
-const RUNS_TOML = KEYED ? '# starpulse.toml\n[[runs]]\nname = "dagu"\n[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"'
-  : '# starpulse.toml\n[[runs]]\nname = "dagu"\n# no [runs.commit]: runs pair by time';
+const RUNS_TOML = KEYED ? '# starpulse.toml\n[[runs]]\nname = "temporal"\n[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"'
+  : '# starpulse.toml\n[[runs]]\nname = "temporal"\n# no [runs.commit]: runs pair by time';
 const SCOL = (st) => (st === "skipped" ? SKIP : st === "waiting" ? CROSS : DAG_COLOR[st] || "#94a3b8");
 
 // ---- simulated merges ----
@@ -2447,8 +2447,8 @@ tipHtml = function (h) {
   if (h.kind === "mgState") return `<div class="k">Board state · click to open</div><div class="n">${esc(stateName(o.id))}</div>${board.agents.filter((a) => a.state === o.id).length} tasks at snapshot`;
   if (h.kind === "mgContract") return `<div class="k">declared contract · hover a caption</div><div class="n">${esc(NM[o.k])}: ${o.k === "mf" ? "writes MERGED" : "cued by MERGED"}</div><pre>${esc(CONTRACT[o.k])}\n\n${esc(RUNS_TOML)}</pre>
     <div class="k">${o.k === "mf" ? "The Board's MERGED transition names this writer; a scheduled 5-minute pass writes it for other repos' merges and carries no commit." : `A failure ${esc(RULE[RES[o.k]])}.`} ${KEYED ? "Runs pair with merges by the AFTER param." : "No commit key, so runs pair with merges by time."}</div>`;
-  if (h.kind === "mgDoctor") return KEYED ? `<div class="k">starpulse doctor · last 24 h</div><div class="n">Contract matches the runs</div>✓ apply-on-merge, graph-refresh and main-follow exist on dagu<br>✓ every push-triggered run carries AFTER, BEFORE and FORCE<br>✓ main-follow wrote MERGED after each merge<br><span class="k">≈ 5-minute main-follow passes carry no params, so other repos' merges pair by time</span>`
-    : `<div class="k">starpulse doctor · runs instance dagu</div><div class="n">No commit key declared</div>Each run pairs with the newest merge before it started (dashed). At ~10 merges an hour a second merge can land first (amber). Recent runs carry params naming the commit; declare them:<pre>[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"</pre>`;
+  if (h.kind === "mgDoctor") return KEYED ? `<div class="k">starpulse doctor · last 24 h</div><div class="n">Contract matches the runs</div>✓ apply-on-merge, graph-refresh and main-follow exist as Temporal schedules<br>✓ every push-triggered run carries AFTER, BEFORE and FORCE<br>✓ main-follow wrote MERGED after each merge<br><span class="k">≈ 5-minute main-follow passes carry no params, so other repos' merges pair by time</span>`
+    : `<div class="k">starpulse doctor · runs instance temporal</div><div class="n">No commit key declared</div>Each run pairs with the newest merge before it started (dashed). At ~10 merges an hour a second merge can land first (amber). Recent runs carry params naming the commit; declare them:<pre>[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"</pre>`;
   if (h.kind === "mgThumb") return `<div class="k">${SC.loaded >= (scene.mg.rest?.length ?? 0) ? "all merges of the last 24 h loaded" : `${SC.loaded} merges loaded · scroll to load ${PAGE} more`}</div>drag to scroll · wheel, PgUp/PgDn, Home`;
   if (h.kind === "mgTop") return `<div class="k">${SC.fresh ? `${SC.fresh} merged while you were scrolled down` : "scrolled into older merges"}</div>click (or Home) to return to the newest merge`;
   if (h.kind === "mgRerun") return `<div class="k">forced apply-on-merge rerun · ${hms(o.start)} MST</div><div class="n">${t >= o.end ? `✓ ${dur(o.dur)}` : `running · ${dur(t - o.start)}`}</div>reapplies everything since the last good apply, clearing every failure before it`;
@@ -2465,7 +2465,7 @@ function openMerge(m) {
     <tr><td>Board</td><td>${t >= m.mergedAt ? `Review → Done: main-follow wrote MERGED ${hms(m.mergedAt)} MST, ${dur(m.mergedAt - m.t)} after the merge` : "in Review until main-follow writes MERGED"}</td></tr>
     ${m.cross ? `<tr><td>Other repo</td><td>Its merge starts no run here. ${m.bump ? `The pin bump ${esc(m.bump.sha)} applied it at ${hhmm(m.bump.t)} MST.` : "It applies when acme's pin bump merges."}</td></tr>` : ""}${runs}</table>
     ${failHtml(m, t, "note")}${unres ? `<button class="run" id="mgRerun">↻ Force rerun apply-on-merge</button>` : ""}
-    <div class="note">Open on board ↗ · PR ↗ · Dagu run ↗ (the build slice links them)</div>`;
+    <div class="note">Open on board ↗ · PR ↗ · Temporal run ↗ (the build slice links them)</div>`;
   panel.querySelector(".x").onclick = () => { panel.classList.remove("open"); sel = null; };
   panel.querySelector("#mgRerun")?.addEventListener("click", forceRerun);
 }
