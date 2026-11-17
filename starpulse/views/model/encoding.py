@@ -183,6 +183,11 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
         return encode("snapshot", slim_snapshot(data))
 
 
+def stored_bodies(data: Any, held: _Held) -> dict[str, bytes]:
+    """The bodies `/api/snapshot` serves, by view: the page's (`slim`) and `?view=full`'s."""
+    return {"slim": encode_snapshot(data, held), "full": encode("snapshot", full_snapshot(data))}
+
+
 def _splice(body: bytes, marker: bytes, drawn: bytes, after: bytes = b"") -> bytes:
     """`body` with the first `marker` past the first `after` replaced by `drawn`; ValueError when either is absent."""
     at = body.index(marker, body.index(after))

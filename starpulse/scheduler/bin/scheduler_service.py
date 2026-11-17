@@ -48,6 +48,7 @@ def start_scheduler(
     cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
+    clock: Callable[[], float] = time.time,
 ) -> Runtime:
     """The scheduler's runtime with its sampler and dispatch loop running on daemon threads until `stop` is set.
 
@@ -115,6 +116,7 @@ def start_scheduler(
         chain=lambda: ranks()["chain"],
         p_goals=lambda: ranks()["p_goals"],
         lane=lane,
+        clock=clock,
         transcript=transcript_written(Path(DEFAULT_TRANSCRIPTS).expanduser()),
     )
     runtime.wire_status(publish or feed.publish)

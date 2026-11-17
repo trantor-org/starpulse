@@ -32,6 +32,7 @@ from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
 from starpulse.event_log.store import EventStore
 from starpulse.event_log.wake import StopEvent
 
@@ -88,11 +89,12 @@ def start(
     follow: Callable[..., object],
     followers: Followers,
     ready: Callable[[Board, BoardFeed], None] | None = None,
+    snapshots: SnapshotStore | None = None,
 ) -> Callable[[], None]:
     """Start the Board writer's threads over `log`, each ending when `stop` is set, and return its reload. Its feed hears
     every change the snapshot draws: the read model's folds, the machine rows, the dates, the claim refusals, the verdicts,
     and what `followers` start. The read model's fold starts last; `ready` is then told the board and feed it folds, which another context in the process
-    may share. Raises `ValueError` as `assemble` does."""
+    may share. With `snapshots`, the held snapshot stores its bodies and deltas there each fold. Raises `ValueError` as `assemble` does."""
     model = ReadModel(log.engine, declared_fields(config.board))
     board, feed = assemble(config, base, None, [], model)
     feed.cap_lanes(MAX_HOURS * 3600)  # the widest window a page can ask for; an older lane stays only for an open task, and decoding the rest is the worker's heap
@@ -103,7 +105,7 @@ def start(
         board.attach(log)  # the sweep's releases append the History events the read model folds
     if board.sweep is not None:
         board.sweep(feed, log, store.save_claim_expiries)
-    threading.Thread(target=HeldSnapshot(feed).run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
+    threading.Thread(target=HeldSnapshot(feed, store=snapshots).run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
     MachineDeltas(feed, model).follow(stop, log)  # a context sharing this feed hears each machine row as a `move`
     follow(
         Projector(log.engine, EventStore(log.engine), log=log, drawn=feed.machines, keys=board.keys), feed, stop, log
