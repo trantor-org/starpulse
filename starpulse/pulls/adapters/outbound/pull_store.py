@@ -198,6 +198,8 @@ class PullSync:
         self._retry_delays = retry_delays
         self._attempts: dict[tuple[str, int], int] = {}
         self._retrying: list[tuple[float, str, int]] = []
+        #: Set once the Board replay is done and the reads queued so far are served from here on.
+        self.serving = threading.Event()
 
     def _linked(self) -> dict[str, set[int]]:
         """The numbers the open tasks' PR links name, by repository."""
@@ -269,6 +271,14 @@ class PullSync:
             if record["mergeable"] == "UNKNOWN":
                 self._put((record["repo"], record["number"]))
 
+    def requeue_unrecorded(self) -> None:
+        """Queue a read of each pull request an open task cites that the store holds no record of: the read that was
+        to make it (an event's or a page's ask) lived in the process a restart replaced."""
+        for repo, numbers in self._linked().items():
+            for number in sorted(numbers):
+                if not self._store.find(repo=repo, number=number):
+                    self._put((repo, number))
+
     def _read_requests(self) -> bool:
         """Read each queued pull request alone, and say whether any was queued; one that cannot be read is logged
         and asked again later (`_retry`), as is an open one whose `mergeable` GitHub has not yet computed."""
@@ -338,7 +348,9 @@ class PullSync:
             threading.Thread(target=self._wake_on_stop, name="pull-stop", daemon=True).start()
             threading.Thread(target=self._project_forever, name="pull-project", daemon=True).start()
         self.requeue_unknown()
+        self.requeue_unrecorded()
         self.project()
+        self.serving.set()
         while not self._stop.is_set():
             self._wake.wait(self.next_retry_in())
             self._wake.clear()  # before the drain: a request queued after it sets the event again
