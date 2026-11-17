@@ -5,7 +5,7 @@ required checks, every check posted on the head) and returns the events to publi
 base branch and read again on each `pull_request` delivery, so a ruleset is never polled. A head's pull requests and posted
 checks are read once, then kept current by the deliveries, and a delivery whose payload names only unlinked pull requests
 reads nothing. While GitHub's quota is spent no read is made. A head's rollup is published
-only when its state changes, and only for a pull request that is not a draft.
+only when its state changes or a required check fails again with a report not seen before, and only for a pull request that is not a draft.
 """
 
 import hashlib
@@ -80,7 +80,7 @@ class HeadChecks:
         self._heads: dict[tuple[str, str], list[Head]] = {}
         self._results: dict[tuple[str, str], dict[str, str]] = {}
         self._required: dict[tuple[str, str], frozenset[str]] = {}
-        self._last: dict[tuple[str, int], tuple[str, str]] = {}
+        self._last: dict[tuple[str, int], tuple[str, str, str]] = {}
 
     def _required_of(self, repository: str, base: str, *, fresh: bool) -> frozenset[str]:
         if fresh or (repository, base) not in self._required:
@@ -143,7 +143,7 @@ class HeadChecks:
         if report is None:
             self._forget(event, body)
         events: list[dict[str, Any]] = []
-        rolled: dict[tuple[str, int], tuple[str, str]] = {}
+        rolled: dict[tuple[str, int], tuple[str, str, str]] = {}
         for head in heads:
             task = links.task_for(repository, head.number)
             if task is None:
@@ -155,9 +155,12 @@ class HeadChecks:
             if head.draft:
                 continue
             state, unfinished = self._rollup(required, self._results_of(repository, sha, report))
-            if self._last.get((repository, head.number)) == (sha, state):
+            refailed = state == "failing" and report is not None and report.state == "failing" and report.name in required
+            mark = (sha, state, key if refailed else "")
+            last = self._last.get((repository, head.number))
+            if last == mark or (last is not None and last[:2] == mark[:2] and not refailed):
                 continue
-            rolled[repository, head.number] = (sha, state)
+            rolled[repository, head.number] = mark
             data = {"repository": repository, "pr": head.number, "sha": sha, "state": state, "required": sorted(required), "unfinished": unfinished}
             events.append(_event(f"ROLLUP_{state.upper()}", task, (repository, head.number, sha, state, key), data))
         return Plan(events, lambda: self._last.update(rolled))
