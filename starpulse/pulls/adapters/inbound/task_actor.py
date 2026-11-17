@@ -1575,9 +1575,11 @@ class TaskActor:
             parts.append(f"{part} ({link})")
         if not parts:
             return None
+        merged_at = self._merged_at(agent)
         if (
             agent["state"] == self._feed.roles.working
-            and (self._merged_at(agent) or 0.0) < (agent.get("entered") or 0.0)
+            and merged_at is not None
+            and merged_at < (agent.get("entered") or 0.0)
             and not self._deploy_reopened(agent)
         ):
             return None  # the merge predates the task's latest entry: a reopened task's earlier delivery proves nothing

@@ -81,22 +81,25 @@ class Projected:
     def __init__(self, log: EventLog, feed: Any) -> None:
         self._log = log
         self._feed = feed
+        self._applying = threading.Lock()
 
     def apply(self) -> None:
-        """Take the kept projection; none kept yet, or one unreadable, leaves the feed as it was.
+        """Take the kept projection; none kept yet, or one unreadable, leaves the feed as it was. Applies run one at a
+        time, so one that read an older projection never sets the feed after one that read a newer.
 
         A projection kept before a pull carried its `repo` (TASK-7845) is unreadable: its pulls fail the snapshot
         contract, so every `/api/snapshot` would 500 until the worker keeps a new one.
         """
-        try:
-            _, body = self._log.state(PROJECTION)
-        except Exception:
-            logger.warning("pulls: the projection was not read", exc_info=True)
-            return
-        if isinstance(body, dict) and isinstance(body.get("pulls"), dict) and isinstance(body.get("answers"), dict):
-            records = [pull for pulls in body["pulls"].values() for pull in pulls]
-            if all(isinstance(pull, dict) and "repo" in pull for pull in records):
-                self._feed.set_pulls(body["pulls"], body["answers"])
+        with self._applying:
+            try:
+                _, body = self._log.state(PROJECTION)
+            except Exception:
+                logger.warning("pulls: the projection was not read", exc_info=True)
+                return
+            if isinstance(body, dict) and isinstance(body.get("pulls"), dict) and isinstance(body.get("answers"), dict):
+                records = [pull for pulls in body["pulls"].values() for pull in pulls]
+                if all(isinstance(pull, dict) and "repo" in pull for pull in records):
+                    self._feed.set_pulls(body["pulls"], body["answers"])
 
     def follow(self, stop: StopEvent) -> threading.Thread:
         """Apply the kept projection now, then each one announced after, on a thread until `stop`."""

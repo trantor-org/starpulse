@@ -409,9 +409,9 @@ GET /api/done[?before=T][&limit=N]
                    A board that cannot read a task is 404, a bad `before` or `limit` 400
 GET /api/history?task=TASK-N[&machine=NAME]
                    {task, path}: the task's Board lane changes as [{at, from, to}], oldest first (`at`
-                   epoch seconds). With `flow`, {task, flow, path, steps}: its events on that lifecycle
-                   machine as [{at, event, state}] in order, `steps` their count; with `flow`, `task` may be a run id. A task never seen has an empty path; no `task` is 400
-                   and an unknown `flow` 404. The machine events are copied from their stream as they
+                   epoch seconds). With `machine`, {task, machine, path, steps}: its events on that lifecycle
+                   machine as [{at, event, state}] in order, `steps` their count; with `machine`, `task` may be a run id. A task never seen has an empty path; no `task` is 400
+                   and an unknown `machine` 404. The machine events are copied from their stream as they
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
                    the config), so the path outlives the stream's trim, unless the board adapter keeps
                    its own history. A trim past entries the copy never read is recorded as a gap

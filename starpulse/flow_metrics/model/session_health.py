@@ -327,7 +327,7 @@ def session_rows(
                 armed.add(task)
             if s.turn:
                 open_turns[s.turn] = row
-                latest = s.turn
+            latest = s.turn
         elif s.kind == "reply":
             open_turns.pop(s.turn, None)
             if s.origin == "main":
