@@ -24,7 +24,6 @@ def prometheus(request: Request) -> Response:
     gauges = (
         services.actor_metrics,
         services.lane_metrics,
-        services.done_hold_metrics,
         services.autopilot_metrics,
         services.sweeper_metrics,
         services.bridge_metrics,

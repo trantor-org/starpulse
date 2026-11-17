@@ -19,7 +19,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.adapters import done_hold
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.adapters.lane_policy import lane_surfaces
 from starpulse.board.adapters.lane_metrics import metrics_of as lane_metrics_of
@@ -168,7 +167,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its
     # projection and asks it
     Projected(log, feed).follow(stop)
-    board_root = base / str(config.board.get("path", ".starpulse/board"))
     # the analytics routes read the per-session folds of the signal table; the `signal-folds` context of
     # `starpulse worker contexts` keeps them current, so no fold runs in this process
     signal_folds = SignalFolds(log, feed.keys, config.analytics)
@@ -221,7 +219,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         actor_view=actor_view,
         # the lane followers run in `starpulse worker contexts`; this process relays the metrics they keep
         lane_metrics=lane_metrics_of(log),
-        done_hold_metrics=lambda: done_hold.exposition(board_root),
         autopilot_metrics=lambda: autopilot_exposition(log),
         sweeper_metrics=sweeper_metrics_of(log),
         bridge_metrics=bridge_metrics_of(log),

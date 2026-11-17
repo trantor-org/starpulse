@@ -60,7 +60,6 @@ class Services:
     actor_metrics: Callable[[], str] | None = None
     actor_view: Callable[[], dict[str, Any]] | None = None
     lane_metrics: Callable[[], str] | None = None
-    done_hold_metrics: Callable[[], str] | None = None
     autopilot_metrics: Callable[[], str] | None = None
     sweeper_metrics: Callable[[], str] | None = None
     bridge_metrics: Callable[[], str] | None = None

@@ -24,7 +24,12 @@ _ABBREVIATION = re.compile(r"\b(e\.g|i\.e|etc|vs)\.")
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?![a-z])")
 #: A path: one that opens with `./`, `../`, `~/` or `/`, has two slashes, or ends in a file extension.
 _PATH = re.compile(r"(?<![\w/.~-])(?:\.{0,2}/|~/)?[\w.-]+(?:/[\w.-]+)+/?|(?<![\w/.~-])[\w-]+(?:\.[\w-]+)*\.[a-z]{1,5}\b")
-_FILE = re.compile(r"\.[a-z]{1,5}$")
+_FILE = re.compile(r"\.([a-z]{1,5})$")
+#: A bare dotted word is a file name only with one of these; any other (`claude.ai`) is a domain name.
+_EXTENSIONS = frozenset(
+    "py pyi md txt rst yaml yml toml json jsonl ini cfg conf env lock sh bash zsh sql html css scss js jsx ts tsx mjs"
+    " c h cpp rs go java rb php xml csv log pem service timer j2 tf nix".split()
+)
 _RADIUS = re.compile(r"^reach ([0-3]) · data ([0-3]) · undo ([0-3]) · detect ([0-3])\. \S")
 _AXES = ("reach", "data", "undo", "detect")
 _TEMPLATE_KEYS = {"headings", "commands", "max_paths_per_sentence", "blast_radius", "board_written"}
@@ -202,7 +207,12 @@ def _sentences(rows: list[tuple[int, str]]) -> list[tuple[int, str]]:
 def _paths(text: str) -> list[str]:
     """The paths `text` names: a token with a slash that opens a path or ends in an extension, or a file name."""
     named = (found.group(0).rstrip(".") for found in _PATH.finditer(_plain(text)))
-    return [path for path in named if path.count("/") > 1 or path.startswith(("/", ".", "~")) or _FILE.search(path)]
+    return [path for path in named if path.count("/") > 1 or path.startswith(("/", ".", "~")) or _is_file(path)]
+
+
+def _is_file(path: str) -> bool:
+    suffix = _FILE.search(path)
+    return bool(suffix) and ("/" in path or suffix[1] in _EXTENSIONS)
 
 
 def _structure(template: Template, found: list[_Section], last: int) -> str:

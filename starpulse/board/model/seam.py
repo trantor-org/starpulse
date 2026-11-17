@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from starpulse.board.model.board_feed import BoardFeed
     from starpulse.contracts.task_keys import TaskKeys
     from starpulse.event_log.event_log import EventLog
-    from starpulse.event_log.wake import StopEvent
     from starpulse.machine_engine.model.snapshot import Qualify
 
 __all__ = [
@@ -227,9 +226,6 @@ class Board:
     """Begin releasing the claims that outlive their TTL on the feed's tasks, on a thread of the adapter's own; `start`
     begins it too, and a view that reads the Task read model instead of starting the adapter calls it alone; None
     sweeps nothing."""
-    hold: Callable[[StopEvent], None] | None = None
-    """Begin the Done hold's day-end sweep and slow-board fallback on a thread of the adapter's own, ended by the
-    stop event; `start` begins it too, and the Board child calls it alone; None holds nothing."""
     keys: TaskKeys | None = None
     """The tracker's task key scheme; None places any key."""
     cues: Callable[[Qualify], Sequence[dict]] = _no_cues
