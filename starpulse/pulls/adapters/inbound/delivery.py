@@ -36,6 +36,9 @@ ACTOR_VIEW = "pulls.actor_view"
 SAVED_STREAM = "pulls:saved"
 REFRESH_STREAM = "pulls:refresh"
 POLLER = "pulls.poller"
+#: Written only while the pull sync serves refreshes, which it does once the Board replay is done: a worker replaced before
+#: then served none of the asks it was handed, and the next one must replay them.
+SERVING = "pulls.serving"
 #: The worker state holding, by stream, the id of the last `follow_events` entry the replay handed over.
 CURSOR = "pulls.cursor"
 #: Seconds between the worker's writes of its metrics.
@@ -138,9 +141,10 @@ def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable
 
 def follow_refreshes(log: EventLog, request: Callable[[str, int], Any], stop: StopEvent) -> threading.Thread:
     """Hand each refresh asked from now on to `request` (the pull sync's), on a thread until `stop`. A request asked
-    since the last poller's beat went unserved while no worker ran, so those replay: a restart must not drop the
-    close of a pull request that landed in the gap."""
-    _, beat = log.state(POLLER)
+    since the last serving beat went unserved, whether no worker ran or the one that did was replaced before it served
+    (it beats alive while it replays the Board), so those replay: a restart must not drop the close of a pull request
+    that landed in the gap."""
+    _, beat = log.state(SERVING)
     since = beat.get("at") if isinstance(beat, dict) else None
     head = log.head() or 0
 
@@ -237,15 +241,20 @@ def keep_metrics(
 
 
 def keep_beating(
-    log: EventLog, running: threading.Event, stop: StopEvent, clock: Callable[[], float] = time.time
+    log: EventLog,
+    running: threading.Event,
+    stop: StopEvent,
+    clock: Callable[[], float] = time.time,
+    state: str = POLLER,
 ) -> threading.Thread:
-    """Write the time to the log every `BEAT_S` while `running` is set, on a thread until `stop`: the poller's beat."""
+    """Write the time to `state` of the log every `BEAT_S` while `running` is set, on a thread until `stop`: the poller's
+    beat, or with `SERVING` the sync's beat."""
 
     def run() -> None:
         while not stop.is_set():
             if running.is_set():
                 try:
-                    log.put_state(POLLER, {"at": clock()})
+                    log.put_state(state, {"at": clock()})
                 except Exception:
                     logger.warning("pulls: the poller's beat was not kept", exc_info=True)
             stop.wait(BEAT_S)

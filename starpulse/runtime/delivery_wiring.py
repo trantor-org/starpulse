@@ -21,6 +21,7 @@ from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound.head_reader import GitHubReader
 from starpulse.github.adapters.outbound.rest import connect
 from starpulse.pulls.adapters.inbound.delivery import (
+    SERVING,
     keep_beating,
 )
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor, moves_of
@@ -164,6 +165,7 @@ def start_delivery(
         sync = PullSync(pulls, feed, config.repos, project=project, stop=stop)
         running = threading.Event()
         keep_beating(log, running, stop)
+        keep_beating(log, sync.serving, stop, state=SERVING)
         threading.Thread(target=keep_polling, args=(sync, stop, running), name="pull-reader", daemon=True).start()
     if config.release is not None:
         if board.edit is None or not (feed.roles.waiting and feed.roles.ready):
