@@ -79,6 +79,16 @@ def listen(parser: argparse.ArgumentParser, args: argparse.Namespace) -> socket.
         parser.exit(1, f"cannot listen on {args.host}:{args.port}: {reason}; pass --port to serve elsewhere\n")
 
 
+def _bound_to(sock: socket.socket, host: str, port: int) -> bool:
+    """Whether `sock` is bound to `port` on an address `host` names, a hostname included."""
+    address, bound_port = sock.getsockname()[:2]
+    try:
+        named = {info[4][0] for info in socket.getaddrinfo(host, port, sock.family, socket.SOCK_STREAM)}
+    except OSError:
+        return False
+    return bound_port == port and address in named
+
+
 def github_socket(environ: Mapping[str, str], settings: GitHub) -> socket.socket | None:
     """The GitHub webhook socket `serve` holds for the `contexts` child: the one the previous image handed over on the
     descriptor `GITHUB_FD_ENV` names when it listens on `settings`' port, else one bound now. `None` when the address
@@ -90,7 +100,7 @@ def github_socket(environ: Mapping[str, str], settings: GitHub) -> socket.socket
             logger.warning("%s=%s is no socket; binding the github port instead", GITHUB_FD_ENV, handed)
         else:
             adopted.set_inheritable(False)
-            if adopted.getsockname()[:2] == (settings.host, settings.port):
+            if _bound_to(adopted, settings.host, settings.port):
                 return adopted
             adopted.close()  # the table now names another address: the contexts child that held this one is replaced
     try:

@@ -56,8 +56,12 @@ def answer(board: str, subscriber: Subscriber, data: bytes) -> bytes:
     """Apply one request to the subscriber and say what happened; a malformed or refused one changes nothing."""
     try:
         request = json.loads(data)
-        subjects = [explicit_subject(board, str(item)) for item in request["subjects"]]
-        changed, filters = subscriber.change(str(request["session"]), subjects, bool(request["add"]))
+        session, items, add = request["session"], request["subjects"], request["add"]
+        if not (isinstance(session, str) and isinstance(add, bool) and isinstance(items, list)):
+            raise ValueError("session must be a string, subjects a list and add a boolean")
+        if not all(isinstance(item, str) for item in items):
+            raise ValueError("subjects must be strings")
+        changed, filters = subscriber.change(session, [explicit_subject(board, item) for item in items], add)
         reply: dict[str, Any] = {"changed": changed, "subjects": filters}
     except Unavailable as exc:
         reply = {"unavailable": str(exc)}

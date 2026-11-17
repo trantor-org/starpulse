@@ -243,8 +243,9 @@ def _start_refusal(feed: BoardFeed, task: str, agent: dict[str, Any]) -> str | N
         return None
     waiting = agent["state"] == feed.roles.waiting
     open_dependencies = [dependency for dependency in agent.get("dependencies", ()) if not feed.is_done(dependency)]
-    if waiting and open_dependencies:
-        return f"{task} is in {agent['state']} on {', '.join(open_dependencies)}: it starts once that is done"
+    if open_dependencies:
+        on = f"{task} is in {agent['state']} on {', '.join(open_dependencies)}"
+        return f"{on}: it starts once that is done" if waiting else f"{on}: the task actor returns it to {feed.roles.waiting}"
     waits = criteria.subjects(agent.get("description", "")) if waiting else ()
     if not waits:
         return None

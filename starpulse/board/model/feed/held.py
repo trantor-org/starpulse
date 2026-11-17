@@ -59,7 +59,7 @@ RULES: dict[str, tuple[str, ...]] = {
     "graphs": ("build",),
     "roles": ("build",),
     "capabilities": ("build",),
-    "interactive": ("build",),
+    "interactive": ("task", "move", "pulls", "claim", "dags", "ledgers", "tick"),
     "boardUrl": ("build",),
 }
 
@@ -76,6 +76,7 @@ class HeldSnapshot:
         self._lanes: dict[str, dict[str, dict]] = {}
         self._cold: dict[str, str] = {}
         self._day = 0.0
+        self._stale = False
         self.snapshot: dict[str, Any] = {}
 
     def build(self) -> None:
@@ -86,34 +87,47 @@ class HeldSnapshot:
         self._lanes = {flow["name"]: {agent["id"]: agent for agent in flow["agents"]} for flow in snapshot["flows"]}
         self._day = local_midnight(self._clock())
         self.snapshot = snapshot
+        self._stale = False
 
     def run(self, stop: StopEvent) -> None:
         """Build the snapshot, then fold the changes published since each publish as one, and a tick every `TICK`, until `stop`."""
         stop.listen(lambda: self._changes.put(None))  # type: ignore[arg-type]
-        self.build()
-        self._save([])
-        due = time.monotonic() + TICK  # a deadline, so a steady run of changes cannot keep the tick off
-        while not stop.is_set():
-            try:
-                batch = [self._changes.get(timeout=max(0.0, due - time.monotonic()))]
-            except queue.Empty:
-                batch = []
-            while not self._changes.empty():
-                batch.append(self._changes.get_nowait())
-            changes = [change for change in batch if change is not None]
-            if time.monotonic() >= due:
-                changes.append(("tick", {}))
-                due = time.monotonic() + TICK
-            if changes:
-                self._folded(changes)
+        try:
+            self._rebuilt([])
+            due = time.monotonic() + TICK  # a deadline, so a steady run of changes cannot keep the tick off
+            while not stop.is_set():
+                try:
+                    batch = [self._changes.get(timeout=max(0.0, due - time.monotonic()))]
+                except queue.Empty:
+                    batch = []
+                while not self._changes.empty():
+                    batch.append(self._changes.get_nowait())
+                changes = [change for change in batch if change is not None]
+                if time.monotonic() >= due:
+                    changes.append(("tick", {}))
+                    due = time.monotonic() + TICK
+                if changes:
+                    self._folded(changes)
+        finally:
+            self._feed.unsubscribe(self._changes)
+
+    def _rebuilt(self, changes: list[tuple[str, dict]]) -> None:
+        try:
+            self.build()
+        except Exception:
+            logger.exception("StarPulse: the held snapshot could not be built; it is built again on the next change or tick")
+            self._stale = True
+            return
+        self._save(changes)
 
     def _folded(self, changes: list[tuple[str, dict]]) -> None:
         try:
+            if self._stale:
+                self.build()
             self.fold_all(changes)
         except Exception:
             logger.exception("StarPulse: the held snapshot could not fold %d changes; it is built again", len(changes))
-            self.build()
-            self._save(changes)
+            self._rebuilt(changes)
 
     def _save(self, changes: list[tuple[str, dict]]) -> None:
         """Store the snapshot if it is not the one stored, and every change taken since the last save. A save that fails
@@ -205,6 +219,7 @@ class HeldSnapshot:
             "milestone_done": dict(sorted(Counter(self._cold.values()).items())),
             "archived_today": self.snapshot["archived_today"] if archived_today is None else archived_today,
             "ratings": self._feed.ratings(),
+            "interactive": self._feed.interactive(),
             **fields,
             "now": now,
         }
