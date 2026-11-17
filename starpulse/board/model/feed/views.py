@@ -300,6 +300,10 @@ class ViewMethods:
         with self._lock:
             return self._ledger_marks(self._ledger_full)
 
+    def interactive(self) -> dict[str, bool]:
+        with self._lock:
+            return dict.fromkeys(self._interactive, True)
+
     def _snapshot(self, now: float, modelled: dict[str, Any]) -> dict[str, Any]:
         """The snapshot from `modelled` and the state the feed holds; the caller holds the lock."""
         return {

@@ -818,12 +818,13 @@ class TaskActor:
         gate = criteria.subjects(agent["description"]) if agent["state"] in self._gated_lanes else ()
         if gate == self._gates.get(name, ()):
             return False
+        heard = {subject for subject in gate if self._latest is not None and self._latest(subject)}
         self._unwatch(name)
         self._gates[name] = gate
         for subject in gate:
             self._until.setdefault(subject, set()).add(name)
-            if self._latest is not None and self._latest(subject):
-                self._heard.setdefault(name, set()).add(subject)
+        if heard:
+            self._heard[name] = heard
         return True
 
     def _unwatch(self, name: str) -> None:
@@ -1290,8 +1291,10 @@ class TaskActor:
                     return
                 logger.warning("task actor: %s flagged stalled without escalation: %s", name, error)
                 with self._lock:
-                    self._stalled.add(name)
-                    self._attend(name, "the escalation to a higher profile failed or no higher profile exists")
+                    now = self._feed.task(name, lean=True)
+                    if now and now["state"] == self._feed.roles.working and self._progress(now) == progress:
+                        self._stalled.add(name)
+                        self._attend(name, "the escalation to a higher profile failed or no higher profile exists")
                 return
         with self._lock:
             self._resumes[name] = (progress, 0 if escalate else count + 1)

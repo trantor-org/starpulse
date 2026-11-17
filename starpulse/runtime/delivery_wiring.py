@@ -142,8 +142,9 @@ def start_delivery(
             awaits=config.awaits,
             log=log,
         )
-        actor.start(stop)
+        # the follower takes its cursor first: an event after the actor's gate lookups is then heard, never missed
         follow_until_events(actor.event_seen, lambda entry: subject_for(config.bridge.board, entry), log, stop)
+        actor.start(stop)
         follow_holder_idle(actor.holder_settled, log, stop)
     if board.entered:
         lane_events.follow_entered(board.entered, log, stop)
