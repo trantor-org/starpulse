@@ -329,6 +329,8 @@ def _frames(base: str) -> Iterator[tuple[str, Any]]:
                 elif line.startswith("data: "):
                     yield name, json.loads(line.removeprefix("data: "))
     except urllib.error.HTTPError as exc:  # before OSError, which it subclasses
+        if isinstance(base, agent_wire.Server) and (refusal := base.refusal(exc.code, None)):
+            raise refusal from exc
         raise agent_wire.CliError(
             "unavailable", f"{base} answered {exc.code} for /api/events: is it a StarPulse server?"
         ) from exc

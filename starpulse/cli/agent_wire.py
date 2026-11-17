@@ -33,18 +33,32 @@ class Server(str):
     """A server's address, which formats as the address, carrying the bearer token every request to it sends."""
 
     token: str
+    defaulted: bool
+    """True when neither `--server` nor `STARPULSE_URL` named it."""
 
-    def __new__(cls, address: str, token: str = "") -> Server:
+    def __new__(cls, address: str, token: str = "", defaulted: bool = False) -> Server:
         server = super().__new__(cls, address)
         server.token = token
+        server.defaulted = defaulted
         return server
+
+    def refusal(self, status: int, reply: object) -> CliError | None:
+        """The error for the default server's 400 with no JSON reply, which is a TLS server refusing plain http when the
+        caller never said where the server is; None for any other reply, which keeps its own reason."""
+        if status != 400 or not self.defaulted or reply:
+            return None
+        return CliError(
+            "unavailable",
+            f"{self} answered 400, a TLS server refusing plain http: STARPULSE_URL is unset, "
+            "so set it (export STARPULSE_URL=https://host:port) or pass --server",
+        )
 
 
 def server_url(flag: str | None, environ: Mapping[str, str]) -> Server:
     """The server to read: the `--server` flag, else `STARPULSE_URL`, else the default, without a trailing slash, with
     `STARPULSE_TOKEN` as its bearer token."""
-    address = (flag or environ.get("STARPULSE_URL") or DEFAULT_SERVER).rstrip("/")
-    return Server(address, environ.get("STARPULSE_TOKEN", ""))
+    named = flag or environ.get("STARPULSE_URL")
+    return Server((named or DEFAULT_SERVER).rstrip("/"), environ.get("STARPULSE_TOKEN", ""), defaulted=not named)
 
 
 def auth(base: str) -> dict[str, str]:
@@ -81,9 +95,12 @@ def _get_once(base: str, path: str, timeout: float) -> tuple[int, Any, str]:
     except urllib.error.HTTPError as exc:
         wait = exc.headers.get("Retry-After", "") if exc.headers else ""
         try:
-            return exc.code, json.load(exc), wait
+            body = json.load(exc)
         except ValueError:
-            return exc.code, None, wait
+            body = None
+        if isinstance(base, Server) and (refusal := base.refusal(exc.code, body)):
+            raise refusal from exc
+        return exc.code, body, wait
     except TimeoutError as exc:  # before OSError: a slow search is not an unreachable server
         if path.startswith("/api/search"):
             raise CliError("unavailable", f"slow search at {base}: timed out after 10s") from exc
@@ -141,6 +158,8 @@ def post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any
             return resp.status, _json_or_empty(resp)
     except urllib.error.HTTPError as exc:  # before OSError, which it subclasses
         reply = _json_or_empty(exc)
+        if isinstance(base, Server) and (refusal := base.refusal(exc.code, reply)):
+            raise refusal from exc
         wait = exc.headers.get("Retry-After", "")
         if exc.code == 503 and wait.isdigit():
             raise CliError("unavailable", str(reply.get("error") or f"{base} answered 503"), retry_after=int(wait)) from exc
