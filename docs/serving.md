@@ -681,7 +681,6 @@ type = "native"
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
 # complete_done = false     # true: a task landing in Done, and each Done task left in `tasks/` at start, moves on to `completed/`, which the reader and search still find
 # complete_keep_labels = "" # a regex: a Done task with a label that fully matches it stays in `tasks/`, Done and writable, where `complete_done` would move it; a start returns such a file already in `completed/` to `tasks/`
-# [board.complete_hold]     # with `complete_done`: a Done task stays in `tasks/` and the Done column until its local day (`tz`, an IANA zone) ends; start-up and each local midnight dehydrate earlier days'. A board read time past `p95_seconds` (1.0) or a task actor latency past `actor_seconds` (60) for `sustained` seconds (600) dehydrates every Done task on landing again until this table is edited; `p95_baseline` with `p95_ratio` (1.2) adds a ratio bound, `actor_metrics` is the URL of the serve's /metrics the actor latency is read from, `fallback = true` forces the fallback
 
 # Task fields this deployment adds to StarPulse's own, checked on write and kept in the read model (see Task read model):
 # [board.fields]

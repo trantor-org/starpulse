@@ -32,7 +32,6 @@ from sqlalchemy.engine import Engine
 
 from starpulse.board.model import criteria
 from starpulse.board.adapters import native_docs, native_milestones
-from starpulse.board.adapters.done_hold import DoneHold
 from starpulse.board.adapters.native_lookup import _aliases, _find, _SETTLED_NS, _stamp
 from starpulse.board.adapters.task_history import TaskHistory, revises_plan
 from starpulse.board.adapters.native_scan import (
@@ -81,7 +80,6 @@ from starpulse.board.model.seam import (
 from starpulse.contracts.tiers import TIERS, implied_tier
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.event_log.tables import pull_requests, retired_tasks
-from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.state_roles import StateRoles
 
 if TYPE_CHECKING:
@@ -97,7 +95,7 @@ DEFAULT_PATH = ".starpulse/board"
 #: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent),
 #: `policy` the `[board.policy]` table `starpulse policy revision` reads, `claim_ttl` the seconds a claim
 #: lives without an event (0: no claim sweep), `transcripts` the directory of the sessions' transcripts, `complete_done` (boolean) that a task
-#: landing in Done, and each Done task `tasks/` holds when the board starts, moves on to `completed/`, `complete_keep_labels` (a regex) that a Done task with a label fully matching it stays in `tasks/`, `complete_hold` (a table, see `done_hold`) that a Done task stays in `tasks/` until its local day ends, `policy_rows` the stored policy
+#: landing in Done, and each Done task `tasks/` holds when the board starts, moves on to `completed/`, `complete_keep_labels` (a regex) that a Done task with a label fully matching it stays in `tasks/`, `policy_rows` the stored policy
 #: (its guards, profiles and watches) that `assemble` hands the board; no config sets it. `entered` is the command run
 #: (`{id}` the task's id) for each lane change `board:lanes` records, and `entered_labels` (a regex) limits it to a task
 #: with a label fully matching it.
@@ -131,7 +129,6 @@ _SETTINGS = {
     "transcripts",
     "complete_done",
     "complete_keep_labels",
-    "complete_hold",
     "policy_rows",
 }
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
@@ -834,10 +831,10 @@ def _done_tasks(root: Path, done: str | None) -> Iterator[tuple[str, dict]]:
                 yield str(frontmatter.get("id") or path.stem).strip(), frontmatter
 
 
-def _done_in_tasks(root: Path, done: str | None) -> list[tuple[str, Path]]:
-    """The id and file of each task under `tasks/` that is Done, in file order."""
+def _done_in_tasks(root: Path, done: str | None) -> list[str]:
+    """Ids of the tasks under `tasks/` that are Done, in file order."""
     return [
-        (str(frontmatter.get("id") or path.stem).strip(), path)
+        str(frontmatter.get("id") or path.stem).strip()
         for path in sorted((root / "tasks").glob("*.md"))
         if isinstance(frontmatter := _split(path.read_text())[0], dict)
         and lane_id(str(frontmatter.get("status") or "")) == done
@@ -1776,17 +1773,13 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         history.import_retired(retired.pairs(), _record_of)
         if settings.get("complete_done"):
             _uncompleted(root, settings.get("complete_keep_labels"))
-            hold.sweep()  # a Done file left in `tasks/` before a move completed it on landing, or whose day ended
+            for done_task in _done_in_tasks(root, made.roles.done):
+                complete(done_task)  # a Done file left in `tasks/` before a move completed it on landing
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)
-        keep(StopEvent())
         made.start(feed, group, log)
         sweep(feed, log, lambda _expiries: None)  # this process serves its own sweep's expiries
-
-    def keep(stop: StopEvent) -> None:
-        if settings.get("complete_done"):
-            hold.start(stop, lambda: list(_open_tasks(root, made.roles.done)))
 
     def sweep(feed: BoardFeed, log: EventLog, persist: Callable[[dict[str, float]], None]) -> None:
         from starpulse.board.adapters import claim_ttl  # noqa: PLC0415 — keeps the board's import light
@@ -1796,13 +1789,12 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     read = made.read
 
     complete = history.dehydrated(made.complete, read)
-    hold = DoneHold(root, lambda: _done_in_tasks(root, made.roles.done), complete, settings.get("complete_hold"))
 
     def completing(write: MoveWriter) -> MoveWriter:
         def land(task: str, status: str, actor: str, *session: str) -> Written:
             written = write(task, status, actor, *session)
             if written.ok and settings.get("complete_done") and lane_id(status) == made.roles.done:
-                hold.landed(task)
+                complete(task)
             return written
 
         return land
@@ -1815,7 +1807,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
                 and settings.get("complete_done")
                 and lane_id(str(changes.get("status") or "")) == made.roles.done
             ):
-                hold.landed(task)
+                complete(task)
             return written
 
         return land
@@ -1845,7 +1837,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         made,
         start=start,
         sweep=sweep,
-        hold=keep,
         attach=attach,
         standing=_standing(root, guard),
         readable=guard.readable,

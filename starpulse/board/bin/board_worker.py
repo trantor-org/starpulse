@@ -101,8 +101,6 @@ def start(
         board.attach(log)  # the sweep's releases append the History events the read model folds
     if board.sweep is not None:
         board.sweep(feed, log, store.save_claim_expiries)
-    if board.hold is not None:
-        board.hold(stop)
     threading.Thread(target=HeldSnapshot(feed).run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
     MachineDeltas(feed, model).follow(stop, log)  # a context sharing this feed hears each machine row as a `move`
     follow(
