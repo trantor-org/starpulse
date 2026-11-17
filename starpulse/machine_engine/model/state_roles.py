@@ -99,8 +99,15 @@ class StateRoles:
 
     @property
     def ready(self) -> str | None:
-        """Where a task waits to be picked up: the first State that waits for dependencies to turn unresolved."""
-        return self._waiting_on(_UNMET)
+        """Where a task waits to be picked up: the State that waits on dependencies to turn unresolved and on no pull request."""
+        return next(
+            (
+                state
+                for state, facts in self.waits.items()
+                if _UNMET in facts and self.roles.get(state) == "waiting_on_fact" and not self._waits_on_pull_request(state)
+            ),
+            None,
+        )
 
     @property
     def waiting(self) -> str | None:
