@@ -22,6 +22,11 @@ claude --settings '{"env": {
   "OTEL_RESOURCE_ATTRIBUTES": "vcs.ref.head.name='"$(git branch --show-current)"'"}}'
 ```
 
+A launch also appends `claude_code.entrypoint=<cli|sdk-cli>` to `OTEL_RESOURCE_ATTRIBUTES` to name how it started. StarPulse copies it onto each signal and into the `entrypoint` field of session rows, beside
+`first_request_tokens`, the prompt tokens (input, cache read and cache write) of the session's first main-thread request, null when it made none. A session whose launch sets no entrypoint, such as a Desktop one, has it empty.
+
+A row's `role` is the furthest of the `[analytics]` table's `phases` (skills in lifecycle order) the session loaded on its task, `other` when it loaded none or none are declared, and its `agents` sum each subagent type's tokens (the `agent` of a side request that names one), so spend reads per phase and per qa lens.
+
 An eval or judge run that is not work names itself by appending `<eval_attribute>=<purpose>` to `OTEL_RESOURCE_ATTRIBUTES`, the attribute the `[analytics]` table's `eval_attribute` names (with none, no run is an eval).
 StarPulse copies the purpose onto each signal and into the `eval` field of session and step rows, and the trace-cluster
 view leaves those sessions out.
@@ -119,15 +124,15 @@ session's first claim or task-naming switch, when its launch branch names no tas
   `operator_tools` tool (a question answered, a plan approved) is no prompt but charges the silence before it to
   `operator_wait_s`: from the last signal before it, other than that tool's own decision, to the tool's start. Codex exports no
   request duration, so its `agent_s` is its tool results' alone.
-- An `interrupt` is a Claude Code turn with a `prompt.id` and no closing reply: a turn still running counts until its
-  reply lands. Codex has no reply signal, so only the interrupts it exports count for it.
+- An `interrupt` is a Claude Code turn with a `prompt.id` and no closing reply once a later prompt arrives: the session's
+  last turn, still open when its signals end, is no interrupt. Codex has no reply signal, so only the interrupts it exports count for it.
 
 What an export cannot say is absent rather than guessed: Claude Code exports no user interrupt, so one is read from
 a turn that never replied, Codex exports an interrupted turn only in `codex.turn_cost`, which it sends only with an API
 key, and Codex has no compaction event.
-Signals are kept in the event log's `telemetry:signals` stream, a private stream that is no contract and changes
-without notice, pruned by `event_log_retention_days` like any row, so a window longer than the retention reads only
-what remains. A server with no such stream is 501, a window that is no
+Signals are kept once per key in the `starpulse_signals` table of the history database, which `SignalFolds` folds per
+session; the hourly prune deletes rows older than 8 days, so a window longer than that reads only what remains. A server
+with no such table is 501, a window that is no
 positive number 400.
 
 One signal is one step of the record the steps-per-clean-completion ledger counts: a `request` is one model call, with
@@ -249,8 +254,10 @@ Cursor left out, by task then the phase's first step. Its columns:
 - `models`, `first_at`, `last_at`: the models used and the epoch seconds of the phase's first and last step.
 - `profile`: `<model>-<effort>` of the phase's first main-thread step (its first step when a subagent made every
   step), each `unknown` when the harness recorded none; the key per-profile norms group by.
-- `task_wte`: `wte` over the task's phases in the window. `norm_wte`: the median `task_wte` of the tasks of its kind and
-  size, null under 5 tasks in the cell. `above_norm`: `task_wte` is over 3 times `norm_wte`.
+- `task_wte`: `wte` over the task's phases in the window. `phase_norm_wte`: the median `wte` of the tasks of its kind and
+  size that ran this phase, null under 5 such tasks. `phase_above_norm`: `wte` is over 3 times it. `norm_wte`: the sum
+  of `phase_norm_wte` over the phases the task ran (null when any is null), so a task that ran qa is weighed against
+  peers' qa. `above_norm`: `task_wte` is over 3 times `norm_wte`.
 
 Blind spot: `starting-task` stays in force through the build, so the skill alone cannot split `claim` from `implement`;
 the first edit does, and a task worked by hand with no skill loaded is still placed by it. A task with no labels has
@@ -378,7 +385,7 @@ Both answer 501 with no telemetry stream, 503 when it cannot be read, and 400 fo
 
 ## Save GitHub webhook deliveries
 
-A `[github]` table (`secret_env`, `organisation` or `repositories`, `database_url`, `max_body_bytes`, `host`, `port`; see
+A `[github]` table (`secret_env`, `organisation` or `repositories`, `database_url`, `max_body_bytes`, `host`, `port`, `reconcile_token_env`; see
 [Serving](serving.md)) makes `serve` run a listener in the `contexts` child for a GitHub App's webhook. Without the
 table none runs. Point the App's webhook URL at the listener, set its secret in the environment variable `secret_env`
 names, and the listener answers each POST in this order:
@@ -410,7 +417,8 @@ posts one CloudEvent per pull request fact to `/api/machine-events` (`STARPULSE_
 absent or fails to start, and the inbox keeps every delivery.
 
 1. Each consumer keeps its own state per delivery in `github_inbox_state`: `pending`, `done`, `skipped` or `dead`.
-2. `pull_request` opened, reopened, closed and merged give `PR_OPENED`, `PR_REOPENED`, `PR_CLOSED` and `PR_MERGED`;
+2. `pull_request` opened, reopened, closed and merged give `PR_OPENED`, `PR_REOPENED`, `PR_CLOSED` and `PR_MERGED`, and
+   an edit that changed the body gives `PR_EDITED`, which asks the store to read that pull request from GitHub;
    `check_suite` completed gives `CHECKS_PASSED` or `CHECKS_FAILED`, and a failed `check_run` gives `CHECKS_FAILED`. The
    event id is a SHA-256 over repository, number, event type and the head or merge SHA (the check suite id for
    `CHECKS_*`), so a repeated fact collapses on the ingest. The subject is the unarchived task whose references hold
@@ -418,12 +426,52 @@ absent or fails to start, and the inbox keeps every delivery.
 3. A failed attempt waits `min(2**attempts, 300)` seconds. A 400, 403 or 413 answer is `dead` at once, and so is the
    tenth failure. A pull request with no linked task is retried the same way, then `skipped` as `no-task`; a bot's
    pull request is skipped as `no-task` at once.
-4. Done and skipped rows are purged after 7 days, with the inbox rows no consumer still needs.
-5. `starpulse github requeue|dismiss <delivery_id> [--config]` settles a dead row: `requeue` makes it pending with its
+4. The `pr-checks` rollup reads GitHub once per head: its open pull requests and posted checks, kept in memory and
+   updated by each later delivery, so a restart costs one read per head. A check whose payload names only unlinked pull
+   requests reads nothing. A rate-limited read (403 or 429 with a reset time) leaves the delivery `pending` until the
+   reset with no attempt spent, and no read is made before then.
+5. Done and skipped rows are purged after 7 days, with the inbox rows no consumer still needs.
+6. `starpulse github requeue|dismiss <delivery_id> [--config]` settles a dead row: `requeue` makes it pending with its
    attempts spent anew, `dismiss` skips it and keeps its last error. A row that is not dead exits 1.
 
 The listener's `/metrics` also serves `starpulse_github_dead_rows{consumer}`, the dead rows each consumer holds until
 `requeue` or `dismiss` clears them.
+
+### Reconcile the inbox against GitHub
+
+With `reconcile_token_env` in `[github]` (the environment variable that holds a token able to read the accepted
+repositories' pull requests and checks), the sweeper's `github` kind runs
+a reconcile pass on each sweeper pass (`[sweeper] interval_s`); no thread or timer of the `github-events` context
+runs it. A pass samples each list it reads and counts each redelivery asked and each row inserted as a correction
+(`starpulse_sweeper_samples_total` and `starpulse_sweeper_corrections_total` with `kind="github"`). GitHub accepts only
+the App's own JWT on `/app/...`, so the delivery reads and redeliveries sign each request with a nine-minute RS256 JWT
+minted from `GH_APP_ID` and the key file at `GH_APP_PRIVATE_KEY_PATH`, never with `reconcile_token_env`'s token. With
+either unset the delivery half fails each pass, logged and naming the variable; the pull request half still runs.
+
+1. It pages the App's deliveries back from a stored cursor (the newest `delivered_at` it has handled; the first pass
+   reaches back 7 days) and asks GitHub once, with `POST /app/hook/deliveries/{id}/attempts`, to redeliver each GUID
+   with no `github_inbox` row, whatever GitHub shows as its status. A GUID with a redelivery among its attempts is not
+   asked for again. The listener's dedup makes a repeat harmless.
+2. For each accepted repository (the listed ones, and the organisation's unarchived ones) it lists pull requests newest
+   updated first until it reaches its `pull-rows:<repository>` cursor. Each closed pull request becomes a `pull_request`
+   row with `delivery_id` `reconcile:<repository>:<number>:<sha>:closed` (the merge SHA when merged, else the head SHA), and
+   each finished check suite on the head of a pull request in the list a `check_suite` row with `delivery_id`
+   `reconcile:<repository>:<number>:<head sha>:<suite id>`. Both have `source = 'reconcile'`, are shaped like the webhook body
+   that would have reported them, and travel the consumer path above. A `pull_request` row carries the listed pull request
+   whole, with `merged` and a top-level `number` added, so the relay reads its closed time and refs as from a webhook.
+   A row for a fact a delivery already reported
+   collapses on the event id.
+3. Every list is read with the ETag it last returned (`If-None-Match`): a 304 spends no rate limit and leaves the
+   cursor and the inbox as they were. No call is GraphQL. Pull requests are handled oldest first and the
+   `pull-rows:<repository>` cursor is saved after each one a newer one follows (a tie is never split), so a pass that failed resumes after the last pull request it
+   handled; a cursor's ETag is saved only after everything its list covers was handled. The inbox is SQLite in WAL mode
+   with a 30-second busy timeout, so the pass, the listener and the inbox's readers wait on each other's locks rather
+   than failing.
+
+The pass keeps `starpulse_github_redeliveries_total`, `starpulse_github_reconcile_rows_total{kind}` and
+`starpulse_github_reconcile_cursor_lag_seconds{cursor}` (`deliveries`, `pull-rows:<repository>`) in its process, as
+`Reconciled.exposition()`; the sweeper worker keeps them beside its own counts for `/metrics`. The alert pages on
+inserted rows only, since a redelivery is the recovery path working.
 
 ## Report runs from any scheduler
 
@@ -500,7 +548,7 @@ reads, and posts it to `--url` (else `STARPULSE_WRITE_URL`, `STARPULSE_URL`) wit
 `STARPULSE_PRODUCER_<SOURCE>_TOKEN`. It exits 0 on a 201 and 1 with the ingest's answer otherwise.
 
 A producer that reports a run system's Step events may set `adapter` to that system's run Adapter type
-(`adapter = "dagu"`): its events then carry the system's own status label in `data.status`, and the ingest reads it
+(`adapter = "github-actions"`): its events then carry the system's own status label in `data.status`, and the ingest reads it
 through the adapter's `status_of`, so a hook posts the label as it is and an unknown label is a 400.
 
 `application/cloudevents-batch+json` takes a JSON array of up to 200 such events. The attributes map to a
@@ -528,16 +576,17 @@ a `machine:events` row like any other: it moves the task on the page and in the 
 | 413 | `data` over 8 KiB, or a body over the ingest's size limit |
 | 503 | the event log did not take an entry; every entry has a stable id, so post the batch again |
 
-### Over gRPC
+### Over Connect
 
-The same ingest is served on the same port as gRPC: service `starpulse.v1.CloudEventsIngest`, methods `Publish`
+The same ingest is served on the same port over Connect (gRPC-compatible on a direct HTTP/2 connection; a proxy that
+speaks HTTP/1.1 to the server carries only the Connect protocol, so a client behind one uses Connect): service `starpulse.v1.CloudEventsIngest`, methods `Publish`
 (one `io.cloudevents.v1.CloudEvent`) and `PublishBatch` (a `CloudEventBatch` of up to 200), both answering
 `google.protobuf.Empty`. The token is the `authorization` metadata, `Bearer <token>`. Attributes are the table above's,
 carried in the event's `attributes` map (`time` as `ce_timestamp` or an RFC 3339 `ce_string`); `data` is JSON text or
-bytes, never a protobuf `Any`. The checks and the all-or-nothing batch are the HTTP ingest's; `grpc-status` arrives in
-the HTTP/2 trailers. A refusal's HTTP status maps to a code:
+bytes, never a protobuf `Any`. The checks and the all-or-nothing batch are the HTTP ingest's; on the gRPC wire
+`grpc-status` arrives in the HTTP/2 trailers. A refusal's HTTP status maps to a code:
 
-| HTTP | gRPC |
+| HTTP | Connect and gRPC |
 |---|---|
 | 400 | `INVALID_ARGUMENT` |
 | 401 | `UNAUTHENTICATED` |
@@ -600,17 +649,20 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
   shows as the instance's error and keeps the last reading; no timer is dropped silently.
 - **Events.** The allowlist is read once at start. After that a `gdbus monitor` per manager (system, and user when an
   entry has `user/`) streams the D-Bus `PropertiesChanged` signals of the units, and a change to a timer or its service
-  re-reads only that timer, a third of a second after the signals settle. The whole allowlist is listed every 10 minutes
-  as a backstop, and every 30 s while a monitor is down or the last read failed. Idle, the adapter starts no `systemctl`
-  between those. Each `gdbus` child ends with the stream that reads it (terminated when the stream closes, SIGTERM from the
-  kernel when its parent thread dies), so a restart leaves none behind. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
+  re-reads only that timer, a third of a second after the signals settle. A monitor that exits is started again and its
+  timers are read again; a `runs:resync` entry naming the instance reads them all again. Idle, the adapter starts no
+  `systemctl`. systemd sends those signals only while a client holds `Manager.Subscribe` and `gdbus monitor` never
+  subscribes (the system manager has other subscribers, the user manager none), so each monitor also holds that
+  subscription on a socket of its own for as long as it runs. Each `gdbus` child ends with the stream that reads it
+  (terminated when the stream closes, SIGTERM from the kernel when its parent thread dies), so a restart leaves none
+  behind. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
   so the adapter offers no start. `systemctl` and `gdbus` (`libglib2.0-bin`) must run on the host that serves StarPulse.
 
 ## Temporal workflows
 
 `type = "temporal"` reads the Temporal server that runs the engine's own workflows and shows them beside the scheduler's
-DAGs. `url` is the Temporal UI server (`http://host:8233`); its HTTP API lists the default namespace. Each of the three
-workflow types `task_lifecycle`, `task_phases` and `AlertInvestigationWorkflow` is a workflow, shown even with no run.
+DAGs. `url` is the Temporal UI server (`http://host:8233`); its HTTP API lists the default namespace. Each of the four
+workflow types `task_lifecycle`, `task_phases`, `AlertInvestigationWorkflow` and `CommandWorkflow` is a workflow, shown even with no run.
 
 ```toml
 [[runs]]
@@ -621,15 +673,95 @@ url = "http://temporal.internal:8233"
 
 - **Active runs.** Every running execution is an active run with the Board task its workflow id names (`TASK-N`; an
   alert has none), the activity it is on, that activity's attempt and the message its last attempt failed with.
-- **Recent runs.** The last day's closed executions, the newest 40 closed and the newest 40 failed, each with its Temporal
+- **Recent runs.** The last day's closed executions, the newest 100 closed and the newest 100 failed, each with its Temporal
   status. A failed one carries the activity it failed on, that activity's attempt and the failure message, read from its
   history once, since a closed execution never changes.
+- **Graph.** Each workflow draws the steps of its oldest running execution, else of its newest closed one, from that
+  execution's history (events up to 500). The mapping is below. A history the adapter cannot draw (the server will not
+  give it, a second page of events, more than 60 nodes, an event it cannot read) leaves the workflow with no graph, and the
+  page lists its runs as before.
 - **Polling.** The server pushes no change, so the adapter lists it every 15 s: three listings, and one describe for each
-  running execution. A server it cannot reach shows as the instance's error, with the last reading kept.
+  running execution, plus one history read for each workflow's drawn execution (a closed one is read once). A server it cannot reach shows as the instance's error, with the last reading kept.
 - **Adapter worker.** `serve` starts it as a child for each instance that names this adapter (`starpulse worker
   temporal --config <this file>`). There is no Run now: these workflows start from the Board's lifecycle.
 
-## Show pull requests and Copilot work
+### Temporal graph mapping
+
+| Temporal | Drawn as |
+| --- | --- |
+| Activity (`ACTIVITY_TASK_SCHEDULED`) | A node named for the activity type; a `run_command_step` activity is named for the `id` of the command step it runs. A name that repeats becomes `name #2`. |
+| Child workflow (`START_CHILD_WORKFLOW_EXECUTION_INITIATED`) | A node named for the child's workflow type. |
+| Node state | Scheduled only is `queued`; started is `running`; completed is `succeeded`; failed or timed out (an activity, a child, or a child that failed to start) is `failed`; canceled or terminated is `aborted`. |
+| Retry | Not a node: the attempt number is the node's `raw` (`attempt 3`) once above 1. |
+| Order | A node waits on the nodes that had closed when it was scheduled, less the ones another waited-on node already follows. Nodes scheduled together, such as a fan-out, are parallel. |
+| Timer, signal, marker, search-attribute update, workflow task | Not nodes. A wait or signal only separates nodes in time. |
+
+What does not map cleanly:
+
+- An edge is the order the workflow scheduled work in, not a dependency it declared. A step the engine held back for a
+  concurrency limit looks like it waits on the step that freed the slot, and a fan-out of unrelated steps scheduled
+  one after another looks like a chain.
+- Only work that has been scheduled is drawn: a step still to come, or skipped because its dependency failed, is absent.
+- A loop (`AlertInvestigationWorkflow` repeating `dispatch_step`) draws one node per pass as a chain; a long-running
+  workflow that waits on signals (`task_lifecycle`, `task_phases`) draws what has run so far, and past 60 nodes or one
+  page of events is listed, not drawn. Such a workflow is always a finite DAG of its history, so none needs another view.
+- The active run's `steps` (the pending activities) keep their activity names, so a `run_command_step` node takes its
+  state from the graph, not from the run.
+
+## Woodpecker pipelines
+
+`type = "woodpecker"` reads a Woodpecker CI server and shows each repository's pipelines beside the scheduler's DAGs.
+`url` is the server and the repository, `http://host:8004/owner/name`. Each pipeline event (`pull_request`, `push`,
+`cron`, `manual`, and any other the server reports) is a workflow named for the event, shown even with no run.
+
+```toml
+[[runs]]
+name = "woodpecker"
+type = "woodpecker"
+url = "http://ci.internal:8004/acme/app"
+```
+
+- **Token.** The adapter reads `WOODPECKER_TOKEN` from its environment and sends it only as an `Authorization: Bearer`
+  header on its own requests. A page receives the run records, never the token.
+- **Active runs.** A running or pending pipeline is an active run, with the step it is on, the task its branch or title
+  names (`TASK-N`), its pull request, its commit and a link to its page on the server.
+- **Recent runs.** The newest 60 pipelines of the repository, closed ones of any status. A failed one carries the step it
+  failed on and its exit code, read once, since a closed pipeline never changes. A pipeline the server never ran (status
+  `error`, no `workflows`) is a failed run with no steps and no failure line.
+- **Graph.** Each event's workflow draws the steps of its oldest running pipeline, else of its newest closed one. The
+  mapping is below. A detail or config the adapter cannot read or draw leaves the workflow with no graph, and the page
+  lists its pipelines as before.
+- **Polling.** The server pushes no change, so the adapter lists it every 15 s: one listing, and one detail read for each
+  running pipeline and for the drawn one (a closed pipeline's detail is read once; a pipeline with more than one workflow
+  also reads its config once, for the workflows' `depends_on`). A server it cannot reach shows as the instance's error, with the last reading kept, and the other
+  instances keep drawing.
+- **Adapter worker.** `serve` starts it as a child for each instance that names this adapter (`starpulse worker
+  woodpecker --config <this file>`). It is read-only: there is no Run now, and nothing triggers, cancels or retries a
+  pipeline.
+
+### Woodpecker graph mapping
+
+| Woodpecker | Drawn as |
+| --- | --- |
+| Workflow | A node named for the workflow, in the workflow's state. It waits on the workflows its file's top-level `depends_on` names (read from `/pipelines/N/config`). |
+| Step | A node named `workflow / step`, so the page folds it under its workflow. The failure line and a running pipeline's `steps` use the same names. |
+| Step `depends_on` | Edges to the named steps of the same workflow. |
+| Step with no `depends_on` | Waits on the workflow's clone step (or the workflow, with none) when a sibling declares `depends_on`; otherwise the steps chain in the order they run after the workflow. |
+| Clone step | A step that waits on the workflow; later steps wait on it. |
+| Step state | `success` is `succeeded`; `failure` and `error` are `failed`; `pending` and `blocked` are `queued`; `killed`, `canceled` and `declined` are `aborted`; `skipped` is `skipped`. |
+| Service (`type: service`) | Not drawn: a background container is no step of the order. |
+
+What does not map cleanly:
+
+- A workflow whose steps all declare `depends_on: []` runs in parallel but draws as a chain, because the server reports
+  an empty list the same way as none.
+- A step skipped by a `when` rule draws as `skipped`, and a workflow the file's `when` left out of the pipeline is absent;
+  the server reports neither the rule nor the branch.
+- A matrix workflow reports one workflow per cell; the graph draws each as its own workflow, and a `depends_on` on the
+  file applies to the cell names the server reports, which the config read cannot match when the names differ.
+- A pipeline with `errors` and no workflows has no graph.
+
+## Show pull requests and their checks
 
 `python -m starpulse.cli.github_adapter` reads a repository's 30 most recently updated pull requests every `--interval`
 seconds (300 by default) and appends their events to the event log, beside the server:
@@ -640,12 +772,6 @@ uvx --from starpulse python -m starpulse.cli.github_adapter --repo trantor-org/s
 
 - **`github-pull-request` machine.** `PR_OPENED`, then `CHECKS_PASSED` or `CHECKS_FAILED` once every check run on the
   head commit has completed, then `PR_MERGED` or `PR_CLOSED`.
-- **`copilot` machine.** `WORK_STARTED` and `WORK_FINISHED` from the `copilot_work_started` and `copilot_work_finished`
-  timeline events (the actor is the person who asked), `RUN_STARTED` and `RUN_FINISHED` from the `dynamic` workflow run
-  "Running Copilot cloud agent", `REVIEW_RUN_STARTED` and `REVIEW_RUN_FINISHED` from "Running Copilot Code Review", and
-  `REVIEW_SUBMITTED` from a review by `copilot-pull-request-reviewer[bot]`. GitHub exposes no per-tool trajectory for
-  these sessions, so Copilot gives spans and outcomes, not trajectories. GitHub documents neither timeline event name;
-  the adapter's tests pin them on recorded responses.
 - **Keys.** An event is keyed by the task the pull request's branch names (`--key`, `--branch` and `--key-format`, as
   for the Claude Code receiver), else by the pull request as a run (`owner/name#7`).
 - **Credentials** are `GITHUB_TOKEN` or `GH_TOKEN` (read access to pull requests, checks and Actions), and

@@ -4,8 +4,6 @@ The order is the ADR's: a body over the cap, then the signature over the raw bod
 then the event allowlist, then the repository allowlist. Saving and the 202/503 that follows it belong to the listener.
 """
 
-from __future__ import annotations
-
 import hashlib
 import hmac
 import json
@@ -21,7 +19,7 @@ EVENTS = frozenset(
     {
         "pull_request", "pull_request_review", "pull_request_review_comment", "push", "merge_group", "check_run",
         "check_suite", "workflow_job", "repository_dispatch", "create", "delete", "workflow_run", "merge_queue_entry",
-        "release", "deploy_key", "deployment", "deployment_review", "deployment_status",
+        "release", "deploy_key", "deployment", "deployment_review", "deployment_status", "status",
     }
 )  # fmt: skip
 #: The event label of a request whose signature did not match: its header is not trusted.

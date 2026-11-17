@@ -10,9 +10,9 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
     const board = snap.flows[0], flows: Snapshot["flows"] = [];
     // the live Board's DAGs: long names writing the paths beside crowded states, three folded on one path, and ten free in the hangar
     if (dags) {
-      const writes: Record<string, string[]> = { waiting_ready: ["dagu/board-dependency-reconciliation"], ready_in_progress: ["dagu/board-scheduler"], done_completed: ["dagu/backlog-sweep"], review_done: ["dagu/main-follow", "dagu/apply-merged", "dagu/pr-reaper"] };
-      const free = { Ops: ["a", "b", "c", "d", "e", "f"].map((x) => `dagu/ops-${x}`), Docs: ["a", "b", "c", "d"].map((x) => `dagu/docs-${x}`) }, tied = Object.values(writes).flat();
-      board.machine.writers = Object.fromEntries(Object.entries(writes).map(([e, ns]) => [e, ns.map((actor) => ({ actor, trigger: "dagu" }))]));
+      const writes: Record<string, string[]> = { waiting_ready: ["temporal/board-dependency-reconciliation"], ready_in_progress: ["temporal/board-scheduler"], done_completed: ["temporal/backlog-sweep"], review_done: ["temporal/main-follow", "temporal/apply-merged", "temporal/pr-reaper"] };
+      const free = { Ops: ["a", "b", "c", "d", "e", "f"].map((x) => `temporal/ops-${x}`), Docs: ["a", "b", "c", "d"].map((x) => `temporal/docs-${x}`) }, tied = Object.values(writes).flat();
+      board.machine.writers = Object.fromEntries(Object.entries(writes).map(([e, ns]) => [e, ns.map((actor) => ({ actor, trigger: "temporal" }))]));
       snap.dags = [...tied, ...Object.values(free).flat()].map((d) => dag(d, [["run", []]]));
       snap.domains = [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }, ...Object.entries(free).map(([name, ds]) => ({ name, dags: ds.map((d) => ({ name: d, runSafe: false })) }))];
     }

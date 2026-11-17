@@ -5,8 +5,6 @@ is proven with `PRAGMA integrity_check` before it counts, and only the newest `-
 A store that is not SQLite exits 2: its own backup tool owns that. The summary is one JSON line on stdout.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sqlite3
@@ -14,6 +12,7 @@ import sys
 import time
 from contextlib import closing
 from pathlib import Path
+from urllib.parse import quote
 
 from starpulse.runtime.config import discover, load
 from starpulse.event_log.opening import database_url
@@ -35,7 +34,7 @@ def snapshot(db: Path, out: Path) -> None:
     partial = out.with_name(f".{out.name}.partial")
     partial.unlink(missing_ok=True)  # VACUUM INTO refuses to overwrite
     try:
-        source = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=BUSY_TIMEOUT_S)
+        source = sqlite3.connect(f"file:{quote(str(db))}?mode=ro", uri=True, timeout=BUSY_TIMEOUT_S)
         try:
             source.execute("VACUUM INTO ?", (str(partial),))
         finally:

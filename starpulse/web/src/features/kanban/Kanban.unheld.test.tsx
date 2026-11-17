@@ -85,11 +85,11 @@ describe("the In Progress lane's unheld toggle", () => {
 });
 
 describe("the In Progress card's footer chip", () => {
-  it("strikes an expired session and ages it from the release", () => {
+  it("strikes an expired session and counts its idle time from the claim's expiry", () => {
     mount(lane);
 
     expect(host.querySelector(".card[data-id=TASK-2] .who s")?.textContent).toBe("deep");
-    expect(chip("TASK-2")).toBe("deep· expired 45m");
+    expect(chip("TASK-2")).toBe("deep· idle 10m");
   });
 
   it("appends the minutes left to a held card under ten minutes from expiry", () => {
@@ -107,7 +107,7 @@ describe("the In Progress card's footer chip", () => {
 
     expect(chip("TASK-6")).toBe("c");
     expect(chip("TASK-7")).toBe("a");
-    expect(host.textContent).not.toMatch(/expired|left|released/);
+    expect(host.textContent).not.toMatch(/idle|left|released/);
   });
 
   it("draws an unheld card with no release record, and a card outside the working lane, as before", () => {
@@ -115,5 +115,22 @@ describe("the In Progress card's footer chip", () => {
 
     expect(chip("TASK-3")).toBe("unassigned");
     expect(chip("TASK-5")).toBe("unassigned");
+  });
+});
+
+describe("an idle holder's released card", () => {
+  const idle = (seconds: number) => ({ at: NOW - seconds, last_renewal: NOW - seconds, session: "", ttl: 0, idle: true });
+
+  it("counts up from under a minute: <1m, 1m, 2m", () => {
+    mount([card("TASK-1", "in_progress", "", { release: idle(20) })]);
+    expect(chip("TASK-1")).toBe("idle <1m");
+    act(() => root.unmount());
+    root = createRoot(host);
+    mount([card("TASK-1", "in_progress", "", { release: idle(65) })]);
+    expect(chip("TASK-1")).toBe("idle 1m");
+    act(() => root.unmount());
+    root = createRoot(host);
+    mount([card("TASK-1", "in_progress", "", { release: idle(130) })]);
+    expect(chip("TASK-1")).toBe("idle 2m");
   });
 });

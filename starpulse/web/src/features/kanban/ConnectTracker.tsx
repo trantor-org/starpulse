@@ -15,31 +15,7 @@ export const TRACKERS: Tracker[] = [
       { text: "To keep it somewhere else, or give it a machine file that decides which moves are offered:", cmd: "starpulse connect native --path .starpulse/board --machine board.yaml" },
     ],
   },
-  {
-    name: "Backlog.md",
-    about: "Draws a Backlog.md project's tasks and writes each move with its backlog CLI.",
-    steps: [
-      { text: "Install the Backlog.md CLI, which writes each move:", cmd: "npm i -g backlog.md" },
-      { text: "Connect the project's backlog/ directory:", cmd: "starpulse connect backlog --path backlog", out: "✓ Read 36 tasks in 5 lanes from backlog/ · wrote [board] to starpulse.toml" },
-      { text: "Restart the server to draw it:", cmd: "starpulse serve" },
-    ],
-  },
-  {
-    name: "Jira", badge: "read-only",
-    about: "Imports a Jira project's workflow as the Board machine and reads its issues. Moves are made in Jira.",
-    steps: [
-      { text: "Create an API token in your Atlassian account settings, then export it:", cmd: "export JIRA_TOKEN=<your API token>" },
-      {
-        text: "Connect the project. It checks the site and the token, imports the workflow and reads the issues once:",
-        cmd: 'starpulse connect jira --url https://<your-site>.atlassian.net --project PAY --workflow "Payments Software Workflow" --user <your Atlassian email>',
-        out: "✓ Imported Payments Software Workflow (7 states) · read 42 issues from PAY · wrote [board] to starpulse.toml",
-      },
-      { text: "Restart the server to draw it:", cmd: "starpulse serve" },
-    ],
-  },
 ];
-
-const RUN = " run: ";
 
 /** A command in a block: `$`, the command wrapped, and a Copy button that puts exactly the command on the clipboard. */
 function CmdBlock({ cmd }: { cmd: string }) {
@@ -60,18 +36,7 @@ function CmdBlock({ cmd }: { cmd: string }) {
   );
 }
 
-/** The server's hint ends `… run: <command>`: the prose, then the command to draw as a block. */
-function Found({ hint }: { hint: string }) {
-  const at = hint.lastIndexOf(RUN);
-  return (
-    <div className="found" role="status">
-      {at < 0 ? hint : hint.slice(0, at + RUN.length - 1)}
-      {at >= 0 && <CmdBlock cmd={hint.slice(at + RUN.length)} />}
-    </div>
-  );
-}
-
-export function TrackerModal({ hint, close }: { hint?: string | null; close: () => void }) {
+export function TrackerModal({ close }: { close: () => void }) {
   const [on, setOn] = useState<ReadonlySet<string>>(new Set());
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -86,7 +51,6 @@ export function TrackerModal({ hint, close }: { hint?: string | null; close: () 
       <div className="modal tk" role="dialog" aria-label="Connect a tracker" tabIndex={-1} ref={dialog}>
         <div className="tkhead"><h2>Connect a tracker</h2><button className="x" aria-label="Close" onClick={close}>✕</button></div>
         <p className="k">StarPulse draws its own Markdown board until you connect another. <code>starpulse connect</code> checks that the tracker answers, then writes the board settings into <code>starpulse.toml</code> for you; <code>starpulse connect --help</code> lists every option.</p>
-        {hint && <Found hint={hint} />}
         <div className="tklist">
           {TRACKERS.map((t) => (
             <section key={t.name} className={`tk${on.has(t.name) ? " on" : ""}`}>
@@ -115,16 +79,16 @@ export function TrackerModal({ hint, close }: { hint?: string | null; close: () 
 }
 
 /** The Admin view's Tracker card: which tracker the board is drawn from, and the setup steps for connecting another. */
-export function TrackerCard({ hint }: { hint?: string | null }) {
+export function TrackerCard() {
   const [open, setOpen] = useState(false);
   return (
     <section className="card">
       <h2>Tracker <span className="c">where the board's tasks come from</span></h2>
       <div className="row">
-        <div><div className="lb">Board source</div><div className="hint">{hint ? "A tracker was found beside this board" : "StarPulse's own Markdown board until you connect another"}</div></div>
+        <div><div className="lb">Board source</div><div className="hint">StarPulse's own Markdown board until you connect another</div></div>
         <div><button type="button" className="btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Connect a tracker</button></div>
       </div>
-      {open && <TrackerModal hint={hint} close={() => setOpen(false)} />}
+      {open && <TrackerModal close={() => setOpen(false)} />}
     </section>
   );
 }

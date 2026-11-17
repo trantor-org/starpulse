@@ -10,7 +10,7 @@ import { MoveStore } from "./move";
 import { StartStore } from "./start";
 
 const NOW = Date.now() / 1000;
-const run = (status: string) => ({ url: "https://dagu/runs/1", status, startedAt: "2026-10-29T17:00:00Z" });
+const run = (status: string) => ({ url: "https://temporal/runs/1", status, startedAt: "2026-10-29T17:00:00Z" });
 const card = (id: string, extra: Partial<KanbanTask> = {}): KanbanTask => ({
   id, title: id, lane: "ready", milestone: "", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
   live: { machine: "lifecycle", state: "ready", at: NOW - 600 }, ...extra,

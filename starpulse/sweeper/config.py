@@ -1,13 +1,11 @@
 """The `[sweeper]` table of the StarPulse config: the pass interval and the kinds and housekeeping declared as commands."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 #: The kind the sweeper itself provides; a declared kind may not take its name.
-BUILT_IN = ("readers",)
+BUILT_IN = ("readers", "claims", "waiting")
 
 
 class SweeperError(ValueError):

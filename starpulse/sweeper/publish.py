@@ -1,11 +1,10 @@
 """The sweeper's metrics across the event log: the worker keeps its exposition, the Page API relays it on `/metrics`."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable
 
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.kept_text import kept_text
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +21,4 @@ def publish_metrics(log: EventLog, text: str) -> None:
 
 def metrics_of(log: EventLog) -> Callable[[], str]:
     """The worker's metrics text as last kept; empty before it kept any or when the log cannot be read."""
-
-    def read() -> str:
-        try:
-            _, text = log.state(METRICS)
-        except Exception:
-            return ""
-        return text if isinstance(text, str) else ""
-
-    return read
+    return kept_text(log, METRICS)

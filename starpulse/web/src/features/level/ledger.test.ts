@@ -15,14 +15,14 @@ const snap = (): Pick<Snapshot, "flows" | "cues"> => ({
         { source: "ready", target: "in_progress", event: "CLAIM" }, { source: "in_progress", target: "review", event: "REVIEW" },
         { source: "review", target: "done", event: "MERGED" }, { source: "in_progress", target: "in_progress", event: "STAY" },
       ],
-      writers: { CLAIM: [{ actor: "dagu/scheduler", trigger: "dagu" }, { actor: "operator", trigger: "ui" }], MERGED: [{ actor: "dagu/main-follow", trigger: "bin/board_reconcile_merged.py" }], STAY: [{ actor: "dagu/stayer", trigger: "dagu" }] },
-      dagActors: ["dagu/scheduler", "dagu/main-follow", "dagu/stayer"],
+      writers: { CLAIM: [{ actor: "temporal/scheduler", trigger: "temporal" }, { actor: "operator", trigger: "ui" }], MERGED: [{ actor: "temporal/main-follow", trigger: "bin/board_reconcile_merged.py" }], STAY: [{ actor: "temporal/stayer", trigger: "temporal" }] },
+      dagActors: ["temporal/scheduler", "temporal/main-follow", "temporal/stayer"],
     },
   }],
   cues: [
-    { dag: "dagu/apply-on-merge", event: "MERGED", state: "done", on: "push to main", resolves: "forced" },
-    { dag: "dagu/healthcheck", event: "MERGED", state: "done", on: "push to main", resolves: "next" },
-    { dag: "dagu/notifier", event: "CLAIM", state: "in_progress", on: "each claim", resolves: "next" },
+    { dag: "temporal/apply-on-merge", event: "MERGED", state: "done", on: "push to main", resolves: "forced" },
+    { dag: "temporal/healthcheck", event: "MERGED", state: "done", on: "push to main", resolves: "next" },
+    { dag: "temporal/notifier", event: "CLAIM", state: "in_progress", on: "each claim", resolves: "next" },
   ],
 });
 
@@ -31,7 +31,7 @@ describe("the DAGs tied to an event", () => {
     const s = snap();
     s.cues![0] = { ...s.cues![0], grace: 120 };
 
-    expect(tiesOf(s, "MERGED").map((t) => [t.dag, t.grace])).toEqual([["dagu/main-follow", null], ["dagu/apply-on-merge", 120], ["dagu/healthcheck", null]]);
+    expect(tiesOf(s, "MERGED").map((t) => [t.dag, t.grace])).toEqual([["temporal/main-follow", null], ["temporal/apply-on-merge", 120], ["temporal/healthcheck", null]]);
   });
 });
 
@@ -40,20 +40,20 @@ describe("a Board transition's Ledger level", () => {
     const level = ledgerLevel(snap(), "MERGED")!;
 
     expect(level).toEqual({
-      kind: "fold", event: "MERGED", path: ["review", "done"], dags: ["dagu/main-follow", "dagu/apply-on-merge", "dagu/healthcheck"],
+      kind: "fold", event: "MERGED", path: ["review", "done"], dags: ["temporal/main-follow", "temporal/apply-on-merge", "temporal/healthcheck"],
       crit: [
-        "dagu/main-follow: writes MERGED (Review → Done)",
-        "dagu/apply-on-merge: runs on push to main, beside MERGED (Review → Done)",
-        "dagu/healthcheck: runs on push to main, beside MERGED (Review → Done)",
+        "temporal/main-follow: writes MERGED (Review → Done)",
+        "temporal/apply-on-merge: runs on push to main, beside MERGED (Review → Done)",
+        "temporal/healthcheck: runs on push to main, beside MERGED (Review → Done)",
       ],
     });
-    expect(pathKey([...BOARD, level])).toBe("board/dagu/main-follow+dagu/apply-on-merge+dagu/healthcheck");
+    expect(pathKey([...BOARD, level])).toBe("board/temporal/main-follow+temporal/apply-on-merge+temporal/healthcheck");
   });
 
   it("opens for every Board transition a DAG writes or is cued by, not only MERGED", () => {
     const level = ledgerLevel(snap(), "CLAIM")!;
 
-    expect(level).toMatchObject({ kind: "fold", event: "CLAIM", path: ["ready", "in_progress"], dags: ["dagu/scheduler", "dagu/notifier"] });
+    expect(level).toMatchObject({ kind: "fold", event: "CLAIM", path: ["ready", "in_progress"], dags: ["temporal/scheduler", "temporal/notifier"] });
     // an event no DAG writes or is cued by has no Ledger, and nor has one that leaves its state where it was
     expect(ledgerLevel(snap(), "REVIEW")).toBeNull();
     expect(ledgerLevel(snap(), "STAY")).toBeNull();
@@ -75,9 +75,9 @@ describe("a Ledger's frame", () => {
 
     expect([l.event, l.from, l.to]).toEqual(["MERGED", "review", "done"]);
     expect(l.ties).toEqual([
-      { dag: "dagu/main-follow", role: "writer", on: "bin/board_reconcile_merged.py", resolves: null, grace: null },
-      { dag: "dagu/apply-on-merge", role: "cue", on: "push to main", resolves: "forced", grace: null },
-      { dag: "dagu/healthcheck", role: "cue", on: "push to main", resolves: "next", grace: null },
+      { dag: "temporal/main-follow", role: "writer", on: "bin/board_reconcile_merged.py", resolves: null, grace: null },
+      { dag: "temporal/apply-on-merge", role: "cue", on: "push to main", resolves: "forced", grace: null },
+      { dag: "temporal/healthcheck", role: "cue", on: "push to main", resolves: "next", grace: null },
     ]);
   });
 
@@ -88,7 +88,7 @@ describe("a Ledger's frame", () => {
   });
 
   it("names the event a Board fold's path carries by the DAGs it holds, when the fold is entered from a Board path", () => {
-    const fold = { kind: "fold" as const, dags: ["dagu/main-follow", "dagu/healthcheck"], crit: [], path: ["review", "done"] as [string, string] };
+    const fold = { kind: "fold" as const, dags: ["temporal/main-follow", "temporal/healthcheck"], crit: [], path: ["review", "done"] as [string, string] };
 
     expect(ledgerOf(snap(), fold)!.event).toBe("MERGED");
     expect(ledgerOf(snap(), { ...fold, path: ["ready", "review"] })).toBeNull();
@@ -100,8 +100,8 @@ const iso = (sec: number) => new Date(sec * 1000).toISOString().replace(/\.\d+Z$
 const hm = (sec: number) => `t${sec % 1000}`;
 const run = (over: Partial<LedgerRun> = {}): LedgerRun => ({ runId: "r", status: "succeeded", startedAt: iso(1000), finishedAt: iso(1042), steps: {}, step: "", inferred: false, ambiguous: 0, ...over });
 const merge = (over: Partial<LedgerRow> = {}): LedgerRow => ({ key: "a1b2c3d4e5", at: 990, tasks: ["TASK-1"], sha: "a1b2c3d4e5", pr: { repo: "trantor", number: 7, url: "u" }, runs: {}, fails: {}, pinned: false, ...over });
-const writer: Tie = { dag: "dagu/main-follow", role: "writer", on: "push", resolves: null, grace: null };
-const cue: Tie = { dag: "dagu/apply-on-merge", role: "cue", on: "push", resolves: "forced", grace: null };
+const writer: Tie = { dag: "temporal/main-follow", role: "writer", on: "push", resolves: null, grace: null };
+const cue: Tie = { dag: "temporal/apply-on-merge", role: "cue", on: "push", resolves: "forced", grace: null };
 const ctx = (over: Partial<LineCtx> = {}): LineCtx => ({ event: "MERGED", now: 1100, hm, optional: new Set(), by: () => undefined, ...over });
 
 describe("a run's mark", () => {

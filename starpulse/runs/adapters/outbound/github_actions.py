@@ -7,8 +7,6 @@ offers the server for one configured instance. `start` dispatches a workflow tha
 workflows whose latest run changed or has not ended).
 """
 
-from __future__ import annotations
-
 import base64
 import os
 import posixpath

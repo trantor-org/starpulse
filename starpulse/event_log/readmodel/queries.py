@@ -4,8 +4,6 @@
 predicate the partial indexes carry, so the cost of a read follows the live board, not the whole History.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, String, and_, cast, column, exists, false, func, or_, select, true
@@ -49,6 +47,12 @@ def held_states() -> Select[Any]:
     return select(tasks.c.state).where(tasks.c.archived == false()).distinct()
 
 
+def held_done(done: str) -> Select[Any]:
+    """The ids of unarchived Done Tasks of any age, in id order."""
+    lane = func.lower(func.replace(tasks.c.state, " ", "_"))
+    return select(tasks.c.id).where(tasks.c.archived == false(), lane.in_(done_lanes(done))).order_by(tasks.c.id)
+
+
 def citing(url: str) -> Select[Any]:
     """The unarchived Tasks whose references hold the link `url`, with or without a trailing slash, in id order: a walk
     of the live index, bounded by the live board."""
@@ -57,34 +61,44 @@ def citing(url: str) -> Select[Any]:
     return select(tasks.c.id).where(tasks.c.archived == false(), cited).order_by(tasks.c.id)
 
 
-def milestone_done(done: str, since: float) -> Select[Any]:
-    """How many Done Tasks each milestone holds that `live` leaves out: unarchived and last changed before `since`."""
+def _cold(done: str, since: float) -> ColumnElement[bool]:
     lane = func.lower(func.replace(tasks.c.state, " ", "_"))
-    return (
-        select(tasks.c.milestone, func.count())
-        .where(
-            tasks.c.archived == false(),
-            lane.in_(done_lanes(done)),
-            tasks.c.updated_at < since,
-            tasks.c.milestone != "",
-        )
-        .group_by(tasks.c.milestone)
+    return and_(
+        tasks.c.archived == false(), lane.in_(done_lanes(done)), tasks.c.updated_at < since, tasks.c.milestone != ""
     )
 
 
-def snapshot(done: str, since: float) -> Select[Any]:
-    """The live Tasks (`live`), in id order."""
-    return select(*CARD).where(live(done, since)).order_by(tasks.c.id)
-
-
-def live_criteria(done: str, since: float) -> Select[Any]:
-    """The live Tasks' Acceptance Criteria, in task and number order."""
+def milestone_done(done: str, since: float) -> Select[Any]:
+    """How many Done Tasks each milestone holds that `live` leaves out: unarchived and last changed before `since`."""
     return (
+        select(tasks.c.milestone, func.count())
+        .where(_cold(done, since))
+        .group_by(tasks.c.milestone)
+        .order_by(tasks.c.milestone)
+    )
+
+
+def cold_done(done: str, since: float, only: str | None = None) -> Select[Any]:
+    """The Tasks `milestone_done` counts, each with its milestone; `only` limits them to one."""
+    query = select(tasks.c.id, tasks.c.milestone).where(_cold(done, since)).order_by(tasks.c.id)
+    return query if only is None else query.where(tasks.c.id == only)
+
+
+def snapshot(done: str, since: float, only: str | None = None) -> Select[Any]:
+    """The live Tasks (`live`), in id order; `only` limits them to one."""
+    query = select(*CARD).where(live(done, since)).order_by(tasks.c.id)
+    return query if only is None else query.where(tasks.c.id == only)
+
+
+def live_criteria(done: str, since: float, only: str | None = None) -> Select[Any]:
+    """The live Tasks' Acceptance Criteria, in task and number order; `only` limits them to one Task's."""
+    query = (
         select(criteria.c.task_id, criteria.c.kind, criteria.c.text, criteria.c.checked)
         .join(tasks, tasks.c.id == criteria.c.task_id)
         .where(live(done, since), criteria.c.kind == "ac")
         .order_by(criteria.c.task_id, criteria.c.n)
     )
+    return query if only is None else query.where(criteria.c.task_id == only)
 
 
 def with_field(field_column: str, value: object) -> Select[Any]:
@@ -92,8 +106,9 @@ def with_field(field_column: str, value: object) -> Select[Any]:
     return select(tasks.c.id).where(tasks.c.archived == false(), column(field_column) == value).order_by(tasks.c.id)
 
 
-def ready(state: str, done: str) -> Select[Any]:
-    """The ids of unarchived Tasks in `state` none of whose dependencies is outside `done_lanes(done)`.
+def ready(state: str, done: str, only: str | None = None) -> Select[Any]:
+    """The ids of unarchived Tasks in `state` none of whose dependencies is outside `done_lanes(done)`; with `only`,
+    just that Task's id when it is one.
 
     `state` is a stored status (`Ready`) and `done` a lane id (`done`), as `lane_id` makes one; a dependency with no
     row blocks too: it is a Task the board has not imported yet.
@@ -105,11 +120,10 @@ def ready(state: str, done: str) -> Select[Any]:
         .select_from(dependency.outerjoin(target, target.c.id == dependency.c.value))
         .where(or_(target.c.id.is_(None), func.lower(func.replace(target.c.state, " ", "_")).not_in(done_lanes(done))))
     )
-    return (
-        select(tasks.c.id)
-        .where(tasks.c.archived == false(), tasks.c.state == state, ~exists(blocked.correlate(tasks)))
-        .order_by(tasks.c.id)
+    ready_tasks = select(tasks.c.id).where(
+        tasks.c.archived == false(), tasks.c.state == state, ~exists(blocked.correlate(tasks))
     )
+    return (ready_tasks if only is None else ready_tasks.where(tasks.c.id == only)).order_by(tasks.c.id)
 
 
 def since(seq: int, limit: int) -> Select[Any]:
@@ -121,6 +135,11 @@ def archived(before: float | None, limit: int) -> Select[Any]:
     """The archived Tasks changed before `before` (None: any time), newest first: one range of the archive index."""
     query = select(*SUMMARY).where(tasks.c.archived == true()).order_by(tasks.c.updated_at.desc(), tasks.c.id)
     return (query if before is None else query.where(tasks.c.updated_at < before)).limit(limit)
+
+
+def archived_since(since: float) -> Select[Any]:
+    """How many Tasks were archived at or after `since`: one range of the archive index."""
+    return select(func.count()).where(tasks.c.archived == true(), tasks.c.updated_at >= since)
 
 
 def titled() -> Select[Any]:

@@ -1,18 +1,13 @@
-"""`starpulse connect native|backlog|jira`: check that a tracker answers, then write the `[board]` table for it.
+"""`starpulse connect native`: check that the board answers, then write the `[board]` table for it.
 
     starpulse connect native --path .starpulse/board --machine board.yaml
-    starpulse connect backlog --path backlog
-    JIRA_TOKEN=... starpulse connect jira --url https://acme.atlassian.net --project PAY --workflow "Payments Software Workflow"
 
-Each reads the tracker the way the server would (a Backlog.md or native board's task files, or a Jira site's workflow
-and project issues), and only then replaces the `[board]` table of the config (`--config`, default `starpulse.toml`)
-with the adapter's settings, keeping every other table and comment. It prints one line saying what it read and exits
-0; a tracker that does not answer, or a config it cannot rewrite, writes nothing, says why on stderr and exits 1.
-A Jira token is never an argument and never written: the config names the variable (`JIRA_TOKEN`) that holds it.
-Connecting `native` creates its board directory, empty, when it is absent, as serving does.
+It reads the native board's task files the way the server would, and only then replaces the `[board]` table of the
+config (`--config`, default `starpulse.toml`) with the adapter's settings, keeping every other table and comment. It
+prints one line saying what it read and exits 0; a board that does not answer, or a config it cannot rewrite, writes
+nothing, says why on stderr and exits 1. Connecting `native` creates its board directory, empty, when it is absent, as
+serving does.
 """
-
-from __future__ import annotations
 
 import argparse
 import json
@@ -24,17 +19,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.adapters import jira
-from starpulse.board.adapters import native
-from starpulse.board.adapters import upstream_backlog
-from starpulse.runtime.config import ConfigError, load
+from starpulse.board.adapters import native, native_scan
 from starpulse.contracts.adapters import BoardTask
+from starpulse.runtime.config import ConfigError, load
 
 __all__ = ["main"]
 
 DEFAULT_CONFIG = Path("starpulse.toml")
-#: The variable a Jira token is read from, and the one the written config names.
-TOKEN_ENV = "JIRA_TOKEN"
 _BOARD_HEADER = re.compile(r"\[board\][ \t]*(?:#.*)?\r?\n?")
 
 
@@ -49,38 +40,20 @@ def _count(number: int, noun: str) -> str:
 def _read_files(root: Path) -> str:
     """What a scan of the Markdown board in `root` finds: its task and lane counts."""
     tasks: list[BoardTask] = []
-    upstream_backlog.UpstreamBacklog(root, tasks.append).scan()
-    lanes = len(upstream_backlog.read_config(root).statuses)
+    native_scan.NativeScan(root, tasks.append).scan()
+    lanes = len(native_scan.read_config(root).statuses)
     return f"Read {_count(len(tasks), 'task')} in {_count(lanes, 'lane')}"
 
 
-def _board_files(settings: dict[str, Any], base: Path, *, create: bool) -> str:
-    """Check the Markdown board `settings` names, as the server builds it, and say what it holds."""
+def _board_files(settings: dict[str, Any], base: Path) -> str:
+    """Check the native board `settings` names, as the server builds it, and say what it holds."""
     path = str(settings["path"])
-    root = base / path
     try:
-        if create:
-            native.board(settings, base)
-        else:
-            if not root.is_dir():
-                raise ValueError(f"{root} is not a directory")
-            upstream_backlog.board(settings, base)
-        found = _read_files(root)
+        native.board(settings, base)
+        found = _read_files(base / path)
     except (OSError, ValueError) as error:
         raise ConnectError(str(error)) from error
     return f"{found} from {path.rstrip('/')}/"
-
-
-def _jira(settings: dict[str, Any]) -> str:
-    """Import the workflow and read the project's issues, as the server does; say how many of each."""
-    try:
-        project, _ = jira.open_project(settings)
-        tasks: list[BoardTask] = []
-        project.scan(tasks.append, lambda task: None)
-    except (OSError, ValueError, KeyError) as error:
-        raise ConnectError(str(error)) from error
-    states = _count(len(project.machine["states"]), "state")
-    return f"Imported {settings['workflow']} ({states}) · read {_count(len(tasks), 'issue')} from {settings['project']}"
 
 
 def _board_table(text: str, settings: Mapping[str, Any]) -> str:
@@ -145,28 +118,12 @@ def _parser() -> argparse.ArgumentParser:
     own.add_argument(
         "--machine", help="a machine file for the Board, which decides the moves offered (relative to the config)"
     )
-    backlog = tracker("backlog", "a Backlog.md project's task files")
-    backlog.add_argument("--path", default="backlog", help="the project's backlog/ directory (default backlog)")
-    backlog.add_argument(
-        "--machine", help="a machine file for the Board, which decides the moves offered (relative to the config)"
-    )
-    backlog.add_argument("--command", help="the backlog CLI that writes moves (default backlog)")
-    site = tracker("jira", f"a Jira project, read-only; the API token is read from ${TOKEN_ENV}")
-    site.add_argument("--url", required=True, help="the Jira site (https://acme.atlassian.net)")
-    site.add_argument("--project", required=True, help="the Jira project key, which is each task's team (PAY)")
-    site.add_argument("--workflow", required=True, help="the Jira workflow imported as the Board machine")
-    site.add_argument("--user", help=f"Jira Cloud: the account the API token in ${TOKEN_ENV} belongs to")
     return parser
 
 
 def _settings(args: argparse.Namespace) -> dict[str, Any]:
     """The `[board]` settings `args` names, only those it gave."""
-    if args.tracker == "jira":
-        given = {"type": "jira", "url": args.url, "project": args.project, "workflow": args.workflow}
-        return {**given, "token_env": TOKEN_ENV, **({"user": args.user} if args.user else {})}
-    kind = {"native": "native", "backlog": "upstream_backlog"}[args.tracker]
-    optional = {"machine": args.machine, "command": getattr(args, "command", None)}
-    return {"type": kind, "path": args.path, **{key: value for key, value in optional.items() if value}}
+    return {"type": "native", "path": args.path, **({"machine": args.machine} if args.machine else {})}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -174,10 +131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     settings = _settings(args)
     try:
-        if args.tracker == "jira":
-            found = _jira(settings)
-        else:
-            found = _board_files(settings, args.config.parent, create=args.tracker == "native")
+        found = _board_files(settings, args.config.parent)
         _write(args.config, settings)
     except ConnectError as error:
         print(f"✗ {error}", file=sys.stderr)

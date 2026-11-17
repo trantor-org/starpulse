@@ -23,6 +23,8 @@ vi.mock("./lazyViews", async (original) => ({ ...(await original<typeof import("
 let host: HTMLDivElement, root: Root, frames: FrameRequestCallback[];
 const mounted = (selector: string) => host.querySelector(selector) !== null;
 const frame = () => act(() => void frames.splice(0).forEach((f) => f(0)));
+// React holds a render a lazy view's load schedules until the enclosing act ends, so a poll inside one act never sees it: each poll opens its own act
+const eventually = (check: () => void) => vi.waitFor(async () => { await act(async () => {}); check(); }, { timeout: 25_000 });
 const marked = () => performance.getEntriesByName(BOARD_DRAWN).length > 0;
 
 beforeEach(() => {
@@ -62,8 +64,9 @@ describe("the page's first tree", () => {
     act(() => root.render(<App />));
     act(() => held.store!.set({ tree: { states: ["In Progress"], subs: {}, children: {} }, roles: { working: "In Progress" }, cards: [{ id: "TASK-1", title: "T", lane: "In Progress", dependencies: [] } as unknown as KanbanTask] }));
     await act(async () => void (await import("./features/level/SunsDrillIn")));
-    const card = () => host.querySelector('[aria-label="In Progress drill-in"] nav[aria-label="In Progress tasks"] button')?.getAttribute("aria-label");
-    await act(async () => vi.waitFor(() => expect(card()).toMatch(/^TASK-1 T, /), { timeout: 5000 })); // the lazy view resolves late on a loaded shard
+    // the drill-in fills the navigator's slot once the shell has it, else its own strip: the query takes either
+    const card = () => host.querySelector('nav[aria-label="In Progress tasks"] button')?.getAttribute("aria-label");
+    await eventually(() => expect(card()).toMatch(/^TASK-1 T, /)); // the lazy view resolves late on a loaded shard
     frame();
     expect(mounted("#rail #feed, #rail section")).toBe(true);
     expect(mounted("#rail #legend")).toBe(false); // the mock's rule: no legends on this board
@@ -73,21 +76,9 @@ describe("the page's first tree", () => {
     expect(location.search).not.toContain("drill");
   });
 
-  it("gives the Proposals view's search the navigator's left panel", async () => {
-    history.replaceState(null, "", "/?view=proposals");
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(url === "/api/harnesses" ? '{"tiers":[],"harnesses":[]}' : "{}", { status: 200 })));
-    act(() => root.render(<App />));
-    act(() => held.store!.set({ tree: { states: ["Proposed"], subs: {}, children: {} }, roles: { proposed: "Proposed" }, cards: [] }));
-    frame();
-    await act(async () => void (await import("./features/proposals/Proposals")));
-    const box = () => host.querySelector('#nav input[aria-label="Search proposals"]');
-    await act(async () => vi.waitFor(() => expect(box()).not.toBeNull(), { timeout: 5000 }));
-    expect(host.querySelector('#proposals input[aria-label="Search proposals"]:not(.mq)')).toBeNull();
-  });
-
   it("offers no create command on an empty board that cannot create a task", () => {
     act(() => root.render(<App />));
-    // a Backlog.md or Jira board: `task create` is refused and the Kanban draws no New task
+    // a Backlog.md board: `task create` is refused and the Kanban draws no New task
     act(() => held.store!.set({ tree: { states: ["To Do", "In Progress", "Done"], subs: {}, children: {} }, capabilities: { edit: true, archive: true, create: false } }));
     frame();
 
@@ -112,18 +103,18 @@ describe("the page's first tree", () => {
     expect(mounted("#rail #legend")).toBe(true);
   });
 
-  it("counts on the Kanban entry only the cards the Kanban draws, not the Done ones from before today", () => {
+  it("counts on the Kanban entry only the cards the Kanban draws, no Done ones", () => {
     const now = Date.now() / 1000;
     const card = (id: string, lane: string, entered: number) => ({ id, lane, entered }) as unknown as KanbanTask;
     act(() => root.render(<App />));
     act(() => held.store!.set({
       tree: { states: ["ready"], subs: {}, children: {} },
       roles: LIFECYCLE_ROLES,
-      cards: [card("T-1", "ready", now), card("T-2", "done", now), card("T-3", "done", now - 3 * 86400), card("T-4", "done", now - 9 * 86400)],
+      cards: [card("T-1", "ready", now), card("T-2", "done", now), card("T-3", "done", now - 3 * 86400)],
     }));
     frame();
 
-    expect(host.querySelector('#nav [title="Kanban"] .n')?.textContent).toBe("2");
+    expect(host.querySelector('#nav [title="Kanban"] .n')?.textContent).toBe("1");
   });
 
   it("mounts them anyway when no board arrives, so a stream that never answers still shows its status", () => {

@@ -4,8 +4,6 @@
 imported at the top of `starpulse.runtime.server`, so the Delivery worker's import closure holds no scheduler module.
 """
 
-from __future__ import annotations
-
 import json
 import threading
 import time
@@ -14,8 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.adapters.claim_ttl import DEFAULT_TRANSCRIPTS
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
+from starpulse.contracts.adapters import Move
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import History
@@ -26,6 +25,7 @@ from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
 from starpulse.scheduler.adapters.transcripts import transcript_written
 from starpulse.scheduler.bin.blocks import SchedulerConfig
+from starpulse.scheduler.model.config import ACTOR as SCHEDULER
 from starpulse.scheduler.model.admission import ranks_from_trajectories_body
 
 #: How long the dispatch loop holds the trajectory chain it ranks on: the analytics read the whole history.
@@ -57,12 +57,20 @@ def start_scheduler(
     server has a `[level]` table. `runtime` passes `trajectories_response`, `cached`, `starter` and `delivered`, as no context imports it.
     """
 
-    def settle(task: str, reason: str) -> Written:
+    def move(task: str, to: str, comment: str) -> Written:
+        """The task moved to lane `to` as the scheduler, if the machine offers the scheduler that move, as an API move is judged."""
         if board.edit is None:
             return Written(False, "this board has no editor", unavailable=True)
+        edit = board.edit
+        held = feed.held(task) or {}
+        if (offered := held.get("moves", {}).get(to)) is not None and not (found := Move.read(offered)).permits(SCHEDULER):
+            return Written(False, found.for_actor(SCHEDULER).reason)
+        return feed.record_write(task, (SCHEDULER, "", ""), lambda: edit(task, {"status": to}, comment, actor=SCHEDULER))
+
+    def settle(task: str, reason: str) -> Written:
         if board.roles.attention is None:
             return Written(False, "this board's machine has no lane that waits on a person", unavailable=True)
-        return board.edit(task, {"status": board.roles.attention}, reason)
+        return move(task, board.roles.attention, reason)
 
     def claim(task: str, comment: str) -> Written:
         if board.edit is None:
@@ -76,9 +84,7 @@ def start_scheduler(
     lane = config.scheduler.eligible_lane(initial)
 
     def requeue(task: str, comment: str) -> Written:
-        if board.edit is None:
-            return Written(False, "this board has no editor", unavailable=True)
-        return board.edit(task, {"status": lane}, comment)
+        return move(task, lane, comment)
 
     def read_ranks() -> dict[str, Any]:
         empty: dict[str, Any] = {"chain": {}, "p_goals": {}}

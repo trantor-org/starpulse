@@ -12,7 +12,8 @@ import { shownRows, type Paging } from "../features/level/machinePaging";
 import { rankRows } from "../features/level/machineRows";
 import { ledgerOf, type Ledger, type Tie } from "../features/level/ledger";
 import type { Viewport } from "../features/level/ledgerScroll";
-import { countText, daily, entry, HOUR, hosted, stale, stateCount, type Move, type Moves, type Sky } from "./sky";
+import { skillOf } from "./skills";
+import { countText, daily, entry, HOUR, hosted, stale, stateCount, todayCount, type Move, type Moves, type Sky } from "./sky";
 import { BOARD_COLOR, MUTED, RAMP } from "./palette";
 import { pinsOf } from "../features/level/ledgerPins";
 import type { Dag, DagStep, RawTask, Transition, Writer } from "../api";
@@ -827,17 +828,17 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const states = board.machine.states.filter((s) => !lanes || lanes.has(s.id) || entry(s) || s.final), transitions = board.machine.transitions;
     const BP = boardPlaces(states, transitions, board.machine.mainLine ?? undefined);
     const byState: Record<string, RawTask[]> = {};
-    // an entry state (the initial one, or Proposed) orbits no task, as each is drawn where it went or tallied; a terminal state orbits those that
+    // an entry state (the initial one) orbits no task, as each is drawn where it went or tallied; a terminal state orbits those that
     // entered it since local midnight and the day's arrivals there not already in it
     const initial = new Set(states.filter(entry).map((s) => s.id)), final = new Set(states.filter((s) => s.final).map((s) => s.id));
     board.agents.forEach((a) => initial.has(a.state) || stale(S, a) || (byState[a.state] ||= []).push(a));
     for (const [sid, list] of Object.entries(S.today)) if (final.has(sid)) (byState[sid] ||= []).push(...list.filter((t) => !byState[sid]?.some((a) => a.id === t.id)));
-    // A task orbits the deepest body this level draws that it is in: the sub-state its latest session holds (a CHILD entry, pr_opened while a PR
+    // A task orbits the deepest body this level draws that it is in: the sub-state its ride holds (a CHILD entry, pr_opened while a PR
     // is open), else the moon of the machine it works when that is not its state's primary, else its state.
     const flowsOf = (sid: string) => (SUBS[sid] || []).filter((f) => S.flows[f]);
     const subStatesOf = (f: string) => S.flows[f].machine.states.filter((q) => S.child[f]?.[q.id]);
     const deepest = (a: RawTask): { flow: string; state?: string } | null => {
-      const q = S.latest[a.id], fs = flowsOf(a.state);
+      const q = S.rides[a.id], fs = flowsOf(a.state);
       if (a.today || !q || !fs.includes(q.flow)) return null;
       if (S.child[q.flow]?.[q.state]) return { flow: q.flow, state: q.state };
       return fs.indexOf(q.flow) > 0 ? { flow: q.flow } : null;
@@ -868,7 +869,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       }).filter((p) => p.steps.length);
     };
     const phased = (sid: string, ps: ReturnType<typeof phasesOf>, a: RawTask) => {
-      const q = S.latest[a.id], f = flowsOf(sid)[0];
+      const q = S.rides[a.id], f = flowsOf(sid)[0];
       return !!q && !a.today && ps.some((p) => (q.flow === f && p.q.id === q.state) || p.child.machine === q.flow);
     };
     // a state's tasks split the same at every zoom, so the zoom search below sizes each state from one split
@@ -876,7 +877,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       states.map((st) => {
         const all = byState[st.id] || [], fs = flowsOf(st.id), ps = phasesOf(st.id), sides = ps.flatMap((p) => p.side);
         // the sun's own tasks: none in a phase, a side machine or a lifecycle's sub-state
-        const here = all.filter((a) => !sides.includes(S.latest[a.id]?.flow ?? "") && !phased(st.id, ps, a) && !deepest(a));
+        const here = all.filter((a) => !sides.includes(S.rides[a.id]?.flow ?? "") && !phased(st.id, ps, a) && !deepest(a));
         return [st.id, { fs, ps, here }];
       }),
     );
@@ -1003,7 +1004,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // The Board laid out at zoom `k` in `rows` lines: the sky is the canvas over `k`, and the layout holds when no two cells meet and every
     // line fits
     let grow = true;
-    const texts = Object.fromEntries(states.map((st) => [st.id, sunTexts(st.name, tally({ n: stateCount(S, st.id), today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [] }))]));
+    const texts = Object.fromEntries(states.map((st) => [st.id, sunTexts(st.name, tally({ n: stateCount(S, st.id), today: daily(st) ? todayCount(S, st.id) : undefined, subs: SUBS[st.id] || [] }))]));
     const lay = (grid: Grid, k: number, rows: number) => {
       const ls = labelScale(k);
       F = (ls * ((ctx.scale ?? 100) / 100)) / k;
@@ -1075,17 +1076,17 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const sized = L.sized, picks = L.picks, ps = L.ps, hb = scene.h - 40;
     for (const st of states) {
       const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { ps: phs, here, band: outer } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
-      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? MUTED, final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, edge: R, text: picks[st.id], reach: [R, R], loops: [] };
+      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? MUTED, final: st.final, today: daily(st) ? todayCount(S, st.id) : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, edge: R, text: picks[st.id], reach: [R, R], loops: [] };
       const d = sized[st.id].r - SUN_R, r0 = phs.length ? FREE + d : FOOT.task0 + d, r1 = phs.length ? SUN_R + d + 12 : outer;
       // a task on a machine step rides that machine's branch (transit.ts places it); only the rest orbit the sun
       const hOf = new Map<RawTask, HPlace>(), f0 = flowsOf(st.id)[0];
       if (f0)
         for (const a of byState[st.id] || []) {
-          const q = S.latest[a.id];
+          const q = S.rides[a.id];
           if (!q || a.today) continue;
           const ph = phs.find((p) => q.flow === f0 && p.q.id === q.state), sd = phs.find((p) => p.side.includes(q.flow)), m = S.flows[q.flow]?.machine.states.map((x) => x.id);
-          if (ph) hOf.set(a, { machine: ph.child.machine, steps: ph.steps.map((x) => x.id), j: 0, ring1: true });
-          else if (m) hOf.set(a, { machine: q.flow, steps: m, j: Math.max(0, m.indexOf(q.state)), config: [q.state], ring1: !phs.length || phs.some((p) => p.child.machine === q.flow), side: sd && { machine: sd.child.machine, steps: sd.steps.map((x) => x.id), j: Math.max(0, sd.steps.findIndex((x) => x.id === "pr_opened")) } });
+          if (ph) hOf.set(a, { machine: ph.child.machine, steps: ph.steps.map((x) => x.id), j: 0, ring1: true, skill: skillOf(S.flows, ph.child.machine) });
+          else if (m) hOf.set(a, { machine: q.flow, steps: m, j: Math.max(0, m.indexOf(q.state)), config: [q.state], ring1: !phs.length || phs.some((p) => p.child.machine === q.flow), skill: skillOf(S.flows, q.flow), side: sd && { machine: sd.child.machine, steps: sd.steps.map((x) => x.id), j: Math.max(0, sd.steps.findIndex((x) => x.id === "pr_opened")), skill: skillOf(S.flows, sd.child.machine) } });
         }
       const free = (byState[st.id] || []).filter((a) => !hOf.has(a) && (!a.today || here.includes(a)));
       const fit = pack(free.length, r0, r1, 11, 12, ROOM), ring = free.length ? attach(free, g, r0, fit.gap, fit.ringGap, false) : sized[st.id].r;
@@ -1164,7 +1165,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const cx0 = scene.w / 2, cy0 = scene.h / 2;
     if (!subs.length) {
       const n = stateCount(S, sid);
-      const sun: Sun = { id: sid, name: stateName(sid), final: !!st?.final, today: st && daily(st) ? today.length : undefined, x: cx0, y: cy0, r: SUN_R, R: 0, n, color: BOARD_COLOR[sid] ?? MUTED };
+      const sun: Sun = { id: sid, name: stateName(sid), final: !!st?.final, today: st && daily(st) ? todayCount(S, sid) : undefined, x: cx0, y: cy0, r: SUN_R, R: 0, n, color: BOARD_COLOR[sid] ?? MUTED };
       scene.sun = sun;
       scene.pivot = sun;
       sun.R = attach(list, sun, sun.r + 30, 16, 16, true);

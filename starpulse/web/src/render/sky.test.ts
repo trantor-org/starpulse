@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { countText, daily, hosted, merge, Moves, RING, stateCount, TRAVEL, withLedgers } from "./sky";
+import { countText, hosted, merge, Moves, RING, stateCount, todayCount, TRAVEL, withLedgers } from "./sky";
 import type { ActiveRun, Dag, Machine, RawTask, Snapshot } from "../api";
+import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
   states: ids.map((id, i) => ({ id, name: id.replace(/_/g, " "), initial: i === 0, final: false })),
@@ -19,7 +20,7 @@ const snap = (now: number, tasks: RawTask[], machineTasks: RawTask[], finishedAt
       transitions: [{ source: "ready", target: "in_progress", event: "CLAIM" }],
       submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }],
       launches: { "board-scheduler": { skill: "starting-tasks", machine: "in-progress" }, "weekly-code-audit": { skill: "auditing-code", machine: null } },
-      writers: { CLAIM: [{ actor: "board-scheduler", trigger: "dagu" }] },
+      writers: { CLAIM: [{ actor: "board-scheduler", trigger: "temporal" }] },
     }) },
     { name: "in-progress", agents: machineTasks, machine: machine(["worktree_ready", "pr_opened"], {
       submachines: [{ state: "pr_opened", machine: "triaging-cr-reviews", exits: {}, parent: "in-progress", when: "a PR is open" }],
@@ -73,15 +74,6 @@ describe("the sky", () => {
 
     expect(stateCount(merge(base, 1000), "ready")).toBe(1);
   });
-  it("tallies a proposed state like a starting one: the day's arrivals in it, read as `N · M today`", () => {
-    const base = snap(5000, [{ ...task("PROJ-1", "proposed"), entered: 1500 }, { ...task("PROJ-2", "proposed"), entered: 10 }, task("PROJ-3", "review")], []);
-    base.flows[0].machine.states.push({ id: "proposed", name: "Proposed", initial: false, final: false, role: "proposed" });
-    const S = merge(base, 1000), proposed = S.board.machine.states.find((s) => s.id === "proposed")!;
-
-    expect(daily(proposed)).toBe(true);
-    expect(S.today.proposed?.map((t) => t.id)).toEqual(["PROJ-1"]);
-    expect(countText(stateCount(S, "proposed"), S.today.proposed?.length)).toBe("2 · 1 today");
-  });
   it("gives a flow two Board states open each state only the tasks whose Board task sits there, reading the Board once however often it is asked", () => {
     const base = snap(5000, [task("PROJ-1", "in_progress"), task("PROJ-2", "review")], [placed("PROJ-1", [["worktree_ready", "w", 1]]), placed("PROJ-2", [["pr_opened", "p", 2]])]);
     base.flows[0].machine.submachines!.push({ state: "review", machine: "in-progress", exits: {}, parent: "board", when: "" });
@@ -101,6 +93,16 @@ describe("the sky", () => {
     base.settled = { "PROJ-99": { state: "completed", at: 1200, created: 10, title: "shipped", model: "" } };
 
     expect(stateCount(merge(base, 1000), "completed")).toBe(51);
+  });
+  it("adds the tasks archived today to the final state's count and leaves the Done state's count alone", () => {
+    const base = snap(5000, [], []);
+    base.flows[0].machine.states.push({ id: "completed", name: "completed", initial: false, final: true });
+    base.roles = LIFECYCLE_ROLES;
+    base.archived_today = 3;
+    base.settled = { "PROJ-99": { state: "completed", at: 1200, created: 10, title: "shipped", model: "" } };
+    const sky = merge(base, 1000);
+
+    expect([sky.archivedToday, stateCount(sky, "completed"), todayCount(sky, "completed"), stateCount(sky, "done")]).toEqual([3, 4, 4, 0]);
   });
   it("reads a starting or terminal state's count as the day's, saying how many it holds when some did not arrive today", () => {
     expect([countText(5), countText(4, 4), countText(6, 4), countText(0, 0)]).toEqual(["5", "4 today", "6 · 4 today", "0 today"]);
@@ -126,6 +128,35 @@ describe("the sky", () => {
 
     expect(merge({ ...snap(1000, [task("TASK-D1", "ready")], []), claims }).claims).toEqual(claims);
     expect(merge(snap(1000, [task("TASK-D1", "ready")], [])).claims).toEqual({});
+  });
+});
+
+describe("the machine a task rides", () => {
+  const session = (task: string, state: string, active: number): RawTask => ({ id: `--`, title: "t", state, model: "", task, active });
+  const phased = (inProgress: RawTask[], deliver: RawTask[], harness: RawTask[]) => {
+    const base = snap(5000, [task("PROJ-1", "in_progress")], []);
+    base.flows[1] = { name: "in-progress", agents: inProgress, machine: machine(["build", "deliver"], { submachines: [{ state: "deliver", machine: "deliver", exits: {}, parent: "in-progress", when: "" }] }) };
+    base.flows.push({ name: "deliver", agents: deliver, machine: machine(["committed", "pushed"]) }, { name: "harness", agents: harness, machine: machine(["idle", "active", "stopped"]) });
+    return merge(base);
+  };
+
+  it("is the deliver step it holds at pushed when the harness session row is newer", () => {
+    const sky = phased([session("PROJ-1", "deliver", 100)], [session("PROJ-1", "pushed", 200)], [session("PROJ-1", "active", 300)]);
+
+    expect(sky.rides["PROJ-1"]).toEqual({ flow: "deliver", state: "pushed", at: 200 });
+  });
+
+  it("is the phase it holds in the In Progress machine when no deeper machine has a row, and none for a harness row alone", () => {
+    const sky = phased([session("PROJ-1", "deliver", 100)], [], [session("PROJ-1", "active", 300)]);
+
+    expect(sky.rides["PROJ-1"]).toEqual({ flow: "in-progress", state: "deliver", at: 100 });
+    expect(phased([], [], [session("PROJ-1", "active", 300)]).rides["PROJ-1"]).toBeUndefined();
+  });
+
+  it("is the newest linked machine's step when the In Progress machine holds no row for it, the harness row older or newer", () => {
+    const sky = phased([], [session("PROJ-1", "pushed", 200)], [session("PROJ-1", "active", 300)]);
+
+    expect(sky.rides["PROJ-1"]).toEqual({ flow: "deliver", state: "pushed", at: 200 });
   });
 });
 

@@ -1,8 +1,6 @@
 """The Task read model's tables. Only this package imports them (the `readmodel-table-private` import contract), so
 every row is written by the projector and read through `ReadModel`."""
 
-from __future__ import annotations
-
 from sqlalchemy import JSON, Boolean, Column, Float, ForeignKey, Index, Integer, MetaData, String, Table, Text, text
 
 metadata = MetaData()
@@ -38,6 +36,7 @@ tasks = Table(
     Column("fields", JSON, nullable=False),
     Column("meta", JSON, nullable=False),
     Index("ix_starpulse_tasks_seq", "seq"),
+    Index("ix_starpulse_tasks_lower_id", text("lower(id)")),
     Index("ix_starpulse_tasks_live_id", "id", sqlite_where=text("archived = 0")),
     Index("ix_starpulse_tasks_live_state", "state", "id", sqlite_where=text("archived = 0")),
     Index("ix_starpulse_tasks_live_milestone", "milestone", sqlite_where=text("archived = 0")),

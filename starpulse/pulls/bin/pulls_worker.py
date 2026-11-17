@@ -7,8 +7,6 @@ actor's metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a De
 loops in the same process.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import threading
@@ -16,7 +14,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.board_feed import BoardFeed
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
@@ -79,13 +77,13 @@ class Delivery:
             stop.set()
             raise
         if sync:
-            follow_refreshes(log, sync.request, stop)
+            follow_refreshes(log, lambda repo, number: sync.request(repo, number, urgent=True), stop)
             projection = RecordProjection(pulls, feed, sync.project, sync.request)
             handlers = {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}
             follow_events(log, feed, handlers, stop, resume=self._resume)
             self._resume = True  # a reload resumes after this replay's cursor
         if actor:
-            keep_metrics(log, actor.exposition, stop)
+            keep_metrics(log, actor.exposition, stop, actor.views)
 
     def stop(self) -> None:
         self._stop.set()
@@ -140,7 +138,10 @@ def start(
     # a store that holds records was built by the replays before; a new or wiped one rebuilds from the whole retention.
     # Read before any loop writes a record.
     delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=bool(store.repos()))
+    stop.listen(delivery.stop)
     delivery.start()
+    if stop.is_set():  # `listen` does not call for a stop already set, and a stop during `start` met the old loops
+        delivery.stop()
     return lambda: delivery.reload(path, load)
 
 

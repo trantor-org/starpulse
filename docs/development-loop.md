@@ -3,7 +3,7 @@
 How I build software with many agent sessions running at once, and what StarPulse is for inside that. StarPulse is
 one part of the loop. It draws the loop and enforces some of its rules; the rest is practice and ordinary tooling.
 This page says what each practice is and why it is shaped that way, so you can copy the parts that suit you. It is
-not a setup guide for GitHub, Dagu or any other tool StarPulse does not ship.
+not a setup guide for GitHub or any other tool StarPulse does not ship.
 
 ## What StarPulse provides and what is mine
 
@@ -13,7 +13,7 @@ not a setup guide for GitHub, Dagu or any other tool StarPulse does not ship.
 | [A human makes every merge](#2-a-human-makes-every-merge) | [The Ledger](serving.md#the-ledger) lists each merge and what applied it | The rule, an approval prompt on the merge command, and the short list of bot merges |
 | [CI runs only what a change reaches](#3-ci-runs-only-what-a-change-reaches-and-the-full-suite-runs-nightly) | Nothing; its own repository's selector, `ci/select_tests.py`, is an example | The selector, the nightly full run, commit-time lint |
 | [CD applies merged changes unattended](#4-cd-applies-merged-changes-unattended) | The Ledger pairs a merge with its apply run and can re-run a failed one | The apply workflow, its allowlist and its verification |
-| [Scheduled workflows take fixed sequences off agents](#5-scheduled-workflows-take-fixed-sequences-off-agents) | Draws runs from Dagu, GitHub Actions or systemd; [CloudEvents ingest](sources.md#post-machine-events-as-cloudevents) | The workflows and their schedules |
+| [Scheduled workflows take fixed sequences off agents](#5-scheduled-workflows-take-fixed-sequences-off-agents) | Draws runs from Temporal, GitHub Actions or systemd; [CloudEvents ingest](sources.md#post-machine-events-as-cloudevents) | The workflows and their schedules |
 | [Documentation is code and is linted](#6-documentation-is-code-and-is-linted) | Nothing | The repository, the lint, the scheduled commit |
 | [Lifecycle guards refuse an out-of-order move](#7-lifecycle-guards-refuse-an-out-of-order-move) | State machines with `writers`, and [`[[board.guards]]`](public-surface.md#board-guards) | The machines and rules I declared, and the skills they name |
 | [Telemetry is read back](#8-telemetry-and-projections-are-read-back-to-size-and-steer-the-next-task) | [Session health, flow health, missed skill loads, trace clusters](sources.md#measure-session-and-slice-health), [scheduler](serving.md#scheduler) | Size bands, agent profiles, what I change after reading a report |
@@ -22,7 +22,7 @@ not a setup guide for GitHub, Dagu or any other tool StarPulse does not ship.
 
 These numbers are a snapshot taken on 2026-10-10 (MST). Each is followed by the command that produced it; replace
 `OWNER/REPO` with the repository, `MY-LOGIN` with the GitHub login that opens the pull requests and `DAGS` with the
-directory of Dagu workflow files.
+directory of workflow files.
 
 | Number | Command |
 |---|---|
@@ -90,7 +90,7 @@ not approval for an unattended rebuild of everything it touches.
 
 ## 5. Scheduled workflows take fixed sequences off agents
 
-**What.** A stretch of work whose steps never vary becomes a Dagu workflow, and an agent calls one command instead of
+**What.** A stretch of work whose steps never vary becomes a scheduled workflow, and an agent calls one command instead of
 several. Delivery is the example: refuse on `main`, commit, test, push, open the pull request, wait for CI, mark it
 ready, ending in `green`, `red <phase>` or `blocked <phase>`. A stretch becomes a workflow only when it needs run
 history, retries, visibility or a wait that should not hold an agent's turn. In an unattended run the workflow owns

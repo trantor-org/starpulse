@@ -3,7 +3,7 @@ import type { KanbanTask } from "./kanbanModel";
 import { changedFields, ciHistory, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, editKey, fetchRecord, labelRuleError, menuKey, repoBase, repoPath, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
-  title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
+  title: "T", profile: "@agent-standard-high", priority: "High", tier: "leverage", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
   description: "d", plan: "1. a", notes: "n", acceptanceCriteria: [{ n: 1, text: "a gate", checked: true }], definitionOfDone: [],
 };
 const reply = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
@@ -174,14 +174,14 @@ describe("saving one section", () => {
     expect(result).toMatchObject({ ok: true, changed: ["description"] });
   });
 
-  it("writes Details' profile, priority, labels and milestone and nothing else", async () => {
-    const draft = { ...base, profile: "@agent-light-low", priority: "Low", milestone: "m-90", labels: ["x"], notes: "z" };
+  it("writes Details' profile, tier, labels and milestone and nothing else", async () => {
+    const draft = { ...base, profile: "@agent-light-low", tier: "bug", milestone: "m-90", labels: ["x"], notes: "z" };
     const fetcher = ok();
 
     await saveSection("TASK-9", "details", base, draft, {}, fetcher);
 
-    expect(SECTION_FIELDS.details).toEqual(["profile", "priority", "labels", "milestone"]);
-    expect(Object.keys(sent(fetcher).changes)).toEqual(["profile", "priority", "labels", "milestone"]);
+    expect(SECTION_FIELDS.details).toEqual(["profile", "tier", "labels", "milestone"]);
+    expect(Object.keys(sent(fetcher).changes)).toEqual(["profile", "tier", "labels", "milestone"]);
   });
 
   it("sends a criterion added in the editor without a number, which the board assigns", async () => {

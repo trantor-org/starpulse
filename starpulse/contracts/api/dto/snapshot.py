@@ -1,7 +1,5 @@
 """The snapshot `/api/snapshot` sends, its pieces, and the `/api/events` deltas and events."""
 
-from __future__ import annotations
-
 from typing import Literal
 
 from pydantic import Field
@@ -36,11 +34,10 @@ class Roles(_Api):
     review: str | None = Field(default=None, description="Where a task waits on its pull request.")
     verifying: str | None = Field(default=None, description="Where a merged task rests while its post-merge QA runs.")
     attention: str | None = Field(default=None, description="Where a task waits on a person.")
-    proposed: str | None = Field(default=None, description="Where a task waits, off the lanes, until it is promoted.")
     startable: list[str] = Field(default_factory=list, description="The States a session starts a task from.")
     lanes: list[str] = Field(
         default_factory=list,
-        description="The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial, final and proposed.",
+        description="The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial and final.",
     )
 
 
@@ -93,11 +90,6 @@ class Snapshot(_Api):
     domains: list[Domain] | None = Field(default=None, description="The DAG domains.")
     cues: list[Cue] | None = Field(default=None, description="The DAGs cued by a Board event.")
     boardUrl: str | None = Field(default=None, description="The Backlog board a task links into.")
-    hint: str | None = Field(
-        default=None,
-        description="A Backlog.md project found beside the config while the default board is shown, and how to switch "
-        "to it.",
-    )
     dags: list[DagBody]
     pools: list[Pool] | None = Field(default=None, description="The concurrency pools the DAGs run on.")
     cpu: dict[str, Cpu] | None = Field(
@@ -131,6 +123,9 @@ class Snapshot(_Api):
         description="The ids of the done tasks from before local midnight that the board feed holds as a stub, left out of `flows`: "
         "the full view (`?view=full`) only, the page reads them from `/api/done` and `/api/task/<id>`.",
     )
+    archived_today: int | None = Field(
+        default=None, description="How many tasks were archived since local midnight, the window of the Done count."
+    )
     ratings: dict[str, Rating] | None = Field(
         default=None, description="Each rated task's latest pass/fail rating, by task id; a task never rated is absent."
     )
@@ -156,6 +151,9 @@ class TaskDelta(_Api):
     id: str
     agent: RawTask | None
     settled: Settled | None
+    archived_today: int | None = Field(
+        default=None, description="On an archived task's delta, how many tasks were archived since local midnight."
+    )
 
 
 class MoveDelta(_Api):

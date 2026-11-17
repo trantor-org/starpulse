@@ -34,15 +34,46 @@
           "additionalProperties": {
             "$ref": "#/$defs/Verdict"
           },
-          "description": "The verdict for an actor a guard treats apart from the rest, such as one it exempts, by actor; any other actor meets the move's own.",
+          "description": "The verdict for an actor a guard treats apart from the rest, such as one it exempts or warns, by actor; any other actor meets the move's own.",
           "title": "Actors",
           "type": "object"
+        },
+        "warnings": {
+          "default": [],
+          "description": "The lane rules the move breaks that the actor is warned of and may still make.",
+          "items": {
+            "$ref": "#/$defs/RuleBreak"
+          },
+          "title": "Warnings",
+          "type": "array"
         }
       },
       "required": [
         "allowed"
       ],
       "title": "Move",
+      "type": "object"
+    },
+    "RuleBreak": {
+      "additionalProperties": false,
+      "description": "One board rule a move breaks: what it needs and the skill that produces it.",
+      "properties": {
+        "reason": {
+          "description": "What the broken rule needs.",
+          "title": "Reason",
+          "type": "string"
+        },
+        "skill": {
+          "default": "",
+          "description": "The skill that produces what the rule needs; empty when none.",
+          "title": "Skill",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "RuleBreak",
       "type": "object"
     },
     "Verdict": {
@@ -65,6 +96,15 @@
           "description": "The skill that produces what the guard needs; empty when allowed.",
           "title": "Skill",
           "type": "string"
+        },
+        "warnings": {
+          "default": [],
+          "description": "The lane rules the move breaks that this actor is warned of and may still make, each with its skill.",
+          "items": {
+            "$ref": "#/$defs/RuleBreak"
+          },
+          "title": "Warnings",
+          "type": "array"
         }
       },
       "required": [
@@ -88,7 +128,7 @@
       "type": "string"
     },
     "team": {
-      "description": "The team key the adapter derived from the tracker's own structure: a Backlog.md project, a Jira project or board, a GitHub repository. Never blank, so a task that belongs to no project is refused rather than counted under a default team.",
+      "description": "The team key the adapter derived from the tracker's own structure: a Backlog.md project, a GitHub repository. Never blank, so a task that belongs to no project is refused rather than counted under a default team.",
       "pattern": "\\S",
       "title": "Team",
       "type": "string"
@@ -186,7 +226,7 @@
     },
     "aliases": {
       "default": [],
-      "description": "Keys the task was known by before: a proposal's key once it is promoted. A read by one of them finds this task.",
+      "description": "Keys the task was known by before: a key it was renamed from. A read by one of them finds this task.",
       "items": {
         "type": "string"
       },

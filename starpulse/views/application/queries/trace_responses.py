@@ -1,17 +1,13 @@
 """The trace analytics routes' bodies and statuses: missed skill loads and trace clusters."""
 
-from __future__ import annotations
-
 import math
 from collections import Counter
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics.model.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
-from starpulse.flow_metrics.model.traces import Case, case_order, missed_loads
-from starpulse.flow_metrics.model.traces import cases as trace_cases
+from starpulse.flow_metrics.model.traces import Case, combine_cases, missed_loads
 from starpulse.views.application.queries.responses import _HEALTH_HOURS, _error, _held_folds, _hours
 from starpulse.views.model.encoding import encode
 
@@ -40,36 +36,28 @@ def _case_ref(case: Case) -> dict[str, Any]:
     return {"harness": case.harness, "session": case.session, "task": case.task, "last_at": case.last_seen}
 
 
-def _telemetry_cases(
+def _folded_cases(
     telemetry: SignalFoldReader | None,
     window: float,
-    keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
-    analytics: Analytics,
     now: float,
     kind: str,
-    include_eval: bool = True,
+    view: str = "cases",
 ) -> list[Case] | tuple[bytes, int]:
-    """The cases of the signals from the last `window` hours, mined a session at a time so one session's signals are
-    held at once, or the 501, 503 or (a window longer than the history) 400 response for a log that has none.
-    `include_eval` False leaves out the signals an eval run stamped."""
+    """The cases of the last `window` hours combined from the sessions' `view` fold rows (`cases`, or `trace_cases`
+    without the eval runs' signals), a session that began before the window folded from its signals inside it, or the
+    501 for a log that has none, the 503 for one that cannot be read, or the 400 for a window longer than the history."""
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot read what its sessions did"), 501
-    held = _held_folds(telemetry, window, kind, now, "analytics")
+    held = _held_folds(telemetry, window, kind, now, "analytics", (view,))
     if isinstance(held, tuple):
         return held
-    tasks = titled()
-    found: list[Case] = []
-    for group in telemetry.sessions(now - window * 3600):
-        signals = group if include_eval else [s for s in group if not s.eval]
-        found += trace_cases(signals, keys, roots=analytics.roots, tasks=tasks, analytics=analytics)
-    return sorted(found, key=case_order)
+    return combine_cases(held[view], titled())
 
 
 def missed_loads_response(
     telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
-    keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
     analytics: Analytics,
     now: float,
@@ -80,7 +68,7 @@ def missed_loads_response(
     window, listed = _hours(query, "hours", _HEALTH_HOURS), _whole(query, "list", _LISTED)
     if window is None or listed is None:
         return _error("hours must be a positive number and list a whole number"), 400
-    found = _telemetry_cases(telemetry, window, keys, titled, analytics, now, "missed_loads")
+    found = _folded_cases(telemetry, window, titled, now, "missed_loads")
     if isinstance(found, tuple):
         return found
     wanted = query.get("skill", [""])[0]
@@ -150,7 +138,6 @@ def _cluster_view(cluster: Cluster, analytics: Analytics, outliers: int) -> dict
 def trace_clusters_response(
     telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
-    keys: TaskKeys | None,
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
     analytics: Analytics,
     now: float,
@@ -172,7 +159,7 @@ def trace_clusters_response(
             ),
             400,
         )
-    found = _telemetry_cases(telemetry, window, keys, titled, analytics, now, "trace_clusters", include_eval=False)
+    found = _folded_cases(telemetry, window, titled, now, "trace_clusters", "trace_cases")
     if isinstance(found, tuple):
         return found
     clusters = trace_clusters(found, stop=analytics.stop_activities, threshold=threshold)

@@ -25,7 +25,7 @@ const dag = (active: ActiveRun[], o: Partial<Dag> = {}): Dag => ({
   finishedAt: "", schedule: [], stats: null, rerun: null,
   steps: STEPS.map((name) => ({ name, depends: [], status: "not_started" as const, kind: null, precondition: null, lock: null, last: [] })),
   active,
-  pool: "dagu/deliver",
+  pool: "temporal/deliver",
   ...o,
 });
 const seen = (d: Dag, now: number) => track(emptyFan(), d, now);
@@ -128,11 +128,11 @@ describe("a run that ends", () => {
 });
 
 describe("queueRow", () => {
-  const pools: Pool[] = [{ name: "dagu/deliver", cap: 32, running: 5, queued: 0 }, { name: "dagu/default", cap: 2, running: 2, queued: 1 }];
+  const pools: Pool[] = [{ name: "temporal/deliver", cap: 32, running: 5, queued: 0 }, { name: "temporal/default", cap: 2, running: 2, queued: 1 }];
 
   it("reports the pool's running count against its cap, the DAG's share only when the pool is shared", () => {
     const own = dag(Array.from({ length: 5 }, (_, i) => run(`r${i}`, "lint")));
-    const shared = dag([run("r1", "lint")], { name: "healthcheck", pool: "dagu/default" });
+    const shared = dag([run("r1", "lint")], { name: "healthcheck", pool: "temporal/default" });
 
     expect(queueRow(own, pools)).toMatchObject({ pool: "deliver", running: 5, cap: 32, mine: 5, full: false });
     expect(queueRow(shared, pools)).toMatchObject({ pool: "default", running: 2, cap: 2, queued: 1, mine: 1, full: true });

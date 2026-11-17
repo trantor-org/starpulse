@@ -1,13 +1,14 @@
 """Tasks: a task's record and every write that changes one, and the retired tasks.
 
 - `GET /api/task/{id}`: a task's record, with the pull requests it cites; a read that takes long is logged.
-- `GET /api/retired`: the retired tasks, filtered by `task` and `milestone`, or as `{task, dependencies}` for
-  `fields=dependencies`.
+- `GET /api/moves/{id}`: the verdict on each column one open task may move to, judged by the guards for each actor.
+- `GET /api/task-records?ids=A,B`: the records of the tasks named, in one read; a task the board cannot read is left out.
+- `GET /api/retired`: one page of the retired tasks, newest first, at most `limit` after the `before` cursor, with
+  `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
+  `fields=dependencies`, unpaged.
 - `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `rating`, `miss`, `restore`, `take-over`, `retire`,
   `retired/import`, `claim`, `park`, `review`, `complete` and `tasks`: a task's writes, each over the seams it needs.
 """
-
-from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Iterator
@@ -25,7 +26,13 @@ from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, no_writer, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task
-from starpulse.views.application.commands.moves import claim_task, move_task, release_task, start_requested, start_task
+from starpulse.views.application.commands.moves import (
+    claim_task,
+    move_task,
+    release_task,
+    start_requested,
+    start_task,
+)
 from starpulse.views.application.commands.tasks import (
     archive_task,
     complete_task,
@@ -38,6 +45,7 @@ from starpulse.views.application.commands.tasks import (
     restore_task,
     retire_task,
     retired_list,
+    retired_page,
     take_over_task,
     task_record,
 )
@@ -48,12 +56,6 @@ if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
 
 
-def _answer_task(request: Request, status: int, body: dict[str, Any], cited: list[dict[str, Any]]) -> Response:
-    if status == 200 and cited:
-        body["record"]["pulls"] = cited
-    return answer(request, encode("task", body), status)
-
-
 def _resident_task(request: Request) -> Response | None:
     """The task's answer when memory holds all of it, with no query; None when it needs a worker."""
     api = seams(request)
@@ -62,19 +64,54 @@ def _resident_task(request: Request) -> Response | None:
         return None
     if (cited := resident_pulls(api.services.pulls, record.get("references", []))) is None:
         return None
-    return _answer_task(request, 200, {"task": name, "record": record, "archived": False}, cited)
+    if cited:
+        record["pulls"] = cited
+    return answer(request, encode("task", {"task": name, "record": record, "archived": False}), 200)
+
+
+def _stored_record(api: Api, name: str) -> tuple[int, dict[str, Any]]:
+    """The task `name` as the board stores it, with the pull requests its references cite attached."""
+    status, body = task_record(api.feed, api.board.read, name, api.board.read_archived)
+    if status == 200 and (cited := cited_pulls(api.services.pulls, body["record"].get("references", []))):
+        body["record"]["pulls"] = cited
+    return status, body
 
 
 def _stored_task(request: Request) -> Response:
-    api = seams(request)
-    status, body = task_record(api.feed, api.board.read, request.path_params["id"], api.board.read_archived)
-    cited = cited_pulls(api.services.pulls, body["record"].get("references", [])) if status == 200 else []
-    return _answer_task(request, status, body, cited)
+    status, body = _stored_record(seams(request), request.path_params["id"])
+    return answer(request, encode("task", body), status)
+
+
+def _stored_moves(request: Request) -> Response:
+    name = request.path_params["id"]
+    found = seams(request).feed.task(name)
+    if found is None:
+        return answer(request, encode("moves", {"error": f"{name} is not an open task on the board"}), 404)
+    return answer(request, encode("moves", {"task": name, "moves": found["moves"]}))
+
+
+async def moves(request: Request) -> Response:
+    """One open task's moves judged by the guards: the snapshot leaves these unjudged, as judging all of them costs seconds."""
+    return await on_worker(request, lambda: _stored_moves(request))
 
 
 async def task(request: Request) -> Response:
     """A task the feed holds in memory, citing only pull requests memory holds, is answered on the event loop."""
     return on_loop(request, lambda: _resident_task(request)) or await on_worker(request, lambda: _stored_task(request))
+
+
+def _stored_records(request: Request) -> Response:
+    api = seams(request)
+    records = []
+    for name in query(request).get("ids", [""])[0].split(","):
+        status, body = _stored_record(api, name)
+        if status == 200:
+            records.append(body)
+    return answer(request, encode("task_records", {"records": records}), 200)
+
+
+async def task_records(request: Request) -> Response:
+    return await on_worker(request, lambda: _stored_records(request))
 
 
 #: The one thread that reads and encodes every retired task: a free-threaded thread keeps the heap pages of what it
@@ -92,17 +129,24 @@ async def _on_dump_thread(chunks: Iterator[bytes]) -> AsyncIterator[bytes]:
 @reading
 def retired(request: Request) -> Response:
     asked = query(request)
-    task, milestone, fields = (asked.get(name, [""])[0] for name in ("task", "milestone", "fields"))
+    task, milestone, fields, limit, before = (
+        asked.get(name, [""])[0] for name in ("task", "milestone", "fields", "limit", "before")
+    )
 
     board = seams(request).board
     if task or fields:
         status, body = retired_list(board, task, milestone, fields)
         return answer(request, encode("retired", body), status)
+    if not milestone:
+        status, body = retired_page(board, limit, before)
+        return answer(request, encode("retired", body), status)
     status, body = _WHOLE_DUMP.submit(retired_list, board, task, milestone, fields).result()
     if status != 200:
         return answer(request, encode("retired", body), status)
     chunks = encode_stream("retired", {}, "tasks", RetiredTask, body["tasks"])
-    return StreamingResponse(_on_dump_thread(chunks), media_type="application/json", headers={"cache-control": "no-store"})
+    return StreamingResponse(
+        _on_dump_thread(chunks), media_type="application/json", headers={"cache-control": "no-store"}
+    )
 
 
 def routes(api: Api) -> list[ApiRoute]:
@@ -146,6 +190,8 @@ def routes(api: Api) -> list[ApiRoute]:
     }
     return [
         ReadRoute("/task/{id:path}", task, timed),
+        ReadRoute("/moves/{id:path}", moves),
+        ReadRoute("/task-records", task_records),
         ReadRoute("/retired", retired),
         *(WriteRoute(path, ("POST",), guarded(kind, whole_body(handler))) for path, (handler, kind) in writes.items()),
     ]

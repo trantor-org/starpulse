@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, order, panes, place, places, refusal, rows, runHours, runNote, stepLabels, ties, type DagData } from "./dagsModel";
+import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, jobRuns, order, panes, place, places, refusal, rows, runHours, runNote, stepLabels, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
@@ -263,7 +263,7 @@ describe("the modal's step chart", () => {
 
   /** A GitHub workflow as the adapter flattens it: each job a step, then each of its steps named `<job> / <step>` in a chain. */
   const workflow = (jobs: string[], each: string[]) => jobs.flatMap((job) => [step(job), ...each.map((s, i) => step(`${job} / ${s}`, [i ? `${job} / ${each[i - 1]}` : job]))]);
-  const JOBS = ["Build the release directory", "Switch current to the release directory", "Apply merged changes through Dagu", "Page on two consecutive failed applies"];
+  const JOBS = ["Build the release directory", "Switch current to the release directory", "Apply merged changes through Temporal", "Page on two consecutive failed applies"];
   const EACH = ["Set up job", "Run actions/checkout@v4", "Post Run actions/checkout@v4", "Complete job"];
 
   it("names a step by what follows its parent step's name, and cuts a long name to the label cap", () => {
@@ -283,7 +283,7 @@ describe("the modal's step chart", () => {
 
     // five columns: the jobs (39 characters at most) then four of labels (28 at most) need about 1500px; their full names (68) need about 3000
     expect(p.span).toBeLessThan(1600);
-    expect(p.label["Apply merged changes through Dagu / Complete job"]).toBe("Complete job");
+    expect(p.label["Apply merged changes through Temporal / Complete job"]).toBe("Complete job");
   });
 });
 
@@ -325,7 +325,7 @@ describe("the page's snapshot as the DAGs view reads it", () => {
       "runs/ran": { schedule: "0 * * * *, 30 6 * * 1", ...stats, rerun },
       "runs/never": { schedule: "manual", runs: null, hours: null, medianSeconds: null, p95Seconds: null, failureShare: null, rerun: null },
     });
-    expect(dagData({ ...sky, cpu: { dagu: { share: 0.25, cores: 36 } } } as unknown as Parameters<typeof dagData>[0]).cpu).toEqual({ dagu: { share: 0.25, cores: 36 } });
+    expect(dagData({ ...sky, cpu: { temporal: { share: 0.25, cores: 36 } } } as unknown as Parameters<typeof dagData>[0]).cpu).toEqual({ temporal: { share: 0.25, cores: 36 } });
     expect(dagFacts(dag("runs/quiet", "succeeded", { stats: { ...stats, runs: 0, hours: 0, medianSeconds: null, p95Seconds: null, failureShare: null } })).runs).toBe(0);
   });
 });
@@ -400,7 +400,7 @@ describe("the run pressure the navigator draws", () => {
   });
 
   it("reads the Runner CPU as one percentage of all the cores, summing the runner units of every instance", () => {
-    expect(cpuPercent({ dagu: { cores: 8, share: 0.375 } })).toBeCloseTo(37.5);
+    expect(cpuPercent({ temporal: { cores: 8, share: 0.375 } })).toBeCloseTo(37.5);
     expect(cpuPercent({ a: { cores: 8, share: 0.25 }, b: { cores: 8, share: 0.125 } })).toBeCloseTo(37.5);
   });
 
@@ -423,7 +423,7 @@ describe("runNote", () => {
   });
 
   it("leaves a run that names no task, attempt or failure to the default line", () => {
-    expect(runNote(dag("dagu/build", "running", { active: [{ ...running, task: null, attempt: null, failure: null }] }))).toBe("");
+    expect(runNote(dag("temporal/build", "running", { active: [{ ...running, task: null, attempt: null, failure: null }] }))).toBe("");
   });
 
   it("says the newest failed run of a job that is not running, with the activity it failed on", () => {
@@ -431,6 +431,38 @@ describe("runNote", () => {
   });
 
   it("is empty for a job with nothing running or failed", () => {
-    expect(runNote(dag("dagu/build", "succeeded"))).toBe("");
+    expect(runNote(dag("temporal/build", "succeeded"))).toBe("");
+  });
+});
+
+describe("jobRuns", () => {
+  const T = (m: number) => `1970-01-01T00:${String(m).padStart(2, "0")}:00Z`;
+  const live = { runId: "31", url: "http://ci/31", status: "running", startedAt: T(10), step: "tests", stepStartedAt: T(11), steps: {}, task: "TASK-9", pr: 9052, commit: "abcdef0123456789", attempt: null, failure: null } as const;
+  const closed = (n: number, over: object = {}) => ({ runId: String(n), url: `http://ci/${n}`, status: "succeeded", startedAt: T(n), finishedAt: T(n + 3), params: {}, steps: {}, ...over }) as const;
+
+  it("lists the live runs first, then the closed ones newest first, each with its status, task, pull request, short commit, duration and link", () => {
+    const d = dag("woodpecker/pull_request", "running", { active: [live], closed: [closed(20, { status: "failed", task: "TASK-8", pr: 9050, commit: "1152cc200628", steps: { tests: "failed" }, failure: "step tests exited 2" }), closed(5)] });
+
+    expect(jobRuns(d, 15 * 60)).toEqual([
+      { key: "31", status: "running", line: "TASK-9 · #9052 · abcdef0 · tests", took: "5m 0s", url: "http://ci/31" },
+      { key: "20", status: "failed", line: "TASK-8 · #9050 · 1152cc2 · tests · step tests exited 2", took: "3m 0s", url: "http://ci/20" },
+      { key: "5", status: "succeeded", line: "", took: "3m 0s", url: "http://ci/5" },
+    ]);
+  });
+
+  it("lists a failed run once when it is among both the closed and the failed runs, and keeps a failed run older than the closed ones", () => {
+    const d = dag("temporal/task_phases", "succeeded", { closed: [closed(20), closed(10, { status: "failed" })], failed: [closed(10, { status: "failed" }), closed(2, { status: "failed" })] });
+
+    expect(jobRuns(d, 0).map((x) => x.key)).toEqual(["20", "10", "2"]);
+  });
+
+  it("leaves the duration empty for a run that has no start time", () => {
+    const d = dag("temporal/task_phases", "succeeded", { closed: [closed(20, { startedAt: "" })] });
+
+    expect(jobRuns(d, 0).map((x) => x.took)).toEqual([""]);
+  });
+
+  it("lists nothing for a job that has no runs", () => {
+    expect(jobRuns(dag("temporal/x", "not_started"), 0)).toEqual([]);
   });
 });

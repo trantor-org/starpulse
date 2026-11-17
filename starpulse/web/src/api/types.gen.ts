@@ -57,12 +57,14 @@ export interface ApiContract {
   laneHistory: LaneHistory;
   ledger: LedgerPage;
   ledgerChange: LedgerChange;
+  liveness: Liveness;
   machineHistory: MachineHistory;
   machines: Machines;
   milestoneShown: MilestoneShown;
   milestones: Milestones;
   missedLoads: MissedLoads;
   pulls: Pulls;
+  readyReport: ReadyReport;
   requests: (
     | MoveRequest
     | StartRequest
@@ -101,7 +103,9 @@ export interface ApiContract {
   spend: Spend;
   stages: SubStages;
   taskEventHistory: TaskEventHistory;
+  taskMoves: TaskMoves;
   taskRecord: TaskRecord;
+  taskRecords: TaskRecords;
   traceClusters: TraceClusters;
   trajectories: Trajectories;
   transitions: Transitions;
@@ -114,10 +118,12 @@ export interface ApiContract {
  */
 export interface Moved {
   advice?: string | null;
+  ok?: boolean;
   startError?: string | null;
   task: string;
   to: string;
   url?: string | null;
+  warnings?: string[] | null;
   [k: string]: unknown;
 }
 /**
@@ -128,6 +134,9 @@ export interface MovedEach {
   refused: {
     [k: string]: string;
   };
+  warnings?: {
+    [k: string]: string[];
+  } | null;
   [k: string]: unknown;
 }
 export interface Edited {
@@ -686,7 +695,7 @@ export interface TaskCriterion {
  */
 export interface Move {
   /**
-   * The verdict for an actor a guard treats apart from the rest, such as one it exempts, by actor; any other actor meets the move's own.
+   * The verdict for an actor a guard treats apart from the rest, such as one it exempts or warns, by actor; any other actor meets the move's own.
    */
   actors?: {
     [k: string]: Verdict;
@@ -703,6 +712,10 @@ export interface Move {
    * The skill that produces what the guard needs; empty when allowed.
    */
   skill?: string;
+  /**
+   * The lane rules the move breaks that the actor is warned of and may still make.
+   */
+  warnings?: RuleBreak[];
   /**
    * The actors the machine YAML declares for the event behind the move; empty when it declares none, and then any actor may make it.
    */
@@ -724,15 +737,36 @@ export interface Verdict {
    * The skill that produces what the guard needs; empty when allowed.
    */
   skill?: string;
+  /**
+   * The lane rules the move breaks that this actor is warned of and may still make, each with its skill.
+   */
+  warnings?: RuleBreak[];
 }
 /**
- * The claim a Board task's claim-TTL sweep released: when, and the session, last renewal and TTL it released.
+ * One board rule a move breaks: what it needs and the skill that produces it.
+ */
+export interface RuleBreak {
+  /**
+   * What the broken rule needs.
+   */
+  reason: string;
+  /**
+   * The skill that produces what the rule needs; empty when none.
+   */
+  skill?: string;
+}
+/**
+ * The claim a Board task's claim-TTL sweep, or its idle holder's release, ended: when, and the session, last renewal and TTL.
  */
 export interface ClaimRelease {
   /**
    * When the release was recorded, epoch seconds.
    */
   at: number;
+  /**
+   * The task actor ended this claim because its holder sat idle, not the TTL sweep.
+   */
+  idle?: boolean;
   /**
    * The session's last renewal before the release, epoch seconds.
    */
@@ -834,6 +868,10 @@ export interface Estimate {
  */
 export interface TaskDelta {
   agent: RawTask | null;
+  /**
+   * On an archived task's delta, how many tasks were archived since local midnight.
+   */
+  archived_today?: number | null;
   id: string;
   settled: Settled | null;
   [k: string]: unknown;
@@ -900,6 +938,10 @@ export interface DagBody {
    */
   active?: ActiveRun[] | null;
   /**
+   * The newest closed runs of the workflow of any status, newest first; absent when none ran.
+   */
+  closed?: RecentRun[] | null;
+  /**
    * The newest failed runs of the workflow, newest first; absent when none failed.
    */
   failed?: RecentRun[] | null;
@@ -940,9 +982,17 @@ export interface ActiveRun {
    */
   attempt?: number | null;
   /**
+   * The commit the run built, as the engine names it; None when it names none.
+   */
+  commit?: string | null;
+  /**
    * The last failure's message (the step's, or the run's); None when nothing failed.
    */
   failure?: string | null;
+  /**
+   * The pull request the run was started for; None when it was not started for one.
+   */
+  pr?: number | null;
   /**
    * The engine's own status for the run when it differs from `status`, shown as is.
    */
@@ -977,6 +1027,10 @@ export interface ActiveRun {
    * The Board task the run works on (`TASK-N`); None when it names none.
    */
   task?: string | null;
+  /**
+   * A link to the run in the scheduler's own page; empty when it has none.
+   */
+  url?: string;
 }
 /**
  * One run of a DAG within the last day, running or over, with the parameters it started with.
@@ -986,6 +1040,10 @@ export interface RecentRun {
    * The attempt of the step the run is on (or failed on); None when the engine counts none.
    */
   attempt?: number | null;
+  /**
+   * The commit the run built, as the engine names it; None when it names none.
+   */
+  commit?: string | null;
   /**
    * The last failure's message (the step's, or the run's); None when nothing failed.
    */
@@ -1000,6 +1058,10 @@ export interface RecentRun {
   params: {
     [k: string]: string;
   };
+  /**
+   * The pull request the run was started for; None when it was not started for one.
+   */
+  pr?: number | null;
   /**
    * The engine's own status for the run when it differs from `status`, shown as is.
    */
@@ -1183,6 +1245,10 @@ export interface Pull {
    * The open PR conflicts with its base branch.
    */
   conflicting?: boolean;
+  /**
+   * The open PR is still a draft.
+   */
+  draft?: boolean;
   /**
    * The merge commit's SHA; null until the PR merges.
    */
@@ -1699,6 +1765,98 @@ export interface LedgerChange {
   [k: string]: unknown;
 }
 /**
+ * `GET /api/analytics/liveness`: each working task's liveness and the Board's pace into Review over a window.
+ */
+export interface Liveness {
+  in_progress_s: number;
+  now: number;
+  review: ReviewPace;
+  /**
+   * Seconds every working stay spent inside the window.
+   */
+  slot_s: number;
+  slots: SlotCause[];
+  stages: WorkStage[];
+  stalled_after_s: number;
+  stalls: StallCause[];
+  tasks: TaskLiveness[];
+  window_s: number;
+  [k: string]: unknown;
+}
+export interface ReviewPace {
+  count: number;
+  hours: ReviewHour[];
+  per_hour: number;
+  /**
+   * Moves per hour of the window's slot time; null with none.
+   */
+  per_slot_hour: number | null;
+  [k: string]: unknown;
+}
+export interface ReviewHour {
+  at: number;
+  count: number;
+  [k: string]: unknown;
+}
+export interface SlotCause {
+  cause: "working" | "idle" | "slow_process" | "unattributed" | "waiting_checks";
+  share: number;
+  /**
+   * Working-lane seconds inside the window the cause held.
+   */
+  slot_s: number;
+  [k: string]: unknown;
+}
+export interface WorkStage {
+  mean_s: number;
+  share: number | null;
+  /**
+   * The `machine:state` a work-machine event left the task in; the lane before the first.
+   */
+  stage: string;
+  task_s: number;
+  visits: number;
+  [k: string]: unknown;
+}
+export interface StallCause {
+  cause: "idle" | "slow_process" | "unattributed" | "waiting_checks";
+  count: number;
+  /**
+   * Seconds past the threshold, summed over the silences.
+   */
+  stalled_s: number;
+  waits_in: string | null;
+  [k: string]: unknown;
+}
+/**
+ * One working task: how long since its state last changed and since its session's last command.
+ */
+export interface TaskLiveness {
+  cause: ("idle" | "slow_process" | "unattributed" | "waiting_checks") | null;
+  /**
+   * Seconds since its session's last tool call; null when none names it.
+   */
+  command_idle_s: number | null;
+  /**
+   * When the task entered the working State.
+   */
+  since: number;
+  /**
+   * Both idle times are past the threshold.
+   */
+  stalled: boolean;
+  /**
+   * Seconds since its last lane change or work-machine event.
+   */
+  state_idle_s: number;
+  task: string;
+  /**
+   * The `machine:state` a slow process or a pending check rollup holds the task in.
+   */
+  waits_in: string | null;
+  [k: string]: unknown;
+}
+/**
  * `GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.
  */
 export interface MachineHistory {
@@ -1715,12 +1873,36 @@ export interface MachineStep {
   [k: string]: unknown;
 }
 /**
- * `GET /api/machines`: the next page of machines entered from `open`.
+ * `GET /api/machines`: the next page of machines entered from `open`, and each lane's surface by lane name.
  */
 export interface Machines {
+  lanes?: {
+    [k: string]: LaneSurface;
+  };
   machines: MachineRow[];
   more: boolean;
   open: string | null;
+  [k: string]: unknown;
+}
+/**
+ * What a session holding the lane may call: its tools, its exit tools and the skill bound on entry.
+ */
+export interface LaneSurface {
+  exits: ExitTool[];
+  skill: string | null;
+  tools: string[];
+  [k: string]: unknown;
+}
+/**
+ * A typed exit tool of a lane: the event it fires and the JSON schema of its arguments.
+ */
+export interface ExitTool {
+  event: string;
+  name: string;
+  schema: {
+    [k: string]: unknown;
+  };
+  to: string;
   [k: string]: unknown;
 }
 /**
@@ -1794,7 +1976,7 @@ export interface MachineState {
   initial: boolean;
   name: string;
   /**
-   * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact`, `waiting_on_person` or `proposed`; null when it declares none.
+   * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
    */
   role?: string | null;
   [k: string]: unknown;
@@ -1817,6 +1999,10 @@ export interface Submachine {
   routes?: {
     [k: string]: string;
   };
+  /**
+   * The skill a session runs while the inner machine does; empty when the link names none.
+   */
+  skill?: string;
   state: string;
   /**
    * What has to hold for the inner machine to run under `state`; empty when always.
@@ -1952,11 +2138,12 @@ export interface Pulls {
  *
  * `headRefName` and `unresolvedThreads` (the first 100 threads) are null for a record saved before they were kept.
  * `files`, the paths the pull request changes, is sent only when `repo` and `number` name one record, and is null for
- * a record saved before they were kept.
+ * a record saved before they were kept. `body` is sent only when `repo` and `number` name one record or `bodies=1`
+ * asks for it.
  */
 export interface PullRecord {
   baseRefName: string;
-  body: string;
+  body?: string | null;
   checks: "pass" | "failing" | "pending" | "none";
   fetchedAt: number;
   files?: string[] | null;
@@ -1977,7 +2164,7 @@ export interface PullRecord {
 }
 export interface RequiredCheck {
   name: string;
-  result: "pass" | "failing" | "pending";
+  result: "pass" | "failing" | "pending" | "missing";
   [k: string]: unknown;
 }
 /**
@@ -1986,6 +2173,25 @@ export interface RequiredCheck {
 export interface PullThread {
   author: string | null;
   id: string;
+  [k: string]: unknown;
+}
+/**
+ * Whether the server can serve the board; `components` names `store`, `board`, `writer` and `contexts`, and the route
+ * answers 503 with this body when any is not ready.
+ */
+export interface ReadyReport {
+  components: {
+    [k: string]: ReadyComponent;
+  };
+  ready: boolean;
+  [k: string]: unknown;
+}
+/**
+ * One part of the server `/api/ready` judges.
+ */
+export interface ReadyComponent {
+  detail: string;
+  ready: boolean;
   [k: string]: unknown;
 }
 /**
@@ -2027,6 +2233,10 @@ export interface EditRequest {
   };
   comment?: string | null;
   harness?: string | null;
+  /**
+   * The client's key for this send: an edit sent again with it answers the first send's answer.
+   */
+  request_key?: string | null;
   session?: string | null;
   task: string;
 }
@@ -2162,7 +2372,7 @@ export interface ClaimRequest {
 }
 /**
  * `POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach
- * Done, or `TASK-N#K` for one open criterion of a task) and `until` (criteria a check can observe) wait; `operator` (what only the operator can do) needs attention.
+ * Done, or `TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait; `operator` (what only the operator can do) needs attention.
  */
 export interface ParkRequest {
   actor?: string | null;
@@ -2171,11 +2381,7 @@ export interface ParkRequest {
   operator?: string | null;
   session?: string | null;
   task: string;
-  until?:
-    | {
-        [k: string]: unknown;
-      }[]
-    | null;
+  until?: string[] | null;
   untilTask?: string[] | null;
 }
 /**
@@ -2225,6 +2431,10 @@ export interface CreateRequest {
   profile?: string | null;
   ref?: string | null;
   references?: string[] | null;
+  /**
+   * The client's key for this send: a create sent again with it answers the first send's answer.
+   */
+  request_key?: string | null;
   session?: string | null;
   size?: string | null;
   skill?: string | null;
@@ -2329,10 +2539,16 @@ export interface RestartingEvent {
   [k: string]: unknown;
 }
 /**
- * `GET /api/retired[?task=<id>][&fields=dependencies]`: every retired task, or the one `task` names, by id; with
- * `fields=dependencies` each is `{task, dependencies}` alone.
+ * `GET /api/retired[?task=<id>][&milestone=<id>][&fields=dependencies][&limit=<n>][&before=<cursor>]`: the one
+ * retired task `task` names, those of `milestone`, or else a page of them, newest retired first, with `next` the
+ * `before` of the page that follows (null on the last); with `fields=dependencies` each is `{task, dependencies}`
+ * alone.
  */
 export interface RetiredTasks {
+  /**
+   * The `before` cursor of the next page; null on the last page.
+   */
+  next?: string | null;
   tasks: RetiredTask[] | RetiredDependencies[];
   [k: string]: unknown;
 }
@@ -2354,8 +2570,9 @@ export interface RetiredDependencies {
   [k: string]: unknown;
 }
 /**
- * `GET /api/search?q=&limit=&label=&finished_within_days=`: the tasks holding every word of `q`, best match first,
- * each carrying every `label` and, with `finished_within_days`, open or finished within that many days.
+ * `GET /api/search?q=&limit=&label=&finished_within_days=&before=`: the tasks holding every word of `q`, best
+ * match first, each carrying every `label`, with `finished_within_days` open or finished within that many days, and
+ * with `before` (a task key) of its prefix and created before it.
  */
 export interface SearchResults {
   hits: SearchHit[];
@@ -2375,9 +2592,13 @@ export interface SearchHit {
   [k: string]: unknown;
 }
 /**
- * `GET /api/analytics/steps`: every model request of a window, oldest first.
+ * `GET /api/analytics/steps`: the model requests of a window, oldest first, a page at a time.
  */
 export interface SessionSteps {
+  /**
+   * The `after` cursor of the next page; null on the last page.
+   */
+  next?: string | null;
   now: number;
   steps: SessionStep[];
   window_s: number;
@@ -2446,6 +2667,12 @@ export interface Sessions {
  */
 export interface SessionHealth {
   agent_s: number;
+  /**
+   * Each subagent type's token totals among `tokens` (`qa-<lens>` for a qa lens); only a subagent that names its type.
+   */
+  agents: {
+    [k: string]: AgentSpend;
+  };
   compactions: {
     [k: string]: number;
   };
@@ -2453,8 +2680,16 @@ export interface SessionHealth {
   cost_usd: number | null;
   effort_changes: number;
   efforts: string[];
+  /**
+   * The launch's `claude_code.entrypoint` resource attribute (`cli`, `sdk-cli`); empty when it set none.
+   */
+  entrypoint: string;
   eval: string;
   first_at: number;
+  /**
+   * The prompt tokens (input, cache read and cache write) of the session's first main-thread request that sent any; None when it made none.
+   */
+  first_request_tokens: number | null;
   gates: {
     [k: string]: number;
   };
@@ -2470,6 +2705,7 @@ export interface SessionHealth {
   models: string[];
   operator_prompts: number;
   operator_wait_s: number;
+  origin: string;
   prompt_labels: {
     [k: string]: number;
   };
@@ -2479,6 +2715,10 @@ export interface SessionHealth {
     [k: string]: number;
   };
   requests: number;
+  /**
+   * The furthest phase skill (`starting-task`, `tdd`, `qa`, `deliver`, `fix-checks`, `review-fix`, `verify`) the session loaded on this task; `other` when it loaded none.
+   */
+  role: string;
   session: string;
   side_requests: number;
   skills: {
@@ -2493,6 +2733,22 @@ export interface SessionHealth {
     [k: string]: number;
   };
   user_rejects: number;
+  [k: string]: unknown;
+}
+export interface AgentSpend {
+  cache_read: number;
+  cache_write: number;
+  /**
+   * The cache_write of each such subagent's first request, summed.
+   */
+  first_request_cache_write?: number;
+  input: number;
+  output: number;
+  reasoning: number;
+  /**
+   * The subagents of this type whose requests named their instance id.
+   */
+  subagents?: number;
   [k: string]: unknown;
 }
 /**
@@ -2536,6 +2792,10 @@ export interface SliceHealth {
 }
 export interface Snapshot {
   /**
+   * How many tasks were archived since local midnight, the window of the Done count.
+   */
+  archived_today?: number | null;
+  /**
    * The Backlog board a task links into.
    */
   boardUrl?: string | null;
@@ -2574,10 +2834,6 @@ export interface Snapshot {
    * Every lifecycle machine the server draws, and `runs`.
    */
   graphs: string[];
-  /**
-   * A Backlog.md project found beside the config while the default board is shown, and how to switch to it.
-   */
-  hint?: string | null;
   /**
    * Each task an accepted take-over made interactive, by task id; a task never taken over is absent.
    */
@@ -2765,13 +3021,9 @@ export interface Roles {
    */
   initial?: string | null;
   /**
-   * The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial, final and proposed.
+   * The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial and final.
    */
   lanes?: string[];
-  /**
-   * Where a task waits, off the lanes, until it is promoted.
-   */
-  proposed?: string | null;
   /**
    * Where a task waits to be picked up.
    */
@@ -2830,7 +3082,7 @@ export interface SpendPhase {
   last_at: number;
   models: string[];
   /**
-   * The median `task_wte` of the task's kind and size; null under five tasks in the cell.
+   * The sum of `phase_norm_wte` over the task's phases; null when any is null.
    */
   norm_wte: number | null;
   output: number;
@@ -2842,6 +3094,14 @@ export interface SpendPhase {
    * `claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.
    */
   phase: string;
+  /**
+   * `wte` is over three times `phase_norm_wte`.
+   */
+  phase_above_norm: boolean;
+  /**
+   * The median `wte` of this phase over the tasks of the task's kind and size that ran it; null under five.
+   */
+  phase_norm_wte: number | null;
   /**
    * `<model>-<effort>` of the phase's first main-thread step, each `unknown` when unrecorded.
    */
@@ -2922,6 +3182,19 @@ export interface MachineEvent {
   [k: string]: unknown;
 }
 /**
+ * `GET /api/moves/<id>`: the verdict on each column one open task may move to, judged by the board's guards now.
+ */
+export interface TaskMoves {
+  /**
+   * The verdict on each Board column, by state id, with the warnings an actor the guards warn instead of refuse would meet. A snapshot's `move_sets` leave these unjudged.
+   */
+  moves: {
+    [k: string]: Move;
+  };
+  task: string;
+  [k: string]: unknown;
+}
+/**
  * `GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.
  */
 export interface TaskRecord {
@@ -2929,10 +3202,21 @@ export interface TaskRecord {
    * The task was archived: read from the archive, off the board's lanes.
    */
   archived?: boolean;
+  /**
+   * When an archived task last changed in the read model: a Done task's entry into Done.
+   */
+  entered?: number | null;
   record: {
     [k: string]: unknown;
   };
   task: string;
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/task-records?ids=A,B`: the `TaskRecord` of each named task the board can read, in the order named.
+ */
+export interface TaskRecords {
+  records: TaskRecord[];
   [k: string]: unknown;
 }
 /**

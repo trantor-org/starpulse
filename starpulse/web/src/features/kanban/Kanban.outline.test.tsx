@@ -56,14 +56,14 @@ describe("the Kanban milestone outline in the navigator", () => {
   });
 
   it("sets the Kanban milestone filter on a click: only that milestone's cards show and the counts follow", () => {
-    expect(shown()).toEqual(["TASK-1", "TASK-2", "TASK-3", "TASK-4", "TASK-5", "TASK-6"]);
+    expect(shown()).toEqual(["TASK-2", "TASK-4", "TASK-5", "TASK-6"]);
 
     act(() => rows()[0].click());
 
-    expect(shown()).toEqual(["TASK-1", "TASK-2"]);
+    expect(shown()).toEqual(["TASK-2"]);
     expect(rows().map((r) => r.classList.contains("on"))).toEqual([true, false]);
-    expect(counter()).toBe("2 of 6 tasks");
-    expect(columnCounts()).toMatchObject({ ready: "1", done: "1", review: "0" });
+    expect(counter()).toBe("1 of 4 tasks");
+    expect(columnCounts()).toMatchObject({ ready: "1", review: "0" });
     expect(host.querySelector(".filters")!.textContent).toContain("m-1");
     expect(clear()!.textContent).toBe("clear ✕");
   });
@@ -74,7 +74,7 @@ describe("the Kanban milestone outline in the navigator", () => {
 
     act(() => rows()[1].click());
 
-    expect(shown()).toHaveLength(6);
+    expect(shown()).toHaveLength(4);
     expect(rows().some((r) => r.classList.contains("on"))).toBe(false);
     expect(clear()).toBeNull();
   });
@@ -86,8 +86,8 @@ describe("the Kanban milestone outline in the navigator", () => {
 
     act(() => clear()!.click());
 
-    expect(shown()).toHaveLength(6);
-    expect(counter()).toBe("6 of 6 tasks");
+    expect(shown()).toHaveLength(4);
+    expect(counter()).toBe("4 of 4 tasks");
     expect(clear()).toBeNull();
   });
 
@@ -96,6 +96,6 @@ describe("the Kanban milestone outline in the navigator", () => {
     act(() => host.querySelector<HTMLButtonElement>(".filters button.clear")!.click());
 
     expect(rows().some((r) => r.classList.contains("on"))).toBe(false);
-    expect(shown()).toHaveLength(6);
+    expect(shown()).toHaveLength(4);
   });
 });

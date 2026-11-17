@@ -7,8 +7,6 @@ attention. `lane`, `review_lane`, `unsized_points`, `idle_minutes`, `state_dir`,
 `[scheduler.priority_matrix]` and `[scheduler.limits]` each override one default; a key left out keeps its default.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from typing import Any
@@ -40,6 +38,10 @@ _KEYS = {
     "verify_lane",
     "verify_profile",
 }
+
+
+#: The actor of the scheduler's own moves: a board machine may name it as a writer on any server, as the scheduler is built in.
+ACTOR = "starpulse/scheduler"
 
 
 class SchedulerError(ValueError):

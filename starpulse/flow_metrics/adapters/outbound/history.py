@@ -9,8 +9,6 @@ gap. It also keeps the step graphs `push_runs` learns from the pushed run events
 `/api/history` reads the paths back through `lane_path` and `machine_path`.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import threading
@@ -115,13 +113,6 @@ _lane_changes = Table(
     Column("observed_at", Float, nullable=False),
     Column("actor", String),
     Index("ix_starpulse_lane_changes_task", "task", "observed_at"),
-)
-#: When each Waiting task's Start Criteria were first seen all met, for as long as they have stayed met: one row per task.
-_criteria_met = Table(
-    "starpulse_criteria_met",
-    metadata,
-    Column("task", String, primary_key=True),
-    Column("met_at", Float, nullable=False),
 )
 #: When each held working task's claim lapses unless renewed, as the claim-TTL sweep's latest pass saw it: one row per task.
 _claim_expiries = Table(
@@ -422,9 +413,9 @@ class HistoryStore:
         query = select(_breaking_changes).order_by(columns.first_seen, columns.id)
         if open_only:
             query = query.where(columns.postmortem_task.is_(None))
-        detections = select(found.commit_sha, found.detector, found.outcome, found.evidence, found.occurred_at).order_by(
-            found.occurred_at, found.id
-        )
+        detections = select(
+            found.commit_sha, found.detector, found.outcome, found.evidence, found.occurred_at
+        ).order_by(found.occurred_at, found.id)
         with self.engine.connect() as db:
             seen: dict[str, list[dict]] = {}
             for commit, detector, outcome, evidence, at in db.execute(detections):
@@ -522,20 +513,21 @@ class HistoryStore:
         """
         ordered = sorted(changes, key=lambda change: change.at)
         ids = [change.event_id for change in ordered]
-        last: dict[str, str] = {}
+        last: dict[tuple[str, str], str] = {}
         with self.engine.begin() as db:
             held = _held_ids(db, ids)
             for event_id, task, lane, at in ordered:
                 status = lane_id(lane)
-                if last.get(task) == status:
-                    continue
-                last[task] = status
                 name, slash, _ = event_id.partition("/")
+                source = name if slash else ""
+                if last.get((source, task)) == status:
+                    continue
+                last[source, task] = status
                 if _holds_move(db, task, name if slash and name else None, status, at):
                     continue
                 row = {"event_id": event_id, "task": task, "old_status": None, "new_status": status, "observed_at": at}
                 db.execute(self._insert(_lane_changes).values(row).on_conflict_do_nothing())
-            _rechain(db, last)
+            _rechain(db, {task for _, task in last})
         self.rebuild_summaries()
         with self.engine.connect() as db:
             return len(_held_ids(db, ids) - held)
@@ -589,18 +581,6 @@ class HistoryStore:
             fold.lane(row["event_id"], row["task"], row["new_status"], row["observed_at"])
             last_change = row["id"]
         return last_event, last_change
-
-    def criteria_met(self) -> dict[str, float]:
-        """When each task's Start Criteria were first seen all met, by task."""
-        with self.engine.connect() as db:
-            return dict(db.execute(select(_criteria_met.c.task, _criteria_met.c.met_at)).all())
-
-    def save_criteria_met(self, met: dict[str, float]) -> None:
-        """Keep `met` as the whole set: a task it leaves out is forgotten, so its next met moment is a new one."""
-        with self.engine.begin() as db:
-            db.execute(_criteria_met.delete())
-            if met:
-                db.execute(self._insert(_criteria_met), [{"task": task, "met_at": at} for task, at in met.items()])
 
     def claim_expiries(self) -> dict[str, float]:
         """When each held working task's claim lapses, as the claim-TTL sweep last saw it, by task."""

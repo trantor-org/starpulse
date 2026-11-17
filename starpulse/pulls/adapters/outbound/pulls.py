@@ -1,7 +1,5 @@
 """The pull requests StarPulse keeps in its own store, projected from lifecycle events, and serves at `GET /api/pulls`."""
 
-from __future__ import annotations
-
 import threading
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
@@ -9,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import Engine, delete, insert, or_, select, tuple_
 
+from starpulse.board.model.rollup import checks_verdict
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.tables import pull_requests
 
@@ -33,7 +32,7 @@ _FIELDS = {
     "fetched_at": "fetchedAt",
 }
 #: The names of columns an older refresh did not fill: a record may lack them, and is served with them null.
-_LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads", "title": "title"}
+_LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads", "title": "title", "rollup": "rollup"}
 
 
 #: How long after its last update a closed or merged pull request stays in memory: about 250 a day, 12 KB each.
@@ -42,6 +41,8 @@ HOLD_WINDOW = timedelta(hours=24)
 #: How many listings of the records only the database holds a store keeps, and the most records one may hold.
 LISTINGS_KEPT = 4
 LISTING_ROWS = 2000
+#: The most records a listing without bodies may hold and still be kept: a body is most of a record's size.
+BODILESS_ROWS = 10 * LISTING_ROWS
 
 
 class PullStore:
@@ -58,6 +59,10 @@ class PullStore:
         #: Counts saves, so a reader holding an answer knows when it is stale.
         self.rev = 0
         self._lock = threading.Lock()
+        self._saving = threading.Lock()
+        #: Orders each read of rows with the taking of them into memory, so a read begun before a save never lands after
+        #: the read of that save and puts the record from before it back.
+        self._holding = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
         self._save_listeners: list[Callable[[list[tuple[str, int]]], None]] = []
         require_migrated(engine)
@@ -65,9 +70,9 @@ class PullStore:
         #: The records only the database held that a listing of a repository (or all) in a state found, without their
         #: `detail`, once `keep_listings` says every save reaches this store: a record saved or refreshed since is
         #: held, which the listing leaves out, so a save needs no re-read. At most `LISTINGS_KEPT` listings of at most
-        #: `LISTING_ROWS` records each, the oldest dropped first, so a long history or a stream of distinct `?repo=`
-        #: values never grows it.
-        self._listed: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
+        #: `LISTING_ROWS` records each (`BODILESS_ROWS` without bodies), the oldest dropped first, so a long history or
+        #: a stream of distinct `?repo=` values never grows it.
+        self._listed: dict[tuple[str | None, str | None, bool], list[dict[str, Any]]] = {}
         self._keep_listings = False
         since = (datetime.now(UTC) - window).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._hold(
@@ -78,20 +83,23 @@ class PullStore:
         """The records of the rows `query` selects, with their `detail` when the query selects it (None otherwise)."""
         with self._engine.connect() as db:
             return [
-                {name: row[column] for column, name in (_FIELDS | _LATER).items()}
+                {name: row[column] for column, name in (_FIELDS | _LATER).items() if column in row}
                 | {"detail": row["detail"] if "detail" in row else None}
                 for row in db.execute(query).mappings()
             ]
 
     def _hold(self, query: Any) -> None:
         """Take the rows `query` selects into memory, replacing each held record of the same repository and number."""
-        rows = self._read(query)
-        with self._lock:
-            self._held.update({(row["repo"], row["number"]): row for row in rows})
+        with self._holding:
+            rows = self._read(query)
+            with self._lock:
+                self._held.update({(row["repo"], row["number"]): row for row in rows})
 
     def save(self, records: Iterable[dict[str, Any]]) -> None:
         """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository
-        and number."""
+        and number, except one that would take a merged pull request back from MERGED or a closed one back to OPEN
+        from before the close (`_takes_back`). An open record's `checks` are its head's rollup (`checks_verdict`),
+        whatever the record says."""
         rows = [
             {
                 **{column: record[name] for column, name in _FIELDS.items()},
@@ -102,16 +110,64 @@ class PullStore:
         ]
         if not rows:
             return
-        with self._engine.begin() as db:
+        with self._saving, self._engine.begin() as db:
+            rows = [self._guarded(db, row) for row in rows]
+            rows = [
+                row | {"checks": checks_verdict(row["state"], row["checks"], row["head"], row["rollup"], row["required"])}
+                for row in rows
+                if row
+            ]
             for row in rows:
                 db.execute(
                     delete(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
                 )
-            db.execute(insert(pull_requests), rows)
+            if rows:
+                db.execute(insert(pull_requests), rows)
         keys = [(row["repo"], row["number"]) for row in rows]
-        self.refresh(keys)
-        for announce in self._save_listeners:
-            announce(keys)
+        if keys:
+            self.refresh(keys)
+            for announce in self._save_listeners:
+                announce(keys)
+
+    @staticmethod
+    def _guarded(db: Any, row: dict[str, Any]) -> dict[str, Any] | None:
+        """`row` as it may be saved, or None when it would undo a pull request's end. A merged record never changes
+        state, whichever writer saves: a read begun before the merge, or an event or job entry built from the record
+        before it, lands after it. A closed one goes back to open only for a write no older than the close (a reopen).
+        A ready one goes back to draft only for a write no older than the ready event. A write older than the stored
+        record of the same head keeps its required checks and `fetched_at`: a read begun while Validate ran, saved after
+        the job result event, must not put the check back to pending. A row with no rollup, or an older one than the stored, keeps
+        the stored one: a `pr-checks` rollup event writes it, and so does a read that sees every required check of its
+        head pass (a `passed` rollup at the read's start), which a stored `pending` or other-head rollup, or an older
+        `failing` one, never outvotes a second time; a snapshot taken before a rollup never does. A read of the rollup's head begun before the rollup
+        passed it never leaves a required check unposted: the push's read can land after the rollup, which names the new
+        head before the record holds it, and no later rollup event comes to settle them."""
+        stored = db.execute(
+            select(
+                *(pull_requests.c[name] for name in ("state", "fetched_at", "is_draft", "head", "required", "rollup"))
+            ).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
+        ).first()
+        if stored is None:
+            return row
+        if row["rollup"] is None or (stored.rollup or {}).get("at", 0) > row["rollup"].get("at", 0):
+            row = row | {"rollup": stored.rollup}
+        rolled = row["rollup"] or {}
+
+        def settled(checks: list[dict[str, Any]], fetched_at: float) -> list[dict[str, Any]]:
+            if rolled.get("state") != "passed" or rolled.get("sha") != row["head"] or fetched_at >= rolled.get("at", 0):
+                return checks
+            return [{**c, "result": "pass"} if c["result"] in {"pending", "missing"} else c for c in checks]
+
+        row = row | {"required": settled(row["required"], row["fetched_at"])}
+        if stored.state == "MERGED":
+            return row if row["state"] == "MERGED" else None
+        if stored.state == "OPEN" and not stored.is_draft and row["is_draft"] and row["fetched_at"] < stored.fetched_at:
+            return None  # a read begun while the PR was draft, saved after the ready event
+        if stored.state == "CLOSED" and row["state"] == "OPEN" and row["fetched_at"] < stored.fetched_at:
+            return None
+        if stored.head == row["head"] and row["fetched_at"] < stored.fetched_at:
+            return row | {"required": settled(stored.required, stored.fetched_at), "fetched_at": stored.fetched_at}
+        return row
 
     def refresh(self, keys: Iterable[tuple[str, int]]) -> None:
         """Take the database's rows of `keys` (repository, number) into memory, as after a save: the way a process that
@@ -149,14 +205,20 @@ class PullStore:
         body_contains: str | None = None,
         detailed: bool = False,
         held_only: bool = False,
+        bodies: bool = True,
     ) -> list[dict[str, Any]]:
         """The records matching every given filter, by repository then number; `body_contains` is a body substring.
 
         `detailed` adds each record's `detail`, which is not served: None for a record saved before it was kept.
+        `bodies=False` leaves out each record's `body`, and the database never selects it, though `body_contains` still filters on it.
         `held_only` leaves out the records only the database holds, so the read runs no SQL."""
         needle = body_contains.lower() if body_contains else None  # SQLite's LIKE ignores ASCII case
         with self._lock:
-            held = dict(self._held)
+            if repo is not None and number is not None:  # a point lookup by key, never a walk of every held record
+                point = self._held.get((repo, number))
+                held = {} if point is None else {(repo, number): point}
+            else:
+                held = dict(self._held)
         found = [
             record
             for record in held.values()
@@ -166,9 +228,13 @@ class PullStore:
             and (needle is None or needle in record["body"].lower())
         ]
         if not held_only and state != "OPEN" and (repo is None or number is None or (repo, number) not in held):
-            found += self._stored(held, repo, number, state, needle, detailed)
+            found += self._stored(held, repo, number, state, needle, detailed, bodies)
         return [
-            {name: value for name, value in record.items() if detailed or name != "detail"}
+            {
+                name: value
+                for name, value in record.items()
+                if (detailed or name != "detail") and (bodies or name != "body")
+            }
             for record in sorted(found, key=lambda record: (record["repo"], record["number"]))
         ]
 
@@ -186,24 +252,29 @@ class PullStore:
         state: str | None,
         needle: str | None,
         detailed: bool,
+        bodies: bool,
     ) -> list[dict[str, Any]]:
         """The records in the database matching the filters that are not in `held`; a pull request is read by its key,
         an indexed lookup, and a listing without `detail` or a body filter is kept (see `_listed`): a save or refresh
         holds each record it changes. Only a read of `detail` pays to decode it."""
         listing = self._keep_listings and number is None and not needle and not detailed
-        rows = self._listed.get((repo, state)) if listing else None
+        rows = self._listed.get((repo, state, bodies)) if listing else None
         if rows is None:
             filters = {"repo": repo, "number": number, "state": state}
-            columns = [column for column in pull_requests.c if detailed or column.name != "detail"]
+            columns = [
+                column
+                for column in pull_requests.c
+                if (detailed or column.name != "detail") and (bodies or column.name != "body")
+            ]
             query = select(*columns).where(
                 *(pull_requests.c[name] == value for name, value in filters.items() if value is not None)
             )
             if needle:
                 query = query.where(pull_requests.c.body.contains(needle, autoescape=True))
             rows = self._read(query)
-            if listing and len(rows) <= LISTING_ROWS:
+            if listing and len(rows) <= (LISTING_ROWS if bodies else BODILESS_ROWS):
                 with self._lock:
                     while len(self._listed) >= LISTINGS_KEPT:
                         del self._listed[next(iter(self._listed))]
-                    self._listed[(repo, state)] = rows
+                    self._listed[(repo, state, bodies)] = rows
         return [record for record in rows if (record["repo"], record["number"]) not in held]

@@ -6,8 +6,6 @@ A file holds `id` and `title` in its front matter and, under `## Description`, t
 verbs do not name, and prose before the first heading, are kept as they are when a milestone is edited.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import re
@@ -26,7 +24,7 @@ from starpulse.board.model.seam import (
     MilestoneReader,
     Written,
 )
-from starpulse.board.adapters.upstream_backlog import _split
+from starpulse.board.adapters.native_scan import _split
 
 #: The sections a milestone is composed of, in the order they are written, and the detail each takes.
 _ORDER = (("Outcome", "outcome"), ("Spec", "specs"), ("ADRs", "adrs"), ("Retro", "retro"))

@@ -7,8 +7,6 @@ commands). It keeps the pass metrics in the event log for the Page API's `/metri
 the kinds are built once, only says whether a restart is needed.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import threading
@@ -22,7 +20,7 @@ from starpulse.sweeper.bin.blocks import SweeperBlocks as SweeperConfig
 from starpulse.sweeper.bin.blocks import sweeper_built_blocks
 from starpulse.sweeper.commands import CommandHousekeeping, CommandKind
 from starpulse.sweeper.lease import Lease, LeaseHeld, acquire, process_alive
-from starpulse.sweeper.passes import Housekeeping, Kind, Metrics, run_pass
+from starpulse.sweeper.passes import Housekeeping, Kind, Metrics, kind_series, run_pass
 from starpulse.sweeper.publish import publish_metrics
 from starpulse.sweeper.readers import Readers
 
@@ -53,7 +51,7 @@ def _loop(
     try:
         while not stop.is_set():
             run_pass(kinds, housekeeping, metrics)
-            publish_metrics(log, metrics.exposition())
+            publish_metrics(log, metrics.exposition() + kind_series(kinds))
             stop.wait(interval_s)
     finally:
         lease.release()

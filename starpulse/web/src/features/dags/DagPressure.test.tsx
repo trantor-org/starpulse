@@ -35,7 +35,7 @@ describe("the navigator's run pressure cards", () => {
   });
 
   it("draws the Runner CPU as one bar whose fill and figure are the served share of all cores", async () => {
-    await draw(data({ cpu: { dagu: { cores: 8, share: 0.375 } } }));
+    await draw(data({ cpu: { temporal: { cores: 8, share: 0.375 } } }));
 
     const cpu = card("Runner CPU");
     expect(cpu.querySelectorAll(".m i")).toHaveLength(1);

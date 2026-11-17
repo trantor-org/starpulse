@@ -66,15 +66,8 @@ With `[board] task_file_name` set to `slug`, a create writes `task-<n>-<slug>.md
 most 19 characters with a trailing `YYYY-MM-DD` kept past the cut, and `untitled` for a title with neither. A value
 other than `title` or `slug` is a startup error. The setting names only files a create writes; an existing file keeps
 its name, and every later write to a task reuses its file.
-With `[board] proposal_prefix` set (`PROP`), a create into the proposed lane takes the next number of its own
-sequence, `PROP-1`, `PROP-2`, so a proposal consumes no task number; a create anywhere else keeps the task prefix and
-its sequence. Moving a proposal out of the proposed lane renumbers it: the file takes the next task number, its old id
-is kept in the front matter `aliases` list, and the move answers `{"task": <new id>, "was": <proposal id>}`. A lookup
-by an alias finds the task, a new id never reuses one, and the feed holds one card for the task. Without the setting a
-proposal is numbered like any task and keeps its id.
-`starpulse migrate-proposals` gives the existing Proposed tasks `PROP-N` ids with their task numbers kept as aliases,
-and writes the old-to-new map to `<board>/proposal-aliases.json`; `--reverse` reads the map and restores each task
-number. Stop `serve` before either run, since the files are renamed. A rerun finishes an interrupted run.
+A task's front matter `aliases` list holds the keys it was known by before. A lookup by an alias finds the task, a new id never
+reuses one, and the feed holds one card for the task.
 With `[board] validate` set to `module:function`, the board imports that function when it loads (a name that resolves
 to no function is a startup error) and calls it before every task write with the file's path, its text before the write
 (`None` for a create) and the text about to be written. A returned string refuses the write: the writer answers with it
@@ -89,21 +82,14 @@ a rule broken refuses the write with its `reason` and `skill` before `validate` 
 keyword, `edit(task, changes, comment, actor="agent")`, which the server always passes on `edit`, `archive` and `create`
 (`anonymous` when the request names none); a `create` writer's `details` also carry `created_by`, the writer's
 `<harness>:<session>` to stamp in the task.
-A task record also carries `start_criteria`: each criterion of the `start_criteria` YAML block under the
-description's `## Start Criteria` heading (`id`, `kind`, `expr`, `cmp` and `want` for its threshold), with its
-`status` (`met`, `unmet`, `error` or `not evaluated`), `observed` value, `error` and `checked` time. With `[board]
-criteria` set to a command, the server runs it in the config's directory with `{id}` replaced by the task's id, and
-reads a JSON array from its output, one object per criterion with `id`, `status` (`met`, `not-met` or `error`),
-`observed`, `error` and `checked_at`; its exit status is ignored when it prints that array. A task's results are reused for 30
-seconds. A command that fails to start, runs longer than 10 seconds, prints no array, or leaves a criterion out marks the
-affected criteria `error` with why, and the record still builds. With no command each criterion is `not evaluated`.
+A task record also carries `start_criteria`: each entry of the `start_criteria` YAML block under the description's
+`## Start Criteria` heading (`id`, `kind`, `expr`), as written and never evaluated; a Done task's is empty. A Waiting
+task waits on events: each `kind: event` entry names an event subject (`query`), and the task actor releases the task on
+the first event of any of them (see Serving). The `[board] criteria` key is still read and does nothing.
 Each open task in the snapshot carries `workable` and `workable_since` (epoch seconds, null when not workable). A task is
-not workable while a dependency is not done (completed, or in the `done` lane) or while it is Waiting and its Start
-Criteria are not all met; `not evaluated` and `error` count as unmet, and a Waiting task with neither criteria nor
-dependencies is workable. It is workable since the latest of when it entered its lane, when each dependency was done and
-when a pass first saw its criteria all met. The server evaluates the criteria of Waiting tasks whose dependencies are
-done in the background every 30 seconds through the same cache, never per page, and keeps that first-met moment in
-`starpulse_criteria_met` while the criteria stay met, so a restart does not reset it.
+not workable while a dependency is not done (completed, or in the `done` lane) or while it is Waiting on an event its
+Start Criteria name; a Waiting task with neither is workable. It is workable since the latest of when it entered its lane
+and when each dependency was done.
 The native board also keeps milestones in Backlog.md's format, so a Backlog.md project's milestone files read
 unchanged: `milestones/m-N - slug.md`, with the front matter `id` and `title` and, under `## Description`, the sections `## Outcome`, `## Spec`
 and `## ADRs` (bullet lists) and `## Retro`. The slug is the title lowercased, whitespace to `-`, `<>:"/\|?*` removed
@@ -127,13 +113,12 @@ with its `n` keeps it, one without takes the next after the highest `n` given, s
 numbered from 1). `appendNotes` adds a line to the end of the notes, a non-blank
 `comment` adds a comment, and `read` returns the comments as `{created, text}`, which an edit cannot set. `complete(task)`
 refuses a task that is not Done and moves one that is to `completed/`.
-`starpulse.board.adapters.upstream_backlog` is the reference adapter for a tracker with its own
-writer: it polls a Backlog.md project's Markdown files (one `os.scandir` pass over `tasks/`, `completed/` and `archive/tasks/` every `interval` seconds,
+`starpulse.board.adapters.native_scan` is the scan the native board reads its files with: it polls the board's Markdown files (one `os.scandir` pass over `tasks/`, `completed/` and `archive/tasks/` every `interval` seconds,
 2 by default, that re-reads only a file whose modification time or size changed and retracts a task whose file is gone), puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
-whose states are those lanes and whose `writers` reserve a move to an actor, such as `operator`), and writes moves
-with the `backlog` CLI, answering a failed write with the CLI's output. Its first scan is the feed's replay, as a
+whose states are those lanes and whose `writers` reserve a move to an actor, such as `operator`); the native board's
+writer lands the moves. Its first scan is the feed's replay, as a
 stream adapter's read up to its start is: the feed builds the Ledger once, after the scan has placed every file, and a
 task write that meets the scan waits for it, so even a full scan serves the whole board in seconds. The native board
 also keeps itself saved: the feed saves its Board with each scanned file's fingerprint (modification time and size)
@@ -144,11 +129,7 @@ again and publishes only the tasks that project differently. A save that cannot 
 An adapter with a writer subclasses
 `BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
 the machine leaves to the operator is refused to the agent. A board kit also declares `teams`, the team key the
-adapter derives for each task it produces, and asserts each record carries it. `starpulse.board.adapters.jira` reads a Jira project and has no writer. It imports the named workflow from the site's
-`workflows/search` as the Board machine (a state per status, an event per transition, a global transition leaving every
-other status), refusing a workflow with a status in no transition, two statuses that make one lane, or no single initial
-transition. Each issue is a task in the lane of its status and the team of its Jira project; an issue it `Blocks` waits on
-the blocker, and a status in Jira's done category settles it as `completed`. Its first successful poll is the feed's replay, as the Backlog.md adapter's first scan is. Name your module in `[board] type` and StarPulse imports it.
+adapter derives for each task it produces, and asserts each record carries it. Name your module in `[board] type` and StarPulse imports it.
 
 **Migrating from `Board.history`.** `Board.history` is removed: StarPulse's store is the only history, so a `Board`
 that passes `history=` fails with `TypeError: Board.__init__() got an unexpected keyword argument 'history'`. Delete

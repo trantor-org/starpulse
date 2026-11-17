@@ -56,8 +56,6 @@ export interface Sky {
   roles: Roles;
   /** What the board writes beyond moves; absent for a board that only reads. */
   capabilities?: Capabilities;
-  /** The Backlog.md project serve found beside the config while it shows its own board, and how to switch to it. */
-  hint: string | null;
   tree: Tree;
   /** The lifecycle machines each Board state opens into; the first is the state's own. */
   subs: Record<string, string[]>;
@@ -65,6 +63,8 @@ export interface Sky {
   child: Record<string, Record<string, ChildLink>>;
   /** Each Backlog task's latest session on a lifecycle machine: the machine it is in and the state that machine left it in. */
   latest: Record<string, { flow: string; state: string; at: number }>;
+  /** Each Board task's place on the Star Map: the deepest phase machine declared under its Board state that it holds a session in, and that machine's state; none for a task only a machine no link opens (the harness) has placed. */
+  rides: Record<string, { flow: string; state: string; at: number }>;
   /** Each open task's pull requests, by task id. */
   pulls: Record<string, Pull[]>;
   /** Each task's latest In Progress claim the board writer refused an agent, and when. */
@@ -73,6 +73,8 @@ export interface Sky {
   settled: Record<string, Settled>;
   /** How many tasks each milestone has completed, over every settled task, not only the recent ones in `settled`. */
   milestoneDone: Record<string, number>;
+  /** How many tasks were archived since local midnight: archived tasks leave the board, so the final state's day count reads this, not a dot. */
+  archivedToday: number;
   /** Each distinct set of Board-column verdicts an agent's `move_set` names. */
   moveSets: Record<string, Record<string, Verdict>>;
   /** The rows of each Ledger the page has open, newest first; an event is absent until its stream's first page arrives, and holds none when its Ledger is empty. */
@@ -122,8 +124,8 @@ function boardStates(board: FlowSnapshot): Map<string, string> {
 /** Local midnight today, in epoch seconds. */
 export const midnight = (now = new Date()) => new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
 
-/** A Board state tasks enter the Board through: its initial state, or the proposed one a suggestion waits in until it is promoted. */
-export const entry = (s: { initial: boolean; role?: string | null }) => s.initial || s.role === "proposed";
+/** A Board state tasks enter the Board through: its initial state. */
+export const entry = (s: { initial: boolean }) => s.initial;
 
 /** A Board state that counts the day's arrivals rather than the tasks in it: where tasks enter, or a final state where they end. */
 export const daily = (s: { initial: boolean; final: boolean; role?: string | null }) => entry(s) || s.final;
@@ -143,6 +145,24 @@ function arrivals(board: FlowSnapshot, settled: Record<string, Settled>, since: 
   return out;
 }
 
+/** A task's rows down the phase machines declared from `root`: its newest row in `root`, then in the newest machine linked on that row's state and so on down, never a machine already on the way or `root` again. `root` records only some phase moves, so a task whose row there names no phase with a row (or has none) takes whichever phase holds its newest row; null for a task with no row anywhere. */
+export function descend(flows: Sky["flows"], id: string, root: string): { chain: string[]; machine: string; row: RawTask } | null {
+  const newest = (machine: string) =>
+    (flows[machine]?.agents ?? []).reduce<RawTask | null>((n, a) => (a.task === id && (!n || (a.active ?? 0) > (n.active ?? 0)) ? a : n), null);
+  const chain: string[] = [];
+  const down = (from: string, at?: RawTask | null) => {
+    const links = (flows[from]?.machine.submachines ?? []).filter((l) => (!at || l.state === at.state) && l.machine !== root && !chain.includes(l.machine));
+    const inner = links.map((l) => ({ machine: l.machine, row: newest(l.machine) }));
+    return inner.reduce<(typeof inner)[number] | null>((n, c) => (c.row && (!n || (c.row.active ?? 0) > (n.row?.active ?? 0)) ? c : n), null);
+  };
+  let machine = root, row = newest(machine);
+  for (let next = down(machine, row) ?? down(machine); next?.row; next = down(machine, row)) {
+    ({ machine, row } = next);
+    chain.push(machine);
+  }
+  return row ? { chain, machine, row } : null;
+}
+
 export function merge(raw: Snapshot, since = midnight()): Sky {
   const snap = mocked(raw);
   const boardTasks = new Map((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((a) => [a.id, a]));
@@ -150,11 +170,16 @@ export function merge(raw: Snapshot, since = midnight()): Sky {
   const board = flows.board ?? EMPTY, t = tree(snap), groups = (snap.domains ?? []).map((d): Group => ({ name: d.name, dags: d.dags.map((x) => x.name), ...(d.processes && { processes: d.processes.map((p) => ({ name: p.name, dags: p.dags.map((x) => x.name) })) }) }));
   // the writers the Star Map draws on a Board path are the ones that are no DAG; a DAG's own are on the DAGs view and a Ledger
   const actors = new Set([...(board.machine.dagActors ?? []), ...snap.dags.map((d) => d.name)]);
-  const child: Sky["child"] = {}, latest: Sky["latest"] = {}, active: Record<string, number> = {};
+  const child: Sky["child"] = {}, latest: Sky["latest"] = {}, rides: Sky["rides"] = {}, active: Record<string, number> = {};
   for (const f of Object.values(flows))
     if (f.name !== "board")
       for (const a of f.agents)
         if (a.task && (active[a.task] === undefined || (a.active ?? 0) > active[a.task])) [active[a.task], latest[a.task]] = [a.active ?? 0, { flow: f.name, state: a.state, at: a.active ?? 0 }];
+  // a task rides the deepest declared phase machine it is in under its Board state, never a machine no link opens (the harness session machine)
+  for (const a of board.agents) {
+    const root = board.machine.submachines?.find((l) => l.state === a.state)?.machine, at = root && descend(flows, a.id, root);
+    if (at) rides[a.id] = { flow: at.machine, state: at.row.state, at: at.row.active ?? 0 };
+  }
   for (const [parent, kids] of Object.entries(t.children)) for (const c of kids) (child[parent] ??= {})[c.state] = { machine: c.machine, when: c.when && `while ${c.when}` };
   return {
     now: snap.now,
@@ -174,15 +199,16 @@ export function merge(raw: Snapshot, since = midnight()): Sky {
     ratings: snap.ratings ?? {},
     roles: snap.roles ?? {},
     capabilities: snap.capabilities ?? undefined,
-    hint: snap.hint ?? null,
     tree: t,
     subs: t.subs,
     child,
     latest,
+    rides,
     pulls: snap.pulls ?? {},
     claims: snap.claims ?? {},
     settled: snap.settled,
     milestoneDone: snap.milestone_done ?? {},
+    archivedToday: snap.archived_today ?? 0,
     moveSets: snap.move_sets ?? {},
     ledgers: {},
     mergeStrip: snap.mergeStrip ?? null,
@@ -204,12 +230,18 @@ export function withLedgers(sky: Sky, snap: Snapshot): Sky {
 export const stale = (sky: Pick<Sky, "board" | "now">, a: RawTask): boolean =>
   !!a.entered && a.entered < midnight(new Date(sky.now * 1000)) && !!sky.board.machine.states.find((s) => s.id === a.state)?.final;
 
+/** The tasks archived today, counted on the final state when that is not the Done state: an archived task leaves the board, so no dot draws it, and it never counts as Done. */
+const archivedHere = (sky: Sky, sid: string) => (sid === sky.roles.final && sid !== sky.roles.done ? sky.archivedToday : 0);
+
+/** How many tasks arrived on a daily Board state since local midnight: the dots drawn there, and on the final state the tasks archived. */
+export const todayCount = (sky: Sky, sid: string) => (sky.today[sid] ?? []).length + archivedHere(sky, sid);
+
 /** A Board state's count: a starting state's is the day's arrivals alone, as it is a concept no task stays in; any other's is the tasks in it,
  * and on a terminal state those that entered it since local midnight and the day's arrivals there not already in it. */
 export function stateCount(sky: Sky, sid: string): number {
   if (sky.board.machine.states.find((s) => s.id === sid)?.initial) return sky.today[sid]?.length ?? 0;
   const here = new Set(sky.board.agents.filter((a) => a.state === sid && !stale(sky, a)).map((a) => a.id));
-  return here.size + (sky.today[sid] ?? []).filter((t) => !here.has(t.id)).length;
+  return here.size + (sky.today[sid] ?? []).filter((t) => !here.has(t.id)).length + archivedHere(sky, sid);
 }
 
 /** How a Board state's count reads: `n`, or on a starting or terminal state `N today`, with every task drawn first when some did not arrive today. */

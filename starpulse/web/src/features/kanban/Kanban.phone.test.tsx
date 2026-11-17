@@ -50,7 +50,7 @@ describe("the Kanban lane strip", () => {
     show(board(cards));
 
     expect(tabs().map((t) => [t.dataset.lane, t.querySelector(".c")?.textContent])).toEqual([
-      ["ready", "2"], ["waiting", "0"], ["in_progress", "1"], ["review", "1"], ["verifying", "0"], ["needs_attention", "0"], ["done", "0"],
+      ["ready", "2"], ["waiting", "0"], ["in_progress", "1"], ["review", "1"], ["verifying", "0"], ["needs_attention", "0"],
     ]);
   });
 
@@ -68,13 +68,20 @@ describe("the Kanban lane strip", () => {
     expect(shown()).toEqual(["todo"]);
   });
 
+  it("counts the open cards and the day's Done tasks in its header, and draws no Done card", () => {
+    show({ ...board([...cards, card("T-5", "done")]), doneCount: 7 } as HudState);
+
+    expect(host.querySelector("header .count")?.textContent).toBe("4 open · 7 done");
+    expect(host.querySelectorAll("#cols .card").length).toBe(4);
+  });
+
   it("shows the lane whose tab is tapped", () => {
     show(board(cards));
 
-    act(() => tabs().find((t) => t.dataset.lane === "done")!.click());
+    act(() => tabs().find((t) => t.dataset.lane === "review")!.click());
 
-    expect(shown()).toEqual(["done"]);
-    expect(tabs().filter((t) => t.getAttribute("aria-selected") === "true").map((t) => t.dataset.lane)).toEqual(["done"]);
+    expect(shown()).toEqual(["review"]);
+    expect(tabs().filter((t) => t.getAttribute("aria-selected") === "true").map((t) => t.dataset.lane)).toEqual(["review"]);
   });
 });
 

@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanbanModel";
-import { offBoardTask, prReadState } from "./kanbanModel";
-import { merge, midnight } from "../../render/sky";
+import { describe, expect, it, vi } from "vitest";
+import { MoveStore, place, type Post, type Reply } from "./move";
+import { NO_PREFS, applySuggestion, boardCount, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll, stackOf, toggleFold, whyHidden, withRecordPulls, type KanbanTask } from "./kanbanModel";
+import { climb, offBoardTask, prReadState } from "./kanbanModel";
+import type { Sky } from "../../render/sky";
+import { merge } from "../../render/sky";
 import { LIFECYCLE_COLUMNS, LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { TaskRecord } from "./taskViewModel";
 import { sessionNickname } from "./nickname";
@@ -11,17 +13,28 @@ const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", 
 const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): KanbanTask => ({
   id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered, created: null, workableSince: null, machines: [],
 });
-const HOURS = 3600, NOW = midnight(new Date(2026, 9, 10)) + 12 * HOURS;
-const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, LIFECYCLE_ROLES, prefs, NOW);
+const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, LIFECYCLE_ROLES, prefs);
 const column = (v: ReturnType<typeof view>, id: string) => v.columns.find((c) => c.id === id)!;
 const headers = (v: ReturnType<typeof view>, id: string) => column(v, id).buckets.map((b) => b.milestone);
+
+describe("a pending move", () => {
+  it("sorts the card first in its new column, ahead of cards already there", () => {
+    const store = new MoveStore(vi.fn<Post>(() => new Promise<Reply>(() => {})), () => 900);
+    const moving = task("PROJ-1", "ready", "", 0, 10);
+    void store.drop({ ...moving, moves: { in_progress: { allowed: true, reason: "", skill: "" } } }, "in_progress");
+
+    const v = view(place([task("PROJ-2", "in_progress", "", 0, 500), moving], store.get()));
+
+    expect(column(v, "in_progress").buckets[0].tasks.map((t) => t.id)).toEqual(["PROJ-1", "PROJ-2"]);
+  });
+});
 
 describe("the columns", () => {
   it("are the seven Board states in order, named by the machine, and draw no other lane", () => {
     const v = view([task("PROJ-1", "new"), task("PROJ-2", "ready")]);
 
-    expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Verifying", "Needs attention", "Done"]);
-    expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0, 0]);
+    expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Verifying", "Needs attention"]);
+    expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0]);
   });
 
   it("draw a task resting in Verifying, which a merged task with post-merge QA items waits in", () => {
@@ -34,9 +47,9 @@ describe("the columns", () => {
   it("draw the verifying State the machine names between Review and Needs attention, so Review holds only review tasks", () => {
     const names = { ...NAMES, verifying: "Verifying" };
     const roles = { ...LIFECYCLE_ROLES, verifying: "verifying", lanes: ["ready", "waiting", "in_progress", "review", "verifying", "needs_attention", "done"] };
-    const v = layout([task("PROJ-1", "review"), task("PROJ-2", "verifying"), task("PROJ-3", "verifying")], names, roles, NO_PREFS, NOW);
+    const v = layout([task("PROJ-1", "review"), task("PROJ-2", "verifying"), task("PROJ-3", "verifying")], names, roles, NO_PREFS);
 
-    expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Verifying", "Needs attention", "Done"]);
+    expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Verifying", "Needs attention"]);
     expect(column(v, "review").buckets.flatMap((b) => b.tasks.map((t) => t.id))).toEqual(["PROJ-1"]);
     expect(column(v, "verifying").count).toBe(2);
     expect(column(v, "verifying").role).toBe("verifying");
@@ -44,7 +57,7 @@ describe("the columns", () => {
 
   it("are the board's own lanes in order when it has no ready lane, so a native board's first-lane task is drawn", () => {
     const native = { to_do: "To Do", in_progress: "In Progress", done: "Done" };
-    const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, {}, NO_PREFS, NOW);
+    const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, {}, NO_PREFS);
 
     expect(columnsOf(native, {})).toEqual(["to_do", "in_progress", "done"]);
     expect(v.columns.map((c) => [c.id, c.name, c.count])).toEqual([["to_do", "To Do", 1], ["in_progress", "In Progress", 0], ["done", "Done", 1]]);
@@ -56,14 +69,15 @@ describe("the columns", () => {
     const lanes = ["ready", "waiting", "in_progress", "review", "verifying", "needs_attention", "done"];
     const names = Object.fromEntries(lanes.map((id) => [id, id]));
 
-    expect(columnsOf(names, { ...LIFECYCLE_ROLES, lanes })).toEqual(lanes);
-    expect(layout([task("TASK-1", "verifying")], names, { ...LIFECYCLE_ROLES, lanes }, NO_PREFS, NOW).columns.map((c) => [c.id, c.count])).toContainEqual(["verifying", 1]);
+    expect(columnsOf(names, { ...LIFECYCLE_ROLES, lanes })).toEqual(lanes.slice(0, -1));
+    expect(layout([task("TASK-1", "verifying")], names, { ...LIFECYCLE_ROLES, lanes }, NO_PREFS).columns.map((c) => [c.id, c.count])).toContainEqual(["verifying", 1]);
   });
 
-  it("never include the proposed State, which waits off the board until it is promoted", () => {
-    const names = { proposed: "Proposed", to_do: "To Do", done: "Done" };
+  it("fall back to the machine's lifecycle States when an older server's snapshot has no lanes, so the tasks are still drawn", () => {
+    const { lanes: _lanes, ...roles } = LIFECYCLE_ROLES;
+    const v = layout([task("TASK-1", "ready"), task("TASK-2", "done")], NAMES, roles, NO_PREFS);
 
-    expect(columnsOf(names, { proposed: "proposed" })).toEqual(["to_do", "done"]);
+    expect(v.shown).toBe(1);
   });
 
   it("order a column's cards by when each entered the column, newest first, then by id, newest first", () => {
@@ -117,8 +131,8 @@ describe("hiding", () => {
 
     expect(headers(v, "ready")).toEqual(["m-9"]);
     expect(column(v, "in_progress").buckets).toEqual([]);
-    expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0, 1]);
-    expect([v.open, v.done, v.shown, v.total]).toEqual([1, 1, 2, 5]);
+    expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0]);
+    expect([v.shown, v.total]).toEqual([1, 4]);
   });
 
   it("takes a hidden task out of its column and the counts, and leaves its milestone's other cards", () => {
@@ -126,16 +140,16 @@ describe("hiding", () => {
 
     expect(column(v, "ready").buckets.find((b) => b.milestone === "m-12")!.tasks.map((t) => t.id)).toEqual(["PROJ-2"]);
     expect(column(v, "ready").count).toBe(2);
-    expect(v.shown).toBe(4);
+    expect(v.shown).toBe(3);
   });
 
   it("shows one item back, or everything at once", () => {
     const hidden = hideTask(hideMilestone(NO_PREFS, "m-12"), "PROJ-3");
 
-    expect(view(tasks, hidden).shown).toBe(1);
-    expect(view(tasks, show(hidden, "milestone", "m-12")).shown).toBe(4);
-    expect(view(tasks, show(hidden, "task", "PROJ-3")).shown).toBe(2);
-    expect(view(tasks, showAll(hidden)).shown).toBe(5);
+    expect(view(tasks, hidden).shown).toBe(0);
+    expect(view(tasks, show(hidden, "milestone", "m-12")).shown).toBe(3);
+    expect(view(tasks, show(hidden, "task", "PROJ-3")).shown).toBe(1);
+    expect(view(tasks, showAll(hidden)).shown).toBe(4);
     expect(showAll(hidden)).toEqual(NO_PREFS);
   });
 
@@ -159,7 +173,7 @@ describe("the cards drawn from a snapshot", () => {
   const agent = (id: string, state: string, extra: Partial<RawTask> = {}): RawTask => ({ id, title: `title ${id}`, state, model: "", ...extra });
   const machine = { states: [], transitions: [] } as never;
   const snapshot = (): Snapshot => ({
-    graphs: ["board", "dagu", "in-progress"],
+    graphs: ["board", "temporal", "in-progress"],
     dags: [],
     flows: [
       { name: "board", machine, agents: [
@@ -212,11 +226,39 @@ describe("the cards drawn from a snapshot", () => {
 
   it("carry the source of a mapped machine on the live line, and none for a local machine", () => {
     const snap = snapshot();
-    snap.flows.push({ name: "ci", machine: { states: [], transitions: [], source: "GitHub" } as never, agents: [agent("PROJ-1", "running", { task: "PROJ-1", active: 550 })] });
+    snap.flows.push({ name: "ci", machine: { states: [], transitions: [], source: "GitHub" } as never, agents: [agent("PROJ-1", "queued", { task: "PROJ-1", active: 550 })] });
     const live = (s: Snapshot) => kanbanTasks(merge(s)).find((t) => t.id === "PROJ-1")!.live;
 
-    expect(live(snap)).toMatchObject({ machine: "ci", state: "running", source: "GitHub" });
+    expect(live(snap)).toMatchObject({ machine: "ci", state: "queued", source: "GitHub" });
     expect(live(snapshot())!.source).toBeUndefined();
+  });
+
+  it("draw a ci state from the check status of the task's open pull requests, so the dot and the card agree", () => {
+    const live = (state: string, checks: "pass" | "pending" | "failing" | "none") => {
+      const snap = snapshot();
+      snap.flows.push({ name: "ci", machine: { states: [], transitions: [] } as never, agents: [agent("PROJ-1", state, { task: "PROJ-1", active: 550 })] });
+      snap.pulls = { "PROJ-1": [pull(7, checks, 2)] };
+      return kanbanTasks(merge(snap)).find((t) => t.id === "PROJ-1")!.live!.state;
+    };
+
+    expect(live("failing", "pass")).toBe("passing");
+    expect(live("passing", "failing")).toBe("failing");
+    expect(live("passing", "pending")).toBe("running");
+    expect(live("running", "pass")).toBe("passing");
+    expect(live("queued", "failing")).toBe("queued");
+    expect(live("failing", "none")).toBe("failing");
+  });
+
+  it("name the skill the machine's submachine link declares on the live line, and none when the link names none", () => {
+    const link = { state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" };
+    const snap = snapshot();
+    snap.flows[0].machine = { states: [], transitions: [], submachines: [{ ...link, skill: "review-fix" }] } as never;
+    const live = (s: Snapshot) => kanbanTasks(merge(s)).find((t) => t.id === "PROJ-1")!.live;
+
+    expect(live(snap)).toMatchObject({ machine: "in-progress", skill: "review-fix" });
+    snap.flows[0].machine = { states: [], transitions: [], submachines: [{ ...link, skill: "" }] } as never;
+    expect(live(snap)!.skill).toBeUndefined();
+    expect(live(snapshot())!.skill).toBeUndefined();
   });
 
   it("carry the verdict on each column the task may move to, and none for a task the snapshot gives none", () => {
@@ -320,6 +362,22 @@ describe("the cards drawn from a snapshot", () => {
   });
 });
 
+describe("a Done task opened by id", () => {
+  const pull = "https://github.com/trantor-org/trantor/pull/9601";
+  const record = { references: [pull, "https://example.com/x"] } as unknown as TaskRecord;
+  const card = (lane: string): KanbanTask => ({ ...task("PROJ-1", lane), prs: [] });
+
+  it("takes the pull request its record cites, since the snapshot's Done entry carries none", () => {
+    expect(withRecordPulls(card("done"), record, LIFECYCLE_ROLES).prs.map((p) => p.url)).toEqual([pull]);
+  });
+
+  it("leaves a task that is not Done as it was", () => {
+    const open = card("ready");
+
+    expect(withRecordPulls(open, record, LIFECYCLE_ROLES)).toBe(open);
+  });
+});
+
 describe("the filters", () => {
   const card = (id: string, title: string, extra: Partial<KanbanTask> = {}): KanbanTask => ({ ...task(id, "ready"), title, ...extra });
   const tasks = [
@@ -376,7 +434,7 @@ describe("the filters", () => {
     const v = view(tasks, prefs);
 
     expect(ids(prefs)).toEqual(["PROJ-2482", "PROJ-2483"]);
-    expect([v.shown, v.total, v.open]).toEqual([2, 4, 2]);
+    expect([v.shown, v.total]).toEqual([2, 4]);
     expect(filtersActive(prefs)).toBe(true);
   });
 
@@ -467,7 +525,7 @@ describe("what holds the Waiting lane", () => {
 
 describe("why a task the Recent rail points at has no card in view", () => {
   const tasks = [task("PROJ-1", "ready", "m-12"), task("PROJ-2", "ready", "m-9"), task("PROJ-3", "archived")];
-  const why = (id: string, prefs: Partial<typeof NO_PREFS> = {}) => whyHidden(tasks, NAMES, LIFECYCLE_ROLES, { ...NO_PREFS, ...prefs }, id, NOW);
+  const why = (id: string, prefs: Partial<typeof NO_PREFS> = {}) => whyHidden(tasks, NAMES, LIFECYCLE_ROLES, { ...NO_PREFS, ...prefs }, id);
 
   it("is nothing for a card the board draws", () => {
     expect(why("PROJ-1")).toBeNull();
@@ -547,58 +605,6 @@ describe("Waiting stacks", () => {
   });
 });
 
-describe("Done chains", () => {
-  const done = (id: string, milestone: string, ...dependencies: string[]): KanbanTask => ({ ...task(id, "done", milestone), dependencies });
-  const finished = (tasks: KanbanTask[], prefs = NO_PREFS) => column(view(tasks, prefs), "done").buckets;
-  const stacks = (tasks: KanbanTask[], prefs = NO_PREFS) => finished(tasks, prefs).flatMap((b) => b.stacks.map((s) => s.members.map((t) => t.id)));
-
-  it("fold a Done task under the Done task that depends on it, the chain's last finished on top and the rest by distance from it", () => {
-    // T-3 finished last: T-2 unblocked it, T-1 unblocked T-2, and T-4 sat beside T-2
-    const tasks = [done("T-1", "m-1"), done("T-2", "m-1", "T-1"), done("T-4", "m-1", "T-1"), done("T-3", "m-1", "T-2", "T-4")];
-    const bucket = finished(tasks)[0];
-
-    expect(stacks(tasks)).toEqual([["T-3", "T-2", "T-4", "T-1"]]);
-    expect(bucket.stacks[0].top.id).toBe("T-3");
-    expect(bucket.stacks[0].links.get("T-1")).toEqual(["T-2", "T-4"]);
-  });
-
-  it("fold the tasks a milestone's retro depends on under the retro", () => {
-    const tasks = [done("T-9", "m-1", "T-1", "T-2", "T-10"), done("T-10", "m-1"), done("T-1", "m-1"), done("T-2", "m-1")];
-
-    expect(stacks(tasks)).toEqual([["T-9", "T-1", "T-2", "T-10"]]);
-  });
-
-  it("leave a Done task whose dependency is in another milestone, not Done or off the board a stack of its own", () => {
-    const tasks = [done("T-1", "m-1", "T-2", "R-1", "X-1"), done("T-2", "m-2"), { ...task("R-1", "ready", "m-1") }];
-
-    expect(stacks(tasks)).toEqual([["T-2"], ["T-1"]]);
-  });
-
-  it("build stacks from the visible cards, so a filtered-out or hidden task leaves its chain", () => {
-    const tasks = [done("T-1", "m-1"), done("T-2", "m-1", "T-1"), done("T-3", "m-1", "T-2")];
-
-    expect(stacks(tasks, hideTask(NO_PREFS, "T-2"))).toEqual([["T-3"], ["T-1"]]);
-    expect(stacks(tasks, { ...NO_PREFS, query: "T-1" })).toEqual([["T-1"]]);
-  });
-
-  it("stack only the Waiting and Done lanes", () => {
-    const tasks = [{ ...task("T-1", "review", "m-1") }, { ...task("T-2", "review", "m-1"), dependencies: ["T-1"] }];
-
-    expect(column(view(tasks), "review").buckets[0].stacks).toEqual([]);
-  });
-
-  it("find the Done chain a task sits in, only when it has company", () => {
-    const l = view([done("T-1", "m-1"), done("T-2", "m-1", "T-1"), done("T-3", "m-1")]);
-
-    expect(stackOf(l, "T-1")?.members.map((t) => t.id)).toEqual(["T-2", "T-1"]);
-    expect(stackOf(l, "T-3")).toBeUndefined();
-  });
-
-  it("stop at a dependency cycle instead of recursing forever", () => {
-    expect(stacks([done("T-1", "m-1", "T-2"), done("T-2", "m-1", "T-1")]).flat().sort()).toEqual(["T-1", "T-2"]);
-  });
-});
-
 describe("Waiting cards linked to a blocker in another milestone", () => {
   const wait = (id: string, milestone: string, ...dependencies: string[]): KanbanTask => ({ ...task(id, "waiting", milestone), dependencies, openDeps: dependencies.length });
   const cross = (tasks: KanbanTask[], prefs = NO_PREFS) => [...view(tasks, prefs).cross].map(([id, held]) => [id, held.map((t) => t.id)]);
@@ -666,35 +672,34 @@ describe("the milestone outline", () => {
   });
 });
 
-describe("the Done column", () => {
-  const finished = (id: string, hoursAgo: number, milestone = "m-1") => task(id, "done", milestone, 0, NOW - hoursAgo * HOURS);
+describe("the Done lane", () => {
+  const done = [task("T-1", "done", "m-1"), task("T-2", "done", "m-1"), task("T-3", "ready", "m-1")];
 
-  it("draws a task that entered Done since local midnight and not one that entered before it, and counts only what it draws", () => {
-    // NOW is local noon: 13 hours back is yesterday, inside a rolling day
-    const tasks = [finished("T-OLD", 13), finished("T-NEW", 11), task("T-1", "ready", "m-1")];
-    const v = view(tasks);
+  it("draws no column and no card for a Done task, and counts only what it draws", () => {
+    const v = view(done);
 
-    expect(column(v, "done").buckets.flatMap((b) => b.tasks.map((t) => t.id))).toEqual(["T-NEW"]);
-    expect([column(v, "done").count, v.done, v.open, v.shown, v.total]).toEqual([1, 1, 1, 2, 2]);
-    expect(whyHidden(tasks, NAMES, LIFECYCLE_ROLES, NO_PREFS, "T-OLD", NOW)).toBe("Done before today");
-    expect(whyHidden(tasks, NAMES, LIFECYCLE_ROLES, NO_PREFS, "T-NEW", NOW)).toBeNull();
+    expect(v.columns.map((c) => c.id)).not.toContain("done");
+    expect(v.columns.flatMap((c) => c.buckets).flatMap((b) => b.tasks.map((t) => t.id))).toEqual(["T-3"]);
+    expect([v.shown, v.total]).toEqual([1, 1]);
   });
 
-  it("draws a Done task the snapshot gave no time for, since its age is unknown", () => {
-    expect(column(view([task("T-1", "done", "m-1")]), "done").count).toBe(1);
+  it("names a Done task as Done when asked why it has no card", () => {
+    expect(whyHidden(done, NAMES, LIFECYCLE_ROLES, NO_PREFS, "T-1")).toBe("Done");
+    expect(whyHidden(done, NAMES, LIFECYCLE_ROLES, NO_PREFS, "T-9")).toBe("not on the board");
   });
 
-  it("leaves an undrawn Done task in its milestone's done and total", () => {
-    const tasks = [finished("T-OLD", 13), finished("T-NEW", 1), task("T-1", "ready", "m-1")];
-
-    expect(column(view(tasks), "done").count).toBe(1);
-    expect(milestoneOutline(tasks, LIFECYCLE_ROLES)).toEqual([{ milestone: "m-1", done: 2, total: 3 }]);
+  it("names a missing task as off the board even when the roles name no Done lane", () => {
+    expect(whyHidden(done, NAMES, { ...LIFECYCLE_ROLES, done: undefined }, NO_PREFS, "T-9")).toBe("not on the board");
   });
 
-  it("keeps the toolbar's counts to the tasks drawn", () => {
-    const tasks = [{ ...finished("T-OLD", 13), assignee: "gone" }, finished("T-NEW", 1)];
+  it("counts the cards in the drawn columns, not the Done or Proposed ones", () => {
+    const roles = { ...LIFECYCLE_ROLES, proposed: "proposed" };
 
-    expect(assigneeOptions(recent(tasks, NOW, LIFECYCLE_ROLES), LIFECYCLE_COLUMNS)).toEqual([{ value: "", count: 1 }]);
+    expect(boardCount([...done, task("T-7", "proposed")], { ...NAMES, proposed: "Proposed" }, roles)).toBe(1);
+  });
+
+  it("leaves a Done task in its milestone's done and total", () => {
+    expect(milestoneOutline(done, LIFECYCLE_ROLES)).toEqual([{ milestone: "m-1", done: 2, total: 3 }]);
   });
 });
 
@@ -712,6 +717,11 @@ describe("prReadState", () => {
   it("gives a read pull request its state, check result and unread review count", () => {
     expect(prReadState(read({ checks: "failing", threads: 2 }))).toEqual({ read: true, state: "open", checks: "failing", unreviewed: 2 });
     expect(prReadState(read({ merged: true }))).toEqual({ read: true, state: "merged", checks: "pass", unreviewed: 0 });
+  });
+
+  it("reads a closed pull request as closed and a merged one as merged, whatever its checks say", () => {
+    expect(prReadState(read({ closed: true, checks: "pass" }))).toMatchObject({ state: "closed" });
+    expect(prReadState(read({ merged: true, closed: true, checks: "failing" }))).toMatchObject({ state: "merged" });
   });
 });
 
@@ -734,5 +744,104 @@ describe("a Done task the snapshot leaves out", () => {
   it("is nothing for a record that is not Done", () => {
     expect(offBoardTask("TASK-9", { ...record, status: "In Progress" }, LIFECYCLE_ROLES)).toBeNull();
     expect(offBoardTask("TASK-9", { ...record, status: undefined }, LIFECYCLE_ROLES)).toBeNull();
+  });
+});
+
+describe("climb", () => {
+  const st = (id: string, final = false) => ({ id, name: id, initial: false, final });
+  type Session = { task: string; state: string; active: number };
+  type Link = [state: string, machine: string];
+  const flow = (name: string, states: string[], agents: Session[] = [], links: Link[] = []) =>
+    ({ name, machine: { states: [...states.map((s) => st(s)), st("done", true)], transitions: [], submachines: links.map(([state, machine]) => ({ parent: name, state, machine })) }, agents });
+  const sky = (on: Record<string, Session[]>) => ({
+    board: flow("board", ["in_progress", "review"], [], [["in_progress", "in-progress"], ["in_progress", "ci"], ["review", "ci"]]),
+    flows: {
+      "in-progress": flow("in-progress", ["build", "deliver", "review_fix"], on["in-progress"], [["build", "build"], ["deliver", "deliver"], ["deliver", "triaging"], ["review_fix", "review_fix"]]),
+      build: flow("build", ["worktree_ready", "red_proven", "green"], on.build),
+      deliver: flow("deliver", ["start", "pushed", "ready"], on.deliver, [["ready", "ci"]]),
+      review_fix: flow("review_fix", ["triage", "fixed"], on.review_fix),
+      ci: flow("ci", ["pending", "pass"], on.ci, [["pass", "verify"]]),
+      verify: flow("verify", ["merged", "applied"], on.verify),
+      harness: flow("harness", ["active", "stopped"], on.harness),
+    },
+  }) as unknown as Sky;
+  const ip = (task: string, state: string, active = 1) => ({ "in-progress": [{ task, state, active }] });
+
+  it("names a task in a phase by that phase and its step over the phase's states", () => {
+    const at = climb(sky({ ...ip("PROJ-1", "build"), build: [{ task: "PROJ-1", state: "red_proven", active: 9 }] }), "PROJ-1");
+    expect(at).toEqual({ chain: ["build"], state: "red_proven", at: 9, track: [st("worktree_ready"), st("red_proven"), st("green"), st("done", true)] });
+  });
+
+  it("names the skill the link opening its phase declares", () => {
+    const s = sky({ ...ip("PROJ-2", "build"), build: [{ task: "PROJ-2", state: "green", active: 9 }] });
+    (s.flows["in-progress"].machine.submachines ?? [])[0].skill = "tdd";
+    expect(climb(s, "PROJ-2")).toMatchObject({ chain: ["build"], skill: "tdd" });
+  });
+
+  it("takes the phase with the newest row for a task with phase rows and no In Progress row", () => {
+    const rows = { build: [{ task: "PROJ-6", state: "green", active: 7 }], deliver: [{ task: "PROJ-6", state: "pushed", active: 9 }] };
+    expect(climb(sky({ build: rows.build }), "PROJ-6")).toMatchObject({ chain: ["build"], state: "green", at: 7 });
+    expect(climb(sky(rows), "PROJ-6")).toMatchObject({ chain: ["deliver"], state: "pushed", at: 9 });
+  });
+
+  it("takes the phase with the newest row when the In Progress row names a phase with no row", () => {
+    const at = climb(sky({ ...ip("PROJ-7", "review_fix", 2), deliver: [{ task: "PROJ-7", state: "pushed", active: 9 }] }), "PROJ-7");
+    expect(at).toMatchObject({ chain: ["deliver"], state: "pushed" });
+  });
+
+  it("chains a submachine after the phase when the phase's step declares it, outermost first", () => {
+    const at = climb(sky({
+      ...ip("PROJ-2", "deliver"),
+      deliver: [{ task: "PROJ-2", state: "ready", active: 4 }],
+      ci: [{ task: "PROJ-2", state: "pass", active: 5 }],
+      verify: [{ task: "PROJ-2", state: "applied", active: 6 }],
+    }), "PROJ-2");
+    expect(at?.chain).toEqual(["deliver", "ci", "verify"]);
+    expect(at?.track?.map((s) => s.id)).toEqual(["merged", "applied", "done"]);
+  });
+
+  it("keeps the phase step its task holds over a newer row of a machine that step does not declare", () => {
+    const at = climb(sky({
+      ...ip("PROJ-5", "deliver", 3),
+      deliver: [{ task: "PROJ-5", state: "pushed", active: 4 }],
+      build: [{ task: "PROJ-5", state: "green", active: 50 }],
+      review_fix: [{ task: "PROJ-5", state: "triage", active: 51 }],
+      ci: [{ task: "PROJ-5", state: "pass", active: 52 }],
+      verify: [{ task: "PROJ-5", state: "merged", active: 53 }],
+    }), "PROJ-5");
+    expect(at).toMatchObject({ chain: ["deliver"], state: "pushed", at: 4 });
+  });
+
+  it("follows the In Progress step to the phase that step declares, whatever another phase's row says", () => {
+    const at = climb(sky({
+      ...ip("PROJ-6", "review_fix", 30),
+      build: [{ task: "PROJ-6", state: "green", active: 40 }],
+      deliver: [{ task: "PROJ-6", state: "pushed", active: 20 }],
+      review_fix: [{ task: "PROJ-6", state: "triage", active: 31 }],
+    }), "PROJ-6");
+    expect(at).toMatchObject({ chain: ["review_fix"], state: "triage" });
+  });
+
+  it("takes the newest session among the machines one step declares", () => {
+    const s = sky({ ...ip("PROJ-7", "deliver"), deliver: [{ task: "PROJ-7", state: "start", active: 2 }] });
+    s.flows.triaging = { ...(s.flows["in-progress"] as object), name: "triaging", agents: [{ task: "PROJ-7", state: "fixed", active: 9 }] } as never;
+    expect(climb(s, "PROJ-7")).toMatchObject({ chain: ["triaging"], state: "fixed" });
+  });
+
+  it("skips a skill session's machine no step declares, however new its session", () => {
+    const at = climb(sky({ ...ip("PROJ-8", "build"), build: [{ task: "PROJ-8", state: "green", active: 10 }], harness: [{ task: "PROJ-8", state: "stopped", active: 40 }] }), "PROJ-8");
+    expect(at).toMatchObject({ chain: ["build"], state: "green" });
+    expect(climb(sky({ harness: [{ task: "PROJ-9", state: "active", active: 1 }] }), "PROJ-9")).toBeNull();
+  });
+
+  it("stops at a machine already on the chain when a declaration links back to it", () => {
+    const s = sky({ ...ip("PROJ-10", "deliver"), deliver: [{ task: "PROJ-10", state: "ready", active: 2 }], ci: [{ task: "PROJ-10", state: "pass", active: 3 }] });
+    s.flows.ci.machine.submachines = [{ parent: "ci", state: "pass", machine: "deliver" }, { parent: "ci", state: "pass", machine: "in-progress" }] as never;
+    expect(climb(s, "PROJ-10")).toMatchObject({ chain: ["deliver", "ci"], state: "pass" });
+  });
+
+  it("gives no track to a task in no phase: none at all, or only in the In Progress machine itself", () => {
+    expect(climb(sky({}), "PROJ-3")).toBeNull();
+    expect(climb(sky(ip("PROJ-4", "build")), "PROJ-4")).toBeNull();
   });
 });

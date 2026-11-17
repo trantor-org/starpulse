@@ -14,7 +14,11 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
-from starpulse.views.ports.services import SLOW_READ_S
+from starpulse.bridge.reach import parse_reach
+from starpulse.bridge.subjects import token
+from starpulse.bridge.subscriptions import parse_rules
+from starpulse.contracts.reads import SLOW_READ_S
+from starpulse.runtime.nats_server import DEFAULT_RESUME
 
 #: An environment variable's name: the setting holds the name, never the value.
 EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
@@ -88,7 +92,7 @@ class RunsInstanceFile(_Table):
         description=(
             "What the adapter reads. A built-in adapter is an opt-in worker: `serve`'s `contexts` child runs it "
             "as a thread, or you run `starpulse worker <adapter> --config <this file>`, and, with it down or not yet started, the page shows "
-            "this instance with the error \"the <adapter> worker has not reported\" or \"last reported Ns ago\" (its "
+            'this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its '
             "beat is older than 60s)."
         ),
     )
@@ -191,6 +195,132 @@ class MemoryFile(_Table):
     )
 
 
+class SubscriptionRulesFile(_Table):
+    """The `[bridge.subscriptions.<kind>]` table."""
+
+    claim: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Subjects a session subscribes to when it claims a task of this kind, relative to the board and with the "
+            "task as `{task}`: `task.{task}.>`."
+        ),
+    )
+    pr_opened: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Subjects the session holding the task adds when a pull request of the task opens, with `{task}` and the "
+            "number `{pr}`: `pr.{pr}.>`."
+        ),
+    )
+
+
+class IncidentReachFile(_Table):
+    """The `[bridge.incidents.<type>]` table."""
+
+    kinds: list[str] = Field(
+        default_factory=list, description="Reach a held task with any of these `kind-*` labels (`execute`)."
+    )
+    areas: list[str] = Field(
+        default_factory=list, description="Reach a held task with any of these `area-*` labels (`starpulse`)."
+    )
+
+
+class BridgeFile(_Table):
+    """The `[bridge]` table."""
+
+    model_config = ConfigDict(title="[bridge]")
+
+    enabled: bool = Field(
+        default=True,
+        description=(
+            "`serve` supervises a `nats-server` (the official release, checked against its pinned checksum) "
+            "on `127.0.0.1` with JetStream on, as its `nats` child; false: none starts. A change restarts `serve`."
+        ),
+    )
+    port: int = Field(default=4222, ge=1, le=65535, description="The port the server listens on, on localhost only.")
+    store_dir: str | None = Field(
+        default=None,
+        description="Where JetStream keeps its streams. Default: `starpulse-nats` beside the config.",
+    )
+    sessions_dir: str | None = Field(
+        default=None,
+        description=(
+            "Where `starpulse subscribe` and `starpulse register` record each session's inbox socket and token, and "
+            "where `serve` reads them. Default: `starpulse-sessions` beside the config, which a CLI run from "
+            "another checkout than the served one does not share; name a state path when they differ."
+        ),
+    )
+    board: str = Field(
+        default="trantor",
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="The `<board>` token of the subjects the bridge publishes, `starpulse.<board>.<entity>.<id>.<event>`.",
+    )
+    subscriptions: dict[str, SubscriptionRulesFile] = Field(
+        default_factory=dict,
+        description=(
+            "The subjects a session subscribes to, by the `kind-*` label of the task it holds, "
+            "`[bridge.subscriptions.<kind>]`. A kind with no table subscribes to nothing; a session leaving the task "
+            "drops the task's subjects."
+        ),
+    )
+
+    incidents: dict[str, IncidentReachFile] = Field(
+        default_factory=dict,
+        description=(
+            "The sessions `starpulse incident open <type> <key>` makes wait on its owner task, by incident type, "
+            "`[bridge.incidents.<type>]`. Each table declares at least one of `kinds` and `areas`, and a task "
+            "must match every one declared; a type with no table reaches none."
+        ),
+    )
+
+    quiet_moves: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "The lane moves a session's consumer acks without notifying the session, by destination lane: "
+            "`review = [\"starpulse/task-actor\"]` quiets the task actor's moves into Review. Each value names "
+            "writers as the move's `actor` records them, or `self` for a move the receiving session wrote itself. "
+            "A lane with no entry notifies every move, and the published subjects are unchanged."
+        ),
+    )
+
+    resume: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_RESUME),
+        min_length=1,
+        description=(
+            "The command that resumes a session that has ended when an event on its subjects arrives, ending in the "
+            "flag that takes the session id; the id and the events follow it as arguments. `{session}` and `{cwd}` in "
+            "an element are replaced by the session's id and working directory, and the command runs in that directory."
+        ),
+    )
+
+    end: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The command run when a task moves into a finished lane `end_lanes` names, whether or not a consumer "
+            "still holds the task, once per task in a delivered batch; `{task}` in an element is replaced by the task id. It ends the task's idle session, so "
+            "it should return at once rather than wait on the end. Empty runs none."
+        ),
+    )
+    end_lanes: list[str] = Field(
+        default_factory=list,
+        description="The lane ids a task's move into runs `end`, such as `done` or `archived`. Empty runs none.",
+    )
+
+    @field_validator("incidents")
+    @classmethod
+    def _incidents_declare_a_reach(cls, value: dict[str, IncidentReachFile]) -> dict[str, IncidentReachFile]:
+        if unmatchable := [kind for kind in value if kind != token(kind)]:
+            raise ValueError(f"incidents {unmatchable} are not subject tokens, so the CLI's normalized type never matches them")
+        parse_reach({kind: reach.model_dump() for kind, reach in value.items()})
+        return value
+
+    @field_validator("subscriptions")
+    @classmethod
+    def _rules_name_known_values(cls, value: dict[str, SubscriptionRulesFile]) -> dict[str, SubscriptionRulesFile]:
+        parse_rules({kind: rules.model_dump() for kind, rules in value.items()})
+        return value
+
+
 class ReleaseFile(_Table):
     """The `[release]` table."""
 
@@ -260,8 +390,11 @@ class ConfigFile(_Table):
         description=(
             "How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the "
             "table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this "
-            "resumes at the oldest kept row and records the span it missed in `starpulse_gaps`. A whole number of "
-            "days."
+            "resumes at the oldest kept row and records the span it missed in `starpulse_gaps`. The `machine:events` "
+            "and `task:ratings` streams are exempt: the prune never deletes them, because a read-model rebuild refolds "
+            "every machine's tasks from the first and a start refolds every rating from the second. On its first pass "
+            "the sweeper also puts the archived rows of those two streams back at their archived `id`, once. A whole "
+            "number of days."
         ),
     )
     event_log_archive_dir: str = Field(
@@ -270,13 +403,6 @@ class ConfigFile(_Table):
         description=(
             "Where the sweeper writes each row it prunes, before it deletes the row (see Event log "
             "archive): a directory, relative to this file unless absolute."
-        ),
-    )
-    telemetry_loki_url: str | None = Field(
-        default=None,
-        description=(
-            "The Loki base URL `copy-signals` reads the old signal stream from, to fill `starpulse_signals` at the "
-            "cutover; the adapters write the table alone."
         ),
     )
     slow_read_seconds: float = Field(
@@ -302,6 +428,7 @@ class ConfigFile(_Table):
             + "."
         ),
     )
+
     @field_validator("worker_memory", mode="before")
     @classmethod
     def _no_retired_child(cls, memory: Any) -> Any:
@@ -360,6 +487,19 @@ class ConfigFile(_Table):
             "one store is kept."
         ),
     )
+    webhook_command: list[Text] | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "The command `POST /api/webhook` runs, as an argv, with the request body on stdin once the bearer token "
+            "`webhook_token_env` names matches. Exit 0: accepted (202). Any other exit or a timeout: 502 with the "
+            "command's stderr, so the sender retries. 404 when this is unset. Needs `webhook_token_env`."
+        ),
+    )
+    webhook_token_env: EnvName | None = Field(
+        default=None,
+        description="The environment variable holding the bearer token `POST /api/webhook` requires; the value is the name, never the token.",
+    )
     refresh_token_env: EnvName | None = Field(
         default=None,
         description=(
@@ -398,7 +538,7 @@ class ConfigFile(_Table):
         default=[],
         description=(
             "A system that posts machine events as CloudEvents (see docs/sources.md, Post machine events as "
-            "CloudEvents). `POST /api/machine-events` and the gRPC `starpulse.v1.CloudEventsIngest` answer 404 "
+            "CloudEvents). `POST /api/machine-events` and the Connect `starpulse.v1.CloudEventsIngest` answer 404 "
             "until one is declared. A producer writes only the machines and actors listed here."
         ),
     )
@@ -449,6 +589,13 @@ class ConfigFile(_Table):
             "sequence names next."
         ),
     )
+    awaits: list[PhaseId] | None = Field(
+        default=None,
+        description=(
+            "The lifecycle machines whose unfinished placement of a task ends in an event, so a session that settles "
+            "meanwhile is not resumed: a link's lens in the phase it runs, or a machine with no link until it ends."
+        ),
+    )
     cursor_context: dict[str, Any] | None = Field(
         default=None, description="Holds Cursor task sessions to a context limit (see docs/sources.md)."
     )
@@ -458,11 +605,11 @@ class ConfigFile(_Table):
     )
     github: dict[str, Any] | None = Field(
         default=None,
-        description="Runs the GitHub intake listener in the `contexts` child (see docs/sources.md).",
-    )
-    github: dict[str, Any] | None = Field(
-        default=None,
         description="Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).",
+    )
+    bridge: BridgeFile = Field(
+        default_factory=BridgeFile,
+        description="The NATS bridge's server that `serve` supervises unless `enabled = false` (see The NATS server).",
     )
     sweeper: dict[str, Any] | None = Field(
         default=None,
@@ -472,11 +619,6 @@ class ConfigFile(_Table):
             "optional `timeout_s`; a kind prints its correction count (see docs/serving.md)."
         ),
     )
-    read_model: Any = Field(
-        default=None,
-        deprecated=True,
-        description="Retired: the read model is the only board reader; accepted so a config that still names it loads.",
-    )
 
     @field_validator("board")
     @classmethod
@@ -485,15 +627,18 @@ class ConfigFile(_Table):
         if "actor" in board and not isinstance(actor, dict):
             raise ValueError("actor must be a [board.actor] table")
         if actor:
-            unknown = sorted(actor.keys() - {"repo"})
+            unknown = sorted(actor.keys() - {"owner_source", "repo"})
             if unknown:
-                raise ValueError(f"the [board.actor] table takes only repo, not {', '.join(unknown)}")
-            if not isinstance(actor.get("repo", ""), str):
-                raise ValueError("repo must be text")
+                raise ValueError(f"the [board.actor] table takes only owner_source and repo, not {', '.join(unknown)}")
+            for key in ("owner_source", "repo"):
+                if not isinstance(actor.get(key, ""), str):
+                    raise ValueError(f"{key} must be text")
         return board
 
     @model_validator(mode="after")
     def _tables_agree(self) -> "ConfigFile":
+        if self.webhook_command and not self.webhook_token_env:
+            raise ValueError("webhook_command needs webhook_token_env, the variable holding the bearer token")
         if dup := _repeated([run.name for run in self.runs]):
             raise ValueError(f"runs instance {dup} is configured twice")
         if dup := _repeated([repo.name for repo in self.repos]):
@@ -508,7 +653,9 @@ class ConfigFile(_Table):
         if (self.tls_cert is None) != (self.tls_key is None):
             raise ValueError("tls_cert and tls_key are set together")
         if self.release is not None and self.release.settle == "pin-bump" and not self.repos:
-            raise ValueError("release: settle = pin-bump needs a [[repos]] entry to say which repositories the parent pins")
+            raise ValueError(
+                "release: settle = pin-bump needs a [[repos]] entry to say which repositories the parent pins"
+            )
         for context, table in self.worker_memory.items():
             soft, hard = memory_limit(context, table)
             if soft >= hard:

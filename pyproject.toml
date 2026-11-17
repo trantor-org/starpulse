@@ -21,6 +21,8 @@ dependencies = [
     "prometheus-client>=0.26.0",
     "setproctitle>=1.3.8",
     "psutil==7.2.2",
+    "nats-py>=2.10",
+    "pyjwt[crypto]>=2.8",
 ]
 
 [project.scripts]
@@ -33,17 +35,17 @@ bench = [
 ]
 dev = [
     "commitizen>=4.19.2",
-    "grpcio>=1.84.0",
-    "grpcio-tools>=1.84.0",
     "httpx2>=2.16.0",
     "hypothesis>=6.170.8",
     "import-linter>=2.15",
     "playwright>=1.63.0",
+    "protobuf-protoc-bin>=36.2",
     "pytest>=9",
     "pytest-cov>=7.1.0",
     "pytest-memray>=1.11.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
+    "ruff>=0.17.5",
 ]
 
 # deptry reads `starpulse` imports as the project's own.
@@ -97,7 +99,7 @@ layers = [
     "starpulse.views",
     "starpulse.cli",
     # producers
-    "starpulse.pulls | starpulse.scheduler | starpulse.sessions | starpulse.sweeper",
+    "starpulse.pulls | starpulse.scheduler | starpulse.sessions | starpulse.sweeper | starpulse.bridge",
     "starpulse.runs | starpulse.harness_telemetry",
     # derived
     "starpulse.flow_metrics",
@@ -145,7 +147,7 @@ forbidden_modules = ["starpulse.contracts.api"]
 id = "store-table-private"
 name = "Only the store package imports the event store's tables"
 type = "forbidden"
-# A stream is appended through `EventStore` alone: its compare-and-swap, outbox row and envelope are what make the
+# A stream is appended through `EventStore` alone: its compare-and-swap and envelope are what make the
 # stream trustworthy, so a module that imports the table could write around them.
 # The wildcards list every sibling of the store, tests included; a root source would contain the table
 # and be skipped, and the store package itself contains it, so it may import it.
@@ -201,9 +203,9 @@ forbidden_modules = [
 
 [[tool.importlinter.contracts]]
 id = "board-layers"
-name = "Board's model imports no adapter"
+name = "Board's model imports no application or adapter"
 type = "layers"
-layers = ["starpulse.board.adapters", "starpulse.board.model"]
+layers = ["starpulse.board.bin", "starpulse.board.adapters", "starpulse.board.application.queries", "starpulse.board.model"]
 
 [[tool.importlinter.contracts]]
 id = "runs-layers"
@@ -217,7 +219,7 @@ id = "views-layers"
 name = "Views' model and ports import no application or adapter"
 type = "layers"
 containers = []
-layers = ["starpulse.views.adapters", "starpulse.views.application.commands | starpulse.views.application.queries", "starpulse.views.ports", "starpulse.views.model"]
+layers = ["starpulse.views.bin", "starpulse.views.adapters", "starpulse.views.application.commands | starpulse.views.application.queries", "starpulse.views.ports", "starpulse.views.model"]
 
 [[tool.importlinter.contracts]]
 id = "github-layers"
@@ -238,14 +240,14 @@ id = "pulls-layers"
 name = "Pulls' model imports no command or adapter"
 type = "layers"
 containers = []
-layers = ["starpulse.pulls.adapters", "starpulse.pulls.application.commands", "starpulse.pulls.model"]
+layers = ["starpulse.pulls.bin", "starpulse.pulls.adapters", "starpulse.pulls.application.commands", "starpulse.pulls.model"]
 
 [[tool.importlinter.contracts]]
 id = "flow_metrics-layers"
 name = "Flow metrics' model imports no adapter"
 type = "layers"
 containers = []
-layers = ["starpulse.flow_metrics.adapters", "starpulse.flow_metrics.model"]
+layers = ["starpulse.flow_metrics.bin", "starpulse.flow_metrics.adapters", "starpulse.flow_metrics.model"]
 
 [[tool.importlinter.contracts]]
 id = "context-machine-engine"
@@ -354,6 +356,12 @@ forbidden_modules = [
     "starpulse.harness_telemetry", "starpulse.sessions",
     "starpulse.pulls",
 ]
+
+[[tool.importlinter.contracts]]
+id = "sessions-layers"
+name = "Sessions' ports import no adapter"
+type = "layers"
+layers = ["starpulse.sessions.adapters", "starpulse.sessions.ports"]
 
 [[tool.importlinter.contracts]]
 id = "context-sessions"

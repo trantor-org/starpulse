@@ -64,8 +64,8 @@ onTheme(() => {
     aborted: MUTED, skipped: token("muted"), not_started: token("track"),
   });
   Object.assign(BOARD_COLOR, {
-    new: MUTED, ready: EXT, waiting: ACT, blocked: OFF, intoprogress: MACHINE,
-    review: REVIEW, verifying: mix("agent", "ok", 0.55), proposed: MUTED, needs_attention: token("muted"), done: token("ok"), completed: token("released"), archived: token("faint"),
+    new: MUTED, ready: EXT, waiting: ACT, blocked: OFF, in_progress: MACHINE,
+    review: REVIEW, verifying: mix("agent", "ok", 0.55), needs_attention: token("muted"), done: token("ok"), completed: token("released"), archived: token("faint"),
   });
   RAMP.splice(0, RAMP.length, MUTED, EXT, mix("ready", "agent", 0.5), MACHINE, mix("agent", "fail", 0.15), REVIEW, mix("agent", "fail", 0.6), ACT, token("ok"));
 });

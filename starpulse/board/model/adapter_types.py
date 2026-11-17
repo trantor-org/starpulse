@@ -11,16 +11,14 @@ DEFAULT_TYPE = "native"
 BUILT_IN = {
     "native": "starpulse.board.adapters.native",
     "machines": "starpulse.board.adapters.machines_only",
-    "upstream_backlog": "starpulse.board.adapters.upstream_backlog",
-    "jira": "starpulse.board.adapters.jira",
-    "dagu": "starpulse.runs.adapters.outbound.dagu",
     "github_actions": "starpulse.runs.adapters.outbound.github_actions",
     "systemd": "starpulse.runs.adapters.outbound.systemd",
     "temporal": "starpulse.runs.adapters.outbound.temporal",
+    "woodpecker": "starpulse.runs.adapters.outbound.woodpecker",
 }
 
 #: The run adapters' worker contexts. Each runs as a thread of `starpulse worker contexts`, or alone as `starpulse worker <context>`.
-ADAPTER_CONTEXTS = ("dagu", "github-actions", "systemd", "temporal")
+ADAPTER_CONTEXTS = ("github-actions", "systemd", "temporal", "woodpecker")
 
 
 def module_name(kind: str) -> str:

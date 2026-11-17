@@ -13,7 +13,7 @@ onTheme(function(){
  PH=token('phase');PHT=token('phase-text');SB=token('submachine');SBT=token('submachine-text');DG=C.ok;DGT=C.okHi;
  Object.assign(TIER,{deep:C.agent,standard:C.waits,fast:C.ink});
  Object.assign(VC,{PASS:C.ok,CHANGES:C.fail});
- Object.assign(BC,{new:BOARD_COLOR.new,ready:BOARD_COLOR.ready,waiting:C.ink,in_progress:BOARD_COLOR.intoprogress,review:C.review,needs_attention:BOARD_COLOR.needs_attention,done:BOARD_COLOR.done,archived:BOARD_COLOR.archived});
+ Object.assign(BC,{new:BOARD_COLOR.new,ready:BOARD_COLOR.ready,waiting:C.ink,in_progress:BOARD_COLOR.in_progress,review:C.review,needs_attention:BOARD_COLOR.needs_attention,done:BOARD_COLOR.done,archived:BOARD_COLOR.archived});
  Object.assign(KC,{phase:PH,sub:SB,dag:DG,tpl:C.agent});
  Object.assign(KT,{phase:PHT,sub:SBT,dag:DGT,tpl:C.agentText});
  Object.assign(TASKC,{deep:C.agentText,standard:C.waits});

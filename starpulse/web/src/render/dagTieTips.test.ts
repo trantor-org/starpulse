@@ -5,18 +5,18 @@ import type { Dag } from "../api";
 
 const dag = (name: string, status: Dag["status"]): Dag => ({ name, status, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
 const sky = {
-  dagBy: { "dagu/main-follow": { ...dag("dagu/main-follow", "running"), finishedAt: "2026-10-07T16:12:00Z" }, "dagu/apply-on-merge": dag("dagu/apply-on-merge", "failed"), "dagu/backlog-sweep": dag("dagu/backlog-sweep", "succeeded") },
-  cues: [{ dag: "dagu/apply-on-merge", event: "MERGED", on: "each merge", resolves: "forced", state: "done" }],
+  dagBy: { "temporal/main-follow": { ...dag("temporal/main-follow", "running"), finishedAt: "2026-10-07T16:12:00Z" }, "temporal/apply-on-merge": dag("temporal/apply-on-merge", "failed"), "temporal/backlog-sweep": dag("temporal/backlog-sweep", "succeeded") },
+  cues: [{ dag: "temporal/apply-on-merge", event: "MERGED", on: "each merge", resolves: "forced", state: "done" }],
   board: { machine: { transitions: [{ source: "review", target: "done", event: "MERGED" }] } },
 } as unknown as TipSky;
 const anchor = (kind: Anchor["kind"], event: string) => ({ kind, event, state: "done" }) as Anchor;
-const orb = (name: string, ...anchors: Anchor[]) => ({ dag: `dagu/${name}`, label: name, anchors, primary: anchors[0], subs: [] }) as unknown as Orbiter;
+const orb = (name: string, ...anchors: Anchor[]) => ({ dag: `temporal/${name}`, label: name, anchors, primary: anchors[0], subs: [] }) as unknown as Orbiter;
 const stateName = (id: string) => ({ done: "Done" })[id as "done"] ?? id;
 const plain = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
 describe("a tied DAG's status", () => {
   it("is running while it runs, failed · unresolved after a failed run, and its status otherwise", () => {
-    expect([sky.dagBy["dagu/main-follow"], sky.dagBy["dagu/apply-on-merge"], sky.dagBy["dagu/backlog-sweep"]].map(tieStatus)).toEqual(["running", "failed · unresolved", "succeeded"]);
+    expect([sky.dagBy["temporal/main-follow"], sky.dagBy["temporal/apply-on-merge"], sky.dagBy["temporal/backlog-sweep"]].map(tieStatus)).toEqual(["running", "failed · unresolved", "succeeded"]);
     expect(tieStatus(undefined)).toBe("");
   });
 });
@@ -60,6 +60,6 @@ describe("an orbiter's tooltip", () => {
   });
 
   it("escapes a DAG name", () => {
-    expect(tieTip({ ...orb("x", anchor("write", "MERGED")), dag: "dagu/<b>" } as Orbiter, ctx(null))).toContain("dagu/&lt;b&gt;");
+    expect(tieTip({ ...orb("x", anchor("write", "MERGED")), dag: "temporal/<b>" } as Orbiter, ctx(null))).toContain("temporal/&lt;b&gt;");
   });
 });

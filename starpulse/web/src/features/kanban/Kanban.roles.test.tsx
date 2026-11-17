@@ -48,8 +48,16 @@ describe("the Kanban page over renamed States", () => {
     show(board(cards));
 
     expect(tabs().map((t) => [t.dataset.lane, t.dataset.role, t.querySelector(".c")?.textContent])).toEqual([
-      ["todo", "ready", "1"], ["parked", "waiting", "1"], ["doing", "working", "1"], ["checking", "review", "1"], ["on_me", "attention", "1"], ["shipped", "done", "1"],
+      ["todo", "ready", "1"], ["parked", "waiting", "1"], ["doing", "working", "1"], ["checking", "review", "1"], ["on_me", "attention", "1"],
     ]);
+  });
+
+  it("draws a column per role State and the cards when an older server's snapshot has no lanes", () => {
+    const { lanes: _lanes, ...older } = RENAMED_ROLES;
+    show({ ...board(cards), roles: older } as unknown as HudState);
+
+    expect(tabs().map((t) => t.dataset.lane)).toEqual(["todo", "parked", "doing", "checking", "on_me"]);
+    expect(host.querySelectorAll("#cols .card").length).toBeGreaterThan(0);
   });
 
   it("opens on the working column", () => {
@@ -78,16 +86,5 @@ describe("the Kanban page over renamed States", () => {
     const starts = [...host.querySelectorAll<HTMLButtonElement>("button.play")].map((b) => [b.getAttribute("aria-label"), b.disabled]);
 
     expect(starts.sort()).toEqual([["Start T-1", false], ["Start T-2", false], ["Start T-5", false]]);
-  });
-
-  it("draws no Proposed task: not as a card, and not as a column", () => {
-    const proposed = { ...RENAMED_ROLES, proposed: "idea" };
-    const hud = { ...board([...cards, card("T-8", "idea", { title: "an idea" })]), roles: proposed, names: { ...RENAMED_NAMES, idea: "Idea" } } as HudState;
-
-    show(hud);
-
-    expect(host.querySelector('#cols .card[data-id="T-8"]')).toBeNull();
-    expect(host.querySelector("#kb")?.textContent).not.toContain("an idea");
-    expect(tabs().map((t) => t.dataset.lane)).not.toContain("idea");
   });
 });

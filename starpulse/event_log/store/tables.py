@@ -1,9 +1,7 @@
 """The event store's tables. Only this package imports them (the `store-table-private` import contract), so every
 write to a stream goes through `EventStore`."""
 
-from __future__ import annotations
-
-from sqlalchemy import JSON, Column, Float, ForeignKey, Index, Integer, MetaData, String, Table, UniqueConstraint
+from sqlalchemy import JSON, Column, Float, ForeignKey, Integer, MetaData, String, Table, UniqueConstraint
 
 metadata = MetaData()
 
@@ -27,15 +25,6 @@ stream_events = Table(
     Column("payload", JSON, nullable=False),
     UniqueConstraint("subject_kind", "subject_id", "version", name="uq_starpulse_stream_events_version"),
     sqlite_autoincrement=True,
-)
-
-#: An Event waiting for the stream to acknowledge it has no `sent_at`.
-outbox = Table(
-    "starpulse_outbox",
-    metadata,
-    Column("event_id", String, ForeignKey("starpulse_stream_events.event_id"), primary_key=True),
-    Column("sent_at", Float),
-    Index("ix_starpulse_outbox_unsent", "sent_at"),
 )
 
 #: Every compiled definition ever activated, kept by the hash of the whole compiled definition so an Event is read

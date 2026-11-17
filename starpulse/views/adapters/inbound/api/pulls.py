@@ -1,14 +1,14 @@
 """Pull requests: the list the page reads and the push that refreshes it.
 
-- `GET /api/pulls`: the pull requests, filtered by the query; a read that takes long is logged.
+- `GET /api/pulls`: the pull requests, filtered by the query (`repo`, `number`, `state`, `body_contains`, and `task` for
+  those a task cites); bodies only when `bodies=1` or one `repo` and `number` is named; a read that takes long is logged.
 - `POST /api/pulls/refresh`: the token-guarded push that refreshes the store; 404 where a deployment leaves it
   unconfigured.
 """
 
-from __future__ import annotations
-
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
@@ -38,17 +38,18 @@ class PullReads:
     gzip, and every page asks for it. A save builds the unfiltered answer itself, in the poller's thread, so a reader
     finds it held, unless no reader asked for the last one built (a save every second would otherwise keep a core
     encoding an answer nobody reads); readers asking together for any other answer share one computation, since each extra one only
-    waits behind the rest for the GIL. A read of one pull request (`repo` and `number`) is a lookup of microseconds:
+    waits behind the rest for the GIL. A read of one pull request (`repo` and `number`), or of those a `task` cites, is a lookup of microseconds:
     it takes neither the computation lock, which a rebuild of the list holds for seconds, nor a held slot."""
 
     #: How many distinct queries are held; past it the oldest is dropped.
     KEEP = 16
 
-    def __init__(self, pulls: PullStore | None) -> None:
+    def __init__(self, pulls: PullStore | None, cited: Callable[[str], list[str]] | None = None) -> None:
         self._pulls = pulls
+        self._cited = cited
         self._held: OrderedDict[str, tuple[int, Encoded, int]] = OrderedDict()
         self._lock = threading.Lock()
-        self._computing = threading.Lock()
+        self._computing: dict[str, threading.Lock] = {}  # one per query, so a slow query never holds another
         self._asked = False  # a reader has taken the unfiltered answer since a save last built it
         if pulls:
             pulls.subscribe(self._rebuild)
@@ -70,21 +71,24 @@ class PullReads:
 
     def _answer(self, query: str) -> tuple[Encoded, int]:
         asked = parse_qs(query)
-        if "repo" in asked and "number" in asked:
-            body, status = pulls_response(self._pulls, asked)
+        if "task" in asked or ("repo" in asked and "number" in asked):  # a task's links move without a save
+            body, status = pulls_response(self._pulls, asked, self._cited)
             return Encoded.of(body), status
         held = self._current(query)
         if held is None:
-            with self._computing:
+            with self._lock:
+                computing = self._computing.setdefault(query, threading.Lock())
+            with computing:
                 held = self._current(query)
                 if held is None:
                     rev = self._pulls.rev if self._pulls else 0
-                    body, status = pulls_response(self._pulls, asked)
+                    body, status = pulls_response(self._pulls, asked, self._cited)
                     held = (rev, Encoded.of(body), status)
                     with self._lock:
                         self._held[query] = held
                         while len(self._held) > self.KEEP:
-                            self._held.popitem(last=False)
+                            evicted, _ = self._held.popitem(last=False)
+                            self._computing.pop(evicted, None)
         return held[1], held[2]
 
 
