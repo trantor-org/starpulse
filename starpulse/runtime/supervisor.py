@@ -36,7 +36,7 @@ from starpulse.runtime import launch
 from starpulse.runtime.closure import SELF, Reading, ReloadError
 from starpulse.runtime.config import Config, MemoryLimit, runs_adapter
 from starpulse.runtime.control import Control
-from starpulse.runtime.hold import ADOPT_ENV, LISTEN_FD_ENV, READY_FD_ENV, Adopted, supervised_env
+from starpulse.runtime.hold import ADOPT_ENV, GITHUB_FD_ENV, LISTEN_FD_ENV, READY_FD_ENV, Adopted, supervised_env
 from starpulse.runtime.memory import memory_reader
 
 logger = logging.getLogger(__name__)
@@ -113,6 +113,7 @@ class Supervisor:
         *,
         spawn: Callable[..., Any] = spawn_child,
         sockets: Mapping[str, socket.socket] | None = None,
+        held: Mapping[str, socket.socket] | None = None,
         first_delay: float = 1.0,
         longest_delay: float = 60.0,
         stable_after: float = 60.0,
@@ -135,6 +136,7 @@ class Supervisor:
         self._children = {name: _Child(command) for name, command in commands.items()}
         self._spawn = spawn
         self._sockets = dict(sockets or {})
+        self._held = dict(held or {})
         self._first_delay = first_delay
         self._longest_delay = longest_delay
         self._stable_after = stable_after
@@ -184,7 +186,7 @@ class Supervisor:
                     self._check_memory(name, child, now)
 
     def _launch(self, name: str, child: _Child, now: float, ready: int | None = None) -> None:
-        listening = self._sockets.get(name)
+        listening = self._sockets.get(name) or self._held.get(name)
         if listening is None:
             child.proc = self._spawn(child.command)
         elif ready is None:
@@ -425,6 +427,9 @@ class Supervisor:
             listening.set_inheritable(True)
             os.environ[LISTEN_FD_ENV] = str(listening.fileno())
             handed.append(name)
+        for listening in self._held.values():  # the `contexts` child's: it is replaced, never started beside the old one
+            listening.set_inheritable(True)
+            os.environ[GITHUB_FD_ENV] = str(listening.fileno())
         handed.extend(sorted(self._handed))
         parts = []
         for name in handed:

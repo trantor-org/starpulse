@@ -15,6 +15,7 @@ bound to the task, and `end` is scoped to the task and idempotent. The entry's o
 read model the holder is read from is projected on another tail and may not have folded the move yet.
 """
 
+import threading
 from collections.abc import Callable, Collection, Mapping
 from typing import Any, Protocol
 
@@ -50,16 +51,30 @@ class Subscriber:
     ) -> None:
         self._board, self._rules, self._store, self._feed = board, rules, store, feed
         self._end, self._end_lanes = end, end_lanes
+        self._lock = threading.Lock()
 
     def handle(self, entry: Entry) -> None:
-        task = str(entry.fields.get("task") or "")
-        if not task:
-            return
-        if entry.stream in (LANES, CLAIMS):
-            self._moved(task, str(entry.fields.get("lane") or ""))
-        elif entry.stream == MACHINE and entry.fields.get("event") == OPENED and (number := pull_number(entry)):
-            holder, rules = self._holder(task)
-            self._grant(holder, task, expand(self._board, rules.pr_opened, task=task, pr=number))
+        with self._lock:
+            task = str(entry.fields.get("task") or "")
+            if not task:
+                return
+            if entry.stream in (LANES, CLAIMS):
+                self._moved(task, str(entry.fields.get("lane") or ""))
+            elif entry.stream == MACHINE and entry.fields.get("event") == OPENED and (number := pull_number(entry)):
+                holder, rules = self._holder(task)
+                self._grant(holder, task, expand(self._board, rules.pr_opened, task=task, pr=number))
+
+    def change(self, session: str, subjects: list[str], add: bool) -> tuple[bool, list[str]]:
+        """Add the explicit `subjects` to `session`'s subscription, or remove them; whether it changed, and its filters."""
+        with self._lock:
+            subscription = self._store.get(session)
+            if add:
+                changed = subscription.add(EXPLICIT, subjects)
+            else:
+                changed = any([subscription.remove(subject) for subject in subjects])
+            if changed:
+                self._store.put(session, subscription)
+            return changed, subscription.filters
 
     def _holder(self, task: str) -> tuple[str, Rules]:
         """The session holding `task` (empty when the board has no open task or it has no holder) and its kind's rules."""
@@ -72,16 +87,17 @@ class Subscriber:
     def reconcile(self) -> None:
         """Drop each task's subjects from every session that does not hold the task now, and give each holder the
         `claim` subjects its kind names now, so a claim list that grew since the session claimed reaches it."""
-        for session, subscription in self._store.sessions().items():
-            changed = False
-            for origin in [origin for origin in subscription.origins if origin != EXPLICIT]:
-                holder, rules = self._holder(origin)
-                if holder != session:
-                    changed |= subscription.drop(origin)
-                else:
-                    changed |= subscription.add(origin, self._held(origin, rules))
-            if changed:
-                self._store.put(session, subscription)
+        with self._lock:
+            for session, subscription in self._store.sessions().items():
+                changed = False
+                for origin in [origin for origin in subscription.origins if origin != EXPLICIT]:
+                    holder, rules = self._holder(origin)
+                    if holder != session:
+                        changed |= subscription.drop(origin)
+                    else:
+                        changed |= subscription.add(origin, self._held(origin, rules))
+                if changed:
+                    self._store.put(session, subscription)
 
     def _moved(self, task: str, lane: str) -> None:
         holder, rules = ("", Rules()) if lane in FINISHED else self._holder(task)

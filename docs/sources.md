@@ -449,13 +449,15 @@ minted from `GH_APP_ID` and the key file at `GH_APP_PRIVATE_KEY_PATH`, never wit
 either unset the delivery half fails each pass, logged and naming the variable; the pull request half still runs.
 
 1. It pages the App's deliveries back from a stored cursor (the newest `delivered_at` it has handled; the first pass
-   reaches back 7 days) and asks GitHub once, with `POST /app/hook/deliveries/{id}/attempts`, to redeliver each GUID
-   with no `github_inbox` row, whatever GitHub shows as its status. A GUID with a redelivery among its attempts is not
-   asked for again. The listener's dedup makes a repeat harmless.
+   reaches back 7 days) and asks GitHub, with `POST /app/hook/deliveries/{id}/attempts`, to redeliver the newest attempt
+   of each GUID with no `github_inbox` row, unless one of its attempts was answered 2xx (the listener saved it, or chose
+   to ignore it as another event or repository). A redelivery that fails too is a new attempt past the cursor, so the
+   GUID is asked again each pass until one attempt is answered. The listener's dedup makes a repeat harmless.
 2. For each accepted repository (the listed ones, and the organisation's unarchived ones) it lists pull requests newest
    updated first until it reaches its `pull-rows:<repository>` cursor. Each closed pull request becomes a `pull_request`
    row with `delivery_id` `reconcile:<repository>:<number>:<sha>:closed` (the merge SHA when merged, else the head SHA), and
-   each finished check suite on the head of a pull request in the list a `check_suite` row with `delivery_id`
+   each check suite on the head of a pull request in the list that finished while it was open a `check_suite` row (a
+   `check_suite` webhook names no closed pull request, so a suite finishing after the close is no missed push) with `delivery_id`
    `reconcile:<repository>:<number>:<head sha>:<suite id>`. Both have `source = 'reconcile'`, are shaped like the webhook body
    that would have reported them, and travel the consumer path above. A `pull_request` row carries the listed pull request
    whole, with `merged` and a top-level `number` added, so the relay reads its closed time and refs as from a webhook.

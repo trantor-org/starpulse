@@ -98,8 +98,8 @@ returns an archived doc's file, unchanged, to `--folder` under the docs (the doc
 that is open or a destination that exists (exit 1).
 `session records` reads no server: it prints a session's Claude Code transcript records grouped by the task each belongs to,
 read from the transcript files and never stored.
-`subscribe <subject>...` and `unsubscribe <subject>...` read no server: they add the subjects (one call, one consumer) of the board's NATS stream to the calling
-session's consumer, or remove it, beside the subjects its task's kind gives (`[bridge.subscriptions.<kind>]`).
+`subscribe <subject>...` and `unsubscribe <subject>...` read no server: they ask the running NATS bridge to add the subjects (one call, one consumer) of the board's
+NATS stream to the calling session's consumer, or remove it, beside the subjects its task's kind gives (`[bridge.subscriptions.<kind>]`).
 `subscribe` also registers the calling session's Claude Code inbox socket and token (owner-only, beside the config) so the bridge can notify it,
 never for another session named by `--session`.
 `incident open <type> <key>` publishes the fault to NATS without the server and then files its owner task there; a
@@ -1683,7 +1683,7 @@ def _parser() -> argparse.ArgumentParser:
         (
             "subscribe",
             "add a subject to the calling session's NATS consumer, kept until `unsubscribe` and beside the subjects its "
-            "task gives; needs `[bridge] enabled`",
+            "task gives; needs `[bridge] enabled` and a running bridge",
             "subscribe",
         ),
         ("unsubscribe", "remove a subject from the calling session's NATS consumer", "unsubscribe"),

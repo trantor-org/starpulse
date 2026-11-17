@@ -798,8 +798,7 @@ class TaskActor:
         open_ids = {agent["id"] for agent in self._feed.open_tasks()}
         names = {agent["id"] for agent in tasks} if BOARD in self._links else set()
         for parent in self._links.keys() - {BOARD}:
-            placed = (each["id"] for each in self._feed.machine_tasks(parent))
-            names.update(name for name in placed if self._feed.current_id(name) in open_ids)
+            names.update(name for name in self._feed.machine_task_ids(parent) if self._feed.current_id(name) in open_ids)
         swept = sorted(names)
         for done, name in enumerate(swept, 1):
             if stop is not None and stop.is_set():

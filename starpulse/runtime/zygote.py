@@ -311,16 +311,17 @@ class Forker:
 
     The `Supervisor` calls it, `retire` and nothing else under its lock, so it takes none of its own. `modules` are what
     the preloaded process imports and `entry` is the function a child runs with the command's arguments. `listening`
-    is the socket `serve` hands the Page API: the preloaded process inherits it, so that child forks like the others."""
+    are the sockets `serve` hands its children (the Page API's, the GitHub webhook's): the preloaded process inherits them,
+    so those children fork like the others."""
 
     def __init__(
         self,
         modules: Sequence[str],
         entry: str = ENTRY,
         fallback: Callable[..., Any] = spawn_child,
-        listening: socket.socket | None = None,
+        held: Sequence[socket.socket] = (),
     ) -> None:
-        self._listening = listening
+        self._held = list(held)
         self._modules = list(modules)
         self._entry = entry
         self._fallback = fallback
@@ -339,17 +340,16 @@ class Forker:
                 self._fail(exc)
 
     def _inherited(self) -> list[int]:
-        if self._listening is None:
-            return []
-        self._listening.set_inheritable(True)
-        return [self._listening.fileno()]
+        for listening in self._held:
+            listening.set_inheritable(True)
+        return [listening.fileno() for listening in self._held]
 
     def __call__(self, command: Sequence[str], listening: socket.socket | None = None, ready: int | None = None) -> Any:
         handed = () if listening is None else (listening,)  # every start but a fork must still pass the socket on
         if ready is not None:  # the preloaded process cannot inherit a descriptor made after it started
             return self._fallback(command, listening, ready)
         if (
-            listening is not None and listening is not self._listening
+            listening is not None and listening not in self._held
         ):  # a fork inherits only what the preloaded process holds
             return self._fallback(command, *handed)
         if list(command[: len(_PREFIX)]) != _PREFIX:

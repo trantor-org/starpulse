@@ -97,6 +97,13 @@ class ReadModel:
         """Each agent `machine` holds that it placed at or after `since` (None: every one), as the page draws it."""
         return [agent for _, agent, _ in self._machine_rows(machine, since)]
 
+    def machine_task_ids(self, machine: str, since: float | None = None) -> list[str]:
+        """The ids `machine` placed at or after `since` (None: every one), read without their records."""
+        statement = select(machine_tasks.c.task).where(machine_tasks.c.machine == machine)
+        if since is not None:
+            statement = statement.where(machine_tasks.c.active_at >= since)
+        return self._ids(statement)
+
     def machine_task(self, machine: str, task: str) -> dict[str, Any] | None:
         """The agent `machine` holds for `task`, or None when it places none."""
         statement = select(machine_tasks.c.agent).where(machine_tasks.c.machine == machine, machine_tasks.c.task == task)

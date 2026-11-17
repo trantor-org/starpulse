@@ -34,6 +34,7 @@ class Publisher:
         self._loop = asyncio.new_event_loop()
         self._client: Any = None
         self._js: Any = None
+        self._one = asyncio.Lock()
         threading.Thread(target=self._loop.run_forever, name="bridge-nats", daemon=True).start()
 
     def publish(self, subject: str, body: bytes, msg_id: str) -> None:
@@ -55,17 +56,18 @@ class Publisher:
             raise Unavailable(f"{type(exc).__name__}: {exc}") from exc
 
     async def _run(self, operation: Callable[[Any], Awaitable[T]]) -> T:
-        try:
-            if self._js is None:
-                self._client = await nats.connect(self._url, connect_timeout=_TIMEOUT_S, max_reconnect_attempts=-1)
-                self._js = self._client.jetstream()
-            await self._js.add_stream(self._config)  # idempotent, and recreates a deleted store
-            return await operation(self._js)
-        except MaxPayloadError:
-            raise
-        except BaseException:
-            await self._drop()
-            raise
+        async with self._one:  # the tail and the bridge's requests share the connection: one connects, one drops it
+            try:
+                if self._js is None:
+                    self._client = await nats.connect(self._url, connect_timeout=_TIMEOUT_S, max_reconnect_attempts=-1)
+                    self._js = self._client.jetstream()
+                await self._js.add_stream(self._config)  # idempotent, and recreates a deleted store
+                return await operation(self._js)
+            except MaxPayloadError:
+                raise
+            except BaseException:
+                await self._drop()
+                raise
 
     async def _drop(self) -> None:
         client, self._client, self._js = self._client, None, None

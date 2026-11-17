@@ -4,7 +4,8 @@
 does two things, each alone so one failing does not stop the
 other:
 
-- It pages the App's deliveries back from a cursor and asks GitHub, once, to redeliver each GUID the inbox lacks.
+- It pages the App's deliveries back from a cursor and asks GitHub to redeliver each GUID the inbox lacks whose
+  attempts were all refused, again after a refused redelivery.
 - For each repository it pages the pull requests updated since a cursor and inserts a `source = 'reconcile'` row for each
   closed pull request and each finished check suite on its head that no row received around the fact reported, which
   the `events` consumer reads like a delivery. Only an inserted row counts as a correction, as only it is a missed push.
@@ -111,7 +112,13 @@ def _pulls(client: Client, inbox: Inbox, cursors: SqlCursors, counted: Reconcile
         found = [(pull_delivery(repository, pull), pull.get("closed_at"))]
         if head:
             suites = _read(client, f"/repos/{repository}/commits/{head}/check-suites").body.get("check_suites", [])
-            found += [(suite_delivery(repository, pull["number"], head, suite), suite.get("updated_at")) for suite in suites]
+            closed = pull.get("closed_at")
+            # A check_suite webhook names no closed pull request, so a suite finishing after the close is no missed push.
+            found += [
+                (suite_delivery(repository, pull["number"], head, suite), suite.get("updated_at"))
+                for suite in suites
+                if not (closed and suite.get("updated_at") and epoch(suite["updated_at"]) > epoch(closed))
+            ]
         for delivery, at in found:
             if delivery is not None and not _reported(inbox, delivery, at) and inbox.save(delivery, SOURCE):
                 counted.inserted(delivery.event)

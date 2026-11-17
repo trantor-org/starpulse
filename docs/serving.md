@@ -170,14 +170,14 @@ keeps no table of them. Three things add subjects:
   deleted. A session whose process ended keeps its consumer while it holds a task, since the `resume` hook wakes it from it.
 - A `PR_OPENED` machine event naming a task and a pull request: the holder gets the kind's `pr_opened` subjects, with
   `{task}` and `{pr}`.
-- `starpulse subscribe <subject>...`, which adds full subjects in one consumer write under the `explicit` origin until `starpulse unsubscribe
+- `starpulse subscribe <subject>...`, which asks the bridge to add full subjects in one consumer write under the `explicit` origin until `starpulse unsubscribe
   <subject>`; a task change leaves it alone.
 
 A kind with no table, or a rule with no subject, subscribes to nothing. A session left with no subject has no consumer.
 A subject in a rule is relative to the board and may not name `starpulse`; `serve` refuses a rule naming a value its
-event does not know. `subscribe` and `unsubscribe` read and write the consumer in two steps, so one that lands in the
-instant the bridge changes the same session's consumer can lose that change; the next move of the task restores the
-bridge's subjects.
+event does not know. `subscribe` and `unsubscribe` ask the running bridge on
+`starpulse-bridge.<board>.subscription`, and the bridge applies the change under the same lock as its own grants, so it
+alone writes a session's consumer; with no bridge running they exit unavailable.
 
 #### Incidents
 
