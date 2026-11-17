@@ -10,11 +10,11 @@ import { QuietHoursStore } from "./features/admin/quietHours";
 import { SchedulerCard } from "./features/scheduler/SchedulerCard";
 import { SchedulerStore } from "./features/scheduler/scheduler";
 
-export function AdminPage({ store, theme, window, hint }: { store: AdminStore; theme: ThemeStore; window: HistoryWindowStore; hint?: string | null }) {
+export function AdminPage({ store, theme, window }: { store: AdminStore; theme: ThemeStore; window: HistoryWindowStore }) {
   const [quiet] = useState(() => new QuietHoursStore());
   const [scheduler] = useState(() => new SchedulerStore());
   return (
-    <Admin store={store} window={window} tracker={<TrackerCard hint={hint} />} theme={<ThemeCard theme={theme} />}
+    <Admin store={store} window={window} tracker={<TrackerCard />} theme={<ThemeCard theme={theme} />}
       scheduler={(clock) => <SchedulerCard store={scheduler} quiet={quiet} clock={clock} />} />
   );
 }

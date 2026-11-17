@@ -1,13 +1,11 @@
 """One sweeper pass: each kind in order, then the housekeeping, with the counts kept as metrics and one journal line."""
 
-from __future__ import annotations
-
 import logging
 import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +89,18 @@ class Metrics:
                 lines += [f"# HELP starpulse_sweeper_{name}_total {help_text}", f"# TYPE starpulse_sweeper_{name}_total counter"]
                 lines += [f'starpulse_sweeper_{name}_total{{kind="{kind}"}} {count}' for kind, count in counts.items()]
         return "\n".join(lines) + "\n"
+
+
+@runtime_checkable
+class Exposes(Protocol):
+    """A kind that keeps Prometheus series of its own beyond the sweeper's counts."""
+
+    def exposition(self) -> str: ...
+
+
+def kind_series(kinds: Sequence[Kind]) -> str:
+    """The series of each kind that keeps its own, joined."""
+    return "".join(kind.exposition() for kind in kinds if isinstance(kind, Exposes))
 
 
 def run_pass(

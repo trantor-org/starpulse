@@ -1,7 +1,5 @@
 """The read model's reads: what the page, the agent CLI, search and the Scheduler ask of the Task tables."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from sqlalchemy import Engine, Select, func, select
@@ -18,16 +16,16 @@ class ReadModel:
         self._declared = declared or {}
 
     def task(self, task_id: str) -> Row | None:
-        """The Task's whole row, archived or not; None when it has none."""
+        """The Task's whole row, archived or not, found by its id in any case; None when it has none."""
         with self._engine.connect() as db:
-            return rows.load(db, task_id)
+            return rows.load(db, task_id) or rows.load_any_case(db, task_id)
 
-    def snapshot(self, done: str, since: float) -> list[dict[str, Any]]:
+    def snapshot(self, done: str, since: float, only: str | None = None) -> list[dict[str, Any]]:
         """The live Tasks (`queries.live`: unarchived, not done or changed since `since`) as summaries with their
-        Acceptance Criteria, in id order."""
-        summaries = self._summaries(queries.snapshot(done, since))
+        Acceptance Criteria, in id order; `only` limits them to that one Task, when it is live."""
+        summaries = self._summaries(queries.snapshot(done, since, only))
         by_task: dict[str, list[dict[str, Any]]] = {summary["id"]: [] for summary in summaries}
-        for item in self._summaries(queries.live_criteria(done, since)):
+        for item in self._summaries(queries.live_criteria(done, since, only)):
             by_task.get(item.pop("task_id"), []).append(item)
         return [summary | {"criteria": by_task[summary["id"]]} for summary in summaries]
 
@@ -63,14 +61,28 @@ class ReadModel:
         """The states unarchived Tasks hold, Done ones of any age included."""
         return set(self._ids(queries.held_states()))
 
+    def held_done(self, done: str) -> list[str]:
+        """The ids of unarchived Done Tasks of any age, in id order."""
+        return self._ids(queries.held_done(done))
+
     def milestone_done(self, done: str, since: float) -> dict[str, int]:
         """How many Done Tasks last changed before `since` each milestone holds, the ones `snapshot` leaves out."""
         with self._engine.connect() as db:
             return {milestone: count for milestone, count in db.execute(queries.milestone_done(done, since))}
 
-    def ready(self, state: str, done: str) -> list[str]:
-        """The ids of unarchived Tasks in `state` whose dependencies are all in `done`."""
-        return self._ids(queries.ready(state, done))
+    def cold_done(self, done: str, since: float, only: str | None = None) -> dict[str, str]:
+        """The milestone of each Done Task `milestone_done` counts, by id; `only` limits them to one Task."""
+        with self._engine.connect() as db:
+            return {task: milestone for task, milestone in db.execute(queries.cold_done(done, since, only))}
+
+    def archived_since(self, since: float) -> int:
+        """How many Tasks were archived at or after `since`."""
+        with self._engine.connect() as db:
+            return db.execute(queries.archived_since(since)).scalar_one()
+
+    def ready(self, state: str, done: str, only: str | None = None) -> list[str]:
+        """The ids of unarchived Tasks in `state` whose dependencies are all in `done`; `only` limits it to that id."""
+        return self._ids(queries.ready(state, done, only))
 
     def since(self, seq: int, limit: int = 1000) -> list[dict[str, Any]]:
         """Summaries of the Tasks changed after `seq`, archived ones included, in the order they changed."""
@@ -120,6 +132,7 @@ class ReadModel:
             statement = statement.where(machine_tasks.c.machine == machine)
         if since is not None:
             statement = statement.where(machine_tasks.c.active_at >= since)
+        statement = statement.order_by(machine_tasks.c.machine, machine_tasks.c.task)
         with self._engine.connect() as db:
             return [tuple(row) for row in db.execute(statement).all()]
 

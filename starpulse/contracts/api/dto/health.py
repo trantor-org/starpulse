@@ -1,7 +1,5 @@
 """`/api/analytics/health` and the sessions it draws."""
 
-from __future__ import annotations
-
 from typing import Annotated, Literal, TypedDict
 
 from pydantic import Field
@@ -93,12 +91,77 @@ class Health(_Api):
     warnings: list[Annotated[GapWarning | UnknownLaneWarning, Field(discriminator="kind")]]
 
 
+class TaskLiveness(_Api):
+    """One working task: how long since its state last changed and since its session's last command."""
+
+    task: str
+    since: float = Field(description="When the task entered the working State.")
+    state_idle_s: float = Field(description="Seconds since its last lane change or work-machine event.")
+    command_idle_s: float | None = Field(description="Seconds since its session's last tool call; null when none names it.")
+    stalled: bool = Field(description="Both idle times are past the threshold.")
+    cause: Literal["idle", "slow_process", "unattributed", "waiting_checks"] | None
+    waits_in: str | None = Field(description="The `machine:state` a slow process or a pending check rollup holds the task in.")
+
+
+class ReviewHour(_Api):
+    at: float
+    count: int
+
+
+class ReviewPace(_Api):
+    count: int
+    per_hour: float
+    per_slot_hour: float | None = Field(description="Moves per hour of the window's slot time; null with none.")
+    hours: list[ReviewHour]
+
+
+class WorkStage(_Api):
+    stage: str = Field(description="The `machine:state` a work-machine event left the task in; the lane before the first.")
+    visits: int
+    task_s: float
+    mean_s: float
+    share: float | None
+
+
+class StallCause(_Api):
+    cause: Literal["idle", "slow_process", "unattributed", "waiting_checks"]
+    waits_in: str | None
+    count: int
+    stalled_s: float = Field(description="Seconds past the threshold, summed over the silences.")
+
+
+class SlotCause(_Api):
+    cause: Literal["working", "idle", "slow_process", "unattributed", "waiting_checks"]
+    slot_s: float = Field(description="Working-lane seconds inside the window the cause held.")
+    share: float
+
+
+class Liveness(_Api):
+    """`GET /api/analytics/liveness`: each working task's liveness and the Board's pace into Review over a window."""
+
+    now: float
+    window_s: float
+    stalled_after_s: float
+    tasks: list[TaskLiveness]
+    review: ReviewPace
+    in_progress_s: float
+    slot_s: float = Field(description="Seconds every working stay spent inside the window.")
+    slots: list[SlotCause]
+    stages: list[WorkStage]
+    stalls: list[StallCause]
+
+
 class TokenCounts(_Api):
     input: int
     output: int
     cache_read: int
     cache_write: int
     reasoning: int
+
+
+class AgentSpend(TokenCounts):
+    subagents: int = Field(0, description="The subagents of this type whose requests named their instance id.")
+    first_request_cache_write: int = Field(0, description="The cache_write of each such subagent's first request, summed.")
 
 
 class SessionHealth(_Api):
@@ -109,6 +172,13 @@ class SessionHealth(_Api):
     task: str | None
     kind: Literal["headless", "interactive", "unknown"]
     eval: str
+    origin: str
+    entrypoint: str = Field(
+        description="The launch's `claude_code.entrypoint` resource attribute (`cli`, `sdk-cli`); empty when it set none."
+    )
+    first_request_tokens: int | None = Field(
+        description="The prompt tokens (input, cache read and cache write) of the session's first main-thread request that sent any; None when it made none."
+    )
     first_at: float
     last_at: float
     prompts: int
@@ -134,6 +204,12 @@ class SessionHealth(_Api):
     raises: int
     lowers: int
     tokens: TokenCounts
+    agents: dict[str, AgentSpend] = Field(
+        description="Each subagent type's token totals among `tokens` (`qa-<lens>` for a qa lens); only a subagent that names its type."
+    )
+    role: str = Field(
+        description="The furthest phase skill (`starting-task`, `tdd`, `qa`, `deliver`, `fix-checks`, `review-fix`, `verify`) the session loaded on this task; `other` when it loaded none."
+    )
     cost_usd: float | None
     agent_s: float
     operator_wait_s: float
@@ -204,12 +280,15 @@ class SessionStep(_Api):
     )
     tokens: TokenCounts
     captured: bool = Field(description="False for a harness the steps-per-completion ledger does not cover (Codex).")
-    eval: str = Field(description="The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.")
+    eval: str = Field(
+        description="The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request."
+    )
 
 
 class SessionSteps(_Api):
-    """`GET /api/analytics/steps`: every model request of a window, oldest first."""
+    """`GET /api/analytics/steps`: the model requests of a window, oldest first, a page at a time."""
 
     now: float
     window_s: float
+    next: str | None = Field(None, description="The `after` cursor of the next page; null on the last page.")
     steps: list[SessionStep]

@@ -4,10 +4,8 @@ The rendering is never state. `render` draws the record; `imported` reads an edi
 field changes, which the board writes as Events by the operator, marked break-glass. A rendering the reader cannot map
 back (a section removed or added, a status changed) is refused whole, naming what it cannot map."""
 
-from __future__ import annotations
-
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 Record = Mapping[str, Any]
@@ -84,8 +82,12 @@ def _sections(text: str) -> tuple[str, dict[str, str]]:
 
 def section_set(description: str, heading: str, content: str) -> str:
     """`description` with its `## <heading>` section replaced by `content`, or ending with it when it had none."""
-    kept = re.sub(rf"^## {re.escape(heading)}\s*$.*?(?=^## |\Z)", "", description, flags=re.M | re.S)
-    return f"{kept.strip()}\n\n## {heading}\n\n{content.strip()}".strip()
+    return f"{section_drop(description, heading)}\n\n## {heading}\n\n{content.strip()}".strip()
+
+
+def section_drop(description: str, heading: str) -> str:
+    """`description` without its `## <heading>` section."""
+    return re.sub(rf"^## {re.escape(heading)}\s*$.*?(?=^## |\Z)", "", description, flags=re.M | re.S).strip()
 
 
 _NEEDS_ATTENTION = re.compile(
@@ -97,6 +99,22 @@ def needs_attention_reason(text: str) -> str:
     """The first line of `text`'s `## Needs attention` section, else empty."""
     found = _NEEDS_ATTENTION.search(text)
     return next((line.strip() for line in found.group(1).splitlines() if line.strip()), "") if found else ""
+
+
+_BLOCKER = re.compile(r"Blocker:\s*\w")
+_OPTIONS = re.compile(r"Options:\s*\w")
+
+
+def attention_reason(fact: str, blocker: str, options: Sequence[str], ask: str) -> str:
+    """The Needs attention reason a card is answered from: what `fact` holds, `blocker`, the operator's `options`, then `ask`."""
+    return f"{fact.rstrip('. ')}. Blocker: {blocker.rstrip('. ')}. Options: {'; '.join(options)}. {ask}"
+
+
+def names_blocker_and_options(reason: str) -> bool:
+    """Whether `reason` names its blocker, then the operator's options, and ends in the ask."""
+    text = reason.strip()
+    blocker = _BLOCKER.search(text)
+    return text.endswith("?") and blocker is not None and _OPTIONS.search(text, blocker.end()) is not None
 
 
 def _checklist(body: str, heading: str) -> list[dict[str, Any]]:

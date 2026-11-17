@@ -71,7 +71,7 @@ describe("the task panel", () => {
 describe("Run now", () => {
   const answer = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
 
-  it("POSTs the DAG to the run endpoint and reports the run id Dagu gave it", async () => {
+  it("POSTs the DAG to the run endpoint and reports the run id Temporal gave it", async () => {
     const sent: [string, RequestInit | undefined][] = [];
     const post = async (url: string, init?: RequestInit) => (sent.push([url, init]), new Response('{"runId":"run-7"}'));
 
@@ -89,7 +89,7 @@ describe("Run now", () => {
   });
 
   it("reports the server's refusal", async () => {
-    expect(await startRun("whole-repo-gate", answer(502, { error: "Dagu refused the start (HTTP 409)" }))).toBe("Not started: Dagu refused the start (HTTP 409)");
+    expect(await startRun("whole-repo-gate", answer(502, { error: "Temporal refused the start (HTTP 409)" }))).toBe("Not started: Temporal refused the start (HTTP 409)");
   });
 
   it("reports a server it cannot reach", async () => {

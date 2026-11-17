@@ -9,23 +9,23 @@ describe("posting a forced rerun", () => {
     const seen: { url: string; init?: RequestInit }[] = [];
     const fetcher = async (url: string, init?: RequestInit) => { seen.push({ url, init }); return new Response(JSON.stringify({ runId: "r-9" }), { status: 200 }); };
 
-    const result = await postRerun("dagu/apply-on-merge", fetcher);
+    const result = await postRerun("temporal/apply-on-merge", fetcher);
 
     expect(result).toEqual({ ok: true, runId: "r-9" });
     expect(seen).toHaveLength(1);
-    expect(seen[0].url).toBe("/api/runs/dagu/apply-on-merge/rerun");
+    expect(seen[0].url).toBe("/api/runs/temporal/apply-on-merge/rerun");
     expect(seen[0].init?.method).toBe("POST");
   });
 
   it("returns the server's refusal as its reason", async () => {
-    const result = await postRerun("dagu/apply-on-merge", reply(409, JSON.stringify({ error: "dagu/apply-on-merge has no unresolved failure" })));
+    const result = await postRerun("temporal/apply-on-merge", reply(409, JSON.stringify({ error: "temporal/apply-on-merge has no unresolved failure" })));
 
-    expect(result).toEqual({ ok: false, reason: "dagu/apply-on-merge has no unresolved failure" });
+    expect(result).toEqual({ ok: false, reason: "temporal/apply-on-merge has no unresolved failure" });
   });
 
   it("explains an unreachable server and a body-less failure instead of throwing", async () => {
-    const down = await postRerun("dagu/a", async () => { throw new TypeError("offline"); });
-    const bare = await postRerun("dagu/a", reply(502, "<html>"));
+    const down = await postRerun("temporal/a", async () => { throw new TypeError("offline"); });
+    const bare = await postRerun("temporal/a", reply(502, "<html>"));
 
     expect(down).toMatchObject({ ok: false, reason: expect.stringContaining("could not be reached") });
     expect(bare).toMatchObject({ ok: false, reason: expect.stringContaining("502") });
@@ -40,31 +40,31 @@ describe("the rerun store", () => {
     const posted: string[] = [], changes: number[] = [];
     const store = new RerunStore((dag) => { posted.push(dag); return new Promise((r) => { answer = r; }); }, () => changes.push(1));
 
-    const done = store.run("dagu/apply-on-merge", 500);
-    const again = store.run("dagu/apply-on-merge", 501);
+    const done = store.run("temporal/apply-on-merge", 500);
+    const again = store.run("temporal/apply-on-merge", 501);
 
-    expect(store.state.busy.has("dagu/apply-on-merge")).toBe(true);
+    expect(store.state.busy.has("temporal/apply-on-merge")).toBe(true);
     answer({ ok: true, runId: "r-9" });
     await Promise.all([done, again]);
-    expect(posted).toEqual(["dagu/apply-on-merge"]);
+    expect(posted).toEqual(["temporal/apply-on-merge"]);
     expect(store.state.busy.size).toBe(0);
-    expect(store.state.started["dagu/apply-on-merge"]).toEqual({ runId: "r-9", at: 500 });
+    expect(store.state.started["temporal/apply-on-merge"]).toEqual({ runId: "r-9", at: 500 });
     expect(changes.length).toBeGreaterThanOrEqual(2);
   });
 
   it("holds a refusal for the DAG until the next try, which clears it", async () => {
-    const replies: RerunResult[] = [{ ok: false, reason: "dagu/a has no unresolved failure" }, { ok: true, runId: "r-1" }];
+    const replies: RerunResult[] = [{ ok: false, reason: "temporal/a has no unresolved failure" }, { ok: true, runId: "r-1" }];
     const store = new RerunStore(async () => replies.shift()!, () => {});
 
-    await store.run("dagu/a", 10);
-    expect(store.state.refused).toEqual({ "dagu/a": "dagu/a has no unresolved failure" });
+    await store.run("temporal/a", 10);
+    expect(store.state.refused).toEqual({ "temporal/a": "temporal/a has no unresolved failure" });
     expect(store.state.started).toEqual({});
 
-    const next = store.run("dagu/a", 20);
+    const next = store.run("temporal/a", 20);
     expect(store.state.refused).toEqual({});
     await next;
     await settle();
-    expect(store.state.started["dagu/a"]).toEqual({ runId: "r-1", at: 20 });
+    expect(store.state.started["temporal/a"]).toEqual({ runId: "r-1", at: 20 });
   });
 });
 

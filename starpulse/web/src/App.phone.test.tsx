@@ -13,7 +13,6 @@ vi.mock("./lazyViews", () => ({
   Kanban: () => <div id="kb" />,
   Dags: () => <div id="dg" />,
   AdminPage: () => <div id="admin" />,
-  Proposals: () => <div id="proposals" />,
   OrbitCard: () => <div id="og" />,
   prefetchViews: () => () => {},
 }));
@@ -90,7 +89,7 @@ describe("the phone-width view bar", () => {
     await viewport.resize(true);
     await mount();
 
-    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "Proposals", "Jobs", "Admin", "More"]);
+    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "Jobs", "Admin", "More"]);
     expect(button("Star Map").disabled).toBe(true);
     expect(buttons().filter((b) => b.disabled)).toHaveLength(1);
   });
@@ -126,7 +125,7 @@ describe("the phone-width view bar", () => {
   it("keeps the Star Map button on a page wider than the phone", async () => {
     await mount();
 
-    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "Proposals", "Jobs", "Admin", "More"]);
+    expect(buttons().map((b) => b.textContent)).toEqual(["Star Map", "Kanban", "Jobs", "Admin", "More"]);
   });
 
   it("refits the Board on a tap on the Star Map while it shows, as the navigator's entry does", async () => {

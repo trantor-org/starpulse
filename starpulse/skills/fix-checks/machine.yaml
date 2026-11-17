@@ -1,5 +1,5 @@
-# The fix-checks phase: a task PR's failing checks read, placed and fixed through delivery, then the task moved to
-# review, or parked on the owner of a fault that is not the branch's. Each transition cites the sentence of this
+# The fix-checks phase: a task PR's failing checks read, placed and fixed through delivery, then the task actor's
+# move to review, or parked on the owner of a fault that is not the branch's. Each transition cites the sentence of this
 # skill that authorizes it, and `writers` names who fires each event.
 name: FixChecks
 states:
@@ -15,7 +15,7 @@ events:
   PARKED:
     - {from: start, to: parked, cite: {skill: fix-checks, quote: "Done when the task waits on the owner, or a redelivery turned the check green."}}
   REVIEW_RECORDED:
-    - {from: start, to: review_recorded, cite: {skill: fix-checks, quote: "Done when `starpulse task show PROJ-45` shows the task in review with the PR linked."}}
+    - {from: start, to: review_recorded, cite: {skill: fix-checks, quote: "Done when `starpulse task show PROJ-45` shows the task in review, moved by the task actor."}}
 writers:
   GREEN:
     - {actor: agent, trigger: "starpulse command run test"}
@@ -24,4 +24,4 @@ writers:
   PARKED:
     - {actor: agent, trigger: "starpulse task park"}
   REVIEW_RECORDED:
-    - {actor: agent, trigger: "starpulse task review"}
+    - {actor: starpulse/task-actor, trigger: "its pr_ready watch on the PR's green checks"}

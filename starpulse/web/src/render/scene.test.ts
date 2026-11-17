@@ -13,7 +13,7 @@ const sky = () => {
       { name: "board", agents: [{ id: "PROJ-1", title: "t", state: "ready", model: "", labels: [] }], machine: machine(["ready", "in_progress", "review"], {
         transitions: [{ source: "ready", target: "in_progress", event: "CLAIM" }, { source: "in_progress", target: "review", event: "REVIEW" }],
         submachines: [{ state: "in_progress", machine: "in-progress", exits: {}, parent: "board", when: "" }],
-        writers: { CLAIM: [{ actor: "board-scheduler", trigger: "dagu" }] },
+        writers: { CLAIM: [{ actor: "board-scheduler", trigger: "temporal" }] },
       }) },
       { name: "in-progress", agents: [], machine: machine(["worktree_ready", "pr_opened"], {
         transitions: [{ source: "worktree_ready", target: "pr_opened", event: "PR_OPENED" }],
@@ -103,7 +103,7 @@ describe("machine paging", () => {
  */
 const boardSky = ({ writes = {}, cues = [], launches = [], free = {}, ledgers, mergePins }: { writes?: Record<string, string[]>; cues?: Cue[]; launches?: string[]; free?: Record<string, string[]>; ledgers?: Record<string, LedgerRow[]>; mergePins?: LedgerRow[] } = {}) => {
   const writers: Record<string, { actor: string; trigger: string }[]> = {};
-  for (const [name, events] of Object.entries(writes)) for (const e of events) (writers[e] ||= []).push({ actor: name, trigger: "dagu" });
+  for (const [name, events] of Object.entries(writes)) for (const e of events) (writers[e] ||= []).push({ actor: name, trigger: "temporal" });
   const tied = [...new Set([...Object.keys(writes), ...cues.map((c) => c.dag), ...launches])], loose = Object.values(free).flat();
   const snap: Snapshot = {
     graphs: ["board", "in-progress", "runs"],
@@ -1109,14 +1109,14 @@ describe("Board paths", () => {
     const sky = savedBoardSky(1920, 1080, (snap) => {
       const m = snap.flows[0].machine;
       m.transitions.push({ source: "new", target: "waiting", event: "new_waiting_deps" });
-      m.writers = { new_waiting: [{ actor: "a", trigger: "dagu" }], new_waiting_deps: [{ actor: "b", trigger: "dagu" }] };
+      m.writers = { new_waiting: [{ actor: "a", trigger: "temporal" }], new_waiting_deps: [{ actor: "b", trigger: "temporal" }] };
     }), scene = build(sky, { kind: "board" });
     const pair = (s: string, t: string) => scene.bEdges.filter((e) => e.source === s && e.target === t);
 
     expect(pair("new", "waiting")).toHaveLength(1);
     expect(pair("new", "waiting")[0].events).toEqual(["new_waiting", "new_waiting_deps"]);
     expect(pair("new", "waiting")[0].event).toBe("new_waiting · new_waiting_deps");
-    expect(pair("new", "waiting")[0].writers).toEqual([{ actor: "a", trigger: "dagu", event: "new_waiting" }, { actor: "b", trigger: "dagu", event: "new_waiting_deps" }]);
+    expect(pair("new", "waiting")[0].writers).toEqual([{ actor: "a", trigger: "temporal", event: "new_waiting" }, { actor: "b", trigger: "temporal", event: "new_waiting_deps" }]);
     expect([pair("ready", "waiting").length, pair("waiting", "ready").length]).toEqual([1, 1]);
   });
 });
@@ -1315,7 +1315,7 @@ describe("a state's self-transitions", () => {
 // a child machine. PROJ-1 sits in pr_opened, PROJ-2 works skill-00, PROJ-3 is in the primary outside any sub-state, PROJ-4 is in Ready.
 const moonSky = (skills = 2, W = 1920, H = 1080, ties: { writes?: Record<string, string[]>; cues?: Cue[]; launches?: Record<string, string>; busy?: number } = {}) => {
   const { writes = {}, cues = [], launches = {}, busy = 0 } = ties, writers: Record<string, { actor: string; trigger: string }[]> = {};
-  for (const [name, events] of Object.entries(writes)) for (const e of events) (writers[e] ||= []).push({ actor: name, trigger: "dagu" });
+  for (const [name, events] of Object.entries(writes)) for (const e of events) (writers[e] ||= []).push({ actor: name, trigger: "temporal" });
   const tied = [...new Set([...Object.keys(writes), ...cues.map((c) => c.dag), ...Object.keys(launches)])];
   const names = Array.from({ length: skills }, (_, i) => `skill-${String(i).padStart(2, "0")}`);
   const session = (task: string, state: string, active: number) => ({ id: `${task}-${state}`, title: "t", state, model: "", task, active });
@@ -1535,7 +1535,7 @@ describe("a fold's level", () => {
   it("gives each template a caption cell that names its role and contract, side by side without overlap", () => {
     const scene = ledger(), cols = scene.fold!.ledger!.cols;
 
-    expect(cols.map((c) => [c.dag, c.role, c.on, c.resolves])).toEqual([["alpha", "writer", "dagu", null], ["beta", "cue", "each merge", "next"], ["delta", "cue", "each claim", "forced"]]);
+    expect(cols.map((c) => [c.dag, c.role, c.on, c.resolves])).toEqual([["alpha", "writer", "temporal", null], ["beta", "cue", "each merge", "next"], ["delta", "cue", "each claim", "forced"]]);
     cols.forEach((c, i) => {
       expect([c.x0 < scene.stars[c.dag].x, scene.stars[c.dag].x < c.x1]).toEqual([true, true]);
       if (i) expect(c.x0).toBeGreaterThanOrEqual(cols[i - 1].x1);

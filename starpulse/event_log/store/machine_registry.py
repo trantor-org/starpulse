@@ -6,8 +6,6 @@ Event under the definition that wrote it. A change that drops a State holding li
 new version: one stale Task rolls the whole change back.
 """
 
-from __future__ import annotations
-
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -108,7 +106,7 @@ class MachineRegistry:
         states = self.definition(digest)["states"]
         for event in events:
             named = event.payload.get(_STATE_FIELD.get(event.type, ""))
-            if named is not None and named not in states:
+            if named is not None and lane_id(named) not in states:
                 raise MachineDefinitionError(
                     f"{machine}: {event.type} names State {named}, which version {digest[:12]} lacks"
                 )

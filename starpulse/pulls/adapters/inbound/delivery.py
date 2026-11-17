@@ -13,8 +13,6 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
   down once that is older than `DOWN_S` (`poller_problem`).
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import math
@@ -23,6 +21,7 @@ import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from starpulse.event_log.kept_text import kept_text
 from starpulse.event_log.wake import StopEvent
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -33,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 PROJECTION = "pulls.projection"
 METRICS = "pulls.metrics"
+ACTOR_VIEW = "pulls.actor_view"
 SAVED_STREAM = "pulls:saved"
 REFRESH_STREAM = "pulls:refresh"
 POLLER = "pulls.poller"
@@ -212,12 +212,20 @@ def publish_metrics(log: EventLog, text: str) -> None:
         logger.warning("pulls: the metrics were not kept", exc_info=True)
 
 
-def keep_metrics(log: EventLog, exposition: Callable[[], str], stop: StopEvent) -> threading.Thread:
-    """Write `exposition()` to the log every `METRICS_S` on a thread until `stop`."""
+def keep_metrics(
+    log: EventLog, exposition: Callable[[], str], stop: StopEvent, views: Callable[[], dict[str, Any]] | None = None
+) -> threading.Thread:
+    """Write `exposition()`, and the task actor's `views()` when given, to the log every `METRICS_S` on a thread until
+    `stop`."""
 
     def run() -> None:
         while not stop.is_set():
             publish_metrics(log, exposition())
+            if views:
+                try:
+                    log.put_state(ACTOR_VIEW, views())
+                except Exception:
+                    logger.warning("pulls: the task actor's views were not kept", exc_info=True)
             stop.wait(METRICS_S)
 
     thread = threading.Thread(target=run, name="pull-metrics", daemon=True)
@@ -263,12 +271,17 @@ def poller_problem(log: EventLog, clock: Callable[[], float] = time.time) -> Cal
 
 def metrics_of(log: EventLog) -> Callable[[], str]:
     """The worker's metrics text as last kept; empty before it kept any or when the log cannot be read."""
+    return kept_text(log, METRICS)
 
-    def read() -> str:
+
+def actor_views_of(log: EventLog) -> Callable[[], dict[str, Any]]:
+    """The task actor's views of the Review tasks as last kept; empty before it kept any or when the log cannot be read."""
+
+    def read() -> dict[str, Any]:
         try:
-            _, text = log.state(METRICS)
+            _, views = log.state(ACTOR_VIEW)
         except Exception:
-            return ""
-        return text if isinstance(text, str) else ""
+            return {}
+        return views if isinstance(views, dict) else {}
 
     return read

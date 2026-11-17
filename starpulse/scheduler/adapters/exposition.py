@@ -4,25 +4,49 @@ Each is read from the store on every scrape, so a server that does not run the l
 wrote there.
 """
 
-from __future__ import annotations
-
+import time
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
 
-from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.tables import scheduler_runs
 from starpulse.scheduler.adapters.loop import GATE_TALLY_KEY, TALLY_KEY
 from starpulse.scheduler.model.admission import GATES
+from starpulse.scheduler.model.changes import STREAM
 from starpulse.scheduler.model.decision_log import EMPTY as EMPTY_DECISION_LOG
 from starpulse.scheduler.model.decision_log import KEY as DECISION_LOG_KEY
+from starpulse.scheduler.model.quiet_hours import QuietHoursSetting
 from starpulse.scheduler.model.toggle import KEY as SWITCH_KEY
+from starpulse.scheduler.model.toggle import Toggle
+from starpulse.scheduler.model.unadmitted import unadmitted_hours
+
+#: The window `unadmittedHours` covers, in hours.
+UNADMITTED_WINDOW_H = 168
+
+
+def _decision_log(log: EventLog) -> dict[str, Any]:
+    return log.state(DECISION_LOG_KEY)[1] or EMPTY_DECISION_LOG
 
 
 def autopilot_log(log: EventLog) -> dict[str, Any]:
-    """The decision log the scheduler kept in the store: verdicts per local day, the starts and the first restore."""
-    return log.state(DECISION_LOG_KEY)[1] or EMPTY_DECISION_LOG
+    """The decision log the scheduler kept in the store: verdicts per local day, the starts and the first restore, and
+    `unadmittedHours`: the hours of the last `UNADMITTED_WINDOW_H` the autopilot could not admit, by cause, read from the
+    change events."""
+    quiet = QuietHoursSetting(log).state()
+    entries = [entry for batch in iter(Tail.replay(log, STREAM).poll, []) for entry in batch]
+    hours = unadmitted_hours(
+        entries,
+        now=time.time(),
+        window_s=UNADMITTED_WINDOW_H * 3600,
+        enabled=Toggle(log).get(),
+        quiet=quiet,
+    )
+    return {
+        **_decision_log(log),
+        "unadmittedHours": {"window_h": UNADMITTED_WINDOW_H, **{k: round(v, 2) for k, v in hours.items()}},
+    }
 
 
 def decision_days(log: EventLog, switched: float) -> int:
@@ -30,7 +54,7 @@ def decision_days(log: EventLog, switched: float) -> int:
     if not switched:
         return 0
     first = datetime.fromtimestamp(switched).date().isoformat()
-    return sum(1 for day in autopilot_log(log)["days"] if day >= first)
+    return sum(1 for day in _decision_log(log)["days"] if day >= first)
 
 
 def autopilot_exposition(log: EventLog) -> str:

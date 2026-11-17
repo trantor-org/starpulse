@@ -10,10 +10,8 @@ judged on is its proportional size (`starpulse.runtime.memory`).
 `Forker` is the `spawn` the `Supervisor` takes. A reload that changes a module the preloaded process imported retires it: it
 takes no more forks and exits when its last child has, and the next fork asks a new one that has the new code. Where the
 platform has no safe `fork` (everywhere but Linux), or the preloaded process fails, children start with `subprocess` as
-`spawn_child` does, as does a child handed a listening socket (the Page API's), which it inherits from `serve` itself.
+`spawn_child` does. The Page API child forks like the others, and the preloaded process inherits its listening socket from `serve`.
 """
-
-from __future__ import annotations
 
 import gc
 import importlib
@@ -32,8 +30,8 @@ from typing import IO, Any, NoReturn
 
 from setproctitle import setproctitle
 
-from starpulse.runtime.hold import LISTEN_FD_ENV, SUPERVISED_ENV, supervised_env, watch_supervisor
 from starpulse.runtime import launch
+from starpulse.runtime.hold import LISTEN_FD_ENV, SUPERVISED_ENV, running, supervised_env, watch_supervisor
 from starpulse.runtime.supervisor import spawn_child
 
 logger = logging.getLogger(__name__)
@@ -167,28 +165,20 @@ def main(argv: list[str]) -> None:  # pragma: no mutate block — process bounda
 # `serve`'s side
 
 
-def _running(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
 class _Forked:
     """A child of the preloaded process, shaped like the `Popen` the `Supervisor` drives.
 
-    It is not `serve`'s child, so it is alive while its pid is and its exit code is what the preloaded process reaped."""
+    It is not `serve`'s child, so it is alive while its pid is and its exit code is what the preloaded process reaped.
+    Its `stdin` is the write end of the pipe it exits on when closed, which every child of the preloaded process shares."""
 
     def __init__(self, pid: int, preloaded: _Preloaded) -> None:
         self.pid = pid
+        self.stdin = preloaded.proc.stdin
         self._preloaded = preloaded
         self._code: int | None = None
 
     def poll(self) -> int | None:
-        if self._code is None and not _running(self.pid):
+        if self._code is None and not running(self.pid):
             self._code = self._preloaded.exit_code(self.pid)
         return self._code
 

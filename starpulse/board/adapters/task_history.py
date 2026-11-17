@@ -3,8 +3,6 @@
 The board still writes the task's file; this records, per write, the intent the file's before and after show. A Task
 with no History yet is seeded with a `TaskImported` of its record before the write, so a replay equals the row."""
 
-from __future__ import annotations
-
 import json
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
 from contextlib import contextmanager
@@ -57,7 +55,7 @@ _OWN = {
 }
 _LISTS = ("labels", "dependencies", "references", "documentation", "modifiedFiles")
 #: The record's keys the fold keeps in `meta`.
-_META = ("profile", "impact", "urgency", "tier", "start_criteria", "source")
+_META = ("profile", "impact", "urgency", "tier", "start_criteria", "source", "needsAttention")
 #: The record's criteria lists, by the kind the fold keeps them under.
 _KINDS = {"ac": "acceptanceCriteria", "dod": "definitionOfDone"}
 
@@ -179,8 +177,8 @@ def _events(before: Record, after: Record | None, note: str) -> list[Event]:
         events.append(("Transitioned", {"from": before.get("status"), "to": after.get("status")}))
     events += _criteria_events(before, after)
     events += [("CommentAdded", {"text": item.get("text", "")}) for item in _comments(after)[len(_comments(before)) :]]
-    if before.get("session") != after.get("session"):
-        held = after.get("session")
+    if before.get("assignee") != after.get("assignee"):
+        held = after.get("assignee")
         events.append(("Claimed", {"assignee": held}) if held else ("Released", {}))
     return events
 
@@ -228,6 +226,7 @@ class TaskHistory:
                 )
                 note = args[reason_at] if reason_at is not None and len(args) > reason_at else ""
                 after = read(task)
+                task = str((after or before or {}).get("id") or task)
                 revised = bool(reason and before and after) and revises_plan(
                     before.get("status") or "", before.get("plan") or "", after.get("plan") or "", unstarted or ()
                 )
@@ -253,18 +252,17 @@ class TaskHistory:
 
         return run
 
-    def renumbered(
-        self, renumber: Callable[[str], Written], read: Callable[[str], Record | None]
+    def dehydrated(
+        self, complete: Callable[[str], Written], read: Callable[[str], Record | None]
     ) -> Callable[[str], Written]:
-        """`renumber` (a verb giving a task a new id, the new id its output) that retires the old id's History with an
-        `Archived` and seeds the new id's History from its file once it succeeds."""
+        """`complete` (a verb moving a Done task out of the active board) that records an `Archived`
+        once it succeeds: the task stays in its History, and replaying that rehydrates it."""
 
         def run(task: str) -> Written:
             before = read(task)
-            written = renumber(task)
+            written = complete(task)
             if written.ok:
                 self._append(task, before, None, OPERATOR, "")
-                self._append(written.output, read(written.output), read(written.output), OPERATOR, "")
             return written
 
         return run

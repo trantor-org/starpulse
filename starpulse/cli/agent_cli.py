@@ -3,10 +3,9 @@
     starpulse board --milestone launch --label api
     starpulse task show PROJ-45
     starpulse task moves PROJ-45
-    starpulse task move PROJ-45 review
+    starpulse task move PROJ-45 <state>
     starpulse task claim PROJ-45 --session s-1
     starpulse task park PROJ-45 --until-task PROJ-40 --comment "needs the API"
-    starpulse task review PROJ-45 --ref https://example.test/pull/9 --summary "Shipped"
     starpulse task trace PROJ-45 --machine in-progress
     starpulse task create "Rotate the secret" --priority high --label ops --ac "It rotates"
     starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops --label security
@@ -18,6 +17,7 @@
     starpulse task retire PROJ-45
     starpulse task retired PROJ-45
     starpulse task import-retired "retired/PROJ-3 - Old.md"
+    starpulse task cold-done
     starpulse task complete PROJ-45
     starpulse task checkpoint-ac PROJ-45 2 "pytest exits 0"
     starpulse machine show in-progress
@@ -36,6 +36,7 @@
     starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
     starpulse analytics health --hours 72
+    starpulse analytics liveness --stalled-minutes 5
     starpulse analytics transitions --hours 168
     starpulse analytics cells --hours 720
     starpulse analytics estimates --hours 720 --milestone m-305
@@ -95,10 +96,16 @@ a board that keeps none answers exit 3. A `--spec` or `--adr` on `milestone edit
 bodies out, `doc show` returns one with its `body`, and a board that keeps no docs answers exit 3. `doc restore`
 returns an archived doc's file, unchanged, to `--folder` under the docs (the docs folder itself by default), refusing a doc
 that is open or a destination that exists (exit 1).
+`session records` reads no server: it prints a session's Claude Code transcript records grouped by the task each belongs to,
+read from the transcript files and never stored.
+`subscribe <subject>...` and `unsubscribe <subject>...` read no server: they add the subjects (one call, one consumer) of the board's NATS stream to the calling
+session's consumer, or remove it, beside the subjects its task's kind gives (`[bridge.subscriptions.<kind>]`).
+`subscribe` also registers the calling session's Claude Code inbox socket and token (owner-only, beside the config) so the bridge can notify it,
+never for another session named by `--session`.
+`incident open <type> <key>` publishes the fault to NATS without the server and then files its owner task there; a
+board that is down leaves the task for the finder's rerun, and a NATS server that is down leaves `published` false. `--owner <task>` makes an existing task the owner instead.
 `skills` reads no server: it copies the bundled skills into the project or, with `--user`, the home directory.
 """
-
-from __future__ import annotations
 
 import argparse
 import dataclasses
@@ -107,6 +114,7 @@ import importlib
 import json
 import os
 import re
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -124,6 +132,7 @@ from starpulse.cli.agent_keys import (
     GRAPH_KEYS,
     HEALTH_KEYS,
     LIFECYCLE_KEYS,
+    LIVENESS_KEYS,
     MILESTONE_KEYS,
     MOVE_KEYS,
     PULL_KEYS,
@@ -145,6 +154,7 @@ if TYPE_CHECKING:
 EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}
 #: Seconds an analytics read may take: the sessions route computes over the telemetry window and answers in ~15.
 _ANALYTICS_TIMEOUT_S = 60.0
+_STEPS_PAGE = 5000
 #: The exit code of each error `code`.
 _ERROR_EXIT = {"refused": 1, "usage": 2, "unavailable": 3, "not_found": 4}
 
@@ -243,6 +253,29 @@ def _machine(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, 
 
         document |= {"format": "dot", "diagram": dot(flow["name"], machine)}
     return document
+
+
+def _lanes(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The Board machine's lane names in machine order beside each retired name history still holds, from its file."""
+    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
+        load_machine,
+    )
+    from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
+        MachineDefinitionError,
+        Registry,
+    )
+    from starpulse.runtime.config import discover  # noqa: PLC0415 - import cost, paid on first use
+
+    path = discover(args.config)
+    try:
+        machine = tomllib.loads(path.read_text()).get("board", {}).get("machine") if path else None
+        if machine is None:
+            raise agent_wire.CliError("usage", "the config declares no board.machine: there are no lanes to print")
+        compiled = load_machine(path.resolve().parent / str(machine), Registry(guards=_AnyName(), actions=_AnyName()))
+    except (tomllib.TOMLDecodeError, MachineDefinitionError, OSError) as exc:
+        raise agent_wire.CliError("refused", str(exc)) from exc
+    lanes = {state.id: compiled.labels[state.id] for state in compiled.machine.states if not state.initial}
+    return {"lanes": list(lanes.values()), "aliases": {old: lanes[state] for old, state in compiled.aliases.items()}}
 
 
 def _runs(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -380,11 +413,25 @@ def _window_read(
     return {key: document[key] for key in keys}
 
 
+def _liveness(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Each working task's liveness and the Board's moves into Review per hour over `--hours`, as
+    `/api/analytics/liveness` answers. A window or threshold the server refuses is `refused`."""
+    stalled = {} if args.stalled_minutes is None else {"stalled_minutes": args.stalled_minutes}
+    return _window_read(args, environ, "/api/analytics/liveness", LIVENESS_KEYS, stalled)
+
+
 def _steps(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """One row per model request over `--hours`, as `/api/analytics/steps` answers: the skill in force, the activities
     and keys of the calls it made, and its tokens. A window longer than the telemetry history is `refused`; a server
-    that receives no telemetry is `unavailable`."""
-    return _window_read(args, environ, "/api/analytics/steps", STEP_KEYS)
+    that receives no telemetry is `unavailable`. The server answers a page at a time; this reads them all."""
+    first = page = _window_read(args, environ, "/api/analytics/steps", (*STEP_KEYS, "next"), {"limit": _STEPS_PAGE})
+    steps = list(page["steps"])
+    while page["next"]:
+        page = _window_read(
+            args, environ, "/api/analytics/steps", (*STEP_KEYS, "next"), {"limit": _STEPS_PAGE, "after": page["next"]}
+        )
+        steps += page["steps"]
+    return {**{key: first[key] for key in STEP_KEYS}, "steps": steps}
 
 
 def _transitions(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -504,14 +551,15 @@ def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
         config = load(path)
     except (OSError, ValueError) as exc:
         config = f"{path}: {exc}"
-    served = None
+    served = ready = None
     try:
         snapshot: dict[str, Any] | str = agent_wire.get_snapshot(base)
         status, report = agent_wire.get(base, "/api/doctor")
         served = report if status == 200 and isinstance(report, dict) else None
+        ready = agent_wire.get(base, "/api/ready")
     except agent_wire.CliError as exc:
         snapshot = str(exc)
-    return doctor.run_checks(snapshot, config, doctor.LIVE, base, served)
+    return doctor.run_checks(snapshot, config, doctor.LIVE, base, served, ready)
 
 
 def _skills_root(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[str, Path]:
@@ -572,9 +620,9 @@ def _checked(path: Path) -> dict[str, Any]:
 
 def _dead_migrations(path: Path, held: set[str]) -> list[dict[str, Any]]:
     """An error per `migrations` entry of `path` whose source State no live Task holds."""
-    from starpulse.machine_engine.adapters.machine_loader import _read  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.machine_engine.adapters.machine_loader import read_document  # noqa: PLC0415 - import cost, paid on first use
 
-    mapping = _read(path).get("migrations", {})
+    mapping = read_document(path).get("migrations", {})
     return [
         {
             "file": str(path),
@@ -643,15 +691,45 @@ def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     except (OSError, ValueError) as exc:  # a file that is missing or not TOML
         return {**checked, "ok": False, "errors": [f"{path}: {exc}"]}
     effective = json.loads(json.dumps(dataclasses.asdict(config), default=_plain))
-    if refused := _unlisted_writers(config, path.parent if path else Path()):
+    base = path.parent if path else Path()
+    if refused := _unlisted_writers(config, base):
         return {**checked, "ok": False, "errors": refused, "config": effective}
     return {**checked, "ok": True, "config": effective}
+
+
+def _session_records(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """One session's transcript records grouped by the task each belongs to, in the order the tasks are first named,
+    read from the transcript files under `--transcripts`, else `[board] transcripts`, else Claude Code's own directory."""
+    from starpulse.board.adapters.session_activity import DEFAULT_TRANSCRIPTS  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.contracts.adapters import TaskKeys  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.contracts.analytics import Analytics  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.sessions.adapters.outbound.transcript_records import records_by_task, session_records  # noqa: PLC0415 - import cost, paid on first use
+
+    path = discover(args.config)
+    try:
+        config = load(path)
+    except (ConfigError, OSError, ValueError) as exc:
+        raise agent_wire.CliError("refused", f"{path}: {exc}") from exc
+    root = Path(args.transcripts or config.board.get("transcripts", DEFAULT_TRANSCRIPTS)).expanduser()
+    records = session_records(root, args.session)
+    if records is None:
+        raise agent_wire.CliError("not_found", f"no transcript of session {args.session} under {root}")
+    settings = config.claude_code or ClaudeCode()
+    keys = TaskKeys(key=re.compile(settings.key), branch=re.compile(settings.branch), key_format=settings.key_format)
+    groups = records_by_task(records, keys, config.analytics or Analytics())
+    return {
+        "session": args.session,
+        "records": len(records),
+        "groups": [{"task": task, "records": found} for task, found in groups.items()],
+    }
 
 
 def _unlisted_writers(config: Config, base: Path) -> list[str]:
     """What `serve` refuses as it draws the project's machines: a writer naming a workflow no configured adapter lists.
 
-    Only the built-in boards draw `.starpulse/machines/`; Jira draws its own workflow and a dotted type is unknown here.
+    Only the built-in boards draw `.starpulse/machines/`; a dotted type is unknown here.
     """
     from starpulse.board.adapters import project_machines  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
@@ -662,11 +740,12 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
         refuse_unlisted,
     )
     from starpulse.pulls.adapters.inbound.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.scheduler.model.config import ACTOR as SCHEDULER_ACTOR  # noqa: PLC0415 - import cost, paid on first use
 
     if config.reads_domains_at_start():
         return []  # an adapter reads this instance's domains from its workflows as `serve` starts, which this offline check cannot read
     listed = [name for names in config.qualified_domains().values() for name in names]
-    if not listed or config.board_type not in {"native", "upstream_backlog", "machines"}:
+    if not listed or config.board_type not in {"native", "machines"}:
         return []
     board_file = base / str(config.board["machine"]) if "machine" in config.board else None
     try:
@@ -677,7 +756,7 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
     refused = []
     for name, compiled in flows.items():
         try:
-            refuse_unlisted(name, compiled.writers, [*listed, ACTOR] if config.task_actor else listed)
+            refuse_unlisted(name, compiled.writers, [*listed, SCHEDULER_ACTOR, *([ACTOR] if config.task_actor else [])])
         except MachineDefinitionError as exc:
             refused.append(str(exc))
     return refused
@@ -749,7 +828,7 @@ def _parser() -> argparse.ArgumentParser:
     verbs = parser.add_subparsers(dest="command", required=True, metavar="command")
     # Listed so `--help` shows how to start the server; `__main__` hands these words to their own parsers before this one.
     verbs.add_parser("serve", help="run StarPulse's server", add_help=False)
-    verbs.add_parser("connect", help="set up a native, Backlog.md or Jira board in starpulse.toml", add_help=False)
+    verbs.add_parser("connect", help="set up the native board in starpulse.toml", add_help=False)
     verbs.add_parser(
         "worker",
         help="run one context of the server as its own process (`worker pulls`, `worker scheduler`)",
@@ -825,6 +904,9 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         help="drop a task that finished (settled or entered Done) longer ago than this many days; open tasks stay",
     )
+    search.add_argument(
+        "--before", help="only tasks of this key's prefix created before it, kept before the limit cuts (`PROJ-45`)"
+    )
     task = verbs.add_parser("task", description="one task of the Board", help="one task of the Board")
     task_verbs = task.add_subparsers(dest="verb", required=True, metavar="verb")
     show = leaf(
@@ -837,6 +919,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     show.add_argument("task", help="the task's key (`PROJ-45`)")
     show.add_argument("--markdown", action="store_true", help="the task rendered as markdown, in `markdown`, instead")
+    show.add_argument("--text", action="store_true", help="the task and its comments as plain text, in `text`, instead")
+    find = leaf(
+        task_verbs,
+        "find",
+        "the open tasks filed under a source key, in `tasks` (empty when none)",
+        _in_tasks("task_find"),
+        ("source", "tasks"),
+        (0, 2, 3),
+    )
+    find.add_argument("--source", required=True, help="the key a producer filed its task under")
     moves = leaf(
         task_verbs,
         "moves",
@@ -893,7 +985,10 @@ def _parser() -> argparse.ArgumentParser:
         help="a task that must reach Done first, or TASK-N#K for one of its open criteria (repeatable)",
     )
     park.add_argument(
-        "--until", action="append", default=[], help="a condition a check can observe, as YAML or JSON (repeatable)"
+        "--until",
+        action="append",
+        default=[],
+        help="an event subject an alert or a deploy emits, the first of which releases the task (repeatable)",
     )
     park.add_argument("--operator", help="what only the operator can do or decide")
     park.add_argument("--comment", help="what is outstanding, recorded with the move")
@@ -967,13 +1062,20 @@ def _parser() -> argparse.ArgumentParser:
         "--tier", help="`regression`, `bug`, `leverage`, `standard` or `decide`; blank returns it to the default"
     )
     edit.add_argument(
-        "--profile", "--assignee", dest="profile", help="the agent profile it is routed to (`@agent-standard-high`); blank clears"
+        "--profile",
+        "--assignee",
+        dest="profile",
+        help="the agent profile it is routed to (`@agent-standard-high`); blank clears",
     )
     edit.add_argument("--milestone", help="the milestone's id; blank removes it")
     edit.add_argument("--source", help="the key a producer files its task under, so a rerun finds it again")
     edit.add_argument("--follows", help="the id of the finished task this one follows up; blank removes it")
     edit.add_argument("--label", action="append", help="a label; given at all, replaces the whole list (blank clears)")
     edit.add_argument("--dependency", action="append", help="a task it depends on; replaces the whole list")
+    edit.add_argument(
+        "--status",
+        help="the lane to move it to in the same write as the other fields, as a move would (a Ready task given an open dependency)",
+    )
     edit.add_argument("--reference", action="append", help="a reference; replaces the whole list")
     edit.add_argument(
         "--documentation",
@@ -1129,6 +1231,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     retired.add_argument("task", nargs="?", default="", help="one retired task's key (`PROJ-45`); default: every one")
     retired.add_argument("--milestone", default="", help="only the retired tasks of this milestone (`m-9`)")
+    leaf(
+        task_verbs,
+        "cold-done",
+        "every Done task past its hot day, newest first, paging the server until it has no more",
+        _in_tasks("task_cold_done"),
+        ("tasks",),
+        (0, 3),
+    )
     import_retired = leaf(
         task_verbs,
         "import-retired",
@@ -1203,6 +1313,18 @@ def _parser() -> argparse.ArgumentParser:
         default="json",
         help="`dot` adds the machine as Graphviz DOT source in `diagram`",
     )
+    lanes = leaf(
+        machine_verbs,
+        "lanes",
+        "the Board machine's lane names in machine order and the retired names history still holds for them, read from its file",
+        _lanes,
+        ("lanes", "aliases"),
+        (0, 1, 2),
+        reads_server=False,
+    )
+    lanes.add_argument(
+        "--config", type=Path, help="the starpulse.toml naming the Board machine; else the working directory's"
+    )
     validate = leaf(
         machine_verbs,
         "validate",
@@ -1229,7 +1351,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     mermaid.add_argument("source", type=Path, help="the stateDiagram-v2 .mmd file")
     mermaid.add_argument("--out", type=Path, help="default: .starpulse/machines/<source name>.yaml")
-    pull = verbs.add_parser("pull", description="the pull requests the server stores", help="the pull requests the server stores")
+    pull = verbs.add_parser(
+        "pull", description="the pull requests the server stores", help="the pull requests the server stores"
+    )
     pull_verbs = pull.add_subparsers(dest="verb", required=True, metavar="verb")
     pull_show = leaf(
         pull_verbs,
@@ -1402,6 +1526,23 @@ def _parser() -> argparse.ArgumentParser:
     )
     health.add_argument("--hours", type=float, help="the window to count over, in hours (default: the server's, 168)")
     health.add_argument("--stuck-hours", type=float, help="how long in one state makes a task stuck (default 24)")
+    liveness = leaf(
+        analytics_verbs,
+        "liveness",
+        "each working task's time since its last state change and last command, the stalled ones with their cause, "
+        "and the Board's moves into Review per hour with the time each working stage takes",
+        _liveness,
+        LIVENESS_KEYS,
+        (0, 1, 2, 3),
+    )
+    liveness.add_argument(
+        "--hours", type=float, help="the window to count moves into Review over, in hours (default 24)"
+    )
+    liveness.add_argument(
+        "--stalled-minutes",
+        type=float,
+        help="how long without a state change or a command stalls a task, in minutes (default 5)",
+    )
     steps = leaf(
         analytics_verbs,
         "steps",
@@ -1538,6 +1679,92 @@ def _parser() -> argparse.ArgumentParser:
     )
     command_show.add_argument("name", help="the step's name (`deliver`)")
     command_show.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    for name, summary, handler in (
+        (
+            "subscribe",
+            "add a subject to the calling session's NATS consumer, kept until `unsubscribe` and beside the subjects its "
+            "task gives; needs `[bridge] enabled`",
+            "subscribe",
+        ),
+        ("unsubscribe", "remove a subject from the calling session's NATS consumer", "unsubscribe"),
+    ):
+        subject = leaf(
+            verbs,
+            name,
+            summary,
+            _later("starpulse.cli.agent_subscribe", handler),
+            ("session", "subject", "changed", "subjects"),
+            (0, 1, 2, 3),
+            reads_server=False,
+        )
+        subject.add_argument(
+            "subject",
+            nargs="+",
+            help="subjects of the board's stream (`starpulse.trantor.alert.disk.>`), all in one call",
+        )
+        subject.add_argument("--session", help="the session subscribing (else `STARPULSE_SESSION`)")
+        subject.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    register = leaf(
+        verbs,
+        "register",
+        "record the calling session's inbox socket and token for the bridge's delivery, with no subject: a session "
+        "rerun this when it resumes, since a resumed session has a new socket and token",
+        _later("starpulse.cli.agent_subscribe", "register"),
+        ("session", "registered"),
+        (0, 1, 2),
+        reads_server=False,
+    )
+    register.add_argument("--session", help="the session registering (else `STARPULSE_SESSION`)")
+    register.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    incident = verbs.add_parser(
+        "incident", description="a fault several sessions share", help="a fault several sessions share"
+    )
+    incident_verbs = incident.add_subparsers(dest="verb", required=True, metavar="verb")
+    incident_open = leaf(
+        incident_verbs,
+        "open",
+        "publish `incident.<type>.<key>` straight to NATS, working while the board is down, and create and claim its "
+        "owner task: one per type and key, joined (nothing published) when another session holds it, left null while "
+        "the board is down until the finder reruns the verb",
+        _later("starpulse.cli.agent_incident", "open_incident"),
+        ("subject", "task", "holder", "published"),
+        (0, 1, 2, 3),
+    )
+    incident_open.add_argument("type", help="the kind of fault (`ci`)")
+    incident_open.add_argument("key", help="which one (`wedged`)")
+    incident_open.add_argument(
+        "--owner", help="an existing task that owns the fault, instead of creating and claiming one"
+    )
+    incident_open.add_argument(
+        "--failing-pull",
+        action="store_true",
+        help="hold only the in-reach tasks with an open pull request whose checks read failing",
+    )
+    incident_open.add_argument(
+        "--config", type=Path, help="the TOML config file; default starpulse.toml when it exists"
+    )
+    agent_flags.writer_flags(incident_open)
+    session = verbs.add_parser("session", description="one agent session", help="one agent session")
+    session_verbs = session.add_subparsers(dest="verb", required=True, metavar="verb")
+    session_records = leaf(
+        session_verbs,
+        "records",
+        "a Claude Code session's transcript records, grouped by the task each belongs to (a claim or a task branch starts "
+        "a task), read from the transcript files and never stored",
+        _session_records,
+        ("session", "records", "groups"),
+        (0, 1, 2, 4),
+        reads_server=False,
+    )
+    session_records.add_argument("session", help="the Claude Code session id")
+    session_records.add_argument(
+        "--transcripts",
+        type=Path,
+        help="the directory of `<project>/<session>.jsonl` files (default: `[board] transcripts`)",
+    )
+    session_records.add_argument(
+        "--config", type=Path, help="the TOML config file; default starpulse.toml when it exists"
+    )
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(

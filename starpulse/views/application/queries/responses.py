@@ -1,7 +1,6 @@
 """The read routes' bodies and statuses: each takes the stores it reads and answers `(bytes, status)`."""
 
-from __future__ import annotations
-
+from bisect import bisect_right
 import logging
 import math
 import re
@@ -9,7 +8,7 @@ import time
 from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.ledger import PAGE
+from starpulse.board.model.ledger import PAGE
 from starpulse.board.model.seam import (
     TaskReader,
 )
@@ -20,9 +19,11 @@ from starpulse.flow_metrics.model import analytics
 from starpulse.flow_metrics.model.cells import cell_report, combine_cost, estimate_report
 from starpulse.flow_metrics.model.flow import combine_cost_to_go, combine_diff, combine_edges, combine_stages
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
+from starpulse.flow_metrics.model.liveness import liveness, work_machines, working_stays
 from starpulse.flow_metrics.model.session_health import combine_health, slice_health
-from starpulse.flow_metrics.model.spend import spend_report
+from starpulse.flow_metrics.model.spend import combine_spend
 from starpulse.flow_metrics.model.steps import combine_steps
+from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.stays import lane_stays
 from starpulse.views.model.encoding import encode, encode_rows
 
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.views.ports.signal_folds import SignalFoldReader
@@ -67,8 +68,11 @@ def ledger_response(feed: BoardFeed, event: str, query: dict[str, list[str]]) ->
     return encode("ledger", found), 200
 
 
-def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes, int]:
-    """The body and status for `/api/machines`: the next page of machines entered from `open`, older than `before`."""
+def machines_response(
+    feed: BoardFeed, query: dict[str, list[str]], lanes: Callable[[], dict[str, Any]] | None = None
+) -> tuple[bytes, int]:
+    """The body and status for `/api/machines`: the next page of machines entered from `open`, older than `before`,
+    and each lane's surface (`lanes`: none when it is not configured)."""
     asked = _page_query(query, "machines")
     if isinstance(asked, bytes):
         return asked, 400
@@ -76,7 +80,7 @@ def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[byt
     found = feed.machine_rows(open_, *asked)
     if found is None:
         return _error(f"{open_} is not a machine here"), 404
-    return encode("machines", found), 200
+    return encode("machines", {**found, "lanes": lanes() if lanes else {}}), 200
 
 
 def done_response(feed: BoardFeed, read: TaskReader | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
@@ -87,7 +91,10 @@ def done_response(feed: BoardFeed, read: TaskReader | None, query: dict[str, lis
     if isinstance(asked, bytes):
         return asked, 400
     stubs, more = feed.cold_page(*asked)
-    tasks = [_done_card(stub, read(stub["id"]) or {}) for stub in stubs]
+    tasks = []
+    for stub in stubs:
+        record = stub["record"] if "record" in stub else (read(stub["id"]) or {})
+        tasks.append(_done_card(stub, record))
     return encode("done", {"tasks": tasks, "more": more}), 200
 
 
@@ -138,9 +145,13 @@ def history_response(
     return encode("history", body), 200
 
 
-def pulls_response(pulls: PullStore | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
-    """The body and status for `/api/pulls`: the stored pull requests matching every filter given; one named by both
-    `repo` and `number` also carries `files`, the paths it changes (null for a record saved before they were kept).
+def pulls_response(
+    pulls: PullStore | None, query: dict[str, list[str]], cited: Callable[[str], list[str]] | None = None
+) -> tuple[bytes, int]:
+    """The body and status for `/api/pulls`: the stored pull requests matching every filter given, without their
+    bodies unless `bodies=1` asks or one is named by both `repo` and `number`, which also carries `files`, the paths it
+    changes (null for a record saved before they were kept). `task` names the pull requests that task cites (`cited`
+    gives its links), each read by its key.
 
     A `number` that is not an integer, or a `state` that is not open, merged or closed, is 400."""
     state = query.get("state", [""])[0].upper() or None
@@ -151,8 +162,22 @@ def pulls_response(pulls: PullStore | None, query: dict[str, list[str]]) -> tupl
     if state not in (None, "OPEN", "MERGED", "CLOSED"):
         return _error("pulls takes ?state= open, merged or closed"), 400
     repo = query.get("repo", [""])[0] or None
-    one = repo is not None and number is not None
-    found = pulls.find(repo, number, state, query.get("body_contains", [""])[0] or None, detailed=one) if pulls else []
+    task = query.get("task", [""])[0]
+    one = repo is not None and number is not None and not task
+    bodies = one or query.get("bodies", [""])[0] in ("1", "true")
+    needle = query.get("body_contains", [""])[0] or None
+    if not pulls:
+        found = []
+    elif task:
+        links = cited(task) if cited else []
+        found = [
+            record
+            for named, held in _cited(links)
+            if repo in (None, named) and number in (None, held)
+            for record in pulls.find(named, held, state, needle, bodies=bodies)
+        ]
+    else:
+        found = pulls.find(repo, number, state, needle, detailed=one, bodies=bodies)
     if one:  # one pull request is read whole: its changed files, which a listing leaves out
         found = [
             {**{key: value for key, value in record.items() if key != "detail"}, "files": (record["detail"] or {}).get("files")}
@@ -203,10 +228,11 @@ _SEARCH_LIMIT = 100
 def search_response(search: SearchIndex | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
     """The body and status for `/api/search`: the tasks holding every word of `?q=`, best first, at most `?limit=`;
     each repeated `?label=` keeps only the tasks carrying it, and `?finished_within_days=` drops a task that finished
-    (settled, or entered the done lane) longer ago than that many days.
+    (settled, or entered the done lane) longer ago than that many days; `?before=` (a task key) keeps only the tasks of
+    its prefix created before it, before `limit` cuts.
 
-    A server with no index is 404; a blank `q`, a `limit` that is not an integer from 1 to 100 or a
-    `finished_within_days` that is not a positive integer is 400."""
+    A server with no index is 404; a blank `q`, a `limit` that is not an integer from 1 to 100, a
+    `finished_within_days` that is not a positive integer or a `before` that is no task key is 400."""
     if search is None:
         return _error("this server keeps no search index"), 404
     words = query.get("q", [""])[0].strip()
@@ -218,12 +244,15 @@ def search_response(search: SearchIndex | None, query: dict[str, list[str]]) -> 
         days = int(query["finished_within_days"][0]) if "finished_within_days" in query else None
     except ValueError:
         days = 0
-    if not words or not 0 < limit <= _SEARCH_LIMIT or (days is not None and days < 1):
+    prefix, _, number = query["before"][0].rpartition("-") if "before" in query else ("", "", "")
+    before = (prefix, int(number)) if prefix and number.isdecimal() else None
+    if not words or not 0 < limit <= _SEARCH_LIMIT or (days is not None and days < 1) or ("before" in query and not before):
         return _error(
-            f"search takes a ?q= of words, a ?limit= from 1 to {_SEARCH_LIMIT} and a positive ?finished_within_days="
+            f"search takes a ?q= of words, a ?limit= from 1 to {_SEARCH_LIMIT}, a positive ?finished_within_days= "
+            "and a task key ?before="
         ), 400
     since = None if days is None else time.time() - days * 86400
-    hits = search.search(words, limit, labels=query.get("label", []), finished_since=since)
+    hits = search.search(words, limit, labels=query.get("label", []), finished_since=since, before=before)
     return encode("search", {"query": words, "hits": hits}), 200
 
 
@@ -232,6 +261,12 @@ _HEALTH_HOURS = 168.0
 
 
 _STUCK_HOURS = 24.0
+#: The window `/api/analytics/liveness` counts moves into Review over, and how long without a state change or a
+#: command stalls a task, when the query names none.
+_LIVENESS_HOURS = 24.0
+_STALLED_MINUTES = 5.0
+#: The longest window it answers: the body carries one bucket per hour.
+_LIVENESS_MAX_HOURS = 24.0 * 366
 
 
 def _hours(query: dict[str, list[str]], key: str, default: float) -> float | None:
@@ -266,6 +301,42 @@ def health_response(
     return encode("health", health), 200
 
 
+
+def liveness_response(
+    history: History, query: dict[str, list[str]], roles: StateRoles, machines: Mapping[str, dict], now: float
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/liveness`: each working task's liveness as of `now` and the Board's
+    moves into Review over the last `hours`, a task stalled past `stalled_minutes` without a state change or command."""
+    from starpulse.flow_metrics.adapters.outbound.history import LaneHistory  # noqa: PLC0415 - the database stack loads when a store does
+
+    window = _hours(query, "hours", _LIVENESS_HOURS)
+    stalled = _hours(query, "stalled_minutes", _STALLED_MINUTES)
+    if window is None or stalled is None or window > _LIVENESS_MAX_HOURS:
+        return _error(f"hours and stalled_minutes must each be a positive number, hours at most {_LIVENESS_MAX_HOURS:g}"), 400
+    if not (isinstance(history, LaneHistory) and hasattr(history, "task_events")) or roles.working is None:
+        return _error("this history does not keep every task's lane changes and events, so it cannot report liveness"), 501
+    start = now - window * 3600
+    stays = [
+        stay
+        for stay in working_stays((row for row in history.lane_rows() if row[1] <= now), {roles.working}, start=start)
+        if stay.ended is None or stay.to == roles.review
+    ]
+    began: dict[str, float] = {}
+    for stay in stays:
+        began[stay.task] = min(stay.began, began.get(stay.task, stay.began))
+    events = {task: history.task_events(task, since, now) for task, since in began.items()}
+    body = liveness(
+        stays,
+        events,
+        work=work_machines(machines, "board", roles.working),
+        review={roles.review},
+        now=now,
+        window_s=window * 3600,
+        stalled_s=stalled * 60,
+    )
+    return encode("liveness", body), 200
+
+
 def refuses_at_once(telemetry: SignalFoldReader | None, query: dict[str, list[str]], now: float, span: int = 1) -> bool:
     """Whether a telemetry report of the last `span` x `hours` answers with a refusal that needs no fold: an `hours`
     that is no positive number, no telemetry, or a window longer than the history (`_held_folds`)."""
@@ -297,7 +368,7 @@ _ROUTE_VIEWS = {
 
 
 def _held_folds(
-    telemetry: SignalFoldReader, window: float, kind: str, now: float, label: str, views: tuple[str, ...] = ()
+    telemetry: SignalFoldReader, window: float, kind: str, now: float, label: str, views: tuple[str, ...] = (), span: int = 1
 ) -> dict[str, list[Any]] | tuple[bytes, int]:
     """The per-session fold results of the `views` for the last `window` hours as of `now`, or the 503 response for a
     database that cannot be read.
@@ -307,12 +378,13 @@ def _held_folds(
     try:
         oldest = telemetry.oldest()
         history = _history_s(oldest, now)
-        held = None if window * 3600 > history else telemetry.window(now - window * 3600, views)
+        held = None if window * span * 3600 > history else telemetry.window(now - window * span * 3600, views)
     except Exception as exc:  # the event log's database is unreachable
         logger.warning("%s: signal table unreadable: %s", label, exc)
         return _error("the telemetry log cannot be read"), 503
     if held is None:
-        return encode(kind, {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
+        reach = history / span  # the longest `hours` the span-scaled window fits in the history
+        return encode(kind, {"error": str(WindowPastHistory(window * 3600, reach)), "history_s": history}), 400
     return held
 
 
@@ -339,6 +411,28 @@ def sessions_response(
     return encode("sessions", body), 200
 
 
+#: How many steps `/api/analytics/steps` answers when `?limit=` is absent, and the most it answers at once.
+_STEPS_PAGE = 1000
+_STEPS_PAGE_LIMIT = 5000
+
+
+def _step_key(row: dict[str, Any]) -> tuple[float, str, str]:
+    return row["at"], row["harness"], row["session"]
+
+
+def _steps_page_query(query: dict[str, list[str]]) -> tuple[tuple[float, str, str] | None, int] | bytes:
+    """The `after` cursor and `limit` of the steps route, or the 400 body for one that is malformed."""
+    try:
+        limit = int(query["limit"][0]) if "limit" in query else _STEPS_PAGE
+        at, harness, session = query["after"][0].split("|", 2) if "after" in query else (None, "", "")
+        after = (float(at), harness, session) if at is not None else None
+    except ValueError:
+        return _error("steps takes an integer ?limit= and an ?after= cursor from a previous page's next")
+    if not 0 < limit <= _STEPS_PAGE_LIMIT or after is not None and not math.isfinite(after[0]):
+        return _error(f"steps takes a ?limit= from 1 to {_STEPS_PAGE_LIMIT} and a finite cursor")
+    return after, limit
+
+
 def steps_response(
     telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
@@ -346,20 +440,31 @@ def steps_response(
     now: float,
     analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/steps`: every model request of the signals from the last `hours`
-    (default 168) as of `now`. An instance that receives no harness telemetry is 501, a log that cannot be read 503,
-    and a window longer than the telemetry history 400 with `history_s` its length."""
+    """The body and status for `/api/analytics/steps`: the model requests of the signals from the last `hours`
+    (default 168) as of `now`, oldest first, one page of at most `limit` (default 1000) after the cursor `after`, and
+    `next`, the cursor for the page that follows, when there is one. An instance that receives no harness telemetry is
+    501, a log that cannot be read 503, and a window longer than the telemetry history 400 with `history_s` its length."""
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
+    paged = _steps_page_query(query)
+    if isinstance(paged, bytes):
+        return paged, 400
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot report session steps"), 501
     held = _held_folds(telemetry, window, "session_steps", now, "steps", ("steps",))
     if isinstance(held, tuple):
         return held
-    rows = (((row["at"], row["harness"], row["session"]), row) for row in combine_steps(held["steps"]))
-    head = {"now": now, "window_s": window * 3600}
-    return encode_rows("session_steps", head, "steps", SessionStep, rows), 200
+    after, limit = paged
+    every = combine_steps(held["steps"])
+    start = bisect_right(every, after, key=_step_key) if after is not None else 0
+    end = start + limit
+    while end < len(every) and _step_key(every[end]) == _step_key(every[end - 1]):  # a page ends between keys
+        end += 1
+    page = every[start:end]
+    last = _step_key(page[-1]) if end < len(every) else None
+    head = {"now": now, "window_s": window * 3600, "next": "|".join(map(str, last)) if last else None}
+    return encode_rows("session_steps", head, "steps", SessionStep, ((_step_key(row), row) for row in page)), 200
 
 
 def _kind_size_response(
@@ -379,7 +484,7 @@ def _kind_size_response(
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error(f"this instance receives no harness telemetry, so it cannot report {label}"), 501
-    held = _held_folds(telemetry, window * span, label, now, label, _ROUTE_VIEWS[label])
+    held = _held_folds(telemetry, window, label, now, label, _ROUTE_VIEWS[label], span)
     if isinstance(held, tuple):
         return held
     return encode(label, {"now": now, "window_s": window * 3600, label: report(held, now - window * 3600)}), 200
@@ -409,17 +514,16 @@ def spend_response(
     analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/spend`: each task's tokens by phase (`spend.spend_report`) over the
-    last `hours`, read from the window's sessions; refusals as `steps_response`."""
+    last `hours`, combined from the window's `spend` fold rows; refusals as `steps_response`."""
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot report spend"), 501
-    held = _held_folds(telemetry, window, "spend", now, "spend")
+    held = _held_folds(telemetry, window, "spend", now, "spend", ("spend",))
     if isinstance(held, tuple):
         return held
-    found = [signal for group in telemetry.sessions(now - window * 3600) for signal in group]
-    report = spend_report(found, keys, titled(), analytics)
+    report = combine_spend(sorted(held["spend"], key=lambda fold: (fold["harness"], fold["session"])), titled())
     return encode("spend", {"now": now, "window_s": window * 3600, "spend": report}), 200
 
 

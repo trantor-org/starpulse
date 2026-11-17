@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from starpulse.event_log.event_log import EventLog
+from starpulse.scheduler.model.changes import record
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,10 @@ class QuietHoursSetting:
 
     def set(self, raw: object) -> None:
         """Keep `raw` as the window, or with None clear it; a value `parse` refuses raises ValueError and changes nothing."""
-        if raw is None:
+        new = None if raw is None else asdict(parse(raw))
+        old = self.state()
+        if new is None:
             self.log.delete_setting(KEY)
         else:
-            self.log.set_setting(KEY, asdict(parse(raw)))
+            self.log.set_setting(KEY, new)
+        record(self.log, "quiet_hours", old, new)

@@ -4,13 +4,10 @@ The event log (`event_log`) and the history store (`history`) share a database a
 the tables they share are declared here, where neither module has to import the other.
 """
 
-from __future__ import annotations
-
 from sqlalchemy import (
     JSON,
     Boolean,
     Column,
-    Date,
     Float,
     Index,
     Integer,
@@ -27,6 +24,11 @@ metadata = MetaData()
 
 #: Where the database records the revision it is at, named so it never meets a host project's own Alembic table.
 VERSION_TABLE = "starpulse_alembic_version"
+
+#: The one revision a release's chain must hold to read the store (the oldest that can); it sits beside the revision
+#: table, not in a migration, so recording it never moves the revision the previous release must know.
+READER_FLOOR_TABLE = "starpulse_reader_floor"
+reader_floor = Table(READER_FLOOR_TABLE, metadata, Column("revision", String, primary_key=True))
 
 #: The append-only event log. `id` is the readers' cursor: SQLite's AUTOINCREMENT never hands a pruned id out again,
 #: so a cursor only ever moves forward.
@@ -142,22 +144,6 @@ retired_tasks = Table(
     Index("ix_starpulse_retired_tasks_retired_at", "retired_at"),  # the change poll's count and max read this alone
 )
 
-#: What the retired server history kept of a day after its raw events were dropped: per team, machine and state,
-#: how many tasks or runs entered the state that UTC day (`entries`), how many of those had not left it when the day was
-#: rolled up (`open_entries`), and the seconds the others stayed. Nothing writes it now, and no revision creates it.
-day_rollups = Table(
-    "starpulse_day_rollups",
-    metadata,
-    Column("day", Date, nullable=False),
-    Column("team", String, nullable=False),
-    Column("machine", String, nullable=False),
-    Column("state", String, nullable=False),
-    Column("entries", Integer, nullable=False),
-    Column("open_entries", Integer, nullable=False),
-    Column("seconds", Float, nullable=False),
-    PrimaryKeyConstraint("day", "team", "machine", "state"),
-)
-
 #: Each pull request the PR store read from GitHub, one row per (repository, number), replaced by each read of an open
 #: one and never read again once `state` is MERGED or CLOSED (a MERGED row without `merge_sha` is read until it has one). `checks` is the required-check rollup (pass, failing,
 #: pending, none), `required` each required check as {name, result}, `updated_at` GitHub's own ISO 8601 UTC text
@@ -186,6 +172,7 @@ pull_requests = Table(
     Column("head_ref", String),
     Column("unresolved", JSON),
     Column("title", String),
+    Column("rollup", JSON),
     PrimaryKeyConstraint("repo", "number"),
     Index("ix_starpulse_pull_requests_state", "state", "repo"),
 )

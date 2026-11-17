@@ -3,6 +3,7 @@
 import logging
 
 from starpulse.event_log.event_log import EventLog
+from starpulse.scheduler.model.changes import record
 
 logger = logging.getLogger(__name__)
 
@@ -28,4 +29,6 @@ class Toggle:
             return False
 
     def set(self, value: bool) -> None:
+        old = self.get()
         self.log.set_setting(KEY, value)
+        record(self.log, "enabled", old, value)

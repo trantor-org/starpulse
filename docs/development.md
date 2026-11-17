@@ -3,7 +3,7 @@
 ```sh
 git clone https://github.com/trantor-org/starpulse && cd starpulse
 uv sync
-pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page, built into starpulse/static; its Kanban, Proposals, DAGs and Admin views load on demand
+pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page, built into starpulse/static; its Kanban, DAGs and Admin views load on demand
 uv run starpulse serve
 ```
 
@@ -23,7 +23,7 @@ workers (`-n <workers> --dist worksteal`). On the build host the count fits the 
 (`ci/xdist_workers.py --slice`); on any other runner it follows the runner's memory limit. A `select` job runs
 `ci/select_tests.py` once and prints `python=false` when it selects no test, which skips the run, and `python=true` with
 the targets otherwise (the nightly and a manual dispatch select the whole suite). The `static-checks` job runs
-`lint-imports` beside the other short checks. The `python` job, the ruleset's required check, passes when `select` did and
+`lint-imports` and `ruff check` (the pyflakes rules, so an unused import or an undefined name fails) beside the other short checks. The `python` job, the ruleset's required check, passes when `select` did and
 the one run did, including when `select` chose no test.
 A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
@@ -37,7 +37,7 @@ comment directly above it naming what the test must pay for (a server process, a
 `OVER_CEILING` there lists the tests at or over 4 s when the bound landed, each with the slice that brings it under; that
 slice removes its entry. A budget test (leak, latency, soak) carries
 `@pytest.mark.nightly`: `addopts` deselects it, and only the nightly suite and a manual dispatch run it (`-m "not e2e"`
-in the `python` job of the `starpulse-nightly` Dagu DAG).
+in the `python` job of the `starpulse-nightly` pipeline).
 The screen below runs only in the nightly full suite and a manual `workflow_dispatch`, where the `starpulse-nightly` DAG sets `TEST_COST_REPORT=1`
 (and on `python-ft`, which reports and never fails the ceiling); any other run prints no section, annotation or summary row
 and writes no report. A test over 5 s is named at the end of the run, slowest first; in CI each is also a warning annotation
@@ -77,9 +77,7 @@ scheduler tick rereads its growing ledger, so its cost grows with the square of 
 tracker. A context joins by adding a driver to `test_context_budgets.py` and an entry to `BUDGETS`.
 `tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`.
 The required checks run only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`), as the
-`ci-sp-*` checks of the sp-ci Dagu DAG (`ci/run.sh` is its entry point; `ci/reach.py` skips a job the change cannot reach); `ci.yml`
-has no pull-request or merge-group trigger, a push to main runs none, because the merge queue tested
-that very commit, and the full suite runs nightly as the `starpulse-nightly` Dagu DAG (`sp-nightly`; rerun it from Dagu for a manual run). A nightly fresh-serve run (the `fresh-serve` job of that DAG, on a Dagu worker so it competes with no other CI) builds main's wheel, installs it into an empty virtualenv, starts `starpulse serve` from an empty directory with no config and a bare environment, and runs `ci/fresh_serve.py`, which fails unless `/` answers HTTP 200 and every worker the supervisor names (read from the pid `serve` logs for its context, since a zygote-forked child shows the zygote's argv in `ps`) is alive below `serve` on two checks five seconds apart with the same processes. It proves the out-of-the-box install is the production install. The canary (`ci/canary_smoke.py`, image `ci/canary/Dockerfile`) proves a candidate against a copy of live state: it migrates a `VACUUM INTO` copy of the store to the wheel's head, serves with the live config and machines (relative reads resolve against the live config directory; writes such as `state_dir` go to scratch, so the run switch is never read; board commands are dropped), checks `starpulse reload` exits 0, holds 60 seconds with no worker restart, then opens the board and a task modal in Chromium. The image runs free-threaded CPython 3.14t, as live does, and runs with `--network none` and no secrets (each token variable the config names gets a placeholder). A store migrated past the wheel's head fails at `migrate:` before anything serves. The image builds from the checkout root after `pnpm --filter @starpulse/web build`, with the patched `aioquic` and `pylsqpack` it needs (neither publishes a 3.14t wheel) fetched from the lock and patched by `ci/canary/ft_sdists.py`; the header of `ci/canary/Dockerfile` has the build and run commands. The `macos-fresh-serve` job in `ci.yml` runs the same script on a GitHub-hosted macOS runner in the nightly run and on a manual dispatch (the fleet is Linux), so the supervisor, the resident-size reader and the Page API's handed socket are proven there too; prove a pull request by dispatching `ci.yml` on its branch. This repository is public, so its `ci/public_names.py` check fails
+`ci-sp-*` checks of the sp-ci pipeline (`ci/run.sh` is its entry point; `ci/reach.py` skips a job the change cannot reach). The public repository runs no GitHub Actions workflow: the merge queue tests every commit, and the full suite runs nightly as the `starpulse-nightly` pipeline (`sp-nightly`; rerun it for a manual run). A nightly fresh-serve run (the `fresh-serve` job of that pipeline, on a worker so it competes with no other CI) builds main's wheel, installs it into an empty virtualenv, starts `starpulse serve` from an empty directory with no config and a bare environment, and runs `ci/fresh_serve.py`, which fails unless `/` answers HTTP 200 and every worker the supervisor names (read from the pid `serve` logs for its context, since a zygote-forked child shows the zygote's argv in `ps`) is alive below `serve` on two checks five seconds apart with the same processes. It proves the out-of-the-box install is the production install. The canary (`ci/canary_smoke.py`, image `ci/canary/Dockerfile`) proves a candidate against a copy of live state: it migrates a `VACUUM INTO` copy of the store to the wheel's head, serves with the live config and machines (relative reads resolve against the live config directory; writes such as `state_dir` go to scratch, so the run switch is never read; board commands are dropped), checks `starpulse reload` exits 0, holds 60 seconds with no worker restart, then opens the board and a task modal in Chromium. The image runs GIL CPython 3.14 with the locked stock wheels, as live does, and runs with `--network none` and no secrets (each token variable the config names gets a placeholder). A store migrated past the wheel's head fails at `migrate:` before anything serves. The image builds from the checkout root after `pnpm --filter @starpulse/web build`; the header of `ci/canary/Dockerfile` has the build and run commands. This repository is public, so its `ci/public_names.py` check fails
 when a tracked file other than a workflow, the runner-label list or a test names the operator's private hosts; docs, comments and fixtures use neutral names.
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the per-test
 coverage map the nightly full suite records (`ci/coverage_map.py`): a changed file selects the tests that executed it. A
@@ -110,22 +108,16 @@ request and page surface against the 50 ms budget, and a Locust load test that h
 [`design/`](../design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`) and, behind
 `?view=kanban`, a saved Board (`board.js`) drawn by `kanban.js`; both hold synthetic tasks only, never a real board's titles; view it with
 `uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse.cli.demo --mockup design --out
-mockup.html` writes it as one scrubbed file. A pull request that changes the page (`starpulse/web/**`), the mockup or
-the preview itself gets one UI-preview comment from
-the `starpulse-ui-preview` Dagu DAG: screenshots of each changed surface's
-scrubbed demo, built by [`ci/ui_preview.py`](../ci/ui_preview.py) against the demo config
-[`ci/preview.toml`](../ci/preview.toml), with the demos published to the `gh-pages` branch of `trantor-org/starpulse`, which GitHub Pages serves, under `pr-<N>/`
-while the pull request is open. That config draws a fictional workspace at a working team's scale: the Board adapter
+mockup.html` writes it as one scrubbed file. [`ci/ui_preview.py`](../ci/ui_preview.py) builds the scrubbed demos against
+the demo config [`ci/preview.toml`](../ci/preview.toml). That config draws a fictional workspace at a working team's scale: the Board adapter
 [`ci/demo_workspace.py`](../ci/demo_workspace.py) serves an eight-lane Board whose In Progress opens an in-progress machine of Build, Deliver and Review-fix phase machines, with
 the other lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse.cli.demo` fills it with
-synthetic tasks, sessions, runs and pools. Each changed sub-mockup, a `design/<dir>/index.html` layered over a scrubbed page
-capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request, so a failed render leaves the run green.
-A final workflow step then replaces the comment with one titled "failed" that names the head commit, links the run and carries no screenshots,
-and the next push renders again. A change confined to one view's
-feature folder (`features/kanban` or `features/dags`) screenshots that view alone; any other page path screenshots all three.
-A push that changed none of those paths since the commit the comment names leaves the comment and the demos untouched, and of `ci/` only
-the preview script, its config, the demo adapter and `ci/workspace/` start a run. A push to `main`
-that touches the same paths republishes both demos under `main/`, the [live demo](https://trantor-org.github.io/starpulse/main/starpulse.html), with a screenshot of each starpulse view that the README shows.
+synthetic tasks, sessions, runs and pools.
+
+After a push to `main` that changes the page (`starpulse/web/**`) or another preview input, the
+`starpulse-ui-preview` Woodpecker workflow runs `ci/ui_preview.py --main`, which republishes both demos under `main/` on the
+`gh-pages` branch GitHub Pages serves: the [live demo](https://trantor-org.github.io/starpulse/main/starpulse.html),
+with a screenshot of each starpulse view that the README shows. Pull requests get no published preview.
 
 ## Flow read scaling
 

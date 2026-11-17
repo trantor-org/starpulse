@@ -4,13 +4,11 @@
 leave one row. The adapters write it alone and the views read it through `SignalFolds`.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from itertools import batched
 from typing import Any
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 from sqlalchemy.dialects import sqlite
 
 from starpulse.event_log.tables import signals
@@ -46,3 +44,15 @@ class SignalTable:
                 statement = sqlite.insert(signals).values(values).on_conflict_do_nothing().returning(signals.c.key)
                 added += len(db.execute(statement).all())
         return added
+
+    def last_claim(self, harness: str, session: str) -> tuple[str, float] | None:
+        """The task `session`'s latest stored `claim` signal names and when it was made, or None when it has none."""
+        statement = (
+            select(signals.c.time, signals.c.fields)
+            .where(signals.c.harness == harness, signals.c.session == session, signals.c.kind == "claim")
+            .order_by(signals.c.time.desc())
+            .limit(1)
+        )
+        with self._engine.connect() as db:
+            row = db.execute(statement).first()
+        return (row.fields["name"], row.time) if row and row.fields.get("name") else None

@@ -1,6 +1,6 @@
 ---
 name: writing-starpulse-adapters
-description: Connects a tracker, a harness or a scheduler to StarPulse by writing an adapter against its board, machine-events or runs contract, testing it with the adapter kit, and posting machine events and runs to the CloudEvents ingest. Use when asked to show Jira, Linear, GitHub or another tracker's tasks on StarPulse, to push lifecycle events or workflow runs into it, or to test an adapter.
+description: Connects a tracker, a harness or a scheduler to StarPulse by writing an adapter against its board, machine-events or runs contract, testing it with the adapter kit, and posting machine events and runs to the CloudEvents ingest. Use when asked to show Linear, GitHub or another tracker's tasks on StarPulse, to push lifecycle events or workflow runs into it, or to test an adapter.
 ---
 
 # Writing StarPulse Adapters
@@ -27,8 +27,7 @@ Pick the contract first: a tracker is a board, a hook that says a task moved is 
    refusal's `output` and `skill` are what `starpulse task move` reports. An actor outside a move's `writers` is refused
    before the writer is called. `assign`, `read`, `edit`, `archive` and `history` are optional.
 5. Name the module in `[board] type`, a module under `starpulse` or a dotted path an installed package provides.
-   `starpulse.board.adapters.upstream_backlog` is the reference adapter, and `starpulse.board.adapters.jira` one that imports its machine from the
-   tracker's own workflow. The machine's states and writers are authored with the
+   `starpulse.board.adapters.native` is the reference adapter. The machine's states and writers are authored with the
    `authoring-starpulse-machines` skill.
 
 Done when `starpulse doctor` reports `adapter:board` as ok.
@@ -67,7 +66,7 @@ with `Authorization: Bearer $CI_BOT_TOKEN`. A machine event carries `machine`, `
 of `subject` (the task) or `run`. A run is a Step event: `type` `StepStarted` or `StepFinished`, `subject` the run's id,
 and `data` holding `workflow`, `status` (`not_started`, `queued`, `running`, `succeeded`, `failed`, `aborted` or `skipped`),
 and for a step's entry `step` with `depends` naming the steps it waits on. The run is drawn as `pushed/<source>/<workflow>`.
-A producer that speaks gRPC calls `starpulse.v1.CloudEventsIngest` `Publish` or `PublishBatch` on the same port, the token in `authorization` metadata and the event as `io.cloudevents.v1.CloudEvent` (docs/sources.md, Over gRPC).
+A producer that speaks Connect or gRPC calls `starpulse.v1.CloudEventsIngest` `Publish` or `PublishBatch` on the same port, the token in `authorization` metadata and the event as `io.cloudevents.v1.CloudEvent` (docs/sources.md, Over Connect).
 
 ```sh
 curl -fsS -X POST "$STARPULSE_URL/api/machine-events" -H "Authorization: Bearer $CI_BOT_TOKEN" \

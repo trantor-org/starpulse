@@ -35,6 +35,7 @@ describe("the Star Map palette", () => {
     expect([ACT, MUTED, MACHINE]).toEqual([t.run, t.slate, t.agent]);
     expect([DAG_COLOR.failed, DAG_COLOR.not_started, LEDGER_PALETTE.overdue]).toEqual([t.fail, t.track, t.fail]);
     expect([BOARD_COLOR.ready, BOARD_COLOR.archived, RAMP[0], RAMP[RAMP.length - 1]]).toEqual([t.ready, t.faint, t.slate, t.ok]);
+    expect(BOARD_COLOR.in_progress).toBe(MACHINE);
     expect([tierColor("@agent-deep-high"), tierColor("@agent-standard-high"), tierColor("")]).toEqual([t["agent-text"], t.waits, t["run-text"]]);
   });
 

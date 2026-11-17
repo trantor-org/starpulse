@@ -13,28 +13,28 @@ import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
 const STATES = ["new", "ready", "blocked", "waiting", "in_progress", "review", "needs_attention", "done", "completed", "archived"];
 const TRANSITIONS: [string, string, string][] = [
   ["new", "in_progress", "CREATE_IN_PROGRESS"], ["ready", "in_progress", "CLAIM"], ["ready", "waiting", "WAIT_ON_DEPS"], ["in_progress", "waiting", "DEFER"],
-  ["waiting", "waiting", "DEP_RESOLVED"], ["waiting", "ready", "DEPS_DONE"], ["in_progress", "review", "CRITERIA_MET"], ["review", "in_progress", "CRITERIA_UNMET"],
+  ["waiting", "waiting", "DEP_RESOLVED"], ["waiting", "ready", "DEPS_DONE"], ["in_progress", "review", "CRITERIA_MET"],
   ["review", "done", "MERGED"], ["done", "completed", "SWEEP"], ["needs_attention", "ready", "RETRY"], ["ready", "archived", "ARCHIVE"],
 ];
 const WRITES: Record<string, string[]> = {
-  "dagu/board-scheduler": ["CREATE_IN_PROGRESS", "CLAIM", "WAIT_ON_DEPS", "DEFER"],
-  "dagu/board-dependency-reconciliation": ["DEP_RESOLVED", "DEPS_DONE", "CRITERIA_MET", "CRITERIA_UNMET"],
-  "dagu/main-follow": ["MERGED"],
-  "dagu/backlog-sweep": ["SWEEP"],
+  "temporal/board-scheduler": ["CREATE_IN_PROGRESS", "CLAIM", "WAIT_ON_DEPS", "DEFER"],
+  "temporal/board-dependency-reconciliation": ["DEP_RESOLVED", "DEPS_DONE", "CRITERIA_MET"],
+  "temporal/main-follow": ["MERGED"],
+  "temporal/backlog-sweep": ["SWEEP"],
 };
 const CUES: Cue[] = [
-  { dag: "dagu/apply-on-merge", event: "MERGED", on: "each merge", resolves: "forced", state: "done" },
-  { dag: "dagu/healthcheck", event: "MERGED", on: "each merge", resolves: "next", state: "done" },
+  { dag: "temporal/apply-on-merge", event: "MERGED", on: "each merge", resolves: "forced", state: "done" },
+  { dag: "temporal/healthcheck", event: "MERGED", on: "each merge", resolves: "next", state: "done" },
 ];
-const LAUNCH_ONLY = ["dagu/nightly-audit", "dagu/weekly-code-audit"], UNTIED = ["dagu/orphan-report"];
+const LAUNCH_ONLY = ["temporal/nightly-audit", "temporal/weekly-code-audit"], UNTIED = ["temporal/orphan-report"];
 
 const dag = (name: string, status: Dag["status"] = "succeeded"): Dag => ({ name, status, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
 const machine: Machine = {
   states: STATES.map((id, i) => ({ id, name: id, initial: i === 0, final: id === "completed" || id === "archived" })),
   transitions: TRANSITIONS.map(([source, target, event]) => ({ source, target, event })),
   mainLine: ["new", "ready", "in_progress", "review", "done"],
-  writers: Object.fromEntries(Object.entries(WRITES).flatMap(([d, evs]) => evs.map((e) => [e, [{ actor: d, trigger: "dagu" }]] as const))),
-  launches: Object.fromEntries(["dagu/board-scheduler", ...LAUNCH_ONLY].map((d) => [d, { skill: "delivering", machine: null }])),
+  writers: Object.fromEntries(Object.entries(WRITES).flatMap(([d, evs]) => evs.map((e) => [e, [{ actor: d, trigger: "temporal" }]] as const))),
+  launches: Object.fromEntries(["temporal/board-scheduler", ...LAUNCH_ONLY].map((d) => [d, { skill: "delivering", machine: null }])),
   dagActors: Object.keys(WRITES),
 };
 /** A machine the Board's DAGs launch: `writer` writes its events itself, as dependency-update-investigation does. */
@@ -42,7 +42,7 @@ const launched = (writer: string): Machine => ({
   states: [{ id: "open", name: "open", initial: true, final: false }, { id: "closed", name: "closed", initial: false, final: true }],
   transitions: [{ source: "open", target: "closed", event: "CLOSE" }],
   mainLine: ["open", "closed"],
-  writers: { CLOSE: [{ actor: writer, trigger: "dagu" }] },
+  writers: { CLOSE: [{ actor: writer, trigger: "temporal" }] },
 });
 const liveSky = (status: Record<string, Dag["status"]> = {}, sub: Record<string, string> = {}, tiers?: string[][]) => {
   const names = [...Object.keys(WRITES), ...CUES.map((c) => c.dag), ...LAUNCH_ONLY, ...UNTIED];
@@ -65,11 +65,11 @@ describe("the tied DAGs of the Board level", () => {
 
   it("puts each DAG in the hangar of the state most of its ties act on", () => {
     // board-scheduler writes from new (1), ready (2) and in_progress (1); reconciliation's four ties each act on another state, so the first wins
-    expect(pivotOf("ready")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-scheduler"]);
-    expect(pivotOf("waiting")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-dependency-reconciliation"]);
-    expect(pivotOf("review")?.orbs.map((o) => o.dag)).toEqual(["dagu/main-follow"]);
+    expect(pivotOf("ready")?.orbs.map((o) => o.dag)).toEqual(["temporal/board-scheduler"]);
+    expect(pivotOf("waiting")?.orbs.map((o) => o.dag)).toEqual(["temporal/board-dependency-reconciliation"]);
+    expect(pivotOf("review")?.orbs.map((o) => o.dag)).toEqual(["temporal/main-follow"]);
     // a cue belongs to the state its event lands in, beside the DAG that writes that state's transition
-    expect(pivotOf("done")?.orbs.map((o) => o.dag).sort()).toEqual(["dagu/apply-on-merge", "dagu/backlog-sweep", "dagu/healthcheck"]);
+    expect(pivotOf("done")?.orbs.map((o) => o.dag).sort()).toEqual(["temporal/apply-on-merge", "temporal/backlog-sweep", "temporal/healthcheck"]);
     expect(ties.pivots).toHaveLength(4);
   });
 
@@ -173,11 +173,11 @@ describe("the comet a tied DAG's Board transition runs", () => {
   });
 
   it("runs the comet for the DAG that wrote the move and the DAGs the event cues", () => {
-    expect(dags(1001)).toEqual(["dagu/apply-on-merge:cue", "dagu/healthcheck:cue", "dagu/main-follow:write"]);
+    expect(dags(1001)).toEqual(["temporal/apply-on-merge:cue", "temporal/healthcheck:cue", "temporal/main-follow:write"]);
   });
 
   it("leaves a writer that did not run out, and still wakes the cued DAGs", () => {
-    expect(dags(1001, [merged], (d) => d !== "dagu/main-follow")).toEqual(["dagu/apply-on-merge:cue", "dagu/healthcheck:cue"]);
+    expect(dags(1001, [merged], (d) => d !== "temporal/main-follow")).toEqual(["temporal/apply-on-merge:cue", "temporal/healthcheck:cue"]);
   });
 
   it("starts at the move and ends once the comet has landed and its ring has faded", () => {
@@ -187,28 +187,28 @@ describe("the comet a tied DAG's Board transition runs", () => {
   });
 
   it("runs along the edge of the transition into its state", () => {
-    const [t] = touches(ties, [merged], ran, 1001).filter((x) => x.orbiter.dag === "dagu/main-follow");
+    const [t] = touches(ties, [merged], ran, 1001).filter((x) => x.orbiter.dag === "temporal/main-follow");
     expect(t.anchor.edge).toMatchObject({ source: "review", target: "done" });
     expect(t.u).toBeCloseTo(1 / TRAVEL, 6);
   });
 });
 
 describe("the sub-machine a tied DAG writes", () => {
-  const ctx = liveSky({}, { "dagu/main-follow": "investigating" }), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
+  const ctx = liveSky({}, { "temporal/main-follow": "investigating" }), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
   const orb = (dag: string) => ties.pivots.flatMap((h) => h.orbs).find((o) => o.dag === dag)!;
 
   it("anchors a tied DAG that writes its launched machine's events at that machine", () => {
-    expect(orb("dagu/main-follow").subs.map((a) => a.flow)).toEqual(["investigating"]);
-    for (const a of orb("dagu/main-follow").subs) expect([a.x, a.y].every(Number.isFinite)).toBe(true);
+    expect(orb("temporal/main-follow").subs.map((a) => a.flow)).toEqual(["investigating"]);
+    for (const a of orb("temporal/main-follow").subs) expect([a.x, a.y].every(Number.isFinite)).toBe(true);
   });
 
   it("leaves a launcher that does not write the machine's events, and a DAG with no launch, unanchored", () => {
-    expect(orb("dagu/board-scheduler").subs).toEqual([]);
-    expect(orb("dagu/backlog-sweep").subs).toEqual([]);
+    expect(orb("temporal/board-scheduler").subs).toEqual([]);
+    expect(orb("temporal/backlog-sweep").subs).toEqual([]);
   });
 
   it("keeps the sub-machine writer's Board ties and hangar as they were", () => {
-    expect(orb("dagu/main-follow").primary?.event).toBe("MERGED");
+    expect(orb("temporal/main-follow").primary?.event).toBe("MERGED");
     expect(ties.pivots).toHaveLength(4);
   });
 });
@@ -223,27 +223,27 @@ describe("what a click on a hangar or an orbiter opens", () => {
   it("opens a hangar into the Ledger of the transition its first DAG docks by", () => {
     const l = hangarLevel(src, pivot("review").orbs);
     expect(l).toMatchObject({ kind: "fold", event: "MERGED", path: ["review", "done"] });
-    expect(l.dags).toContain("dagu/main-follow");
+    expect(l.dags).toContain("temporal/main-follow");
   });
 
   it("opens a hangar whose transitions have no Ledger into the fold of its DAGs", () => {
-    expect(hangarLevel(src, [fake("dagu/a", "NOPE"), fake("dagu/b", "NEVER")])).toMatchObject({
-      kind: "fold", path: null, dags: ["dagu/a", "dagu/b"], crit: ["dagu/a: writes NOPE", "dagu/b: writes NEVER"],
+    expect(hangarLevel(src, [fake("temporal/a", "NOPE"), fake("temporal/b", "NEVER")])).toMatchObject({
+      kind: "fold", path: null, dags: ["temporal/a", "temporal/b"], crit: ["temporal/a: writes NOPE", "temporal/b: writes NEVER"],
     });
   });
 
   it("opens an orbiter into the Ledger of the transition it docks by", () => {
-    expect(tieLedger(src, orb("dagu/main-follow"))).toMatchObject({ ev: "MERGED", led: { kind: "fold", event: "MERGED" } });
+    expect(tieLedger(src, orb("temporal/main-follow"))).toMatchObject({ ev: "MERGED", led: { kind: "fold", event: "MERGED" } });
   });
 
   it("falls back to the first of its other transitions that has a Ledger when its own is a self-loop", () => {
-    const o = orb("dagu/board-dependency-reconciliation");
+    const o = orb("temporal/board-dependency-reconciliation");
     expect(o.primary?.event).toBe("DEP_RESOLVED");
     expect(tieLedger(src, o)?.ev).toBe("DEPS_DONE");
   });
 
   it("opens nothing for an orbiter none of whose transitions has a Ledger", () => {
-    expect(tieLedger(src, fake("dagu/a", "NOPE"))).toBeNull();
+    expect(tieLedger(src, fake("temporal/a", "NOPE"))).toBeNull();
   });
 
   it("is a level a right-click steps out of, named Board › DAGs, that survives a reload", () => {
@@ -272,10 +272,10 @@ describe("each Board DAG's turn on the map", () => {
     expect(alpha(24)).toBe(0);
   });
   it("gives every idle hangar DAG a window and leaves an active one out, which shows out of turn", () => {
-    const ctx = liveSky({ "dagu/main-follow": "running", "dagu/healthcheck": "failed" }), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
+    const ctx = liveSky({ "temporal/main-follow": "running", "temporal/healthcheck": "failed" }), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
     const list = turnDags(ties, (d) => activeDag(ctx.S.dagBy[d]?.status));
     const hangared = ties.pivots.flatMap((h) => h.orbs.map((o) => o.dag));
-    expect(list).toEqual(hangared.filter((d) => d !== "dagu/main-follow" && d !== "dagu/healthcheck"));
+    expect(list).toEqual(hangared.filter((d) => d !== "temporal/main-follow" && d !== "temporal/healthcheck"));
     expect(new Set(list.map((_, i) => dagTurn(list, i * TURN)!.dag))).toEqual(new Set(list));
   });
 });

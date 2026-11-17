@@ -6,9 +6,9 @@ import type { FeedLine } from "../../render/hud";
 import type { Pool } from "../../api";
 
 const pools: Pool[] = [
-  { name: "dagu/deliver", cap: 32, running: 5, queued: 0 },
-  { name: "dagu/models", cap: 1, running: 1, queued: 2 },
-  { name: "dagu/gpu-1", cap: 1, running: 0, queued: 0 },
+  { name: "temporal/deliver", cap: 32, running: 5, queued: 0 },
+  { name: "temporal/models", cap: 1, running: 1, queued: 2 },
+  { name: "temporal/gpu-1", cap: 1, running: 0, queued: 0 },
 ];
 
 describe("the navigator's Queues section", () => {
@@ -54,12 +54,12 @@ describe("the Recent feed's lines", () => {
 
   it("colours a run's name by its outcome, green or red, and leaves the others as they are", () => {
     const html = renderToStaticMarkup(
-      <FeedLines lines={[line({ key: "a", who: "dagu/a", tone: "ok" }), line({ key: "b", who: "dagu/b", tone: "failed" }), line({ key: "c", who: "dagu/c" })]} />,
+      <FeedLines lines={[line({ key: "a", who: "temporal/a", tone: "ok" }), line({ key: "b", who: "temporal/b", tone: "failed" }), line({ key: "c", who: "temporal/c" })]} />,
     );
 
-    expect(html).toContain('<b class="ok">dagu/a</b>');
-    expect(html).toContain('<b class="failed">dagu/b</b>');
-    expect(html).toContain("<b>dagu/c</b>");
+    expect(html).toContain('<b class="ok">temporal/a</b>');
+    expect(html).toContain('<b class="failed">temporal/b</b>');
+    expect(html).toContain("<b>temporal/c</b>");
   });
 
   it("flashes a line born after the page's first read, once", () => {
@@ -70,7 +70,7 @@ describe("the Recent feed's lines", () => {
 });
 
 describe("a Recent line that points at a task or DAG", () => {
-  const a = line({ key: "a", who: "TASK-1", task: "TASK-1" }), b = line({ key: "b", who: "dagu/nightly", dag: "dagu/nightly" });
+  const a = line({ key: "a", who: "TASK-1", task: "TASK-1" }), b = line({ key: "b", who: "temporal/nightly", dag: "temporal/nightly" });
   const rows = (props: Parameters<typeof FeedLines>[0]) => (FeedLines(props) as ReactElement<{ children: ReactElement<Record<string, () => void>>[] }>).props.children;
 
   it("reports hover, leave and click for a line the view can light, and leaves the others inert", () => {

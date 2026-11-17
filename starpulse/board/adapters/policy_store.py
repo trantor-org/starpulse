@@ -4,17 +4,31 @@ A store whose policy tables are all empty is governed by today's files: `load` t
 The tables are written by a migration (the operator's own chain, a later slice), never by StarPulse at runtime.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import fields
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import JSON, Column, Connection, Engine, Integer, PrimaryKeyConstraint, String, Table, Text, select
+from sqlalchemy import (
+    JSON,
+    Column,
+    Connection,
+    Engine,
+    Integer,
+    PrimaryKeyConstraint,
+    String,
+    Table,
+    Text,
+    create_engine,
+    inspect,
+    select,
+)
+from sqlalchemy.engine import make_url
+
 from starpulse.board.model.policy import Exit, Lane, LaneTool, Policy, PolicyRule, Profile, Route, Vocabulary, Watch
 from starpulse.event_log.tables import metadata
 
-__all__ = ["exits", "lanes", "load", "profiles", "routes", "rules", "stored", "tools", "vocabularies", "watches"]
+__all__ = ["exits", "held", "lanes", "load", "profiles", "routes", "rules", "stored", "tools", "vocabularies", "watches"]
 
 lanes = Table(
     "starpulse_policy_lanes",
@@ -23,6 +37,7 @@ lanes = Table(
     Column("role", String),
     Column("position", Integer, nullable=False),
     Column("skill", String),
+    Column("label", String),
 )
 routes = Table(
     "starpulse_policy_routes",
@@ -111,3 +126,20 @@ def load(engine: Engine, files: Callable[[], Policy]) -> tuple[str, Policy]:
     with engine.connect() as db:
         held = stored(db)
     return ("database", held) if held != Policy() else ("files", files())
+
+
+def held(url: str) -> Policy:
+    """The policy the store at `url` holds; empty when the store is absent or not yet migrated (no lanes table, or one missing a column), which leaves the board
+    with no guard, profile cell or watch until the policy chain fills it. A SQLite file that does not exist is not created;
+    any other database error propagates, so a board never starts unguarded on a fault."""
+    target = make_url(url)
+    if target.get_backend_name() == "sqlite" and target.database not in (None, ":memory:") and not Path(target.database).exists():
+        return Policy()
+    engine = create_engine(url)
+    try:
+        with engine.connect() as db:
+            inspector = inspect(db)
+            present = {c["name"] for c in inspector.get_columns(lanes.name)} if inspector.has_table(lanes.name) else set()
+            return stored(db) if present >= set(lanes.c.keys()) else Policy()
+    finally:
+        engine.dispose()

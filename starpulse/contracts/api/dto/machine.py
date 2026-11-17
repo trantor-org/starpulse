@@ -1,7 +1,5 @@
 """The machines the page draws: states, transitions, writers and submachines."""
 
-from __future__ import annotations
-
 from typing import Literal
 
 from pydantic import Field
@@ -16,8 +14,8 @@ class MachineState(_Api):
     final: bool
     role: str | None = Field(
         default=None,
-        description="The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact`, "
-        "`waiting_on_person` or `proposed`; null when it declares none.",
+        description="The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` "
+        "or `waiting_on_person`; null when it declares none.",
     )
 
 
@@ -53,6 +51,7 @@ class Submachine(_Api):
     parent: str = Field(description="The machine the link opens under: `board`, or the machine whose `state` it hangs off.")
     when: str = Field(description="What has to hold for the inner machine to run under `state`; empty when always.")
     routes: dict[str, str] = Field(default_factory=dict, description="Inner event to the Board event it fires; empty when the link routes none.")
+    skill: str = Field(default="", description="The skill a session runs while the inner machine does; empty when the link names none.")
 
 
 class Launch(_Api):

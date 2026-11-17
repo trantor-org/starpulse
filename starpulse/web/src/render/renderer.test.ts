@@ -62,7 +62,7 @@ describe("an agent's colour", () => {
 });
 
 describe("the Recent feed's lines", () => {
-  const dag: Dag = { name: "dagu/deliver", status: "succeeded", runId: "r1", startedAt: "", finishedAt: "2026-10-05T16:00:00Z", schedule: [], stats: null, rerun: null, steps: [] };
+  const dag: Dag = { name: "temporal/deliver", status: "succeeded", runId: "r1", startedAt: "", finishedAt: "2026-10-05T16:00:00Z", schedule: [], stats: null, rerun: null, steps: [] };
   const fin = Date.parse(dag.finishedAt) / 1000;
 
   it("points a move's line at the task it moved", () => {
@@ -74,7 +74,7 @@ describe("the Recent feed's lines", () => {
   it("points a DAG's own finished line at the DAG, with no task", () => {
     const [line] = feedOf([], [dag], [], fin + 1);
 
-    expect(line).toMatchObject({ who: "dagu/deliver", where: "succeeded", dag: "dagu/deliver" });
+    expect(line).toMatchObject({ who: "temporal/deliver", where: "succeeded", dag: "temporal/deliver" });
     expect(line.task).toBeUndefined();
   });
 

@@ -2,6 +2,7 @@
 `[scheduler]` limits in `starpulse.toml` until cleared. The loop reads them on every pass, so a change needs no restart."""
 
 from starpulse.event_log.event_log import EventLog
+from starpulse.scheduler.model.changes import record
 from starpulse.scheduler.model.override_store import OverrideStore
 
 KEY = "scheduler.session_caps"
@@ -16,6 +17,7 @@ class SessionCapSetting:
     """Each harness's cap in the store, or none: a harness with none, or one that cannot be read, keeps the config limit."""
 
     def __init__(self, log: EventLog) -> None:
+        self.log = log
         self.store = OverrideStore(log, KEY, _cap)
 
     def get(self, harness: str) -> int | None:
@@ -26,7 +28,9 @@ class SessionCapSetting:
         ValueError and changes nothing."""
         if value is not None and _cap(value) is None:
             raise ValueError(f"session cap must be a whole number above zero; got {value!r}")
+        old = self.get(harness)
         caps = {name: cap for name, cap in self.store.all().items() if name != harness}
         if value is not None:
             caps[harness] = value
         self.store.save(caps)
+        record(self.log, "session_cap", old, value, harness=harness)

@@ -12,8 +12,6 @@ and `embed_pending` (run by `keep_embedding`) catches the vectors up. Without an
 endpoint that fails leaves the lexical order.
 """
 
-from __future__ import annotations
-
 import array
 import dataclasses
 import hashlib
@@ -58,14 +56,17 @@ _HIT_COLUMN = (
 _LOCATED = f"{_HIT_COLUMN} AS field, snippet({_TABLE}, {_HIT_COLUMN}, '', '', '…', 16) AS snippet"
 _SNIPPET_CHARS = 160
 #: The lexical query: MATCH first into a MATERIALIZED CTE, then `{filtered}` (facets) on those rowids. ANDing the
-#: facets IN onto MATCH makes SQLite look up each facet rowid in FTS (`0:=M`) and cost grows with rows × words.
-_SEARCH = (
+#: facets IN onto MATCH makes SQLite look up each facet rowid in FTS (`0:=M`) and cost grows with rows × words. Only the
+#: `best` rows are located (`snippet` runs seven times a row, and a word most tasks hold matches thousands).
+_BEST = (
     f"WITH matched AS MATERIALIZED ("
     f"SELECT {_TABLE}.rowid AS row, task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, "
-    f"{_LOCATED}, bm25({_TABLE}, {_WEIGHTS}) AS rank "
-    f"FROM {_TABLE} WHERE {_TABLE} MATCH :query"
-    f") SELECT task, title, lane, score, snippet, field FROM matched WHERE 1{{filtered}} "
-    f"ORDER BY rank, task LIMIT :limit"
+    f"bm25({_TABLE}, {_WEIGHTS}) AS rank FROM {_TABLE} WHERE {_TABLE} MATCH :query"
+    f"), best AS MATERIALIZED (SELECT * FROM matched WHERE 1{{filtered}} ORDER BY rank, task LIMIT :limit) "
+)
+_SEARCH = (
+    f"{_BEST}SELECT best.task, best.title, best.lane, best.score, {_LOCATED} FROM best JOIN {_TABLE} "
+    f"ON {_TABLE}.rowid = best.row WHERE {_TABLE} MATCH :query ORDER BY best.rank, best.task"
 )
 _DIGEST = text(f"SELECT digest FROM {_TABLE} WHERE rowid = :row")
 _DELETE = text(f"DELETE FROM {_TABLE} WHERE rowid = :row")
@@ -93,14 +94,10 @@ _DROP_OTHER_RECIPES = text(f"DELETE FROM {_VECTORS} WHERE model != :model")
 #: task-like sentence, and changing it makes every vector again.
 _EMBEDDED_TEXT = "title+description"
 _RANKED = (
-    f"WITH matched AS MATERIALIZED ("
-    f"SELECT {_TABLE}.rowid AS row, task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, "
-    f"{_LOCATED}, bm25({_TABLE}, {_WEIGHTS}) AS rank, "
-    f"{_VECTORS}.vector AS vector FROM {_TABLE} LEFT JOIN {_VECTORS} "
-    f"ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model "
-    f"WHERE {_TABLE} MATCH :query"
-    f") SELECT task, title, lane, score, snippet, field, vector FROM matched WHERE 1{{filtered}} "
-    f"ORDER BY rank, task LIMIT :limit"
+    f"{_BEST}SELECT best.task, best.title, best.lane, best.score, {_LOCATED}, {_VECTORS}.vector AS vector "
+    f"FROM best JOIN {_TABLE} ON {_TABLE}.rowid = best.row LEFT JOIN {_VECTORS} "
+    f"ON {_VECTORS}.task_row = best.row AND {_VECTORS}.model = :model "
+    f"WHERE {_TABLE} MATCH :query ORDER BY best.rank, best.task"
 )
 #: Every embedded task, for a query whose meaning (not its words) is what is wanted; `snippet` is the task's opening.
 _EMBEDDED_SELECT = (
@@ -138,9 +135,10 @@ _RELOAD_AT = 500
 _SHARED_REFRESH_S = 30.0
 _TEXT_LIMIT = 8000
 _TIMEOUT = 10.0
-#: Seconds a search waits for its query's vector before ranking lexically, so a slow endpoint costs the order and not
-#: the answer.
-_QUERY_TIMEOUT = 1.0
+#: Seconds each attempt at a search query's vector waits, and the attempts made, before ranking lexically, so a slow
+#: endpoint costs the order and not the answer. A healthy embedder answers in 1 to 3 s and a cold one is quick on retry.
+_QUERY_TIMEOUT = 3.5
+_QUERY_ATTEMPTS = 2
 #: Seconds `keep_embedding` waits between passes, and after a failed one.
 _POLL = 5.0
 _RETRY = 60.0
@@ -150,20 +148,34 @@ _INSERT = text(
 )
 
 
-def _filtered(labels: Sequence[str], finished_since: float | None, *, row: str = f"{_TABLE}.rowid") -> tuple[str, dict]:
-    """The condition, ANDed onto a query's WHERE, that keeps the tasks carrying every one of `labels` and not finished
-    before `finished_since` (epoch seconds), with its parameters; no condition when neither narrows.
+def _filtered(
+    labels: Sequence[str],
+    finished_since: float | None,
+    before: tuple[str, int] | None = None,
+    *,
+    row: str = f"{_TABLE}.rowid",
+) -> tuple[str, dict]:
+    """The condition, ANDed onto a query's WHERE, that keeps the tasks carrying every one of `labels`, not finished
+    before `finished_since` (epoch seconds) and, with `before` (a key's prefix and number), of that prefix and a lower
+    number, with its parameters; no condition when none narrows.
 
     `row` is the outer column compared to `task_row` (the MATCH CTE's `row`, or `{_TABLE}.rowid` for a facets-only
-    select)."""
+    select); both selects carry the `task` column `before` reads."""
     conditions = [f"instr(labels, :label_{at}) > 0" for at in range(len(labels))]
     parameters: dict = {f"label_{at}": f"\n{label}\n" for at, label in enumerate(labels)}
     if finished_since is not None:
         conditions.append("(finished_at IS NULL OR finished_at >= :finished_since)")
         parameters["finished_since"] = finished_since
-    if not conditions:
-        return "", {}
-    return f" AND {row} IN (SELECT task_row FROM {_FACETS} WHERE {' AND '.join(conditions)})", parameters
+    clause = f" AND {row} IN (SELECT task_row FROM {_FACETS} WHERE {' AND '.join(conditions)})" if conditions else ""
+    if before is not None:
+        clause += (
+            " AND substr(task, 1, length(:before_prefix)) = :before_prefix"
+            " AND substr(task, length(:before_prefix) + 1) GLOB '[0-9]*'"
+            " AND substr(task, length(:before_prefix) + 1) NOT GLOB '*[^0-9]*'"
+            " AND CAST(substr(task, length(:before_prefix) + 1) AS INTEGER) < :before_number"
+        )
+        parameters |= {"before_prefix": f"{before[0]}-", "before_number": before[1]}
+    return clause, parameters
 
 
 def _row(task_id: str) -> int:
@@ -338,7 +350,13 @@ class SearchIndex:
             self._dirty.add(_row(task_id))
 
     def search(
-        self, query: str, limit: int = 10, *, labels: Sequence[str] = (), finished_since: float | None = None
+        self,
+        query: str,
+        limit: int = 10,
+        *,
+        labels: Sequence[str] = (),
+        finished_since: float | None = None,
+        before: tuple[str, int] | None = None,
     ) -> list[dict]:
         """The tasks holding every word of `query`, best first, as `{task, title, lane, score, snippet}`; `score` is
         higher for a better match and `snippet` is the text around it. With an embeddings endpoint the order blends
@@ -346,13 +364,14 @@ class SearchIndex:
         query's words is a hit too when its vector is near the query's (its snippet is the task's opening).
 
         A hit carries every one of `labels`, and with `finished_since` (epoch seconds) a task that finished before it
-        is no hit; an open task always may be."""
+        is no hit; an open task always may be. With `before` (a task key's prefix and number) a hit is a task of its prefix with a lower
+        number, created before it; every filter applies before `limit` cuts."""
         match = _match(query)
         if not match:
             return []
         limit = max(1, limit)
         vector = self._embed_query(query)
-        filtered, narrowing = _filtered(labels, finished_since, row="row")
+        filtered, narrowing = _filtered(labels, finished_since, before, row="row")
         with self._engine.connect() as connection:
             if vector is None:
                 rows = connection.execute(
@@ -365,7 +384,7 @@ class SearchIndex:
             )
             hits = [_named(dict(row._mapping)) for row in rows]
             lexical = {hit["task"] for hit in hits}
-            facets, _ = _filtered(labels, finished_since)
+            facets, _ = _filtered(labels, finished_since, before)
             allowed = (
                 set(connection.execute(text(f"SELECT rowid FROM {_TABLE} WHERE 1{facets}"), narrowing).scalars())
                 if filtered
@@ -477,11 +496,12 @@ class SearchIndex:
         """`query`'s vector, or None when no endpoint is configured or it cannot be reached: the order stays lexical."""
         if not self._url:
             return None
-        try:
-            return array.array("f", self._embed([query], _QUERY_TIMEOUT)[0])
-        except EmbeddingError as exc:
-            logger.warning("StarPulse: cannot embed the search query, ranking lexically: %s", exc)
-            return None
+        for attempt in range(_QUERY_ATTEMPTS):
+            try:
+                return array.array("f", self._embed([query], _QUERY_TIMEOUT)[0])
+            except EmbeddingError as exc:
+                logger.warning("StarPulse: cannot embed the search query (attempt %d): %s", attempt + 1, exc)
+        return None
 
     def _embed(self, texts: list[str], timeout: float = _TIMEOUT) -> list[list[float]]:
         """One vector per text from the endpoint (OpenAI-compatible: `POST {model, input}`, `data[].embedding`)."""

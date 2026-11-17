@@ -1,7 +1,5 @@
 """The output keys each agent verb documents in `starpulse help --agent`, and the snapshot keys a server must answer."""
 
-from __future__ import annotations
-
 SNAPSHOT_KEYS = (
     "graphs",
     "flows",
@@ -17,6 +15,7 @@ SNAPSHOT_KEYS = (
     "settled",
     "cold_done",
     "milestone_done",
+    "archived_today",
     "ratings",
     "interactive",
     "roles",
@@ -24,17 +23,19 @@ SNAPSHOT_KEYS = (
     "cues",
     "domains",
     "boardUrl",
-    "hint",
     "capabilities",
     "reading",
     "now",
 )
 
-# Keys a server one release behind may not serve yet: a snapshot without them is still a snapshot.
-NEWER_SNAPSHOT_KEYS = ("cpu", "milestone_done")
+# What makes a document a StarPulse snapshot; any other key may come or go between releases.
+SNAPSHOT_IDENTITY_KEYS = ("graphs", "flows", "machinePage", "now")
 
 
 HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
+
+
+LIVENESS_KEYS = ("now", "window_s", "stalled_after_s", "tasks", "review", "in_progress_s", "slot_s", "slots", "stages", "stalls")
 
 
 STEP_KEYS = ("now", "window_s", "steps")
@@ -72,6 +73,8 @@ TASK_KEYS = (
     "assignee",
     "milestone",
     "type",
+    "impact",
+    "urgency",
     "labels",
     "dependencies",
     "waiting_on",
@@ -79,6 +82,7 @@ TASK_KEYS = (
     "pause_reason",
     "readable",
     "source",
+    "verify_plan",
     "prs",
     "moves",
     "rating",

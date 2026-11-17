@@ -7,9 +7,7 @@
 <p align="center"><strong>Declarative state machines for agent work, with an enforced task board and a live view of every task, workflow run and agent session.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/trantor-org/starpulse/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/trantor-org/starpulse/ci.yml?branch=main&style=flat-square&label=ci" alt="CI status"></a>
-  <a href="https://pypi.org/project/starpulse/"><img src="https://img.shields.io/pypi/v/starpulse?style=flat-square&label=pypi" alt="PyPI version"></a>
-  <a href="https://pypi.org/project/starpulse/"><img src="https://img.shields.io/pypi/pyversions/starpulse?style=flat-square" alt="Python version"></a>
+  <a href="https://github.com/trantor-org/starpulse/releases/latest"><img src="https://img.shields.io/github/v/release/trantor-org/starpulse?style=flat-square&label=release" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License: MIT"></a>
 </p>
 
@@ -33,12 +31,12 @@ live, with tasks, workflow runs and agent sessions moving through it.
 - **Machines as data.** Lifecycles, guards and writer permissions are declared in YAML and validated with
   `starpulse machine validate`; a Kanban board is one machine, its states rendered as lanes.
 - **Enforced writes.** One write path for the CLI, the API and the page; a forbidden transition is refused, not drawn.
-- **Event-sourced state.** Append-only streams with optimistic concurrency, a transactional outbox and schema
+- **Event-sourced state.** Append-only streams with optimistic concurrency and schema
   upcasters, in a single portable SQLite database.
 - **Agent-native CLI.** Every verb prints JSON with documented exit codes; `starpulse help --agent` emits the full verb
   manifest for an agent's context.
 - **Pluggable sources.** Adapters for task trackers, workflow schedulers and agent harnesses, plus a CloudEvents
-  ingest (HTTP and gRPC) for anything else.
+  ingest (HTTP and Connect) for anything else.
 - **Built-in scheduler.** Admission, quiet hours and dispatch of Ready tasks to agent sessions.
 - **Observable.** Prometheus `/metrics`, OTLP intake for agent telemetry, and flow and session analytics.
 
@@ -49,15 +47,15 @@ Most issue trackers treat a status as a label: anyone, or any agent, can drag a 
 - **Moves are enforced, not just drawn.** States, transitions and which writers may make each move live in YAML. `[[board.guards]]` rules add record-level conditions, for example "Done needs a pull request in references". A forbidden move is refused the same way from the CLI, the HTTP API and the web page, with a reason and the skill that satisfies it. `starpulse conform` replays recorded history against the declared machines and prints each violation.
 - **A scheduler that dispatches work to agents.** The built-in scheduler admits Ready tasks into agent sessions, with admission limits and quiet hours, so agents pull work from the board instead of waiting to be assigned.
 - **Paused work says why.** A paused task sits in Waiting when it is blocked on something specific, or in Needs attention when a person has to act, with the reason recorded on the task.
-- **Every change is an event.** State lives in append-only, event-sourced streams with optimistic concurrency and a transactional outbox, in one portable SQLite database. Prometheus `/metrics`, OTLP agent telemetry and flow and session analytics sit on top of that record.
-- **One model for agents, code and workflows.** A task board, a delivery pipeline, a skill's steps and a pull request's CI are all machines. Agents, workflow schedulers such as Dagu or GitHub Actions, and plain code move them through the same enforced write path.
-- **Yours to run.** Install it with `uv tool install starpulse` or `pipx install starpulse` and run `starpulse serve`. There is no hosted service and no per-seat pricing; `serve` supervises its own workers, and your board is files and a database you own.
+- **Every change is an event.** State lives in append-only, event-sourced streams with optimistic concurrency, in one portable SQLite database. Prometheus `/metrics`, OTLP agent telemetry and flow and session analytics sit on top of that record.
+- **One model for agents, code and workflows.** A task board, a delivery pipeline, a skill's steps and a pull request's CI are all machines. Agents, workflow schedulers such as Temporal or GitHub Actions, and plain code move them through the same enforced write path.
+- **Yours to run.** [Install it from a GitHub Release](#installation) and run `starpulse serve`. There is no hosted service and no per-seat pricing; `serve` supervises its own workers, and your board is files and a database you own.
 
 ### Compared with a hosted tracker
 
 | | Typical hosted tracker | StarPulse |
 |---|---|---|
-| Where it runs | The vendor's cloud | Your machine, installed from PyPI |
+| Where it runs | The vendor's cloud | Your machine, installed from a GitHub Release |
 | Cost | Usually per seat | Free and open source (MIT) |
 | Status changes | Free-form; anyone can move anything | Declared machines and guards; refused moves are never written |
 | Agent work | Agents act when a person assigns or mentions them | The scheduler admits Ready tasks into agent sessions |
@@ -69,11 +67,9 @@ Hosted tools such as Linear have polished planning features (cycles, projects, t
 
 StarPulse requires Python 3.14 or later.
 
-Install from a GitHub Release; the PyPI versions are old and no longer maintained.
-
 ### Install from a GitHub Release
 
-New versions are published as GitHub Releases, not to PyPI. Each
+New versions are published as GitHub Releases. Each
 Release carries the versioned wheel, `starpulse-latest-py3-none-any.whl` (the same wheel under a name that never
 changes) and `starpulse-web.tar.gz` (the built web page). The latest Release's fixed URL is
 `https://github.com/trantor-org/starpulse/releases/latest/download/starpulse-latest-py3-none-any.whl`.
@@ -82,7 +78,7 @@ install the copy under its own name:
 
 ```sh
 dir=$(mktemp -d)
-curl -fsSL -o "$dir/starpulse-latest-py3-none-any.whl" \
+curl -fsSL --max-time 120 -o "$dir/starpulse-latest-py3-none-any.whl" \
   https://github.com/trantor-org/starpulse/releases/latest/download/starpulse-latest-py3-none-any.whl
 name=$(python3 -c "import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); print(next(n for n in z.namelist() if n.endswith('/WHEEL')).split('/')[0][:-len('.dist-info')])" "$dir/starpulse-latest-py3-none-any.whl")
 mv "$dir/starpulse-latest-py3-none-any.whl" "$dir/$name-py3-none-any.whl"
@@ -115,9 +111,9 @@ For any other harness, point the agent at the CLI from `AGENTS.md` or `CLAUDE.md
 ```md
 ## Tasks
 
-This project tracks work on a StarPulse board. Run `uvx starpulse help --agent` for every verb, its
-arguments and exit codes. Read the board with `uvx starpulse board` and open a task with
-`uvx starpulse task create "<title>"`.
+This project tracks work on a StarPulse board. Run `starpulse help --agent` for every verb, its
+arguments and exit codes. Read the board with `starpulse board` and open a task with
+`starpulse task create "<title>"`.
 ```
 
 The same verbs work by hand, and **New task** on the Kanban view writes to the same board.
@@ -126,8 +122,8 @@ The same verbs work by hand, and **New task** on the Kanban view writes to the s
 
 | Kind | Supported |
 |---|---|
-| Task trackers | Native Markdown board, Backlog.md, Jira |
-| Workflow runs | Dagu, GitHub Actions, systemd timers, any scheduler via CloudEvents |
+| Task trackers | Native Markdown board |
+| Workflow runs | Temporal, GitHub Actions, systemd timers, any scheduler via CloudEvents |
 | Agent sessions | Claude Code (OTLP), GitHub Copilot cloud agent and code review |
 
 New trackers and producers are written against the board, machine-events and runs contracts; see

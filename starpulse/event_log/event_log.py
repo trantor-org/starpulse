@@ -19,8 +19,6 @@ wait too (`EventLog.wait_for_append`). A platform with no file watch falls back 
 sweeper's interval, and logs once that it has none.
 """
 
-from __future__ import annotations
-
 import gzip
 import json
 import logging
@@ -34,6 +32,7 @@ import weakref
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
+from itertools import batched
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -58,12 +57,24 @@ _NO_WATCH_LOGGED = threading.Event()
 #: outlasts the multi-second disk stalls of the host's weekly snapshot backup, which held writes past a 5 s wait.
 _SQLITE_BUSY_TIMEOUT = 30.0
 
-#: How many times a new SQLite connection tries to switch to WAL, which fails at once, without waiting on the busy
+#: How many times the log tries to switch its SQLite database to WAL, which fails at once, without waiting on the busy
 #: timeout, while another connection opens or closes the database.
 _PRAGMA_ATTEMPTS = 20
 
+#: How many idle connections a file database's pool keeps. Every append wakes every tail and `follow_state` thread
+#: (~66 in the contexts worker), each checking out a connection at once; a pool smaller than that burst closes the
+#: extra connections as they come back and opens them again on the next append, which cost 8-10 % of the worker's CPU
+#: in the 2026-11-09 profile. An idle connection holds about 250 KB.
+_POOL_SIZE = 64
+#: How many connections a burst past `_POOL_SIZE` may open beyond it; those are closed again as they come back.
+_POOL_OVERFLOW = 16
+
 #: How many rows a prune archives and deletes at a time, so a long backlog is never held in memory at once.
 _PRUNE_BATCH = 1000
+
+#: The streams the prune keeps whatever their age: `task:ratings` is refolded into every rating on start, and
+#: `machine:events` into every machine's task placement on a read-model rebuild.
+RETAINED_STREAMS = ("machine:events", "task:ratings")
 # Built once: a statement made per poll recompiles its lazy attributes every time, which dominated the server's CPU
 # at ~45 live sessions (every commit wakes every tail).
 # Scalar subqueries: SQLite answers a lone min or max from the primary key, but scans an index for both.
@@ -139,7 +150,8 @@ def _watch_commits(
         watch.close()
 
 
-def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+def _sqlite_wal(dbapi_connection: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+    """Switch the database to WAL. The mode is kept in the database file, so the log does it once, not per connection."""
     cursor = dbapi_connection.cursor()
     for attempt in range(_PRAGMA_ATTEMPTS):
         try:
@@ -149,6 +161,12 @@ def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no 
             if attempt == _PRAGMA_ATTEMPTS - 1:
                 raise
             time.sleep(0.05)
+    cursor.close()
+
+
+def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+    """The pragmas each connection keeps for itself: `synchronous` is not kept in the database file."""
+    cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
 
@@ -166,12 +184,17 @@ class EventLog:
         self._appended = threading.Condition()
         self._appends = 0
         self._watching = False
+        self._unwatch: Callable[[], object] | None = None
 
     def close(self) -> None:
-        """Release the database connections the log holds; the log reopens on its next use."""
+        """Release the database connections the log holds and end its commit watch; the log reopens, and watches
+        again, on its next use."""
         with self._lock:
             if self._engine is not None:
                 self._engine.dispose()
+            if self._unwatch is not None:
+                self._unwatch()
+                self._unwatch, self._watching = None, False
 
     @property
     def engine(self) -> Engine:
@@ -181,6 +204,8 @@ class EventLog:
                 if self._engine is None:
                     self._engine = _create_engine(self.url)
                 event.listen(self._engine, "connect", _sqlite_pragmas)
+                with self._engine.connect() as db:
+                    _sqlite_wal(db.connection.dbapi_connection)
                 require_migrated(self._engine)
                 self._ready = True
             assert self._engine is not None
@@ -362,7 +387,8 @@ class EventLog:
         if url.database not in (None, "", ":memory:"):
             baseline = threading.Event()
             ended, release = os.pipe()
-            weakref.finalize(self, os.close, release)  # the thread sees the pipe end when the log is dropped
+            # the thread sees the pipe end when the log is dropped or closed
+            self._unwatch = weakref.finalize(self, os.close, release)
             threading.Thread(
                 target=_watch_commits,
                 args=(weakref.ref(self), url.database, self._fallback_interval, baseline, ended),
@@ -387,7 +413,7 @@ class EventLog:
             with engine.connect() as db:
                 batch = db.execute(
                     select(events)
-                    .where(events.c.at < cutoff, events.c.id > last)
+                    .where(events.c.at < cutoff, events.c.id > last, events.c.stream.not_in(RETAINED_STREAMS))
                     .order_by(events.c.id)
                     .limit(_PRUNE_BATCH)
                 ).all()
@@ -395,14 +421,33 @@ class EventLog:
                 return pruned
             _archive(archive_dir, batch)
             with engine.begin() as db:
-                db.execute(delete(events).where(events.c.id > last, events.c.id <= batch[-1].id, events.c.at < cutoff))
+                db.execute(delete(events).where(
+                        events.c.id > last,
+                        events.c.id <= batch[-1].id,
+                        events.c.at < cutoff,
+                        events.c.stream.not_in(RETAINED_STREAMS),
+                    )
+                )
             pruned += len(batch)
             last = batch[-1].id
+
+    def restore(self, archive_dir: Path) -> int:
+        """Put the archived rows of `RETAINED_STREAMS` back in the log at their archived `id` and return how many were
+        inserted; a row whose `id` or `event_id` the log holds is left as it is, so a second call inserts nothing.
+        Raises when the database or the archive does."""
+        restored = 0
+        for path in sorted(archive_dir.glob("*.jsonl.gz")):
+            with gzip.open(path, "rt") as day:
+                wanted = (row for row in map(json.loads, day) if row["stream"] in RETAINED_STREAMS)
+                for batch in batched(wanted, _PRUNE_BATCH):
+                    with self.engine.begin() as db:
+                        restored += db.execute(sqlite.insert(events).on_conflict_do_nothing(), list(batch)).rowcount
+        return restored
 
     def prune_signals(self, keep: float, now: float | None = None) -> int:
         """Delete the `starpulse_signals` rows whose `time` is more than `keep` seconds old, and the
         `starpulse_signal_folds` rows whose `last_at` is, and return how many signals; raises when the database does. A
-        signal has no archive: Loki kept none either."""
+        signal has no archive."""
         cutoff = (time.time() if now is None else now) - keep
         with self.engine.begin() as db:
             db.execute(delete(signal_folds).where(signal_folds.c.last_at < cutoff))
@@ -412,6 +457,11 @@ class EventLog:
         """The cursor of `stream`'s newest row, or None when it has none; raises when the database does."""
         with self.engine.connect() as db:
             return db.execute(select(func.max(events.c.id)).where(events.c.stream == stream)).scalar()
+
+    def first(self, stream: str) -> int | None:
+        """The cursor of `stream`'s oldest retained row, or None when it has none; raises when the database does."""
+        with self.engine.connect() as db:
+            return db.execute(select(func.min(events.c.id)).where(events.c.stream == stream)).scalar()
 
     def head(self) -> int | None:
         """The cursor of the newest row of any stream, or None when the log holds none; raises when the database does."""
@@ -484,11 +534,12 @@ class Tail:
 
     @classmethod
     def live(cls, log: EventLog, stream: str, **kwargs: Any) -> Tail:
-        """A Tail that reads only the rows appended after `stream`'s newest one now, for a reader that rebuilds its
-        state from elsewhere and would discard the replay. Take it before that rebuild, so a row appended meanwhile is
-        read. When the log cannot be reached it replays the retention, which is the safe start."""
+        """A Tail that reads only the rows appended after the newest one of `stream` (of `streams`, when it reads
+        several) now, for a reader that rebuilds its state from elsewhere and would discard the replay. Take it before
+        that rebuild, so a row appended meanwhile is read. When the log cannot be reached it replays the retention,
+        which is the safe start."""
         try:
-            after = log.last(stream)
+            after = max(filter(None, map(log.last, kwargs.get("streams") or [stream])), default=None)
         except Exception as exc:  # the database is unreachable; `run` retries the polls
             logger.warning("Tail %s: cannot read the head, replaying the retention: %s", stream, exc)
             after = None
@@ -646,4 +697,8 @@ def insert_event(db: Connection, stream: str, fields: Mapping[str, Any], key: st
 
 
 def _create_engine(url: str) -> Engine:
-    return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
+    if make_url(url).database in (None, "", ":memory:"):  # one in-memory database per connection: no pool to size
+        return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
+    return create_engine(
+        url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT}, pool_size=_POOL_SIZE, max_overflow=_POOL_OVERFLOW
+    )

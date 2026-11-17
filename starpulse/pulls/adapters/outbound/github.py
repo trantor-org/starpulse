@@ -1,4 +1,4 @@
-"""The GitHub adapter: a repository's pull requests, checks and Copilot work become events on two machines.
+"""The GitHub adapter: a repository's pull requests and their checks become events on the pull-request machine.
 
     python -m starpulse.cli.github_adapter --repo OWNER/NAME [--interval 300] [--config FILE] [--key RE --branch RE --key-format FMT]
 
@@ -8,20 +8,12 @@ to the event log in the database `--config` names (default `starpulse.toml` in t
 unauthenticated rate limit applies. A second read of a pull request appends nothing new: each event's id is derived
 from the GitHub record behind it.
 
-The `github-pull-request` machine follows a pull request: opened, its checks passing or failing, merged or closed. The
-`copilot` machine follows Copilot on it: the `copilot_work_started` and `copilot_work_finished` timeline events (the
-actor is the person who asked), the `dynamic` workflow runs GitHub names "Running Copilot cloud agent" and "Running
-Copilot Code Review", and reviews by `copilot-pull-request-reviewer[bot]`. An event is keyed by the task the pull
-request's branch names under the adapter's `TaskKeys`, else by the pull request itself (`owner/name#7`). GitHub exposes
-no per-tool trajectory for Copilot sessions, so these are spans and outcomes, not trajectories.
-
-GitHub documents neither Copilot timeline event name; the recorded fixtures in the tests pin them, so a rename fails
-the adapter's tests rather than the page.
+The `github-pull-request` machine follows a pull request: opened, its checks passing or failing, merged or closed. An
+event is keyed by the task the pull request's branch names under the adapter's `TaskKeys`, else by the pull request
+itself (`owner/name#7`).
 
 The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.md` or its branch names.
 """
-
-from __future__ import annotations
 
 import argparse
 import os
@@ -31,7 +23,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.stamps import epoch_of
@@ -45,21 +36,11 @@ from starpulse.machine_engine.model.snapshot import describe
 #: The machine files beside the package: `adapters/runs/` is two levels below them.
 MACHINES = Path(__file__).parents[3] / "machines"
 PULL_REQUEST = load_machine(MACHINES / "github-pull-request.yaml")
-COPILOT = load_machine(MACHINES / "copilot.yaml")
 CI_JOB = load_machine(MACHINES / "ci-job.yaml")
-GITHUB_MACHINES = {m.name: describe(m.machine) for m in (PULL_REQUEST, COPILOT, CI_JOB)}
+PR_CHECKS = load_machine(MACHINES / "pr-checks.yaml")
+GITHUB_MACHINES = {m.name: describe(m.machine) for m in (PULL_REQUEST, CI_JOB, PR_CHECKS)}
 
 
-#: The timeline events GitHub records when Copilot's coding agent starts and stops work on a pull request; the actor is
-#: the person who asked. GitHub documents neither name.
-_TIMELINE = {"copilot_work_started": "WORK_STARTED", "copilot_work_finished": "WORK_FINISHED"}
-#: The `dynamic` workflow runs Copilot's own sessions appear as, by run name: the events a run's start and end become.
-_RUNS = {
-    "Running Copilot cloud agent": ("RUN_STARTED", "RUN_FINISHED"),
-    "Running Copilot Code Review": ("REVIEW_RUN_STARTED", "REVIEW_RUN_FINISHED"),
-}
-#: The bot that submits Copilot's code reviews.
-REVIEWER = "copilot-pull-request-reviewer[bot]"
 #: The conclusions of a completed check run that leave the rollup passing.
 _PASSING = frozenset({"success", "neutral", "skipped"})
 
@@ -75,7 +56,7 @@ class GitHubAdapter:
     keys: TaskKeys
 
     def events(self, repo: str, bundle: dict) -> list[dict]:
-        """The events `bundle` (`pull`, `timeline`, `reviews`, `check_runs`, `runs`, as `read` returns it) moves the machines by, oldest first."""
+        """The events `bundle` (`pull` and `check_runs`, as `read` returns it) moves the machines by, oldest first."""
         pull = bundle["pull"]
         pr = f"{repo}#{pull['number']}"
         task = self.keys.for_branch(pull["head"]["ref"])
@@ -92,18 +73,6 @@ class GitHubAdapter:
             }
 
         events = [event("github-pull-request", "PR_OPENED", pull["user"]["login"], pull["created_at"], "")]
-        for item in bundle["timeline"]:
-            if name := _TIMELINE.get(item["event"]):
-                events.append(event("copilot", name, item["actor"]["login"], item["created_at"], item["id"]))
-        for run in bundle["runs"]["workflow_runs"]:
-            if run["event"] == "dynamic" and run["name"] in _RUNS:
-                started, finished = _RUNS[run["name"]]
-                events.append(event("copilot", started, "copilot", run["created_at"], run["id"]))
-                if run["status"] == "completed":
-                    events.append(event("copilot", finished, "copilot", run["updated_at"], run["id"]))
-        for review in bundle["reviews"]:
-            if review["user"]["login"] == REVIEWER:
-                events.append(event("copilot", "REVIEW_SUBMITTED", REVIEWER, review["submitted_at"], review["id"]))
         checks = bundle["check_runs"]["check_runs"]
         if checks and all(check["status"] == "completed" for check in checks):
             passed = all(check["conclusion"] in _PASSING for check in checks)
@@ -120,34 +89,17 @@ class GitHubAdapter:
         return sorted(events, key=lambda e: e["time"])
 
 
-#: GitHub's page size; a page shorter than it is the last.
+#: The page of check runs one read takes; GitHub's largest page.
 _PAGE = 100
-#: The most pages read of one list, so a pull request with a very long timeline cannot spend the rate limit.
-_MAX_PAGES = 10
-
-
-def _items(transport: Transport, path: str) -> list[dict]:
-    """Every item of the list endpoint `path` (which carries `?per_page=100`), page by page."""
-    items: list[dict] = []
-    for page in range(1, _MAX_PAGES + 1):
-        got = get(transport, f"{path}&page={page}")["items"]
-        items += got
-        if len(got) < _PAGE:
-            break
-    return items
 
 
 def read(transport: Transport, repo: str, number: int) -> dict:
-    """Pull request `number` of `repo` as `GitHubAdapter.events` takes it: the pull, its timeline, its reviews, the check
-    runs of its head commit and the workflow runs of its branch, each as GitHub answers."""
-    base = f"/repos/{repo}"
-    pull = get(transport, f"{base}/pulls/{number}")
+    """Pull request `number` of `repo` as `GitHubAdapter.events` takes it: the pull and the check runs of its head commit,
+    each as GitHub answers."""
+    pull = get(transport, f"/repos/{repo}/pulls/{number}")
     return {
         "pull": pull,
-        "timeline": _items(transport, f"{base}/issues/{number}/timeline?per_page={_PAGE}"),
-        "reviews": _items(transport, f"{base}/pulls/{number}/reviews?per_page={_PAGE}"),
-        "check_runs": get(transport, f"{base}/commits/{pull['head']['sha']}/check-runs?per_page={_PAGE}"),
-        "runs": get(transport, f"{base}/actions/runs?branch={quote(pull['head']['ref'], safe='')}&per_page={_PAGE}"),
+        "check_runs": get(transport, f"/repos/{repo}/commits/{pull['head']['sha']}/check-runs?per_page={_PAGE}"),
     }
 
 

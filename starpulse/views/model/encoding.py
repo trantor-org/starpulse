@@ -1,7 +1,5 @@
 """Encoding of the API's bodies: each one validated through its model before it is sent."""
 
-from __future__ import annotations
-
 import json
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
@@ -82,7 +80,7 @@ _TASK_DETAIL = ("description", "criteria", "definition_of_done", "moves")
 #: What an active task's card keeps: its description, criteria and Definition of Done, which the page shows in the
 #: first frame of the task view without a fetch.
 _LIVE_DETAIL = ("moves",)
-#: The states whose cards keep that detail: the tasks an operator opens. The rest (waiting, proposed, done, archived)
+#: The states whose cards keep that detail: the tasks an operator opens. The rest (waiting, done, archived)
 #: are most of the board and read `/api/task/<id>` on open.
 _ACTIVE_STATES = frozenset({"ready", "in_progress", "review", "needs_attention", "verifying"})
 

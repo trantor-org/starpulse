@@ -1,7 +1,5 @@
 """The pull records `/api/pulls` lists."""
 
-from __future__ import annotations
-
 from typing import Literal
 
 from starpulse.contracts.api._base import _Api
@@ -9,7 +7,7 @@ from starpulse.contracts.api._base import _Api
 
 class RequiredCheck(_Api):
     name: str
-    result: Literal["pass", "failing", "pending"]
+    result: Literal["pass", "failing", "pending", "missing"]
 
 
 class PullThread(_Api):
@@ -24,7 +22,8 @@ class PullRecord(_Api):
 
     `headRefName` and `unresolvedThreads` (the first 100 threads) are null for a record saved before they were kept.
     `files`, the paths the pull request changes, is sent only when `repo` and `number` name one record, and is null for
-    a record saved before they were kept."""
+    a record saved before they were kept. `body` is sent only when `repo` and `number` name one record or `bodies=1`
+    asks for it."""
 
     repo: str
     number: int
@@ -33,7 +32,7 @@ class PullRecord(_Api):
     mergeable: str
     baseRefName: str
     headRefOid: str
-    body: str
+    body: str | None = None
     checks: Literal["pass", "failing", "pending", "none"]
     requiredChecks: list[RequiredCheck]
     threads: int

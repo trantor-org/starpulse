@@ -1,7 +1,7 @@
 """The Temporal adapter: each of a server's workflow types as a workflow, its running executions as active runs and the last day's closed ones as recent runs.
 
 `url` is the Temporal UI server's address (`http://host:8233`), whose HTTP API lists executions of the default namespace.
-`Poller.listing` reads the three engine-run types, `task_lifecycle`, `task_phases` and `AlertInvestigationWorkflow`, into
+`Poller.listing` reads the four engine-run types, `task_lifecycle`, `task_phases`, `AlertInvestigationWorkflow` and `CommandWorkflow`, into
 the `runs` contract's `Dag` records: a running execution is an `ActiveRun` with the activity it is on, that activity's
 attempt and the failure its last attempt ended in; a closed one is a `RecentRun`, and a failed one carries the activity
 it failed on, that activity's attempt and the failure. A closed execution never changes, so its history is read once.
@@ -9,8 +9,7 @@ it failed on, that activity's attempt and the failure. A closed execution never 
 has no Run now: these workflows start from the Board's lifecycle, not from the page.
 """
 
-from __future__ import annotations
-
+import base64
 import json
 import re
 import threading
@@ -22,20 +21,24 @@ from datetime import UTC, datetime, timedelta
 
 from starpulse.contracts.adapters import RunsSink, RunStatus
 from starpulse.event_log.event_log import EventLog
+from starpulse.runs.adapters.outbound import Unreported, node
 
 #: The workflow types shown, in the order the page lists them.
-TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow")
+TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow", "CommandWorkflow")
 
 #: Seconds between two listings of the server.
-POLL_INTERVAL = 15.0
+POLL_INTERVAL = 2.0
 #: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
 WORKER = "temporal"
 
 #: How many closed runs, failed and of any status, each listing asks for; the server answers newest first.
-RECENT_LIMIT = 40
+RECENT_LIMIT = 100
 #: How many running executions a listing asks for.
 ACTIVE_LIMIT = 200
 _HISTORY_EVENTS = 20
+#: The most events one graph reads and the most nodes it draws; a longer history is listed, not drawn.
+_GRAPH_EVENTS = 500
+_GRAPH_NODES = 60
 _TIMEOUT = 10.0
 _NAMESPACE = "/api/v1/namespaces/default"
 _TASK = re.compile(r"TASK-\d+", re.IGNORECASE)
@@ -88,12 +91,74 @@ def _status(execution: dict) -> RunStatus:
     return _STATUS.get(_short(execution["status"]), "failed")
 
 
+#: The history events that open a node.
+_OPENING = ("ACTIVITY_TASK_SCHEDULED", "START_CHILD_WORKFLOW_EXECUTION_INITIATED")
+_STATE: dict[str, RunStatus] = {
+    "ACTIVITY_TASK_STARTED": "running",
+    "CHILD_WORKFLOW_EXECUTION_STARTED": "running",
+    "ACTIVITY_TASK_COMPLETED": "succeeded",
+    "CHILD_WORKFLOW_EXECUTION_COMPLETED": "succeeded",
+    "ACTIVITY_TASK_FAILED": "failed",
+    "ACTIVITY_TASK_TIMED_OUT": "failed",
+    "CHILD_WORKFLOW_EXECUTION_FAILED": "failed",
+    "CHILD_WORKFLOW_EXECUTION_TIMED_OUT": "failed",
+    "START_CHILD_WORKFLOW_EXECUTION_FAILED": "failed",
+    "ACTIVITY_TASK_CANCELED": "aborted",
+    "CHILD_WORKFLOW_EXECUTION_CANCELED": "aborted",
+    "CHILD_WORKFLOW_EXECUTION_TERMINATED": "aborted",
+}
+_COMMAND_STEP = "run_command_step"
+
+
+def _label(attributes: dict) -> str:
+    """The name of an activity or child workflow; a command step is named by the `id` of the step its second input holds."""
+    name = attributes.get("activityType", {}).get("name") or attributes["workflowType"]["name"]
+    try:
+        step = json.loads(base64.b64decode(attributes["input"]["payloads"][1]["data"])).get("id") if name == _COMMAND_STEP else None
+    except (KeyError, IndexError, ValueError, AttributeError):
+        step = None
+    return step if isinstance(step, str) and step else name
+
+
+def _nodes(events: list[dict], started: set[str]) -> list[dict]:
+    """The activities and child workflows of a workflow's history as nodes, each waiting on the nodes that had closed when it opened.
+
+    An edge is scheduling order, not a declared dependency; one the other edges already imply is dropped. A queued activity
+    whose id is in `started` is running: the server writes no start event to the history of an activity it retries. Any field missing,
+    an event about an unopened node, or more than `_GRAPH_NODES` nodes raises, so the run is listed rather than drawn.
+    """
+    opened: dict[int, dict] = {}
+    for e in events:
+        kind, number = e["eventType"].removeprefix("EVENT_TYPE_"), int(e["eventId"])
+        attributes = next((v for k, v in e.items() if k.endswith("EventAttributes")), {})
+        if kind in _OPENING:
+            label = _label(attributes)
+            same = sum(n["label"].partition(" #")[0] == label for n in opened.values())
+            opened[number] = {"id": number, "label": label if not same else f"{label} #{same + 1}", "status": "running" if attributes.get("activityId") in started else "queued", "closed": 0, "attempt": 1}
+        elif kind in _STATE:
+            found = opened[int(attributes.get("scheduledEventId") or attributes["initiatedEventId"])]
+            found["status"] = _STATE[kind]
+            found["attempt"] = attributes.get("attempt") or found["attempt"]
+            found["closed"] = number if _STATE[kind] != "running" else 0
+    if len(opened) > _GRAPH_NODES:
+        raise ValueError("too many nodes to draw")
+    nodes = list(opened.values())
+    out = []
+    for n in nodes:
+        before = [m for m in nodes if m["closed"] and m["closed"] < n["id"]]
+        waits = [m["label"] for m in before if not any(m["closed"] < x["id"] for x in before)]
+        out.append(node(n["label"], waits, n["status"], f"attempt {n['attempt']}" if n["attempt"] > 1 else None))
+    return out
+
+
 class Poller:
     """Reads the server into `Dag` records, remembering what a closed run's history said."""
 
     def __init__(self, sink: RunsSink, fetch: Callable[[str], dict], url: str) -> None:
         self.sink, self.fetch, self.base = sink, fetch, url.rstrip("/")
         self.closed: dict[str, dict] = {}  # run id -> the failure details of a closed run, which never change
+        self.drawn: dict[str, list[dict]] = {}  # run id -> the nodes of a closed run, which never change
+        self.started: dict[str, set[str]] = {}  # run id -> the ids of the activities a running run has executing now
 
     def _list(self, query: str, limit: int) -> list[dict]:
         types = ",".join(f'"{name}"' for name in TYPES)
@@ -114,14 +179,35 @@ class Poller:
         self.closed[run_id] = details
         return details
 
+    def _graph(self, execution: dict, live: bool) -> list[dict]:
+        """The nodes of the workflow `execution`, or none when the server cannot give or the adapter cannot read its history: the page then lists the run."""
+        workflow_id, run_id = execution["execution"]["workflowId"], execution["execution"]["runId"]
+        if run_id in self.drawn:
+            return self.drawn[run_id]
+        params = urllib.parse.urlencode({"execution.runId": run_id, "maximumPageSize": _GRAPH_EVENTS})
+        try:
+            history = self.fetch(f"{self.base}{_NAMESPACE}/workflows/{urllib.parse.quote(workflow_id, safe='')}/history?{params}")
+            if history.get("nextPageToken"):
+                raise ValueError("history is longer than one page")
+            nodes = _nodes(history["history"]["events"], self.started.get(run_id, set()))
+        except OSError:
+            return []
+        except (ValueError, KeyError, TypeError, AttributeError):
+            nodes = []
+        if not live:
+            self.drawn[run_id] = nodes
+        return nodes
+
     def _active(self, execution: dict) -> dict:
         workflow_id, run_id = execution["execution"]["workflowId"], execution["execution"]["runId"]
         quoted = urllib.parse.quote(workflow_id, safe="")
         described = self.fetch(f"{self.base}{_NAMESPACE}/workflows/{quoted}?execution.runId={run_id}")
         entered = sorted(described.get("pendingActivities") or [], key=lambda a: a.get("lastStartedTime") or "")
         current = entered[-1] if entered else {}
+        self.started[run_id] = {a["activityId"] for a in entered if a.get("state") == "PENDING_ACTIVITY_STATE_STARTED"}
         return {
             "runId": run_id,
+            "url": f"{self.base}/namespaces/default/workflows/{quoted}/{run_id}",
             "status": "running",
             "raw": None,
             "startedAt": _iso(execution["startTime"]),
@@ -160,7 +246,9 @@ class Poller:
         closed = self._list(f'ExecutionStatus!="Running" AND {window}', RECENT_LIMIT)
         newest = {e["execution"]["runId"]: e for e in [*closed, *failed]}.values()
         dags = [self._workflow(name, [e for e in running if e["type"]["name"] == name], newest) for name in TYPES]
-        self.closed = {run: seen for run, seen in self.closed.items() if run in {e["execution"]["runId"] for e in newest}}
+        kept = {e["execution"]["runId"] for e in newest}
+        self.closed = {run: seen for run, seen in self.closed.items() if run in kept}
+        self.drawn = {run: seen for run, seen in self.drawn.items() if run in kept}
         return dags
 
     def _workflow(self, name: str, running: list[dict], closed) -> dict:
@@ -169,6 +257,7 @@ class Poller:
             (self._recent(e) for e in closed if e["type"]["name"] == name), key=lambda run: run["finishedAt"], reverse=True
         )
         latest = max(active, key=lambda run: run["startedAt"]) if active else recent[0] if recent else None
+        by_run = {e["execution"]["runId"]: e for e in [*running, *closed]}
         return {
             "name": name,
             "status": "running" if active else latest["status"] if latest else "not_started",
@@ -176,7 +265,7 @@ class Poller:
             "runId": latest["runId"] if latest else "",
             "startedAt": latest["startedAt"] if latest else "",
             "finishedAt": "" if active or not latest else latest["finishedAt"],
-            "steps": [],
+            "steps": self._graph(by_run[latest["runId"]], live=bool(active)) if latest else [],
             "schedule": [],
             "stats": None,
             "rerun": None,
@@ -208,14 +297,9 @@ def _failure_of(events: list[dict]) -> dict:
     return details
 
 
-class _Unreported:
-    def set_dags(self, *args: object) -> None:
-        return
-
-
 def read(url: str) -> list[dict]:
     """The workflows of the server at `url`, as the sweeper's `runs` kind compares them with the projection."""
-    return Poller(_Unreported(), get, url).listing(datetime.now(UTC))
+    return Poller(Unreported(), get, url).listing(datetime.now(UTC))
 
 
 def start(url: str) -> None:

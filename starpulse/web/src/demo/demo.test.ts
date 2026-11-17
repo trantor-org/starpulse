@@ -390,6 +390,13 @@ describe("the demo server", () => {
     expect((await body(s.fetch("/api/history?task=DEMO-1"))).path.at(-1)).toEqual({ at: 30, from: "in_progress", to: "review" });
   });
 
+  it("answers the moves of a board card on demand, and 404s a card that is not on the board", async () => {
+    const s = new DemoServer(fixture());
+
+    expect(await body(s.fetch("/api/moves/DEMO-1"))).toEqual({ task: "DEMO-1", moves: s.snapshot.flows[0].agents[0].moves });
+    expect((await s.fetch("/api/moves/NOPE-1")).status).toBe(404);
+  });
+
   it("refuses a move to a column the card's lane does not exit to", async () => {
     const s = new DemoServer(fixture());
 
@@ -398,25 +405,6 @@ describe("the demo server", () => {
     expect(reply.status).toBe(409);
     expect((await reply.json()).error).toMatch(/ready to done/);
     expect(lane(s, "DEMO-2")).toBe("ready");
-  });
-
-  it("refuses to promote a proposal with no profile, as the served writer does, and promotes it once one is set", async () => {
-    const proposing = machine("new", [["new", "proposed", "CREATE_PROPOSED"], ["proposed", "ready", "PROMOTE"], ["proposed", "archived", "DROP"]], "archived");
-    const f = { ...fixture(), roles: { ...LIFECYCLE_ROLES, proposed: "proposed", ready: "ready" }, flows: [{ name: "board", machine: proposing, agents: [card("DEMO-7", "proposed"), card("DEMO-8", "proposed")] }] };
-    const s = new DemoServer(f);
-    const move = (task: string, to: string) => s.fetch("/api/move", { method: "POST", body: JSON.stringify({ task, to }) });
-
-    const refused = await move("DEMO-7", "ready");
-
-    expect(refused.status).toBe(409);
-    expect((await refused.json()).error).toMatch(/DEMO-7.*no profile/);
-    expect(lane(s, "DEMO-7")).toBe("proposed");
-    const edit = await s.fetch("/api/edit", { method: "POST", body: JSON.stringify({ task: "DEMO-7", base: { profile: "" }, changes: { profile: "@agent-fast-low" } }) });
-    expect(edit.status).toBe(200);
-    expect((await move("DEMO-7", "ready")).status).toBe(200);
-    expect(lane(s, "DEMO-7")).toBe("ready");
-    expect((await move("DEMO-8", "completed")).status).toBe(200);
-    expect(s.snapshot.flows[0].agents.map((a) => a.id)).toEqual(["DEMO-7"]);
   });
 
   it("records the lane change of every card its walk moves", () => {
@@ -511,6 +499,12 @@ describe("the demo server", () => {
     expect(off.inFlight).toHaveLength(1);
     expect(bad.status).toBe(400);
     expect(await body(s.fetch("/api/scheduler"))).toMatchObject({ enabled: false });
+  });
+
+  it("refuses a scheduler PUT whose body is null with a 400", async () => {
+    const s = new DemoServer(fixture(), () => 1000);
+
+    expect((await s.fetch("/api/scheduler", { method: "PUT", body: "null" })).status).toBe(400);
   });
 
   it("overrides the selected harness's session cap with a PUT, drops it on null and refuses a non-whole number", async () => {
@@ -693,11 +687,11 @@ const run = (runId: string, step: string) => ({
 const fan = (...at: string[]): Snapshot => ({
   ...fixture(),
   dags: [{
-    name: "dagu/deliver", status: "running", runId: "deliver-agent-demo-1", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, pool: "dagu/deliver",
+    name: "temporal/deliver", status: "running", runId: "deliver-agent-demo-1", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, pool: "temporal/deliver",
     steps: STEPS.map((name, i) => ({ name, depends: i ? [STEPS[i - 1]] : [], status: "not_started" as const, kind: null, precondition: null, lock: null, last: [] })),
     active: at.map((step, i) => run(`deliver-agent-demo-${i + 1}`, step)),
   }],
-  pools: [{ name: "dagu/deliver", cap: 2, running: at.length, queued: 0 }],
+  pools: [{ name: "temporal/deliver", cap: 2, running: at.length, queued: 0 }],
 });
 const script = (...v: number[]) => () => v.shift() ?? 0;
 
@@ -709,7 +703,7 @@ describe("the demo's fan-out", () => {
     expect(moved).toMatchObject({ step: "wait_ci", steps: { refuse: "succeeded", lint: "succeeded", wait_ci: "running", ready: "not_started" } });
     expect(moved.stepStartedAt).not.toBe("2026-10-05T16:00:05Z");
     expect(other.step).toBe("wait_ci");
-    expect(next.pools).toEqual([{ name: "dagu/deliver", cap: 2, running: 2, queued: 0 }]);
+    expect(next.pools).toEqual([{ name: "temporal/deliver", cap: 2, running: 2, queued: 0 }]);
   });
 
   it("ends a run in its last step, freeing its slot in the pool", () => {
@@ -717,7 +711,7 @@ describe("the demo's fan-out", () => {
 
     expect(next.dags[0].active!.map((r) => r.step)).toEqual(["lint"]);
     expect(next.dags[0].status).toBe("running");
-    expect(next.pools).toEqual([{ name: "dagu/deliver", cap: 2, running: 1, queued: 0 }]);
+    expect(next.pools).toEqual([{ name: "temporal/deliver", cap: 2, running: 1, queued: 0 }]);
   });
 
   it("settles the DAG once its last run ends", () => {

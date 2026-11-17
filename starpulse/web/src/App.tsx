@@ -18,18 +18,17 @@ import { Kept, revealKept } from "./shared/Kept";
 import { SearchClear } from "./shared/SearchClear";
 import { useScrollRest } from "./shared/scrollRest";
 import { useBoardDrawn } from "./shared/boardDrawn";
+import { boardCount } from "./features/kanban/kanbanModel";
 import { Leaderboard } from "./features/kanban/Leaderboard";
-import { recent } from "./features/kanban/kanbanModel";
-import { MoveStore, postMove } from "./features/kanban/move";
-import { AdminPage, Dags, Kanban, Proposals, SunsDrillIn, prefetchViews } from "./lazyViews";
+import { MoveStore, postMove, fetchStanding } from "./features/kanban/move";
+import { AdminPage, Dags, Kanban, SunsDrillIn, prefetchViews } from "./lazyViews";
 import { onPhone, retired, shownView, viewOf, viewSearch, type ViewName } from "./shared/nav";
 import { usePhone } from "./shared/usePhone";
 import { renderer as makeRenderer } from "./render/renderer";
 import type { Renderer } from "./render/rendererTypes";
 import { booted } from "./boot";
 import { search, type Target } from "./features/level/search";
-import { StartStore, fetchHarnesses, postStart, profilesOf } from "./features/kanban/start";
-import { proposedOf } from "./features/proposals/proposalsModel";
+import { StartStore, fetchHarnesses, postStart } from "./features/kanban/start";
 
 
 /** Keep page-wide React reconciliation outside the two-frame reveal and a rapid follow-up switch. */
@@ -53,11 +52,10 @@ export function App() {
   const [theme] = useState(() => held?.theme ?? new ThemeStore(applyTheme));
   const [historyWindow] = useState(() => new HistoryWindowStore());
   // a move outlives the view that made it: the card stays where it landed while the writer answers
-  const [moves] = useState(() => new MoveStore(postMove));
+  const [moves] = useState(() => new MoveStore(postMove, undefined, fetchStanding));
   // so does a started session: the card waits in In progress for its agent's claim whichever view is showing
   const [starts] = useState(() => new StartStore(postStart, moves));
   useEffect(() => void fetchHarnesses().then((h) => starts.load(h)), [starts]);
-  const started = useSyncExternalStore(starts.subscribe, starts.get);
   // a hovered Recent line lights its task on the view showing: the Kanban hears it as a task to spot and says why it has no card
   const [line, setLine] = useState<string | null>(null), [spotted, setSpotted] = useState<string | null>(null);
   const [why, setWhy] = useState<string | null>(null), [opening, setOpening] = useState<{ id: string } | null>(null);
@@ -67,8 +65,6 @@ export function App() {
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
   // and the Jobs view's filter draws in the same section, above the run-pressure cards
   const [dgSlot, setDgSlot] = useState<HTMLElement | null>(null);
-  // and the Proposals view's search draws there too
-  const [propSlot, setPropSlot] = useState<HTMLElement | null>(null);
   // and its milestone outline draws in the outline slot below it, where Layers draw on the Star Map
   const [outlineSlot, setOutlineSlot] = useState<HTMLElement | null>(null);
   // and the drill-in's In Progress task list draws in its own section there while it is open
@@ -169,7 +165,7 @@ export function App() {
   return (
     <>
       {!held && <canvas ref={canvas} id="c" />}
-      <Navigator shell={shell} hud={hud} view={view} phone={phone} slot={setSearchSlot} dgSlot={setDgSlot} propSlot={setPropSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
+      <Navigator shell={shell} hud={hud} view={view} phone={phone} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
       {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && hud.capabilities?.create && (
@@ -179,18 +175,14 @@ export function App() {
           <span>An agent usually runs the CLI; you can too, or use New task on the Kanban.</span>
         </section>
       )}
-      {/* views warm in this order, the Kanban first: it is the one most often opened */}
-      <Kept name="kanban" on={view === "kanban"} warm={drawn}>
+      <Kept name="kanban" on={view === "kanban"}>
         <Suspense fallback={null}>
           <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} constellation={flyToLane}
             spot={spotted} note={setWhy} opening={opening} records={held?.records} />
         </Suspense>
       </Kept>
-      <Kept name="proposals" on={view === "proposals"} warm={drawn}>
-        <Suspense fallback={null}><Proposals cards={hud.cards} roles={hud.roles} profiles={view === "proposals" ? profilesOf(started.harnesses) : []} harnesses={started.harnesses} searchSlot={propSlot} /></Suspense>
-      </Kept>
-      <Kept name="jobs" on={view === "jobs"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
-      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} hint={hud.hint} /></Suspense></Kept>
+      <Kept name="jobs" on={view === "jobs"}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
+      <Kept name="admin" on={view === "admin"}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} /></Suspense></Kept>
       <Rail shown={shell} legend={!drill} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "jobs" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
@@ -257,7 +249,6 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
       <nav id="pnav" ref={bar} aria-label="Views">
         {tab("constellation", "Star Map", <svg className="g" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none" /><ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" strokeWidth="1.5" /><circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" stroke="none" /></svg>, props.phone)}
         {tab("kanban", "Kanban", <svg className="g kb" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="2.5" height="10" rx=".6" /><rect x="4.75" y="1" width="2.5" height="7" rx=".6" /><rect x="8.5" y="1" width="2.5" height="4.5" rx=".6" /></svg>)}
-        {tab("proposals", "Proposals", <svg className="g" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 3.5h9v6h-9zM1.5 3.5 6 7l4.5-3.5" /></svg>)}
         {tab("jobs", "Jobs", <svg className="g dg" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>)}
         {tab("admin", "Admin", <svg className="g" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>)}
         <button className="more" aria-label="More: search, status and the rest of the navigator" aria-expanded={sheet} onClick={() => setSheet(true)}><svg className="g" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" /></svg><span>More</span><i className={`dot ${props.hud.live}`} /></button>
@@ -266,8 +257,8 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
   );
 }
 
-function NavigatorBody({ hud, view, phone, slot, dgSlot, propSlot, outlineSlot, drillSlot, choose, open, spot, selectTask }: {
-  hud: HudState; view: ViewName; phone: boolean; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; propSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
+function NavigatorBody({ hud, view, phone, slot, dgSlot, outlineSlot, drillSlot, choose, open, spot, selectTask }: {
+  hud: HudState; view: ViewName; phone: boolean; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
   /** While the drill-in is open, the section its In Progress task list draws in, in place of the view's own lower sections. */
   drillSlot?: ((el: HTMLElement | null) => void) | null;
@@ -333,12 +324,7 @@ function NavigatorBody({ hud, view, phone, slot, dgSlot, propSlot, outlineSlot, 
         <button className={`node${view === "kanban" ? " on here" : ""}`} title="Kanban" onClick={() => choose("kanban")}>
           <svg className="g kb-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="2.5" height="10" rx=".6" /><rect x="4.75" y="1" width="2.5" height="7" rx=".6" /><rect x="8.5" y="1" width="2.5" height="4.5" rx=".6" /></svg>
           <span className="t">Kanban</span>
-          <span className="n">{recent(hud.cards, now, hud.roles).length || ""}</span>
-        </button>
-        <button className={`node${view === "proposals" ? " on here" : ""}`} title="Proposals" onClick={() => choose("proposals")}>
-          <svg className="g kb-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 3.5h9v6h-9zM1.5 3.5 6 7l4.5-3.5" /></svg>
-          <span className="t">Proposals</span>
-          <span className="n">{proposedOf(hud.cards, hud.roles).length || ""}</span>
+          <span className="n">{boardCount(hud.cards, hud.names, hud.roles) || ""}</span>
         </button>
         <button className={`node${view === "jobs" ? " on here" : ""}`} title="Jobs" onClick={() => choose("jobs")}>
           <svg className="g dg-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>
@@ -348,7 +334,7 @@ function NavigatorBody({ hud, view, phone, slot, dgSlot, propSlot, outlineSlot, 
       </section>
       {view !== "admin" && (
         <section className="away has-x search">
-          {view === "kanban" ? <div key="kb" ref={slot} /> : view === "jobs" ? <div key="dg" ref={dgSlot} /> : view === "proposals" ? <div key="pp" ref={propSlot} /> : <>
+          {view === "kanban" ? <div key="kb" ref={slot} /> : view === "jobs" ? <div key="dg" ref={dgSlot} /> : <>
             <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States and lifecycle machines" aria-label="Search tasks, States and lifecycle machines" autoComplete="off" value={query}
               onChange={(e) => { setQuery(e.target.value); spot(null); }}
               onKeyDown={(e) => {

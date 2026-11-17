@@ -54,12 +54,12 @@ branch did not touch may go back through delivery once first; a second failure o
 
 Done when the task waits on the owner, or a redelivery turned the check green.
 
-## 6. Move the task to review
+## 6. Leave the move to review to the task actor
 
-When every check is green, run `starpulse task review PROJ-45 --ref <PR URL> --summary '<outcome>'`. A refusal names
-the rule that failed and the step that satisfies it: do that step, then run the move again.
+When every check is green, end the turn with the task in progress: the task actor moves it to review on the green
+checks, and an agent's move there is refused.
 
-Done when `starpulse task show PROJ-45` shows the task in review with the PR linked.
+Done when `starpulse task show PROJ-45` shows the task in review, moved by the task actor.
 
 ## Keep the loop bounded
 

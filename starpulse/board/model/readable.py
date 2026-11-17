@@ -6,8 +6,6 @@ and a `blast_radius` format whose axis and rollback rules read the headings it n
 backticks. The verdict is the first broken rule with its line in the description, or "" when it reads well.
 """
 
-from __future__ import annotations
-
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -146,8 +144,7 @@ def judged(template: Template, body: str) -> str:
         heading = None if fenced else _HEADING.match(line)
         if heading:
             skipping = heading.group(1) in template.board_written
-        if not skipping:
-            kept.append(line)
+        kept.append("\n" if skipping else line)  # a skipped line stays blank, so a verdict names the line as written
     return "".join(kept).rstrip()
 
 

@@ -18,8 +18,6 @@ signal.
 | Codex | `codex.conversation_starts`, `codex.user_prompt`, `codex.sse_event` (`response.completed`), `codex.tool_decision`, `codex.tool_result`, `codex.skill_invocation`, `codex.turn_cost` (an interrupted turn) |
 """
 
-from __future__ import annotations
-
 import importlib
 import json
 import logging
@@ -42,6 +40,10 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
 __all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "held", "redactor", "signals", "telemetry_log"]
 
 log = logging.getLogger(__name__)
+
+
+class ClaimUnreadable(Exception):
+    """The stored claims could not be read, which is not the same as a session having claimed nothing."""
 
 #: Where Codex runs its main agent; a tool result from any other agent path is a subagent's.
 _MAIN_AGENT = {"", "/root"}
@@ -128,6 +130,11 @@ def _label(text: Any, injected: tuple[str, ...]) -> str:
     return "injected" if opening.startswith(injected) else "human"
 
 
+def _named(text: Any, origins: tuple[tuple[str, tuple[str, ...]], ...]) -> str:
+    opening = str(text or "").lstrip()
+    return next((name for name, prefixes in origins if opening.startswith(prefixes)), "")
+
+
 # A reply asks the operator when its first sentence ends in a question mark.
 _OPENING_QUESTION = re.compile(r"(?:[^.!?\n]|[.!?](?!\s))*\?(?:\s|$)")
 
@@ -156,6 +163,7 @@ def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
             "effort": str(a.get("effort") or ""),
             "origin": origin,
             "agent": str(a.get("agent.name") or (source if origin == "side" else "")),
+            "agent_id": str(a.get("agent_id") or ""),
             "detail": source,
             "seconds": _seconds(a.get("duration_ms")),
             "input": _number(a.get("input_tokens")),
@@ -289,7 +297,7 @@ def signals(
     A Claude Code shell result keeps its command, passed through `redact`; with none, no command is kept."""
     reading = analytics or Analytics()
     found: list[Signal] = []
-    for resource_branch, resource_eval, record in _records(payload, reading.eval_attribute):
+    for resource_branch, resource_eval, entrypoint, record in _records(payload, reading.eval_attribute):
         a = _attributes(record)
         harness, session, read = _identity(a)
         at = _epoch(a.get("event.timestamp"))
@@ -302,15 +310,21 @@ def signals(
         identity = a.get("event.sequence") if harness == CLAUDE_CODE else a.get("call_id")
         key = f"{harness}:{session}:{name}:{identity}:{a.get('event.timestamp')}"
         turn = str(a.get("prompt.id") or "") if harness == CLAUDE_CODE else ""
-        for fields in read(name, a):
-            if fields["kind"] == "tool" and harness == CLAUDE_CODE:
-                fields = {**fields, "command": _stored_command(a, redact)}
-            elif fields["kind"] == "prompt" and harness == CLAUDE_CODE:
+        for parts in read(name, a):
+            if parts["kind"] == "tool" and harness == CLAUDE_CODE:
+                parts = {**parts, "command": _stored_command(a, redact)}
+            elif parts["kind"] == "prompt" and harness == CLAUDE_CODE:
                 origin = _label(a.get("prompt"), reading.injected_openings)
                 intent = (
                     intent_label(reading.labeller, str(a["prompt"])) if reading.labeller and origin == "human" else ""
                 )
-                fields = {**fields, "detail": origin, "label": intent}
+                parts = {
+                    **parts,
+                    "detail": origin
+                    if origin == "injected"
+                    else _named(a.get("prompt"), reading.session_origins) or origin,
+                    "label": intent,
+                }
             found.append(
                 Signal(
                     harness,
@@ -321,7 +335,8 @@ def signals(
                     captured=harness == CLAUDE_CODE,
                     turn=turn,
                     eval=purpose,
-                    **fields,
+                    entrypoint=entrypoint,
+                    **parts,
                 )
             )
         if str(a.get("tool_name")) in SHELLS and (switch := _SWITCH.search(_command(_input(a)[0]))):
@@ -337,15 +352,39 @@ def signals(
                     captured=harness == CLAUDE_CODE,
                     turn=turn,
                     eval=purpose,
+                    entrypoint=entrypoint,
                 )
             )
         if harness == CLAUDE_CODE and name == "tool_result" and (text := _named_text(a)):
             if (task := claimed(text, reading.claims, keys)) is not None:
                 found.append(
-                    Signal(harness, session, "claim", at, claim_key(key), branch, name=task, turn=turn, eval=purpose)
+                    Signal(
+                        harness,
+                        session,
+                        "claim",
+                        at,
+                        claim_key(key),
+                        branch,
+                        name=task,
+                        turn=turn,
+                        eval=purpose,
+                        entrypoint=entrypoint,
+                    )
                 )
             if reading.completion_call and str(a.get("tool_name")) in SHELLS and reading.completion_call.search(text):
-                found.append(Signal(harness, session, "deliver", at, f"{key}:deliver", branch, turn=turn, eval=purpose))
+                found.append(
+                    Signal(
+                        harness,
+                        session,
+                        "deliver",
+                        at,
+                        f"{key}:deliver",
+                        branch,
+                        turn=turn,
+                        eval=purpose,
+                        entrypoint=entrypoint,
+                    )
+                )
     return found
 
 
@@ -367,6 +406,7 @@ _SHARED = frozenset(
         "turn",
         "label",
         "eval",
+        "entrypoint",
     )
 )
 
@@ -390,8 +430,8 @@ def _shared(field: str, value: Any) -> Any:
 
 
 def held(found: Iterable[Signal]) -> list[Signal]:
-    """`found` as `TelemetryLog.read` gives it back once published: the first signal of each key, read from its stored
-    fields, so a replayed record counts once and a shell command that writes a file carries `shell_write`."""
+    """`found` as the table gives it back once stored: the first signal of each key, read from its stored fields, so a
+    replayed record counts once and a shell command that writes a file carries `shell_write`."""
     first: dict[str, Signal] = {}
     for signal in found:
         first.setdefault(signal.key, signal)
@@ -409,8 +449,6 @@ class TelemetryLog:
     (`SignalFolds`), so this holds no signal and no key.
     """
 
-    STREAM = "telemetry:signals"  # the private stream `starpulse backfill-signals` still reads; T4a deletes both
-
     def __init__(self, log: EventLog) -> None:
         self._events = log
 
@@ -423,6 +461,20 @@ class TelemetryLog:
             SignalTable(self._events.engine).insert([asdict(signal) for signal in found])
         except SQLAlchemyError:
             log.warning("signal table unwritable; dropping signals", exc_info=True)
+
+    def last_claim(self, harness: str, session: str) -> tuple[str, float] | None:
+        """The task `session` last claimed in a stored signal and when, or None when it claimed none.
+
+        Raises `ClaimUnreadable` when the table cannot be read, so a failed read is not taken for no claim."""
+        from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415 - the database stack loads when a log opens
+
+        from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable  # noqa: PLC0415
+
+        try:
+            return SignalTable(self._events.engine).last_claim(harness, session)
+        except SQLAlchemyError:
+            log.warning("signal table unreadable; no claim recalled", exc_info=True)
+            raise ClaimUnreadable(session) from None
 
 
 def telemetry_log(log: EventLog) -> TelemetryLog:

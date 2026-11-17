@@ -225,6 +225,8 @@ const HANDLERS: Record<string, Handler> = {
     const { task, to } = JSON.parse(String(init?.body ?? "{}")) as { task?: string; to?: string };
     return server.move(String(task), String(to));
   },
+  "/api/moves": (server, path) => server.moves(decodeURIComponent(path.slice("/api/moves/".length))),
+  "/api/task-records": (server, _path, query) => server.taskRecords((query.get("ids") ?? "").split(",")),
   "/api/task": (server, path) => server.task(decodeURIComponent(path.slice("/api/task/".length))),
   "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
@@ -452,10 +454,7 @@ export class DemoServer {
     const board = this.snapshot.flows.find((f) => f.name === "board");
     const card = board?.agents.find((a) => a.id === task);
     if (!board || !card) return json({ error: `${task} is not on the board` }, 404);
-    const roles = this.snapshot.roles;
-    if (plays(card.state, roles?.proposed) && plays(to, roles?.final)) return this.archive(JSON.stringify({ task }));
     if (!columns(board.machine, card.state).includes(to)) return json({ error: `${task} cannot move from ${card.state} to ${to}` }, 409);
-    if (plays(card.state, roles?.proposed) && plays(to, roles?.ready) && !this.records[task]?.profile) return json({ error: `${task} has no profile, so it cannot be promoted` }, 409);
     const next = structuredClone(this.snapshot);
     next.flows.find((f) => f.name === "board")!.agents.find((a) => a.id === task)!.state = to;
     this.publish(next);
@@ -464,10 +463,26 @@ export class DemoServer {
 
   /** The synthetic full record behind a public demo card; an In Progress card's names a synthetic claiming session, a fragment so the public demo carries no real host. */
   task(id: string): Response {
+    const full = this.fullRecord(id);
+    return full ? json(full) : json({ error: `${id} has no record to read` }, 404);
+  }
+
+  /** The records of the named tasks that have one, in the order named. */
+  taskRecords(ids: string[]): Response {
+    return json({ records: ids.flatMap((id) => this.fullRecord(id) ?? []) });
+  }
+
+  private fullRecord(id: string): { task: string; record: Record<string, unknown> } | null {
     const record = this.records[id];
-    if (!record) return json({ error: `${id} has no record to read` }, 404);
+    if (!record) return null;
     const working = plays(this.snapshot.flows.find((f) => f.name === "board")?.agents.find((a) => a.id === id)?.state, this.snapshot.roles?.working);
-    return json({ task: id, record: { ...record, session: working ? `#demo-session-${id.replace(/\D/g, "").padStart(4, "0")}` : "" } });
+    return { task: id, record: { ...record, session: working ? `#demo-session-${id.replace(/\D/g, "").padStart(4, "0")}` : "" } };
+  }
+
+  /** The verdict on every lane for one board card, as the served `GET /api/moves/<id>` answers; the demo's guards allow every move. */
+  moves(id: string): Response {
+    const card = this.snapshot.flows.find((f) => f.name === "board")?.agents.find((a) => a.id === id);
+    return card ? json({ task: id, moves: card.moves ?? {} }) : json({ error: `${id} is not on the board` }, 404);
   }
 
   /** Apply the same optimistic-lock payload as the served writer, then publish card-sized fields. */
@@ -495,7 +510,7 @@ export class DemoServer {
   /** Rate `task` as the served writer would: the verdict, its reason and a change count land on the snapshot, unless a review fixture makes the writer refuse. */
   rate(raw: string): Response {
     let sent: { task?: unknown; verdict?: unknown; reason?: unknown; actor?: unknown };
-    try { sent = JSON.parse(raw) as typeof sent; } catch { sent = {}; }
+    try { sent = (JSON.parse(raw) as typeof sent | null) ?? {}; } catch { sent = {}; }
     const { task, verdict } = sent;
     if (typeof task !== "string" || (verdict !== "pass" && verdict !== "fail" && verdict !== "cleared")) return json({ error: "invalid rating" }, 400);
     if (!this.snapshot.flows.find((f) => f.name === "board")?.agents.some((a) => a.id === task)) return json({ error: `${task} is not on the board` }, 404);
@@ -562,11 +577,11 @@ export class DemoServer {
     if (method === "PUT") {
       if (this.pilot === "refused") return json({ error: "Autopilot changes are taken only from loopback or a private address; this demo is neither." }, 403);
       let sent: { enabled?: unknown; quietHours?: unknown; harness?: unknown; sessionCap?: unknown; cpuLimit?: unknown; memoryLimit?: unknown } = {};
-      try { sent = JSON.parse(raw) as typeof sent; } catch { /* refused below */ }
+      try { sent = (JSON.parse(raw) as typeof sent | null) ?? {}; } catch { /* refused below */ }
       const usage = 'the scheduler takes {"enabled": true|false}, {"harness": "<name>"}, {"sessionCap": <whole number above zero>|null}, {"cpuLimit": <percent above 0, at most 100>|null}, {"memoryLimit": <percent above 0, at most 100>|null} and/or {"quietHours": {"start", "end", "timezone"}|null}';
-      const window = sent?.quietHours as typeof NIGHT | null | undefined;
+      const window = sent.quietHours as typeof NIGHT | null | undefined;
       const noField = sent.enabled === undefined && window === undefined && sent.harness === undefined && sent.sessionCap === undefined && sent.cpuLimit === undefined && sent.memoryLimit === undefined;
-      if (!sent || noField || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
+      if (noField || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
       if (sent.harness !== undefined && (typeof sent.harness !== "string" || !sent.harness)) return json({ error: usage }, 400);
       const cap = sent.sessionCap;
       if (cap !== undefined && cap !== null && !(typeof cap === "number" && Number.isInteger(cap) && cap > 0)) {

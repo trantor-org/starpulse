@@ -74,7 +74,8 @@ export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   const settled = { ...snap.settled };
   if (delta.settled === null) delete settled[delta.id];
   else settled[delta.id] = delta.settled;
-  return { ...snap, flows, settled, milestone_done: recount(snap.milestone_done, snap.roles?.final, snap.settled[delta.id], delta.settled) };
+  const archived = delta.archived_today == null ? {} : { archived_today: delta.archived_today };
+  return { ...snap, ...archived, flows, settled, milestone_done: recount(snap.milestone_done, snap.roles?.final, snap.settled[delta.id], delta.settled) };
 }
 
 /**

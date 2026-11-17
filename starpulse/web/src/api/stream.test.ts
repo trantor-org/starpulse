@@ -48,6 +48,15 @@ describe("applyDelta", () => {
     expect(back.settled).toEqual({ "PROJ-2": settled("archived") });
   });
 
+  it("advances the count archived today on an archived task delta, and leaves a milestone's completed count", () => {
+    const s = board([], { archived_today: 1, milestone_done: { "m-1": 2 } });
+
+    const next = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: null, archived_today: 2 });
+
+    expect([next.archived_today, next.milestone_done]).toEqual([2, { "m-1": 2 }]);
+    expect(applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: null }).archived_today).toBe(1);
+  });
+
   describe("a milestone's completed count", () => {
     const done = (milestone: string, state = "completed") => ({ ...settled(state), milestone });
     const counted = (s: Snapshot) => s.milestone_done;
@@ -92,7 +101,7 @@ describe("applyDelta", () => {
     expect([next.mergeStrip, next.mergePins, "ledgers" in next]).toEqual([mergeStrip, [pin], false]);
   });
 
-  it("takes Dagu's runs and error without touching the tasks", () => {
+  it("takes Temporal's runs and error without touching the tasks", () => {
     const s = board([agent("PROJ-1", "to_do")]);
     const dags = [{ name: "d" } as Dag];
 
@@ -125,13 +134,13 @@ describe("applyDelta", () => {
   });
 
   it("takes the CPU readings a runs delta carries, and keeps the last ones from a delta that carries none", () => {
-    const reading = { dagu: { share: 0.4, cores: 36 } };
+    const reading = { temporal: { share: 0.4, cores: 36 } };
     const s = board([], { cpu: reading });
 
     const kept = applyDelta(s, { kind: "dags", dags: [], error: null });
-    const replaced = applyDelta(s, { kind: "dags", dags: [], cpu: { dagu: { share: 0.1, cores: 36 } }, error: null });
+    const replaced = applyDelta(s, { kind: "dags", dags: [], cpu: { temporal: { share: 0.1, cores: 36 } }, error: null });
 
-    expect([kept.cpu, replaced.cpu]).toEqual([reading, { dagu: { share: 0.1, cores: 36 } }]);
+    expect([kept.cpu, replaced.cpu]).toEqual([reading, { temporal: { share: 0.1, cores: 36 } }]);
   });
 
   it("keeps the identity of every DAG and pin a delta leaves as it was, so only the entry it changes is new", () => {

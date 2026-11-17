@@ -6,8 +6,6 @@ gives the feed its write routes, and `run` is a `starpulse` verb called in-proce
 process.
 """
 
-from __future__ import annotations
-
 import contextlib
 import io
 import re
@@ -23,7 +21,7 @@ from pathlib import Path
 from starpulse.cli import agent_cli
 from starpulse.runtime.config import load
 from starpulse.runtime.store_migrate import maintain
-from starpulse.board.adapters.upstream_backlog import _live
+from starpulse.board.adapters.native_scan import _live
 from starpulse.event_log.event_log import EventLog
 from starpulse.runtime.adapter_kit import assembled, serve, url
 

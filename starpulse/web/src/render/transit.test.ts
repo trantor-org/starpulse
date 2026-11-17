@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import capture from "./fixtures/events-snapshot.json";
+// /api/snapshot from the live board on 2026-11-14, trimmed to its In Progress tasks, their titles replaced by their ids
+import liveCapture from "./fixtures/live-snapshot.json";
 import type { Snapshot } from "../api";
 import type { Galaxy, Pt, Scene } from "./scene";
 import type { Drawing, Hover } from "./draw";
@@ -25,15 +27,20 @@ function board(snap: Snapshot, { scale = 100, secs = 3, from = 0, W = 1920, H = 
 const run = (scene: Scene, from: number, secs: number) => {
   for (let t = from; t <= from + secs; t += 1 / 60) T.placeBranches(scene, t);
 };
-const live = () => structuredClone(capture) as unknown as Snapshot;
+// the capture's In Progress rows are cleared, so its tasks ride the newest phase machine they hold (build), the premise of the tests below that force their own deliver steps
+const live = () => {
+  const snap = structuredClone(capture) as unknown as Snapshot;
+  for (const f of snap.flows) if (f.name === "in-progress") f.agents = [];
+  return snap;
+};
 /** The preview's `?mock=1&extra=8&sim=3` at `scale`% on a `W`-wide canvas: phase tasks on build, deliver and review_fix, and the pair walked from Deliver into the
  *  CI it opens, which branches off Deliver's station. */
-function mock(scale = 100, W = 1920, H = 1080): Scene {
+function mock(scale = 100, W = 1920, H = 1080, snap: Snapshot = live()): Scene {
   vi.stubGlobal("location", { search: "?mock=1&extra=8&sim=3" });
   const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-  board(live(), { scale, W, H });
+  board(snap, { scale, W, H });
   clock.mockReturnValue(60_000);
-  return board(live(), { scale, W, H, from: 3, secs: 6 });
+  return board(snap, { scale, W, H, from: 3, secs: 6 });
 }
 /** The share of phase branch `l`'s line, from the hub, out to its station `s`. */
 // a sub-machine's points leave out the parent station it forks from, so it passes that station as `fork`
@@ -43,6 +50,15 @@ const upTo = (l: ReturnType<typeof T.branchLines>[number], s: number, fork?: (ty
 };
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
 const stationsOf = (l: ReturnType<typeof T.branchLines>[number]) => l.pts.filter((p) => new RegExp(`^${l.key.replace(/[|]/g, "\\|")}:\\d+$`).test(p.k));
+/** What drawBranches prints over `scene` with `hover` under the pointer at `at`, each as [text, x, y, height, colour, align]. */
+function printedBy(scene: Scene, hover: Hover | null = null, at: Pt | null = null) {
+  const text = vi.fn(), noop = () => {};
+  const cx = new Proxy({}, { get: (_, p) => (p === "createRadialGradient" ? () => ({ addColorStop: noop }) : noop), set: () => true }) as unknown as CanvasRenderingContext2D;
+  const d = { circle: noop, dot: noop, text, labPx: (n: number) => n } as unknown as Drawing;
+  T.drawBranches({ cx, K: 1, ZS: 1, clock: 0, scale: 100, hover } as never, d, scene, at);
+  return text.mock.calls as [string, number, number, number, string, CanvasTextAlign][];
+}
+const nameOf = (l: ReturnType<typeof T.branchLines>[number]) => (l.skill ?? l.key.split("|").at(-1)!).replace(/_/g, " ");
 
 // each case steps hundreds of 60 fps frames of a 700-task scene, CPU-bound: 2-9 s alone, so a CI runner at its share of the host overruns the 15 s default
 describe("placeBranches", { timeout: 60_000 }, () => {
@@ -63,6 +79,16 @@ describe("placeBranches", { timeout: 60_000 }, () => {
         const gap = Math.min(...a.pts.flatMap((p) => b.pts.map((q) => dist(p, q))));
         expect(gap, `${a.key} ~ ${b.key}`).toBeGreaterThan(8);
       }
+  });
+
+  it("labels each phase branch, a side branch too, with the skill its submachine link declares, as the kanban card does", () => {
+    const snap = live();
+    for (const f of snap.flows) for (const l of f.machine.submachines ?? []) l.skill = "skill-" + l.machine;
+    mock(100, 1920, 1080, snap);
+    const lines = T.branchLines();
+    expect(lines.some((l) => l.ring === 1)).toBe(true);
+    expect(lines.some((l) => l.ring === 2)).toBe(true);
+    for (const l of lines) expect(l.skill).toBe("skill-" + l.key.split("|").at(-1));
   });
 
   it("grows no branch into the room of a line still drawn while it leaves the sky", () => {
@@ -322,35 +348,31 @@ describe("placeBranches", { timeout: 60_000 }, () => {
     expect([...bad]).toEqual([]);
   });
 
-  it("prints a branch's machine name and its riders' steps only while the pointer is on it or on a dot riding it, never one name over another", () => {
-    const scene = mock(), text = vi.fn(), noop = () => {};
-    const cx = new Proxy({}, { get: (_, p) => (p === "createRadialGradient" ? () => ({ addColorStop: noop }) : noop), set: () => true }) as unknown as CanvasRenderingContext2D;
-    const d = { circle: noop, dot: noop, text, labPx: (n: number) => n } as unknown as Drawing;
-    const dc = (hover: Hover | null) => ({ cx, K: 1, ZS: 1, clock: 0, scale: 100, hover });
-    const printed = () => text.mock.calls.map((c) => c[0] as string);
-    T.drawBranches(dc(null), d, scene, null);
-    expect(printed()).toEqual([]);
+  it("prints every grown branch's skill name and its riders' steps with no pointer, an empty station's name only under the pointer, and none on a retracting branch", () => {
+    const scene = mock(), printed = (hover: Hover | null = null, at: Pt | null = null) => printedBy(scene, hover, at).map((c) => c[0]);
     const sub = T.branchLines().find((l) => l.ring === 2)!, [, phase, machine] = sub.key.split("|"), k = scene.tasks.find((t) => t.h?.machine === machine)!;
-    T.drawBranches(dc({ kind: "task", o: k }), d, scene, null);
+    const ridden = new Set(scene.tasks.filter((t) => t.h?.machine === machine).map((t) => t.h!.j)), empty = k.h!.steps.findIndex((_, s) => !ridden.has(s));
     expect(printed()).toEqual(expect.arrayContaining([phase, machine, k.h!.steps[k.h!.j].replace(/_/g, " ")]));
-    const boxes = text.mock.calls.map((c) => {
-      const [s, x, y, h, , align] = c as [string, number, number, number, string, CanvasTextAlign], w = (sc.textW(s, 9) * h) / 9, x0 = align === "left" ? x : align === "right" ? x - w : x - w / 2;
-      return { s, x0, x1: x0 + w, y0: y - h / 2, y1: y + h / 2 };
-    });
-    for (const a of boxes) for (const b of boxes) if (a !== b) expect(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1, `${a.s} on ${b.s}`).toBe(false);
-    text.mockClear();
-    T.drawBranches(dc(null), d, scene, stationsOf(sub)[0]);
-    expect(printed()).toContain(machine);
-    // once no task is on it the branch retracts, and the pointer still on its line prints nothing
+    expect(printed()).not.toContain(k.h!.steps[empty].replace(/_/g, " "));
+    expect(printed({ kind: "task", o: k })).toContain(k.h!.steps[empty].replace(/_/g, " "));
+    expect(printed(null, stationsOf(sub)[0])).toContain(k.h!.steps[empty].replace(/_/g, " "));
+    // once no task is on it the branch retracts, and it drops its names with its line
     for (const t of scene.tasks) if (t.h?.machine === machine) t.h = undefined;
     const ext = () => T.branchLines(0).find((l) => l.key === sub.key)?.ext ?? 0;
     for (let t = 9.1; t < 14 && ext() === sub.ext; t += 1 / 60) T.placeBranches(scene, t);
     expect(ext()).toBeGreaterThan(0);
     expect(ext()).toBeLessThan(sub.ext);
-    text.mockClear();
-    T.drawBranches(dc(null), d, scene, stationsOf(sub)[0]);
-    T.drawBranches(dc({ kind: "task", o: k }), d, scene, null);
-    expect(printed()).toEqual([]);
+    expect(printed(null, stationsOf(sub)[0])).not.toContain(machine);
+    expect(printed({ kind: "task", o: k })).not.toContain(machine);
+  });
+
+  it.each([100, 125, 150])("prints, over the live capture at the Board level at text size %i, every branch a task rides labelled with its skill name and its riders' steps, with no pointer", (scale) => {
+    const scene = board(structuredClone(liveCapture) as unknown as Snapshot, { scale, secs: 6 }), lines = T.branchLines(), said = new Set(printedBy(scene).map((c) => c[0]));
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.map(nameOf).filter((s) => !said.has(s))).toEqual([]);
+    const riding = scene.tasks.filter((t) => t.h && lines.some((l) => l.key === `${(t.host as Galaxy).id}|${t.h!.machine}`));
+    expect(riding.length).toBeGreaterThan(0);
+    expect(riding.map((t) => t.h!.steps[t.h!.j].replace(/_/g, " ")).filter((s) => !said.has(s))).toEqual([]);
   });
 
   it("traces a dot on a sub-machine back along the line it rode: hub, its phase's stations, then the sub-machine's", () => {
@@ -519,7 +541,7 @@ describe("placeBranches", { timeout: 60_000 }, () => {
   it("keeps every branch clear of the orbiter of whichever DAG has its turn", async () => {
     const scene = mock(), D = await import("./dagTies"), orb = 7 / fitLevel(scene, 1920, 1080).k;
     // one orbiter per state, just off its ring where a hangar's DAG docks
-    const orbs = Object.entries(scene.galaxies).map(([id, g]) => ({ dag: `dagu/${id}`, x: g.x + g.R * 1.3, y: g.y - g.R * 1.3 }));
+    const orbs = Object.entries(scene.galaxies).map(([id, g]) => ({ dag: `temporal/${id}`, x: g.x + g.R * 1.3, y: g.y - g.R * 1.3 }));
     scene.hangars = orbs.map((o) => ({ of: `hangar:${o.dag}`, x0: o.x - orb, y0: o.y - orb, x1: o.x + orb, y1: o.y + orb }));
     run(scene, 10, 6);
     const pts = T.branchLines().flatMap((l) => l.pts), dags = orbs.map((o) => o.dag);

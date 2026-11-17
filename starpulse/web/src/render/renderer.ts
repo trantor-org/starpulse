@@ -584,13 +584,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       ...(dagData && kanbanTasks ? { dagData: dagData(sky), cards: kanbanTasks(sky) } : {}),
       pools: sky.pools,
       milestoneDone: sky.milestoneDone,
+      doneCount: sky.roles.done ? stateCount(sky, sky.roles.done) : 0,
       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
       types: Object.fromEntries(board.machine.states.map((s) => [s.id, s.role ?? null])),
       roles: sky.roles,
       claims: sky.claims,
       boardUrl: sky.boardUrl,
       capabilities: sky.capabilities,
-      hint: sky.hint,
       // the note beside the dot names the time of the Board drawn, so a Board drawn after the link changed (the kept one, drawn after the server was found down) is dated
       ...(link === "live" ? {} : linkHud(link, lastAt, updating)),
     };

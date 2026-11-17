@@ -57,3 +57,56 @@ describe("a stream event that changes no card the board shows", () => {
     expect(host.querySelector('#cols .card[data-id="TASK-1"]')?.textContent).toContain("renamed");
   });
 });
+
+describe("a working card's footer claim chip", () => {
+  const MIN = 60;
+  const t0 = new Date("2026-11-16T10:00:00Z").getTime() / 1000;
+  const working = (assignee: string, extra: Partial<KanbanTask> = {}): KanbanTask => ({ ...card("TASK-9"), lane: "in_progress", assignee, ...extra });
+  const shown = (t: KanbanTask) => show({ ...hud, cards: [t] });
+  const chip = () => host.querySelector<HTMLElement>(".card[data-id=TASK-9] .who")!;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(t0 * 1000);
+    // the board read its clock when the outer setup drew it, so this block's board starts on the fixed clock
+    act(() => root.unmount());
+    root = createRoot(host);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("shows the time left only in the claim's last 10 minutes", () => {
+    shown(working("@agent-a", { claimExpiresAt: t0 + 11 * MIN }));
+    expect(chip().textContent).toBe("a");
+
+    shown(working("@agent-a", { claimExpiresAt: t0 + 9 * MIN }));
+    expect(chip().textContent).toBe("a· 9m left");
+  });
+
+  it("puts a red idle time in that spot once the claim expires, counting up live", () => {
+    shown(working("@agent-a", { claimExpiresAt: t0 - 2 * MIN }));
+    expect(chip().className).toBe("who idle");
+    expect(chip().textContent).toBe("a· idle 2m");
+
+    act(() => void vi.advanceTimersByTime(3 * MIN * 1000));
+    expect(chip().textContent).toBe("a· idle 5m");
+  });
+
+  it("counts a swept claim's idle time from its expiry, the session struck", () => {
+    shown(working("", { release: { at: t0 - 30 * MIN, last_renewal: t0 - 45 * MIN, session: "@agent-deep", ttl: 10 * MIN } }));
+
+    expect(chip().className).toBe("who idle");
+    expect(chip().querySelector("s")!.textContent).toBe("deep");
+    expect(chip().textContent).toBe("deep· idle 35m");
+  });
+
+  it("clears the idle time when a returning session renews the claim, until 10 minutes are left again", () => {
+    shown(working("", { release: { at: t0 - 5 * MIN, last_renewal: t0 - 15 * MIN, session: "@agent-a", ttl: 10 * MIN } }));
+    expect(chip().textContent).toBe("a· idle 5m");
+
+    shown(working("@agent-b", { claimExpiresAt: t0 + 30 * MIN, release: null }));
+    expect(chip().textContent).toBe("b");
+
+    act(() => void vi.advanceTimersByTime(21 * MIN * 1000));
+    expect(chip().textContent).toBe("b· 9m left");
+  });
+});

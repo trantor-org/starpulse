@@ -1,19 +1,18 @@
 """Park a task for a typed reason and move it to Review with the evidence it ships."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from starpulse.board.board_feed import BoardFeed
-from starpulse.board.model.markdown import section_set
+from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.model.markdown import section_drop, section_set
 from starpulse.board.model.seam import (
     TaskEditor,
     TaskReader,
 )
+from starpulse.bridge.last_event import readable
 from starpulse.contracts.api.dto.requests import (
     ParkRequest,
     ReviewRequest,
@@ -23,6 +22,7 @@ from starpulse.views.application.commands.guard import (
     EDIT_LOCK,
     Who,
     held_task,
+    holder_refusal,
     not_held,
     record_written,
     who_of,
@@ -134,30 +134,38 @@ def _open_criterion(feed: BoardFeed, need: str) -> None:
         )
 
 
-def _wait_on_criteria(feed: BoardFeed, task: str, current: dict[str, Any], found: Any) -> dict[str, Any]:
-    """The edit that makes the task wait for the start criteria `found`, which replace those it has.
+def _wait_on_events(feed: BoardFeed, task: str, current: dict[str, Any], found: Any) -> dict[str, Any]:
+    """The edit that makes the task wait for the first of the event subjects `found`, which replace those it waits on.
 
-    Only the shape is judged here: what a criterion observes is for the client that evaluates it.
+    A subject is `starpulse.<board>.alert.<rule>.<event>` or `starpulse.<board>.deploy.<component>.<event>`: the two whose
+    latest event the log answers, so a wait already met releases at once.
     """
-    if not (
-        isinstance(found, list)
-        and found
-        and all(isinstance(item, dict) and all(_nonblank(item.get(key)) for key in ("id", "kind")) for item in found)
-        and len({item["id"] for item in found}) == len(found)
-    ):
+    if not (isinstance(found, list) and found and all(isinstance(item, str) and readable(item) for item in found)):
         raise _RefusalError(
-            400, {"error": 'until needs a non-empty list of criteria, each with a unique "id" and a "kind"'}
+            400,
+            {
+                "error": "until needs a non-empty list of event subjects an alert or a deploy emits, as in "
+                "`--until starpulse.trantor.deploy.web.applied`; to wait on a task use `--until-task TASK-N`, "
+                "and use `--operator` only for a question the operator must answer"
+            },
         )
     if open_ := [name for name in current["dependencies"] if not feed.is_done(name)]:
         raise _RefusalError(
             409,
             {"error": f"{task} already waits on {', '.join(open_)}; a task is gated by one reason, never both"},
         )
-    block = "```yaml\n" + yaml.safe_dump({"start_criteria": found}, sort_keys=False) + "```"
+    entries = [{"id": each, "kind": "event", "query": each} for each in dict.fromkeys(found)]
+    block = "```yaml\n" + yaml.safe_dump({"start_criteria": entries}, sort_keys=False) + "```"
     return {
         "description": section_set(current["description"], "Start Criteria", block),
         **({"dependencies": []} if current["dependencies"] else {}),  # Done dependencies gate nothing
     }
+
+
+def _without_question(current: dict[str, Any]) -> dict[str, Any]:
+    """The edit that drops a Needs attention task's question when the task parks on the task that makes it moot."""
+    dropped = section_drop(current["description"], "Needs attention")
+    return {"description": dropped} if dropped != current["description"].strip() else {}
 
 
 def _wait_on_operator(current: dict[str, Any], reason: Any) -> dict[str, Any]:
@@ -172,8 +180,8 @@ def _nonblank(value: Any) -> bool:
 
 
 _BAD_PARK = {
-    "error": 'a park needs exactly one reason: "untilTask" (task ids that must reach Done), "until" (criteria, each an '
-    'object with an "id" and a "kind") or "operator" (text)'
+    "error": 'a park needs exactly one reason: "untilTask" (task ids that must reach Done), "until" (event subjects, '
+    'one of which releases the task) or "operator" (text)'
 }
 _PARK_REASONS = ("untilTask", "until", "operator")
 
@@ -201,17 +209,20 @@ def park_task(
         return 404, {"error": "this board does not edit tasks"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
-    if agent["state"] != feed.roles.working:
-        return 409, {"error": f"only an In Progress task can be parked: {task} is {agent['state']}"}
     reason = reasons[0]
+    parkable = (feed.roles.working, feed.roles.attention) if reason == "untilTask" else (feed.roles.working,)
+    if agent["state"] not in parkable:
+        return 409, {
+            "error": f"only an In Progress task can be parked (a Needs attention one only on a task): {task} is {agent['state']}"
+        }
     column, value = _park_lane(feed, reason), getattr(request, reason)
     if column is None:
         return 409, {"error": f"this board's machine has no lane to park {task} in for {reason}"}
     if (refused := move_refusal(agent, task, column, who)) is not None:
         return refused
     plans = {
-        "untilTask": lambda current: _wait_on_tasks(feed, task, current, value),
-        "until": lambda current: _wait_on_criteria(feed, task, current, value),
+        "untilTask": lambda current: _wait_on_tasks(feed, task, current, value) | _without_question(current),
+        "until": lambda current: _wait_on_events(feed, task, current, value),
         "operator": lambda current: _wait_on_operator(current, value),
     }
     return _lifecycle_edit(feed, task, column, who, comment, read, edit, plans[reason])
@@ -241,7 +252,7 @@ def review_task(
     review = feed.roles.review
     if review is None:
         return 409, {"error": f"this board's machine has no lane to move {task} to for review"}
-    if (refused := move_refusal(agent, task, review, who)) is not None:
+    if (refused := move_refusal(agent, task, review, who) or holder_refusal(feed, agent, task, who)) is not None:
         return refused
 
     def plan(current: dict[str, Any]) -> dict[str, Any]:

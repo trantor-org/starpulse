@@ -1,31 +1,32 @@
-"""`starpulse worker board`: the Board context's writer (the thread that dates when each Waiting task's Start Criteria
-were met) as its own process, beside `serve`.
+"""`starpulse worker board`: the Board context's writer (the lane dating and the claim sweep) as its own process, beside
+`serve`.
 
 `board-release` is not here: the release of dependents runs in the Delivery worker (`starpulse worker pulls`).
 
-It reads the config and the database `serve` does and meets `serve` only in the history there: this worker writes when
-each task's criteria were met (`HistoryStore.save_criteria_met`), and `serve` rereads it on a timer
-(`BoardFeed.follow_criteria`). The writer is resumable by construction: the dates are read back from the history at
-start, so a task whose criteria stay met keeps the moment it was first seen so, and it waits for the Board to be read
-before it evaluates, so a replay in progress forgets no date. `SIGTERM` stops it; `SIGHUP` re-reads the config and, as
+It reads the config and the database `serve` does and meets `serve` only in the history there: this worker writes each
+claim expiry (`HistoryStore.save_claim_expiries`), and `serve` rereads it on each push (`BoardFeed.follow_dates`).
+`SIGTERM` stops it; `SIGHUP` re-reads the config and, as
 the board and the writer are built once, only says whether a restart is needed.
 """
-
-from __future__ import annotations
 
 import argparse
 import logging
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
-from starpulse.board.board_feed import BoardFeed, CriteriaStore, ExpiriesStore, LaneRecorder
-from starpulse.board.criteria import Evaluator
+from starpulse.board.model.board_feed import BoardFeed, ExpiriesStore, LaneRecorder
+from starpulse.board.model.board_feed import follow as follow_stream
+from starpulse.board.model.feed.held import HeldSnapshot
+from starpulse.board.model.feed.shared import PushedDates
+from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM, ClaimRefusals
+from starpulse.board.application.queries.machine_tasks import MachineDeltas
+from starpulse.board.application.queries.verdicts import Verdicts
 from starpulse.board.model.seam import Board
-from starpulse.event_log.event_log import Entry, EventLog, Tail
-from starpulse.event_log.events import STREAM as MACHINE_STREAM
+from starpulse.event_log import verdict_events
+from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.projector import Projector
@@ -36,10 +37,20 @@ from starpulse.event_log.wake import StopEvent
 logger = logging.getLogger(__name__)
 
 
-class WriterStore(LaneRecorder, CriteriaStore, ExpiriesStore, Protocol):
-    """What the criteria thread keeps its dating in (`HistoryStore`)."""
+class WriterStore(LaneRecorder, ExpiriesStore, Protocol):
+    """What the writer keeps its dating in (`HistoryStore`)."""
 
     def lane_path(self, task: str) -> list[dict]: ...
+
+
+class Followers(NamedTuple):
+    """What the producers above the Board announce to the feed, each a start `(feed, log, stop)` that `runtime` passes in as
+    no context imports the others: the pull request projection, the runs projection with each opt-in worker's liveness,
+    and the scheduler's status."""
+
+    pulls: Callable[[BoardFeed, EventLog, StopEvent], object]
+    runs: Callable[[BoardFeed, EventLog, StopEvent], object]
+    scheduler: Callable[[BoardFeed, EventLog, StopEvent], object]
 
 
 def reload(path: Path, config: BoardConfig, load: Callable[[Path | None], BoardConfig]) -> None:
@@ -55,68 +66,12 @@ def reload(path: Path, config: BoardConfig, load: Callable[[Path | None], BoardC
         logger.info("reload: no Board setting changed")
 
 
-def start_writers(
-    feed: BoardFeed,
-    store: WriterStore,
-    evaluate: Callable[[str, str], list[dict]] | None,
-    stop: StopEvent,
-    live: bool = True,
-    log: EventLog | None = None,
-) -> threading.Thread:
-    """Start the criteria thread, which runs until `stop` is set; it waits for `feed` to have read the Board. A `live`
-    feed also records each lane a task enters as it places it; the Board child places none live, as `serve` records the
-    ones its writes make. `log` carries each lane change's actor to the `board:lanes`
-    entry."""
+def start_writers(feed: BoardFeed, store: WriterStore, live: bool = True, log: EventLog | None = None) -> None:
+    """Date each task's lanes from the history. A `live` feed also records each lane a task enters as it places it; the
+    Board child places none live, as `serve` records the ones its writes make. `log` carries each lane change's actor
+    to the `board:lanes` entry."""
     feed.date_lanes(store.lane_path)
     feed.record_lanes(store, log, live=live)
-    feed.track_criteria(evaluate, store)
-
-    def keep() -> None:
-        feed.ready.wait()
-        feed.keep_criteria(stop)
-
-    criteria = threading.Thread(target=keep, name="board-criteria", daemon=True)
-    criteria.start()
-    return criteria
-
-
-#: The runs adapter's stream (`runs.run_events.STREAM`), named here because the Board imports no other context.
-RUNS_STREAM = "runs:events"
-ENDED = frozenset({"succeeded", "failed", "aborted", "skipped"})
-PULL_REQUEST_MACHINE = "github-pull-request"
-
-
-def criteria_topic(entry: Entry) -> str | None:
-    """The topic a criterion's `refresh.on` names that `entry` announces: `run:<dag>` for a run that ended, `merge` for a
-    merged pull request, else None."""
-    fields = entry.fields
-    if entry.stream == RUNS_STREAM:
-        ended = "step" not in fields and fields.get("status") in ENDED
-        return f"run:{fields.get('workflow')}" if ended else None
-    merged = fields.get("machine") == PULL_REQUEST_MACHINE and fields.get("event") == "PR_MERGED"
-    return "merge" if entry.stream == MACHINE_STREAM and merged else None
-
-
-def follow_criteria_events(
-    feed: BoardFeed,
-    evaluate: Callable[[str, str], list[dict]] | None,
-    log: EventLog,
-    stop: StopEvent,
-) -> threading.Thread | None:
-    """Evaluate the Start Criteria again within seconds of the event they await, so they poll only as a net. Each run
-    that ends or pull request that merges after this call invalidates the results that name it and wakes `feed`'s
-    criteria pass. None when `evaluate` keeps no hints to invalidate."""
-    if not isinstance(evaluate, Evaluator):
-        return None
-
-    def handle(entry: Entry) -> None:
-        if (topic := criteria_topic(entry)) and evaluate.invalidate(topic):
-            feed.evaluate_criteria()
-
-    tail = Tail.live(log, RUNS_STREAM, streams=[RUNS_STREAM, MACHINE_STREAM])
-    thread = threading.Thread(target=tail.run, args=(handle, stop), name="board-criteria-events", daemon=True)
-    thread.start()
-    return thread
 
 
 def start(
@@ -130,22 +85,37 @@ def start(
     assemble: Callable[..., tuple[Board, BoardFeed]],
     history_store: Callable[[BoardConfig, Path, Mapping[str, dict]], WriterStore],
     follow: Callable[..., object],
+    followers: Followers,
     ready: Callable[[Board, BoardFeed], None] | None = None,
 ) -> Callable[[], None]:
-    """Start the Board writer's threads over `log`, each ending when `stop` is set, and return its reload. The read
-    model's fold starts last; `ready` is then told the board and feed it folds, which another context in the process
+    """Start the Board writer's threads over `log`, each ending when `stop` is set, and return its reload. Its feed hears
+    every change the snapshot draws: the read model's folds, the machine rows, the dates, the claim refusals, the verdicts,
+    and what `followers` start. The read model's fold starts last; `ready` is then told the board and feed it folds, which another context in the process
     may share. Raises `ValueError` as `assemble` does."""
     model = ReadModel(log.engine, declared_fields(config.board))
     board, feed = assemble(config, base, None, [], model)
-    store = history_store(config, base, feed.machines)
+    store = PushedDates(history_store(config, base, feed.machines), log)  # a save also pushes the date to `serve`
     feed.ready.set()
-    start_writers(feed, store, board.evaluate, stop, live=False, log=log)
-    follow_criteria_events(feed, board.evaluate, log, stop)
+    start_writers(feed, store, live=False, log=log)
     if board.attach is not None:
         board.attach(log)  # the sweep's releases append the History events the read model folds
     if board.sweep is not None:
         board.sweep(feed, log, store.save_claim_expiries)
-    follow(Projector(log.engine, EventStore(log.engine), log=log, drawn=feed.machines, keys=board.keys), feed, stop, log)
+    if board.hold is not None:
+        board.hold(stop)
+    threading.Thread(target=HeldSnapshot(feed).run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
+    MachineDeltas(feed, model).follow(stop, log)  # a context sharing this feed hears each machine row as a `move`
+    follow(
+        Projector(log.engine, EventStore(log.engine), log=log, drawn=feed.machines, keys=board.keys), feed, stop, log
+    )
+    feed.follow_dates(log, store, stop)  # the start criteria dates and claim expiries
+    refusals = ClaimRefusals(feed)
+    follow_stream(refusals, log, CLAIMS_STREAM, refusals.handle_entry, stop=stop)  # the claim refusals
+    verdicts = Verdicts(feed)
+    follow_stream(verdicts, log, verdict_events.STREAM, verdicts.handle_entry, stop=stop)  # the verdicts
+    followers.pulls(feed, log, stop)  # the pull requests, which the ledgers draw
+    followers.runs(feed, log, stop)  # the runs, the ledgers and each opt-in worker's liveness
+    followers.scheduler(feed, log, stop)  # the scheduler status
     if ready is not None:
         ready(board, feed)
     return lambda: reload(path, config, load)
@@ -160,10 +130,11 @@ def main(
     assemble: Callable[..., tuple[Board, BoardFeed]],
     history_store: Callable[[BoardConfig, Path, Mapping[str, dict]], WriterStore],
     follow: Callable[..., object],
+    followers: Callable[[argparse.ArgumentParser, BoardConfig], Followers],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
     """Run the Board writer; `runtime` passes the collaborators it builds (`assemble`, `history_store`, the read model's
-    `follow` and `hold`), as no context imports it."""
+    `follow`, `followers` and `hold`), as no context imports it."""
     args = parser.parse_args(argv)
     path = discover(args.config)
     try:
@@ -175,8 +146,9 @@ def main(
     stop = StopEvent()
     try:
         reload_config = start(
-            config, path, base, log, stop, load=load, assemble=assemble, history_store=history_store, follow=follow
-        )
+            config, path, base, log, stop, load=load, assemble=assemble, history_store=history_store, follow=follow,
+            followers=followers(parser, config),
+        )  # fmt: skip
     except ValueError as exc:
         stop.set()  # `worker_board` may have started its read model follower before the start refused
         parser.exit(1, f"{exc}\n")

@@ -1,6 +1,6 @@
 ---
 name: operating-starpulse-board
-description: Operates a task board that runs on StarPulse through the starpulse CLI, never by editing task files or calling its HTTP API. Use when a project's board runs on StarPulse and the work is picking what to work on next, finding why a task (PROJ-45, TASK-12) cannot move to a column, moving a task to review, done or another column, or checking what a task waits on.
+description: Operates a task board that runs on StarPulse through the starpulse CLI, never by editing task files or calling its HTTP API. Use when a project's board runs on StarPulse and the work is picking what to work on next, finding why a task (PROJ-45) cannot move to a column, moving a task to a column, or checking what a task waits on.
 ---
 
 # Operating the StarPulse Board
@@ -35,7 +35,8 @@ Done when you can state, for the column asked about, the reason and the one thin
 ## Move a task
 
 1. Run `starpulse task moves PROJ-45` and confirm the target column is `allowed`.
-2. Run `starpulse task move PROJ-45 review`, with the column's state id as `task moves` lists it.
+2. Run `starpulse task move PROJ-45 <state>`, with the column's state id as `task moves` lists it. A column only
+   an automated actor writes, such as review on a board whose task actor moves a delivered PR there, refuses you.
 3. Read the result: `ok: true` is the move made. `ok: false` with exit 1 is the guard's refusal with its `reason`
    and `skill`; do the skill's step, then move again, and do not retry unchanged. Exit 3 means the board has no
    writer or no server answers; exit 4 means the task is not on the board.

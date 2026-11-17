@@ -1,17 +1,15 @@
 """The event store's envelope, its append and its read."""
 
-from __future__ import annotations
-
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from sqlalchemy import Connection, Engine, func, insert, select, update
+from sqlalchemy import Connection, Engine, func, insert, select
 from sqlalchemy.exc import IntegrityError
 
-from starpulse.event_log.store.tables import outbox, stream_events
+from starpulse.event_log.store.tables import stream_events
 
 
 class StaleVersion(Exception):
@@ -86,9 +84,9 @@ class EventStore:
         at: float | None = None,
         connection: Connection | None = None,
     ) -> list[StoredEvent]:
-        """Write `events` as the versions after `expected_version`, the head the caller read (0 for a new stream), with
-        an outbox row each in the same transaction. Raises `StaleVersion` when the head has moved. With `connection`,
-        the write joins the caller's transaction, so appends to several streams commit or roll back together."""
+        """Write `events` as the versions after `expected_version`, the head the caller read (0 for a new stream).
+        Raises `StaleVersion` when the head has moved. With `connection`, the write joins the caller's transaction, so
+        appends to several streams commit or roll back together."""
         at = time.time() if at is None else at
         rows = [
             {
@@ -125,7 +123,6 @@ class EventStore:
         if head != expected_version:
             raise StaleVersion(f"{subject_kind} {subject_id} is at version {head}, not {expected_version}")
         db.execute(insert(stream_events), rows)
-        db.execute(insert(outbox), [{"event_id": row["event_id"]} for row in rows])
         ids = select(stream_events.c.event_id, stream_events.c.id).where(
             stream_events.c.event_id.in_([row["event_id"] for row in rows])
         )
@@ -160,27 +157,6 @@ class EventStore:
         """The stream's newest version, 0 when it has none."""
         with self._engine.connect() as db:
             return self._head(db, subject_kind, subject_id)
-
-    def outbox_pending(self, limit: int = 100) -> list[StoredEvent]:
-        """The oldest Events the stream has not acknowledged."""
-        query = (
-            select(stream_events)
-            .join(outbox, outbox.c.event_id == stream_events.c.event_id)
-            .where(outbox.c.sent_at.is_(None))
-            .order_by(stream_events.c.id)
-            .limit(limit)
-        )
-        with self._engine.connect() as db:
-            return [self._upcasters.apply(_stored(row)) for row in db.execute(query).mappings()]
-
-    def mark_sent(self, event_ids: Sequence[str]) -> None:
-        """Record that the stream acknowledged `event_ids`; one already marked keeps its first time."""
-        with self._engine.begin() as db:
-            db.execute(
-                update(outbox)
-                .where(outbox.c.event_id.in_(event_ids), outbox.c.sent_at.is_(None))
-                .values(sent_at=time.time())
-            )
 
     @staticmethod
     def _head(db: Connection, subject_kind: str, subject_id: str) -> int:

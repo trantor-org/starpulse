@@ -1,7 +1,5 @@
 """Where a lifecycle's points are, read from the roles a machine declares and never from a State's name."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -13,8 +11,8 @@ if TYPE_CHECKING:
 
 __all__ = ["StateRoles"]
 
-#: The fact kind each point of the task lifecycle waits on: Start Criteria not yet met, met, and a pull request's end.
-_UNMET, _MET = "criteria_unmet", "criteria_met"
+#: The fact kind each point of the task lifecycle waits on: the first State to wait on dependencies, and Start Criteria met.
+_UNMET, _MET = "deps_unresolved", "criteria_met"
 #: The facts a pull request's end can be: every cited one ended, or also at least one merged, with or without a Verify plan.
 _PULL_REQUEST = ("pr_terminal", "pr_merged", "pr_merged_planned")
 
@@ -47,11 +45,13 @@ class StateRoles:
     def of_drawn(cls, machine: Mapping[str, Any]) -> StateRoles:
         """The roles of a drawn machine, which marks only its initial and final States."""
         states = machine["states"]
-        return cls({s["id"]: "initial" if s.get("initial") else "final" if s.get("final") else None for s in states}, {})
+        return cls(
+            {s["id"]: "initial" if s.get("initial") else "final" if s.get("final") else None for s in states}, {}
+        )
 
     def wire(self) -> dict[str, str | list[str] | None]:
         """The roles as the snapshot sends them, for a client that holds no machine to read them from."""
-        points = ("initial", "final", "done", "working", "ready", "waiting", "review", "verifying", "attention", "proposed")
+        points = ("initial", "final", "done", "working", "ready", "waiting", "review", "verifying", "attention")
         named = {point: getattr(self, point) for point in points}
         return {**named, "startable": sorted(self.startable), "lanes": list(self.lanes)}
 
@@ -63,8 +63,8 @@ class StateRoles:
 
     @property
     def lanes(self) -> tuple[str, ...]:
-        """The open lanes a view draws, in the order the machine lists them: every State but the initial, final and proposed."""
-        off = ("initial", "final", "proposed")
+        """The open lanes a view draws, in the order the machine lists them: every State but the initial and final."""
+        off = ("initial", "final")
         return tuple(state for state, role in self.roles.items() if role not in off)
 
     @property
@@ -93,18 +93,13 @@ class StateRoles:
 
     @property
     def verifying(self) -> str | None:
-        """Where a merged task rests while its post-merge QA runs: the resting State that follows the working one."""
-        return next(iter(self._resting[1:]), None)
-
-    @property
-    def verifying(self) -> str | None:
         """Where a merged task rests while its post-merge QA runs: the resting State after the working one that `rests` omits."""
         resting = [state for state, role in self.roles.items() if role == "resting" and state not in self.rests]
         return resting[1] if len(resting) > 1 else None
 
     @property
     def ready(self) -> str | None:
-        """Where a task waits to be picked up: the State that waits for its Start Criteria to turn unmet."""
+        """Where a task waits to be picked up: the first State that waits for dependencies to turn unresolved."""
         return self._waiting_on(_UNMET)
 
     @property
@@ -123,11 +118,6 @@ class StateRoles:
         return self._first("waiting_on_person")
 
     @property
-    def proposed(self) -> str | None:
-        """Where a task waits, off the lanes, until it is promoted or dropped."""
-        return self._first("proposed")
-
-    @property
     def startable(self) -> frozenset[str]:
         """The States a session starts a task from: those waiting on a person or on a fact other than a pull request."""
         waiting = {"waiting_on_fact", "waiting_on_person"}
@@ -140,5 +130,7 @@ class StateRoles:
         that waits on its Start Criteria being met, which a merge only closes."""
         waits = self.waits.get(state, {})
         return (
-            self.roles.get(state) == "waiting_on_fact" and _MET not in waits and any(fact in waits for fact in _PULL_REQUEST)
+            self.roles.get(state) == "waiting_on_fact"
+            and _MET not in waits
+            and any(fact in waits for fact in _PULL_REQUEST)
         )

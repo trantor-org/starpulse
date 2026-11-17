@@ -3,8 +3,6 @@
 `api_routes` is the routes under `/api`; `metrics.routes` is the one route that is not.
 """
 
-from __future__ import annotations
-
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -32,7 +30,7 @@ from starpulse.views.adapters.inbound.api.streams import Streams
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.history_window import HistoryWindow
-    from starpulse.board.board_feed import BoardFeed
+    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.board.model.seam import Board
     from starpulse.flow_metrics.adapters.outbound.history import History
     from starpulse.views.adapters.inbound.snapshots import Snapshots
@@ -57,7 +55,7 @@ class Api:
     slow_reads: SlowReads = field(init=False)
 
     def __post_init__(self) -> None:
-        self.pull_reads = PullReads(self.services.pulls)
+        self.pull_reads = PullReads(self.services.pulls, self.feed.cited)
         self.slow_reads = SlowReads("/api/pulls", self.services.slow_read_s)
 
     @cached_property

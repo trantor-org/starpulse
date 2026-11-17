@@ -1,7 +1,5 @@
 """The cue and the pull a flow shows."""
 
-from __future__ import annotations
-
 from typing import Literal
 
 from pydantic import Field
@@ -38,6 +36,7 @@ class Pull(_Api):
     merged: bool
     closed: bool = Field(default=False, description="The PR closed without merging.")
     conflicting: bool = Field(default=False, description="The open PR conflicts with its base branch.")
+    draft: bool = Field(default=False, description="The open PR is still a draft.")
     queued: bool = Field(default=False, description="The open PR waits in its base branch's merge queue.")
     merge_sha: str | None = Field(description="The merge commit's SHA; null until the PR merges.")
     merged_at: str | None = Field(description="When the PR merged, ISO 8601 UTC; null until it does.")

@@ -56,6 +56,8 @@ export interface HudState {
   cards: KanbanTask[];
   /** How many tasks each milestone has completed, which the Kanban's milestone outline still counts. */
   milestoneDone: Record<string, number>;
+  /** How many tasks reached Done in the window the Star Map's Done count uses, which the Kanban header shows in place of a Done lane. */
+  doneCount: number;
   names: Record<string, string>;
   /** Each Board state's declared type (initial, final, resting, waiting_on_fact, waiting_on_person), null when the machine declares none. */
   types?: Record<string, string | null>;
@@ -67,14 +69,12 @@ export interface HudState {
   boardUrl: string | null;
   /** What the board writes beyond moves: the task view draws Edit and Archive… only for what it can. */
   capabilities?: Capabilities;
-  /** The Backlog.md project serve found beside the config while it shows its own board, and how to switch to it. */
-  hint?: string | null;
 }
 
 export class HudStore {
   private state: HudState = {
     stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, hostCounts: {}, dags: [], dagData: null,
-    moving: [], pools: [], feed: [], cards: [], milestoneDone: {}, names: {}, types: {}, roles: {}, claims: {}, boardUrl: null,
+    moving: [], pools: [], feed: [], cards: [], milestoneDone: {}, doneCount: 0, names: {}, types: {}, roles: {}, claims: {}, boardUrl: null,
   };
   private listeners = new Set<() => void>();
 

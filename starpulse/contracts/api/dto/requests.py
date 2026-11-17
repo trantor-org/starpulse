@@ -1,7 +1,5 @@
 """The body each write route takes."""
 
-from __future__ import annotations
-
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -38,7 +36,7 @@ CREATE_TEXT = (
     "duplicateResolution",
     "follows",
 )
-CREATE_LISTS =("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
+CREATE_LISTS = ("labels", "dependencies", "acceptanceCriteria", "references", "documentation", "definitionOfDone")
 #: The lists whose every item must be nonblank, rather than dropped when blank.
 _CREATE_NONBLANK = ("acceptanceCriteria", "definitionOfDone")
 _PRIORITIES = frozenset({"high", "medium", "low"})  # also the levels of Impact and Urgency
@@ -100,6 +98,12 @@ class EditRequest(_Writer):
     changes: dict[str, Any]
     comment: str | None = None
     break_glass: bool = Field(False, alias="breakGlass")  # an editor import: its Events are marked break-glass (D5)
+    request_key: str | None = Field(
+        None,
+        min_length=1,
+        max_length=128,
+        description="The client's key for this send: an edit sent again with it answers the first send's answer.",
+    )
 
 
 class ArchiveRequest(_Writer):
@@ -163,11 +167,11 @@ class ReleaseRequest(_Writer):
 
 class ParkRequest(_Writer):
     """`POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach
-    Done, or `TASK-N#K` for one open criterion of a task) and `until` (criteria a check can observe) wait; `operator` (what only the operator can do) needs attention."""
+    Done, or `TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait; `operator` (what only the operator can do) needs attention."""
 
     task: str
     untilTask: list[str] | None = None
-    until: list[dict[str, Any]] | None = None
+    until: list[str] | None = None
     operator: str | None = None
     comment: str | None = None
 
@@ -254,6 +258,12 @@ class CreateRequest(_Writer, CreateSpec):
 
     title: str | None = None
     tasks: list[CreateSpec] | None = Field(None, min_length=1)
+    request_key: str | None = Field(
+        None,
+        min_length=1,
+        max_length=128,
+        description="The client's key for this send: a create sent again with it answers the first send's answer.",
+    )
 
     @model_validator(mode="after")
     def _one_target(self) -> CreateRequest:

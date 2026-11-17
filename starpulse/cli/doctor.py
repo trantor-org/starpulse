@@ -6,8 +6,6 @@ config and the machines' DAG cues: each cued DAG exists and takes the parameter 
 failure never stops the others, so a report names every fault at once.
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import socket
@@ -42,13 +40,13 @@ def quic_answers(host: str, port: int, timeout: float = _QUIC_TIMEOUT) -> bool:
     """Whether the UDP socket at `host:port` replies to a 1200-byte long-header packet of a QUIC version no server
     speaks: a live QUIC listener answers it with Version Negotiation, a wedged or absent one with silence."""
     header = bytes([0xC0]) + _UNSUPPORTED_QUIC_VERSION + bytes([8]) + os.urandom(8) + bytes([8]) + os.urandom(8)
-    family, kind, proto, _, address = socket.getaddrinfo(host, port, type=socket.SOCK_DGRAM)[0]
     try:
+        family, kind, proto, _, address = socket.getaddrinfo(host, port, type=socket.SOCK_DGRAM)[0]
         with socket.socket(family, kind, proto) as probe:
             probe.settimeout(timeout)
             probe.sendto(header.ljust(1200, b"\0"), address)
             probe.recvfrom(2048)
-    except OSError:  # no reply in time, or an ICMP port-unreachable
+    except OSError:  # no such host, no reply in time, or an ICMP port-unreachable
         return False
     return True
 
@@ -115,6 +113,15 @@ def _board(board: dict[str, Any], errors: list[str]) -> dict[str, str]:
     if reading := next((e for e in errors if e.startswith("board: ")), None):
         return _result("adapter:board", False, reading)
     return _result("adapter:board", True, f"{len(board['agents'])} open tasks")
+
+
+def _ready(status: int, body: Any) -> dict[str, str]:
+    """The `ready` check: the server answered `/api/ready` 200, or the components it names as not ready."""
+    if status == 200:
+        return _result("ready", True, "every component ready")
+    components = body.get("components", {}) if isinstance(body, dict) else {}
+    named = [f"{name}: {part['detail']}" for name, part in components.items() if not part["ready"]]
+    return _result("ready", False, "; ".join(named) or f"/api/ready answered {status}")
 
 
 def _gh(probes: Probes) -> dict[str, str]:
@@ -210,12 +217,14 @@ def run_checks(
     probes: Probes,
     server: str,
     served: dict[str, Any] | None = None,
+    ready: tuple[int, Any] | None = None,
 ) -> dict[str, Any]:
     """Every check as `{ok, checks: [{check, status, reason}]}`.
 
     `snapshot` is the server's snapshot, or the reason it could not be read; `config` is the loaded config, or the
     reason it could not be loaded; `server` is the address the snapshot was read from; `served` is the server's own
-    `/api/doctor` report, whose `poller:` checks join these because only the server reads the poller's beat."""
+    `/api/doctor` report, whose `poller:` checks join these because only the server reads the poller's beat; `ready` is
+    the status and body of its `/api/ready`, which the `ready` check judges."""
     beat = [check for check in (served or {}).get("checks", []) if check["check"].startswith("poller:")]
     checks = [
         _result(
@@ -223,6 +232,7 @@ def run_checks(
         ),
         _result("server", *((False, snapshot) if isinstance(snapshot, str) else (True, f"{server} answers"))),
         *([] if isinstance(snapshot, str) else _h3(probes, server)),
+        *([] if ready is None else [_ready(*ready)]),
         *_adapters(snapshot, config),
         _gh(probes),
         *_contract(snapshot, config, probes),

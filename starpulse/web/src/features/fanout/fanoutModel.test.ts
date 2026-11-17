@@ -6,36 +6,36 @@ const pool = (name: string, cap: number, running: number, queued = 0): Pool => (
 
 describe("the navigator's pool rows", () => {
   it("writes each pool's running count against its cap", () => {
-    const [row] = poolRows([pool("dagu/deliver", 32, 5)]);
+    const [row] = poolRows([pool("temporal/deliver", 32, 5)]);
 
     expect(row).toMatchObject({ label: "deliver", count: "5/32", queued: "", full: false, busy: true });
     expect(row.pct).toBeCloseTo(15.625);
   });
 
   it("adds the queued runs as +q and nothing when none wait", () => {
-    const rows = poolRows([pool("dagu/deliver", 32, 32, 6), pool("dagu/default", 2, 1)]);
+    const rows = poolRows([pool("temporal/deliver", 32, 32, 6), pool("temporal/default", 2, 1)]);
 
     expect(rows.map((r) => r.queued)).toEqual(["+6", ""]);
   });
 
   it("is full, and so red, once the pool runs its cap, and only then", () => {
-    const rows = poolRows([pool("dagu/deliver", 32, 32), pool("dagu/models", 1, 1), pool("dagu/gpu-1", 1, 0), pool("dagu/default", 2, 1)]);
+    const rows = poolRows([pool("temporal/deliver", 32, 32), pool("temporal/models", 1, 1), pool("temporal/gpu-1", 1, 0), pool("temporal/default", 2, 1)]);
 
     expect(rows.map((r) => r.full)).toEqual([true, true, false, false]);
     expect(rows.map((r) => r.pct)).toEqual([100, 100, 0, 50]);
   });
 
   it("is idle, with no colour, while nothing runs", () => {
-    expect(poolRows([pool("dagu/models", 1, 0)])[0]).toMatchObject({ busy: false, full: false, count: "0/1" });
+    expect(poolRows([pool("temporal/models", 1, 0)])[0]).toMatchObject({ busy: false, full: false, count: "0/1" });
   });
 
   it("draws a pool with no cap as empty rather than dividing by zero", () => {
-    expect(poolRows([pool("dagu/paused", 0, 0)])[0]).toMatchObject({ pct: 0, full: false });
+    expect(poolRows([pool("temporal/paused", 0, 0)])[0]).toMatchObject({ pct: 0, full: false });
   });
 
   it("names a pool by its bare name unless another instance runs one by it", () => {
-    expect(poolRows([pool("dagu/deliver", 32, 0), pool("other/default", 2, 0)]).map((r) => r.label)).toEqual(["deliver", "default"]);
-    expect(poolRows([pool("dagu/default", 2, 0), pool("other/default", 2, 0)]).map((r) => r.label)).toEqual(["dagu/default", "other/default"]);
+    expect(poolRows([pool("temporal/deliver", 32, 0), pool("other/default", 2, 0)]).map((r) => r.label)).toEqual(["deliver", "default"]);
+    expect(poolRows([pool("temporal/default", 2, 0), pool("other/default", 2, 0)]).map((r) => r.label)).toEqual(["temporal/default", "other/default"]);
   });
 
   it("lists no row when the adapter reports no pools", () => {
@@ -48,7 +48,7 @@ const run = (runId: string, status: RunStatus, step: string, steps: Record<strin
   runId, status, startedAt: "2026-10-05T16:00:00Z", step, stepStartedAt: "2026-10-05T16:00:05Z", steps,
 });
 const dag = (active: ActiveRun[], over: Partial<Dag> = {}): Dag => ({
-  name: "dagu/deliver", status: "running", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [], active, ...over,
+  name: "temporal/deliver", status: "running", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [], active, ...over,
 });
 const A = "deliver-agent-task-2787-1", B = "deliver-agent-task-2801-2";
 
@@ -152,7 +152,7 @@ describe("the Recent feed's run lines", () => {
 
     events.observe([dag([run(A, "running", "refuse")])], 101);
 
-    expect(events.lines[0]).toMatchObject({ task: "TASK-2787", dag: "dagu/deliver" });
+    expect(events.lines[0]).toMatchObject({ task: "TASK-2787", dag: "temporal/deliver" });
   });
 
   it("points a line whose run id embeds no task at its DAG alone", () => {
@@ -162,7 +162,7 @@ describe("the Recent feed's run lines", () => {
     events.observe([dag([run("nightly-20261005", "running", "a")])], 101);
 
     expect(events.lines[0].task).toBeUndefined();
-    expect(events.lines[0].dag).toBe("dagu/deliver");
+    expect(events.lines[0].dag).toBe("temporal/deliver");
   });
 
   it("keeps the newest dozen lines, newest first", () => {

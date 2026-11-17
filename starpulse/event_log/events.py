@@ -9,9 +9,8 @@ Each entry carries `event_id` plus these string fields (absent when empty): `mac
 fired it), and `time` (epoch seconds).
 """
 
-from __future__ import annotations
-
 import time
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -29,9 +28,12 @@ def publish(
     run: str | None = None,
     now: float | None = None,
     event_id: str | None = None,
+    data: Mapping[str, Any] | None = None,
     log: EventLog,
 ) -> int | None:
     """Append one entry to `log`, fail-open; returns its cursor, or None when the log refused it.
+
+    `data` is the event's extra fields, which a subscriber's line carries.
 
     With an `event_id`, an entry of that id the log already holds is not appended again and its cursor is returned.
 
@@ -47,5 +49,6 @@ def publish(
         "actor": actor,
         "time": time.time() if now is None else now,
         **({"event_id": event_id} if event_id else {}),
+        **({"data": dict(data)} if data else {}),
     }
     return log.publish(STREAM, fields)
