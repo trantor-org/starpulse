@@ -24,6 +24,7 @@ from starpulse.contracts.api.dto.milestones import (
 from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
+from starpulse.contracts.api.dto.dag import Runs
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
@@ -89,6 +90,7 @@ from starpulse.contracts.api.dto.snapshot import (
     BuildEvent,
     ClaimDelta,
     DagsDelta,
+    Flows,
     LedgersDelta,
     MoveDelta,
     PullsDelta,
@@ -149,6 +151,8 @@ class ApiContract(_Api):
     schedulerStatus: SchedulerStatus
     contractReport: ContractReport
     readyReport: ReadyReport
+    runs: Runs
+    flows: Flows
     taskRecord: TaskRecord
     taskMoves: TaskMoves
     taskRecords: TaskRecords

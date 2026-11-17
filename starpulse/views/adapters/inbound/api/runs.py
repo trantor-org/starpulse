@@ -2,6 +2,7 @@
 
 - `POST /api/run/{name}`, `/api/runs/{instance}/{workflow}/rerun`: start a workflow, or run a finished one again.
 - `POST /api/machine-events`: the token-guarded push of machine events; 404 where a deployment leaves it unconfigured.
+- `POST /api/temporal-completion?workflow=<type>`: Temporal's completion callback for a workflow close, token-guarded like the push above; 404 where unconfigured.
 - `POST /api/webhook`: the token-guarded push a sender's own JSON, handed to the deployment's `webhook_command`; 404 where unset.
 """
 
@@ -11,6 +12,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.runs.adapters.inbound.ingest import MAX_BATCH_BODY
+from starpulse.runs.adapters.inbound.temporal_completion import completion
 from starpulse.views.adapters.inbound.api.answering import client
 from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, pushed, writing
@@ -38,6 +40,17 @@ def routes(api: Api) -> list[ApiRoute]:
         content_type = request.headers.get("Content-Type")
         return pushed(request, "ingest", lambda auth, raw: events(auth, content_type, raw), MAX_BATCH_BODY)
 
+    def temporal_completion(request: Request) -> Response | None:
+        events = services.events
+        if events is None:
+            return None
+        return pushed(
+            request,
+            "ingest",
+            lambda auth, _raw: completion(events, auth, request.headers, request.query_params),
+            MAX_BATCH_BODY,
+        )
+
     def webhook(request: Request) -> Response | None:
         hook = services.webhook
         return None if hook is None else pushed(request, "ingest", hook, MAX_BATCH_BODY)
@@ -46,5 +59,6 @@ def routes(api: Api) -> list[ApiRoute]:
         WriteRoute("/run/{name:path}", ("POST",), guarded("run", run)),
         WriteRoute("/runs/{instance}/{workflow}/rerun", ("POST",), guarded("run", rerun)),
         WriteRoute("/machine-events", ("POST",), writing(machine_events)),
+        WriteRoute("/temporal-completion", ("POST",), writing(temporal_completion)),
         WriteRoute("/webhook", ("POST",), writing(webhook)),
     ]

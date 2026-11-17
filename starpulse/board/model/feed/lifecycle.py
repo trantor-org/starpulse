@@ -53,6 +53,12 @@ class LifecycleMixin:
             self._window_s = window_s
             self._publish("snapshot", self.snapshot())
 
+    def cap_lanes(self, cap_s: float | None) -> None:
+        """Read the snapshot's machine lanes no further back than `cap_s` seconds when no window narrows them, except
+        a lane whose Task is still open; the machine reads (`machine_tasks`) stay as the window leaves them."""
+        with self._lock:
+            self._lane_cap_s = cap_s
+
     def expect(self, last_id: str) -> None:
         """Mark the feed ready once the entry `last_id` has been read; `0` is an empty stream."""
         with self._lock:

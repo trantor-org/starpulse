@@ -1,11 +1,14 @@
 """The native board's scan: a project's task files in, the board contract out."""
 
+import contextlib
 import hashlib
 import importlib
 import inspect
 import logging
 import os
 import re
+import selectors
+import socket
 import threading
 from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
@@ -27,6 +30,7 @@ from starpulse.board.model.policy import Policy, waits_of
 from starpulse.board.model.seam import Board
 from starpulse.contracts.task_keys import TaskKeys
 from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
+from starpulse.event_log.watch import open_directory_watch
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 
@@ -44,8 +48,6 @@ logger = logging.getLogger(__name__)
 _PROJECTION = (__name__, "starpulse.board.model.board_feed", "starpulse.contracts.adapters")
 
 DEFAULT_PREFIX = "task"
-#: Seconds between the scans that find a changed task file, unless the board sets `interval`.
-POLL_INTERVAL = 2.0
 #: Where a task file sits decides whether it is in a lane or has left them; subtasks are ids like `task-1.1`.
 _FOLDERS: tuple[tuple[str, Literal["completed", "archived"] | None], ...] = (
     ("tasks", None),
@@ -252,6 +254,7 @@ class NativeScan:
         self._ids: dict[str, str] = {}
         self._kept = kept
         self._stop = threading.Event()
+        self._wake: socket.socket | None = None
         self._scanning = threading.RLock()  # the poll thread and `settle()` both scan
         for name, (mtime_ns, size, task_id) in (files or {}).items():
             self._seen[str(root / name)] = (mtime_ns, size)
@@ -265,24 +268,56 @@ class NativeScan:
             for path, fingerprint in self._seen.items()
         }
 
-    def scan(self) -> None:
-        """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone.
+    def scan(self) -> int:
+        """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone;
+        how many files that read or forgot.
 
         One `os.scandir` pass over the folders: a file whose time and size match the last scan is not read.
         Scans are serialized, so two callers never forget the same file twice."""
         with self._scanning:
-            self._scan()
+            return self._scan()
 
-    def _scan(self) -> None:
+    def _scan(self) -> int:
         present: set[str] = set()
-        changed = False
+        read = 0
         for folder, settled in _FOLDERS:
             for path, fingerprint in _listing(self.root / folder):
                 present.add(path)
                 if self._seen.get(path) != fingerprint:
-                    changed |= self._place(path, settled, fingerprint)
-        for gone in self._seen.keys() - present:
-            self._forget(gone)
+                    read += self._place(path, settled, fingerprint)
+        gone = self._seen.keys() - present
+        self._finish(gone, bool(read))
+        return read + len(gone)
+
+    def scan_paths(self, paths: Iterable[str]) -> None:
+        """Publish the files `paths` name that are new or changed, and retract a task whose file is gone.
+
+        What a directory watch names: a path in a task folder is stat-ed alone, a path that is a folder is listed, and any
+        other path is ignored. Nothing else is read, so a board of thousands of files costs only the files that changed."""
+        settled_in = {str(self.root / folder): settled for folder, settled in _FOLDERS}
+        gone: set[str] = set()
+        changed = False
+        with self._scanning:
+            for path in sorted(set(paths)):
+                if path in settled_in:
+                    listed = _listing(Path(path))
+                    for member, fingerprint in listed:
+                        if self._seen.get(member) != fingerprint:
+                            changed |= self._place(member, settled_in[path], fingerprint)
+                    gone |= {seen for seen in self._seen if os.path.dirname(seen) == path} - {m for m, _ in listed}
+                elif path.endswith(".md") and (folder := os.path.dirname(path)) in settled_in:
+                    try:
+                        stat = os.stat(path)
+                    except OSError:
+                        gone.add(path)
+                        continue
+                    if (fingerprint := (stat.st_mtime_ns, stat.st_size)) != self._seen.get(path):
+                        changed |= self._place(path, settled_in[folder], fingerprint)
+            self._finish(gone & self._seen.keys(), changed)
+
+    def _finish(self, gone: Iterable[str], changed: bool) -> None:
+        for path in list(gone):
+            self._forget(path)
             changed = True
         self._settle(changed)
         if changed:
@@ -411,19 +446,38 @@ class NativeScan:
                 moves[target] = type(move).model_validate({**move.model_dump(), **refused})
         return moves
 
-    def start(
-        self, interval: float = 2.0, scanned: Callable[[], None] = lambda: None
-    ) -> threading.Thread:  # pragma: no mutate block — poll thread plumbing
-        """Scan now and every `interval` seconds after, on a daemon thread, and return it; `scanned` runs once, after
-        the first scan."""
+    def start(self, scanned: Callable[[], None] = lambda: None) -> threading.Thread:  # pragma: no mutate block — watch thread plumbing
+        """Watch the task folders, scan once, and read each path the watch names after, on a daemon thread, which it
+        returns; `scanned` runs once, after the first scan. The watch opens before that scan, so a write between them is
+        read twice, never missed. A folder made later, or a watch that lost events, is a scan of everything."""
+        wake, ended = socket.socketpair()
+        self._wake = wake
 
         def run() -> None:
-            self.scan()
-            scanned()
+            watch = open_directory_watch(self.root / folder for folder, _ in _FOLDERS)
             try:
-                while not self._stop.wait(interval):
-                    self.scan()
+                self.scan()
+                scanned()
+                if watch is None:
+                    logger.warning("NativeScan: no file watch on %s; the sweeper corrects its tasks", self.root)
+                    self._stop.wait()
+                    return
+                with selectors.DefaultSelector() as selector:
+                    selector.register(watch.fileno(), selectors.EVENT_READ)
+                    selector.register(ended, selectors.EVENT_READ)
+                    while not self._stop.is_set():
+                        if watch.fileno() not in {key.fd for key, _ in selector.select()}:
+                            continue
+                        paths = watch.drain()
+                        if watch.sync() or paths is None:
+                            self.scan()
+                        else:
+                            self.scan_paths(paths)
             finally:
+                if watch is not None:
+                    watch.close()
+                wake.close()
+                ended.close()
                 _live.pop(self, None)
 
         thread = threading.Thread(target=run, name="native-scan", daemon=True)
@@ -432,8 +486,10 @@ class NativeScan:
         return thread
 
     def stop(self) -> None:
-        """End the thread `start` began: it leaves its loop at once, even while it waits out `interval`."""
+        """End the thread `start` began: it leaves its loop at once, as it waits on the watch."""
         self._stop.set()
+        with contextlib.suppress(OSError, AttributeError):
+            self._wake.send(b"x")
 
 
 def _listing(folder: Path) -> list[tuple[str, tuple[int, int]]]:
@@ -489,7 +545,7 @@ def project_board(
     readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
     statuses: tuple[str, ...] = (),
 ) -> Board:
-    """The Board of the Markdown project in `root`, polled every `settings["interval"]` seconds, with the writers `writers` builds.
+    """The Board of the Markdown project in `root`, kept current by a directory watch, with the writers `writers` builds.
 
     Any lane reaches any other unless `settings["machine"]` names a machine file (relative to `base`), whose transitions
     and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text;
@@ -497,7 +553,6 @@ def project_board(
     what the board's `readable` rules find broken in a task's description, "" when it reads well. `statuses` are the
     lanes the policy holds, which replace the config file's.
     """
-    interval = float(settings.get("interval", POLL_INTERVAL))
     config = read_config(root, statuses)
     require_project(root, config)
     board_file = base / str(settings["machine"]) if "machine" in settings else None
@@ -518,8 +573,10 @@ def project_board(
             drawn_flows["board"].setdefault("mainLine", [lane for lane in lane_ids if lane in states])
         return {"board": drawn, **drawn_flows}
 
+    scans: list[NativeScan] = []
+
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
-        # Built here, not at load: a `Move` is an adapter model, and a board read never starts the poll.
+        # Built here, not at load: a `Move` is an adapter model, and a board read never starts the watch.
         # The first scan is the feed's replay: it places every file, the Ledger is built once at its end rather than
         # once per task, and a write meeting it waits for the task it places.
         # A restart resumes the Board the last run saved and re-reads only the files changed since it.
@@ -533,7 +590,7 @@ def project_board(
                 # new code, and a file gone meanwhile still retracts its task.
                 files = {name: [0, 0, task_id] for name, (_mtime, _size, task_id) in files.items()}
         moves = board_moves(drawn, declared, lane_ids)
-        NativeScan(
+        scan = NativeScan(
             root,
             feed.put,
             moves,
@@ -545,7 +602,9 @@ def project_board(
             roles=roles,
             readable=readable,
             statuses=statuses,
-        ).start(interval, scanned=lambda: feed.expect("0-0"))
+        )
+        scans.append(scan)
+        scan.start(scanned=lambda: feed.expect("0-0"))
         feed.spawn(feed.keep_saved, "board-state")
 
     return Board(
@@ -556,6 +615,7 @@ def project_board(
         waits=compiled.waits if compiled else {},
         roles=roles,
         source=str(root),
+        rescan=lambda: sum(scan.scan() for scan in scans),
         **writers(config, roles),
     )
 

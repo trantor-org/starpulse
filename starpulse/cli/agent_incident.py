@@ -155,7 +155,7 @@ def open_incident(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     waiting: list[str] = []
     refused: dict[str, str] = {}
     try:
-        snapshot = agent_wire.snapshot(args, environ)
+        snapshot = agent_wire.flows(args, environ)
         given = None
         if args.owner:
             given = next(
@@ -177,7 +177,7 @@ def open_incident(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
             except agent_wire.CliError as exc:
                 if exc.code != "refused":
                     raise
-                now = _open_owner(agent_wire.snapshot(args, environ), source)
+                now = _open_owner(agent_wire.flows(args, environ), source)
                 if not (now and now.get("assignee") and not same_holder(now["assignee"], session)):
                     raise
                 return {"subject": source, "task": now["id"], "holder": now["assignee"], "published": False}

@@ -222,7 +222,7 @@ def _trace(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
 
 
 def _machines(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    flows = agent_wire.snapshot(args, environ)["flows"]
+    flows = agent_wire.flows(args, environ)["flows"]
     return {
         "machines": [
             {"name": f["name"], "states": [s["id"] for s in f["machine"]["states"]], "tasks": len(f["agents"])}
@@ -233,7 +233,7 @@ def _machines(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
 def _machine(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """One machine's states with the live count and the tasks in each, and its transitions."""
-    flows = {f["name"]: f for f in agent_wire.snapshot(args, environ)["flows"]}
+    flows = {f["name"]: f for f in agent_wire.flows(args, environ)["flows"]}
     if (flow := flows.get(args.name)) is None:
         raise agent_wire.CliError("not_found", f"{args.name} is not a machine; the server draws {', '.join(flows)}")
     machine = flow["machine"]
@@ -279,7 +279,7 @@ def _lanes(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
 
 
 def _runs(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    snapshot = agent_wire.snapshot(args, environ)
+    listing = agent_wire.get_runs(agent_wire.server_url(args.server, environ))
     return {
         "runs": [
             {
@@ -290,9 +290,9 @@ def _runs(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
                 "started_at": dag["startedAt"],
                 "finished_at": dag["finishedAt"],
             }
-            for dag in snapshot["dags"]
+            for dag in listing["dags"]
         ],
-        "error": snapshot["error"],
+        "error": listing["error"],
     }
 
 
@@ -553,7 +553,7 @@ def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
         config = f"{path}: {exc}"
     served = ready = None
     try:
-        snapshot: dict[str, Any] | str = agent_wire.get_snapshot(base)
+        snapshot: dict[str, Any] | str = agent_wire.get_flows(base)
         status, report = agent_wire.get(base, "/api/doctor")
         served = report if status == 200 and isinstance(report, dict) else None
         ready = agent_wire.get(base, "/api/ready")
@@ -870,7 +870,7 @@ def _parser() -> argparse.ArgumentParser:
         verbs,
         "snapshot",
         "the server's whole snapshot: every machine with its tasks, workflows and pull requests",
-        agent_wire.snapshot,
+        agent_wire.whole_snapshot,
         SNAPSHOT_KEYS,
         (0, 2, 3),
     )

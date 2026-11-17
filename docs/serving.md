@@ -105,7 +105,7 @@ On Linux `serve` starts one preloaded process before any thread, `python -m star
 
 `starpulse reload` replaces the children whose installed code or Board machine file (`[board] machine`, by content hash) changed, tells the `contexts` child whose only change is a live config block to re-read it, and re-executes `serve` when its own code changed, handing every child whose own closure and config did not change to the new `serve` by pid and stdin pipe, so a deploy restarts only what it changed: a `serve`-only change never ends the `contexts` worker. A reload that changes code any child runs also retires the preloaded process: it takes no more forks and exits when its last child has, and a new one that imports the installed code forks every replaced child, so a replaced child never runs the old preloaded code. See [Reloading a running serve](cli.md#reloading-a-running-serve).
 
-`serve` also holds each child to a memory limit, sampled every 5 s. Past the soft limit it replaces the child: the new one starts, then the old one is stopped (killed after 10 s if it ignores `SIGTERM`). Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is the proportional set size on Linux (`Pss`, which divides each page the forked children share among the processes that map it, so the shared floor is not charged to every child) and the resident size on macOS, read with psutil; where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits.
+`serve` also holds each child to a memory limit, sampled every 5 s. Past the soft limit it replaces the child: the old one is stopped (killed after 10 s if it ignores `SIGTERM`), then the new one starts, so the new one finds the ports and leases the old one held free; the Page API alone starts its replacement beside it, on the shared socket. Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is the proportional set size on Linux (`Pss`, which divides each page the forked children share among the processes that map it, so the shared floor is not charged to every child) and the resident size on macOS, read with psutil; where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits.
 
 | Child | `soft_mb` | `hard_mb` |
 | --- | --- | --- |
@@ -352,7 +352,10 @@ GET /api/events/body/<key>
                    server has built four newer ones
 GET /api/snapshot  the document /api/events sends on connect, as one response: without each task's description,
                    criteria and moves (`/api/task/<id>`, `move_sets`) and with only the day's settled tasks;
-                   `?view=full` is the whole document, which `starpulse snapshot|board|task` read
+                   `?view=full` is the whole document, which `starpulse snapshot` reads
+GET /api/flows     every flow whole (full tasks, moves) with `roles`, every `settled` entry, `cold_done`, `pulls`, `interactive`,
+                   `ratings`, `cues`, `dags` and `error`: what `starpulse board|task|machines|machine|doctor|incident` read
+GET /api/runs      {dags, error}: every runs workflow with its latest run, and what a runs instance reported: `starpulse runs list`
 GET /api/ledger/<event>[?before=T][&limit=N]
                    {rows, more}: one Ledger's next `limit` rows (default 20, at most 100) older than `before` (epoch
                    seconds, the `at` of the last row held; none: the newest), each as a `LedgerRow`. None is older than
@@ -508,6 +511,8 @@ POST /api/machine-events (also Connect `starpulse.v1.CloudEventsIngest` Publish 
                    contract refuses, 401 for a missing or wrong token, 403 for another producer's source, machine or
                    actor, 413 over the limit, 503 when the log refuses it, 404 when no producer is declared. A batch is
                    checked whole, and a refusal writes nothing. A GET answers 405
+POST /api/temporal-completion?workflow=<type>  Temporal's close callback (`Nexus-Operation-State`, `Nexus-Link` headers) with the `[[producers]]` bearer of a producer
+                   named `temporal`; writes the run's close to `runs:events`. 201 {accepted}; 400 for a missing state, link or workflow, 401 for a wrong token
 ```
 
 ## Event store
@@ -746,7 +751,7 @@ name = "ci-bot"
 token_env = "CI_BOT_TOKEN"
 machines = ["delivery"]
 actors = ["ci"]
-# adapter = "github-actions"  # optional: a run adapter type whose own status labels its Step events carry, read through its `status_of`
+# adapter = "github_actions"  # optional: a run adapter type whose own status labels its Step events carry, read through its `status_of`
 
 [[repos]]
 name = "skills"
@@ -867,9 +872,9 @@ applied_by = "pin-bump"
 
 A `[[runs]]` instance's `type` names one of the built-in adapters `github_actions`, `systemd`, `temporal` and `woodpecker`, or an installed
 package's module. `serve` starts the worker of each built-in adapter that a configured instance names, as its own child
-(`starpulse worker temporal --config <this file>`, likewise `github-actions`, `systemd` and `woodpecker`), and restarts it if it stops, as
+(`starpulse worker github-actions --config <this file>`, likewise `systemd` and `woodpecker`; `temporal` has none, its closes arrive at `/api/temporal-completion`), and restarts it if it stops, as
 it does its other workers. No OS service unit is needed for an adapter. With its worker down or not yet started, the
-page shows the instance with the error "the temporal worker has not reported" or "last reported Ns ago" (its beat is older
+page shows the instance with the error "the woodpecker worker has not reported" or "last reported Ns ago" (its beat is older
 than 60s).
 
 
@@ -988,7 +993,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 
 #### [worker_memory.<context>]
 
-- `soft_mb` (whole number, 1 or more): Past this the child is replaced: a new one starts, then the old one stops.
+- `soft_mb` (whole number, 1 or more): Past this the child is replaced: the old one stops, then a new one starts (the Page API starts its replacement first).
 - `hard_mb` (whole number, 1 or more): Past this the child is killed and restarted. Above `soft_mb`.
 
 <!-- config-reference:end -->
@@ -1538,8 +1543,8 @@ publishes nothing, so a page keeps a card until it reloads. The page's snapshot 
   `task` delta carries the new number;
 - `settled` keeps the tasks created or settled since the start of the day before local midnight, and `milestone_done` (`{milestone: count}`)
   counts every settled completed task by milestone;
-- `/api/snapshot?view=full` is the whole document the CLI verbs read: full tasks, every `settled` entry and `cold_done`,
-  the ids of the cold done tasks.
+- `/api/snapshot?view=full` is the whole document `starpulse snapshot` reads: full tasks, every `settled` entry and `cold_done`,
+  the ids of the cold done tasks; the other CLI verbs read `/api/flows`, `/api/runs`, `/api/task/<id>` and the routes above, never the snapshot.
 
 `GET /api/done[?before=<entered>][&limit=20]` returns `{tasks, more}`, the next page of cold done tasks, newest done
 first, each `{id, title, state, model, labels, milestone, type, entered}`, its card fields from the read model when the feed has one (no board file is opened), else read from the board on request. `before` is

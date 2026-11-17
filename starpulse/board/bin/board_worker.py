@@ -16,6 +16,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import NamedTuple, Protocol
 
+from starpulse.board.adapters.history_window import MAX_HOURS
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
 from starpulse.board.model.board_feed import BoardFeed, ExpiriesStore, LaneRecorder
 from starpulse.board.model.board_feed import follow as follow_stream
@@ -94,6 +95,7 @@ def start(
     may share. Raises `ValueError` as `assemble` does."""
     model = ReadModel(log.engine, declared_fields(config.board))
     board, feed = assemble(config, base, None, [], model)
+    feed.cap_lanes(MAX_HOURS * 3600)  # the widest window a page can ask for; an older lane stays only for an open task, and decoding the rest is the worker's heap
     store = PushedDates(history_store(config, base, feed.machines), log)  # a save also pushes the date to `serve`
     feed.ready.set()
     start_writers(feed, store, live=False, log=log)

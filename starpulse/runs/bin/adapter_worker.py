@@ -1,4 +1,4 @@
-"""`starpulse worker <github-actions|systemd|temporal|woodpecker>`: a run Adapter as its own process, which `serve` starts as a child for each `[[runs]]` instance that names it.
+"""`starpulse worker <github-actions|systemd|woodpecker>`: a run Adapter as its own process, which `serve` starts as a child for each `[[runs]]` instance that names it.
 
 It announces its process id in the event log. `SIGTERM` stops it; `SIGHUP` re-reads the config.
 """

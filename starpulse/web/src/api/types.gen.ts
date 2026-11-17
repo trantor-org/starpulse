@@ -51,6 +51,7 @@ export interface ApiContract {
   events: (
     TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | VerdictDelta | LedgersDelta | SchedulerStatus
   )[];
+  flows: Flows;
   graph: FlowGraph;
   harnesses: Harnesses;
   health: Health;
@@ -95,6 +96,7 @@ export interface ApiContract {
   )[];
   restarting: RestartingEvent;
   retiredTasks: RetiredTasks;
+  runs: Runs;
   schedulerStatus: SchedulerStatus;
   searchResults: SearchResults;
   sessionSteps: SessionSteps;
@@ -1601,6 +1603,273 @@ export interface SchedulerHarnessSessions {
   [k: string]: unknown;
 }
 /**
+ * `GET /api/flows`: the whole of every flow and what the agent CLI reads beside it, with none of the snapshot's pages.
+ */
+export interface Flows {
+  /**
+   * The ids of the done tasks the feed holds as a stub, left out of `flows`.
+   */
+  cold_done?: string[] | null;
+  cues?: Cue[] | null;
+  dags: DagBody[];
+  error: string | null;
+  flows: FlowSnapshot[];
+  interactive?: {
+    [k: string]: boolean;
+  } | null;
+  pulls?: {
+    [k: string]: Pull[];
+  } | null;
+  ratings?: {
+    [k: string]: Rating;
+  } | null;
+  roles?: Roles | null;
+  settled: {
+    [k: string]: Settled;
+  };
+  [k: string]: unknown;
+}
+/**
+ * A DAG that runs on the same trigger as a Board event's writer but writes no lane itself.
+ */
+export interface Cue {
+  dag: string;
+  event: string;
+  /**
+   * Seconds after the event a run of the DAG may take to start before the Ledger draws the merge overdue.
+   */
+  grace?: number;
+  on: string;
+  /**
+   * How a failed run of the DAG clears: `forced` only on a green forced rerun, `next` on the DAG's next green run.
+   */
+  resolves?: ("forced" | "next") | null;
+  state: string;
+  [k: string]: unknown;
+}
+export interface FlowSnapshot {
+  agents: RawTask[];
+  chain?: string[] | null;
+  depth?: number | null;
+  last?: number | null;
+  machine: Machine;
+  name: string;
+  nested?: string[] | null;
+  parent?: string | null;
+  stuck?: Stuck | null;
+  ties?: Tie[] | null;
+  [k: string]: unknown;
+}
+export interface Machine {
+  /**
+   * Only the board machine: the writers that are runs workflows.
+   */
+  dagActors?: string[] | null;
+  /**
+   * Only the board machine: the skill machine each launching DAG starts.
+   */
+  launches?: {
+    [k: string]: Launch;
+  } | null;
+  /**
+   * Only the board machine: the state ids along its axis, in order (New to Done).
+   */
+  mainLine?: string[] | null;
+  /**
+   * The edge a finished skill hands to; null when the machine declares none.
+   */
+  next?: HeldNext | null;
+  /**
+   * The third party whose events move this machine ("GitHub"); absent for a machine StarPulse's own actors move.
+   */
+  source?: string | null;
+  states: MachineState[];
+  /**
+   * The machines that open under this machine's states; the board's first is its In Progress delivery machine.
+   */
+  submachines?: Submachine[] | null;
+  /**
+   * Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's states stacked in its cell; a state no tier names is drawn with the tier at the mean of the tiers its transitions join it to, stacked in it or in a tier of its own after it, else in a tier of its own after the last, and with none the Board draws its own columns.
+   */
+  tiers?: string[][] | null;
+  transitions: Transition[];
+  /**
+   * Its YAML-declared writers per event.
+   */
+  writers?: {
+    [k: string]: Writer[];
+  } | null;
+  [k: string]: unknown;
+}
+/**
+ * A runs workflow's launch: the skill it starts and the machine that skill draws, null when it has none.
+ */
+export interface Launch {
+  machine: string | null;
+  skill: string;
+  [k: string]: unknown;
+}
+export interface MachineState {
+  final: boolean;
+  id: string;
+  initial: boolean;
+  name: string;
+  /**
+   * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
+   */
+  role?: string | null;
+  [k: string]: unknown;
+}
+/**
+ * Where a Board state opens into another machine, and which Board event each inner final state fires.
+ */
+export interface Submachine {
+  exits: {
+    [k: string]: string;
+  };
+  machine: string;
+  /**
+   * The machine the link opens under: `board`, or the machine whose `state` it hangs off.
+   */
+  parent: string;
+  /**
+   * Inner event to the Board event it fires; empty when the link routes none.
+   */
+  routes?: {
+    [k: string]: string;
+  };
+  /**
+   * The skill a session runs while the inner machine does; empty when the link names none.
+   */
+  skill?: string;
+  state: string;
+  /**
+   * What has to hold for the inner machine to run under `state`; empty when always.
+   */
+  when: string;
+  [k: string]: unknown;
+}
+export interface Transition {
+  /**
+   * The skill sentence that authorizes the transition; absent when its YAML cites none.
+   */
+  cite?: Cite | null;
+  event: string;
+  source: string;
+  target: string;
+  [k: string]: unknown;
+}
+/**
+ * The sentence of a skill that sends a session down a transition.
+ */
+export interface Cite {
+  quote: string;
+  skill: string;
+  [k: string]: unknown;
+}
+/**
+ * Who fires a Board event: a runs workflow (by `<instance>/<workflow>` name), `operator` or `agent`.
+ */
+export interface Writer {
+  actor: string;
+  trigger: string;
+  [k: string]: unknown;
+}
+/**
+ * The longest-stuck task of a machine and every machine nested below it: idle over two hours outside a final state.
+ */
+export interface Stuck {
+  machine: string;
+  /**
+   * When the task last moved, epoch seconds.
+   */
+  since: number;
+  state: string;
+  [k: string]: unknown;
+}
+/**
+ * Where a lifecycle machine is entered from.
+ *
+ * `declared` is a Submachine on `machine`'s `state`; `observed` is the state the task held on `machine` when its session
+ * entered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered
+ * through it, null for a launch.
+ */
+export interface Tie {
+  count: number | null;
+  dag: string | null;
+  kind: "declared" | "observed" | "dag";
+  machine: string | null;
+  state: string | null;
+  /**
+   * What has to hold for a declared tie to run; empty otherwise.
+   */
+  when: string;
+  [k: string]: unknown;
+}
+/**
+ * A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch
+ * seconds), who set it (`actor`, empty when the write named none) and how many changes the task's rating has had.
+ */
+export interface Rating {
+  actor: string;
+  at: number;
+  changes: number;
+  reason: string;
+  verdict: string;
+  [k: string]: unknown;
+}
+/**
+ * Which of the board's States play which part, as its machine declares them: a client reads these and never a
+ * State's name.
+ */
+export interface Roles {
+  /**
+   * Where a task waits on a person.
+   */
+  attention?: string | null;
+  /**
+   * Where the work is done: a resting State, else the final one.
+   */
+  done?: string | null;
+  /**
+   * Where a task is settled for good.
+   */
+  final?: string | null;
+  /**
+   * Where a task starts.
+   */
+  initial?: string | null;
+  /**
+   * The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial and final.
+   */
+  lanes?: string[];
+  /**
+   * Where a task waits to be picked up.
+   */
+  ready?: string | null;
+  /**
+   * Where a task waits on its pull request.
+   */
+  review?: string | null;
+  /**
+   * The States a session starts a task from.
+   */
+  startable?: string[];
+  /**
+   * Where a merged task rests while its post-merge QA runs.
+   */
+  verifying?: string | null;
+  /**
+   * Where a task waits on its Start Criteria or dependencies.
+   */
+  waiting?: string | null;
+  /**
+   * Where a session works a task.
+   */
+  working?: string | null;
+  [k: string]: unknown;
+}
+/**
  * `GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.
  */
 export interface FlowGraph {
@@ -1919,152 +2188,6 @@ export interface MachineRow {
   parent: string | null;
   stuck: Stuck | null;
   ties: Tie[];
-  [k: string]: unknown;
-}
-export interface Machine {
-  /**
-   * Only the board machine: the writers that are runs workflows.
-   */
-  dagActors?: string[] | null;
-  /**
-   * Only the board machine: the skill machine each launching DAG starts.
-   */
-  launches?: {
-    [k: string]: Launch;
-  } | null;
-  /**
-   * Only the board machine: the state ids along its axis, in order (New to Done).
-   */
-  mainLine?: string[] | null;
-  /**
-   * The edge a finished skill hands to; null when the machine declares none.
-   */
-  next?: HeldNext | null;
-  /**
-   * The third party whose events move this machine ("GitHub"); absent for a machine StarPulse's own actors move.
-   */
-  source?: string | null;
-  states: MachineState[];
-  /**
-   * The machines that open under this machine's states; the board's first is its In Progress delivery machine.
-   */
-  submachines?: Submachine[] | null;
-  /**
-   * Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's states stacked in its cell; a state no tier names is drawn with the tier at the mean of the tiers its transitions join it to, stacked in it or in a tier of its own after it, else in a tier of its own after the last, and with none the Board draws its own columns.
-   */
-  tiers?: string[][] | null;
-  transitions: Transition[];
-  /**
-   * Its YAML-declared writers per event.
-   */
-  writers?: {
-    [k: string]: Writer[];
-  } | null;
-  [k: string]: unknown;
-}
-/**
- * A runs workflow's launch: the skill it starts and the machine that skill draws, null when it has none.
- */
-export interface Launch {
-  machine: string | null;
-  skill: string;
-  [k: string]: unknown;
-}
-export interface MachineState {
-  final: boolean;
-  id: string;
-  initial: boolean;
-  name: string;
-  /**
-   * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
-   */
-  role?: string | null;
-  [k: string]: unknown;
-}
-/**
- * Where a Board state opens into another machine, and which Board event each inner final state fires.
- */
-export interface Submachine {
-  exits: {
-    [k: string]: string;
-  };
-  machine: string;
-  /**
-   * The machine the link opens under: `board`, or the machine whose `state` it hangs off.
-   */
-  parent: string;
-  /**
-   * Inner event to the Board event it fires; empty when the link routes none.
-   */
-  routes?: {
-    [k: string]: string;
-  };
-  /**
-   * The skill a session runs while the inner machine does; empty when the link names none.
-   */
-  skill?: string;
-  state: string;
-  /**
-   * What has to hold for the inner machine to run under `state`; empty when always.
-   */
-  when: string;
-  [k: string]: unknown;
-}
-export interface Transition {
-  /**
-   * The skill sentence that authorizes the transition; absent when its YAML cites none.
-   */
-  cite?: Cite | null;
-  event: string;
-  source: string;
-  target: string;
-  [k: string]: unknown;
-}
-/**
- * The sentence of a skill that sends a session down a transition.
- */
-export interface Cite {
-  quote: string;
-  skill: string;
-  [k: string]: unknown;
-}
-/**
- * Who fires a Board event: a runs workflow (by `<instance>/<workflow>` name), `operator` or `agent`.
- */
-export interface Writer {
-  actor: string;
-  trigger: string;
-  [k: string]: unknown;
-}
-/**
- * The longest-stuck task of a machine and every machine nested below it: idle over two hours outside a final state.
- */
-export interface Stuck {
-  machine: string;
-  /**
-   * When the task last moved, epoch seconds.
-   */
-  since: number;
-  state: string;
-  [k: string]: unknown;
-}
-/**
- * Where a lifecycle machine is entered from.
- *
- * `declared` is a Submachine on `machine`'s `state`; `observed` is the state the task held on `machine` when its session
- * entered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered
- * through it, null for a launch.
- */
-export interface Tie {
-  count: number | null;
-  dag: string | null;
-  kind: "declared" | "observed" | "dag";
-  machine: string | null;
-  state: string | null;
-  /**
-   * What has to hold for a declared tie to run; empty otherwise.
-   */
-  when: string;
   [k: string]: unknown;
 }
 /**
@@ -2570,6 +2693,14 @@ export interface RetiredDependencies {
   [k: string]: unknown;
 }
 /**
+ * `GET /api/runs`: every runs workflow as the snapshot lists it, and the error a runs instance reported.
+ */
+export interface Runs {
+  dags: DagBody[];
+  error: string | null;
+  [k: string]: unknown;
+}
+/**
  * `GET /api/search?q=&limit=&label=&finished_within_days=&before=`: the tasks holding every word of `q`, best
  * match first, each carrying every `label`, with `finished_within_days` open or finished within that many days, and
  * with `before` (a task key) of its prefix and created before it.
@@ -2906,24 +3037,6 @@ export interface Claim {
   [k: string]: unknown;
 }
 /**
- * A DAG that runs on the same trigger as a Board event's writer but writes no lane itself.
- */
-export interface Cue {
-  dag: string;
-  event: string;
-  /**
-   * Seconds after the event a run of the DAG may take to start before the Ledger draws the merge overdue.
-   */
-  grace?: number;
-  on: string;
-  /**
-   * How a failed run of the DAG clears: `forced` only on a green forced rerun, `next` on the DAG's next green run.
-   */
-  resolves?: ("forced" | "next") | null;
-  state: string;
-  [k: string]: unknown;
-}
-/**
  * A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured.
  */
 export interface Domain {
@@ -2943,19 +3056,6 @@ export interface DomainDag {
 export interface DomainProcess {
   dags: DomainDag[];
   name: string;
-  [k: string]: unknown;
-}
-export interface FlowSnapshot {
-  agents: RawTask[];
-  chain?: string[] | null;
-  depth?: number | null;
-  last?: number | null;
-  machine: Machine;
-  name: string;
-  nested?: string[] | null;
-  parent?: string | null;
-  stuck?: Stuck | null;
-  ties?: Tie[] | null;
   [k: string]: unknown;
 }
 /**
@@ -2985,69 +3085,6 @@ export interface MachineEntry {
 export interface MachineEntryFrom {
   machine: string;
   state: string;
-  [k: string]: unknown;
-}
-/**
- * A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch
- * seconds), who set it (`actor`, empty when the write named none) and how many changes the task's rating has had.
- */
-export interface Rating {
-  actor: string;
-  at: number;
-  changes: number;
-  reason: string;
-  verdict: string;
-  [k: string]: unknown;
-}
-/**
- * Which of the board's States play which part, as its machine declares them: a client reads these and never a
- * State's name.
- */
-export interface Roles {
-  /**
-   * Where a task waits on a person.
-   */
-  attention?: string | null;
-  /**
-   * Where the work is done: a resting State, else the final one.
-   */
-  done?: string | null;
-  /**
-   * Where a task is settled for good.
-   */
-  final?: string | null;
-  /**
-   * Where a task starts.
-   */
-  initial?: string | null;
-  /**
-   * The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial and final.
-   */
-  lanes?: string[];
-  /**
-   * Where a task waits to be picked up.
-   */
-  ready?: string | null;
-  /**
-   * Where a task waits on its pull request.
-   */
-  review?: string | null;
-  /**
-   * The States a session starts a task from.
-   */
-  startable?: string[];
-  /**
-   * Where a merged task rests while its post-merge QA runs.
-   */
-  verifying?: string | null;
-  /**
-   * Where a task waits on its Start Criteria or dependencies.
-   */
-  waiting?: string | null;
-  /**
-   * Where a session works a task.
-   */
-  working?: string | null;
   [k: string]: unknown;
 }
 /**
@@ -3202,6 +3239,10 @@ export interface TaskRecord {
    * The task was archived: read from the archive, off the board's lanes.
    */
   archived?: boolean;
+  /**
+   * The id of the board's Done lane, which a task's status is read against.
+   */
+  done?: string | null;
   /**
    * When an archived task last changed in the read model: a Done task's entry into Done.
    */

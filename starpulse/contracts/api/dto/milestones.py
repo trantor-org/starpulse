@@ -15,6 +15,7 @@ class TaskRecord(_Api):
     record: dict[str, Any]
     archived: bool = Field(False, description="The task was archived: read from the archive, off the board's lanes.")
     entered: float | None = Field(None, description="When an archived task last changed in the read model: a Done task's entry into Done.")
+    done: str | None = Field(None, description="The id of the board's Done lane, which a task's status is read against.")
 
 
 class TaskMoves(_Api):

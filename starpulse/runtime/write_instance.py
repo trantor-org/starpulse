@@ -12,10 +12,9 @@ import re
 import subprocess
 import tempfile
 import threading
-import time
 from collections.abc import Generator
 from contextlib import contextmanager
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from starpulse.cli import agent_cli
@@ -25,9 +24,7 @@ from starpulse.board.adapters.native_scan import _live
 from starpulse.event_log.event_log import EventLog
 from starpulse.runtime.adapter_kit import assembled, serve, url
 
-#: How often the Board adapter rescans the board's files, so a task a write created is on the feed within a scan.
-SCAN_INTERVAL_S = 0.05
-#: How long a verb naming a task whose file exists waits for the feed to place it.
+#: How long a stopped instance waits for the Board adapter's thread to end.
 PLACED_WITHIN_S = 5.0
 #: Held while an instance starts its adapter, so the threads that start is the only new ones in the adapter registry.
 _STARTING = threading.Lock()
@@ -44,24 +41,22 @@ class WriteInstance:
     backlogs: tuple = field(default=(), compare=False, repr=False)
 
     def settle(self) -> None:
-        """Place the board's files on the feed now, rather than at the Board adapter's next scan."""
+        """Place the board's files on the feed now, rather than when the Board adapter's watch names them."""
         for backlog in self.backlogs:
             backlog.scan()
 
     def run(self, *argv: str) -> subprocess.CompletedProcess[str]:
         """Run `starpulse <argv> --server <url>` in this process and answer as a child process would.
 
-        A task a verb created is placed on the feed by the adapter's next scan, so a verb that names a task whose file
-        is already on the board is run again until the feed has it. Each retry scans on the caller's thread first, so a
-        polling thread that is starved or has stopped cannot leave the task unplaced.
+        A task a verb created is placed on the feed when the adapter's watch names its file, so a verb that names a task
+        whose file is already on the board is run again once the caller's thread has scanned, which a starved or
+        stopped watch thread cannot leave unplaced.
         """
-        deadline = time.monotonic() + PLACED_WITHIN_S
-        while True:
-            done = self._once(argv)
-            if not self._unplaced(done.stdout + done.stderr) or time.monotonic() > deadline:
-                return done
+        done = self._once(argv)
+        if self._unplaced(done.stdout + done.stderr):
             self.settle()
-            time.sleep(SCAN_INTERVAL_S)
+            done = self._once(argv)
+        return done
 
     def _once(self, argv: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
         out, err, code = io.StringIO(), io.StringIO(), 0
@@ -83,11 +78,9 @@ class WriteInstance:
 def write_instance(base: Path, config_file: str = "starpulse.toml") -> Generator[WriteInstance]:
     """Serve the write routes over the board `base / config_file` names, until the `with` block ends.
 
-    `base` is the directory the config's relative paths are read from. The Board adapter rescans every
-    `SCAN_INTERVAL_S` whatever the config sets.
+    `base` is the directory the config's relative paths are read from.
     """
     config = load(base / config_file)
-    config = replace(config, board={**config.board, "interval": SCAN_INTERVAL_S})
     board = base / str(config.board.get("path", "backlog"))
     with tempfile.TemporaryDirectory() as scratch:
         state = Path(scratch)

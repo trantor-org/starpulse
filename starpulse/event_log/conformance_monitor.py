@@ -24,7 +24,7 @@ import logging
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from starpulse.event_log import events, lane_events
@@ -98,12 +98,14 @@ class Conformance:
         review: str | None = None,
         work: Collection[str] = (),
         clock: Callable[[], float] = time.time,
+        open_tasks: Callable[[], Iterable[Mapping[str, Any]]] | None = None,
     ) -> None:
         self._names = list(machines)
         self._entered: dict[str, int] = dict.fromkeys(entered, 0)
         self._working, self._review = working, review
         self._review_moves = 0
         self._clock = clock
+        self._open_tasks = open_tasks
         self._work = set(work)
         #: When each task in the working lane last moved or took an event, and those among them that had a stall.
         self._active: dict[str, float] = {}
@@ -198,6 +200,13 @@ class Conformance:
             self._stalled.add(task)
         self._active[task] = max(last, at)
 
+    def _working_now(self) -> set[str]:
+        """The tasks in the working lane: the board's own, where it is given, since a lane move recorded nowhere (a file
+        moved while the server was down) never reaches the lane stream; else those the lane stream last placed there."""
+        if self._open_tasks is not None:
+            return {task["id"] for task in self._open_tasks() if task["state"] == self._working}
+        return {task for task, lane in self._lanes.items() if lane == self._working}
+
     def exposition(self) -> str:
         """Prometheus text of the counters, a series per machine (and per declared event) from the first scrape."""
         with self._lock:
@@ -225,13 +234,16 @@ class Conformance:
             )
             watched = ""
             if caught_up and self._working and self._review:
-                working = sum(lane == self._working for lane in self._lanes.values())
+                working = self._working_now()
                 now = self._clock()
-                stalled = sum(task in self._stalled or now - last >= STALL_S for task, last in self._active.items())
+                stalled = sum(
+                    task in working and (task in self._stalled or now - last >= STALL_S)
+                    for task, last in self._active.items()
+                )
                 watched = (
                     f"# HELP {REVIEW_MOVES_METRIC} {REVIEW_MOVES_HELP}\n# TYPE {REVIEW_MOVES_METRIC} counter\n"
                     f"{REVIEW_MOVES_METRIC} {self._review_moves}\n"
-                    f"# HELP {WORKING_METRIC} {WORKING_HELP}\n# TYPE {WORKING_METRIC} gauge\n{WORKING_METRIC} {working}\n"
+                    f"# HELP {WORKING_METRIC} {WORKING_HELP}\n# TYPE {WORKING_METRIC} gauge\n{WORKING_METRIC} {len(working)}\n"
                     f"# HELP {STALLED_METRIC} {STALLED_HELP}\n# TYPE {STALLED_METRIC} gauge\n{STALLED_METRIC} {stalled}\n"
                 )
             return (

@@ -184,6 +184,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         #: Held for a whole Ledger build, which runs outside `_lock`, so builds never overlap; taken before `_lock`, never under it.
         self._building = threading.Lock()
         self._window_s = window_s
+        #: How far back the snapshot's machine lanes read when no `window_s` narrows them (an open Task's lane stays); None: no cap.
+        self._lane_cap_s: float | None = None
         self._open: dict[str, dict] = {}
         #: Each key a placed task was known by before, to the key it holds now.
         self._aliases: dict[str, str] = {}

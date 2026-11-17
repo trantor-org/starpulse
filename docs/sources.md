@@ -550,7 +550,7 @@ reads, and posts it to `--url` (else `STARPULSE_WRITE_URL`, `STARPULSE_URL`) wit
 `STARPULSE_PRODUCER_<SOURCE>_TOKEN`. It exits 0 on a 201 and 1 with the ingest's answer otherwise.
 
 A producer that reports a run system's Step events may set `adapter` to that system's run Adapter type
-(`adapter = "github-actions"`): its events then carry the system's own status label in `data.status`, and the ingest reads it
+(`adapter = "github_actions"`): its events then carry the system's own status label in `data.status`, and the ingest reads it
 through the adapter's `status_of`, so a hook posts the label as it is and an unknown label is a 400.
 
 `application/cloudevents-batch+json` takes a JSON array of up to 200 such events. The attributes map to a

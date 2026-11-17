@@ -2850,6 +2850,132 @@
       "title": "FlowSnapshot",
       "type": "object"
     },
+    "Flows": {
+      "description": "`GET /api/flows`: the whole of every flow and what the agent CLI reads beside it, with none of the snapshot's pages.",
+      "properties": {
+        "cold_done": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The ids of the done tasks the feed holds as a stub, left out of `flows`."
+        },
+        "cues": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Cue"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dags": {
+          "items": {
+            "$ref": "#/$defs/DagBody"
+          },
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flows": {
+          "items": {
+            "$ref": "#/$defs/FlowSnapshot"
+          },
+          "type": "array"
+        },
+        "interactive": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "boolean"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pulls": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "$ref": "#/$defs/Pull"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ratings": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Rating"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "roles": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Roles"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "settled": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Settled"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "flows",
+        "settled",
+        "dags",
+        "error"
+      ],
+      "title": "Flows",
+      "type": "object"
+    },
     "Forecast": {
       "description": "One run still going: where it is, its loops so far, and from its state's row the chance of each terminal and\nof the goal and its expected days to finish, with `n`, the times that row was seen leave. Null with no row.",
       "properties": {
@@ -7184,6 +7310,33 @@
       "title": "RunStats",
       "type": "object"
     },
+    "Runs": {
+      "description": "`GET /api/runs`: every runs workflow as the snapshot lists it, and the error a runs instance reported.",
+      "properties": {
+        "dags": {
+          "items": {
+            "$ref": "#/$defs/DagBody"
+          },
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "dags",
+        "error"
+      ],
+      "title": "Runs",
+      "type": "object"
+    },
     "SchedulerBlock": {
       "description": "One gate holding admission back: a capacity dimension the top task overfits, or `start-limit`, the session-start\nservice refusing every start because its live-session limit is full.",
       "properties": {
@@ -9600,6 +9753,18 @@
           "description": "The task was archived: read from the archive, off the board's lanes.",
           "type": "boolean"
         },
+        "done": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The id of the board's Done lane, which a task's status is read against."
+        },
         "entered": {
           "anyOf": [
             {
@@ -10685,6 +10850,9 @@
       },
       "type": "array"
     },
+    "flows": {
+      "$ref": "#/$defs/Flows"
+    },
     "graph": {
       "$ref": "#/$defs/FlowGraph"
     },
@@ -10818,6 +10986,9 @@
     "retiredTasks": {
       "$ref": "#/$defs/RetiredTasks"
     },
+    "runs": {
+      "$ref": "#/$defs/Runs"
+    },
     "schedulerStatus": {
       "$ref": "#/$defs/SchedulerStatus"
     },
@@ -10899,6 +11070,8 @@
     "schedulerStatus",
     "contractReport",
     "readyReport",
+    "runs",
+    "flows",
     "taskRecord",
     "taskMoves",
     "taskRecords",

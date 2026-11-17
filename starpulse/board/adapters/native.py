@@ -104,7 +104,8 @@ _SETTINGS = {
     "entered_labels",
     "type",
     "path",
-    "interval",
+    "source_labels",  # a regex: `starpulse migrate` moves a task's one fully matching label to its `source`, once
+    "interval",  # retired: a config that still sets it loads, the setting does nothing
     "machine",
     "criteria",  # retired: a config that still sets it loads, the setting does nothing
     "holds",
@@ -1660,7 +1661,7 @@ def _probe(command: object, base: Path) -> Callable[[str], bool] | None:
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:
-    """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, as the project named for `base`'s directory, polled every `interval` seconds.
+    """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, as the project named for `base`'s directory, kept current by a directory watch.
 
     Moves, profile changes, creates, edits and archives write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
     machine file, whose transitions and `writers` then decide which moves are offered, and to whom.

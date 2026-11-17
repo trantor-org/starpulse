@@ -4,6 +4,7 @@
 - `GET /api/events`, `/api/held`, `/api/lanes`: streams of the Board, a session's held tasks and its lanes.
 - `GET /api/events/body/{key}`: the snapshot body a `ref` event names.
 - `GET /api/snapshot`: the Board's snapshot, or the full one with `?view=full`.
+- `GET /api/flows`: every flow whole, with the roles, settled tasks, pulls and runs the agent CLI reads beside them.
 """
 
 from typing import TYPE_CHECKING
@@ -14,10 +15,14 @@ from starlette.responses import Response
 from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, StreamRoute
 from starpulse.views.adapters.inbound.api.streams import streaming
-from starpulse.views.model.encoding import encode
+from starpulse.views.model.encoding import encode, full_snapshot
 
 if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
+
+
+#: The snapshot's fields `/api/flows` keeps: what the agent CLI reads of the board, the runs and the cues.
+_FLOW_KEYS = ("flows", "roles", "settled", "cold_done", "pulls", "interactive", "ratings", "cues", "dags", "error")
 
 
 @reading
@@ -37,6 +42,13 @@ def snapshot(request: Request) -> Response:
     return answer(request, snapshots.build()[1])
 
 
+@reading
+def flows(request: Request) -> Response:
+    taken = seams(request).snapshots.take().snapshot
+    drawn = full_snapshot(taken)
+    return answer(request, encode("flows", {key: drawn[key] for key in _FLOW_KEYS if key in drawn}))
+
+
 def routes(api: Api) -> list[ApiRoute]:
     streams = api.streams
     return [
@@ -45,4 +57,5 @@ def routes(api: Api) -> list[ApiRoute]:
         StreamRoute("/lanes", streaming(streams.lanes)),
         ReadRoute("/events/body/{key:path}", body),
         ReadRoute("/snapshot", snapshot),
+        ReadRoute("/flows", flows),
     ]

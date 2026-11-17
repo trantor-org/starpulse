@@ -481,6 +481,12 @@ class SearchIndex:
                 break
         return stored
 
+    def embed_missing(self) -> tuple[int, int]:
+        """`(embedded, indexed)`: how many tasks `embed_pending` gave a vector, and how many tasks the index holds."""
+        embedded = self.embed_pending()
+        with self._engine.connect() as connection:
+            return embedded, connection.execute(text(f"SELECT count(*) FROM {_TABLE}")).scalar_one()
+
     def keep_embedding(self, stop: StopEvent) -> None:
         """Run `embed_pending` every few seconds until `stop` is set; a failed pass is logged and retried later."""
         delay = _POLL
