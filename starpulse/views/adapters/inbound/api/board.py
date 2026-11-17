@@ -2,6 +2,7 @@
 
 - `GET /api/doctor`: the contract report.
 - `GET /api/ready`: 200 when the server can serve the board, 503 naming each component that is not ready.
+- `GET /api/runs`: every runs workflow with its latest run, and the error a runs instance reported.
 - `GET /api/machines`, `/api/done`, `/api/search`: the lifecycle machines, the Done lane and a search of the tasks.
 - `GET /api/harnesses`: the harnesses a session may start on.
 """
@@ -30,6 +31,11 @@ def ready(request: Request) -> Response:
 
 
 @reading
+def runs(request: Request) -> Response:
+    return answer(request, encode("runs", seams(request).feed.run_list()))
+
+
+@reading
 def machines(request: Request) -> Response:
     api = seams(request)
     return answer(request, *machines_response(api.feed, query(request), api.services.lanes))
@@ -54,6 +60,7 @@ def harnesses(request: Request) -> Response:
 routes: list[ApiRoute] = [
     ReadRoute("/doctor", doctor),
     ReadRoute("/ready", ready),
+    ReadRoute("/runs", runs),
     ReadRoute("/machines", machines),
     ReadRoute("/done", done),
     ReadRoute("/search", search),

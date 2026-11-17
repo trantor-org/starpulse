@@ -2,7 +2,7 @@
 
 A child is started by `spawn` (`starpulse.runtime.zygote.Forker`: a fork of one preloaded process, else
 `subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
-`serve`. Past its soft memory limit a child is replaced (the new one starts, then the old one stops); past its hard
+`serve`. Past its soft memory limit a child is replaced (the old one stops, then the new one starts; only the Page API starts its replacement beside it); past its hard
 limit it is killed and restarted. The run adapters a `[[runs]]` instance configures are threads of `contexts`
 (`starpulse.runtime.contexts`), named by `adapter_contexts`.
 
@@ -226,9 +226,9 @@ class Supervisor:
             )
             if name in self._sockets:  # the Page API: the old one answers until the new one is about to serve
                 self._launch_beside(name, child, old)
-            else:
-                self._launch(name, child, now)
+            else:  # a worker holds ports and leases the next one needs: it starts once the old one has freed them
                 self._end([old])
+                self._launch(name, child, now)
 
     def start(self) -> None:
         """Start every child and keep them running on a background thread until `stop`."""

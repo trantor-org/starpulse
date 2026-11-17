@@ -64,7 +64,7 @@ _CHECKLIST_DESTS = ("{}", "reword_{}", "remove_{}", "check_{}", "uncheck_{}")
 
 
 def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    snapshot = agent_wire.snapshot(args, environ)
+    snapshot = agent_wire.flows(args, environ)
     states = board_flow(snapshot)["machine"]["states"]
     if args.state and args.state not in (ids := [s["id"] for s in states]):
         raise agent_wire.CliError("usage", f"unknown state {args.state}; the board has {', '.join(ids)}")
@@ -162,12 +162,12 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     if getattr(args, "text", False):
         document = _read_document(args, environ)
         record = document["record"]
-        done = lane_id(record["status"]) == roles_of(agent_wire.snapshot(args, environ)).done
+        done = lane_id(record["status"]) == document["done"]
         if document.get("archived") and not done:
             # The archived file keeps the status and holder it had when archived; the lane is archived and none holds it.
             record = {**record, "status": "Archived", "assignee": ""}
         return {"task": args.task, "text": render_text(record, done=done)}
-    snapshot = agent_wire.snapshot(args, environ)
+    snapshot = agent_wire.flows(args, environ)
     wanted = args.task.casefold()
     agents = {agent["id"].casefold(): agent for agent in board_flow(snapshot)["agents"]}
     if (agent := agents.get(wanted)) is None:
@@ -425,7 +425,7 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _open_with_source(args: argparse.Namespace, environ: Mapping[str, str], source: str) -> list[dict[str, Any]]:
-    snapshot = agent_wire.snapshot(args, environ)
+    snapshot = agent_wire.flows(args, environ)
     done = roles_of(snapshot).done
     return [a for a in board_flow(snapshot)["agents"] if a.get("source") == source and a["state"] != done]
 

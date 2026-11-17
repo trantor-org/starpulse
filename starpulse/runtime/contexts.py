@@ -98,10 +98,14 @@ class _SharedBoard:
             with self._lock:
                 if self._built is None:
                     self.publish(*self._build())
-        while not self._ready.wait(0.1):
-            if self._stop.is_set():
-                raise RuntimeError("stopped before the board was built")
-        assert self._built is not None
+        self._stop.listen(self._ready.set)
+        try:
+            if not self._stop.is_set():  # a stop set before `listen` calls nothing
+                self._ready.wait()
+        finally:
+            self._stop.unlisten(self._ready.set)
+        if self._built is None:
+            raise RuntimeError("stopped before the board was built")
         return self._built
 
     def __call__(self, *_args: object, **_kwargs: object) -> tuple[Any, Any]:
@@ -233,11 +237,16 @@ def default_starters(
     def lane_metrics(own: threading.Event) -> Callable[[], None]:
         # the api worker serves the text these followers keep in the log, so their catch-up and sweep stay off its GIL
         from starpulse.board.adapters import lane_metrics as followers
+        from starpulse.board.adapters.search import SearchIndex
         from starpulse.event_log.conformance_monitor import BOARD
         from starpulse.flow_metrics.model.liveness import work_machines
 
         board, feed = shared()
-        followers.start(feed, board, log, own, work_machines(feed.machines, BOARD, feed.roles.working))
+        search = SearchIndex.open(log.engine, config.search) if config.search.embeddings_url else None
+        followers.start(
+            feed, board, log, own, work_machines(feed.machines, BOARD, feed.roles.working),
+            vectors=search.embed_missing if search is not None else None,
+        )
         return lambda: logger.info("lane-metrics: the board config is read at start; restart to apply a change")
 
     def sweeper(own: threading.Event) -> Callable[[], None]:

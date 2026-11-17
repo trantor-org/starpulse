@@ -29,7 +29,9 @@ EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
 WORKER_MEMORY_MB = {"api": (4096, 8192), "contexts": (1536, 3072)}
 
 #: The per-context `[worker_memory]` keys `serve` once took, one for each child it supervised.
-_RETIRED_MEMORY = frozenset({"pulls", "scheduler", "runs", "flow-metrics", "search", "board", *ADAPTER_CONTEXTS})
+_RETIRED_MEMORY = frozenset(
+    {"pulls", "scheduler", "runs", "flow-metrics", "search", "board", *ADAPTER_CONTEXTS, "temporal"}
+)
 
 #: A phase id in a `[sequences]` table: lowercase words joined by `_` or `-`.
 PhaseId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*([_-][a-z0-9]+)*$")]
@@ -188,7 +190,7 @@ class MemoryFile(_Table):
     model_config = ConfigDict(title="[worker_memory.<context>]")
 
     soft_mb: int | None = Field(
-        default=None, ge=1, description="Past this the child is replaced: a new one starts, then the old one stops."
+        default=None, ge=1, description="Past this the child is replaced: the old one stops, then a new one starts (the Page API starts its replacement first)."
     )
     hard_mb: int | None = Field(
         default=None, ge=1, description="Past this the child is killed and restarted. Above `soft_mb`."
@@ -277,7 +279,7 @@ class BridgeFile(_Table):
         default_factory=dict,
         description=(
             "The lane moves a session's consumer acks without notifying the session, by destination lane: "
-            "`review = [\"starpulse/task-actor\"]` quiets the task actor's moves into Review. Each value names "
+            '`review = ["starpulse/task-actor"]` quiets the task actor\'s moves into Review. Each value names '
             "writers as the move's `actor` records them, or `self` for a move the receiving session wrote itself. "
             "A lane with no entry notifies every move, and the published subjects are unchanged."
         ),
@@ -310,7 +312,9 @@ class BridgeFile(_Table):
     @classmethod
     def _incidents_declare_a_reach(cls, value: dict[str, IncidentReachFile]) -> dict[str, IncidentReachFile]:
         if unmatchable := [kind for kind in value if kind != token(kind)]:
-            raise ValueError(f"incidents {unmatchable} are not subject tokens, so the CLI's normalized type never matches them")
+            raise ValueError(
+                f"incidents {unmatchable} are not subject tokens, so the CLI's normalized type never matches them"
+            )
         parse_reach({kind: reach.model_dump() for kind, reach in value.items()})
         return value
 

@@ -277,6 +277,8 @@ class Board:
     """Lists each open task file's id and the aliases it answers to; None when the board keeps no files to list."""
     done_files: Callable[[], Iterable[tuple[str, list[str]]]] | None = None
     """Lists each done task file's id and the aliases it answers to, which the board keeps answering; None when the board keeps none."""
+    rescan: Callable[[], int] | None = None
+    """Reads every file the directory watch has not placed and says how many it read; None when the board is not watched."""
     create: TaskCreator | None = None
     """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
     milestones: MilestoneLister | None = None

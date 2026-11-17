@@ -48,6 +48,11 @@ class ViewMethods:
             end += 1
         return rows[:end], len(rows) > end
 
+    def run_list(self) -> dict[str, Any]:
+        """`GET /api/runs`: the snapshot's `dags` and `error`, with no board read."""
+        with self._lock:
+            return {"dags": self._workflows(), "error": self._error()}
+
     def _hot(self) -> list[dict]:
         """Every open task but the cold done ones; the caller holds the lock unless the feed has a read model."""
         if self._read_model is not None:
@@ -109,8 +114,10 @@ class ViewMethods:
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
         """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
-        since = now - self._window_s if self._window_s is not None else None
-        lanes = {} if self._read_model is None else self._read_model.machine_lanes(since)
+        reach = self._window_s if self._window_s is not None else self._lane_cap_s
+        since = now - reach if reach is not None else None
+        keep_open = self._roles.done if self._window_s is None else None
+        lanes = {} if self._read_model is None else self._read_model.machine_lanes(since, keep_open)
         flows = [
             {
                 "name": "board",

@@ -85,7 +85,7 @@ def task_record(
     reader = read_archived if archived and read_archived is not None else read
     if (record := reader(task)) is None:
         return 404, {"error": f"{task} has no record to read"}
-    return 200, {"task": task, "record": record, "archived": archived, "entered": entered if archived else None}
+    return 200, {"task": task, "record": record, "archived": archived, "entered": entered if archived else None, "done": feed.roles.done}
 
 
 _REPLAYS = Replays()

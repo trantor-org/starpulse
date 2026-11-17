@@ -92,19 +92,33 @@ def _get_once(base: str, path: str, timeout: float) -> tuple[int, Any, str]:
         raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
 
 
-def get_snapshot(base: str) -> dict[str, Any]:
-    """The snapshot the server at `base` answers; JSON without the identity keys is no StarPulse server."""
-    path = "/api/snapshot"
-    status, document = get(base, f"{path}?view=full")
+def _read_document(base: str, path: str, keys: set[str], noun: str) -> dict[str, Any]:
+    """The JSON object the server at `base` answers `path` with; one without every key of `keys` is no StarPulse server."""
+    status, document = get(base, path)
     if status != 200:
-        raise CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
-    if not isinstance(document, dict) or not document.keys() >= set(SNAPSHOT_IDENTITY_KEYS):
-        raise CliError("unavailable", f"{base} answered {path} with no StarPulse snapshot: is it a StarPulse server?")
+        raise CliError("unavailable", f"{base} answered {status} for {path.split('?')[0]}: is it a StarPulse server?")
+    if not isinstance(document, dict) or not document.keys() >= keys:
+        raise CliError("unavailable", f"{base} answered {path.split('?')[0]} with no StarPulse {noun}: is it a StarPulse server?")
     return document
 
 
-def snapshot(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    return get_snapshot(server_url(args.server, environ))
+def get_flows(base: str) -> dict[str, Any]:
+    """The flows the server at `base` answers: every flow whole, with the roles, settled tasks, pull requests and runs a verb reads."""
+    return _read_document(base, "/api/flows", {"flows", "roles", "settled", "dags", "error"}, "flows")
+
+
+def get_runs(base: str) -> dict[str, Any]:
+    """The run list the server at `base` answers: every runs workflow with its latest run, and what the adapter reported."""
+    return _read_document(base, "/api/runs", {"dags", "error"}, "run list")
+
+
+def flows(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    return get_flows(server_url(args.server, environ))
+
+
+def whole_snapshot(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The `snapshot` verb's document: the whole board, which only a caller that asks for all of it reads."""
+    return _read_document(server_url(args.server, environ), "/api/snapshot?view=full", set(SNAPSHOT_IDENTITY_KEYS), "snapshot")
 
 
 def post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:

@@ -30,6 +30,7 @@ from typing import IO, Any, NoReturn
 
 from setproctitle import setproctitle
 
+from starpulse.event_log.process_exit import ExitWatch
 from starpulse.runtime import launch
 from starpulse.runtime.hold import LISTEN_FD_ENV, SUPERVISED_ENV, running, supervised_env, watch_supervisor
 from starpulse.runtime.supervisor import spawn_child
@@ -43,7 +44,6 @@ ENTRY = "starpulse.__main__:main"
 _PREFIX = [launch.interpreter(), "-m", "starpulse"]
 
 _ANSWER_S = 60.0  # how long the preloaded process may take to import and answer
-_REAP_S = 0.1
 
 
 def fork_supported() -> bool:
@@ -114,12 +114,17 @@ def _serve(
     retired = False
     readable = select.poll()
     readable.register(control, select.POLLIN)
+    exited: dict[int, ExitWatch] = {}  # a child's pidfd by descriptor: it wakes the poll when the child ends
     while True:
-        _reap(exits)
-        children -= exits.keys()
         if retired and not children:
             return
-        if not readable.poll(_REAP_S * 1000):
+        ready = {fd for fd, _ in readable.poll()}
+        for fd in ready - {control.fileno()}:
+            readable.unregister(fd)
+            exited.pop(fd).close()
+        _reap(exits)  # after the poll, so a request that arrives with an exit finds the code
+        children -= exits.keys()
+        if control.fileno() not in ready:
             continue
         line = requests.readline()
         if not line:
@@ -129,8 +134,13 @@ def _serve(
             pid = os.fork()
             if not pid:
                 requests.close()
+                for watch in exited.values():
+                    watch.close()
                 _child(control, run, request["argv"], request.get("env", {}))
             children.add(pid)
+            watch = ExitWatch(pid)
+            exited[watch.fileno()] = watch
+            readable.register(watch, select.POLLIN)
             reply: dict[str, Any] = {"pid": pid}
         elif request["op"] == "exit":
             reply = {"code": exits.pop(request["pid"], None)}

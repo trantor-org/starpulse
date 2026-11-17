@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from starpulse.contracts.api.dto.dag import Runs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.breaking_changes import BreakingChanges
@@ -86,6 +87,7 @@ from starpulse.contracts.api.dto.snapshot import (
     BuildEvent,
     ClaimDelta,
     DagsDelta,
+    Flows,
     LedgersDelta,
     MoveDelta,
     PullsDelta,
@@ -144,6 +146,8 @@ RESPONSES: dict[str, Any] = {
     "/api/history-window": WindowState,
     "/api/doctor": ContractReport,
     "/api/ready": ReadyReport,
+    "/api/flows": Flows,
+    "/api/runs": Runs,
     "/api/task/": TaskRecord,
     "/api/moves/": TaskMoves,
     "/api/task-records": TaskRecords,
@@ -221,6 +225,8 @@ BODIES: dict[str, Any] = {
     "scheduler": SchedulerStatus | ApiError,
     "doctor": ContractReport,
     "ready": ReadyReport,
+    "flows": Flows,
+    "runs": Runs,
     "task": TaskRecord | ApiError,
     "moves": TaskMoves | ApiError,
     "task_records": TaskRecords,

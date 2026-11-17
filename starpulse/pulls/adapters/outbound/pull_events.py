@@ -2,7 +2,8 @@
 
 Nothing here reads GitHub; an event after which the record may be stale (`_REREADS`: a push, an opening, a body edit) asks `PullSync` to read the pull
 request. A task's events name the task, never the pull request, so each one lands on the pull
-requests the Board says the task cites (`BoardFeed.cited`); an event of a task that cites none is dropped. An event
+requests the Board says the task cites (`BoardFeed.cited`); an event of a task that cites none is dropped, except a close
+that names its pull request, which applies to that one (a worker's feed may not yet hold the citation). An event
 patches the fields it causes on the stored record, or on a new one it opens, and dates the record by its own time
 (`fetchedAt`): a record is current until a newer event lands, and an event older than the record is already in it.
 Applying an event twice leaves the record as one application did, so the log may be replayed from any point.
@@ -261,13 +262,16 @@ class RecordProjection:
         """The task's pull requests an event applies to: those still open, for a reopen those closed unmerged, and for a
         close or a reopen the one it names (`pr`, or the intake's `pull_request`), at the top level or under `data`;
         one naming none applies only to a lone candidate."""
-        pulls = self._cited(key)
+        named = self._named(fields)
+        # a task citing none (its feed not yet warm, or the citation not yet written) leaves a close naming its pull
+        # request the only evidence; the pull request merged whoever cites it
+        pulls = self._cited(key) or ([named] if named and name in CLOSING else [])
         stored = {pull: self._store.find(repo=pull[0], number=pull[1]) for pull in pulls}
         wanted = "CLOSED" if name == REOPENING else "OPEN"
         candidates = [pull for pull in pulls if not stored[pull] or stored[pull][0]["state"] == wanted]
         if name not in CLOSING | ROLLUPS | {REOPENING}:
             return candidates
-        if named := self._named(fields):
+        if named:
             return [named] if named in candidates else []
         return candidates if len(candidates) == 1 else []
 

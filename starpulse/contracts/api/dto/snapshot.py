@@ -85,6 +85,21 @@ class Rating(_Api):
     changes: int
 
 
+class Flows(_Api):
+    """`GET /api/flows`: the whole of every flow and what the agent CLI reads beside it, with none of the snapshot's pages."""
+
+    flows: list[FlowSnapshot]
+    roles: Roles | None = None
+    settled: dict[str, Settled]
+    cold_done: list[str] | None = Field(default=None, description="The ids of the done tasks the feed holds as a stub, left out of `flows`.")
+    pulls: dict[str, list[Pull]] | None = None
+    interactive: dict[str, bool] | None = None
+    ratings: dict[str, Rating] | None = None
+    cues: list[Cue] | None = None
+    dags: list[DagBody]
+    error: str | None
+
+
 class Snapshot(_Api):
     graphs: list[str] = Field(description="Every lifecycle machine the server draws, and `runs`.")
     domains: list[Domain] | None = Field(default=None, description="The DAG domains.")

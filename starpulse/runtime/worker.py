@@ -29,7 +29,7 @@ from starpulse.runtime.listen import listen_options
 logger = logging.getLogger(__name__)
 
 #: The run Adapters that run as their own workers (`starpulse.runs.bin.adapter_worker`): `serve`'s `contexts` child runs one as a thread for each that a `[[runs]]` instance names.
-OPT_IN = ("github-actions", "systemd", "temporal", "woodpecker")
+OPT_IN = ("github-actions", "systemd", "woodpecker")
 HEARTBEAT_CONTEXTS = ("api", "contexts")  # the processes `serve` supervises (`supervisor.WORKER_CONTEXTS`)
 CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", "sweeper", *OPT_IN, "contexts")
 

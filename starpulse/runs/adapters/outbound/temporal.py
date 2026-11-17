@@ -5,15 +5,13 @@
 the `runs` contract's `Dag` records: a running execution is an `ActiveRun` with the activity it is on, that activity's
 attempt and the failure its last attempt ended in; a closed one is a `RecentRun`, and a failed one carries the activity
 it failed on, that activity's attempt and the failure. A closed execution never changes, so its history is read once.
-`follow` lists the server every `POLL_INTERVAL` seconds, since the server pushes no change. `start` is None, so a workflow
+`read` feeds the sweeper's `runs` kind; a close reaches the page as a completion callback (`POST /api/temporal-completion`). `start` is None, so a workflow
 has no Run now: these workflows start from the Board's lifecycle, not from the page.
 """
 
 import base64
 import json
 import re
-import threading
-import time
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
@@ -25,11 +23,6 @@ from starpulse.runs.adapters.outbound import Unreported, node
 
 #: The workflow types shown, in the order the page lists them.
 TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow", "CommandWorkflow")
-
-#: Seconds between two listings of the server.
-POLL_INTERVAL = 2.0
-#: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
-WORKER = "temporal"
 
 #: How many closed runs, failed and of any status, each listing asks for; the server answers newest first.
 RECENT_LIMIT = 100
@@ -307,13 +300,7 @@ def start(url: str) -> None:
     return
 
 
-def follow(url: str, runs: RunsSink, log: EventLog) -> None:  # pragma: no mutate block — thread wiring
-    """Show the workflows of the Temporal server at `url` on `runs`, read again every `POLL_INTERVAL` seconds."""
-    poller = Poller(runs, get, url)
-
-    def run() -> None:
-        while True:
-            poller.read()
-            time.sleep(POLL_INTERVAL)
-
-    threading.Thread(target=run, name="temporal-runs", daemon=True).start()
+def follow(url: str, runs: RunsSink, log: EventLog) -> None:
+    """Nothing to follow: the server pushes each close to `POST /api/temporal-completion`, and the sweeper's `runs` kind
+    compares `read` with the projection."""
+    return

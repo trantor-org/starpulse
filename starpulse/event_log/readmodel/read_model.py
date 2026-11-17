@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy import Engine, Select, func, select
+from sqlalchemy import Engine, Select, func, or_, select
 
 from starpulse.event_log.readmodel import queries, rows
 from starpulse.event_log.readmodel.declared import Declared
@@ -110,10 +110,13 @@ class ReadModel:
         with self._engine.connect() as db:
             return db.execute(statement).scalar()
 
-    def machine_lanes(self, since: float | None = None) -> dict[str, list[dict[str, Any]]]:
-        """Every machine's agents placed at or after `since`, keyed by machine; a machine with none is absent."""
+    def machine_lanes(self, since: float | None = None, keep_open: str | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Every machine's agents placed at or after `since`, keyed by machine; a machine with none is absent.
+
+        `keep_open` is the Board's done lane: an agent placed earlier stays while its Task is unarchived and not done.
+        """
         lanes: dict[str, list[dict[str, Any]]] = {}
-        for machine, agent, _ in self._machine_rows(None, since):
+        for machine, agent, _ in self._machine_rows(None, since, keep_open):
             lanes.setdefault(machine, []).append(agent)
         return lanes
 
@@ -133,12 +136,15 @@ class ReadModel:
         with self._engine.connect() as db:
             return db.execute(select(func.max(machine_tasks.c.seq))).scalar() or 0
 
-    def _machine_rows(self, machine: str | None, since: float | None) -> list[tuple[str, dict[str, Any], int]]:
+    def _machine_rows(
+        self, machine: str | None, since: float | None, keep_open: str | None = None
+    ) -> list[tuple[str, dict[str, Any], int]]:
         statement = select(machine_tasks.c.machine, machine_tasks.c.agent, machine_tasks.c.seq)
         if machine is not None:
             statement = statement.where(machine_tasks.c.machine == machine)
         if since is not None:
-            statement = statement.where(machine_tasks.c.active_at >= since)
+            recent = machine_tasks.c.active_at >= since
+            statement = statement.where(recent if keep_open is None else or_(recent, machine_tasks.c.task.in_(queries.open_ids(keep_open))))
         statement = statement.order_by(machine_tasks.c.machine, machine_tasks.c.task)
         with self._engine.connect() as db:
             return [tuple(row) for row in db.execute(statement).all()]

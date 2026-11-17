@@ -37,6 +37,13 @@ class DagBody(_Api):
     pool: str | None = Field(default=None, description="The name of the pool the workflow runs on; empty when none.")
 
 
+class Runs(_Api):
+    """`GET /api/runs`: every runs workflow as the snapshot lists it, and the error a runs instance reported."""
+
+    dags: list[DagBody]
+    error: str | None
+
+
 class DomainDag(_Api):
     name: str
     runSafe: bool

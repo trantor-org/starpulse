@@ -18,7 +18,7 @@ BUILT_IN = {
 }
 
 #: The run adapters' worker contexts. Each runs as a thread of `starpulse worker contexts`, or alone as `starpulse worker <context>`.
-ADAPTER_CONTEXTS = ("github-actions", "systemd", "temporal", "woodpecker")
+ADAPTER_CONTEXTS = ("github-actions", "systemd", "woodpecker")
 
 
 def module_name(kind: str) -> str:

@@ -66,7 +66,7 @@ def _resident_task(request: Request) -> Response | None:
         return None
     if cited:
         record["pulls"] = cited
-    return answer(request, encode("task", {"task": name, "record": record, "archived": False}), 200)
+    return answer(request, encode("task", {"task": name, "record": record, "archived": False, "done": api.feed.roles.done}), 200)
 
 
 def _stored_record(api: Api, name: str) -> tuple[int, dict[str, Any]]:

@@ -47,6 +47,12 @@ def held_states() -> Select[Any]:
     return select(tasks.c.state).where(tasks.c.archived == false()).distinct()
 
 
+def open_ids(done: str) -> Select[Any]:
+    """The ids of unarchived Tasks outside the done lanes."""
+    lane = func.lower(func.replace(tasks.c.state, " ", "_"))
+    return select(tasks.c.id).where(tasks.c.archived == false(), lane.not_in(done_lanes(done)))
+
+
 def held_done(done: str) -> Select[Any]:
     """The ids of unarchived Done Tasks of any age, in id order."""
     lane = func.lower(func.replace(tasks.c.state, " ", "_"))
