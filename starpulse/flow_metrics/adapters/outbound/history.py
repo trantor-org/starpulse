@@ -925,6 +925,7 @@ def _copy(
             break
         except OperationalError as exc:
             logger.warning("history: cannot read the %s cursor, retrying in %ss: %s", stream, RETRY_DELAY, exc)
+            # adr-exempt: retry
             stop.wait(RETRY_DELAY)
     else:
         return

@@ -82,6 +82,7 @@ def stop(server: subprocess.Popen) -> None:
         return
     os.killpg(server.pid, signal.SIGTERM)
     try:
+        # adr-exempt: handshake
         server.wait(STOP_S)
     except subprocess.TimeoutExpired:
         os.killpg(server.pid, signal.SIGKILL)
@@ -129,6 +130,7 @@ def rehearse(
                 last = read_ready(port)
                 if last[0] == 200:
                     return None
+                # adr-exempt: handshake
                 time.sleep(poll_s)
             status, body = last
             why = unready(body) or ("nothing answered" if status is None else f"/api/ready answered {status}")

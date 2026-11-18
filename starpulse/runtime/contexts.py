@@ -368,6 +368,7 @@ def _keep(
         except Exception:
             logger.exception("%s: start failed; starting again in %.1f s", name, wait)
             own.set()
+            # adr-exempt: retry
             if stop.wait(wait):
                 return
             wait = min(wait * 2, backoff[1])

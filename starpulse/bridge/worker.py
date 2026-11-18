@@ -49,6 +49,7 @@ def _await_start_position(log: EventLog, stop: StopEvent) -> tuple[bool, int | N
             return True, _start_position(log)
         except Exception as exc:  # the log's database is unreachable or locked; the next read retries
             logger.warning("bridge: cannot read its start position, retrying: %s", exc)
+            # adr-exempt: retry
             stop.wait(RETRY_DELAY)
     return False, None
 
@@ -59,6 +60,7 @@ def _reconcile(subscriber: Subscriber, stop: StopEvent) -> None:
             return subscriber.reconcile()
         except Unavailable as exc:  # the server is down; the subscriptions are reconciled before the tail starts
             logger.warning("bridge: cannot reconcile the sessions' subscriptions, retrying: %s", exc)
+            # adr-exempt: retry
             stop.wait(RETRY_DELAY)
 
 

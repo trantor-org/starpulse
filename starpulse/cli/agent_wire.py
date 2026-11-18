@@ -83,6 +83,7 @@ def get(base: str, path: str, timeout: float = 10.0) -> tuple[int, Any]:
         status, document, wait = _get_once(base, path, timeout)
         if status != 503 or not wait.isdigit() or send == BUSY_SENDS:
             return status, document
+        # adr-exempt: retry
         time.sleep(min(int(wait), BUSY_PAUSE_MAX_S))
     raise AssertionError("unreachable")
 

@@ -254,4 +254,5 @@ class ReadMethods:
     def wait_replayed(self, timeout: float | None = None) -> bool:
         """Block until the stream has been read up to where it stood at the start, or `timeout` seconds pass, and say
         whether it has; at once for a feed that reads none."""
+        # adr-exempt: handshake
         return self.ready.wait(timeout) if self._awaiting else True

@@ -505,6 +505,7 @@ class SearchIndex:
                 self.embed_pending()
             except (EmbeddingError, SQLAlchemyError) as exc:
                 logger.warning("StarPulse: cannot embed tasks for search: %s", exc)
+                # adr-exempt: retry
                 stop.wait(_RETRY)
 
         log.run_on_wake(stop, catch_up, "StarPulse: the search embedding pass failed")

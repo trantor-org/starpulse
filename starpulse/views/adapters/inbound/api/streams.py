@@ -226,6 +226,7 @@ class Streams:
                 sent = view
                 interest = Interest(view, assignee, states)
             yield from self._wait_touched(changes, interest)
+            # adr-exempt: debounce
             time.sleep(_HELD_SETTLE_S)
             while not changes.empty():
                 changes.get_nowait()

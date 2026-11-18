@@ -100,6 +100,7 @@ class Adopted:
         while (code := self.poll()) is None:
             if deadline is not None and time.monotonic() >= deadline:
                 raise subprocess.TimeoutExpired(str(self.pid), timeout)
+            # adr-exempt: handshake
             time.sleep(0.05)
         return code
 

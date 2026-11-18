@@ -1010,6 +1010,7 @@ class TaskActor:
     def _keep_checkpoint(self, stop: StopEvent) -> None:
         """Save the checkpoint every `_CHECKPOINT_S` while recovery or the actor runs, and once more on a stop."""
         try:
+            # adr-exempt: pending
             while not stop.wait(_CHECKPOINT_S):
                 self.checkpoint()
         finally:
@@ -1569,6 +1570,7 @@ class TaskActor:
                     return Written(False, str(error))
                 if delay is None:
                     return Written(False, str(error), transient=True)
+                # adr-exempt: retry
                 time.sleep(delay)
         raise AssertionError("unreachable")
 

@@ -318,6 +318,7 @@ def follow(  # pragma: no mutate block — thread wiring
                 pass
             relist(user)
             if time.monotonic() - started < QUICK_EXIT:
+                # adr-exempt: retry
                 stop.wait(RESTART_BACKOFF)
 
     for user in {user for user, _ in timers.entries}:

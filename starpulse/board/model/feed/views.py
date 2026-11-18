@@ -273,6 +273,7 @@ class ViewMethods:
         deadline = time.monotonic() + wait_s
         for stream in streams:
             while stream.unfinished_tasks and time.monotonic() < deadline:
+                # adr-exempt: handshake
                 time.sleep(0.005)
 
     def snapshot(self) -> dict[str, Any]:
