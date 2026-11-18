@@ -314,30 +314,32 @@ def serve(
     board = board or _bare_board()
     board = replace(board, writer=board.writer or _no_writer, assign=board.assign or _no_writer)
     stop = StopEvent()
-    snapshots = stored_snapshots(served, log, stop)
-    app = page_app(
-        served,
-        snapshots,
-        static,
-        history or HistoryStore(kept, machines),
-        window or HistoryWindow(served, 6, log),
-        board,
-        Services(**services),
-        clock,
-        gate,
-    )
-    server = PageServer(
-        app, ("127.0.0.1", port), tls=tls, stopping=lambda: snapshots.announce("restarting", {"at": time.time()})
-    )
-    server.caught_up = snapshots.caught_up
-    server.start()
+    snapshots = server = None
     try:
+        snapshots = stored_snapshots(served, log, stop)
+        app = page_app(
+            served,
+            snapshots,
+            static,
+            history or HistoryStore(kept, machines),
+            window or HistoryWindow(served, 6, log),
+            board,
+            Services(**services),
+            clock,
+            gate,
+        )
+        server = PageServer(
+            app, ("127.0.0.1", port), tls=tls, stopping=lambda: snapshots.announce("restarting", {"at": time.time()})
+        )
+        server.caught_up = snapshots.caught_up
+        server.start()
         yield server
     finally:
-        server.close()
+        if server is not None:
+            server.close()
         stop.set()
         # a reader of the log still mid-step reopens it after the close, and a thread starved under load has not begun
-        for reader in snapshots.readers:
+        for reader in snapshots.readers if snapshots is not None else ():
             reader.join(30)
         log.close()
 

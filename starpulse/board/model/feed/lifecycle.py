@@ -159,6 +159,7 @@ class LifecycleMixin:
             if self._seen == self._saved and not self._pulls_unsaved and self._kept is self._kept_saved:
                 return
             seen, source = self._seen, self._kept
+            pulls_unsaved, self._pulls_unsaved = self._pulls_unsaved, False  # a pull set during the write sets it again
             snapshot = BoardSnapshot(
                 open=dict(self._open),
                 settled=dict(self._settled),
@@ -172,6 +173,8 @@ class LifecycleMixin:
             store.save(stream, seen, snapshot)
         except Exception as exc:  # the store is down; the Board still draws and the next debounce retries
             logger.warning("StarPulse: cannot save the Board of %s: %s", stream, exc)
+            if pulls_unsaved:
+                self._pulls_unsaved = True
             self.unsaved.set()
             return
-        self._saved, self._pulls_unsaved, self._kept_saved = seen, False, source
+        self._saved, self._kept_saved = seen, source

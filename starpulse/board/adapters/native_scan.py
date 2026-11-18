@@ -257,9 +257,9 @@ class NativeScan:
         self._wake: socket.socket | None = None
         self._scanning = threading.RLock()  # the poll thread and `settle()` both scan
         for name, (mtime_ns, size, task_id) in (files or {}).items():
-            self._seen[str(root / name)] = (mtime_ns, size)
+            self._seen[str(self.root / name)] = (mtime_ns, size)
             if task_id:
-                self._ids[str(root / name)] = task_id
+                self._ids[str(self.root / name)] = task_id
 
     def files(self) -> dict[str, list]:
         """Each file scanned, by its path under the project, with its fingerprint and the task it holds (or None)."""

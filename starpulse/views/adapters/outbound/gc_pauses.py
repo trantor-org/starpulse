@@ -93,6 +93,8 @@ class Collector:
 
     def run(self, stop: StopEvent) -> None:
         stop.listen(self._due.set)
+        if stop.is_set():  # a stop before the listener is not called for
+            self._due.set()
         frozen = False
         try:
             while self._due.wait() and not stop.is_set():
