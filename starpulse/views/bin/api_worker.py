@@ -12,6 +12,7 @@ the process, as the page is built from the whole config once.
 
 import argparse
 import dataclasses
+import gc
 import os
 import socket
 import time
@@ -47,7 +48,7 @@ from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.inbound.snapshots import Snapshots
-from starpulse.views.adapters.outbound.gc_pauses import install as collect_by_requests
+from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.adapters.outbound.storage_metrics import cached, storage_exposition
 from starpulse.views.adapters.outbound.take_over import command_take_over
@@ -237,8 +238,8 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         autopilot_log=lambda: autopilot_log(log),
     )
     snapshots = Snapshots(SnapshotStore(log.engine, stored_bodies), log, stop)
-    collector = collect_by_requests(stop)
-    app = page_app(feed, snapshots, host.static, store, window, board, services, served=collector.served)
+    gc.callbacks.append(PAUSES.callback)
+    app = page_app(feed, snapshots, host.static, store, window, board, services)
     try:
         httpd = PageServer(
             app,

@@ -353,10 +353,8 @@ class PageApp:
         gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
         seams: Api | None = None,
-        served: Callable[[], None] = lambda: None,
     ) -> None:
         self._grpc = grpc
-        self._served = served
         self._flows = flows
         self._files = _Build(directory=static, check_dir=False)
         self._workers = CapacityLimiter(REQUEST_THREADS)
@@ -416,7 +414,6 @@ class PageApp:
             await self._answer(scope, receive, send, started)
         finally:
             started()
-            self._served()
 
     async def _answer(
         self, scope: MutableMapping[str, Any], receive: Any, send: Any, started: Callable[[], None]
@@ -524,9 +521,8 @@ def page_app(
     services: Services = Services(),
     clock: Callable[[], float] = time.time,
     gate: Callable[[GateRequest], bool] | None = None,
-    served: Callable[[], None] = lambda: None,
 ) -> PageApp:
-    """The Page API over `feed`, serving the snapshot and deltas the Board writer stored (`snapshots`), calling `served` after each HTTP request."""
+    """The Page API over `feed`, serving the snapshot and deltas the Board writer stored (`snapshots`)."""
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
 
     def build_frame() -> str | None:
@@ -545,4 +541,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api, served)
+    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api)
