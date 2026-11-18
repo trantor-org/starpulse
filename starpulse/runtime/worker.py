@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.context == "api":
         from starpulse.cli import doctor
-        from starpulse.runtime import listen, read_model_follow, sched, wiring
+        from starpulse.runtime import listen, sched, wiring
         from starpulse.runtime.assembly import assemble, history_store
         from starpulse.runtime.hold import LISTEN_FD_ENV, announce_ready
         from starpulse.views.bin import api_worker
@@ -84,7 +84,6 @@ def main(argv: list[str] | None = None) -> None:
             announce_ready=announce_ready,
             assemble=assemble,
             history_store=history_store,
-            follow_read_model=read_model_follow.follow,
             contract=doctor.contract,
             readiness=_readiness,
             probes=doctor.LIVE,

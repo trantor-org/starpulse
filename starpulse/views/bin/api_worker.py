@@ -74,7 +74,6 @@ class Host:
     announce_ready: Callable[[Any], None]
     assemble: Callable[..., tuple[Any, Any]]
     history_store: Callable[..., Any]
-    follow_read_model: Callable[..., object]
     contract: Callable[..., Any]
     readiness: Callable[..., Callable[[], dict[str, Any]]]
     probes: Any
@@ -110,16 +109,13 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
 
     from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.application.queries.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.board.application.queries.machine_tasks import MachineDeltas  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.application.queries.verdicts import Verdicts  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.model.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.declared import declared_fields  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.readmodel.projector import Projector  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.snapshot_store import SnapshotStore  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.store import EventStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.pulls.adapters.outbound.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.views.model.encoding import stored_bodies  # noqa: PLC0415 - the database stack loads after the config is accepted
 
@@ -142,18 +138,14 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     feed.record_lanes(store, log)
     feed.record_ratings(log)
     feed.read_lanes(store.lane_rows)
+    # the Board writer's projector indexes each task for search; this process only reads the index
     search = SearchIndex.open(log.engine, config.search)
     stop = StopEvent()
     board.attach(log)
-    projector = Projector(log.engine, EventStore(log.engine), search)
-    projector.catch_up()
-    feed.follow_read_model()
     feed.ready.set()
     # `starpulse worker board` dates when each task's Start Criteria were met and when each claim expires and pushes both
     # to the log; this process adopts them on each push
     feed.follow_dates(log, store, stop)
-    host.follow_read_model(projector, feed, stop, log)
-    MachineDeltas(feed, model).follow(stop, log)
     refusals = ClaimRefusals(feed)
     follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry)
     verdicts = Verdicts(feed)
