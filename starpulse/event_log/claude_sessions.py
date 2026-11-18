@@ -1,18 +1,38 @@
-"""Whether a session is working or idle at its prompt, read from its transcript.
+"""The one reader of Claude Code's session records and transcripts for StarPulse.
 
-Claude Code ends each agent turn with a `system` entry (`turn_duration`) and writes an interrupt as a user entry. A
-later user or assistant entry means a turn is running. tmux redraws and the session record's `status` say nothing
-reliable about it, so only the transcript decides.
+Claude Code keeps one record per running process, `<sessions>/<pid>.json`, and one transcript per session,
+`<transcripts>/<project>/<session>.jsonl`. A record is of a running session only while its pid runs with the start
+time the record holds (`procStart`), so a reused pid is no live session: every liveness answer here, a session's
+process and its inbox socket, is that one check. A turn is a `user` or `assistant` entry of a transcript; Claude Code
+ends each agent turn with a `system` entry (`turn_duration`) and writes an interrupt as a user entry. A later turn
+means one is running. tmux redraws and the record's `status` say nothing reliable about it, so only the transcript
+decides.
 """
 
 import json
+import os
 import re
 import time
+from collections.abc import Callable, Iterator, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-__all__ = ["DEFAULT_SESSIONS", "DEFAULT_TRANSCRIPTS", "holder_activity", "local_id", "same_holder", "session_activity"]
+import psutil
+
+__all__ = [
+    "DEFAULT_SESSIONS",
+    "DEFAULT_TRANSCRIPTS",
+    "holder_activity",
+    "last_turn",
+    "live_session",
+    "live_socket",
+    "local_id",
+    "same_holder",
+    "session_activity",
+    "sessions_dir",
+    "transcript_written",
+]
 
 DEFAULT_TRANSCRIPTS = "~/.claude/projects"
 """Where Claude Code writes each session's transcript, read for a terminal halt: `[board] transcripts`."""
@@ -20,7 +40,9 @@ DEFAULT_SESSIONS = "~/.claude/sessions"
 """Where Claude Code registers each running session, `<pid>.json`, read for a live holder: `[board] sessions`."""
 
 TURNS = frozenset({"user", "assistant"})
+"""The `type` of a transcript entry that is a turn."""
 TURN_END = "turn_duration"
+"""The `subtype` of the `system` entry that closes a turn."""
 INTERRUPT = "[Request interrupted"
 SESSION_ID = re.compile(r"[\w-]+")
 BRIDGE_ID = re.compile(r"(?:https?://\S+/)?(?:session|cse)_(\w+)/?")
@@ -47,10 +69,6 @@ def _text(entry: dict[str, Any]) -> str:
         return content
     parts = content if isinstance(content, list) else []
     return " ".join(part.get("text", "") for part in parts if isinstance(part, dict))
-
-
-def _decides(entry: dict[str, Any]) -> bool:
-    return entry.get("type") in TURNS or (entry.get("type") == "system" and entry.get("subtype") == TURN_END)
 
 
 def _ended(entry: dict[str, Any]) -> bool:
@@ -84,23 +102,92 @@ def transcript_path(root: Path, session: str) -> Path | None:
     return path
 
 
-def session_activity(root: Path, session: str, *, now: float, tail: int = TAIL_BYTES) -> dict[str, Any] | None:
-    """`{"state": "idle", "last_turn_at", "idle_s"}` after a finished turn, `{"state": "working", "last_turn_at"}`
-    mid-turn; None when `session` names no transcript under `root` or none of its last `tail` bytes is a turn."""
+def last_turn(root: Path, session: str, *, size: int = TAIL_BYTES, ends: bool = False) -> dict[str, Any] | None:
+    """The newest timestamped turn of `session`'s transcript under `root`, or with `ends` the `system` entry that closes
+    one; None when it has no transcript or none of its last `size` bytes is one (a transcript reaches 100 MB)."""
     path = transcript_path(root, session)
     if path is None:
         return None
-    for line in reversed(_tail(path, tail)):
+    for line in reversed(_tail(path, size)):
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(entry, dict) and _decides(entry) and entry.get("timestamp"):
-            stamp = entry["timestamp"]
-            if _ended(entry):
-                return {"state": "idle", "last_turn_at": stamp, "idle_s": int(now - _seconds(stamp))}
-            return {"state": "working", "last_turn_at": stamp}
+        if not isinstance(entry, dict) or not entry.get("timestamp"):
+            continue
+        if entry.get("type") in TURNS or (ends and entry.get("type") == "system" and entry.get("subtype") == TURN_END):
+            return entry
     return None
+
+
+def transcript_written(root: Path) -> Callable[[str], float | None]:
+    """A reader of when `<root>/<project>/<session>.jsonl` was last written; None for no session or no transcript."""
+
+    def written(session: str) -> float | None:
+        path = transcript_path(root, session)
+        try:
+            return path.stat().st_mtime if path is not None else None
+        except FileNotFoundError:
+            return None
+
+    return written
+
+
+def session_activity(root: Path, session: str, *, now: float, tail: int = TAIL_BYTES) -> dict[str, Any] | None:
+    """`{"state": "idle", "last_turn_at", "idle_s"}` after a finished turn, `{"state": "working", "last_turn_at"}`
+    mid-turn; None when `session` names no transcript under `root` or none of its last `tail` bytes is a turn."""
+    entry = last_turn(root, session, size=tail, ends=True)
+    if entry is None:
+        return None
+    stamp = entry["timestamp"]
+    if _ended(entry):
+        return {"state": "idle", "last_turn_at": stamp, "idle_s": int(now - _seconds(stamp))}
+    return {"state": "working", "last_turn_at": stamp}
+
+
+def sessions_dir(environ: Mapping[str, str]) -> Path:
+    """Where Claude Code keeps one record per running process: `$CLAUDE_CONFIG_DIR/sessions`, else `~/.claude/sessions`."""
+    return Path(environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "sessions"
+
+
+def _running(record: dict[str, Any]) -> bool:
+    """Whether the recorded pid runs with the recorded start time, so a reused pid is not the session."""
+    try:
+        started = psutil.Process(int(record["pid"])).create_time() - psutil.boot_time()
+        return round(started * os.sysconf("SC_CLK_TCK")) == int(record["procStart"])  # `procStart` is in clock ticks
+    except psutil.Error, KeyError, ValueError, TypeError:
+        return False
+
+
+def _running_records(sessions: Path) -> Iterator[dict[str, Any]]:
+    for entry in sorted(sessions.glob("*.json")):
+        try:
+            data = json.loads(entry.read_text())
+        except OSError, ValueError:
+            continue
+        if isinstance(data, dict) and _running(data):
+            yield data
+
+
+def live_session(sessions: Path, session: str) -> bool:
+    """Whether the process registered under `sessions` for `session` (its session id, bridge id or Remote Control URL) is still running."""
+    for record in _running_records(sessions) if session else ():
+        bridge = record.get("bridgeSessionId")
+        if session in (record.get("sessionId"), bridge) or bool(bridge and session.endswith(f"/{bridge}")):
+            return True
+    return False
+
+
+def live_socket(sessions: Path) -> Callable[[str], str | None]:
+    """The inbox socket of the running process of a session, from Claude Code's per-process records in `sessions`."""
+
+    def find(session: str) -> str | None:
+        for record in _running_records(sessions):
+            if record.get("sessionId") == session and record.get("messagingSocketPath"):
+                return str(record["messagingSocketPath"])
+        return None
+
+    return find
 
 
 def local_id(sessions: Path, assignee: str) -> str:
@@ -109,13 +196,9 @@ def local_id(sessions: Path, assignee: str) -> str:
     bridge = assignee.rstrip("/").rsplit("/", 1)[-1] if assignee.startswith("http") else ""
     if not bridge:
         return assignee
-    for record in sessions.glob("*.json"):
-        try:
-            data = json.loads(record.read_text())
-        except OSError, ValueError:
-            continue
-        if isinstance(data, dict) and data.get("bridgeSessionId") == bridge:
-            return str(data.get("sessionId", ""))
+    for record in _running_records(sessions):
+        if record.get("bridgeSessionId") == bridge:
+            return str(record.get("sessionId", ""))
     return ""
 
 

@@ -104,18 +104,10 @@ def domains_of(config: Config) -> dict[str, tuple[str, ...]]:
     return merged
 
 
-def assemble(
-    config: Config,
-    base: Path,
-    window_s: float | None,
-    run_safe: Collection[str],
-    read_model: ReadModel | None = None,
-) -> tuple[Board, BoardFeed]:
-    """The board the config's `[board]` adapter builds, and the feed that draws it; `base` is the config's directory.
-
-    A task whose latest move on a machine is older than `window_s` seconds (None: never) is not drawn there, and Run
-    now is drawn on the `run_safe` workflows.
-    """
+def declared(config: Config, base: Path) -> tuple[Board, dict[str, dict], Mapping[str, Sequence[str]], Policy | None]:
+    """The board the config's `[board]` adapter builds, the machines it and the harness adapters draw, the config's
+    domains and the stored policy: all a reader of the declarations, with no feed, needs. Raises ValueError as
+    `assemble` does."""
     native_board = config.board_type == "native"
     rows = policy_store.held(database_url(config.database_url, base)) if native_board else None
     board = native.board({**config.board, "policy_rows": rows}, base) if native_board else machines_only.board(config.board, base)
@@ -137,7 +129,26 @@ def assemble(
             raise ConfigError(str(exc)) from exc
     if config.level:
         config.level.check(machines)
+    return board, machines, domains, rows
+
+
+def assemble(
+    config: Config,
+    base: Path,
+    window_s: float | None,
+    run_safe: Collection[str],
+    read_model: ReadModel,
+) -> tuple[Board, BoardFeed]:
+    """The board the config's `[board]` adapter builds, and the feed that draws it from `read_model`; `base` is the config's directory.
+
+    A task whose latest move on a machine is older than `window_s` seconds (None: never) is not drawn there, and Run
+    now is drawn on the `run_safe` workflows.
+    """
+    board, machines, domains, rows = declared(config, base)
+    qualify = qualifier(domains)
+    native_board = config.board_type == "native"
     feed = BoardFeed(
+        read_model,
         window_s,
         board.keys,
         config.tracker_url,
@@ -150,7 +161,6 @@ def assemble(
         source=board.source,
         capabilities={"edit": native_board, "archive": native_board, "create": native_board},
         commit={instance.name: instance.commit for instance in config.runs if instance.commit},
-        read_model=read_model,
         standing=board.standing,
         readable=board.readable,
         default_profiles=profile_matrix(rows or Policy()),

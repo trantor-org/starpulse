@@ -148,6 +148,7 @@ def default_starters(
     from starpulse.runtime.assembly import (
         assemble,
         board_kinds,
+        declared,
         github_kinds,
         own_pull_merged,
         prune_steps,
@@ -223,9 +224,9 @@ def default_starters(
     def flow_metrics(own: threading.Event) -> Callable[[], None]:
         from starpulse.flow_metrics.bin import flow_metrics_worker
 
-        # its own cheap assemble, never `shared`: the recorder needs only the machines, and the shared board waits for the Board context's fold, minutes after a restart
+        # its own cheap `declared`, never `shared`: the recorder needs only the machines, and the shared board waits for the Board context's fold, minutes after a restart
         return flow_metrics_worker.start(
-            config, path, base, log, own, load=load, assemble=assemble, history_store=history_store,
+            config, path, base, log, own, load=load, declared=declared, history_store=history_store,
         )  # fmt: skip
 
     def signal_folds(own: StopEvent) -> Callable[[], None]:
@@ -270,12 +271,13 @@ def default_starters(
         from starpulse.bridge import worker
         from starpulse.runtime.session_delivery import forget_ended, route
         from starpulse.sessions.adapters.outbound import claude_code_notify as claude
+        from starpulse.event_log.claude_sessions import live_socket, sessions_dir
         from starpulse.sessions.adapters.outbound.registry import Registry, directory
 
         notifier = claude.ClaudeCodeNotifier(
             post=claude.post_inbox,
             resume=claude.resume_with(config.bridge.resume),
-            alive=claude.live_socket(claude.sessions_dir(os.environ)),
+            alive=live_socket(sessions_dir(os.environ)),
             now=time.monotonic,
         )
         end = claude.end_with(config.bridge.end)
@@ -290,14 +292,14 @@ def default_starters(
             route(
                 registry,
                 notifier,
-                claude.sessions_dir(os.environ),
+                sessions_dir(os.environ),
                 config.bridge.quiet_moves,
                 end,
                 config.bridge.end_lanes,
             ),
             end,
             config.bridge.end_lanes,
-            forget_ended(registry, claude.live_socket(claude.sessions_dir(os.environ)), claude.sessions_dir(os.environ)),
+            forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ)),
             config.bridge.incidents,
         )
 

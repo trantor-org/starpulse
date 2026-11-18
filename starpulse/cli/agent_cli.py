@@ -553,15 +553,13 @@ def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
         config = load(path)
     except (OSError, ValueError) as exc:
         config = f"{path}: {exc}"
-    served = ready = None
+    ready = None
     try:
         snapshot: dict[str, Any] | str = agent_wire.get_flows(base)
-        status, report = agent_wire.get(base, "/api/doctor")
-        served = report if status == 200 and isinstance(report, dict) else None
         ready = agent_wire.get(base, "/api/ready")
     except agent_wire.CliError as exc:
         snapshot = str(exc)
-    return doctor.run_checks(snapshot, config, doctor.LIVE, base, served, ready)
+    return doctor.run_checks(snapshot, config, doctor.LIVE, base, ready)
 
 
 def _skills_root(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[str, Path]:
@@ -702,7 +700,7 @@ def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
 def _session_records(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """One session's transcript records grouped by the task each belongs to, in the order the tasks are first named,
     read from the transcript files under `--transcripts`, else `[board] transcripts`, else Claude Code's own directory."""
-    from starpulse.board.adapters.session_activity import DEFAULT_TRANSCRIPTS  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.contracts.adapters import TaskKeys  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.contracts.analytics import Analytics  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode  # noqa: PLC0415 - import cost, paid on first use

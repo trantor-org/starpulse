@@ -8,16 +8,14 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
 - the worker announces the records of each save on `SAVED_STREAM` (`announce_saves`); `serve` holds records in memory
   and takes those from the database again (`follow_saves`), so `/api/pulls` never answers from before a save;
 - a page's refresh request lands on `REFRESH_STREAM` (`request_refresh`) and the worker asks `PullSync` for it;
-- the actor's `/metrics` text is kept in the `METRICS` worker state for `serve` to relay;
-- the poller writes the time to the `POLLER` worker state while it runs (`keep_beating`), and `starpulse doctor` reports it
-  down once that is older than `DOWN_S` (`poller_problem`).
+- the actor's `/metrics` text is kept in the `METRICS` worker state for `serve` to relay.
+
+Nothing here beats: a stalled worker shows in the sweeper's `readers` kind, an exit in the supervisor.
 """
 
 import json
 import logging
-import math
 import threading
-import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -35,15 +33,9 @@ METRICS = "pulls.metrics"
 ACTOR_VIEW = "pulls.actor_view"
 SAVED_STREAM = "pulls:saved"
 REFRESH_STREAM = "pulls:refresh"
-POLLER = "pulls.poller"
-#: Written only while the pull sync serves refreshes, which it does once the Board replay is done: a worker replaced before
-#: then served none of the asks it was handed, and the next one must replay them.
-SERVING = "pulls.serving"
-#: The worker state holding, by stream, the id of the last `follow_events` entry the replay handed over.
+#: The worker state holding, by stream, the id of the last entry a replay handed over: the `follow_events` streams, and
+#: `REFRESH_STREAM` once the pull sync serves.
 CURSOR = "pulls.cursor"
-#: Seconds between the poller's beats, and how old its last beat may be before `serve` calls it down.
-BEAT_S = 15.0
-DOWN_S = 60.0
 
 
 def _follow(name: str, log: EventLog, stream: str, after: int, handle: Callable[[Entry], None], stop: StopEvent):
@@ -138,21 +130,23 @@ def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable
     return request
 
 
-def follow_refreshes(log: EventLog, request: Callable[[str, int | None], Any], stop: StopEvent) -> threading.Thread:
-    """Hand each refresh asked from now on to `request` (the pull sync's), on a thread until `stop`. A request asked
-    since the last serving beat went unserved, whether no worker ran or the one that did was replaced before it served
-    (it beats alive while it replays the Board), so those replay: a restart must not drop the close of a pull request
-    that landed in the gap."""
-    _, beat = log.state(SERVING)
-    since = beat.get("at") if isinstance(beat, dict) else None
-    head = log.head() or 0
+def follow_refreshes(
+    log: EventLog, request: Callable[[str, int | None], Any], serving: threading.Event, stop: StopEvent
+) -> threading.Thread:
+    """Hand each refresh asked from now on to `request` (the pull sync's), on a thread until `stop`. Each one handed over
+    while `serving` is set (the sync is past its Board replay) moves the `REFRESH_STREAM` entry of the `CURSOR` state, and
+    the next worker replays those after it: a worker replaced before it served leaves the asks it was handed unserved,
+    and a restart must not drop the close of a pull request that landed in the gap."""
+    _, kept = log.state(CURSOR)
+    cursor = kept.get(REFRESH_STREAM) if isinstance(kept, dict) else None
 
     def handle(entry: Entry) -> None:
-        if entry.id > head or entry.at >= (since or math.inf):
-            number = entry.fields["number"]
-            request(entry.fields["repo"], int(number) if number != "" else None)
+        number = entry.fields["number"]
+        request(entry.fields["repo"], int(number) if number != "" else None)
+        if serving.is_set():
+            log.put_state_entry(CURSOR, REFRESH_STREAM, entry.id)
 
-    return _follow("pull-refresh", log, REFRESH_STREAM, head if since is None else 0, handle, stop)
+    return _follow("pull-refresh", log, REFRESH_STREAM, (log.head() or 0) if cursor is None else cursor, handle, stop)
 
 
 def follow_events(
@@ -246,48 +240,6 @@ def keep_metrics(
     thread = threading.Thread(target=run, name="pull-metrics", daemon=True)
     thread.start()
     return thread
-
-
-def keep_beating(
-    log: EventLog,
-    running: threading.Event,
-    stop: StopEvent,
-    clock: Callable[[], float] = time.time,
-    state: str = POLLER,
-) -> threading.Thread:
-    """Write the time to `state` of the log every `BEAT_S` while `running` is set, on a thread until `stop`: the poller's
-    beat, or with `SERVING` the sync's beat."""
-
-    def run() -> None:
-        while not stop.is_set():
-            if running.is_set():
-                try:
-                    log.put_state(state, {"at": clock()})
-                except Exception:
-                    logger.warning("pulls: the poller's beat was not kept", exc_info=True)
-            # adr-exempt: pending
-            stop.wait(BEAT_S)
-
-    thread = threading.Thread(target=run, name="pull-beat", daemon=True)
-    thread.start()
-    return thread
-
-
-def poller_problem(log: EventLog, clock: Callable[[], float] = time.time) -> Callable[[], str | None]:
-    """Why the pull poller counts as down, or None while its beat is under `DOWN_S` old."""
-
-    def read() -> str | None:
-        try:
-            _, beat = log.state(POLLER)
-        except Exception as exc:
-            return f"the event log cannot be read: {exc}"
-        at = beat.get("at") if isinstance(beat, dict) else None
-        if not isinstance(at, int | float):
-            return "the pull poller has not reported"
-        age = clock() - at
-        return None if age <= DOWN_S else f"the pull poller last reported {age:.0f}s ago"
-
-    return read
 
 
 def metrics_of(log: EventLog) -> Callable[[], str]:

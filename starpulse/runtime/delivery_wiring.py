@@ -20,10 +20,6 @@ from starpulse.event_log import lane_events
 from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound.head_reader import GitHubReader
 from starpulse.github.adapters.outbound.rest import connect
-from starpulse.pulls.adapters.inbound.delivery import (
-    SERVING,
-    keep_beating,
-)
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor, moves_of
 from starpulse.pulls.adapters.outbound.main_green import MainGreen
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
@@ -53,16 +49,12 @@ def _then(first: Callable[[], None], second: Callable[[], None]) -> Callable[[],
 POLL_RESTART_S = (1.0, 60.0)  # the pull reader's first restart delay after a crash and the longest it backs off to
 
 
-def keep_polling(
-    sync: PullSync, stop: StopEvent, running: threading.Event, delay_s: tuple[float, float] = POLL_RESTART_S
-) -> None:
-    """Run the pull reader until `stop`, with `running` set while it runs, starting it again after a crash with a delay
-    that doubles from `delay_s[0]` to `delay_s[1]`, and logging each crash. A run that lasts the longest delay starts
-    the backoff over."""
+def keep_polling(sync: PullSync, stop: StopEvent, delay_s: tuple[float, float] = POLL_RESTART_S) -> None:
+    """Run the pull reader until `stop`, starting it again after a crash with a delay that doubles from `delay_s[0]` to
+    `delay_s[1]`, and logging each crash. A run that lasts the longest delay starts the backoff over."""
     delay, longest = delay_s
     while not stop.is_set():
         started = time.monotonic()
-        running.set()
         try:
             sync.serve_forever()
             return
@@ -70,8 +62,6 @@ def keep_polling(
             if time.monotonic() - started >= longest:
                 delay = delay_s[0]
             logger.exception("pull requests: the poller crashed; restarting in %.0fs", delay)
-        finally:
-            running.clear()
         # adr-exempt: retry
         stop.wait(delay)
         delay = min(delay * 2, longest)
@@ -163,10 +153,7 @@ def start_delivery(
             pulls.subscribe(actor.store_changed)
             project = _then(actor.timed_projection(project), actor.pulls_changed)
         sync = PullSync(pulls, feed, config.repos, project=project, stop=stop)
-        running = threading.Event()
-        keep_beating(log, running, stop)
-        keep_beating(log, sync.serving, stop, state=SERVING)
-        threading.Thread(target=keep_polling, args=(sync, stop, running), name="pull-reader", daemon=True).start()
+        threading.Thread(target=keep_polling, args=(sync, stop), name="pull-reader", daemon=True).start()
     if config.release is not None:
         if config.board_type != "native" or not (feed.roles.waiting and feed.roles.ready):
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")

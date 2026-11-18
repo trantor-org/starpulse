@@ -45,8 +45,9 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.machine_fold import Placer
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.runtime.assembly import assemble as _assemble
 from starpulse.runtime.config import Config
+from starpulse.runtime.placed import Placed
+from starpulse.runtime.placed import assembled as placed_assembled
 from starpulse.runtime.store_migrate import maintain
 from starpulse.runtime.stored_snapshot import stored_snapshots
 from starpulse.views.adapters.inbound.asgi_app import page_app
@@ -183,7 +184,7 @@ class RunsAdapterKit(_AdapterKit):
         assert [dag.name for dag in self.records() if dag.pool and dag.pool not in names] == []
 
     def test_starpulse_draws_every_dag_and_pool(self) -> None:
-        feed = BoardFeed()
+        feed = Placed().draw()
         dags, pools = self.produce(), self.produce_pools()
         feed.runs("kit").set_dags(dags, None, pools)
         snapshot = feed.snapshot()
@@ -220,7 +221,8 @@ def serve(
     (static / "index.html").write_text("<!doctype html>")
     (static / "assets" / "index-abc123.js").write_text("")
     (tmp_path / "secret.txt").write_text("")
-    served = feed or BoardFeed()
+    drawn = None if feed else Placed()
+    served = feed or drawn.draw()
     machines = feed.machines if feed else {}
     settings, kept = f"sqlite:///{tmp_path / 'settings.sqlite'}", f"sqlite:///{tmp_path / 'history.sqlite'}"
     for store in () if migrated else (settings, kept):
@@ -259,6 +261,8 @@ def serve(
         for reader in snapshots.readers if snapshots is not None else ():
             reader.join(30)
         log.close()
+        if drawn:
+            drawn.close()
 
 
 def url(server: PageServer, path: str) -> str:
@@ -293,4 +297,5 @@ def assembled(config: Config, base: Path) -> tuple[Board, BoardFeed]:
 
     `base` is the directory the config's relative paths are read from.
     """
-    return _assemble(config, base, None, config.qualified_run_safe())
+    board, feed, _ = placed_assembled(config, base)
+    return board, feed

@@ -10,7 +10,7 @@ from typing import Any
 import nats
 from nats.errors import Error as NatsError
 
-from starpulse.board.adapters.session_activity import same_holder
+from starpulse.event_log.claude_sessions import same_holder
 from starpulse.board.model.view import board_flow, roles_of
 from starpulse.bridge.reach import Reach
 from starpulse.bridge.subjects import token

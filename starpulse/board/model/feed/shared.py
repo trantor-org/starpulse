@@ -2,13 +2,13 @@
 
 import logging
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from starpulse.board.model.entry import default_profile
 from starpulse.board.model.markdown import needs_attention_reason
-from starpulse.contracts.adapters import DEFAULT_TIER, BoardTask
+from starpulse.contracts.adapters import DEFAULT_TIER
 from starpulse.machine_engine.model.machine_definition import Writer
 from starpulse.machine_engine.model.transitions import board_moves, lane_id
 
@@ -54,66 +54,9 @@ def pull_links(references: Iterable[str]) -> list[str]:
     return [ref for ref in references if _PULL_REQUEST.fullmatch(ref)]
 
 
-def cited_pulls(task: BoardTask) -> list[str]:
-    """The pull request links among the task's references."""
-    return pull_links(task.references)
-
-
 def local_midnight(at: float) -> float:
     """The start of the local day `at` falls in, in epoch seconds."""
     return datetime.fromtimestamp(at).astimezone().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-
-
-def is_cold(agent: dict) -> bool:
-    """Whether the agent is a cold done task: its id, state, entered time and moves, with the record left on the Board."""
-    return "title" not in agent
-
-
-def cooled(agent: dict, clock: Callable[[], float], done: str | None) -> dict:
-    """The agent, or its cold stub when it entered the `done` state before local midnight by `clock`; the stub keeps
-    its moves, so a reopen is still offered."""
-    if agent["state"] == done and agent["entered"] < local_midnight(clock()):
-        return {
-            "id": agent["id"],
-            "state": agent["state"],
-            "entered": agent["entered"],
-            "moves": agent.get("moves", {}),
-        }
-    return agent
-
-
-def task_agent(task: BoardTask) -> dict:
-    """One task as an agent on the Board machine, its lane as the state id."""
-    ticks = task.acceptance_checked + (False,) * len(
-        task.acceptance_criteria
-    )  # a criterion past the ticks is unchecked
-    return {
-        "id": task.id,
-        "title": task.title,
-        "state": task.lane,
-        "model": task.profile,
-        "profile": task.profile,
-        "assignee": task.assignee,
-        "labels": list(task.labels),
-        "milestone": task.milestone,
-        "impact": task.impact,
-        "urgency": task.urgency,
-        "tier": task.tier,
-        "adr_needed": task.adr_needed,
-        "duplicate_search": task.duplicate_search,
-        "duplicate_resolution": task.duplicate_resolution,
-        "follows": task.follows,
-        "type": task.type,
-        "dependencies": list(task.dependencies),
-        "prs": cited_pulls(task),
-        "runs": [],
-        "description": task.description,
-        "criteria": [{"text": text, "checked": checked} for text, checked in zip(task.acceptance_criteria, ticks)],
-        "pause_reason": task.pause_reason,
-        "readable": task.readable,
-        "moves": {column: move.model_dump() for column, move in task.moves.items()},
-        "created": task.created_at,
-    }
 
 
 def read_model_lane_moves(machine: dict) -> dict[str, dict[str, dict]]:
@@ -203,22 +146,6 @@ def _cold_stub(summary: Mapping[str, Any]) -> dict:
     return {"id": summary["id"], "state": lane_id(summary["state"]), "entered": summary["updated_at"], "record": record}
 
 
-def settled_entry(task: BoardTask) -> dict | None:
-    """Where a settled task settled, when, and the title, assignee, milestone and labels it settled with; None for an
-    open task."""
-    if not task.settled:
-        return None
-    return {
-        "state": task.settled,
-        "at": task.settled_at,
-        "created": task.created_at,
-        "title": task.title,
-        "model": task.profile,
-        "milestone": task.milestone,
-        "labels": list(task.labels),
-    }
-
-
 def entry_position(entry_id: str) -> int:
     """The log id of an entry id, `7` or the `7-0` a stream of the retired Redis form named it."""
     return int(entry_id.partition("-")[0])
@@ -232,14 +159,6 @@ class LaneRecorder(Protocol):
     ) -> bool | None:
         """Keep one lane change, and with it the lane `event` (the `board:lanes` fields) in the same transaction; True
         when it wrote a row, False for a repeat of the task's last lane or a known id."""
-
-
-class TaskIndex(Protocol):
-    """Where the feed keeps each task's searchable text (`search.SearchIndex`)."""
-
-    def index(self, task: BoardTask, finished_at: float | None = None) -> None: ...
-
-    def remove(self, task_id: str) -> None: ...
 
 
 class BoardStore(Protocol):

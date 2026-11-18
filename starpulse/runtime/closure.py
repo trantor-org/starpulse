@@ -46,6 +46,7 @@ CONTEXT_ENTRIES = (
     # `contexts` imports each of these late, inside a function, which the probe of its load never sees
     "starpulse.board.adapters.lane_metrics",
     "starpulse.bridge.worker",
+    "starpulse.event_log.claude_sessions",
     "starpulse.event_log.conformance_monitor",
     "starpulse.flow_metrics.model.liveness",
     "starpulse.github.adapters.inbound.consumer",

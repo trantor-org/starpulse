@@ -238,12 +238,6 @@ class PullStore:
             for record in sorted(found, key=lambda record: (record["repo"], record["number"]))
         ]
 
-    def resident(self, repo: str, number: int) -> list[dict[str, Any]] | None:
-        """What `find(repo, number)` answers when memory can say, with no query: None when only the database can."""
-        with self._lock:
-            known = (repo, number) in self._held
-        return self.find(repo, number) if known else None
-
     def _stored(
         self,
         held: dict[tuple[str, int], dict[str, Any]],

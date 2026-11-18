@@ -45,7 +45,7 @@ class Followed(Protocol):
 
 @runtime_checkable
 class Resumable(Protocol):
-    """A feed that keeps its state across restarts (`BoardFeed`), so a reader of its stream resumes after a cursor."""
+    """A feed that keeps its state across restarts (`PushedRuns`), so a reader of its stream resumes after a cursor."""
 
     def resume(self, store: BoardStore, stream: str, retained: Callable[[int], bool]) -> int | None: ...
 

@@ -17,12 +17,10 @@ context imports `runtime`.
 import argparse
 import logging
 import os
-import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from starpulse.event_log import heartbeat
 from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.listen import listen_options
 
@@ -30,7 +28,6 @@ logger = logging.getLogger(__name__)
 
 #: The run Adapters that run as their own workers (`starpulse.runs.bin.adapter_worker`): `serve`'s `contexts` child runs one as a thread for each that a `[[runs]]` instance names.
 OPT_IN = ("github-actions", "systemd", "woodpecker")
-HEARTBEAT_CONTEXTS = ("api", "contexts")  # the processes `serve` supervises (`supervisor.WORKER_CONTEXTS`)
 CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", "sweeper", *OPT_IN, "contexts")
 
 
@@ -68,10 +65,6 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO)
     parser = worker_parser()
     args = parser.parse_args(argv)
-    if (
-        args.context in HEARTBEAT_CONTEXTS
-    ):  # a stalled process stops its ticker; the board writer beats from its own loop
-        heartbeat.keep(args.context, threading.Event())
     if args.context == "api":
         from starpulse.cli import doctor
         from starpulse.runtime import listen, read_model_follow, sched, wiring
@@ -88,7 +81,6 @@ def main(argv: list[str] | None = None) -> None:
             listen=listen.listen,
             announce=wiring.announce,
             scheduler_remote=wiring.scheduler_remote,
-            serve_until_stopped=wiring.serve_until_stopped,
             announce_ready=announce_ready,
             assemble=assemble,
             history_store=history_store,
@@ -159,13 +151,13 @@ def main(argv: list[str] | None = None) -> None:
         )
     if args.context == "flow-metrics":
         from starpulse.flow_metrics.bin import flow_metrics_worker
-        from starpulse.runtime.assembly import assemble
+        from starpulse.runtime.assembly import declared
 
         return flow_metrics_worker.main(
             argv,
             parser,
             **loader,
-            assemble=assemble,
+            declared=declared,
             history_store=history_store,
             hold=hold,
         )

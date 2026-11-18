@@ -1,8 +1,8 @@
 """A write instance: the board of a config file served with its write routes, so a test writes tasks through StarPulse.
 
 It is StarPulse's own assembly (`assembled`) over the config, so every Guard, the machine and the Board's validation
-judge a test's write as they judge a served board's. The Board adapter scans the board's files onto the feed, `serve`
-gives the feed its write routes, and `run` is a `starpulse` verb called in-process, ~100 times cheaper than a child
+judge a test's write as they judge a served board's. The Board adapter scans the board's files into the History a read
+model over a temporary database folds, `serve` gives the feed over it its write routes, and `run` is a `starpulse` verb called in-process, ~100 times cheaper than a child
 process.
 """
 
@@ -17,12 +17,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from starpulse.cli import agent_cli
-from starpulse.runtime.config import load
-from starpulse.runtime.store_migrate import maintain
 from starpulse.board.adapters.native_scan import _live
-from starpulse.event_log.event_log import EventLog
-from starpulse.runtime.adapter_kit import FOLDED_WITHIN_S, assembled, serve, url
+from starpulse.cli import agent_cli
+from starpulse.event_log.wake import StopEvent
+from starpulse.runtime.adapter_kit import FOLDED_WITHIN_S, serve, url
+from starpulse.runtime.config import load
+from starpulse.runtime.placed import Placed, assembled
 
 #: How long a stopped instance waits for the Board adapter's thread to end.
 PLACED_WITHIN_S = 5.0
@@ -40,14 +40,20 @@ class WriteInstance:
     url: str
     caught_up: Callable[[float], bool] = field(compare=False, repr=False)
     backlogs: tuple = field(default=(), compare=False, repr=False)
+    placed: Placed | None = field(default=None, compare=False, repr=False)
 
     def settle(self) -> None:
         """Place the board's files on the feed now, rather than when the Board adapter's watch names them, and wait for
         the Board writer to fold them into the snapshot a read is served from."""
         for backlog in self.backlogs:
             backlog.scan()
+        self._fold()
         if not self.caught_up(FOLDED_WITHIN_S):
             raise TimeoutError(f"the Board writer folded no change in {FOLDED_WITHIN_S} s")
+
+    def _fold(self) -> None:
+        if self.placed is not None:
+            self.placed.fold()
 
     def run(self, *argv: str) -> subprocess.CompletedProcess[str]:
         """Run `starpulse <argv> --server <url>` in this process and answer as a child process would.
@@ -69,6 +75,7 @@ class WriteInstance:
                 code = agent_cli.main([*argv, "--server", self.url]) or 0
             except SystemExit as stopped:
                 code = stopped.code if isinstance(stopped.code, int) else int(stopped.code is not None)
+        self._fold()  # the verb's write is History the feed reads once folded
         return subprocess.CompletedProcess(list(argv), code, stdout=out.getvalue(), stderr=err.getvalue())
 
     def _unplaced(self, reply: str) -> bool:
@@ -86,22 +93,20 @@ def write_instance(base: Path, config_file: str = "starpulse.toml") -> Generator
     """
     config = load(base / config_file)
     board = base / str(config.board.get("path", "backlog"))
-    with tempfile.TemporaryDirectory() as scratch:
-        state = Path(scratch)
-        stream, feed = assembled(config, base)
-        store = f"sqlite:///{state / 'events.sqlite'}"
-        maintain(store, feed.machines, config.event_log_retention_days)
-        log = EventLog(store)
-        with _STARTING:
-            before = set(_live)
-            stream.start(feed, "write-instance", log)
-            started = {backlog: thread for backlog, thread in _live.items() if backlog not in before}
-        try:
-            with serve(state, feed, stream) as server:
-                yield WriteInstance(board, url(server, ""), server.caught_up, tuple(started))
-        finally:
-            for backlog, thread in started.items():
-                backlog.stop()
-                thread.join(PLACED_WITHIN_S)
-            feed.stop(PLACED_WITHIN_S)
-            log.close()
+    stream, feed, placed = assembled(config, base)
+    stop = StopEvent()
+    placed.follow(stop)
+    feed.ready.set()
+    with _STARTING:
+        before = set(_live)
+        stream.start(feed, "write-instance", placed.log)
+        started = {backlog: thread for backlog, thread in _live.items() if backlog not in before}
+    try:
+        with tempfile.TemporaryDirectory() as scratch, serve(Path(scratch), feed, stream) as server:
+            yield WriteInstance(board, url(server, ""), server.caught_up, tuple(started), placed)
+    finally:
+        stop.set()
+        for backlog, thread in started.items():
+            backlog.stop()
+            thread.join(PLACED_WITHIN_S)
+        feed.stop(PLACED_WITHIN_S)

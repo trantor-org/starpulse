@@ -10,7 +10,6 @@ import json
 from starlette.requests import Request
 from starlette.responses import Response
 
-from starpulse.event_log import heartbeat
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute
 from starpulse.views.adapters.outbound import request_durations
@@ -36,7 +35,6 @@ def prometheus(request: Request) -> Response:
     text = (
         "".join(gauge() for gauge in gauges if gauge)
         + process_gauges()
-        + heartbeat.exposition()
         + PAUSES.exposition()
         + request_durations.exposition()
     )

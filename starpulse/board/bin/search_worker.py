@@ -2,7 +2,7 @@
 index holds text of) as its own process, beside `serve`.
 
 It reads the config and the database `serve` does and meets `serve` only in the index tables there: `serve` writes the
-index rows (`feed.index_tasks`) and this worker writes the vectors, and a search in `serve` rereads the vectors once the
+index rows (the read model projector's fold) and this worker writes the vectors, and a search in `serve` rereads the vectors once the
 store holds others (`starpulse.board.adapters.search`). The catch-up is resumable by construction:
 `SearchIndex.embed_pending` embeds what holds no vector of the configured model and stores each batch in one
 transaction, keyed by the text's digest, so a new process embeds exactly what the last one left and neither drops nor

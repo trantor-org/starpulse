@@ -11,11 +11,11 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.adapters.claim_ttl import DEFAULT_TRANSCRIPTS
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import Move
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS, transcript_written
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.flow_metrics.model.level import Level
@@ -23,7 +23,6 @@ from starpulse.scheduler.adapters.pressure import watch
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
-from starpulse.scheduler.adapters.transcripts import transcript_written
 from starpulse.scheduler.bin.blocks import SchedulerConfig
 from starpulse.scheduler.model.config import ACTOR as SCHEDULER
 from starpulse.scheduler.model.admission import ranks_from_trajectories_body

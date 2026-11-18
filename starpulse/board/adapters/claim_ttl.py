@@ -13,7 +13,6 @@ for good: its claim is released at once, before the TTL, and the comment names t
 
 import json
 import logging
-import os
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -22,11 +21,9 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import psutil
-
 from starpulse.board.adapters.running_workflows import DEFAULT_QUERY, running_tasks
-from starpulse.board.adapters.session_activity import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS
 from starpulse.board.model.seam import Board
+from starpulse.event_log import claude_sessions
 from starpulse.event_log.deadlines import Deadlines
 from starpulse.event_log.store import EventStore, NewEvent, StoredEvent
 from starpulse.event_log.wake import StopEvent
@@ -36,7 +33,7 @@ if TYPE_CHECKING:
     from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
 
-__all__ = ["DEFAULT_TTL", "ACTOR", "last_renewal", "live_session", "start", "sweep", "transcript_halt"]
+__all__ = ["DEFAULT_TTL", "ACTOR", "last_renewal", "start", "sweep", "terminal_halt"]
 
 DEFAULT_TTL = 30 * 60
 """Seconds a claim lives without an Event by its session: `[board] claim_ttl`."""
@@ -53,53 +50,17 @@ def last_renewal(events: Iterable[StoredEvent], session: str) -> float | None:
 
 TERMINAL_HALTS = ("Autocompact is thrashing",)
 """How the halts that end a session for good open: Claude Code writes each as a synthetic error reply."""
-TURNS = frozenset({"user", "assistant"})
 
 
-def transcript_halt(root: Path, session: str, tail: int = 64 * 1024) -> tuple[float, str] | None:
-    """The moment and text of the terminal halt `session`'s transcript under `root` ends its turns with; None when its
-    last turn is any other, or no turn lies in the transcript's last `tail` bytes (a transcript reaches 100 MB)."""
-    path = next(root.glob(f"*/{session}.jsonl"), None)
-    if path is None:
-        return None
-    with path.open("rb") as transcript:
-        start = max(0, path.stat().st_size - tail)
-        transcript.seek(start)
-        lines = transcript.read().decode(errors="replace").splitlines()
-    lines = lines[1:] if start else lines  # a read from mid-file opens on a partial line
-    for line in reversed(lines):
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if entry.get("type") in TURNS:
-            return _halt(entry)
-    return None
+def terminal_halt(last_turn: Callable[[str], dict | None]) -> Callable[[str], tuple[float, str] | None]:
+    """The moment and text of the terminal halt a session's transcript ends its turns with, from `last_turn`, the
+    session's newest transcript turn; None when its last turn is any other or it has none."""
 
+    def halt(session: str) -> tuple[float, str] | None:
+        turn = last_turn(session)
+        return _halt(turn) if turn is not None else None
 
-def live_session(root: Path, session: str) -> bool:
-    """Whether the process registered under `root` for `session` (its session id, bridge id or Remote Control URL) is still running."""
-    for entry in root.glob("*.json") if session else ():
-        try:
-            data = json.loads(entry.read_text())
-        except OSError, ValueError:
-            continue
-        if not isinstance(data, dict):
-            continue
-        bridge = data.get("bridgeSessionId")
-        named = session in (data.get("sessionId"), bridge) or bool(bridge and session.endswith(f"/{bridge}"))
-        if named and _running(data):
-            return True
-    return False
-
-
-def _running(entry: dict) -> bool:
-    """Whether the registered pid runs with the registered start time, so a reused pid is not the session."""
-    try:
-        started = psutil.Process(int(entry["pid"])).create_time() - psutil.boot_time()
-        return round(started * os.sysconf("SC_CLK_TCK")) == int(entry["procStart"])  # `procStart` is in clock ticks
-    except psutil.Error, KeyError, ValueError:
-        return False
+    return halt
 
 
 def _halt(turn: dict) -> tuple[float, str] | None:
@@ -271,8 +232,9 @@ def start(
         return  # a rehearsal runs on the live board's files and must release none of its claims
     store = EventStore(log.engine)
     activity = partial(last_run_event, log.engine)
-    halted = partial(transcript_halt, Path(settings.get("transcripts", DEFAULT_TRANSCRIPTS)).expanduser())
-    alive = partial(live_session, Path(settings.get("sessions", DEFAULT_SESSIONS)).expanduser())
+    transcripts = Path(settings.get("transcripts", claude_sessions.DEFAULT_TRANSCRIPTS)).expanduser()
+    halt = terminal_halt(partial(claude_sessions.last_turn, transcripts))
+    alive = partial(claude_sessions.live_session, Path(settings.get("sessions", claude_sessions.DEFAULT_SESSIONS)).expanduser())
     workflows = str(settings.get("workflows", ""))
     query = str(settings.get("workflows_query", DEFAULT_QUERY))
     seen: dict[str, float] = {}
@@ -306,7 +268,7 @@ def start(
                 ttl=ttl,
                 activity=activity,
                 expiries=expiries,
-                halted=halted,
+                halted=halt,
                 seen_running=seen,
                 alive=alive,
                 feed=feed,

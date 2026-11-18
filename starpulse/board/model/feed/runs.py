@@ -7,9 +7,7 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
 from starpulse.board.model.feed.follow import InstanceRuns
 from starpulse.board.model.feed.shared import (
     PUSHED_INSTANCE,
-    is_cold,
 )
-
 
 #: How many of a workflow's newest failed runs the page draws.
 FAILED_SHOWN = 10
@@ -86,31 +84,10 @@ class RunMethods:
                     "dags",
                     {"dags": self._workflows(), "pools": self._drawn_pools(), "cpu": dict(self._cpu), "error": self._error()},
                 )
-                self._attach_runs()
             if changed:
                 self._publish("snapshot", self.snapshot())
         if runs_moved:
             self._refresh_ledgers()
-
-    def _task_runs(self) -> dict[str, list[dict]]:
-        """The linked runs among every instance's recent runs, by the task their run id names."""
-        out: dict[str, list[dict]] = {}
-        for dags in self._dags.values():
-            for run in (run for dag in dags for run in dag.get("recent", [])):
-                if run.get("task") and run.get("url"):
-                    out.setdefault(run["task"], []).append(
-                        {"url": run["url"], "status": run["status"], "startedAt": run["startedAt"]}
-                    )
-        return out
-
-    def _attach_runs(self) -> None:
-        """Give each open task the runs `_task_runs` finds for it and publish those whose runs changed."""
-        by_task = self._task_runs()
-        for task_id, agent in list(self._open.items()):
-            runs = by_task.get(task_id, [])
-            if not is_cold(agent) and agent.get("runs", []) != runs:
-                self._open[task_id] = agent = {**agent, "runs": runs}
-                self._publish("task", {"id": task_id, "agent": agent, "settled": None})
 
     @staticmethod
     def _tied_runs(instance: str, dags: list, tied: set[str]) -> dict[str, list]:

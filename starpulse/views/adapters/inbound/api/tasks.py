@@ -21,7 +21,7 @@ from starlette.responses import Response, StreamingResponse
 
 from starpulse.contracts.api.dto.milestones import RetiredTask
 from starpulse.contracts.api.dto.requests import StartRequest
-from starpulse.views.adapters.inbound.api.answering import answer, on_loop, on_worker, query, reading, seams
+from starpulse.views.adapters.inbound.api.answering import answer, on_worker, query, reading, seams
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole_body
@@ -49,24 +49,11 @@ from starpulse.views.application.commands.tasks import (
     take_over_task,
     task_record,
 )
-from starpulse.views.application.queries.responses import cited_pulls, resident_pulls
+from starpulse.views.application.queries.responses import cited_pulls
 from starpulse.views.model.encoding import encode, encode_stream
 
 if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
-
-
-def _resident_task(request: Request) -> Response | None:
-    """The task's answer when memory holds all of it, with no query; None when it needs a worker."""
-    api = seams(request)
-    name = request.path_params["id"]
-    if not api.feed.is_resident(name) or (record := api.board.read(name)) is None:
-        return None
-    if (cited := resident_pulls(api.services.pulls, record.get("references", []))) is None:
-        return None
-    if cited:
-        record["pulls"] = cited
-    return answer(request, encode("task", {"task": name, "record": record, "archived": False, "done": api.feed.roles.done}), 200)
 
 
 def _stored_record(api: Api, name: str) -> tuple[int, dict[str, Any]]:
@@ -96,8 +83,8 @@ async def moves(request: Request) -> Response:
 
 
 async def task(request: Request) -> Response:
-    """A task the feed holds in memory, citing only pull requests memory holds, is answered on the event loop."""
-    return on_loop(request, lambda: _resident_task(request)) or await on_worker(request, lambda: _stored_task(request))
+    """One task's record, read on a worker."""
+    return await on_worker(request, lambda: _stored_task(request))
 
 
 def _stored_records(request: Request) -> Response:

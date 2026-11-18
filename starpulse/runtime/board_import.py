@@ -28,7 +28,7 @@ from starpulse.event_log.store import EventStore
 from starpulse.event_log.tables import events
 from starpulse.runs.application.commands.run_streams import RunStreams
 from starpulse.runs.model.run_events import STREAM
-from starpulse.runtime.assembly import assemble, history_store
+from starpulse.runtime.assembly import declared, history_store
 from starpulse.runtime.config import ConfigError, discover, load
 
 __all__ = ["main"]
@@ -51,12 +51,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"{path}: {exc}")
     base = path.parent if path else Path.cwd()
     try:
-        board, feed = assemble(config, base, None, [])
+        board, machines, *_ = declared(config, base)
     except (OSError, ValueError) as exc:
         parser.error(f"the board does not assemble: {exc}")
     if config.board_type != "native":
         parser.error("the board keeps no task records")
-    history = history_store(config, base, feed.machines)
+    history = history_store(config, base, machines)
     lanes = history.lane_changes()
     records = {task: record for task in dict.fromkeys(lane[1] for lane in lanes) if (record := board.read(task))}
     with history.engine.connect() as db:

@@ -45,7 +45,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from sqlalchemy.engine import make_url  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.runtime.assembly import assemble  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.runtime.assembly import declared  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     logging.basicConfig(level=logging.INFO)
@@ -64,13 +64,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(store_state(engine)))
         return 0
     try:
-        board, feed = assemble(config, base, None, [])
+        board, machines, *_ = declared(config, base)
     except (OSError, ValueError) as exc:
         parser.error(f"the board does not assemble: {exc}")
     url = database_url(config.database_url, base)
     maintain(
         url,
-        feed.machines,
+        machines,
         config.event_log_retention_days,
         base=base,
         state_dir=config.scheduler.state_dir,

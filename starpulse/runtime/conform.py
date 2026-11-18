@@ -20,7 +20,7 @@ from pathlib import Path
 
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.machine_engine.model import replay
-from starpulse.runtime.assembly import assemble, history_store
+from starpulse.runtime.assembly import declared, history_store
 from starpulse.runtime.config import ConfigError, discover, load
 
 __all__ = ["main"]
@@ -45,16 +45,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"{path}: {exc}")
     base = path.parent if path else Path.cwd()
     try:
-        _, feed = assemble(config, base, None, [])
+        _, machines, *_ = declared(config, base)
     except (OSError, ValueError) as exc:
         parser.error(f"the board does not assemble: {exc}")
-    if unknown := [name for name in args.machine if name not in feed.machines]:
-        parser.error(f"no such machine: {', '.join(unknown)}; declared: {', '.join(sorted(feed.machines))}")
-    store = history_store(config, base, feed.machines)
+    if unknown := [name for name in args.machine if name not in machines]:
+        parser.error(f"no such machine: {', '.join(unknown)}; declared: {', '.join(sorted(machines))}")
+    store = history_store(config, base, machines)
     reports = [
         _check(store, name, machine, since)
-        for name, machine in feed.machines.items()
-        if name in (args.machine or feed.machines)
+        for name, machine in machines.items()
+        if name in (args.machine or machines)
     ]
     reports = [report for report in reports if report.replayed]
     violations = sum(v.count for report in reports for v in report.violations)

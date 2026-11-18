@@ -5,7 +5,7 @@ with no History yet is seeded with a `TaskImported` of its record before the wri
 
 import json
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from typing import Any
 
@@ -274,7 +274,8 @@ class TaskHistory:
             written = create(title, details, actor=actor)
             record = read(written.output) if written.ok else None
             if record is not None and self._store is not None:
-                self._store.append(KIND, written.output, 0, [self._new("TaskCreated", seed(record, 0.0), actor)])
+                with suppress(StaleVersion):  # the scan imported the new file first: its History already holds the task
+                    self._store.append(KIND, written.output, 0, [self._new("TaskCreated", seed(record, 0.0), actor)])
             return written
 
         return run

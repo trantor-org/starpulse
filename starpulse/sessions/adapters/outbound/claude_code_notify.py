@@ -10,10 +10,9 @@ visible in the sessions directory is not resumed again, which would fork it: its
 
 import json
 import logging
-import os
 import socket
 import subprocess
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from starpulse.sessions.ports.notify import Line, Registration
@@ -44,29 +43,6 @@ def post_inbox(sock: str, token: str, text: str) -> None:  # pragma: no mutate b
         conn.shutdown(socket.SHUT_WR)
         while conn.recv(4096):
             pass
-
-
-def sessions_dir(environ: Mapping[str, str]) -> Path:
-    """Where Claude Code keeps one record per running process: `$CLAUDE_CONFIG_DIR/sessions`, else `~/.claude/sessions`."""
-    return Path(environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "sessions"
-
-
-def live_socket(sessions_dir: Path) -> Callable[[str], str | None]:  # pragma: no mutate block — reads the live process table.
-    """The inbox socket of the running process of a session, from Claude Code's per-process records in `sessions_dir`."""
-
-    def find(session: str) -> str | None:
-        for record in sorted(sessions_dir.glob("*.json")):
-            try:
-                found = json.loads(record.read_text())
-                pid = int(found["pid"])
-                os.kill(pid, 0)
-            except (OSError, ValueError, KeyError, TypeError):
-                continue
-            if found.get("sessionId") == session and found.get("messagingSocketPath"):
-                return str(found["messagingSocketPath"])
-        return None
-
-    return find
 
 
 def resume_with(command: Sequence[str]) -> Callable[[Registration, str], bool]:  # pragma: no mutate block — spawns claude.

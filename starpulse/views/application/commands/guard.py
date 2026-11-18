@@ -174,7 +174,7 @@ def holder_refusal(feed: BoardFeed, agent: dict, task: str, who: Who) -> tuple[i
     holder = agent.get("assignee") or ""
     if who.actor != AGENT or not who.session or holder in ("", RELEASED_ASSIGNEE) or agent["state"] != feed.roles.working:
         return None
-    from starpulse.board.adapters.session_activity import same_holder  # noqa: PLC0415 - the transcript reader loads when a write names a session
+    from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a write names a session
 
     if same_holder(holder, who.session):
         return None

@@ -398,8 +398,7 @@ GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for th
                    `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds` and
                    `starpulse_task_actor_handoff_seconds` and
                    `starpulse_task_merge_move_seconds` histograms, and the gauges
-                   `starpulse_task_actor_heartbeat_timestamp_seconds`, `starpulse_task_actor_recovery_finished` and
-                   `starpulse_task_actor_merged_review_waiting`
+                   `starpulse_task_actor_recovery_finished` and `starpulse_task_actor_merged_review_waiting`
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
@@ -1394,14 +1393,11 @@ labels or dependencies change. `GET /metrics` carries:
   merge (`PinGate.waiting_on`); one that stays above 0 is a pin that never merges. Each such hold comments the pull request
   and pin it waits on once. Only a cited pull request that can be the dependency's own delivery counts: one whose
   branch or title names another task is a reference.
-- `starpulse_task_actor_heartbeat_timestamp_seconds`: the Unix time of the actor's last turn. The actor beats every 30 s
-  when idle and once per task during start recovery, so a value minutes old is a stuck thread in a live process. Absent
-  until the first beat.
 - `starpulse_task_actor_recovery_finished`: 0 until start recovery has derived every task, then 1.
 - `starpulse_task_actor_merged_review_waiting`: a gauge of Review tasks whose cited pull request merged, whether or not the
   actor has tried or been refused a move for them; compare with the moves landed, the `starpulse_task_actor_latency_seconds_count`
   rate. The actor reads its lock-held series (this one and `pin_held`) with a 2 s timed acquire and
-  omits them when it cannot, so a stuck turn never blocks the scrape; the heartbeat and recovery gauge need no lock.
+  omits them when it cannot, so a stuck turn never blocks the scrape; the recovery gauge needs no lock.
 - `starpulse_task_actor_resume_stalled{task}`: 1 for each In Progress task whose settled session was resumed twice with no
   progress between the resumes (a submachine placement, or a pull request head, unchanged), then escalated one profile
   through the `idle` hook's `escalate` verdict before its next resume. It clears when the task next shows
