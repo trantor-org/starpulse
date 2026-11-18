@@ -733,7 +733,8 @@ url = "http://ci.internal:8004/acme/app"
 - **Graph.** Each event's workflow draws the steps of its oldest running pipeline, else of its newest closed one. The
   mapping is below. A detail or config the adapter cannot read or draw leaves the workflow with no graph, and the page
   lists its pipelines as before.
-- **Polling.** The server pushes no change, so the adapter lists it every 15 s: one listing, and one detail read for each
+- **Reading.** The server pushes no change, so the adapter lists it once at start and again for each `runs:resync` entry
+  naming the instance (a commit status Woodpecker posts writes one): one listing, and one detail read for each
   running pipeline and for the drawn one (a closed pipeline's detail is read once; a pipeline with more than one workflow
   also reads its config once, for the workflows' `depends_on`). A server it cannot reach shows as the instance's error, with the last reading kept, and the other
   instances keep drawing.

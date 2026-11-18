@@ -1,7 +1,6 @@
 """The events that tell a task's holder it went idle: a harness session settling on the task's branch, or another
 session moving the task it parked back to In Progress."""
 
-import logging
 import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -13,7 +12,6 @@ from starpulse.event_log.wake import StopEvent
 if TYPE_CHECKING:
     from starpulse.event_log.event_log import Entry, EventLog
 
-logger = logging.getLogger(__name__)
 HARNESS_MACHINE = "harness"
 SETTLED = "SESSION_SETTLED"
 WORKING = "in_progress"
@@ -57,22 +55,24 @@ def follow_holder_idle(
             ready.wait()
         if stop.is_set():
             return
-        newest: dict[str, bool] = {}  # task -> whether its newest harness event so far is a settle
 
-        def note(entry: Entry) -> None:
-            fields = entry.fields
-            task = fields.get("task")
-            if entry.stream == MACHINE_STREAM and fields.get("machine") == HARNESS_MACHINE and task:
-                newest[task] = fields.get("event") == SETTLED
+        def follow() -> None:
+            newest: dict[str, bool] = {}  # task -> whether its newest harness event so far is a settle
 
-        try:
+            def note(entry: Entry) -> None:
+                fields = entry.fields
+                task = fields.get("task")
+                if entry.stream == MACHINE_STREAM and fields.get("machine") == HARNESS_MACHINE and task:
+                    newest[task] = fields.get("event") == SETTLED
+
+            # a failed pass raises, and `run_on_wake` reads again before any settle is called
             Tail.replay(log, MACHINE_STREAM).catch_up(lambda entry: note(entry) if entry.id <= before else None)
-        except Exception:  # the database is unreachable; the live tail below retries its own polls
-            logger.warning("holder idle: cannot read the settles while the actor was down", exc_info=True)
-        for task, idle in newest.items():
-            if idle:
-                settled(task)
-        tail.run(handle, stop)
+            for task, idle in newest.items():
+                if idle:
+                    settled(task)
+            tail.run(handle, stop)
+
+        log.run_on_wake(stop, follow, "holder idle: cannot read the settles while the actor was down")
 
     tail = Tail.live(log, MACHINE_STREAM, streams=[MACHINE_STREAM, LANE_STREAM])
     before = tail.cursor or 0  # the replay stops here; the live tail reads what follows

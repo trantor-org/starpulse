@@ -239,6 +239,8 @@ class PushRuns:
                 return False
             self._report_step(dag, entry.step, entry.depends, entry.status)
         elif entry.event == "StepStarted":
+            if dag is not None and dag["runId"] == entry.run_id and dag["status"] not in _UNSETTLED:
+                return False  # its own end was read first: the run stays ended
             steps = [{**step, "status": "not_started"} for step in dag["steps"]] if dag else []
             self._dags[entry.key] = (dag or _dag(entry.key, {})) | {
                 "status": entry.status,

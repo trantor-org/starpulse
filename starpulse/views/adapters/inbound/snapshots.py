@@ -54,7 +54,10 @@ class Snapshots:
         self._keys = itertools.count()
         #: The body last read of each view, with the stamp and sequence it was stored at; a newer stamp replaces it.
         self._bodies: dict[str, tuple[tuple[int, float], int, Encoded]] = {}
-        self._taken: Served | None = None
+        #: The full body `take` last decoded and what it decoded to, under `_taking`; a body stored again at an unmoved
+        #: sequence is another `Encoded`.
+        self._taken: tuple[Encoded, Served] | None = None
+        self._taking = threading.Lock()
         #: The newest delta put on the streams, and the queue of each stream open.
         self._head = store.head()
         self._streams: list[queue.Queue] = []
@@ -97,12 +100,12 @@ class Snapshots:
             return self._flows[1]
 
     def take(self) -> Served:
-        """The stored full snapshot as a dict, decoded once per sequence however many streams and requests read it."""
+        """The stored full snapshot as a dict, decoded once per stored body however many streams and requests read it."""
         seq, encoded = self.stored("full")
-        taken = self._taken
-        if taken is None or taken.seq != seq:
-            self._taken = taken = Served(seq, json.loads(encoded.body))
-        return taken
+        with self._taking:
+            if self._taken is None or self._taken[0] is not encoded:
+                self._taken = encoded, Served(seq, json.loads(encoded.body))
+            return self._taken[1]
 
     def _advance(self) -> None:
         with self._lock:

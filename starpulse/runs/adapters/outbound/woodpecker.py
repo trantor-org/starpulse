@@ -118,6 +118,7 @@ class Poller:
         self.sink, self.fetch = sink, fetch
         self.server, self.repo = _split(url)
         self.repo_id: int | None = None
+        self._reading = threading.Lock()
         self.seen: dict[tuple[int, str], dict] = {}  # (pipeline number, status) -> its detail; a closed one never changes
         self.needs: dict[int, dict[str, list[str]]] = {}  # pipeline number -> the workflows each workflow's file waits on
 
@@ -240,12 +241,13 @@ class Poller:
 
     def read(self) -> None:
         """List the server and hand the workflows to the page; when it cannot be read the last reading stays and the error shows."""
-        try:
-            self.sink.set_dags(self.listing(), None)
-        except OSError as exc:
-            self.sink.set_dags(None, str(exc))
-        except (ValueError, KeyError, TypeError) as exc:  # an answer not in the shape `listing` reads
-            self.sink.set_dags(None, f"unreadable response ({type(exc).__name__}: {exc})")
+        with self._reading:  # the start's read and a resync's never overlap, so the older listing never publishes last
+            try:
+                self.sink.set_dags(self.listing(), None)
+            except OSError as exc:
+                self.sink.set_dags(None, str(exc))
+            except (ValueError, KeyError, TypeError) as exc:  # an answer not in the shape `listing` reads
+                self.sink.set_dags(None, f"unreadable response ({type(exc).__name__}: {exc})")
 
 
 def read(url: str) -> list[dict]:

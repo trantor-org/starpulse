@@ -501,12 +501,14 @@ class SearchIndex:
         `stop` is set; a failed pass is logged and retried after `_RETRY` seconds."""
 
         def catch_up() -> None:
-            try:
-                self.embed_pending()
-            except (EmbeddingError, SQLAlchemyError) as exc:
-                logger.warning("StarPulse: cannot embed tasks for search: %s", exc)
-                # adr-exempt: retry
-                stop.wait(_RETRY)
+            while not stop.is_set():
+                try:
+                    self.embed_pending()
+                    return
+                except (EmbeddingError, SQLAlchemyError) as exc:
+                    logger.warning("StarPulse: cannot embed tasks for search: %s", exc)
+                    # adr-exempt: retry
+                    stop.wait(_RETRY)
 
         log.run_on_wake(stop, catch_up, "StarPulse: the search embedding pass failed")
 
