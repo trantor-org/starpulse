@@ -87,6 +87,7 @@ class LifecycleMixin:
         """Note that a board adapter reading a stream has read up to the entry `entry_id`."""
         with self._lock:
             self._seen = max(self._seen, entry_position(entry_id))
+        self.unsaved.set()
         self._check_ready()
 
     def resume(
@@ -147,7 +148,7 @@ class LifecycleMixin:
 
     def save(self) -> None:
         """Write the Board and the position it reflects to the store `resume` was given, unless the feed has read
-        nothing since the last save. A store that cannot be written is logged; the next save tries again.
+        nothing since the last save. A store that cannot be written is logged and the save is armed again.
 
         The Board is copied under `recording`, so a saved Board never holds a change `put` has placed and not yet
         recorded: a restart that resumes from it would never place that change again, and its lane would go unrecorded."""
@@ -169,7 +170,8 @@ class LifecycleMixin:
             )
         try:
             store.save(stream, seen, snapshot)
-        except Exception as exc:  # the store is down; the Board still draws and the next save retries
+        except Exception as exc:  # the store is down; the Board still draws and the next debounce retries
             logger.warning("StarPulse: cannot save the Board of %s: %s", stream, exc)
+            self.unsaved.set()
             return
         self._saved, self._pulls_unsaved, self._kept_saved = seen, False, source

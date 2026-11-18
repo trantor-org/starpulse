@@ -77,17 +77,16 @@ def _paths(files: dict) -> list[str] | None:
 
 def _record(repo: str, node: dict, now: float, wanted: Iterable[str] = ()) -> dict[str, Any]:
     """The served record of one `pullRequest` node, its required checks reduced to a rollup; a context in `wanted` that
-    no check on the head carries is a required check with result `missing`. A head whose required checks all pass is
-    its own `passed` rollup at `now`, which the store keeps unless a newer rollup is stored (`PullStore._guarded`)."""
+    no check on the head carries is a required check with result `missing`. A repository no rule requires a check of
+    (nothing `isRequired`, `wanted` empty) counts every check the head posted, so its PR can read `pass`. A head whose
+    required checks all pass is its own `passed` rollup at `now`, which the store keeps unless a newer rollup is stored
+    (`PullStore._guarded`)."""
     head = next(iter(node["commits"]["nodes"]), None)  # a PR can hold no commits: record it with an empty rollup
     rollup = (head and head["commit"]["statusCheckRollup"]) or {"contexts": {"nodes": []}}
     posted = [check for check in rollup["contexts"]["nodes"] if check]  # GitHub can return a null node in a connection
+    counted = [check for check in posted if check.get("isRequired")] or ([] if wanted else posted)
     required = rulesets.with_missing(
-        [
-            {"name": check.get("name") or check["context"], "result": _result(check)}
-            for check in posted
-            if check.get("isRequired")
-        ],
+        [{"name": check.get("name") or check["context"], "result": _result(check)} for check in counted],
         (check.get("name") or check["context"] for check in posted),
         wanted,
     )

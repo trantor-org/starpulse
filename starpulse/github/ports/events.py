@@ -1,11 +1,12 @@
 """The ports of the `events` consumer: its queue over the inbox, the ingest it posts to, and the links from a pull request to a task."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from starpulse.github.model.delivery import Delivery
 
-__all__ = ["Entry", "Head", "Ingest", "Links", "Queue", "Reader"]
+__all__ = ["Entry", "Head", "Ingest", "Links", "OpenWatch", "Queue", "Reader", "Stop", "Watch"]
 
 
 @dataclass(frozen=True)
@@ -16,9 +17,36 @@ class Entry:
     attempts: int
 
 
+class Stop(Protocol):
+    """The signal that ends the consumer: set once, and a listener is called when it is."""
+
+    def is_set(self) -> bool: ...
+
+    def listen(self, callback: Callable[[], None]) -> None: ...
+
+    def unlisten(self, callback: Callable[[], None]) -> None: ...
+
+
+class Watch(Protocol):
+    """A file watch: `fileno` is readable when the file may have changed, and `drain` clears it."""
+
+    def fileno(self) -> int: ...
+
+    def drain(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+OpenWatch = Callable[[str], Watch | None]
+
+
 class Queue(Protocol):
     def claim(self, limit: int = ...) -> list[Entry]:
         """The deliveries due for an attempt, oldest first; a delivery the consumer has not seen yet is due."""
+        ...
+
+    def due_in(self) -> float | None:
+        """Seconds until the earliest pending delivery is due (0 when one is due now), or `None` with none pending."""
         ...
 
     def complete(self, delivery_id: str) -> None: ...

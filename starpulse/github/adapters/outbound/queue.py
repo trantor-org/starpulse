@@ -73,6 +73,14 @@ class SqlQueue:
             for row in rows
         ]
 
+    def due_in(self) -> float | None:
+        """Seconds until the earliest pending delivery is due (0 when one is due now), or `None` with none pending."""
+        with self._engine.connect() as db:
+            earliest = db.execute(
+                select(func.min(state.next_attempt_at)).where(state.consumer == self._consumer, state.status == "pending")
+            ).scalar_one()
+        return None if earliest is None else max(0.0, earliest - self._clock())
+
     def complete(self, delivery_id: str) -> None:
         self._set(delivery_id, status="done", last_error=None)
 

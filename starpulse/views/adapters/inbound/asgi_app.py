@@ -29,6 +29,7 @@ from starlette.responses import Response as Reply
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from starpulse.event_log.wake import StopEvent
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
 from starpulse.harness_telemetry.model.harnesses import Harnesses
@@ -370,10 +371,12 @@ class PageApp:
         gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
         seams: Api | None = None,
-        warm_stop: threading.Event | None = None,
+        warm_stop: StopEvent | None = None,
+        served: Callable[[], None] = lambda: None,
     ) -> None:
         self._grpc = grpc
-        self._warm_stop = warm_stop or threading.Event()
+        self._warm_stop = warm_stop or StopEvent()
+        self._served = served
         self._flows = flows
         self._files = _Build(directory=static, check_dir=False)
         self._workers = CapacityLimiter(REQUEST_THREADS)
@@ -433,6 +436,7 @@ class PageApp:
             await self._answer(scope, receive, send, started)
         finally:
             started()
+            self._served()
 
     async def _answer(
         self, scope: MutableMapping[str, Any], receive: Any, send: Any, started: Callable[[], None]
@@ -540,14 +544,16 @@ def page_app(
     clock: Callable[[], float] = time.time,
     gate: Callable[[GateRequest], bool] | None = None,
     snapshot_refresh_s: float = 0.0,
+    served: Callable[[], None] = lambda: None,
 ) -> PageApp:
-    """The Page API over `feed`; a `snapshot_refresh_s` above zero keeps the snapshot warm, rebuilt that often off the
-    request path (a daemon thread that lives as long as the process). The first snapshot is built before this returns,
+    """The Page API over `feed`, calling `served` after each HTTP request; a `snapshot_refresh_s` above zero keeps the
+    snapshot warm, rebuilt that long after a feed change off the request path (a daemon thread that lives as long as
+    the process). The first snapshot is built before this returns,
     so the server that serves the app is not announced ready on a cold one: a restart's queued connections wait on the
     held socket and are answered warm, and a swap's old child serves until the new one is warm."""
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
     snapshots = Snapshots(feed, refresh_s=snapshot_refresh_s)
-    warm_stop = threading.Event()  # set by `PageApp.end_streams`
+    warm_stop = StopEvent()  # set by `PageApp.end_streams`
     if snapshot_refresh_s > 0:
         snapshots.refresh()
         threading.Thread(target=snapshots.keep_warm, args=(warm_stop,), name="snapshot-warm", daemon=True).start()
@@ -568,4 +574,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api, warm_stop)
+    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api, warm_stop, served)

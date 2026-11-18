@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board.model import criteria, write_steps
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log import lane_events, rating_events
-from starpulse.event_log.wake import StopEvent
+from starpulse.event_log.wake import StopEvent, save_on_change
 from starpulse.machine_engine.model.stays import LaneRow
 from starpulse.machine_engine.model.transitions import lane_id
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.board.model.seam import Written
     from starpulse.event_log.event_log import EventLog
 from starpulse.board.model.feed.shared import (
-    SAVE_INTERVAL,
+    SAVE_DEBOUNCE,
     LaneRecorder,
     TaskIndex,
     cited_pulls,
@@ -44,17 +44,16 @@ class RecordsMixin:
         holds: a native board's file fingerprints, noted after the scan that placed them."""
         with self._lock:
             self._kept = source
+        self.unsaved.set()
 
     def source(self) -> dict:
         """What the adapter last kept (`keep_source`), or what `resume` restored; empty when neither happened."""
         with self._lock:
             return self._kept
 
-    def keep_saved(self, stop: StopEvent, interval: float = SAVE_INTERVAL) -> None:
-        """Save every `interval` seconds, and once more when `stop` is set."""
-        while not stop.wait(interval):
-            self.save()
-        self.save()
+    def keep_saved(self, stop: StopEvent, debounce: float = SAVE_DEBOUNCE) -> None:
+        """Save `debounce` seconds after a change (`unsaved`), and once more when `stop` is set."""
+        save_on_change(stop, self.unsaved, self.save, debounce)
 
     def spawn(self, target: Callable[[StopEvent], None], name: str) -> None:
         """Run `target(stopped)` on a daemon thread that `stop` ends: `target` returns once `stopped` is set."""

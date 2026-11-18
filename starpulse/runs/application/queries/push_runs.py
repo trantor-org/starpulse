@@ -17,10 +17,10 @@ from typing import Any, ClassVar, Protocol, get_args
 
 from pydantic import BaseModel
 
-from starpulse.board.model.board_feed import PUSHED_INSTANCE, SAVE_INTERVAL, BoardStore, InstanceRuns, entry_position
+from starpulse.board.model.board_feed import PUSHED_INSTANCE, SAVE_DEBOUNCE, BoardStore, InstanceRuns, entry_position
 from starpulse.contracts.adapters import LAST_OUTCOMES, RunStatus
 from starpulse.contracts.stamps import iso_utc
-from starpulse.event_log.wake import StopEvent
+from starpulse.event_log.wake import StopEvent, save_on_change
 from starpulse.runs.model import run_events
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
@@ -136,6 +136,8 @@ class PushRuns:
         self._pruned = 0  # prunes so far, which a save in flight compares to see its copy is no longer current
         #: The id of the last entry read, which `_dags` reflects, and the one last saved.
         self._seen = self._saved = 0
+        #: Set by every entry read and every prune, for `keep_saved`.
+        self._unsaved = threading.Event()
         self._store_at: tuple[BoardStore, str] | None = None
         self._publish()
 
@@ -152,6 +154,7 @@ class PushRuns:
         with self._lock:
             moved = self._move(fields)
             self._seen = entry_position(entry_id)
+        self._unsaved.set()
         if self._replay_end is None:
             if moved:
                 self._publish()
@@ -198,11 +201,12 @@ class PushRuns:
                 del self._dags[name]
             self._pruned += 1
             self._saved = -1  # the saved snapshot still holds them; the next save writes this state at the same position
+        self._unsaved.set()
         self._publish()
 
     def save(self) -> None:
         """Write the workflows and the position they reflect to the store `resume` was given, unless nothing was read
-        since the last save. A store that cannot be written is logged; the next save tries again."""
+        since the last save. A store that cannot be written is logged and the save is armed again."""
         if self._store_at is None:
             return
         store, stream = self._store_at
@@ -212,18 +216,17 @@ class PushRuns:
             return
         try:
             store.save(stream, seen, PushedRunsSnapshot(dags=dags))
-        except Exception as exc:  # the store is down; the workflows still draw and the next save retries
+        except Exception as exc:  # the store is down; the workflows still draw and the next debounce retries
             logger.warning("StarPulse: cannot save the pushed runs of %s: %s", stream, exc)
+            self._unsaved.set()
             return
         with self._lock:
             if self._pruned == pruned:  # a prune since the copy left the saved state behind; the next save writes it
                 self._saved = seen
 
-    def keep_saved(self, stop: StopEvent, interval: float = SAVE_INTERVAL) -> None:
-        """Save every `interval` seconds, and once more when `stop` is set."""
-        while not stop.wait(interval):
-            self.save()
-        self.save()
+    def keep_saved(self, stop: StopEvent, debounce: float = SAVE_DEBOUNCE) -> None:
+        """Save `debounce` seconds after an entry or a prune, and once more when `stop` is set."""
+        save_on_change(stop, self._unsaved, self.save, debounce)
 
     def _move(self, fields: dict) -> bool:
         """Apply an entry to the workflow it names; whether it moved one."""

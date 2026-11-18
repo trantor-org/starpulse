@@ -36,7 +36,7 @@ from starpulse.board.model.feed.shared import (
     _SENT_LOG,
     FEED_EVENT_RESEND,
     PUSHED_INSTANCE,
-    SAVE_INTERVAL,
+    SAVE_DEBOUNCE,
     BoardStore,
     ExpiriesStore,
     LaneRecorder,
@@ -57,7 +57,7 @@ __all__ = [
     "LaneRecorder",
     "PUSHED_INSTANCE",
     "Resumable",
-    "SAVE_INTERVAL",
+    "SAVE_DEBOUNCE",
     "_SENT_LOG",
     "entry_position",
     "follow",
@@ -226,6 +226,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._expected: int | None = None
         self._seen = 0
         self._saved = 0
+        #: Set by whatever `save` would write that it has not, for `keep_saved`.
+        self.unsaved = threading.Event()
         self._store: tuple[BoardStore, str] | None = None
         #: What the board adapter keeps of its own beside the Board, saved and resumed with it (`keep_source`).
         self._kept: dict = {}

@@ -37,3 +37,19 @@ class StopEvent(threading.Event):
             listeners = list(self._listeners)
         for callback in listeners:
             callback()
+
+
+def save_on_change(stop: StopEvent, changed: threading.Event, save: Callable[[], None], debounce: float) -> None:
+    """Call `save` once, `debounce` seconds after `changed` is set, and once more when `stop` is set; with no change
+    nothing is saved between. A change inside the window is covered by that window's save."""
+    stop.listen(changed.set)
+    try:
+        while not stop.is_set():
+            changed.wait()
+            if stop.wait(debounce):
+                break
+            changed.clear()
+            save()
+    finally:
+        stop.unlisten(changed.set)
+    save()

@@ -1,8 +1,11 @@
-"""`starpulse github requeue|dismiss <delivery_id>`: settle a delivery a consumer left dead (`events` unless
+"""`starpulse github requeue|dismiss <delivery_id>`, `purge`: settle a delivery a consumer left dead (`events` unless
 `--consumer` names another).
 
 `requeue` makes it pending again with its attempts spent anew; `dismiss` skips it for good and keeps its last error. Either
 clears it from `starpulse_github_dead_rows`. A delivery that is not dead is left as it is and the command exits 1.
+
+`starpulse github purge` takes no delivery: it deletes the consumer's done and skipped rows past their retention, which
+the sweeper runs as housekeeping.
 """
 
 import argparse
@@ -14,11 +17,13 @@ __all__ = ["main"]
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="starpulse github", description=__doc__)
-    parser.add_argument("action", choices=["requeue", "dismiss"])
-    parser.add_argument("delivery_id", help="the X-GitHub-Delivery id of the dead delivery")
+    parser.add_argument("action", choices=["requeue", "dismiss", "purge"])
+    parser.add_argument("delivery_id", nargs="?", help="the X-GitHub-Delivery id of the dead delivery")
     parser.add_argument("--config", type=Path, help="the starpulse.toml with the [github] table, as `serve` reads it")
     parser.add_argument("--consumer", default="events", help="the inbox consumer whose dead delivery to settle")
     args = parser.parse_args(argv)
+    if (args.action == "purge") == bool(args.delivery_id):
+        parser.error("purge takes no delivery_id; requeue and dismiss need one")
 
     from starpulse.event_log.migrate import migrate_chain  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.github.adapters.inbound.consumer import open_queue  # noqa: PLC0415
@@ -31,6 +36,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"github: config unreadable: {exc}", file=sys.stderr)
         return 1
     try:
+        if args.action == "purge":
+            queue.purge()
+            print("purge: done")
+            return 0
         settled = getattr(queue, args.action)(args.delivery_id)
     finally:
         inbox.engine.dispose()

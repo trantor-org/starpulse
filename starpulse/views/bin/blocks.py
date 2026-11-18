@@ -19,6 +19,7 @@ class ApiConfig(Protocol):
     """The config section the page reads; `runtime` loads the root config and hands it in, as no context imports it."""
 
     database_url: str | None
+    event_log_archive_dir: str
     board_type: str
     board: Mapping[str, object]
     read_model: bool

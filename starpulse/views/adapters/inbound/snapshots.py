@@ -162,12 +162,22 @@ class Snapshots:
                 self._interval_s = max(self._interval_s, WARM_IDLE_PER_BUILD * (self._clock() - started))
 
     def keep_warm(self, stop: StopEvent) -> None:
-        """Run `refresh` every `refresh_s` until `stop`: the warm snapshot trails the feed by about that long."""
-        while not stop.wait(self._interval_s):
-            try:
-                self.refresh()
-            except Exception:
-                logger.exception("StarPulse: the warm snapshot could not be rebuilt")
+        """Run `refresh` `refresh_s` after each feed change (`BoardFeed.revised`) until `stop`: the warm snapshot trails
+        the feed by about that long, and an unchanged feed costs nothing."""
+        revised = self._feed.revised
+        stop.listen(revised.set)
+        try:
+            while not stop.is_set():
+                revised.wait()
+                if stop.wait(self._interval_s):
+                    break
+                revised.clear()
+                try:
+                    self.refresh()
+                except Exception:
+                    logger.exception("StarPulse: the warm snapshot could not be rebuilt")
+        finally:
+            stop.unlisten(revised.set)
 
     def _current(self) -> _Warm | None:
         """The warm snapshot if it is unchanged since the feed's last publish and under `IDLE_REFRESH_S` old, or
@@ -190,6 +200,8 @@ class Snapshots:
     def _read(self) -> None:
         with self._lock:
             self._reads += 1
+        if (warm := self._warm) is not None and warm.served.rev != self._feed.rev:
+            self._feed.revised.set()  # a read of a snapshot the feed has left behind: the warmer rebuilds it
 
     def _encode(self) -> tuple[Served, Encoded]:
         started = time.perf_counter()

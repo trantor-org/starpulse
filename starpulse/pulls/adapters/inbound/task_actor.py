@@ -143,7 +143,7 @@ _DAY_S = 86_400.0
 LOCK_BACKOFF_S = (0.1, 0.4, 1.6)
 
 #: The facts whose event parks a task in Needs attention: the comment is also its `## Needs attention` reason, a question.
-_ASKS = ("overdue", "pr_closed_unmerged", "pr_failing")
+_ASKS = ("overdue", "pr_failing")
 
 #: The skill machine whose lens states are a wait on a verdict, and the machine of an alert whose end is `RESOLVED`.
 _SLE_DAYS, _GRACE_DAYS = 7, 2
@@ -691,7 +691,7 @@ class TaskActor:
                 self._index(agent)
             self._drop_holds_outside(tasks)
             self._read_pulls()
-            if self._idle is not None:  # a settle before this start is lost; `confirm` still spares a busy holder
+            if self._idle is not None:  # a settle while down is replayed by `follow_holder_idle`; `confirm` spares a busy holder
                 self._awaited |= {a["id"] for a in tasks if a["state"] == self._feed.roles.working and self._awaits(a)}
             open_ids = {agent["id"] for agent in tasks}
             self._derived = {name: digest for name, digest in self._derived.items() if name in open_ids}
@@ -1251,7 +1251,8 @@ class TaskActor:
         return max((at for at in merges if at is not None), default=None)
 
     def holder_settled(self, name: str) -> None:
-        """A session settled. An In Progress task whose holder is not busy (`confirm`) and that no event is awaited on
+        """A session settled. A task citing no pull request closes when every criterion is checked, else returns to Ready
+        (`_end_without_pr`). Any other In Progress task whose holder is not busy (`confirm`) and that no event is awaited on
         has work left, so the `idle` hook resumes the same session with its phase machine's next step; the task stays In
         Progress and no clock runs. A settle an awaited event held runs again from the derivation that finds the wait
         ended, as the session that settled may never settle again. After `_STALLED_RESUMES` resumes with no progress (a phase or submachine event, a
@@ -1270,17 +1271,22 @@ class TaskActor:
             if self._awaits(agent):
                 self._awaited.add(name)
                 return
-            own = self._own_prs(agent)
-            if own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
-                return
-            progress = self._progress(agent)
-            before, count = self._resumes.get(name, (progress, 0))
-            if before != progress:
-                count = 0
-                self._stalled.discard(name)
-            elif name in self._stalled:
-                self._attend(name, "its escalated session settled again with no progress")
-                return
+            ended = not agent["prs"]
+            if not ended:
+                own = self._own_prs(agent)
+                if own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
+                    return
+                progress = self._progress(agent)
+                before, count = self._resumes.get(name, (progress, 0))
+                if before != progress:
+                    count = 0
+                    self._stalled.discard(name)
+                elif name in self._stalled:
+                    self._attend(name, "its escalated session settled again with no progress")
+                    return
+        if ended:
+            self._end_without_pr(name)
+            return
         escalate = count >= _STALLED_RESUMES
         for verdict in ("confirm", *(("escalate",) if escalate else ()), "resume"):
             try:
@@ -1315,6 +1321,30 @@ class TaskActor:
         self._apply(
             name, {"status": attention, "description": section_set(agent["description"], "Needs attention", reason)}, reason
         )
+
+    def _end_without_pr(self, name: str) -> None:
+        """A task citing no pull request has nothing left to resume once its holder ended: every criterion checked closes it,
+        any other returns it to Ready for a new session. A holder still busy (`confirm` raises) settles again."""
+        try:
+            self._idle(name, "confirm")
+        except Exception as error:
+            logger.info("task actor: %s settled but its holder was not confirm: %s", name, error)
+            return
+        with self._lock:
+            agent = self._feed.task(name, lean=True)
+            if agent is None or agent["state"] != self._feed.roles.working or agent["prs"]:
+                return
+            self._resumes.pop(name, None)
+            self._stalled.discard(name)
+            criteria = agent.get("criteria", ())
+            done = bool(criteria) and all(criterion["checked"] for criterion in criteria)
+            target = self._feed.roles.done if done else self._feed.roles.ready
+            comment = (
+                "Closed at its session's end: it cites no pull request and every criterion is checked."
+                if done
+                else "Returned to Ready at its session's end: it cites no pull request and a criterion is unchecked."
+            )
+            self._write(name, target, comment, self._clock(), source=agent["state"])
 
     def _settle_awaited(self, name: str) -> None:
         if name not in self._awaited:
@@ -1622,18 +1652,13 @@ class TaskActor:
         return terminal if terminal and merged and self._planned(agent) is planned else None
 
     def _pr_closed_unmerged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The closed pull requests and the Needs attention question when every pull request the task cites has ended and
-        none merged: its delivery is gone and no merge will ever close it."""
+        """The closed pull requests and the archive reason when every pull request the task cites has ended and none
+        merged: its delivery is gone and the close is the answer: the task archives as superseded, and a redelivery is a new task."""
         terminal = self._pr_terminal(agent)
         records = [self._record(url) for url in self._proof_prs(agent)]
         if not terminal or any(not record or record["state"] != "CLOSED" for record in records):
             return None
-        return terminal[0], attention_reason(
-            f"Every pull request it cites closed unmerged: {terminal[0]}",
-            "no pull request is left to merge its delivery",
-            ("close the task as superseded", "redeliver it on a new pull request"),
-            "Close it as superseded, or redeliver it?",
-        )
+        return terminal[0], f"superseded: {', '.join(self._proof_prs(agent))} closed unmerged"
 
     def _pr_closed_unmerged_complete(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The closed pull requests when `_pr_closed_unmerged` holds and every criterion is checked: the work was done

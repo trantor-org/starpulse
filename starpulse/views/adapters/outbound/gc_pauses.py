@@ -1,13 +1,13 @@
-"""Garbage collection on a timer, and the pause each collection costs, as Prometheus metrics.
+"""Garbage collection after a count of served requests, and the pause each collection costs, as Prometheus metrics.
 
 On a free-threaded build a collection stops every thread, and under CPU contention the stop waits for descheduled
 threads: an automatic collection mid-request stalls the whole worker for tens of milliseconds to seconds, which is the
-`/api/task/{id}` p95 tail. A worker therefore turns automatic collection off and collects on a timer.
+`/api/task/{id}` p95 tail. A worker therefore turns automatic collection off and collects after a count of requests,
+on a thread of its own, so a request never waits for the collection it paid for.
 """
 
 import ctypes
 import gc
-import os
 import threading
 import time
 from collections.abc import Callable
@@ -15,11 +15,9 @@ from typing import Any
 
 from starpulse.event_log.wake import StopEvent
 
-#: Between two timed collections. Cyclic garbage waits at most this long; one pause of a few seconds in this span
-#: reaches about 1% of requests.
-COLLECT_EVERY_S = 300.0
-
-_GOLDEN = 0.6180339887498949
+#: Requests served between two collections. A worker that serves none allocates nothing to collect; one that serves
+#: them leaves cyclic garbage for at most this many.
+COLLECT_EVERY_REQUESTS = 2000
 
 
 class GcPauses:
@@ -59,12 +57,6 @@ class GcPauses:
 PAUSES = GcPauses()
 
 
-def first_collection_delay_s(interval_s: float, pid: int) -> float:
-    """Seconds before a worker's first timed collection: a golden-ratio phase of `pid`, so workers forked together
-    (consecutive pids) land far apart in the interval instead of stalling together."""
-    return interval_s * ((pid * _GOLDEN) % 1.0)
-
-
 def release_native_heap() -> None:
     """Hand glibc's freed arena pages back to the kernel (`malloc_trim`); a no-op where glibc is absent.
 
@@ -77,23 +69,45 @@ def release_native_heap() -> None:
         return
 
 
+class Collector:
+    """Counts served requests and wakes a thread that collects and trims after each `every`."""
+
+    def __init__(self, every: int, trim: Callable[[], None]) -> None:
+        self._every = every
+        self._trim = trim
+        self._lock = threading.Lock()
+        self._count = 0
+        self._due = threading.Event()
+
+    def served(self) -> None:
+        with self._lock:
+            self._count += 1
+            if self._count < self._every:
+                return
+            self._count = 0
+        self._due.set()
+
+    def run(self, stop: StopEvent) -> None:
+        stop.listen(self._due.set)
+        try:
+            while self._due.wait() and not stop.is_set():
+                self._due.clear()
+                gc.collect()
+                self._trim()
+        finally:
+            stop.unlisten(self._due.set)
+
+
 def install(
     stop: StopEvent,
-    interval_s: float = COLLECT_EVERY_S,
+    every: int = COLLECT_EVERY_REQUESTS,
     pauses: GcPauses = PAUSES,
     trim: Callable[[], None] = release_native_heap,
-) -> threading.Thread:
-    """Turn automatic collection off, time every collection into `pauses`, and collect then `trim` each `interval_s` (first after a per-worker phase) until `stop`."""
+) -> Collector:
+    """Turn automatic collection off, time every collection into `pauses`, and collect then `trim` after each `every`
+    requests the returned collector counts (`served`) until `stop`."""
     gc.callbacks.append(pauses.callback)
     gc.disable()
-
-    def collect_each_interval() -> None:
-        wait_s = first_collection_delay_s(interval_s, os.getpid())
-        while not stop.wait(wait_s):
-            gc.collect()
-            trim()
-            wait_s = interval_s
-
-    timer = threading.Thread(target=collect_each_interval, name="gc-collect", daemon=True)
-    timer.start()
-    return timer
+    collector = Collector(every, trim)
+    threading.Thread(target=collector.run, args=(stop,), name="gc-collect", daemon=True).start()
+    return collector
