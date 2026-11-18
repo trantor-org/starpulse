@@ -17,7 +17,7 @@ from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import Move
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent
-from starpulse.flow_metrics.adapters.outbound.history import History
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.flow_metrics.model.level import Level
 from starpulse.scheduler.adapters.pressure import watch
 from starpulse.scheduler.adapters.runtime import Runtime
@@ -37,7 +37,7 @@ def start_scheduler(
     base: Path,
     feed: BoardFeed,
     board: Board,
-    history: History,
+    history: HistoryStore,
     log: EventLog,
     level: Level | None,
     stop: StopEvent,

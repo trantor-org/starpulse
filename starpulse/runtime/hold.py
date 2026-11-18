@@ -58,8 +58,7 @@ class Adopted:
     """A child of this process that an earlier image of `serve` started, shaped like the `Popen` the `Supervisor` drives.
 
     A re-executed process keeps its pid and so its children: a child of `serve` is waited for by pid, and `fd` is the
-    write end of the stdin pipe it exits on, which stays open across the exec. A child of the preloaded process is not
-    `serve`'s: it is alive while its pid is, and its exit code is lost with the preloaded process that reaped it."""
+    write end of the stdin pipe it exits on, which stays open across the exec."""
 
     def __init__(self, pid: int, fd: int) -> None:
         self.pid = pid

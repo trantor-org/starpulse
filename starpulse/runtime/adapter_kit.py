@@ -50,7 +50,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.machine_fold import Placer
 from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.stored_snapshot import stored_snapshots
-from starpulse.flow_metrics.adapters.outbound.history import History, HistoryStore
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.assembly import assemble as _assemble
 from starpulse.runtime.config import Config
 from starpulse.runtime.store_migrate import maintain
@@ -288,7 +288,7 @@ def serve(
     feed: BoardFeed | None = None,
     board: Board | None = None,
     *,
-    history: History | None = None,
+    history: HistoryStore | None = None,
     window: HistoryWindow | None = None,
     clock: Callable[[], float] = time.time,
     gate: Callable[[GateRequest], bool] | None = None,
@@ -329,6 +329,7 @@ def serve(
     server = PageServer(
         app, ("127.0.0.1", port), tls=tls, stopping=lambda: snapshots.announce("restarting", {"at": time.time()})
     )
+    server.caught_up = snapshots.caught_up
     server.start()
     try:
         yield server

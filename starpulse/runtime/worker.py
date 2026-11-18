@@ -121,7 +121,7 @@ def main(argv: list[str] | None = None) -> None:
         from starpulse.runtime.wiring import trajectories_response
         from starpulse.scheduler.bin import scheduler_worker
         from starpulse.sessions.adapters.outbound.session_start import starter
-        from starpulse.views.adapters.inbound.asgi_app import _cached
+        from starpulse.views.adapters.outbound.ttl_cached import ttl_cached
 
         return scheduler_worker.main(
             argv,
@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> None:
             history_store=history_store,
             hold=hold,
             trajectories_response=trajectories_response,
-            cached=_cached,
+            cached=ttl_cached,
             starter=starter,
             delivered=own_pull_merged,
         )

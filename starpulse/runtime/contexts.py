@@ -191,12 +191,12 @@ def default_starters(
         from starpulse.runtime.wiring import trajectories_response
         from starpulse.scheduler.bin import scheduler_worker
         from starpulse.sessions.adapters.outbound.session_start import starter
-        from starpulse.views.adapters.inbound.asgi_app import _cached
+        from starpulse.views.adapters.outbound.ttl_cached import ttl_cached
 
         return scheduler_worker.start(
             config, path, base, log, own, load=load,
             worker_board=lambda *_: scheduler_board(config, base, log, own), history_store=history_store,
-            trajectories_response=trajectories_response, cached=_cached, starter=starter, delivered=own_pull_merged,
+            trajectories_response=trajectories_response, cached=ttl_cached, starter=starter, delivered=own_pull_merged,
         )  # fmt: skip
 
     def runs(own: threading.Event) -> Callable[[], None]:
@@ -298,6 +298,7 @@ def default_starters(
             end,
             config.bridge.end_lanes,
             forget_ended(registry, claude.live_socket(claude.sessions_dir(os.environ)), claude.sessions_dir(os.environ)),
+            config.bridge.incidents,
         )
 
     def search(own: threading.Event) -> Callable[[], None]:

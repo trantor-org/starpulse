@@ -183,8 +183,8 @@ describe("the Kanban board's lane width", () => {
   const board = (viewport: number) => viewport - sidePx;
   const need = (lanes: number) => lanes * min + (lanes - 1) * gap;
 
-  it("stretches every lane from a minimum width to share the board, so no strip is left", () => {
-    expect(rule("#kb #cols")).toContain("grid-template-columns: repeat(var(--cols, 6), minmax(var(--lane-min), 1fr))");
+  it("stretches every lane from a minimum width, never wider than the board, to share it, so no strip is left and a narrow board scrolls whole lanes (TASK-15344)", () => {
+    expect(rule("#kb #cols")).toContain("grid-template-columns: repeat(var(--cols, 6), minmax(min(var(--lane-min), 100%), 1fr))");
   });
 
   it("never lets a lane shrink below 475px, the width TASK-11986 set", () => {
@@ -198,5 +198,17 @@ describe("the Kanban board's lane width", () => {
   it.each([1366, 1920])("scrolls the board sideways at %ipx, where six lanes of the minimum width do not fit", (viewport) => {
     expect(need(6)).toBeGreaterThan(board(viewport));
     expect(rule("#kb #cols")).toContain("overflow-x: auto");
+  });
+});
+
+describe("the sidebars at large text (TASK-15344)", () => {
+  it("wraps the navigator's clock line instead of cutting it with an ellipsis", () => {
+    expect(rule("#nav .sub")).not.toContain("text-overflow");
+    expect(rule("#nav .sub")).not.toContain("nowrap");
+  });
+
+  it("lets Recent shrink to leave the legend its whole height, so the legend's last line is not cut", () => {
+    expect(rule("#rail .recent")).toContain("flex: 0 1 auto");
+    expect(rule("#legend")).toContain("flex: none");
   });
 });

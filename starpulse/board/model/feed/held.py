@@ -114,8 +114,15 @@ class HeldSnapshot:
                     due = time.monotonic() + TICK
                 if changes:
                     self._folded(changes)
+                for _ in batch:
+                    self._changes.task_done()
         finally:
             self._feed.unsubscribe(self._changes)
+
+    def caught_up(self, timeout: float) -> bool:
+        """Whether every change the feed published is folded into the snapshot, waiting up to `timeout` for the ones not."""
+        with self._changes.all_tasks_done:
+            return self._changes.all_tasks_done.wait_for(lambda: not self._changes.unfinished_tasks, timeout)
 
     def _rebuilt(self, changes: list[tuple[str, dict]], restarted: bool = False) -> None:
         try:

@@ -20,7 +20,7 @@ from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
-from starpulse.flow_metrics.adapters.outbound.history import History
+from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.scheduler.adapters.remote import follow_wakes, publisher
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.bin.blocks import SchedulerConfig, scheduler_fixed_blocks, scheduler_live_blocks
@@ -39,7 +39,7 @@ class Scheduler:
         board: Board,
         feed: BoardFeed,
         log: EventLog,
-        history: History,
+        history: HistoryStore,
         probe: Callable[[], Mapping[str, float]] | None = None,
         *,
         trajectories_response: Callable[..., tuple[bytes, int]],
@@ -122,7 +122,7 @@ def start(
     *,
     load: Callable[[Path | None], SchedulerConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
-    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], History],
+    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], HistoryStore],
     trajectories_response: Callable[..., tuple[bytes, int]],
     cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
     starter: Callable[..., Any],
@@ -154,7 +154,7 @@ def main(
     discover: Callable[[Path | None], Path | None],
     load: Callable[[Path | None], SchedulerConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
-    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], History],
+    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], HistoryStore],
     hold: Callable[[threading.Event, Callable[[], None]], None],
     trajectories_response: Callable[..., tuple[bytes, int]],
     cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],

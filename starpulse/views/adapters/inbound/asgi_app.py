@@ -49,7 +49,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starlette.types import ASGIApp, Receive, Scope, Send
 
     from starpulse.board.model.board_feed import BoardFeed
-    from starpulse.flow_metrics.adapters.outbound.history import History
+    from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 
 
 logger = logging.getLogger(__name__)
@@ -121,23 +121,6 @@ def build_gauge(static: Path) -> str:
 
 #: How long `/api/doctor` holds its report: the checks read the scheduler and run `git`.
 _CONTRACT_TTL_S = 60
-
-
-def _cached(
-    read: Callable[[], dict[str, Any]], ttl: float, clock: Callable[[], float] = time.monotonic
-) -> Callable[[], dict[str, Any]]:
-    """`read`, asked at most once in `ttl` seconds; the page that asks while it is stale waits for the fresh read."""
-    held: tuple[float, dict[str, Any]] | None = None
-    lock = threading.Lock()
-
-    def get() -> dict[str, Any]:
-        nonlocal held
-        with lock:
-            if held is None or clock() - held[0] >= ttl:
-                held = (clock(), read())
-            return held[1]
-
-    return get
 
 
 class _Build(StaticFiles):
@@ -535,7 +518,7 @@ def page_app(
     feed: BoardFeed,
     snapshots: Snapshots,
     static: Path,
-    history: History,
+    history: HistoryStore,
     window: HistoryWindow,
     board: Board,
     services: Services = Services(),

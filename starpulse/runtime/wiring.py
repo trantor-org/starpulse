@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.model.level import Level
-from starpulse.flow_metrics.model.level_metrics import RunWindow, WindowPastHistory
+from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
 from starpulse.flow_metrics.model.trajectories import trajectory_analytics
 from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
 from starpulse.runs.model import opt_in
@@ -23,7 +23,7 @@ if (
 ):  # annotation only: a runtime import would put the scheduler and the page in the Delivery worker's import closure
     from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
-    from starpulse.flow_metrics.adapters.outbound.history import History
+    from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
     from starpulse.scheduler.adapters.remote import Remote
     from starpulse.views.adapters.inbound.page_server import PageServer
 
@@ -38,26 +38,20 @@ STATIC = _HERE / "static"
 
 
 def trajectories_response(
-    history: History, query: dict[str, list[str]], level: Level, machines: Mapping[str, dict], now: float
+    history: HistoryStore, query: dict[str, list[str]], level: Level, machines: Mapping[str, dict], now: float
 ) -> tuple[bytes, int]:
     """The body and status of the trajectory analytics of the runs that ended in the last `hours` as of `now`, which
     the scheduler ranks tasks by; refused when `hours` is no positive number."""
-    from starpulse.flow_metrics.adapters.outbound.history import LevelHistory, SummarisedLevel  # noqa: PLC0415 - the database stack loads when a store does
     from starpulse.views.application.queries.responses import _HEALTH_HOURS, _error, _hours  # noqa: PLC0415 - the scheduler's answer is the page's, and `serve` and the contexts child import no page module
     from starpulse.views.model.encoding import encode  # noqa: PLC0415
 
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
-    if not isinstance(history, LevelHistory):
-        return _error("this history does not keep every task's trajectory, so it cannot report the level"), 501
 
     def answer() -> tuple[bytes, int]:
         try:
-            if isinstance(history, SummarisedLevel):
-                held = history.level_window(level, now=now, window_s=window * 3600)
-            else:
-                held = RunWindow(history.level_runs(level.machine))
+            held = history.level_window(level, now=now, window_s=window * 3600)
             return (
                 encode(
                     "trajectories",
@@ -76,8 +70,6 @@ def trajectories_response(
         except WindowPastHistory as exc:
             return encode("trajectories", {"error": str(exc), "history_s": exc.history_s}), 400
 
-    if not isinstance(history, SummarisedLevel):
-        return answer()
     # the query's own params, so a junk param cannot fill the memo
     params = tuple(tuple(query.get(name, ())) for name in ("hours", "from", "to", "p"))
     return history.level_answer(level, ("trajectories", params), now=now, compute=answer)

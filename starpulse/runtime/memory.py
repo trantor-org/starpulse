@@ -1,8 +1,7 @@
 """The memory a worker is judged on, per OS, read through psutil.
 
-Workers forked from one preloaded process share the pages of what it imported, so a limit on the resident size would charge
-every child for the whole shared floor. Linux reads the proportional set size, which divides each shared page among the
-processes that map it; macOS starts its children with `subprocess`, so its resident size is the child's own.
+Linux reads the proportional set size, which divides each page processes share among the processes that map it; macOS
+reads the child's own resident size.
 """
 
 import sys

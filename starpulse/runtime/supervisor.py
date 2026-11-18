@@ -1,7 +1,6 @@
 """`serve` as a supervisor of two `starpulse worker` children: `api` (the page) and `contexts` (every background context as a thread).
 
-A child is started by `spawn` (`starpulse.runtime.zygote.Forker`: a fork of one preloaded process, else
-`subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
+A child is started by `spawn` (`spawn_child`: a `subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
 `serve`. Past its soft memory limit a child is replaced (the old one stops, then the new one starts; only the Page API starts its replacement beside it); past its hard
 limit it is killed and restarted. The run adapters a `[[runs]]` instance configures are threads of `contexts`
 (`starpulse.runtime.contexts`), named by `adapter_contexts`.
@@ -122,7 +121,6 @@ class Supervisor:
         read: Callable[[str], Reading] | None = None,
         baseline: Callable[[str], Reading] | None = None,
         execute: Callable[[], None] = launch.exec_self,
-        retire: Callable[[], None] | None = None,
         control: Path | None = None,
         limits: Mapping[str, MemoryLimit] | None = None,
         memory: Callable[[int], int] | None = memory_reader(),
@@ -157,7 +155,6 @@ class Supervisor:
         self._read = read
         self._baseline = baseline or read
         self._execute = execute
-        self._retire = retire
         self._control = Control(control, self) if control else None
         self._seen: dict[str, Reading] = {}
 
@@ -339,14 +336,9 @@ class Supervisor:
                 }
                 outcomes.update(dict.fromkeys(self._sockets, "replaced"))
             else:
-                if self._retire and self._code_changed(after):
-                    self._retire()
                 outcomes = {n: self._apply(n, c, self._seen.get(n), after[n]) for n, c in self._children.items()}
             self._seen = after
         return {"supervisor": "re-executed" if reexec else "kept", "reads": "launcher", "children": outcomes}
-
-    def _code_changed(self, after: Mapping[str, Reading]) -> bool:
-        return any(n not in self._seen or not self._seen[n].same_code(after[n]) for n in self._children)
 
     def _apply(self, name: str, child: _Child, before: Reading | None, now: Reading) -> str:
         if before is None or not before.same_code(now) or before.restart != now.restart:

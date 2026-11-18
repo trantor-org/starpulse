@@ -13,6 +13,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from starpulse.event_log.event_log import EventLog
@@ -41,6 +42,9 @@ class Served(NamedTuple):
 class Snapshots:
     def __init__(self, store: SnapshotStore, log: EventLog, stop: StopEvent) -> None:
         self._store = store
+        #: Whether the writer beside this feed has folded what the feed published, within the seconds given; true when
+        #: another process writes the snapshot.
+        self.caught_up: Callable[[float], bool] = lambda _timeout: True
         self._lock = threading.Lock()
         #: The bodies event streams sent by reference and pages have not fetched yet, by key.
         self._refs: dict[str, Encoded] = {}
@@ -140,6 +144,7 @@ class Snapshots:
         deadline = time.monotonic() + wait_s
         for stream in streams:
             while stream.unfinished_tasks and time.monotonic() < deadline:
+                # adr-exempt: pending
                 time.sleep(0.005)
 
     def hold(self, encoded: Encoded) -> str:

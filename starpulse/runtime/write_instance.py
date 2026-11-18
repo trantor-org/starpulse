@@ -12,7 +12,7 @@ import re
 import subprocess
 import tempfile
 import threading
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +26,8 @@ from starpulse.runtime.adapter_kit import assembled, serve, url
 
 #: How long a stopped instance waits for the Board adapter's thread to end.
 PLACED_WITHIN_S = 5.0
+#: How long a settle waits for the Board writer to fold what the scan placed.
+FOLDED_WITHIN_S = 30.0
 #: Held while an instance starts its adapter, so the threads that start is the only new ones in the adapter registry.
 _STARTING = threading.Lock()
 _MISSING = re.compile(r"([\w-]+) (?:is not on the board|has no record to read)")
@@ -38,12 +40,16 @@ class WriteInstance:
 
     board: Path
     url: str
+    caught_up: Callable[[float], bool] = field(compare=False, repr=False)
     backlogs: tuple = field(default=(), compare=False, repr=False)
 
     def settle(self) -> None:
-        """Place the board's files on the feed now, rather than when the Board adapter's watch names them."""
+        """Place the board's files on the feed now, rather than when the Board adapter's watch names them, and wait for
+        the Board writer to fold them into the snapshot a read is served from."""
         for backlog in self.backlogs:
             backlog.scan()
+        if not self.caught_up(FOLDED_WITHIN_S):
+            raise TimeoutError(f"the Board writer folded no change in {FOLDED_WITHIN_S} s")
 
     def run(self, *argv: str) -> subprocess.CompletedProcess[str]:
         """Run `starpulse <argv> --server <url>` in this process and answer as a child process would.
@@ -94,7 +100,7 @@ def write_instance(base: Path, config_file: str = "starpulse.toml") -> Generator
             started = {backlog: thread for backlog, thread in _live.items() if backlog not in before}
         try:
             with serve(state, feed, stream) as server:
-                yield WriteInstance(board, url(server, ""), tuple(started))
+                yield WriteInstance(board, url(server, ""), server.caught_up, tuple(started))
         finally:
             for backlog, thread in started.items():
                 backlog.stop()
