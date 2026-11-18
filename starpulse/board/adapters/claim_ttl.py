@@ -124,8 +124,6 @@ def _halt_note(session: str, at: float, text: str) -> str:
 
 def _announce(board: Board, task: str) -> None:
     """Runs the board's `released` notice for a task the sweep released, so a session starts on it; a raise is logged."""
-    if board.released is None:
-        return
     try:
         board.released(task)
     except Exception:
@@ -209,7 +207,7 @@ def sweep(
     now = time.time() if now is None else now
     expiries = {} if expiries is None else expiries
     working = board.roles.working
-    if board.release is None or not working:
+    if not working:
         return []
     released = []
     for row in rows:

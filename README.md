@@ -35,7 +35,7 @@ live, with tasks, workflow runs and agent sessions moving through it.
   upcasters, in a single portable SQLite database.
 - **Agent-native CLI.** Every verb prints JSON with documented exit codes; `starpulse help --agent` emits the full verb
   manifest for an agent's context.
-- **Pluggable sources.** Adapters for task trackers, workflow schedulers and agent harnesses, plus a CloudEvents
+- **Pluggable sources.** Adapters for workflow schedulers and agent harnesses, plus a CloudEvents
   ingest (HTTP and Connect) for anything else.
 - **Built-in scheduler.** Admission, quiet hours and dispatch of Ready tasks to agent sessions.
 - **Observable.** Prometheus `/metrics`, OTLP intake for agent telemetry, and flow and session analytics.
@@ -126,7 +126,7 @@ The same verbs work by hand, and **New task** on the Kanban view writes to the s
 | Workflow runs | Temporal, GitHub Actions, systemd timers, any scheduler via CloudEvents |
 | Agent sessions | Claude Code (OTLP), GitHub Copilot cloud agent and code review |
 
-New trackers and producers are written against the board, machine-events and runs contracts; see
+New producers are written against the machine-events and runs contracts; the board is the native one; see
 [Adapters](docs/adapters.md).
 
 ## Views
@@ -142,7 +142,7 @@ New trackers and producers are written against the board, machine-events and run
 | [Serve and configure](docs/serving.md) | Server, workers, config file, event store, scheduler, releases |
 | [Connect sources](docs/sources.md) | Agent telemetry, runs adapters, CloudEvents ingest, pull requests |
 | [CLI reference](docs/cli.md) | Every verb, its arguments, JSON output and exit codes |
-| [Write an adapter](docs/adapters.md) | Board, machine-events and runs contracts, and the adapter kit |
+| [Write an adapter](docs/adapters.md) | Machine-events and runs contracts, the native board, and the adapter kit |
 | [Build a consumer](docs/consumers.md) | Dashboards, alerts and reports built on the event log export |
 | [Security](docs/security.md) | Network exposure, request checks and the trust model |
 | [Benchmarks](docs/benchmarks.md) | The event-log, flow-read, page-latency and soak harnesses and their budgets |

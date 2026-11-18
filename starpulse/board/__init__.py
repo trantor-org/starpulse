@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 
 from starpulse.board.adapters.native_scan import NativeScan
 from starpulse.board.model.commit_keys import CommitKeys
+from starpulse.board.model.adapter_types import DEFAULT_TYPE
 from starpulse.board.model.seam import (
-    DEFAULT_TYPE,
     AssigneeWriter,
     Board,
     DocArchiver,
@@ -31,8 +31,6 @@ from starpulse.board.model.seam import (
     TaskRestorer,
     TaskRetirer,
     Written,
-    load,
-    module_name,
 )
 
 if TYPE_CHECKING:
@@ -73,8 +71,6 @@ __all__ = [
     "TaskRetirer",
     "NativeScan",
     "Written",
-    "load",
-    "module_name",
 ]
 
 

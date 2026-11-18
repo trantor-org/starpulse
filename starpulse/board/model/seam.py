@@ -1,20 +1,14 @@
-"""The board adapter seam: where the Board's tasks and the machines the page draws come from.
+"""The Board: what the server, the views and the task actor read and write of StarPulse's Markdown board.
 
-The config's `[board]` table names the adapter by `type`: a module under `starpulse` (the default is
-`native`, StarPulse's own Markdown board) or a dotted module path an installed package provides.
-The module's `board(settings, base)` returns a `Board`; `settings` is the rest of the `[board]` table and
-`base` the directory relative paths in it are read from.
+`starpulse.board.adapters.native.board` builds the one a `[board]` table of type `native` names, and
+`starpulse.board.adapters.machines_only.board` the one `machines` names, which draws the machines alone and refuses every task write.
 """
 
-import importlib
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
-from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
 from starpulse.machine_engine.model.state_roles import StateRoles
-from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES
 
 if TYPE_CHECKING:
     from starpulse.board.model.board_feed import BoardFeed
@@ -26,7 +20,6 @@ __all__ = [
     "AGENT",
     "ANONYMOUS",
     "COMMENT_CAP",
-    "DEFAULT_TYPE",
     "FLAGGED",
     "HELD",
     "MERGE_EVIDENCE",
@@ -57,8 +50,6 @@ __all__ = [
     "TaskRestorer",
     "TaskRetirer",
     "Written",
-    "load",
-    "module_name",
 ]
 
 #: Who the page acts for, which it names on every write it makes.
@@ -209,152 +200,128 @@ class DocRestorer(Protocol):
     def __call__(self, doc: str, folder: str = "", /) -> Written: ...
 
 
-def _no_cues(qualify: Qualify) -> list[dict]:
-    return []
-
-
 @dataclass(frozen=True)
 class Board:
-    """What a board adapter hands the server."""
+    """What the server reads and writes of a board."""
 
     machines: Callable[[Qualify, Collection[str]], dict[str, dict]]
     """Every machine the page draws, the Board's as `board`, naming workflows as `qualify` does; the collection is
-    the `<instance>/<workflow>` names the config lists, for an adapter that refuses a writer naming another."""
+    the `<instance>/<workflow>` names the config lists, so a writer naming another is refused."""
     start: Callable[[BoardFeed, str, EventLog], None]
-    """Begin placing the Board's tasks on the feed, on threads of the adapter's own; the text is a name unique to this
-    running view, and the log is the event log of the view's database, which an adapter that reads another system's
-    events appends them to (`board_feed.follow` reads a stream of it into the feed)."""
-    sweep: Callable[[BoardFeed, EventLog, Callable[[dict[str, float]], None]], None] | None = None
-    """Begin releasing the claims that outlive their TTL on the feed's tasks, on a thread of the adapter's own; `start`
-    begins it too, and a view that reads the Task read model instead of starting the adapter calls it alone; None
-    sweeps nothing."""
-    keys: TaskKeys | None = None
-    """The tracker's task key scheme; None places any key."""
-    cues: Callable[[Qualify], Sequence[dict]] = _no_cues
+    """Begin placing the Board's tasks on the feed, on threads of its own; the text is a name unique to this
+    running view, and the log is the event log of the view's database."""
+    sweep: Callable[[BoardFeed, EventLog, Callable[[dict[str, float]], None]], None]
+    """Begin releasing the claims that outlive their TTL on the feed's tasks, on a thread of its own; `start`
+    begins it too, and a view that reads the Task read model instead of calling `start` calls it alone."""
+    keys: TaskKeys | None
+    """The board's task key scheme; None places any key, as the machines board does."""
+    cues: Callable[[Qualify], Sequence[dict]]
     """The workflow cues the page draws, each `{dag, ...}` with its workflow named as `qualify` does."""
-    waits: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    waits: Mapping[str, Mapping[str, str]]
     """The facts the Board machine's states wait on, `{lane: {fact kind: event}}`; empty when the machine declares none."""
-    roles: StateRoles = field(default_factory=lambda: StateRoles.of_statuses(DEFAULT_STATUSES))
+    roles: StateRoles
     """The Board machine's states by the role each plays; a board with no machine file has the roles its statuses imply."""
-    writer: MoveWriter | None = None
-    """Sets a task's status when the page moves it; None refuses every move."""
-    assign: AssigneeWriter | None = None
-    """Sets the assignee the page picked when starting a task's session; None refuses a changed assignee."""
-    release: TaskReleaser | None = None
-    """Ends a task's claim and returns it to a State; None releases nothing."""
-    source: str = "the board"
-    """What the page says the Board is read from until the adapter is ready."""
-    read: TaskReader | None = None
-    """Reads a task's full record when the page opens it; None leaves the page with the snapshot's fields."""
-    read_archived: TaskReader | None = None
-    """Reads an archived task's full record, which `read` never finds; None leaves an archived task unread."""
-    edit: TaskEditor | None = None
-    """Saves the page's edits to a task in one write; None refuses every edit. Needs `read`, which it is checked against."""
-    archive: TaskArchiver | None = None
-    """Archives a task from any column; None refuses every archive."""
-    restore: TaskRestorer | None = None
-    """Returns an archived task to the board's tasks; None refuses every restore."""
-    standing: Callable[[str, str], Mapping[str, Any] | None] | None = None
+    writer: MoveWriter
+    """Sets a task's status when the page moves it."""
+    assign: AssigneeWriter
+    """Sets the assignee the page picked when starting a task's session."""
+    release: TaskReleaser
+    """Ends a task's claim and returns it to a State."""
+    source: str
+    """What the page says the Board is read from until the board is ready."""
+    read: TaskReader
+    """Reads a task's full record when the page opens it."""
+    read_archived: TaskReader
+    """Reads an archived task's full record, which `read` never finds."""
+    edit: TaskEditor
+    """Saves the page's edits to a task in one write."""
+    archive: TaskArchiver
+    """Archives a task from any column."""
+    restore: TaskRestorer
+    """Returns an archived task to the board's tasks."""
+    standing: Callable[[str, str], Mapping[str, Any] | None]
     """The update to the move of a task to a lane that the board's rules make for the task as it stands: a refusal, and
-    the verdict of each actor a rule exempts (`Move.actors`); None when no rule refuses. None leaves a read-model move
-    unjudged."""
-    readable: Callable[[Mapping[str, Any], str], str] | None = None
-    """What the board's `readable` rules find broken in the description of a task, or "" when it reads well; None leaves a
-    read-model card without a verdict."""
-    complete: TaskCompleter | None = None
-    """Completes a Done task; None refuses every complete."""
-    retire: TaskRetirer | None = None
-    """Takes a finished task off the board into its retired tasks; None refuses every retire."""
-    retired: RetiredReader | None = None
-    """Reads the retired tasks; None when the board keeps none."""
-    retired_projected: RetiredProjector | None = None
-    """Reads the retired tasks through a projection of each text; None when the board keeps none."""
-    retired_page: RetiredPager | None = None
-    """Reads the retired tasks a page at a time, newest first; None when the board keeps none."""
-    import_retired: RetiredImporter | None = None
-    """Keeps a task retired elsewhere among the retired tasks; None refuses every import."""
-    reconcile: Callable[[str], bool] | None = None
-    """Brings a task's History to its file and says whether it had to; None when the board keeps no History."""
-    files: Callable[[], Iterable[tuple[str, list[str]]]] | None = None
-    """Lists each open task file's id and the aliases it answers to; None when the board keeps no files to list."""
-    done_files: Callable[[], Iterable[tuple[str, list[str]]]] | None = None
-    """Lists each done task file's id and the aliases it answers to, which the board keeps answering; None when the board keeps none."""
-    rescan: Callable[[], int] | None = None
-    """Reads every file the directory watch has not placed and says how many it read; None when the board is not watched."""
-    create: TaskCreator | None = None
-    """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
-    milestones: MilestoneLister | None = None
-    """Lists the open milestones; None leaves the board with no milestone records."""
-    read_milestone: MilestoneReader | None = None
-    """Reads one milestone's record; None when the board keeps none."""
-    create_milestone: MilestoneCreator | None = None
-    """Opens a milestone; None refuses every one."""
-    edit_milestone: MilestoneEditor | None = None
-    """Saves a milestone's changes in one write; None refuses every one."""
-    archive_milestone: MilestoneArchiver | None = None
-    """Archives a milestone; None refuses every one."""
-    docs: DocLister | None = None
-    """Lists the open docs; None leaves the board with no doc records."""
-    read_doc: DocReader | None = None
-    """Reads one doc's record; None when the board keeps none."""
-    create_doc: DocCreator | None = None
-    """Files a doc; None refuses every one."""
-    edit_doc: DocEditor | None = None
-    """Saves a doc's changes in one write; None refuses every one."""
-    archive_doc: DocArchiver | None = None
-    """Archives a doc; None refuses every one."""
-    restore_doc: DocRestorer | None = None
-    """Returns an archived doc to the board's docs; None refuses every one."""
-    holds: Callable[[str], Sequence[str]] | None = None
+    the verdict of each actor a rule exempts (`Move.actors`)."""
+    readable: Callable[[Mapping[str, Any], str], str]
+    """What the board's `readable` rules find broken in the description of a task, or "" when it reads well."""
+    complete: TaskCompleter
+    """Completes a Done task."""
+    retire: TaskRetirer
+    """Takes a finished task off the board into its retired tasks."""
+    retired: RetiredReader
+    """Reads the retired tasks."""
+    retired_projected: RetiredProjector
+    """Reads the retired tasks through a projection of each text."""
+    retired_page: RetiredPager
+    """Reads the retired tasks a page at a time, newest first."""
+    import_retired: RetiredImporter
+    """Keeps a task retired elsewhere among the retired tasks."""
+    reconcile: Callable[[str], bool]
+    """Brings a task's History to its file and says whether it had to."""
+    files: Callable[[], Iterable[tuple[str, list[str]]]]
+    """Lists each open task file's id and the aliases it answers to."""
+    done_files: Callable[[], Iterable[tuple[str, list[str]]]]
+    """Lists each done task file's id and the aliases it answers to, which the board keeps answering."""
+    rescan: Callable[[], int]
+    """Reads every file the directory watch has not placed and says how many it read."""
+    create: TaskCreator
+    """Creates a task in the first lane when the page asks for a new one."""
+    milestones: MilestoneLister
+    """Lists the open milestones."""
+    read_milestone: MilestoneReader
+    """Reads one milestone's record."""
+    create_milestone: MilestoneCreator
+    """Opens a milestone."""
+    edit_milestone: MilestoneEditor
+    """Saves a milestone's changes in one write."""
+    archive_milestone: MilestoneArchiver
+    """Archives a milestone."""
+    docs: DocLister
+    """Lists the open docs."""
+    read_doc: DocReader
+    """Reads one doc's record."""
+    create_doc: DocCreator
+    """Files a doc."""
+    edit_doc: DocEditor
+    """Saves a doc's changes in one write."""
+    archive_doc: DocArchiver
+    """Archives a doc."""
+    restore_doc: DocRestorer
+    """Returns an archived doc to the board's docs."""
+    holds: Callable[[str], Sequence[str]]
     """Why the board withholds a task's `deps_done` from the task actor, given its id; empty when nothing does, and an
-    exception holds the task. None holds no task."""
-    unfinished: Callable[[str], Sequence[str]] | None = None
+    exception holds the task."""
+    unfinished: Callable[[str], Sequence[str]]
     """The work a task whose pull requests merged still has, given its id; empty when none, and an exception reports
-    the error as the work left. None reports none."""
-    parked: Callable[[str], None] | None = None
+    the error as the work left."""
+    parked: Callable[[str], None]
     """Tells whoever works a task that the task actor moved it from the working lane to Waiting, given its id; a raise is
-    logged and the move stands. None tells no one."""
-    released: Callable[[str], None] | None = None
+    logged and the move stands."""
+    released: Callable[[str], None]
     """Tells whoever held a task that the task actor moved it from Waiting to Ready, given its id, so a task that was
-    parked mid-work is resumed whatever admits Ready tasks; a raise is logged and the move stands. None tells no one."""
-    idle: Callable[[str, str], None] | None = None
+    parked mid-work is resumed whatever admits Ready tasks; a raise is logged and the move stands."""
+    idle: Callable[[str, str], None] | None
     """Tells the session holding a task In Progress that it went idle, given the task's id and `checkpoint` (the first
     idle: resume the holder to checkpoint) or `confirm` (the second); a raise says the holder is busy or was not reached,
-    and that idle is not counted. None tells no one, and an idle holder is never counted."""
-    returned: Callable[[str], None] | None = None
+    and that idle is not counted. None when the config sets no idle command, so the task actor tracks no idle."""
+    returned: Callable[[str], None]
     """Tells whoever held a task that the task actor moved it from Review back to the working lane, given its id, so the
     session that delivered it fixes the pull request that turned draft or conflicting; a raise is logged and the move
-    stands. None tells no one."""
-    alive: Callable[[str], bool] | None = None
+    stands."""
+    alive: Callable[[str], bool]
     """Whether the session holding a task is running, given its id, so a Review task whose pull request is not green goes
-    back to that session when it is and to the queue when it is not. None reads every holder as gone."""
-    enqueued: Callable[[str], None] | None = None
+    back to that session when it is and to the queue when it is not."""
+    enqueued: Callable[[str], None]
     """Puts a Review task's ready pull request in the merge queue, given the task's id, when the task actor reads
-    `pr_ready` in Review; the task stays in Review and a raise is logged. None enqueues nothing."""
-    verifying: Callable[[str], None] | None = None
+    `pr_ready` in Review; the task stays in Review and a raise is logged."""
+    verifying: Callable[[str], None]
     """Tells whoever held a task that the task actor moved it on a merge that leaves post-merge QA to run (its Verify
-    plan), given its id, so the session that delivered it runs that QA; a raise is logged and the move stands. None tells
-    no one."""
-    closed: Callable[[str], None] | None = None
+    plan), given its id, so the session that delivered it runs that QA; a raise is logged and the move stands."""
+    closed: Callable[[str], None]
     """Tells the board that the task actor moved a task to Done, given its id, so it can file what follows the close; a
-    raise is logged and the close stands. None tells no one."""
-    entered: Callable[[str], None] | None = None
+    raise is logged and the close stands."""
+    entered: Callable[[str], None]
     """Tells the board that a task entered a lane, given its id, for every lane change `board:lanes` records whoever
-    wrote it; a raise is logged and the move stands. None tells no one."""
-    attach: Callable[[EventLog], None] | None = None
-    """What a context that reads the Board from the read model, and so never calls `start`, needs of the event log the
-    adapter would have been handed there; None needs nothing."""
-
-    def __post_init__(self) -> None:
-        if self.edit is not None and self.read is None:
-            raise ValueError(
-                "a board that edits tasks must also read them: an edit is checked against the current record"
-            )
-
-
-def load(kind: str, settings: Mapping[str, Any], base: Path) -> Board:
-    """The board the adapter module `kind` builds from `settings`."""
-    module = importlib.import_module(module_name(kind))
-    if not callable(factory := getattr(module, "board", None)):
-        raise ValueError(f"board type {kind}: {module.__name__} has no board(settings, base)")
-    return factory(settings, base)
+    wrote it; a raise is logged and the move stands."""
+    attach: Callable[[EventLog], None]
+    """What a context that reads the Board from the read model, and so never calls `start`, needs of the event log `start` would have been handed there."""

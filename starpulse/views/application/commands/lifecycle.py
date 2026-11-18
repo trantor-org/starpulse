@@ -193,7 +193,7 @@ def _park_lane(feed: BoardFeed, reason: str) -> str | None:
 
 @with_request(ParkRequest, "Parking a task")
 def park_task(
-    request: ParkRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+    request: ParkRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
 ) -> tuple[int, dict[str, Any]]:
     """Park the In Progress task `request` names for the one reason it names: the HTTP status and JSON body.
 
@@ -205,8 +205,6 @@ def park_task(
     reasons = [key for key in _PARK_REASONS if key in request.model_fields_set]
     if len(reasons) != 1:
         return 400, _BAD_PARK
-    if read is None or edit is None:
-        return 404, {"error": "this board does not edit tasks"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     reason = reasons[0]
@@ -233,7 +231,7 @@ _BAD_REVIEW = {"error": "references must each be a nonblank pull request link"}
 
 @with_request(ReviewRequest, "Reviewing a task")
 def review_task(
-    request: ReviewRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+    request: ReviewRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
 ) -> tuple[int, dict[str, Any]]:
     """Move the task `request` names to Review with the evidence it names: the HTTP status and JSON body.
 
@@ -245,8 +243,6 @@ def review_task(
     if not all(_nonblank(link) for link in links):
         return 400, _BAD_REVIEW
     comment, who = request.comment or "", who_of(request)
-    if read is None or edit is None:
-        return 404, {"error": "this board does not edit tasks"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     review = feed.roles.review

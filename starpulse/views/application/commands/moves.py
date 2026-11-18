@@ -206,15 +206,13 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
 
 
 @with_request(ReleaseRequest, "Releasing a claim")
-def release_task(request: ReleaseRequest, feed: BoardFeed, release: TaskReleaser | None) -> tuple[int, dict[str, str]]:
+def release_task(request: ReleaseRequest, feed: BoardFeed, release: TaskReleaser) -> tuple[int, dict[str, str]]:
     """End the claim on the task `request` names, whoever holds it: the HTTP status and JSON body.
 
     The task loses its assignee, records the session as released and keeps its lane, so the next claim adopts it. A task
     no session holds is refused 409; judging whether the holder is gone is the caller's.
     """
     task, who = request.task, who_of(request)
-    if release is None:
-        return 404, {"error": "this board does not release claims"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     state, holder = agent["state"], agent.get("assignee")

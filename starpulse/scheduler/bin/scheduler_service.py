@@ -60,8 +60,6 @@ def start_scheduler(
 
     def move(task: str, to: str, comment: str) -> Written:
         """The task moved to lane `to` as the scheduler, if the machine offers the scheduler that move, as an API move is judged."""
-        if board.edit is None:
-            return Written(False, "this board has no editor", unavailable=True)
         edit = board.edit
         held = feed.held(task) or {}
         if (offered := held.get("moves", {}).get(to)) is not None and not (found := Move.read(offered)).permits(SCHEDULER):
@@ -74,8 +72,6 @@ def start_scheduler(
         return move(task, board.roles.attention, reason)
 
     def claim(task: str, comment: str) -> Written:
-        if board.edit is None:
-            return Written(False, "this board has no editor", unavailable=True)
         return board.edit(task, {}, comment)
 
     def merged(agent: Mapping[str, Any]) -> bool:

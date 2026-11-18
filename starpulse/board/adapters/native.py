@@ -1583,10 +1583,10 @@ def _unlabelled(root: Path, task: str, applies: re.Pattern[str]) -> bool:
     return not any(applies.fullmatch(label) for label in _strings(frontmatter.get("labels")))
 
 
-def _entered(command: object, base: Path, root: Path, labels: object) -> Callable[[str], None] | None:
+def _entered(command: object, base: Path, root: Path, labels: object) -> Callable[..., None]:
     """The `entered` command, as `_notice` runs it, for a task not found or with a label fully matching `labels`."""
     notice = _notice(command, base)
-    if notice is None or not labels:
+    if not command or not labels:
         return notice
     applies = re.compile(str(labels))
 
@@ -1597,15 +1597,13 @@ def _entered(command: object, base: Path, root: Path, labels: object) -> Callabl
     return entered
 
 
-def _holds(
-    command: object, base: Path, root: Path | None = None, labels: object = None
-) -> Callable[[str], list[str]] | None:
+def _holds(command: object, base: Path, root: Path | None = None, labels: object = None) -> Callable[[str], list[str]]:
     """The `holds` or `unfinished` command, run in `base` with `{id}` replaced by the task's id: it prints a JSON array
     of the reasons the task's `deps_done` is withheld, or of the work a merged task has left. Output that is no such array
     raises, which holds the task. With `labels` (a regex) and the board `root`, a task found with no label that fully
-    matches it holds nothing and the command, a process spawn per call, does not run."""
+    matches it holds nothing and the command, a process spawn per call, does not run. With no command nothing is held."""
     if not command:
-        return None
+        return lambda _task: []
     parts = shlex.split(str(command))
     applies = re.compile(str(labels)) if labels and root is not None else None
 
@@ -1626,15 +1624,15 @@ def _holds(
     return holds
 
 
-def _notice(command: object, base: Path) -> Callable[[str], None] | None:
+def _notice(command: object, base: Path) -> Callable[..., None]:
     """The `parked`, `released`, `idle`, `returned`, `enqueued`, `verifying`, `closed` or `entered` command
     (the last on any lane entry the board records, by whoever moves the task), run in `base` with `{id}` replaced by the
     task's id, after the task actor moves a task from the working lane to Waiting, from Waiting to Ready, sees its holder
     go idle (with `{verdict}` replaced by the idle step), sends it from Review
     back to the working lane, reads its pull request ready in Review, moves it on a merge that leaves its post-merge QA
-    to run, or moves it to Done. A nonzero exit raises with what the command said."""
+    to run, or moves it to Done. A nonzero exit raises with what the command said. With no command it tells no one."""
     if not command:
-        return None
+        return lambda _task, _verdict="": None
     parts = shlex.split(str(command))
 
     def notice(task: str, verdict: str = "") -> None:
@@ -1647,10 +1645,10 @@ def _notice(command: object, base: Path) -> Callable[[str], None] | None:
     return notice
 
 
-def _probe(command: object, base: Path) -> Callable[[str], bool] | None:
-    """The `alive` command, run in `base` with `{id}` replaced by the task's id: exit 0 says yes, any other exit no."""
+def _probe(command: object, base: Path) -> Callable[[str], bool]:
+    """The `alive` command, run in `base` with `{id}` replaced by the task's id: exit 0 says yes, any other exit no; with no command every holder reads as gone."""
     if not command:
-        return None
+        return lambda _task: False
     parts = shlex.split(str(command))
 
     def probe(task: str) -> bool:
@@ -1725,7 +1723,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "unfinished": _holds(settings.get("unfinished"), base),
             "parked": _notice(settings.get("parked"), base),
             "released": _notice(settings.get("released"), base),
-            "idle": _notice(settings.get("idle"), base),
+            "idle": _notice(idle, base) if (idle := settings.get("idle")) else None,
             "returned": _notice(settings.get("returned"), base),
             "alive": _probe(settings.get("alive"), base),
             "enqueued": _notice(settings.get("enqueued"), base),
@@ -1785,7 +1783,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     def sweep(feed: BoardFeed, log: EventLog, persist: Callable[[dict[str, float]], None]) -> None:
         from starpulse.board.adapters import claim_ttl  # noqa: PLC0415 — keeps the board's import light
 
-        claim_ttl.start(replace(made, **recorded), feed, log, settings, persist)
+        claim_ttl.start(final, feed, log, settings, persist)
 
     read = made.read
 
@@ -1834,15 +1832,18 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             (task, _aliases(frontmatter)) for task, frontmatter in _done_tasks(root, made.roles.done)
         ],
     }
-    return replace(
-        made,
-        start=start,
-        sweep=sweep,
-        attach=attach,
-        standing=_standing(root, guard),
-        readable=guard.readable,
-        **recorded,
+    final = Board(
+        **{
+            **vars(made),
+            "start": start,
+            "sweep": sweep,
+            "attach": attach,
+            "standing": _standing(root, guard),
+            "readable": guard.readable,
+            **recorded,
+        }
     )
+    return final
 
 
 def _own(root: Path, read: Callable[[str], Any]) -> Callable[[str], Any]:

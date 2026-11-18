@@ -11,12 +11,11 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Engine
 
-from starpulse.board.adapters import policy_store
+from starpulse.board.adapters import machines_only, native, policy_store
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.board.model.policy import Policy, profile_matrix
 from starpulse.board.model.seam import Board
-from starpulse.board.model.seam import load as load_board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.migrate import migrate_chain
 from starpulse.event_log.opening import database_url
@@ -105,10 +104,6 @@ def domains_of(config: Config) -> dict[str, tuple[str, ...]]:
     return merged
 
 
-#: The board types whose guards, profile cells or watches the policy DB holds.
-POLICY_BOARDS = frozenset({"native"})
-
-
 def assemble(
     config: Config,
     base: Path,
@@ -121,9 +116,9 @@ def assemble(
     A task whose latest move on a machine is older than `window_s` seconds (None: never) is not drawn there, and Run
     now is drawn on the `run_safe` workflows.
     """
-    rows = _policy_rows(config, base)
-    settings = {**config.board, "policy_rows": rows} if rows is not None else config.board
-    board = load_board(config.board_type, settings, base)
+    native_board = config.board_type == "native"
+    rows = policy_store.held(database_url(config.database_url, base)) if native_board else None
+    board = native.board({**config.board, "policy_rows": rows}, base) if native_board else machines_only.board(config.board, base)
     domains = domains_of(config)
     qualify = qualifier(domains)
     # `[board.actor]` makes the task actor a writer the machine may name beside the adapters' workflows; the scheduler is always one.
@@ -153,25 +148,14 @@ def assemble(
         run_safe=run_safe,
         cues=board.cues(qualify),
         source=board.source,
-        capabilities={
-            "edit": board.edit is not None,
-            "archive": board.archive is not None,
-            "create": board.create is not None,
-        },
+        capabilities={"edit": native_board, "archive": native_board, "create": native_board},
         commit={instance.name: instance.commit for instance in config.runs if instance.commit},
         read_model=read_model,
-        standing=board.standing or (lambda *_: None),
-        readable=board.readable or (lambda *_: ""),
+        standing=board.standing,
+        readable=board.readable,
         default_profiles=profile_matrix(rows or Policy()),
     )
     return board, feed
-
-
-def _policy_rows(config: Config, base: Path) -> Policy | None:
-    """The stored policy, for the board types that enforce it (their guards, profile cells and watches); None for the rest."""
-    if config.board_type not in POLICY_BOARDS:
-        return None
-    return policy_store.held(database_url(config.database_url, base))
 
 
 def worker_board(config: Config, base: Path, log: EventLog, stop: StopEvent) -> tuple[Board, BoardFeed]:
@@ -201,8 +185,7 @@ def _read_model_board(config: Config, base: Path, log: EventLog) -> tuple[Board,
     model = ReadModel(log.engine, declared_fields(config.board))
     board, feed = assemble(config, base, None, [], model)
     # The read model folds only History events, so this worker's writes (the task actor's moves) must append them.
-    if board.attach is not None:
-        board.attach(log)
+    board.attach(log)
     feed.ready.set()
     return board, feed, model
 

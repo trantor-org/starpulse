@@ -24,7 +24,7 @@ from starpulse.contracts.api.dto.requests import StartRequest
 from starpulse.views.adapters.inbound.api.answering import answer, on_loop, on_worker, query, reading, seams
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
-from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, no_writer, whole_body
+from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task
 from starpulse.views.application.commands.moves import (
     claim_task,
@@ -60,7 +60,7 @@ def _resident_task(request: Request) -> Response | None:
     """The task's answer when memory holds all of it, with no query; None when it needs a worker."""
     api = seams(request)
     name = request.path_params["id"]
-    if api.board.read is None or not api.feed.is_resident(name) or (record := api.board.read(name)) is None:
+    if not api.feed.is_resident(name) or (record := api.board.read(name)) is None:
         return None
     if (cited := resident_pulls(api.services.pulls, record.get("references", []))) is None:
         return None
@@ -151,8 +151,7 @@ def retired(request: Request) -> Response:
 
 def routes(api: Api) -> list[ApiRoute]:
     feed, board, services = api.feed, api.board, api.services
-    writer = board.writer or no_writer
-    assign = board.assign or no_writer
+    writer, assign = board.writer, board.assign
     read, edit, archive, create = board.read, board.edit, board.archive, board.create
     restore, complete = board.restore, board.complete
 

@@ -33,8 +33,9 @@ logger = logging.getLogger(__name__)
 _HERE = Path(__file__).parents[1]
 
 
-#: The Vite build of web/; it holds nothing but the page, so all of it is served.
-STATIC = _HERE / "static"
+#: The Vite build of web/; it holds nothing but the page, so all of it is served. `STARPULSE_STATIC` names another
+#: directory; the environment reaches the child workers a fresh interpreter starts, where a patched attribute would not.
+STATIC = Path(os.environ.get("STARPULSE_STATIC") or _HERE / "static")
 
 
 def trajectories_response(

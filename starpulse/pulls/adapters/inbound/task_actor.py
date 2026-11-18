@@ -24,7 +24,7 @@ the lane is the last visit's and advances nothing.
 A Waiting task parked on event subjects (the `kind: event` entries of its Start Criteria) is released by the first
 event of any of them: the actor keeps a `subject -> tasks` index, `event_seen(subject)` is the follower's call for each
 machine event the bridge names, and a task parking on a subject asks `latest(subject)` whether its last event already
-happened, so a wait already met releases at once. No evaluator is polled. The board adapter may hold a task's `deps_done`
+happened, so a wait already met releases at once. No evaluator is polled. The board may hold a task's `deps_done`
 with reasons, written once as a comment; a task created re-derives every held task.
 
 Nothing derives a lane on a period. A task moves when a fact its lane watches changes: its own record, a dependency's
@@ -61,7 +61,6 @@ from starpulse.board.model.seam import (
     FLAGGED,
     HELD,
     MERGE_EVIDENCE,
-    TaskCreator,
     TaskEditor,
     TaskReader,
     Written,
@@ -91,10 +90,13 @@ IN_PROGRESS = "in-progress"
 LINT_REFUSED = "Release to Ready refused, repair the record to release it:"
 #: The question that ends the `## Needs attention` reason of a task the actor moves there on a pull request fact.
 ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
+
+
 #: The pull request states that end a pull request.
 _TERMINAL = ("MERGED", "CLOSED")
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
 PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
+
 HEARTBEAT_METRIC = "starpulse_task_actor_heartbeat_timestamp_seconds"
 RECOVERY_FINISHED_METRIC = "starpulse_task_actor_recovery_finished"
 MERGED_WAITING_METRIC = "starpulse_task_actor_merged_review_waiting"
@@ -150,6 +152,10 @@ _ASKS = ("overdue", "pr_failing")
 _SLE_DAYS, _GRACE_DAYS = 7, 2
 #: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
 _ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")
+
+
+def _ignore(_task: str) -> None:
+    return None
 
 
 def _exit_links(machines: Mapping[str, Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
@@ -276,10 +282,9 @@ class TaskActor:
     `waits` is `{lane: {fact kind: event}}` (`Compiled.waits`) and `moves` is `{(lane, event): target lane}`, from the
     Board machine's transitions. `edit` is the board's task editor. `repos`, `pin_rule` and `pins` are the `[release]`
     pin-bump rule (`unblock.PinGate`): a dependency in a pinned repository is merged on the parent's pin bump.
-    `latest` says whether an event subject's last event already happened (None: none has), and `holds` the reasons the board adapter withholds a task's `deps_done` (`Board.holds`; None: it holds none). `read` is the
-    board's task reader (`Board.read`), which tells `pr_merged` and `pr_merged_planned` apart by the task's Verify plan
-    (None: no task has one). `unfinished` is the work a task whose pull requests merged still has (`Board.unfinished`;
-    None: it has none). `main_green` is the SHA of main's latest passed Validate (None: none passed, or no source),
+    `latest` says whether an event subject's last event already happened (None: none has), and `holds` the reasons the board withholds a task's `deps_done` (`Board.holds`). `read` is the
+    board's task reader (`Board.read`), which tells `pr_merged` and `pr_merged_planned` apart by the task's Verify plan.
+    `unfinished` is the work a task whose pull requests merged still has (`Board.unfinished`). `main_green` is the SHA of main's latest passed Validate (None: none passed, or no source),
     and `owner_source` the `source` prefix of the tasks that pass closes while nothing waits on them (empty: none).
     """
 
@@ -297,22 +302,21 @@ class TaskActor:
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         latest: Callable[[str], bool] | None = None,
-        holds: Callable[[str], Sequence[str]] | None = None,
-        parked: Callable[[str], None] | None = None,
-        released: Callable[[str], None] | None = None,
-        closed: Callable[[str], None] | None = None,
-        returned: Callable[[str], None] | None = None,
-        alive: Callable[[str], bool] | None = None,
-        enqueued: Callable[[str], None] | None = None,
-        verifying: Callable[[str], None] | None = None,
+        holds: Callable[[str], Sequence[str]] = lambda _task: (),
+        parked: Callable[[str], None] = _ignore,
+        released: Callable[[str], None] = _ignore,
+        closed: Callable[[str], None] = _ignore,
+        returned: Callable[[str], None] = _ignore,
+        alive: Callable[[str], bool] = lambda _task: False,
+        enqueued: Callable[[str], None] = _ignore,
+        verifying: Callable[[str], None] = _ignore,
         live: LiveBuild | None = None,
         advance: Callable[[str, str, str], None] | None = None,
-        read: TaskReader | None = None,
+        read: TaskReader = lambda _task: None,
         idle: Callable[[str, str], None] | None = None,
         sequences: Mapping[str, Sequence[str]] = MappingProxyType({}),
         awaits: Sequence[str] = (),
-        unfinished: Callable[[str], Sequence[str]] | None = None,
-        create: TaskCreator | None = None,
+        unfinished: Callable[[str], Sequence[str]] = lambda _task: (),
         log: EventLog | None = None,
         main_green: Callable[[], str | None] | None = None,
         owner_source: str = "",
@@ -321,7 +325,6 @@ class TaskActor:
         self._owner_source = owner_source
         self._read = read
         self._idle = idle
-        self._create = create
         self._advance = advance
         #: The phases a task of each type goes through, in order (`[sequences]`); `default` serves an unnamed type.
         self._sequences = sequences
@@ -372,7 +375,7 @@ class TaskActor:
         self._heard: dict[str, set[str]] = {}
         #: Whether the start derivation is running, which only recovers moves the events missed.
         self._recovering = False
-        #: Tasks whose `deps_done` the board adapter holds; a task created re-derives them.
+        #: Tasks whose `deps_done` the board holds; a task created re-derives them.
         self._held: set[str] = set()
         self._gate = PinGate(feed, store, repos, pin_rule, pins, live)
         self._board_repo = (
@@ -1236,17 +1239,16 @@ class TaskActor:
                 if fact == "overdue" and self._missing(agent):
                     changes["dependencies"] = []  # Needs attention carries none; the reason names them
             if target == agent["state"]:
-                if self._enqueued:
-                    self._notice(
-                        self._enqueued,
-                        name,
-                        "was ready but its pull request was not enqueued",
-                        on_failure=lambda: self._tried.pop(name, None),  # tried again on the next derivation
-                    )
+                self._notice(
+                    self._enqueued,
+                    name,
+                    "was ready but its pull request was not enqueued",
+                    on_failure=lambda: self._tried.pop(name, None),  # tried again on the next derivation
+                )
                 return
             merged = self._merged_at(agent) if fact in _MERGE_FACTS else None
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes, merged=merged):
-                if self._verifying and fact == "pr_merged_planned":
+                if fact == "pr_merged_planned":
                     self._notice(self._verifying, name, "entered post-merge QA but its holder was not told")
                 return
 
@@ -1423,8 +1425,6 @@ class TaskActor:
         """Whether the operator already answered this very ask: an `Operator answer` comment follows the last time the
         task carried `ask`, so parking the task on it again would put the question to them twice. A new ask (another
         pull request, another reason) is a new question."""
-        if self._read is None:
-            return False
         try:
             comments = (self._read(agent["id"]) or {}).get("comments") or []
         except Exception as error:
@@ -1458,13 +1458,13 @@ class TaskActor:
             if merged is not None:  # timed at the lane write, ahead of the hooks that tell the board and the holder
                 self._merge_move.observe(max(0.0, self._wall() - merged))
             roles = self._feed.roles
-            if self._tell and source == roles.working and target == roles.waiting:
+            if source == roles.working and target == roles.waiting:
                 self._notice(self._tell, name, "was parked but its holder was not told")
-            if self._released and source == roles.waiting and target in (roles.ready, roles.review):
+            if source == roles.waiting and target in (roles.ready, roles.review):
                 self._notice(self._released, name, "was released but its holder was not told")
-            if self._returned and target == roles.working:
+            if target == roles.working:
                 self._notice(self._returned, name, "was sent back but its holder was not told")
-            if self._closed and target == roles.done:
+            if target == roles.done:
                 self._notice(self._closed, name, "was closed but the board was not told")
             return True
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
@@ -1641,8 +1641,6 @@ class TaskActor:
     def _planned(self, agent: dict[str, Any]) -> bool | None:
         """Whether the task's record carries a Verify plan; None when the board's read raises, which settles neither
         route until the task is derived again."""
-        if self._read is None:
-            return False
         try:
             record = self._read(agent["id"])
         except Exception as error:
@@ -1697,7 +1695,7 @@ class TaskActor:
         the board reports work unfinished, else None. A command that fails reports its error: the task returns to its
         holder, never closes."""
         merged = self._pr_merged(agent) or self._pr_merged_planned(agent)
-        if merged is None or self._unfinished is None:
+        if merged is None:
             return None
         try:
             left = tuple(self._unfinished(agent["id"]))
@@ -1712,8 +1710,6 @@ class TaskActor:
     def _deploy_reopened(self, agent: dict[str, Any]) -> bool:
         """Whether the task's latest reopen from Done was a failed deploy of its merge. A read that fails leaves the pass
         unsettled, so the next one asks again."""
-        if self._read is None:
-            return False
         try:
             comments = (self._read(agent["id"]) or {}).get("comments") or []
         except Exception as error:
@@ -1814,7 +1810,7 @@ class TaskActor:
         if held is None:
             return None
         try:
-            running = bool(self._alive and self._alive(agent["id"]))
+            running = self._alive(agent["id"])
         except Exception as error:
             self._unsettled = True
             logger.warning("task actor: the holder of %s was not probed: %s", agent["id"], error)
@@ -1859,9 +1855,7 @@ class TaskActor:
         return self._deps_done(agent) if self._pr_ready(agent) else None
 
     def _held_by(self, name: str) -> tuple[str, ...]:
-        """Why the board adapter withholds the task's `deps_done`; a hold that raises holds it with that error."""
-        if self._holds is None:
-            return ()
+        """Why the board withholds the task's `deps_done`; a hold that raises holds it with that error."""
         self._hooked = True
         try:
             return tuple(self._holds(name))
@@ -1987,7 +1981,7 @@ class TaskActor:
         return self._owns_failure(dependency) and bool(self._main_green())
 
     def _owns_failure(self, task_id: str) -> bool:
-        if not (self._owner_source and self._main_green and self._read):
+        if not (self._owner_source and self._main_green):
             return False
         return str((self._read(task_id) or {}).get("source") or "").startswith(self._owner_source)
 
@@ -1996,7 +1990,7 @@ class TaskActor:
         is checked: the fact the task waited on holds, whatever the dependency still has open. A dependency with no
         need names the whole task; a record the board cannot read names none."""
         open_ = [dependency for dependency in agent["dependencies"] if not self._cleared(dependency)]
-        if not open_ or self._read is None:
+        if not open_:
             return ()
         try:
             needs = (self._read(agent["id"]) or {}).get("dependencyNeeds") or ()

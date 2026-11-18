@@ -97,7 +97,7 @@ requests it took and closes.
 
 `serve` is a supervisor over two children, each a `starpulse worker <name>` process: `api` (the Page API) and `contexts`, the one process that runs every background context as a thread: `pulls` (Delivery), `scheduler`, `runs` with each run adapter a `[[runs]]` instance names (`github-actions`, `systemd`, `temporal`), `flow-metrics`, `signal-folds` (the per-session folds of the harness signals the analytics routes read), `lane-metrics` (the unattributed-lane count, the conformance monitor and the lane sweep, whose metrics text the Page API relays), `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` starts each as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in the event log. No unit file is needed to run StarPulse, and no setting turns a child off: `starpulse reload` picks the children whose code or config moved. The set of children does not depend on the config: a config naming every run adapter still has two.
 
-The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; the child serves the page build of the release it runs from, so a reload after a merge that rebuilds the page serves the new build. The child reads the Board from the read model the `contexts` child folds and starts no adapter watcher. A reload of the child starts the new one on the same socket, waits until it reports (`STARPULSE_READY_FD`) it is about to serve, or 30 s (`warm`) at most, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused. The child serves the snapshot the Board writer stored and builds none, so a connection that queued across a restart or a reload is answered from the store, never by a build in its request (a 503 with `Retry-After: 1` before the writer has stored one); an agent client (`starpulse` verbs) sends a GET once more when the server answered it with an empty reply.
+The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; the child serves the page build of the release it runs from (`STARPULSE_STATIC` names another directory, as a test's stub page), so a reload after a merge that rebuilds the page serves the new build. The child reads the Board from the read model the `contexts` child folds and starts no adapter watcher. A reload of the child starts the new one on the same socket, waits until it reports (`STARPULSE_READY_FD`) it is about to serve, or 30 s (`warm`) at most, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused. The child serves the snapshot the Board writer stored and builds none, so a connection that queued across a restart or a reload is answered from the store, never by a build in its request (a 503 with `Retry-After: 1` before the writer has stored one); an agent client (`starpulse` verbs) sends a GET once more when the server answered it with an empty reply.
 
 The background contexts share one process so the interpreter, the imports and the database stack are paid for once, not once per context. A context that fails stops its thread alone and is restarted in place; a config-only reload sends the `contexts` child `SIGHUP` and it re-reads the changed context's settings under the same pid, while a change to code any context runs, or to a setting a context cannot take in place, replaces the child.
 
@@ -344,7 +344,7 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    a `task` delta ({id, agent, settled}) per Board task change, a `move` delta ({flow, id, agent}) per task a machine placed (the machine:events replay at start sends none: a `snapshot` follows it), a
                    `dags` delta ({dags, pools, error}) per runs change, a `pulls` delta ({pulls}) per
                    change to a task's pull requests and a `claim` delta ({task, reason, at}) per
-                   refused agent claim the board adapter reports, with a `: ping` comment every 15 s. A `build` event
+                   refused agent claim the board reports, with a `: ping` comment every 15 s. A `build` event
                    ({id}: the first 12 hex digits of the SHA-256 of `static/index.html`) follows the `snapshot` on every
                    connect, so a page can tell it is not running the server's build; `restarting` ({at}) goes to every
                    open stream on `SIGTERM`, before the process exits.
@@ -352,7 +352,7 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    (pass, failing, pending, none), merged, closed (unmerged), conflicting (open and conflicting with its base), draft (open and still a draft), queued (open and in the merge queue), merge_sha, merged_at (null until merged), threads (unresolved), behind_main (commits main holds that the head lacks; null once the head branch is gone), stale}], read from
                    GitHub once a minute and held between reads; a failed read keeps the
                    last value with `stale` true.
-                   Everything is held in memory: the Board from the configured board adapter, other machines' tasks
+                   Everything is held in memory: the Board from the configured board, other machines' tasks
                    from machine:events, each instance's workflows from its adapter (`pushed/`: runs:events)
                    `?snapshot=ref` sends the `snapshot` as `ref /api/events/body/<key>`, the path its document is read
                    from, so a browser parses it off its main thread rather than as one long event.
@@ -425,8 +425,7 @@ GET /api/history?task=TASK-N[&machine=NAME]
                    machine as [{at, event, state}] in order, `steps` their count; with `machine`, `task` may be a run id. A task never seen has an empty path; no `task` is 400
                    and an unknown `machine` 404. The machine events are copied from their stream as they
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
-                   the config), so the path outlives the stream's trim, unless the board adapter keeps
-                   its own history. A trim past entries the copy never read is recorded as a gap
+                   the config), so the path outlives the stream's trim. A trim past entries the copy never read is recorded as a gap
 GET /api/analytics/health[?hours=N][&stuck_hours=N]
                    the Board's flow health from the history's lane changes (`analytics.stay_health`): `states`
                    (each with `wip` now and, for a state that is not final, the `visits`, `mean_s` and `max_s` of
@@ -632,7 +631,7 @@ queried field; it is idempotent, so it runs at every start.
 
 Board and lifecycle state (task lanes, lane changes, machine events, runs) lives in StarPulse's database, SQLite at
 `database_url` or beside the config, and nowhere else. A project that embeds StarPulse, such as an agent workspace,
-reads and writes that state through the `starpulse` CLI, the HTTP API or a board adapter ([adapters](adapters.md)),
+reads and writes that state through the `starpulse` CLI, the HTTP API or the native board ([adapters](adapters.md)),
 and keeps no copy of its own: code in the project that stores or derives board state is a gap in this contract, and
 the missing capability is filed against StarPulse. Because the database is the whole state, moving to another host is
 copying the SQLite file, with no project-side migration.
@@ -667,8 +666,8 @@ slow_read_seconds = 1   # the default
 # hard_mb = 3072   # the default
 
 
-# The board adapter: a module under `starpulse`, or the dotted path of one an installed package provides.
-# The rest of the table is that adapter's settings.
+# The board: `type` is `native` or `machines`; a config cannot name an outside module.
+# The rest of the table is that board's settings.
 # With no [board] table the view draws its own Markdown board, `type = "native"`:
 [board]
 type = "native"
@@ -887,7 +886,7 @@ than 60s).
 
 ### Settings reference
 
-The board adapters, `[scheduler]`, `[analytics]`, `[search]`, `[project]`, `[cursor_context]`, `[claude_code]` and `[github]` are described by the examples above and
+The board, `[scheduler]`, `[analytics]`, `[search]`, `[project]`, `[cursor_context]`, `[claude_code]` and `[github]` are described by the examples above and
 by [Scheduler](#scheduler); `[level]` by the flow graph it draws. Every other setting is described below, generated from the
 models in `starpulse/runtime/config_model.py`, which the loader takes its keys and defaults from: edit a description there, run
 `python -m starpulse.runtime.config_reference`, and commit the result. CI fails when this section differs from the models.
@@ -921,7 +920,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `repos` (list of `[[repos]]` table): A repository whose merges apply through the parent's pin bump rather than a run of their own.
 - `ci` (`[ci]` table): Draws each task's pull-request CI as a sub-flow of these Board states.
 - `release` (`[release]` table): Releases Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task it depends on is Done (see Release); with no `[release]` table it releases none. The board must edit tasks and draw `waiting` and `ready` lanes, else `serve` refuses to start.
-- `board` (table): The board adapter: `type` names a module under `starpulse` or the dotted path of one an installed package provides, and the rest of the table is that adapter's settings, shown in the Board examples above. With no `[board]` table the view draws its own Markdown board, `type = "native"`.
+- `board` (table): The board: `type` is `native` or `machines` (no outside module), and the rest of the table is that board's settings, shown in the Board examples above. With no `[board]` table the view draws its own Markdown board, `type = "native"`.
 - `level` (table): The flow graph drawn above the Board (`starpulse.flow_metrics.model.level`).
 - `scheduler` (table): The scheduler's policy; every key is optional (see Scheduler).
 - `analytics` (table): What harness telemetry is read against for missed skill loads and trace clusters (see docs/sources.md).
@@ -1341,7 +1340,7 @@ deploy event, `starpulse.<board>.alert.<rule>.<event>` or `starpulse.<board>.dep
 When a task enters Waiting, the actor reads each subject's latest event from the log (`latest`), so a wait already met
 releases at once; a subject the log cannot answer is refused at the park. A restart rebuilds the index from the records.
 
-The board adapter may withhold `deps_done` with reasons (`Board.holds`; the native board's `[board] holds` command, run
+The board may withhold `deps_done` with reasons (`Board.holds`; the native board's `[board] holds` command, run
 in the config's directory with `{id}` replaced, prints a JSON array of them, and output that is no such array holds the
 task). The actor writes the reasons once as a comment on the task, and re-derives every held task when a task is created.
 
@@ -1420,7 +1419,7 @@ A hold or flag comment lists the first three reasons and a count of the rest, an
 Each move the actor writes names `starpulse/task-actor` on its `board:lanes` entry: the Delivery worker records the lane
 change when it writes it, in the history and the log in one transaction, and the file scan that places the change
 later finds the lane recorded. The same holds for every write `serve` makes on the native board, under the request's
-actor. A change no such write recorded (a file edited by hand, a board adapter whose writer does not say the lane it
+actor. A change no such write recorded (a file edited by hand, a write that does not say the lane it
 set) is recorded at its placement as `external`. `GET /metrics` carries `starpulse_board_lane_unattributed_total`, a
 counter of the `board:lanes` entries any process appended since `serve` started that name no actor.
 

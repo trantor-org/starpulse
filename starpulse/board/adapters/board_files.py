@@ -51,18 +51,16 @@ def mismatches(
 class BoardFiles:
     """Reconciles each mismatched task and keeps the ones a second pass finds mismatched still.
 
-    `rescan` is a full pass of the board's files that answers how many it had to read (the watch had not placed them),
-    and `vectors` embeds the tasks that hold no vector and answers `(embedded, indexed)`."""
+    `vectors` embeds the tasks that hold no vector and answers `(embedded, indexed)`."""
 
     def __init__(
         self,
         feed: _Feed,
         board: Board,
-        rescan: Callable[[], int] | None = None,
         vectors: Callable[[], tuple[int, int]] | None = None,
     ) -> None:
         self._feed, self._board = feed, board
-        self._rescan, self._vectors = rescan, vectors
+        self._vectors = vectors
         self._seen: set[str] = set()
         self._absent: set[str] = set()
         self._persisting: dict[str, tuple[str, str]] = {}
@@ -73,10 +71,10 @@ class BoardFiles:
         seeds its History, and each alias a file lists, a done task's included, answers its id; an open task, or a Done one the live set has cooled out of, whose file is absent on two passes in
         a row, or whose id is only an alias another file lists (a rename's ghost), is reconciled, which archives it. With no files listed nothing is judged absent.
         Returns how many reconciles appended Events."""
-        for task, aliases in self._board.done_files() if self._board.done_files is not None else ():
+        for task, aliases in self._board.done_files():
             for alias in aliases:
                 self._feed.alias(alias, task)
-        files = list(self._board.files()) if self._board.files is not None else []
+        files = list(self._board.files())
         if not files:
             self._absent = set()
             return 0
@@ -113,13 +111,12 @@ class BoardFiles:
         """One pass: `(sampled, corrected)`, the order `_BoardKind` reads. `sampled` is the open tasks read and the tasks
         the vector index holds; `corrected` is the lanes reconciled, the files a rescan had to read and the vectors
         embedded, each a task a push should have placed (an unembedded task missed its index push)."""
-        corrected = self._rescan() if self._rescan is not None else 0
+        corrected = self._board.rescan()
         corrected += self._place()
         agents = self._feed.open_tasks()
         found = mismatches(agents, self._board.read)
         for task, (lane, _state) in found.items():
-            if self._board.reconcile is not None:
-                corrected += self._reconcile(task, lane)
+            corrected += self._reconcile(task, lane)
         persisting = {task: lanes for task, lanes in found.items() if task in self._seen}
         self._seen = set(found)
         with self._lock:

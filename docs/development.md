@@ -109,9 +109,9 @@ request and page surface against the 50 ms budget, and a Locust load test that h
 `?view=kanban`, a saved Board (`board.js`) drawn by `kanban.js`; both hold synthetic tasks only, never a real board's titles; view it with
 `uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse.cli.demo --mockup design --out
 mockup.html` writes it as one scrubbed file. [`ci/ui_preview.py`](../ci/ui_preview.py) builds the scrubbed demos against
-the demo config [`ci/preview.toml`](../ci/preview.toml). That config draws a fictional workspace at a working team's scale: the Board adapter
-[`ci/demo_workspace.py`](../ci/demo_workspace.py) serves an eight-lane Board whose In Progress opens an in-progress machine of Build, Deliver and Review-fix phase machines, with
-the other lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse.cli.demo` fills it with
+the demo config [`ci/preview.toml`](../ci/preview.toml). That config draws a fictional workspace at a working team's scale: the native board over the machines in
+[`ci/.starpulse/machines/`](../ci/.starpulse/machines) is an eight-lane Board whose In Progress opens an in-progress machine of Build, Deliver and Review-fix phase machines, with
+the other lifecycle machines beside it, and five DAG domains, and `starpulse.cli.demo` fills it with
 synthetic tasks, sessions, runs and pools.
 
 After a push to `main` that changes the page (`starpulse/web/**`) or another preview input, the

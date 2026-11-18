@@ -1,29 +1,37 @@
-# Write a board adapter
+# The native board
 
-A board adapter connects StarPulse to a tracker. It is a module with a `board(settings, base)` function that
-returns a `starpulse.board.Board`: `settings` is the rest of the `[board]` table and `base` is the config file's
-directory. The `Board` says:
+StarPulse serves its own Markdown board directly: the server, the page and the task actor call the native board's
+functions, with no board adapter contract between them, and a `[board]` table can no longer name an outside module. Its
+`type` is `native` (the default) or `machines`, which draws a project's declared machines and holds no task: it reads
+no board directory, finds no task and refuses every task write as unavailable (HTTP 409). The runs and machine-events
+contracts are unchanged (see the adapter-writing skill). Pluggable boards, a Jira or Linear board for example, are
+withdrawn until a second tracker is planned (see ADR Pluggable boards are withdrawn).
+
+The `starpulse.board.Board` the server holds says:
 
 - which lifecycle machines the page draws (`machines`),
-- how the tracker's tasks reach the page (`start`, which feeds each task as it changes, and `keys`, the task
-  keys it recognizes),
-- and optionally a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may
-  list the `writers` the machine declares per event), an `assign` for assignee changes, a `read`, `edit` and `archive` for the full task record and guarded edits and
-  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `restore(task)` that
-  returns an archived or retired task's file to the board's tasks unchanged (`POST /api/restore`), a `retire(task)`,
-  `retired(task)` and `import_retired(name, text)` that keep a finished task's file in the history store instead
-  (`POST /api/retire`, `GET /api/retired[?task=<id>][&fields=dependencies]`, `POST /api/retired/import`), a `complete(task)` that
-  moves a Done task out of the lanes (the native board's to `completed/`, where `read` and `edit` still find it), a `create(title, details)` that
-  makes a task whole, in one write, in the board's starting lane or the lane a `status` detail names, with the
-  details the page filled (description, priority, impact, urgency, labels, milestone, assignee, dependencies, acceptance
-  criteria, type, references, documentation, Definition of Done) and answers with its id (`POST /api/tasks`;
-  `capabilities.create`), and optionally milestone records: `milestones()`, `read_milestone(id)`,
-  `create_milestone(title, details)` (answering with the new id), `edit_milestone(id, changes)` and
-  `archive_milestone(id)` (`GET /api/milestones`, `GET /api/milestones/<id>`, `POST /api/milestones`,
-  `POST /api/milestones/edit` and `POST /api/milestones/archive`; the writes answer only the loopback and private
-  network, and a board that sets none answers 404), and doc records the same way: `docs()` (without bodies),
-  `read_doc(id)`, `create_doc(title, details)`, `edit_doc(id, changes)` and `archive_doc(id)` and `restore_doc(id, folder)` (`/api/docs`,
-  `/api/docs/<id>`, `/api/docs/edit`, `/api/docs/archive` and `/api/docs/restore`). `serve` records every machine event (task- and run-keyed) and each Board lane change it
+- how its tasks reach the page (`start`, which feeds each task as it changes, and `keys`, the task keys it
+  recognizes),
+- a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may list the
+  `writers` the machine declares per event), an `assign` for assignee changes, a `read`, `edit` and `archive` for the
+  full task record and guarded edits and archives, a `restore(task)` that returns an archived or retired task's file to
+  the board's tasks unchanged (`POST /api/restore`), a `retire(task)`, `retired(task)` and `import_retired(name, text)`
+  that keep a finished task's file in the history store instead (`POST /api/retire`,
+  `GET /api/retired[?task=<id>][&fields=dependencies]`, `POST /api/retired/import`), a `complete(task)` that moves a
+  Done task out of the lanes (to `completed/`, where `read` and `edit` still find it), and a `create(title, details)`
+  that makes a task whole, in one write, in the board's starting lane or the lane a `status` detail names, with the
+  details the page filled (description, priority, impact, urgency, labels, milestone, assignee, dependencies,
+  acceptance criteria, type, references, documentation, Definition of Done) and answers with its id
+  (`POST /api/tasks`),
+- milestone records: `milestones()`, `read_milestone(id)`, `create_milestone(title, details)` (answering with the new
+  id), `edit_milestone(id, changes)` and `archive_milestone(id)` (`GET /api/milestones`, `GET /api/milestones/<id>`,
+  `POST /api/milestones`, `POST /api/milestones/edit` and `POST /api/milestones/archive`; the writes answer only the
+  loopback and private network),
+- and doc records the same way: `docs()` (without bodies), `read_doc(id)`, `create_doc(title, details)`,
+  `edit_doc(id, changes)`, `archive_doc(id)` and `restore_doc(id, folder)` (`/api/docs`, `/api/docs/<id>`,
+  `/api/docs/edit`, `/api/docs/archive` and `/api/docs/restore`).
+
+`serve` records every machine event (task- and run-keyed) and each Board lane change it
   places into StarPulse's own store (`starpulse_machine_events`, `starpulse_lane_changes`), and the page reads that
   store: a `Board` has no history of its own. In the same transaction the store folds each of them into
   summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
@@ -41,8 +49,7 @@ directory. The `Board` says:
   the lane counts; the Board's level reads the trajectories of the tasks that changed lane in its window or the trailing
   12 weeks (which set the aging threshold) and of the tasks still waiting or working, and takes where the history begins
   and which sources reported from the lane counts. Their cost follows that activity, not the history's length (see
-  [Flow read scaling](development.md#flow-read-scaling)). A history that supplies only `lane_rows` and `level_runs`, as the Board adapter
-  hook does, is read whole, and a level on a machine other than the Board reads that machine's events whole.
+  [Flow read scaling](development.md#flow-read-scaling)). A history that supplies only `lane_rows` and `level_runs` is read whole, and a level on a machine other than the Board reads that machine's events whole.
 
 `starpulse.board.adapters.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
@@ -125,14 +132,3 @@ and task, and a restart resumes that Board and re-reads only the files added, ch
 files are never read again. The save is keyed by the project alone and records a hash of the projection code, the
 project's `config.yml` and the machine file; a deploy that changes any of them keeps the saved Board, reads every file
 again and publishes only the tasks that project differently. A save that cannot be read starts from a full scan.
-An adapter with a writer subclasses
-`BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
-the machine leaves to the operator is refused to the agent. A board kit also declares `teams`, the team key the
-adapter derives for each task it produces, and asserts each record carries it. Name your module in `[board] type` and StarPulse imports it.
-
-**Migrating from `Board.history`.** `Board.history` is removed: StarPulse's store is the only history, so a `Board`
-that passes `history=` fails with `TypeError: Board.__init__() got an unexpected keyword argument 'history'`. Delete
-the argument, and have the adapter report what happens to a task through `start` (the feed records each lane change it
-places) or the event log; the page, `/api/history` and `/api/analytics/health` read the store. To keep an
-existing history, copy its lane changes and machine events into the store's `starpulse_lane_changes` and
-`starpulse_machine_events` tables once; `HistoryStore.rebuild_summaries` then rebuilds the summaries over them.
