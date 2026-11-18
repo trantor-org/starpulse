@@ -1,5 +1,6 @@
 """Park a task for a typed reason and move it to Review with the evidence it ships."""
 
+import json
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -134,19 +135,32 @@ def _open_criterion(feed: BoardFeed, need: str) -> None:
         )
 
 
+def _start_entry(item: Any) -> dict[str, Any] | None:
+    """The Start Criteria entry for one `until` item: a criterion object (`{"id", "kind", ...}`, as a prom hold sends) or an event subject."""
+    if isinstance(item, str):
+        try:
+            criterion = json.loads(item)
+        except ValueError:
+            return {"id": item, "kind": "event", "query": item} if readable(item) else None
+        if isinstance(criterion, dict) and isinstance(criterion.get("id"), str) and isinstance(criterion.get("kind"), str):
+            return criterion
+    return None
+
+
 def _wait_on_events(feed: BoardFeed, task: str, current: dict[str, Any], found: Any) -> dict[str, Any]:
-    """The edit that makes the task wait for the first of the event subjects `found`, which replace those it waits on.
+    """The edit that makes the task wait for the first of the `found` criteria or event subjects, which replace those it waits on.
 
     A subject is `starpulse.<board>.alert.<rule>.<event>` or `starpulse.<board>.deploy.<component>.<event>`: the two whose
-    latest event the log answers, so a wait already met releases at once.
+    latest event the log answers, so a wait already met releases at once. A criterion object is written as given.
     """
-    if not (isinstance(found, list) and found and all(isinstance(item, str) and readable(item) for item in found)):
+    entries = [_start_entry(item) for item in found] if isinstance(found, list) and found else []
+    if not entries or any(entry is None for entry in entries):
         raise _RefusalError(
             400,
             {
-                "error": "until needs a non-empty list of event subjects an alert or a deploy emits, as in "
-                "`--until starpulse.trantor.deploy.web.applied`; to wait on a task use `--until-task TASK-N`, "
-                "and use `--operator` only for a question the operator must answer"
+                "error": "until needs a non-empty list of event subjects an alert or a deploy emits, or criterion objects "
+                "with an id and a kind, as in `--until starpulse.trantor.deploy.web.applied`; to wait on a task use "
+                "`--until-task TASK-N`, and use `--operator` only for a question the operator must answer"
             },
         )
     if open_ := [name for name in current["dependencies"] if not feed.is_done(name)]:
@@ -154,7 +168,7 @@ def _wait_on_events(feed: BoardFeed, task: str, current: dict[str, Any], found: 
             409,
             {"error": f"{task} already waits on {', '.join(open_)}; a task is gated by one reason, never both"},
         )
-    entries = [{"id": each, "kind": "event", "query": each} for each in dict.fromkeys(found)]
+    entries = list({entry["id"]: entry for entry in entries}.values())
     block = "```yaml\n" + yaml.safe_dump({"start_criteria": entries}, sort_keys=False) + "```"
     return {
         "description": section_set(current["description"], "Start Criteria", block),
