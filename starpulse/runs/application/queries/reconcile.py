@@ -52,7 +52,9 @@ class Reconcile:
                 continue
             sampled += 1
             held = kept.get(instance, {}).get("dags", []) if isinstance(kept.get(instance), dict) else []
-            if _runs(listed) != _runs(held):
+            if (now := _runs(listed)) != (before := _runs(held)):
                 corrected += 1
+                differing = sorted(name for name in now.keys() | before.keys() if now.get(name) != before.get(name))
+                logger.info("runs: %s differs from the projection in %s; resyncing it", instance, ", ".join(differing))
                 self._log.publish(RESYNC, {"instance": instance})
         return corrected, sampled

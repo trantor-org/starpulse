@@ -15,14 +15,10 @@ from starlette.responses import Response
 from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, StreamRoute
 from starpulse.views.adapters.inbound.api.streams import streaming
-from starpulse.views.model.encoding import encode, full_snapshot
+from starpulse.views.model.encoding import encode
 
 if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
-
-
-#: The snapshot's fields `/api/flows` keeps: what the agent CLI reads of the board, the runs and the cues.
-_FLOW_KEYS = ("flows", "roles", "settled", "cold_done", "pulls", "interactive", "ratings", "cues", "dags", "error")
 
 
 @reading
@@ -44,9 +40,7 @@ def snapshot(request: Request) -> Response:
 
 @reading
 def flows(request: Request) -> Response:
-    taken = seams(request).snapshots.take().snapshot
-    drawn = full_snapshot(taken)
-    return answer(request, encode("flows", {key: drawn[key] for key in _FLOW_KEYS if key in drawn}))
+    return answer(request, seams(request).snapshots.flows())
 
 
 def routes(api: Api) -> list[ApiRoute]:

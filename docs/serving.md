@@ -354,7 +354,7 @@ GET /api/snapshot  the document /api/events sends on connect, as one response: w
                    criteria and moves (`/api/task/<id>`, `move_sets`) and with only the day's settled tasks;
                    `?view=full` is the whole document, which `starpulse snapshot` reads
 GET /api/flows     every flow whole (full tasks, moves) with `roles`, every `settled` entry, `cold_done`, `pulls`, `interactive`,
-                   `ratings`, `cues`, `dags` and `error`: what `starpulse board|task|machines|machine|doctor|incident` read
+                   `ratings`, `cues`, `dags` and `error`: what `starpulse board|task|machines|machine|doctor|incident` read; the body and its gzip are made once per snapshot `take`
 GET /api/runs      {dags, error}: every runs workflow with its latest run, and what a runs instance reported: `starpulse runs list`
 GET /api/ledger/<event>[?before=T][&limit=N]
                    {rows, more}: one Ledger's next `limit` rows (default 20, at most 100) older than `before` (epoch
