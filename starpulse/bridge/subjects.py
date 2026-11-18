@@ -34,6 +34,11 @@ def stream_subjects(board: str) -> list[str]:
     return [f"starpulse.{board}.>", INCIDENTS]
 
 
+def wake_subject(board: str) -> str:
+    """The core subject outside the stream that `starpulse subscribe` signals once a session's route is registered."""
+    return f"starpulse-wake.{board}"
+
+
 def token(value: object) -> str:
     """`value` as one subject token: a run of characters NATS reads as structure (`.`, `*`, `>`, space) becomes `_`."""
     return _UNSAFE.sub("_", str(value)).strip("_")

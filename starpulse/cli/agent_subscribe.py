@@ -10,7 +10,7 @@ from typing import Any
 from starpulse.bridge.consumers import Consumers
 from starpulse.bridge.publisher import Publisher, Unavailable
 from starpulse.bridge.requests import ask
-from starpulse.bridge.subjects import stream_subjects, token
+from starpulse.bridge.subjects import stream_subjects, token, wake_subject
 from starpulse.bridge.subscriptions import covers, explicit_subject
 from starpulse.cli.agent_wire import CliError
 from starpulse.runtime.config import ConfigError, discover, load
@@ -57,7 +57,20 @@ def _register(args: argparse.Namespace, environ: Mapping[str, str]) -> bool:
         raise CliError("refused", f"config: {exc}") from exc
     base = config.parent if config else Path.cwd()
     Registry(directory(base, configured)).put(token(session), Registration(session, socket, secret, str(Path.cwd())))
+    _wake_delivery(args)
     return True
+
+
+def _wake_delivery(args: argparse.Namespace) -> None:
+    """Tell the bridge's delivery a route now exists, so events waiting on the session's consumer are handed over; a
+    bridge that is off or not answering is started later with its first pass, which finds them."""
+    try:
+        settings = bridge(args)
+        link = Publisher(f"nats://127.0.0.1:{settings.port}", f"starpulse-{settings.board}", stream_subjects(settings.board))
+        with closing(link):
+            link.signal(wake_subject(settings.board))
+    except (CliError, Unavailable, OSError):
+        pass
 
 
 def _change(args: argparse.Namespace, environ: Mapping[str, str], add: bool) -> dict[str, Any]:

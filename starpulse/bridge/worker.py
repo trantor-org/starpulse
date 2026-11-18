@@ -16,12 +16,11 @@ from nats.js.errors import BadRequestError
 
 from starpulse.bridge.consumers import Consumers
 from starpulse.bridge.delivery import Delivery, JetStreamMailbox, Route
-from starpulse.bridge.delivery import run as deliver
 from starpulse.bridge.metrics import Published
 from starpulse.bridge.publisher import Publisher, Unavailable
 from starpulse.bridge.requests import serve
 from starpulse.bridge.reach import Reach
-from starpulse.bridge.subjects import STREAMS, payload, stream_subjects, subject_for
+from starpulse.bridge.subjects import STREAMS, payload, stream_subjects, subject_for, wake_subject
 from starpulse.bridge.subscriber import Subscriber
 from starpulse.bridge.subscriptions import Rules
 from starpulse.event_log.event_log import Entry, EventLog, Tail
@@ -65,8 +64,15 @@ def _reconcile(subscriber: Subscriber, stop: StopEvent) -> None:
             stop.wait(RETRY_DELAY)
 
 
-def run(log: EventLog, publisher: Publisher, board: str, subscriber: Subscriber, stop: StopEvent) -> None:
-    """Publish and subscribe until `stop` is set."""
+def run(
+    log: EventLog,
+    publisher: Publisher,
+    board: str,
+    subscriber: Subscriber,
+    stop: StopEvent,
+    woke: Callable[[], None] = lambda: None,
+) -> None:
+    """Publish and subscribe until `stop` is set; `woke` runs after each entry, when a session's consumer may have news."""
 
     published = Published(log)
 
@@ -83,6 +89,7 @@ def run(log: EventLog, publisher: Publisher, board: str, subscriber: Subscriber,
         except BadRequestError as exc:  # the server refuses this subscription for good; retrying only stalls the tail
             logger.error("bridge: entry %s subscription is refused and skipped: %s", entry.id, exc)
         log.checkpoints.save(CHECKPOINT, entry.id)
+        woke()
 
     try:
         started, position = _await_start_position(log, stop)
@@ -95,7 +102,7 @@ def run(log: EventLog, publisher: Publisher, board: str, subscriber: Subscriber,
 
 def _deliver(delivery: Delivery, link: Publisher, stop: StopEvent) -> None:
     try:
-        deliver(delivery, stop)
+        delivery.run(stop)
     finally:
         link.close()
 
@@ -122,10 +129,13 @@ def start(
     url = f"nats://127.0.0.1:{port}"
     publisher = Publisher(url, stream, stream_subjects(board))
     subscriber = Subscriber(board, rules, Consumers(publisher, stream), feed, end, end_lanes, settle, reach)
-    threading.Thread(target=run, args=(log, publisher, board, subscriber, stop), name="bridge", daemon=True).start()
-    threading.Thread(target=serve, args=(url, board, subscriber, stop), name="bridge-requests", daemon=True).start()
+    delivery: Delivery | None = None
     if route:
         link = Publisher(url, stream, stream_subjects(board))
         delivery = Delivery(JetStreamMailbox(link, stream), route)
+        link.listen(wake_subject(board), delivery.wake)  # `starpulse subscribe` signals it once a session's route is registered
         threading.Thread(target=_deliver, args=(delivery, link, stop), name="bridge-delivery", daemon=True).start()
+    wake = delivery.wake if delivery else lambda: None
+    threading.Thread(target=run, args=(log, publisher, board, subscriber, stop, wake), name="bridge", daemon=True).start()
+    threading.Thread(target=serve, args=(url, board, subscriber, stop), name="bridge-requests", daemon=True).start()
     return lambda: logger.info("reload: the bridge reads [bridge] at start; restart serve to apply a change")
