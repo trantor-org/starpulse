@@ -24,7 +24,6 @@ from starpulse.flow_metrics.model.session_health import combine_health, slice_he
 from starpulse.flow_metrics.model.spend import combine_spend
 from starpulse.flow_metrics.model.steps import combine_steps
 from starpulse.machine_engine.model.state_roles import StateRoles
-from starpulse.machine_engine.model.stays import lane_stays
 from starpulse.views.model.encoding import encode, encode_rows
 
 logger = logging.getLogger(__name__)
@@ -32,7 +31,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.board.model.board_feed import BoardFeed
-    from starpulse.flow_metrics.adapters.outbound.history import History
+    from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.views.ports.signal_folds import SignalFoldReader
 
@@ -105,7 +104,7 @@ def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
     return named | {"model": record.get("profile") or "", "entered": stub["entered"]} | card
 
 
-def breaking_changes_response(history: History, query: dict[str, list[str]]) -> tuple[bytes, int]:
+def breaking_changes_response(history: HistoryStore, query: dict[str, list[str]]) -> tuple[bytes, int]:
     """The body for `/api/breaking-changes`: every commit that broke the branch, or with `?open=1` those no postmortem
     has closed."""
     open_only = query.get("open", [""])[0] in ("1", "true")
@@ -113,7 +112,7 @@ def breaking_changes_response(history: History, query: dict[str, list[str]]) -> 
 
 
 def history_response(
-    history: History,
+    history: HistoryStore,
     query: dict[str, list[str]],
     flows: Collection[str],
     keys: TaskKeys | None = None,
@@ -279,22 +278,14 @@ def _hours(query: dict[str, list[str]], key: str, default: float) -> float | Non
 
 
 def health_response(
-    history: History, query: dict[str, list[str]], machines: Mapping[str, dict], now: float
+    history: HistoryStore, query: dict[str, list[str]], machines: Mapping[str, dict], now: float
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/health`: the Board's flow health over the last `hours` as of `now`."""
-    from starpulse.flow_metrics.adapters.outbound.history import HealthHistory, SummarisedHealth  # noqa: PLC0415 - the database stack loads when a store does
-
     window = _hours(query, "hours", _HEALTH_HOURS)
     stuck = _hours(query, "stuck_hours", _STUCK_HOURS)
     if window is None or stuck is None:
         return _error("hours and stuck_hours must each be a positive number"), 400
-    if not isinstance(history, HealthHistory):
-        return _error("this history does not keep every task's lane changes, so it cannot report flow health"), 501
-    start = now - window * 3600
-    if isinstance(history, SummarisedHealth):
-        held = history.health_stays(machines["board"], start=start, now=now, stuck_s=stuck * 3600)
-    else:
-        held = lane_stays(history.lane_rows(), start=start, now=now, stuck_s=stuck * 3600)
+    held = history.health_stays(machines["board"], start=now - window * 3600, now=now, stuck_s=stuck * 3600)
     health = analytics.stay_health(
         machines["board"], held, history.gaps(), now=now, window_s=window * 3600, stuck_s=stuck * 3600
     )
@@ -303,18 +294,16 @@ def health_response(
 
 
 def liveness_response(
-    history: History, query: dict[str, list[str]], roles: StateRoles, machines: Mapping[str, dict], now: float
+    history: HistoryStore, query: dict[str, list[str]], roles: StateRoles, machines: Mapping[str, dict], now: float
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/liveness`: each working task's liveness as of `now` and the Board's
     moves into Review over the last `hours`, a task stalled past `stalled_minutes` without a state change or command."""
-    from starpulse.flow_metrics.adapters.outbound.history import LaneHistory  # noqa: PLC0415 - the database stack loads when a store does
-
     window = _hours(query, "hours", _LIVENESS_HOURS)
     stalled = _hours(query, "stalled_minutes", _STALLED_MINUTES)
     if window is None or stalled is None or window > _LIVENESS_MAX_HOURS:
         return _error(f"hours and stalled_minutes must each be a positive number, hours at most {_LIVENESS_MAX_HOURS:g}"), 400
-    if not (isinstance(history, LaneHistory) and hasattr(history, "task_events")) or roles.working is None:
-        return _error("this history does not keep every task's lane changes and events, so it cannot report liveness"), 501
+    if roles.working is None:
+        return _error("this board has no working state, so it cannot report liveness"), 501
     start = now - window * 3600
     stays = [
         stay

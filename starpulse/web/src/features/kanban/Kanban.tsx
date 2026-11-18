@@ -957,7 +957,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       <header><span className="title">Kanban</span><span className="count">{view.shown} open · {hud.doneCount} done</span></header>
       {active && searchSlot && createPortal(
         <div className="fw">
-          <input id="kbq" ref={searchBox} type="text" value={prefs.query} placeholder="filter by id, title or label…" aria-label="Filter tasks by id, title or label" autoComplete="off" spellCheck={false}
+          <input id="kbq" ref={searchBox} type="text" value={prefs.query} placeholder="id, title or label…" aria-label="Filter tasks by id, title or label" autoComplete="off" spellCheck={false}
             onChange={(e) => { setPrefs((p) => ({ ...p, query: e.target.value })); setPick(0); }}
             onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} onKeyDown={onSearchKey} />
           <SearchClear input={searchBox} value={prefs.query} clear={() => { setPrefs((p) => ({ ...p, query: "" })); setPick(0); }} />

@@ -142,6 +142,8 @@ class PageServer:
             self._config.alt_svc_headers = [f'h3=":{self.server_port}"; ma={ALT_SVC_MAX_AGE_S}']
             _survive_cancelled_streams()
             self._sockets = Sockets([self.socket], [], [self._quic])
+        #: Whether the Board writer serving this has folded the feed's changes; a serve that holds one sets it.
+        self.caught_up: Callable[[float], bool] = lambda _timeout: True
         self._stopped = threading.Event()
         self._wake: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None

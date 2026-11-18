@@ -68,7 +68,7 @@ from starpulse.board.model.seam import (
 )
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.deadlines import Deadlines
-from starpulse.event_log.wake import StopEvent
+from starpulse.event_log.wake import StopEvent, save_on_change
 from starpulse.pulls.adapters.inbound.unblock import PinGate
 from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
@@ -133,7 +133,8 @@ CHECKPOINT = "pulls.task_actor_checkpoint"
 #: Bumped when a fact function reads something new or reads it differently: a checkpoint of another revision is unread.
 _FACTS_REVISION = 2
 #: Seconds between two saves of the checkpoint while the actor runs.
-_CHECKPOINT_S = 30.0
+#: Seconds after a task's derived facts change before the checkpoint is saved.
+_CHECKPOINT_DEBOUNCE_S = 10.0
 _NOTICE_JOIN_S = 10.0
 #: The bounds of the projection and handoff histograms: a pin walk takes seconds, and the 10 s bound is the measure.
 SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
@@ -394,6 +395,8 @@ class TaskActor:
         #: still digest to it needs no derivation at start.
         self._derived: dict[str, str] = self._restored_checkpoint()
         self._kept: dict[str, str] = dict(self._derived)
+        #: Set when `_derived` changes, so the checkpoint saver writes it after a debounce.
+        self._derived_moved = threading.Event()
         #: Whether the derivation running now called a board hook, or could not settle (a transient write failure, a
         #: hold it could not read), which keeps its digest out of the checkpoint.
         self._hooked = False
@@ -699,6 +702,7 @@ class TaskActor:
                 self._awaited |= {a["id"] for a in tasks if a["state"] == self._feed.roles.working and self._awaits(a)}
             open_ids = {agent["id"] for agent in tasks}
             self._derived = {name: digest for name, digest in self._derived.items() if name in open_ids}
+            self._derived_moved.set()
         self.indexed.set()
         recovery = threading.Thread(
             target=self._recovered, args=(tasks, observed, stop), name="task-actor-recovery", daemon=True
@@ -1015,13 +1019,8 @@ class TaskActor:
             self._kept = facts
 
     def _keep_checkpoint(self, stop: StopEvent) -> None:
-        """Save the checkpoint every `_CHECKPOINT_S` while recovery or the actor runs, and once more on a stop."""
-        try:
-            # adr-exempt: pending
-            while not stop.wait(_CHECKPOINT_S):
-                self.checkpoint()
-        finally:
-            self.checkpoint()
+        """Save the checkpoint `_CHECKPOINT_DEBOUNCE_S` after its facts change, and once more on a stop."""
+        save_on_change(stop, self._derived_moved, self.checkpoint, _CHECKPOINT_DEBOUNCE_S)
 
     def _unchanged(self, name: str) -> bool:
         """Whether the task's facts digest to what it was last derived on; when they do, arm its deadline, the one thing
@@ -1058,6 +1057,7 @@ class TaskActor:
 
     def _forget(self, name: str) -> None:
         self._derived.pop(name, None)
+        self._derived_moved.set()
         for url in self._seen.pop(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
@@ -1172,6 +1172,7 @@ class TaskActor:
             self._derived.pop(name, None)  # its hold or failure can end with no fact of the task changing
         else:
             self._derived[name] = digest
+        self._derived_moved.set()
 
     def view(self, name: str) -> dict[str, Any] | None:
         """The actor's view of one task: the lane the feed and the actor each hold, the pull requests it saw, the move it

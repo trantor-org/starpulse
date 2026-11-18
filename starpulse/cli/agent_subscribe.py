@@ -10,7 +10,7 @@ from typing import Any
 from starpulse.bridge.consumers import Consumers
 from starpulse.bridge.publisher import Publisher, Unavailable
 from starpulse.bridge.requests import ask
-from starpulse.bridge.subjects import token
+from starpulse.bridge.subjects import stream_subjects, token
 from starpulse.bridge.subscriptions import covers, explicit_subject
 from starpulse.cli.agent_wire import CliError
 from starpulse.runtime.config import ConfigError, discover, load
@@ -96,7 +96,7 @@ def subscribed(session: str, subject: str, config: Path | None = None) -> bool:
     try:
         settings = bridge(argparse.Namespace(config=config))
         stream = f"starpulse-{settings.board}"
-        link = Publisher(f"nats://127.0.0.1:{settings.port}", stream, f"starpulse.{settings.board}.>")
+        link = Publisher(f"nats://127.0.0.1:{settings.port}", stream, stream_subjects(settings.board))
         with closing(link):
             filters = Consumers(link, stream).get(token(session)).filters
     except (CliError, Unavailable, OSError):

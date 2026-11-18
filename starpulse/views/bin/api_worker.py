@@ -44,17 +44,19 @@ from starpulse.runs.model import opt_in
 from starpulse.scheduler.adapters.exposition import autopilot_exposition, autopilot_log
 from starpulse.sessions.adapters.outbound.session_start import starter
 from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
-from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
+from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.adapters.outbound.gc_pauses import install as collect_by_requests
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.adapters.outbound.storage_metrics import cached, storage_exposition
 from starpulse.views.adapters.outbound.take_over import command_take_over
+from starpulse.views.adapters.outbound.ttl_cached import ttl_cached
 from starpulse.views.adapters.outbound.webhook_command import command_webhook
 from starpulse.views.application.queries.answers import Answers
 from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
+
 
 @dataclasses.dataclass(frozen=True)
 class Host:
@@ -204,7 +206,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         start_session=starter(config.session_start_url),
         events=cloudevents,
         scheduler=scheduler_runtime,
-        contract=_cached(lambda: host.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
+        contract=ttl_cached(lambda: host.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
         ready=host.readiness(log, feed, config),
         pulls=pulls,
         telemetry=signal_folds,

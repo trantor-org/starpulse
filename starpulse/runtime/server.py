@@ -15,14 +15,13 @@ from pathlib import Path
 
 from starpulse.event_log import heartbeat
 from starpulse.runtime import launch, wiring
-from starpulse.runtime.closure import CONTEXT_ENTRIES, ENTRIES, Reader
+from starpulse.runtime.closure import Reader
 from starpulse.runtime.config import Config, rehearsing
 from starpulse.runtime.control import control_file
 from starpulse.runtime.hold import BOOT_ENV, GITHUB_FD_ENV, LISTEN_FD_ENV, adopted_from_env, boot_token
 from starpulse.runtime.listen import github_socket, inherited_socket, listen, listen_options, resolve_listen
 from starpulse.runtime.nats_server import bridge_commands
 from starpulse.runtime.supervisor import Supervisor, worker_commands
-from starpulse.runtime.zygote import Forker
 
 logger = logging.getLogger(__name__)
 
@@ -113,21 +112,6 @@ def stay_until_stopped() -> None:  # pragma: no mutate block — process boundar
         os.close(wake)
 
 
-#: What `api_worker.serve_page` imports once the config is accepted; the preloaded process imports it too, so the Page API child
-#: forks with it loaded.
-DATABASE_STACK = (
-    "starpulse.event_log.event_log",
-    "starpulse.flow_metrics.adapters.outbound.history",
-    "starpulse.board.model.board_feed",
-    "starpulse.board.application.queries.claim_refusals",
-    "starpulse.board.application.queries.verdicts",
-    "starpulse.board.application.queries.machine_tasks",
-    "starpulse.board.adapters.search",
-    "starpulse.pulls.adapters.outbound.pulls",
-    "starpulse.runtime.assembly",
-)
-
-
 def forget_old_starts(config: Config, args: argparse.Namespace) -> None:
     """Drop the context stamps of the image this one re-executed from; a store it cannot reach is logged, and the page
     then reads the old image's contexts as started until the new ones stamp again."""
@@ -174,20 +158,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     webhook = github_socket(os.environ, config.github) if "contexts" in commands and config.github else None
     os.environ.pop(GITHUB_FD_ENV, None)
     held = {"contexts": webhook} if webhook else {}
-    # the preloaded process inherits the bound sockets, so the children they are handed fork from it like every other worker
-    forker = Forker(
-        [*DATABASE_STACK, *(ENTRIES[context] for context in commands), *CONTEXT_ENTRIES],
-        held=[*([listening] if listening and "api" in commands else []), *held.values()],
-    )
-    if commands:
-        forker.start(forked=True)  # once the port is bound: a refused start leaves no process behind
     reader = Reader(args.config)
     supervisor = Supervisor(
         commands,
         sockets={"api": listening} if "api" in commands else {},
         held=held,
-        spawn=forker,
-        retire=forker.retire,
         read=reader,
         baseline=reader.at_start,
         control=None if rehearsing() else control_file(args.config),  # a rehearsal must not replace the live endpoint
@@ -202,7 +177,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         stay_until_stopped()
     finally:
         supervisor.stop()
-        forker.close()
 
 
 if __name__ == "__main__":

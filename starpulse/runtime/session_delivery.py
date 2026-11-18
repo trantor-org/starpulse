@@ -16,17 +16,22 @@ as a claude.ai URL holder.
 
 A failing-checks line names the skill that answers it, `skill=starpulse:fix-checks`, so the woken session fixes its
 task's red check rather than waiting on the task actor's Review move, which only passing checks fire.
+
+An `incident.<type>.<key>` event, which `starpulse incident open` publishes straight to NATS, is one line naming its owner task
+and finder; one older than `INCIDENT_FRESH_S` is acked with no line.
 """
 
 import json
 import logging
 import re
+import time
 from collections.abc import Callable, Collection, Mapping
 from pathlib import Path
 
 from starpulse.board.adapters.session_activity import local_id
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.bridge.delivery import Event, Route
+from starpulse.bridge.subjects import INCIDENT
 from starpulse.sessions.ports.notify import Line, Notifier, Registration
 from starpulse.sessions.adapters.outbound.registry import Registry
 
@@ -37,6 +42,8 @@ _UNSAFE = re.compile(r"[<>\r\n]+")
 _VALUE_MAX = 120
 _DATA_PAIRS = 20
 _URL_HOLDER = re.compile(r"https_claude_ai_code_((?:session|cse)_\w+)")
+#: An incident older than this is no news: a new consumer replays the last one of every key, so it is acked unannounced.
+INCIDENT_FRESH_S = 6 * 3600
 _FINISHED = frozenset({"done", COMPLETED, ARCHIVED})
 SELF = "self"
 #: The bundled skill each subject suffix wakes its session into.
@@ -47,8 +54,33 @@ def _value(value: object) -> str:
     return _UNSAFE.sub(" ", str(value)).strip()[:_VALUE_MAX]
 
 
+def _incident(event: Event) -> dict | None:
+    if not event.subject.startswith(INCIDENT):
+        return None
+    try:
+        body = json.loads(event.body)
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def _stale(event: Event) -> bool:
+    body = _incident(event)
+    at = body.get("at") if body else None
+    return isinstance(at, (int, float)) and time.time() - at > INCIDENT_FRESH_S
+
+
+def _incident_line(event: Event, body: dict) -> Line:
+    pairs = [f"{key}={_value(body[key])}" for key in ("task", "finder") if body.get(key)]
+    parts = pairs + [f"({_value(body.get('at', ''))})"]
+    return Line(event.subject, f"{event.subject}: {' '.join(parts)}")
+
+
 def line_for(event: Event) -> Line:
-    """`<subject>: <event> <task> <data> (<event id>)`, from the entry the bridge published."""
+    """`<subject>: <event> <task> <data> (<event id>)`, from the entry the bridge published; an incident, which
+    `starpulse incident open` publishes to NATS directly, reads `<subject>: task=<owner task> finder=<session> (<at>)`."""
+    if (incident := _incident(event)) is not None:
+        return _incident_line(event, incident)
     try:
         body = json.loads(event.body)
         fields = body["fields"]
@@ -125,7 +157,7 @@ def route(
 
         def deliver(events: list[Event]) -> bool:
             own = local_id(sessions, registration.session)
-            lines = [line_for(event) for event in events if not _quieted(event, quiet or {}, own, sessions)]
+            lines = [line_for(event) for event in events if not _stale(event) and not _quieted(event, quiet or {}, own, sessions)]
             delivered = notifier.notify(registration, lines) if lines else True
             outcome = "quieted, nothing sent" if not lines else "delivered" if delivered else "not delivered"
             logger.info("session %s: %s %s", name, ", ".join(event.subject for event in events), outcome)

@@ -1,6 +1,6 @@
 """Board health from a history's lane changes: dwell and WIP per state, throughput and stuck tasks over a window.
 
-`stay_health` is a pure function of the lane stays the history keeps (`lane_stays` over `HealthHistory.lane_rows`), a lane named by
+`stay_health` is a pure function of the lane stays the history keeps (`HistoryStore.health_stays`), a lane named by
 its state's name or id, so a fixture history gives numbers that can be worked out by hand. A task's stay in a state
 runs from the lane change into it to the next change; the stay of a task still in its state has no end, so it is
 counted to `now` and flagged (`open`, `counted_to_now`). History begins at a task's first recorded change: where the

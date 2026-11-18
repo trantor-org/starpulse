@@ -21,9 +21,17 @@ LANES = "board:lanes"
 MACHINE = "machine:events"
 CLAIMS = "board:claims"
 STREAMS = (LANES, MACHINE, CLAIMS)
+INCIDENT = "incident."
+INCIDENTS = f"{INCIDENT}>"
 
 _PULL = re.compile(r"/pull/(\d+)")
 _UNSAFE = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def stream_subjects(board: str) -> list[str]:
+    """The subjects of `board`'s stream: its own and the incidents (`incident.<type>.<key>`), which a session publishes
+    straight to NATS and the stream retains."""
+    return [f"starpulse.{board}.>", INCIDENTS]
 
 
 def token(value: object) -> str:

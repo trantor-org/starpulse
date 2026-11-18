@@ -1,7 +1,7 @@
 """Task liveness and the Board's pace into Review, from lane changes and machine events.
 
 `liveness` is a pure function of the stays tasks made in the working lane (`working_stays` over
-`LaneHistory.lane_rows`) and each task's machine events (`HistoryStore.task_events`), so a fixture history gives numbers
+`HistoryStore.lane_rows`) and each task's machine events (`HistoryStore.task_events`), so a fixture history gives numbers
 that can be worked out by hand. A task's state changes when it changes lane or a work machine (the working lane's
 machine and the machines it links) takes an event for it; it issues a command when the harness machine takes
 `TOOL_USED` for it. A task is stalled once both are older than the threshold, and the events say why:

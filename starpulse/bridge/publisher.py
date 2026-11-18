@@ -14,6 +14,7 @@ import nats
 from nats.errors import Error as NatsError
 from nats.errors import MaxPayloadError
 from nats.js.api import StorageType, StreamConfig
+from nats.js.errors import BadRequestError
 
 #: Messages kept per subject: the newest events of a task or pull request, which is what a late subscriber starts from.
 PER_SUBJECT = 100
@@ -26,10 +27,10 @@ class Unavailable(Exception):
 
 
 class Publisher:
-    def __init__(self, url: str, stream: str, subjects: str) -> None:
+    def __init__(self, url: str, stream: str, subjects: list[str]) -> None:
         self._url = url
         self._config = StreamConfig(
-            name=stream, subjects=[subjects], storage=StorageType.FILE, max_msgs_per_subject=PER_SUBJECT
+            name=stream, subjects=subjects, storage=StorageType.FILE, max_msgs_per_subject=PER_SUBJECT
         )
         self._loop = asyncio.new_event_loop()
         self._client: Any = None
@@ -61,13 +62,20 @@ class Publisher:
                 if self._js is None:
                     self._client = await nats.connect(self._url, connect_timeout=_TIMEOUT_S, max_reconnect_attempts=-1)
                     self._js = self._client.jetstream()
-                await self._js.add_stream(self._config)  # idempotent, and recreates a deleted store
+                await self._declare()
                 return await operation(self._js)
             except MaxPayloadError:
                 raise
             except BaseException:
                 await self._drop()
                 raise
+
+    async def _declare(self) -> None:
+        """Create the stream, which also recreates a deleted store; a stream an older release made for other subjects is updated."""
+        try:
+            await self._js.add_stream(self._config)
+        except BadRequestError:
+            await self._js.update_stream(self._config)
 
     async def _drop(self) -> None:
         client, self._client, self._js = self._client, None, None

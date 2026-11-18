@@ -180,9 +180,7 @@ flagged rather than left out. `throughput` is `{count, per_day}`, the entries in
 `stuck_hours` or longer, longest first, each `{task, state, since, dwell_s, counted_to_now}`. `warnings` carry each
 gap the history recorded (`kind` `gap`: entries trimmed before it read them, so counts may miss them) and each lane
 the Board machine has no state for. History starts at a task's first recorded lane change, so a stay before it is not
-counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive number, and 501 when the history
-does not list every task's lane changes through `lane_rows(since=None)` and `gaps()`; `since`
-is an epoch the Ledger passes so it reads only its last 24 hours, and None asks for every change.
+counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive number.
 
 `analytics liveness` reads `GET /api/analytics/liveness[?hours=N][&stalled_minutes=N]` (a window of 24 hours and a
 stalled threshold of 5 minutes by default). `tasks` lists every task in the working State, longest without a state
@@ -205,8 +203,7 @@ lists the time spent after each work-machine event, `{stage, visits, task_s, mea
 `machine:state` (the lane before the first event), summing to `in_progress_s`. `stalls` lists each
 `{cause, waits_in, count, stalled_s}`, the seconds each silence ran past the threshold. Both are largest first. The
 read replays the events of every task it lists, so it takes seconds on a busy Board and no page asks for it. The
-endpoint is 400 for an `hours` or `stalled_minutes` that is no positive number or an `hours` past 8784 (a year of hourly buckets), and 501 when the history does not
-answer `lane_rows` and `task_events`.
+endpoint is 400 for an `hours` or `stalled_minutes` that is no positive number or an `hours` past 8784 (a year of hourly buckets), and 501 when the board has no working state.
 
 `analytics steps` reads `GET /api/analytics/steps[?hours=N]` (168 hours by default, 400 with `history_s` for a window
 longer than the telemetry history): one row per model request of the

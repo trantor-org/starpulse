@@ -11,7 +11,7 @@ and a task counts from its first stall until it leaves the lane, a stall still o
 an event is a violation when no state the task or run may be in declares it (`replay.EventJudge`). A guard that reads
 a task's facts is not judged. The counts cover the entries the log retains and everything appended since.
 
-The counts, each task's lane and each judged key's states are saved every `CHECKPOINT_S` with the id of the last entry
+The counts, each task's lane and each judged key's states are saved `CHECKPOINT_DEBOUNCE_S` after a change, and at stop, with the id of the last entry
 of each stream they cover (`CHECKPOINT`), so a restart reads only what was appended after them instead of replaying the
 whole retention. A checkpoint of another `CHECKPOINT_VERSION` or other machines, or one whose last entry of a stream
 the log no longer retains (so the entries after it may have been pruned unread), is ignored and the retention replayed. A resumed count still holds the entries pruned since it was saved, as
@@ -29,7 +29,7 @@ from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from starpulse.event_log import events, lane_events
-from starpulse.event_log.wake import StopEvent
+from starpulse.event_log.wake import StopEvent, save_on_change
 from starpulse.machine_engine.model.replay import EventJudge, lane_moves
 from starpulse.machine_engine.model.transitions import tables
 
@@ -61,8 +61,8 @@ _HARNESS, _COMMAND = "harness", "TOOL_USED"
 CHECKPOINT = "conformance:checkpoint"
 #: Raised when what a checkpoint holds, or how an entry is counted, changes, so an older one is replayed over.
 CHECKPOINT_VERSION = 6
-#: Seconds between two saves of a changed checkpoint.
-CHECKPOINT_S = 300.0
+#: Seconds after a cursor moves before its changed checkpoint is saved.
+CHECKPOINT_DEBOUNCE_S = 10.0
 _STREAMS = (lane_events.STREAM, events.STREAM)
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,8 @@ class Conformance:
         #: The id of the last entry of each stream handled, which the counts cover.
         self._cursors: dict[str, int] = {}
         self._saved: dict[str, int] = {}
+        #: Set when an entry moves a cursor, so the saver writes the checkpoint after a debounce.
+        self._moved = threading.Event()
         self._lane_moves = lane_moves(machines[BOARD]) if BOARD in machines else set()
         tables_ = tables(machines)
         self._judges = {name: EventJudge(table) for name, table in tables_.items()}
@@ -141,6 +143,7 @@ class Conformance:
         self._recover_heads()
         with self._lock:
             self._cursors[lane_events.STREAM] = entry.id
+            self._moved.set()
             if not task or not lane:
                 return
             source = self._lanes.get(task)
@@ -172,6 +175,7 @@ class Conformance:
         self._recover_heads()
         with self._lock:
             self._cursors[events.STREAM] = entry.id
+            self._moved.set()
             if key:
                 self._touch(key, machine, event, entry.at)
             if machine not in self._judges or not event or not key:
@@ -380,11 +384,11 @@ class Conformance:
         self,
         log: EventLog,
         stop: StopEvent,
-        checkpoint_s: float = CHECKPOINT_S,
         after: Callable[[], None] = lambda: None,
     ) -> list[threading.Thread]:
         """Read `log` from the saved checkpoint, or what it retains when none applies, then follow it, on a thread per
-        stream until `stop`, saving the checkpoint every `checkpoint_s` and calling `after` once each entry is handled;
+        stream until `stop`, saving the checkpoint `CHECKPOINT_DEBOUNCE_S` after a cursor moves and once at stop, and
+        calling `after` once each entry is handled;
         the threads read the log, so the caller does not wait on a long one."""
         cursors = self._resumed(log)
         threads = []
@@ -396,15 +400,13 @@ class Conformance:
             thread.start()
             threads.append(thread)
         saver = threading.Thread(
-            target=self._keep_saving, args=(log, stop, checkpoint_s), name="conformance-checkpoint", daemon=True
+            target=save_on_change,
+            args=(stop, self._moved, lambda: self.save(log), CHECKPOINT_DEBOUNCE_S),
+            name="conformance-checkpoint",
+            daemon=True,
         )
         saver.start()
         return [*threads, saver]
-
-    def _keep_saving(self, log: EventLog, stop: StopEvent, checkpoint_s: float) -> None:
-        # adr-exempt: pending
-        while not stop.wait(checkpoint_s):
-            self.save(log)
 
 
 def stalled_exposition(state: Mapping[str, Any], now: float) -> str:

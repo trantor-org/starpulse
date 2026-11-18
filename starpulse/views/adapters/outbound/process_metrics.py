@@ -6,7 +6,7 @@ from prometheus_client.process_collector import ProcessCollector
 
 REGISTRY = CollectorRegistry()
 ProcessCollector(registry=REGISTRY)  # `process_*` gauges as Prometheus's client libraries name them; none on a host without procfs
-# `psutil.Process()` per call, so a forked worker counts its own threads, not the preloading parent's.
+# `psutil.Process()` per call, so a worker counts its own threads.
 Gauge("process_threads", "Number of OS threads in the process.", registry=REGISTRY).set_function(
     lambda: psutil.Process().num_threads()
 )

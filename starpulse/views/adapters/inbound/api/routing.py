@@ -32,7 +32,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.adapters.history_window import HistoryWindow
     from starpulse.board.model.board_feed import BoardFeed
     from starpulse.board.model.seam import Board
-    from starpulse.flow_metrics.adapters.outbound.history import History
+    from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
     from starpulse.views.adapters.inbound.snapshots import Snapshots
     from starpulse.views.ports.services import Services
 
@@ -43,7 +43,7 @@ class Api:
     `page_gauge` the page build's gauge for `/metrics`."""
 
     feed: BoardFeed
-    history: History
+    history: HistoryStore
     snapshots: Snapshots
     window: HistoryWindow
     board: Board

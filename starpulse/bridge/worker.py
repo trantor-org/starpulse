@@ -20,7 +20,8 @@ from starpulse.bridge.delivery import run as deliver
 from starpulse.bridge.metrics import Published
 from starpulse.bridge.publisher import Publisher, Unavailable
 from starpulse.bridge.requests import serve
-from starpulse.bridge.subjects import STREAMS, payload, subject_for
+from starpulse.bridge.reach import Reach
+from starpulse.bridge.subjects import STREAMS, payload, stream_subjects, subject_for
 from starpulse.bridge.subscriber import Subscriber
 from starpulse.bridge.subscriptions import Rules
 from starpulse.event_log.event_log import Entry, EventLog, Tail
@@ -110,20 +111,21 @@ def start(
     end: Callable[[str], None] | None = None,
     end_lanes: Collection[str] = (),
     settle: Callable[[Collection[str]], None] | None = None,
+    reach: Mapping[str, Reach] | None = None,
 ) -> Callable[[], None]:
     """Start the bridge over `log` for `board`, ending when `stop` is set; `feed()` is the board's read side. Return its reload.
 
     `route` finds how to reach a session's consumer: with it, the events waiting on a consumer it knows are delivered
-    (`bridge.delivery`). `end` runs for a task moved into a finished lane `end_lanes` names (`bridge.subscriber`), and `settle` after each lane move and `reconcile`.
+    (`bridge.delivery`). `reach` is each incident type's reach (`bridge.reach`). `end` runs for a task moved into a finished lane `end_lanes` names (`bridge.subscriber`), and `settle` after each lane move and `reconcile`.
     """
     stream = f"starpulse-{board}"
     url = f"nats://127.0.0.1:{port}"
-    publisher = Publisher(url, stream, f"starpulse.{board}.>")
-    subscriber = Subscriber(board, rules, Consumers(publisher, stream), feed, end, end_lanes, settle)
+    publisher = Publisher(url, stream, stream_subjects(board))
+    subscriber = Subscriber(board, rules, Consumers(publisher, stream), feed, end, end_lanes, settle, reach)
     threading.Thread(target=run, args=(log, publisher, board, subscriber, stop), name="bridge", daemon=True).start()
     threading.Thread(target=serve, args=(url, board, subscriber, stop), name="bridge-requests", daemon=True).start()
     if route:
-        link = Publisher(url, stream, f"starpulse.{board}.>")
+        link = Publisher(url, stream, stream_subjects(board))
         delivery = Delivery(JetStreamMailbox(link, stream), route)
         threading.Thread(target=_deliver, args=(delivery, link, stop), name="bridge-delivery", daemon=True).start()
     return lambda: logger.info("reload: the bridge reads [bridge] at start; restart serve to apply a change")

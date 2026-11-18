@@ -30,7 +30,7 @@ append and cursor-poll p50 and p99, and the database size.
 
 ```sh
 uv run python bench/flow_reads.py .tmp/bench-flow                  # 10 thousand, 1 million and 10 million
-uv run python bench/flow_reads.py .tmp/bench-flow 10000 1000000 --scan 1000000
+uv run python bench/flow_reads.py .tmp/bench-flow 10000 1000000
 uv run python bench/flow_reads.py .tmp/bench-flow --reuse          # read the stores a run left
 ```
 
@@ -39,8 +39,7 @@ uv run python bench/flow_reads.py .tmp/bench-flow --reuse          # read the st
 The script records synthetic Board lane changes at a fixed rate (about 125 a day) into a SQLite store, summarises
 them as the store does at start-up, and asks `/api/analytics/health` and the level's trajectories
 for the default week 60 times each. It prints the p95 in wall and CPU time with the statements each read sends, and
-exits 1 when the CPU p95 at any size is over 2x the first size's. `--scan N` also times the whole-table reads the
-summaries replaced, on the stores up to N events.
+exits 1 when the CPU p95 at any size is over 2x the first size's.
 
 Result (build host, SQLite, 60 reads each; CPU time judges the 2x gate):
 

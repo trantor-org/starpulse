@@ -7,7 +7,7 @@ from itertools import zip_longest
 from string import Formatter
 from typing import Any
 
-from starpulse.bridge.subjects import token
+from starpulse.bridge.subjects import INCIDENT, token
 
 EXPLICIT = "explicit"
 
@@ -70,6 +70,18 @@ class Subscription:
             self.origins[origin] = grown
         return grown != held
 
+    def replace_prefixed(self, origin: str, prefix: str, subjects: list[str]) -> bool:
+        """Make `subjects` the only subjects `origin` holds that start with `prefix`, keeping the rest; whether that changed."""
+        held = self.origins.get(origin, set())
+        grown = {kept for kept in held if not kept.startswith(prefix)} | set(subjects)
+        if grown == held:
+            return False
+        if grown:
+            self.origins[origin] = grown
+        else:
+            del self.origins[origin]
+        return True
+
     def drop(self, origin: str) -> bool:
         return self.origins.pop(origin, None) is not None
 
@@ -97,11 +109,15 @@ def expand(board: str, templates: tuple[str, ...], **values: str) -> list[str]:
 
 
 def explicit_subject(board: str, subject: str) -> str:
-    """`subject` when it is a subject of `board`'s stream, else `ValueError`."""
+    """`subject` when it is a subject of `board`'s stream or an incident (`incident.<type>.<key>`), else `ValueError`."""
     prefix = f"starpulse.{board}."
     relative = subject.removeprefix(prefix)
+    if relative == subject:
+        relative = subject.removeprefix(INCIDENT)
     if relative == subject or not _SUBJECT.fullmatch(relative):
-        raise ValueError(f"{subject!r} is not a subject of the {board} board; it starts {prefix} (`{prefix}task.TASK-1.>`)")
+        raise ValueError(
+            f"{subject!r} is not a subject of the {board} board or an incident; it starts {prefix} (`{prefix}task.TASK-1.>`) or `incident.`"
+        )
     return subject
 
 

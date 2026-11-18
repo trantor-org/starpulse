@@ -59,7 +59,7 @@ ingest path, which has its own token, is outside it). The pooled workers keep th
 stack size, where the previous server gave them 256 KiB: the free-threaded build's RSS check (`test_crowd_rss.py`) runs
 only on 3.14t. On that build mimalloc keeps freed pages resident until its purge delay lapses (3.6 GB resident
 against about 1 GB live in one deployment, 1.5-1.7 GB with no delay), so `serve` sets `MIMALLOC_PURGE_DELAY=0` in every
-child it supervises, the zygote included, unless its own environment already names a value, which the child keeps.
+child it supervises unless its own environment already names a value, which the child keeps.
 
 An event stream (`/api/events`, `/api/lanes`, `/api/held`) leaves that pool for as long as it stays open and is counted
 against `STREAM_LIMIT` (256) instead, so a crowd of long-lived streams never takes the worker a short request needs. A
@@ -101,11 +101,11 @@ The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--
 
 The background contexts share one process so the interpreter, the imports and the database stack are paid for once, not once per context. A context that fails stops its thread alone and is restarted in place; a config-only reload sends the `contexts` child `SIGHUP` and it re-reads the changed context's settings under the same pid, while a change to code any context runs, or to a setting a context cannot take in place, replaces the child.
 
-On Linux `serve` starts one preloaded process before any thread, `python -m starpulse.runtime.zygote`, that imports the `contexts` child's entry modules, those of every background context (the Page API's excepted), freezes what it imported out of the garbage collector's way and waits on a socket from `serve`. The `contexts` child is a fork of it that runs the same `starpulse worker contexts` main, so it shares the pages of the interpreter and imports until it writes to them. A child still dies with `serve`: it inherits the preloaded process's stdin pipe from `serve`. The Page API child forks from the preloaded process like every other child, and inherits `serve`'s listening socket through it. Where `fork` is not safe (macOS and Windows), or when the preloaded process fails to start or answer (`serve` logs one warning naming the preloaded process and starts every later child with `subprocess` instead), a child is a `subprocess` child with its own imports.
+Every child is a `subprocess` child with its own imports, on every platform, and still dies with `serve`: it holds the read end of a stdin pipe `serve` keeps the write end of. The Page API child inherits `serve`'s listening socket and the `contexts` child the GitHub webhook socket.
 
-`starpulse reload` replaces the children whose installed code or Board machine file (`[board] machine`, by content hash) changed, tells the `contexts` child whose only change is a live config block to re-read it, and re-executes `serve` when its own code changed, handing every child whose own closure and config did not change to the new `serve` by pid and stdin pipe, so a deploy restarts only what it changed: a `serve`-only change never ends the `contexts` worker. A reload that changes code any child runs also retires the preloaded process: it takes no more forks and exits when its last child has, and a new one that imports the installed code forks every replaced child, so a replaced child never runs the old preloaded code. See [Reloading a running serve](cli.md#reloading-a-running-serve).
+`starpulse reload` replaces the children whose installed code or Board machine file (`[board] machine`, by content hash) changed, tells the `contexts` child whose only change is a live config block to re-read it, and re-executes `serve` when its own code changed, handing every child whose own closure and config did not change to the new `serve` by pid and stdin pipe, so a deploy restarts only what it changed: a `serve`-only change never ends the `contexts` worker. See [Reloading a running serve](cli.md#reloading-a-running-serve).
 
-`serve` also holds each child to a memory limit, sampled every 5 s. Past the soft limit it replaces the child: the old one is stopped (killed after 10 s if it ignores `SIGTERM`), then the new one starts, so the new one finds the ports and leases the old one held free; the Page API alone starts its replacement beside it, on the shared socket. Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is the proportional set size on Linux (`Pss`, which divides each page the forked children share among the processes that map it, so the shared floor is not charged to every child) and the resident size on macOS, read with psutil; where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits.
+`serve` also holds each child to a memory limit, sampled every 5 s. Past the soft limit it replaces the child: the old one is stopped (killed after 10 s if it ignores `SIGTERM`), then the new one starts, so the new one finds the ports and leases the old one held free; the Page API alone starts its replacement beside it, on the shared socket. Past the hard limit it kills the child and starts a new one at once. Each action is logged as a warning naming the context, pid, size and limit. The size is the proportional set size on Linux (`Pss`, which divides each page processes share among the processes that map it) and the resident size on macOS, read with psutil; where there is no reader, as on Windows, `serve` logs one warning and runs the children without limits.
 
 | Child | `soft_mb` | `hard_mb` |
 | --- | --- | --- |
@@ -171,7 +171,7 @@ keeps no table of them. Three things add subjects:
 - A `PR_OPENED` machine event naming a task and a pull request: the holder gets the kind's `pr_opened` subjects, with
   `{task}` and `{pr}`.
 - `starpulse subscribe <subject>...`, which asks the bridge to add full subjects in one consumer write under the `explicit` origin until `starpulse unsubscribe
-  <subject>`; a task change leaves it alone.
+  <subject>`; a task change leaves it alone. A subject written `incident.<type>.<key>` (or `incident.<type>.>`) is taken whole, not relative to the board.
 
 A kind with no table, or a rule with no subject, subscribes to nothing. A session left with no subject has no consumer.
 A subject in a rule is relative to the board and may not name `starpulse`; `serve` refuses a rule naming a value its
@@ -181,9 +181,10 @@ alone writes a session's consumer; with no bridge running they exit unavailable.
 
 #### Incidents
 
-`starpulse incident open <type> <key>` tells the sessions of a shared fault, with no event in the log and no stream:
-it publishes `incident.<type>.<key>` (each token as `subscribe` writes one) to the NATS server as a plain message, so it
-works while the board's API is down. When NATS does not answer (the server is `serve`'s child, so a stopped `serve`
+`starpulse incident open <type> <key>` tells the sessions of a shared fault, with no event in the log:
+it publishes `incident.<type>.<key>` (each token as `subscribe` writes one) to the NATS server as a plain message, which
+the bridge's one stream also keeps (it takes `incident.>` beside the board's own subjects, an existing stream gaining it at
+the bridge's start), so it works while the board's API is down. When NATS does not answer (the server is `serve`'s child, so a stopped `serve`
 takes it down too) the verb still succeeds with `published` false once it holds the owner task, and exits 3 only when
 the board did not answer either. The owner task is the board's own: the verb
 creates one filed under source `incident.<type>.<key>` and claims it, so a second finder finds the open task, holds
@@ -197,7 +198,15 @@ task made or found, the verb parks each task in reach on it (`task park --until-
 incident, so the session is told by the task's move on its consumer and by the comment; the task actor releases it when
 the owner task is Done, as for any dependency. The owner task, the finder's own task and a task no session holds never
 wait. The verb prints `waiting` (the tasks parked) and `refused` (each task the board refused, with its reason), and a
-rerun parks the tasks that began since. A raw publish to the subject, with no verb, has no owner task and reaches no one.
+rerun parks the tasks that began since. A raw publish to the subject, with no verb, has no owner task.
+
+The same reach subscribes the sessions to the incident: the bridge gives the holder of a working-lane task in a type's
+reach the subject `incident.<type>.>` beside the task's own, and drops it when the task leaves the working lane or
+finishes, so a session told of one incident is not woken by the next after it has moved on. The notifier posts one line,
+`incident.<type>.<key>: task=<owner task> finder=<session> (<time>)`, and a session may also `subscribe` to one by hand.
+An incident older than six hours is acked with no line, so a consumer first granted the subject is not woken by every
+old key the stream still holds. The publish needs no API, but the line needs the bridge and the session's registration,
+so a stopped `serve` delivers nothing and the finder's owner task is the record.
 
 #### Notifying a session
 
@@ -424,8 +433,7 @@ GET /api/analytics/health[?hours=N][&stuck_hours=N]
                    its stays over the last `hours`, default 168, `open` of them still going and counted to now),
                    `throughput` {count, per_day} into a final state, `stuck` (tasks in a middle state for
                    `stuck_hours` or longer, default 24, each `counted_to_now`) and `warnings` (the history's
-                   recorded gaps). A `hours` or `stuck_hours` that is no positive number is 400; a history that
-                   does not keep lane changes for every task is 501
+                   recorded gaps). A `hours` or `stuck_hours` that is no positive number is 400
 GET /api/analytics/liveness[?hours=N][&stalled_minutes=N]
                    each working task's liveness and the Board's pace into Review (`liveness.liveness`): `tasks`
                    (every task in the working State with `state_idle_s` since its last lane change or work-machine
@@ -436,8 +444,7 @@ GET /api/analytics/liveness[?hours=N][&stalled_minutes=N]
                    seconds inside the window by the cause that held them (`working` inside the threshold), and
                    `stages` and `stalls`, the time those stays spent after each work-machine event and past the
                    threshold by cause. An `hours` or
-                   `stalled_minutes` that is no positive number, or `hours` past 8784, is 400; a history that does not keep every task's
-                   lane changes and events is 501
+                   `stalled_minutes` that is no positive number, or `hours` past 8784, is 400; a board with no working state is 501
 GET /api/analytics/sessions[?hours=N]
                    session and slice health from the harness OTLP exports the Claude Code receiver recorded
                    (`sessions.session_health`, `sessions.slice_health`) over the last `hours`, default 168:

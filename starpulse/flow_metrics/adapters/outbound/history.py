@@ -15,7 +15,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 from sqlalchemy import (
     Column,
@@ -75,7 +75,7 @@ from starpulse.machine_engine.model.stays import Dwell, LaneStays, Stay
 from starpulse.machine_engine.model.transitions import Table as Transitions
 from starpulse.machine_engine.model.transitions import lane_id
 
-__all__ = ["History", "machine_steps"]
+__all__ = ["HistoryStore", "machine_steps"]
 
 logger = logging.getLogger(__name__)
 
@@ -172,62 +172,6 @@ def _rechain(db: Connection, tasks: Iterable[str]) -> None:
         if old != before.get(key):
             db.execute(update(_lane_changes).where(c.id == id_).values(old_status=before.get(key)))
         before[key] = new
-
-
-class History(Protocol):
-    """Where `/api/history` reads a task's paths from."""
-
-    def lane_path(self, task: str) -> list[dict]: ...
-
-    def plan_revisions(self, task: str) -> int: ...
-
-    def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]: ...
-
-    def task_events(self, task: str, since: float, now: float) -> list[dict]: ...
-
-    def breaking_changes(self, *, open_only: bool = False) -> list[dict]: ...
-
-
-@runtime_checkable
-class LaneHistory(History, Protocol):
-    """A history that can list every task's lane changes: what the Ledger reads."""
-
-    def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
-        """`(task, at, from, to)` for every task's lane changes at or after epoch `since` (None: all), oldest first."""
-        ...
-
-
-@runtime_checkable
-class HealthHistory(LaneHistory, Protocol):
-    """A history that can also answer `/api/analytics/health`: the gaps it recorded as well as the lane changes."""
-
-    def gaps(self) -> list[dict]: ...
-
-
-@runtime_checkable
-class SummarisedHealth(HealthHistory, Protocol):
-    """A history that keeps lane summaries, so flow health reads a window of them and not every lane change."""
-
-    def health_stays(self, machine: dict, *, start: float, now: float, stuck_s: float) -> LaneStays: ...
-
-
-@runtime_checkable
-class LevelHistory(History, Protocol):
-    """A history that can also answer the trajectory analytics: each task's trajectory on a machine, by its reporting source."""
-
-    def level_runs(self, flow: str) -> list[Run]: ...
-
-
-@runtime_checkable
-class SummarisedLevel(History, Protocol):
-    """A history that keeps lane summaries, so the level reads the runs a window touches and not every lane change."""
-
-    def level_window(self, level: Level, *, now: float, window_s: float) -> RunWindow: ...
-
-    def level_answer(self, level: Level, key: Hashable, *, now: float, compute: Callable[[], _Answer]) -> _Answer:
-        """`compute()` for `key`, or the answer an earlier request computed in the same few seconds, as long as no
-        summary has been written since."""
-        ...
 
 
 def _in_id_order(db: Connection, query: Select, id_column: Column, after: int = 0) -> Iterator[Mapping[str, Any]]:

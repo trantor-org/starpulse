@@ -114,7 +114,7 @@ class RecordsMixin:
         self._search = search
 
     def read_lanes(self, lane_rows: Callable[..., list[LaneRow]]) -> None:
-        """Read the Ledger's lane moves through `lane_rows` (`LaneHistory.lane_rows`)."""
+        """Read the Ledger's lane moves through `lane_rows` (`HistoryStore.lane_rows`)."""
         self._lane_rows = lane_rows
 
     def alias(self, alias: str, task: str) -> None:
