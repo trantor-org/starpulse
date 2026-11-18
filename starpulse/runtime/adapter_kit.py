@@ -60,6 +60,9 @@ from starpulse.views.adapters.inbound.page_server import PageServer
 from starpulse.views.application.commands.moves import move_task
 from starpulse.views.ports.services import Services
 
+#: How long a settle or a served page waits for the Board writer to fold what was published.
+FOLDED_WITHIN_S = 30.0
+
 __all__ = [
     "BoardAdapterKit",
     "MachineEventsAdapterKit",
@@ -332,6 +335,8 @@ def serve(
             app, ("127.0.0.1", port), tls=tls, stopping=lambda: snapshots.announce("restarting", {"at": time.time()})
         )
         server.caught_up = snapshots.caught_up
+        if not snapshots.caught_up(FOLDED_WITHIN_S):  # the window `page_app` drew is folded, or a stream sends it late
+            raise TimeoutError(f"the Board writer folded no change in {FOLDED_WITHIN_S} s")
         server.start()
         yield server
     finally:
