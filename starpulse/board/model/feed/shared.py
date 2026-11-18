@@ -48,9 +48,6 @@ CLAIM_EXPIRIES_STATE = "board:claim-expiries"
 #: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
 LEDGER_WINDOW = 86400.0
 
-#: How many published changes the feed keeps for a page connecting on a snapshot older than the feed.
-_SENT_LOG = 512
-
 
 def pull_links(references: Iterable[str]) -> list[str]:
     """The pull request links among `references`."""

@@ -29,7 +29,6 @@ from starlette.responses import Response as Reply
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from starpulse.event_log.wake import StopEvent
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
 from starpulse.harness_telemetry.model.harnesses import Harnesses
@@ -371,11 +370,9 @@ class PageApp:
         gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
         seams: Api | None = None,
-        warm_stop: StopEvent | None = None,
         served: Callable[[], None] = lambda: None,
     ) -> None:
         self._grpc = grpc
-        self._warm_stop = warm_stop or StopEvent()
         self._served = served
         self._flows = flows
         self._files = _Build(directory=static, check_dir=False)
@@ -473,7 +470,6 @@ class PageApp:
     async def end_streams(self) -> None:
         """End every open stream and refuse a new one: a stopping server has no stream to wait for."""
         self._ending = True
-        self._warm_stop.set()
         for scope in list(self._scopes):
             scope.cancel()
 
@@ -537,6 +533,7 @@ def _not_found() -> Reply:
 
 def page_app(
     feed: BoardFeed,
+    snapshots: Snapshots,
     static: Path,
     history: History,
     window: HistoryWindow,
@@ -544,20 +541,10 @@ def page_app(
     services: Services = Services(),
     clock: Callable[[], float] = time.time,
     gate: Callable[[GateRequest], bool] | None = None,
-    snapshot_refresh_s: float = 0.0,
     served: Callable[[], None] = lambda: None,
 ) -> PageApp:
-    """The Page API over `feed`, calling `served` after each HTTP request; a `snapshot_refresh_s` above zero keeps the
-    snapshot warm, rebuilt that long after a feed change off the request path (a daemon thread that lives as long as
-    the process). The first snapshot is built before this returns,
-    so the server that serves the app is not announced ready on a cold one: a restart's queued connections wait on the
-    held socket and are answered warm, and a swap's old child serves until the new one is warm."""
+    """The Page API over `feed`, serving the snapshot and deltas the Board writer stored (`snapshots`), calling `served` after each HTTP request."""
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
-    snapshots = Snapshots(feed, refresh_s=snapshot_refresh_s)
-    warm_stop = StopEvent()  # set by `PageApp.end_streams`
-    if snapshot_refresh_s > 0:
-        snapshots.refresh()
-        threading.Thread(target=snapshots.keep_warm, args=(warm_stop,), name="snapshot-warm", daemon=True).start()
 
     def build_frame() -> str | None:
         build = page_build(static)
@@ -575,4 +562,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api, warm_stop, served)
+    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api, served)

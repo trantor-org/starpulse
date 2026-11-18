@@ -48,6 +48,8 @@ from starpulse.contracts.adapters import (
 )
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.machine_fold import Placer
+from starpulse.event_log.wake import StopEvent
+from starpulse.runtime.stored_snapshot import stored_snapshots
 from starpulse.flow_metrics.adapters.outbound.history import History, HistoryStore
 from starpulse.runtime.assembly import assemble as _assemble
 from starpulse.runtime.config import Config
@@ -311,8 +313,11 @@ def serve(
     log = EventLog(settings)
     board = board or _bare_board()
     board = replace(board, writer=board.writer or _no_writer, assign=board.assign or _no_writer)
+    stop = StopEvent()
+    snapshots = stored_snapshots(served, log, stop)
     app = page_app(
         served,
+        snapshots,
         static,
         history or HistoryStore(kept, machines),
         window or HistoryWindow(served, 6, log),
@@ -321,12 +326,15 @@ def serve(
         clock,
         gate,
     )
-    server = PageServer(app, ("127.0.0.1", port), tls=tls)
+    server = PageServer(
+        app, ("127.0.0.1", port), tls=tls, stopping=lambda: snapshots.announce("restarting", {"at": time.time()})
+    )
     server.start()
     try:
         yield server
     finally:
         server.close()
+        stop.set()
         log.close()
 
 

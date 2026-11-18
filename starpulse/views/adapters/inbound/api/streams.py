@@ -148,15 +148,16 @@ class Streams:
     def _events(self, by_ref: bool) -> Stream:
         """The Board's snapshot, then each change as it happens. `by_ref` sends the snapshot as `ref <path>`, the path its
         body is read from: a browser reads a long event on its main thread, a fetched body off it."""
-        served, encoded = self._snapshots.build()
-        while (attached := self._feed.watch_from(served.sent)) is None:
-            served, encoded = self._snapshots.build(fresh=True)
+        while True:
+            seq, encoded = self._snapshots.stored()
+            if (attached := self._snapshots.watch_from(seq)) is not None:
+                break  # else the deltas past that body were pruned: read the newer one stored
         missed, changes = attached
         key = self._snapshots.hold(encoded) if by_ref else None
         first = f"ref /api/events/body/{key}" if key is not None else encoded.body.decode()
 
         def release() -> None:
-            self._feed.unsubscribe(changes)
+            self._snapshots.unsubscribe(changes)
             if key is not None:
                 self._snapshots.release(key)
 
@@ -178,7 +179,7 @@ class Streams:
                 try:
                     yield self._event(*change)
                 finally:
-                    changes.task_done()  # `feed.announce` waits for the marks of what it queued
+                    changes.task_done()  # `Snapshots.announce` waits for the marks of what it queued
         except ValidationError:
             logger.exception("StarPulse: /api/events sent a body its model refuses; the stream ends")
 
@@ -206,13 +207,13 @@ class Streams:
         then again each time a change alters that view. A burst of changes settles before one reread, and the streams
         that reread for a change read one build of the columns."""
         served = self._column_views.take(self._snapshots)
-        while (attached := self._feed.watch_from(served.sent)) is None:
+        while (attached := self._snapshots.watch_from(served.seq)) is None:
             served = self._column_views.take(self._snapshots)
         missed, changes = attached
         if missed:  # the view must include what was published after the snapshot it started from
             served = self._column_views.take(self._snapshots)
         return Stream(
-            self._column_frames(event, assignee, states, served, changes), lambda: self._feed.unsubscribe(changes)
+            self._column_frames(event, assignee, states, served, changes), lambda: self._snapshots.unsubscribe(changes)
         )
 
     def _column_frames(
@@ -241,6 +242,6 @@ class Streams:
             except queue.Empty:
                 yield _PING
                 continue
-            changes.task_done()  # `feed.announce` waits for the marks of what it queued
+            changes.task_done()  # `Snapshots.announce` waits for the marks of what it queued
             if interest.touched_by(*change):
                 return

@@ -13,6 +13,7 @@ With a `store`, each fold also saves the encoded bodies and the changes it took,
 
 import logging
 import queue
+import threading
 import time
 from collections import Counter
 from collections.abc import Callable
@@ -78,6 +79,8 @@ class HeldSnapshot:
         self._day = 0.0
         self._stale = False
         self.snapshot: dict[str, Any] = {}
+        #: Set once the first build is stored (or failed): `run` then folds changes.
+        self.started = threading.Event()
 
     def build(self) -> None:
         """Take the snapshot whole, and the lanes and cold Done Tasks it is folded from."""
@@ -96,6 +99,7 @@ class HeldSnapshot:
         stop.listen(lambda: self._changes.put(None))  # type: ignore[arg-type]
         try:
             self._rebuilt([], restarted=True)
+            self.started.set()
             due = time.monotonic() + TICK  # a deadline, so a steady run of changes cannot keep the tick off
             while not stop.is_set():
                 try:

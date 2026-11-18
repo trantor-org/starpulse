@@ -26,8 +26,6 @@ class ColumnViews:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._served: Served | None = None
-        #: The snapshot last taken (`take`), which only the worker thread reads and replaces.
-        self._taken: Served | None = None
         self._inputs: tuple[Any, ...] | None = None
         self._columns: list[dict[str, Any]] = []
         #: One thread makes every view and frame: on a free-threaded interpreter a thread keeps the heap pages of what it
@@ -38,15 +36,9 @@ class ColumnViews:
         self._frames: dict[tuple[str | None, tuple[str, ...]], tuple[dict[str, Any], str]] = {}
 
     def take(self, snapshots: Snapshots) -> Served:
-        """The snapshot as of now, taken on the worker thread: the streams a change woke share the one taken at its
-        revision, so a change costs one read of the live set however many streams it wakes."""
-        return self._worker.submit(self._take, snapshots).result()
-
-    def _take(self, snapshots: Snapshots) -> Served:
-        taken = self._taken
-        if taken is None or taken.rev != snapshots.rev:
-            self._taken = taken = snapshots.take()
-        return taken
+        """The stored snapshot, decoded on the worker thread: the streams a change woke share the one decoded at its
+        sequence, so a change costs one decode however many streams it wakes."""
+        return self._worker.submit(snapshots.take).result()
 
     def render(self, served: Served, assignee: str | None, states: Sequence[str]) -> tuple[dict[str, Any], str]:
         """The view of `assignee` and `states` in `served` with its JSON, made on the one worker thread."""
