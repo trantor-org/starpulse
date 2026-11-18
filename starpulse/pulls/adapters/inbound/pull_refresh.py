@@ -3,6 +3,8 @@
 The body is `{"repo": "<owner>/<name>", "number": <pull request number>}` with `Authorization: Bearer <token>`, the
 token the config's `refresh_token_env` names. The PR store's thread reads that pull request alone, as soon as it is
 asked, and publishes it as the lifecycle events do; a request that is lost leaves the record as the events made it.
+`{"repo": "<owner>/<name>", "open": true}` asks for every stored open pull request of the repository instead, which a
+push to its default branch needs: GitHub sends no event for a pull request the push made conflicting.
 
 The answers: 202 when the request is queued; 401 for a missing or wrong token; 403 for a repository the instance does
 not track; 400 for a body that is not a repository and a pull request number. A refusal queues nothing.
@@ -17,6 +19,9 @@ from typing import Any
 #: The largest body accepted: a request is a repository name and a number.
 MAX_BODY = 1024
 _REPO = re.compile(r"[\w.-]+/[\w.-]+")
+_BAD_BODY = (
+    'the body must be {"repo": "<owner>/<name>", "number": <pull request number>} or {"repo": ..., "open": true}'
+)
 
 
 class PullRefresh:
@@ -24,7 +29,7 @@ class PullRefresh:
 
     `request` queues the read and says whether the repository is one the instance tracks."""
 
-    def __init__(self, token: str, request: Callable[[str, int], bool]) -> None:
+    def __init__(self, token: str, request: Callable[[str, int | None], bool]) -> None:
         self._token = token
         self._request = request
 
@@ -40,14 +45,12 @@ class PullRefresh:
             body = None
         fields = body if isinstance(body, dict) else {}
         repo, number = fields.get("repo"), fields.get("number")
-        if not (
-            isinstance(repo, str)
-            and _REPO.fullmatch(repo)
-            and isinstance(number, int)
-            and not isinstance(number, bool)
-            and number > 0
-        ):
-            return 400, {"error": 'the body must be {"repo": "<owner>/<name>", "number": <pull request number>}'}
+        if fields.get("open") is True and "number" not in fields:
+            number = None
+        elif not (isinstance(number, int) and not isinstance(number, bool) and number > 0):
+            return 400, {"error": _BAD_BODY}
+        if not (isinstance(repo, str) and _REPO.fullmatch(repo)):
+            return 400, {"error": _BAD_BODY}
         if not self._request(repo, number):
             return 403, {"error": f"this instance tracks no pull requests of {repo}"}
         return 202, {"accepted": True}

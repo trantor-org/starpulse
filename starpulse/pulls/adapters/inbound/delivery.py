@@ -127,19 +127,20 @@ def follow_saves(store: PullStore, log: EventLog, stop: StopEvent, after: int) -
     return _follow("pull-saved", log, SAVED_STREAM, after, handle, stop)
 
 
-def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable[[str, int], bool]:
-    """A refresh request for `serve`'s page: queued for the worker when `repo` is tracked, refused (False) otherwise."""
+def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable[[str, int | None], bool]:
+    """A refresh request for `serve`'s page: queued for the worker when `repo` is tracked, refused (False) otherwise.
+    No `number` asks for every open pull request of `repo`."""
 
-    def request(repo: str, number: int) -> bool:
+    def request(repo: str, number: int | None) -> bool:
         if repo not in tracked():
             return False
-        log.publish(REFRESH_STREAM, {"repo": repo, "number": number})
+        log.publish(REFRESH_STREAM, {"repo": repo, "number": "" if number is None else number})
         return True
 
     return request
 
 
-def follow_refreshes(log: EventLog, request: Callable[[str, int], Any], stop: StopEvent) -> threading.Thread:
+def follow_refreshes(log: EventLog, request: Callable[[str, int | None], Any], stop: StopEvent) -> threading.Thread:
     """Hand each refresh asked from now on to `request` (the pull sync's), on a thread until `stop`. A request asked
     since the last serving beat went unserved, whether no worker ran or the one that did was replaced before it served
     (it beats alive while it replays the Board), so those replay: a restart must not drop the close of a pull request
@@ -150,7 +151,8 @@ def follow_refreshes(log: EventLog, request: Callable[[str, int], Any], stop: St
 
     def handle(entry: Entry) -> None:
         if entry.id > head or entry.at >= (since or math.inf):
-            request(entry.fields["repo"], int(entry.fields["number"]))
+            number = entry.fields["number"]
+            request(entry.fields["repo"], int(number) if number != "" else None)
 
     return _follow("pull-refresh", log, REFRESH_STREAM, head if since is None else 0, handle, stop)
 

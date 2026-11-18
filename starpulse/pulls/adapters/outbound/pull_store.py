@@ -218,13 +218,18 @@ class PullSync:
         pinned = {f"{owner}/{repo.name}" for owner in owners for repo in self._repos}
         return sorted(linked | pinned | set(self._store.repos()))
 
-    def request(self, repo: str, number: int, *, urgent: bool = False) -> bool:
-        """Queue a read of pull request `number` of `repo` for the refresh thread to serve now; False, queueing
-        nothing, for a repository this store does not track. A pull request already waiting is not queued twice, and an
-        `urgent` one (a delivery's ask) is read before every other waiting one, which the events' rereads are."""
+    def request(self, repo: str, number: int | None, *, urgent: bool = False) -> bool:
+        """Queue a read of pull request `number` of `repo` for the refresh thread to serve now, or of each stored open
+        one when `number` is None; False, queueing nothing, for a repository this store does not track. A pull request
+        already waiting is not queued twice, and an `urgent` one (a delivery's ask) is read before every other waiting
+        one, which the events' rereads are."""
         if repo not in self.tracked():
             return False
-        self._put((repo, number), urgent)
+        if number is None:
+            for record in self._store.find(repo, state="OPEN"):
+                self._put((repo, record["number"]))
+        else:
+            self._put((repo, number), urgent)
         self._wake.set()
         return True
 
