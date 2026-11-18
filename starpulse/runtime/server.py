@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 import sys
+from _thread import interrupt_main
 from pathlib import Path
 
 from starpulse.runtime import launch, wiring
@@ -31,27 +32,6 @@ def serve_parser() -> argparse.ArgumentParser:
     listen_options(parser)
     parser.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     return parser
-
-
-def refuse_unassemblable(
-    parser: argparse.ArgumentParser, args: argparse.Namespace, config: Config, ready: wiring.Prepared
-) -> None:
-    """Exit with the reason when the page cannot be built from `config`, so `serve` fails on it as the Page API child would
-    rather than supervising a child that exits on it at every start."""
-    from sqlalchemy import create_engine  # noqa: PLC0415 - the database stack loads after the config is accepted
-
-    from starpulse.event_log.migrate import StoreNotMigrated, require_migrated  # noqa: PLC0415
-    from starpulse.event_log.opening import database_url  # noqa: PLC0415
-    from starpulse.runtime.assembly import declared  # noqa: PLC0415
-
-    base = args.config.parent if args.config else Path.cwd()
-    try:
-        require_migrated(create_engine(database_url(config.database_url, base)))
-        declared(config, base)
-    except StoreNotMigrated as exc:
-        parser.exit(1, f"{exc}\n")
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
 
 
 #: `machine_sync.REFUSED`, which this module cannot import without loading the database stack.
@@ -145,7 +125,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     os.environ[BOOT_ENV] = boot_token(os.environ, adopted)
     if adopted and "contexts" not in adopted:
         forget_old_starts(config, args)
-    ready = wiring.prepare(parser, args, config)
+    wiring.prepare(parser, args, config)
     commands = {**worker_commands(args.config), **bridge_commands(config, args.config)}
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         listening = listening or listen(parser, args)
@@ -157,6 +137,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     os.environ.pop(GITHUB_FD_ENV, None)
     held = {"contexts": webhook} if webhook else {}
     reader = Reader(args.config)
+    refused: list[str] = []
+
+    def refuse(name: str) -> None:
+        refused.append(name)
+        interrupt_main()  # wakes `stay_until_stopped`, which stops the other children
+
     supervisor = Supervisor(
         commands,
         sockets={"api": listening} if "api" in commands else {},
@@ -167,14 +153,15 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         limits=config.worker_memory,
         admit=lambda: admit_definitions(args),
         adopted=adopted or None,
+        refuse=refuse,
     )
     supervisor.start()
     try:
-        if "api" in commands:  # beside the children, which load the same stack: the page waits on them, not on this
-            refuse_unassemblable(parser, args, config, ready)
         stay_until_stopped()
     finally:
         supervisor.stop()
+    if refused:  # the child printed the reason on the stderr it shares with this process
+        parser.exit(1, f"serve: the {refused[0]} worker refused the config\n")
 
 
 if __name__ == "__main__":

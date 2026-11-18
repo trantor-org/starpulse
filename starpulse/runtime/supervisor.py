@@ -101,6 +101,7 @@ class _Child:
     failures: int = 0
     due: float = 0.0
     sampled: float = float("-inf")
+    launches: int = 0
 
 
 class Supervisor:
@@ -127,8 +128,11 @@ class Supervisor:
         sample_every: float = 5.0,
         admit: Callable[[], None] | None = None,
         adopted: Mapping[str, Adopted] | None = None,
+        refuse: Callable[[str], None] | None = None,
     ) -> None:
         self._admit = admit
+        self._refuse = refuse
+        self._refused = False
         self._adopted = dict(adopted or {})
         self._handed: set[str] = set()
         self._children = {name: _Child(command) for name, command in commands.items()}
@@ -164,11 +168,15 @@ class Supervisor:
     def tick(self, now: float) -> None:
         """Note each child that exited and start each one that is due, at monotonic time `now`."""
         with self._lock:
-            if self._halt.is_set():
+            if self._halt.is_set() or self._refused:
                 return
             for name, child in self._children.items():
                 if child.proc is not None and child.proc.poll() is not None:
                     code = child.proc.poll()
+                    if code == os.EX_CONFIG and child.launches == 1 and self._refuse is not None:
+                        self._refused = True  # the first run exited on the config: a restart would only exit on it again
+                        self._refuse(name)
+                        return
                     ran = now - child.started
                     child.failures = 0 if ran >= self._stable_after else child.failures + 1
                     child.due = now + self._delay(child.failures)
@@ -191,6 +199,7 @@ class Supervisor:
         else:
             child.proc = self._spawn(child.command, listening, ready)
         child.started = child.sampled = now
+        child.launches += 1
         logger.info("worker %s started as pid %s", name, child.proc.pid)
         self._nudge()
 

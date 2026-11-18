@@ -37,6 +37,8 @@ def _selection(number: int) -> str:
   p{number}: pullRequest(number: {number}) {{
     number state isDraft isInMergeQueue mergeable baseRefName headRefName headRefOid title body updatedAt createdAt mergedAt
     mergeCommit {{ oid }}
+    baseRef {{ target {{ oid }} }}
+    potentialMergeCommit {{ parents(first: 2) {{ nodes {{ oid }} }} }}
     files(first: 100) {{ totalCount pageInfo {{ hasNextPage endCursor }} nodes {{ path }} }}
     headRef {{ compare(headRef: "main") {{ aheadBy }} }}
     ciCommits: commits(last: 100) {{ nodes {{ commit {{ oid
@@ -75,6 +77,14 @@ def _paths(files: dict) -> list[str] | None:
     return paths if files["totalCount"] <= len(paths) else None
 
 
+def _tested_on_older_base(node: dict) -> bool:
+    """Whether GitHub's MERGEABLE answer was computed on a base commit that is no longer the base's tip: it recomputes
+    lazily after the base moves, so the answer can still be the one from before the push."""
+    base = ((node.get("baseRef") or {}).get("target") or {}).get("oid")
+    parents = {parent["oid"] for parent in ((node.get("potentialMergeCommit") or {}).get("parents") or {}).get("nodes", [])}
+    return node["mergeable"] == "MERGEABLE" and bool(base and parents) and base not in parents
+
+
 def _record(repo: str, node: dict, now: float, wanted: Iterable[str] = ()) -> dict[str, Any]:
     """The served record of one `pullRequest` node, its required checks reduced to a rollup; a context in `wanted` that
     no check on the head carries is a required check with result `missing`. A repository no rule requires a check of
@@ -103,6 +113,7 @@ def _record(repo: str, node: dict, now: float, wanted: Iterable[str] = ()) -> di
         "state": node["state"],
         "isDraft": node["isDraft"],
         "mergeable": node["mergeable"],
+        "mergeSettled": node["mergeable"] != "UNKNOWN" and not _tested_on_older_base(node),
         "baseRefName": node["baseRefName"],
         "headRefOid": node["headRefOid"],
         "title": node.get("title", ""),
@@ -285,7 +296,7 @@ class PullSync:
 
     def _read_requests(self) -> bool:
         """Read each queued pull request alone, and say whether any was queued; one that cannot be read is logged
-        and asked again later (`_retry`), as is an open one whose `mergeable` GitHub has not yet computed."""
+        and asked again later (`_retry`), as is an open one whose `mergeable` GitHub has not yet computed for its base's tip."""
         self._requeue_due()
         served = False
         while True:
@@ -295,7 +306,7 @@ class PullSync:
             served = True
             try:
                 record = refresh_pull(repo, number, self._store, self._clock(), self._graphql)
-                if record and record["state"] == "OPEN" and record["mergeable"] == "UNKNOWN":
+                if record and record["state"] == "OPEN" and not record["mergeSettled"]:
                     self._retry(repo, number)  # GitHub computes mergeability lazily after a push: ask again
                 else:
                     self._attempts.pop((repo, number), None)
