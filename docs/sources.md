@@ -765,18 +765,14 @@ What does not map cleanly:
 
 ## Show pull requests and their checks
 
-`python -m starpulse.cli.github_adapter` reads a repository's 30 most recently updated pull requests every `--interval`
-seconds (300 by default) and appends their events to the event log, beside the server:
-
-```sh
-uvx --from starpulse python -m starpulse.cli.github_adapter --repo trantor-org/starpulse
-```
+Pull request events reach the event log only through the App webhook: point the App's webhook at the listener described in
+[Save GitHub webhook deliveries](#save-github-webhook-deliveries). Nothing polls GitHub.
 
 - **`github-pull-request` machine.** `PR_OPENED`, then `CHECKS_PASSED` or `CHECKS_FAILED` once every check run on the
   head commit has completed, then `PR_MERGED` or `PR_CLOSED`.
-- **Keys.** An event is keyed by the task the pull request's branch names (`--key`, `--branch` and `--key-format`, as
-  for the Claude Code receiver), else by the pull request as a run (`owner/name#7`).
-- **Credentials** are `GITHUB_TOKEN` or `GH_TOKEN` (read access to pull requests, checks and Actions), and
-  `GITHUB_API_URL` for GitHub Enterprise Server. A re-read appends nothing already in the log.
+- **Keys.** An event is keyed by the task the pull request's branch names (the same key scheme as the Claude Code
+  receiver), else by the pull request as a run (`owner/name#7`).
+- **Deliveries** are verified with the App's webhook secret (`secret_env`). A redelivery appends nothing already in
+  the log.
 
 The two machine definitions ship in the package under `starpulse/machines/`.
