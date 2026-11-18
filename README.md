@@ -145,6 +145,7 @@ New trackers and producers are written against the board, machine-events and run
 | [Write an adapter](docs/adapters.md) | Board, machine-events and runs contracts, and the adapter kit |
 | [Build a consumer](docs/consumers.md) | Dashboards, alerts and reports built on the event log export |
 | [Security](docs/security.md) | Network exposure, request checks and the trust model |
+| [Benchmarks](docs/benchmarks.md) | The event-log, flow-read, page-latency and soak harnesses and their budgets |
 | [Compatibility](docs/public-surface.md) | The public surface and how releases keep it compatible |
 | [Development](docs/development.md) | Building and testing StarPulse from source |
 | [Development loop](docs/development-loop.md) | How StarPulse fits a workflow with many concurrent agent sessions |
