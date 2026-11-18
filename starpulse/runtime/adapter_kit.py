@@ -319,13 +319,14 @@ def serve(
     stop = StopEvent()
     snapshots = server = None
     try:
+        window = window or HistoryWindow(served, 6, log)  # it publishes a snapshot change: before the writer starts, it builds with it
         snapshots = stored_snapshots(served, log, stop)
         app = page_app(
             served,
             snapshots,
             static,
             history or HistoryStore(kept, machines),
-            window or HistoryWindow(served, 6, log),
+            window,
             board,
             Services(**services),
             clock,
