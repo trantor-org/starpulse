@@ -36,7 +36,7 @@ def backoff(attempts: int) -> int:
 
 @dataclass(frozen=True)
 class Fact:
-    """One thing GitHub said about a pull request: `event` is the machine event, `key` the SHA or check suite id it is about."""
+    """One thing GitHub said about a pull request: `event` is the machine event, `key` the SHA (with the close or reopen stamp) or check suite id it is about."""
 
     event: str
     repository: str
@@ -94,6 +94,9 @@ def _pull_request(repository: str, action: str, payload: dict[str, Any]) -> list
             else []
         )
     named = {"opened": "PR_OPENED", "reopened": "PR_REOPENED", "closed": "PR_CLOSED"}.get(action)
+    if action in {"reopened", "closed"}:  # the same head can close and reopen again, so the stamp tells one from the next
+        stamp = _text(pull.get("closed_at" if action == "closed" else "updated_at"))
+        head = f"{head}@{stamp}" if head and stamp else head
     return [Fact(named, repository, number, head, bot)] if named and head else []
 
 
