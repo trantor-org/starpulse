@@ -15,7 +15,8 @@ The counts, each task's lane and each judged key's states are saved every `CHECK
 of each stream they cover (`CHECKPOINT`), so a restart reads only what was appended after them instead of replaying the
 whole retention. A checkpoint of another `CHECKPOINT_VERSION` or other machines, or one whose last entry of a stream
 the log no longer retains (so the entries after it may have been pruned unread), is ignored and the retention replayed. A resumed count still holds the entries pruned since it was saved, as
-the process that saved it did.
+the process that saved it did, and so does the review-move count after an ignored checkpoint: the replay counts only
+the moves after the ignored one's last lane entry, so a restart never lowers that counter.
 """
 
 import hashlib
@@ -104,6 +105,9 @@ class Conformance:
         self._entered: dict[str, int] = dict.fromkeys(entered, 0)
         self._working, self._review = working, review
         self._review_moves = 0
+        #: The lane-stream entry the review moves already counted reach: a replay over an ignored checkpoint counts
+        #: only the moves after it, so the exported counter never falls.
+        self._review_after = 0
         self._clock = clock
         self._open_tasks = open_tasks
         self._work = set(work)
@@ -152,7 +156,7 @@ class Conformance:
                     self._enter(task, entry.at)
             if lane in self._entered:
                 self._entered[lane] += 1
-            if self._review and source == self._working and lane == self._review:
+            if self._review and source == self._working and lane == self._review and entry.id > self._review_after:
                 self._review_moves += 1
             if BOARD not in self._names or source is None:
                 return
@@ -291,12 +295,16 @@ class Conformance:
         """Take the state of the `checkpoint` `held` and return the cursors to read on from; None, taking nothing,
         when it is missing, of another version or other machines, or when a stream's `first` retained entry lies past
         its cursor: the log prunes oldest first, so an entry after the cursor may have been pruned uncounted."""
-        if not isinstance(held, dict) or held.get("version") != CHECKPOINT_VERSION or held.get("basis") != self._basis:
+        if not isinstance(held, dict):
+            return None
+        if held.get("version") != CHECKPOINT_VERSION or held.get("basis") != self._basis:
+            self._keep_review_moves(held)
             return None
         cursors = {stream: int(cursor) for stream, cursor in held["cursors"].items() if stream in _STREAMS}
         for stream, cursor in cursors.items():
             oldest = first.get(stream)
             if oldest is None or oldest > cursor:
+                self._keep_review_moves(held)
                 return None
         with self._lock:
             self._cursors = dict(cursors)
@@ -314,6 +322,12 @@ class Conformance:
             for name, judge in self._judges.items():
                 judge.restore(held["where"].get(name, {}))
         return cursors
+
+    def _keep_review_moves(self, held: Mapping[str, Any]) -> None:
+        cursor = held.get("cursors", {}).get(lane_events.STREAM)
+        if isinstance(held.get("review_moves"), int) and isinstance(cursor, int):
+            with self._lock:
+                self._review_moves, self._review_after = held["review_moves"], cursor
 
     def save(self, log: EventLog) -> None:
         """Save the `checkpoint` under `CHECKPOINT` when an entry was handled since the last save; a failed write is
