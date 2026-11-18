@@ -16,9 +16,7 @@ PRESSURE_FILES = ("/proc/pressure/cpu", "/proc/pressure/memory")
 TRIGGER = b"some 300000 2000000\0"
 
 
-def watch(
-    stop: StopEvent, wake: threading.Event, files: Sequence[str] = PRESSURE_FILES
-) -> threading.Thread | None:
+def watch(stop: StopEvent, wake: threading.Event, files: Sequence[str] = PRESSURE_FILES) -> threading.Thread | None:
     """Set `wake` each time a trigger on `files` fires, on a daemon thread that ends with `stop`; None when the host has
     no PSI or refuses a trigger, which leaves the sampler to the events that wake it."""
     poller = select.poll()
@@ -37,17 +35,25 @@ def watch(
         return None
     poller.register(ended, select.POLLIN)
 
+    closing = threading.Lock()
+    closed = False
+
     def run() -> None:
+        nonlocal closed
         try:
             while ended not in dict(poller.poll()):
                 wake.set()
         finally:
             stop.unlisten(end_wait)
-            for fd in (*held, ended, end):
-                os.close(fd)
+            with closing:
+                closed = True
+                for fd in (*held, ended, end):
+                    os.close(fd)
 
-    def end_wait() -> None:
-        os.write(end, b"x")
+    def end_wait() -> None:  # a `set` that copied it before `unlisten` may call it after the close
+        with closing:
+            if not closed:
+                os.write(end, b"x")
 
     stop.listen(end_wait)
     if stop.is_set():  # a stop set before `listen` calls nothing

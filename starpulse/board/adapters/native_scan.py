@@ -236,7 +236,7 @@ class NativeScan:
         not left waiting on a file that is gone. Only their ids are kept, never their text. `refusal` answers, from a task's front matter and body and a lane,
         the update a rule that refuses the move there makes to it (`Move.actors` included), which the task's move to that
         lane then carries."""
-        self.root = root
+        self.root = root.absolute()
         self.config = read_config(root, statuses)
         self._team = require_project(root, self.config)
         self._put = put

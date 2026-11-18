@@ -1,9 +1,5 @@
-"""The one-time move of a task's key label to its `source`, run by `starpulse migrate`.
-
-A task carrying a label that fully matches the board's `source_labels` pattern and holding no `source` has that label
-moved to `source`. A task whose `source` is set, or that carries more than one such label, is left alone and reported.
-Nothing else in the task file changes, and a second run finds no label to move.
-"""
+"""The one-time move of a task's key label to its `source`, run by `starpulse migrate`; the StarPulse Operations doc's Board
+Lane Disagrees With the Task File section holds the contract."""
 
 import logging
 import os
