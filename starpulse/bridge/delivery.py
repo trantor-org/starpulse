@@ -2,22 +2,27 @@
 
 A pass lists the consumers with messages waiting, and for each one the `Route` knows a way to reach (the runtime builds
 it from the sessions' registrations) fetches a batch and hands it over. The batch is acknowledged only when the handler
-took it; otherwise the server redelivers it after its ack wait, so a session that was unreachable, or still starting, is
-told when it can be. A consumer with no route is not touched and its events stay on it.
+took it; otherwise the server redelivers it after its ack wait, so a one-shot deadline at the consumer's ack wait runs
+the next pass. A consumer with no route is not touched and its events stay on it until a route is registered.
+
+A pass runs when `wake` is called (the bridge published an entry, or a session registered its route), when a
+deadline fires, and again after each acknowledged batch, which may have left events waiting.
 """
 
 import logging
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
 from starpulse.bridge.consumers import all_consumers
 from starpulse.bridge.publisher import Publisher, Unavailable
-from starpulse.event_log.wake import StopEvent
+from starpulse.event_log.deadlines import Deadlines
+from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 
 logger = logging.getLogger(__name__)
 
-INTERVAL_S = 1.0
 _BATCH = 100
 _FETCH_TIMEOUT_S = 0.2
 
@@ -35,7 +40,8 @@ class Fetched:
 
 
 class Mailbox(Protocol):
-    def waiting(self) -> list[str]: ...
+    def waiting(self) -> dict[str, float]:
+        """The consumers with messages waiting, each with the ack wait the server redelivers an unacknowledged one after."""
 
     def fetch(self, name: str) -> Fetched: ...
 
@@ -45,12 +51,17 @@ Route = Callable[[str], Handler | None]
 
 
 class Delivery:
-    def __init__(self, mailbox: Mailbox, route: Route) -> None:
-        self._mailbox, self._route = mailbox, route
+    def __init__(self, mailbox: Mailbox, route: Route, *, clock: Callable[[], float] = time.time) -> None:
+        self._mailbox, self._route, self._clock = mailbox, route, clock
         self._unrouted: set[str] = set()
+        self._woken = threading.Event()
+        self._deadlines = Deadlines(lambda _name: self.wake(), clock=clock)
+
+    def wake(self) -> None:
+        self._woken.set()
 
     def once(self) -> None:
-        for name in self._mailbox.waiting():
+        for name, ack_wait in self._mailbox.waiting().items():
             handler = self._route(name)
             if handler is None:
                 if name not in self._unrouted:
@@ -62,10 +73,35 @@ class Delivery:
                 fetched = self._mailbox.fetch(name)
                 if fetched.events and handler(fetched.events):
                     fetched.ack()
+                    self.wake()
+                    continue
             except Unavailable:
                 raise
             except Exception:  # noqa: BLE001 — one session's failure never stops delivery to the rest
                 logger.exception("delivery: session %s failed", name)
+            self._deadlines.arm(name, self._clock() + ack_wait)
+
+    def run(self, stop: StopEvent) -> None:
+        """Pass over the consumers each time woken, and once at start, until `stop` is set; a pass that failed (the
+        server did not answer) is tried again after `RETRY_DELAY`."""
+        stop.listen(self._woken.set)
+        self._deadlines.start(stop, thread_name="bridge-delivery-deadlines")
+        self._woken.set()
+        while True:
+            self._woken.wait()
+            self._woken.clear()  # a wake during the pass below runs the next pass
+            if stop.is_set():
+                return
+            try:
+                self.once()
+            except Unavailable as exc:
+                logger.warning("delivery: the NATS server did not answer: %s", exc)
+            except Exception:  # noqa: BLE001 — a failed pass never ends delivery
+                logger.exception("delivery: a pass failed")
+            else:
+                continue
+            stop.wait(RETRY_DELAY)
+            self._woken.set()
 
 
 class JetStreamMailbox:
@@ -74,11 +110,13 @@ class JetStreamMailbox:
     def __init__(self, link: Publisher, stream: str) -> None:
         self._link, self._stream = link, stream
 
-    def waiting(self) -> list[str]:
+    def waiting(self) -> dict[str, float]:
         async def read(js):  # noqa: ANN001, ANN202
             return await all_consumers(js, self._stream)
 
-        return [info.name for info in self._link.run(read) if info.num_pending or info.num_ack_pending]
+        return {
+            info.name: info.config.ack_wait for info in self._link.run(read) if info.num_pending or info.num_ack_pending
+        }
 
     def fetch(self, name: str) -> Fetched:
         held = []
@@ -101,15 +139,3 @@ class JetStreamMailbox:
         return Fetched(
             [Event(message.subject, message.data) for message in held], lambda: self._link.run(acknowledge)
         )
-
-
-def run(delivery: Delivery, stop: StopEvent) -> None:
-    """Pass over the consumers every `INTERVAL_S` until `stop` is set; a server that does not answer is tried again."""
-    # adr-exempt: pending
-    while not stop.wait(INTERVAL_S):
-        try:
-            delivery.once()
-        except Unavailable as exc:
-            logger.warning("delivery: the NATS server did not answer: %s", exc)
-        except Exception:  # noqa: BLE001 — a failed pass never ends delivery
-            logger.exception("delivery: a pass failed")
