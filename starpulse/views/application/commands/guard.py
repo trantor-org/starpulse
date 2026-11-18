@@ -10,6 +10,7 @@ JSON, not an object, or holds an unnamed key, a field of the wrong type or a bla
 import functools
 import ipaddress
 import logging
+import os
 import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Concatenate, NamedTuple
@@ -79,6 +80,7 @@ def not_held(feed: BoardFeed, task: str) -> tuple[int, dict[str, str]]:
     """The refusal for a task `held_task` did not find: 503, which a client sends again, while the replay has not ended,
     else 404."""
     if feed.wait_replayed(0):
+        logger.warning("%s not on the board: 404 from pid %d", task, os.getpid())
         return 404, {"error": f"{task} is not on the board"}
     return 503, {"error": f"{task} is not on the board yet: the board is replaying its feed, retry"}
 
