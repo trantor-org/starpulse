@@ -117,17 +117,22 @@ is public for the names listed here:
 - `starpulse.runtime.write_instance`: `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).
 - `starpulse.runtime.config`: loading the config file and the runs adapter a `type` names.
 - `starpulse.runtime.closure`: `CONFIG_OWNERS` (the processes that read each key) with `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).
+- `starpulse.runtime.session_delivery`: `line_for(event)`, the line the bridge writes into a holding session for a delivered event, for a consumer that checks what a session reads.
 - `starpulse.bridge.subjects`: `subject_for(board, entry)`, the subject the bridge publishes an event-log entry on, or `None`.
 - `starpulse.bridge.subscriptions`: `parse_rules(table)`, the rules of each task kind from the `[bridge.subscriptions.<kind>]` tables, and `expand(board, templates, **values)`, their full subjects, for a consumer that checks its own subscription rules.
+- `starpulse.bridge.delivery`: `Event`, the delivered event (`subject` and `payload`) that `line_for` renders.
 - `starpulse.github.adapters.outbound.queue`: `SqlQueue(engine, consumer)`, the per-consumer queue over the durable GitHub
   inbox, for a consumer outside the package. Method contract: `claim(limit)` returns the due `Entry` list, oldest first;
   `complete(delivery_id)`, `skip(delivery_id, reason)` and `fail(delivery_id, error, fatal=, exhausted=)` settle one
   (`fail` returns the new status); `requeue(delivery_id)` and `dismiss(delivery_id)` return whether a row changed.
 - `starpulse.github.adapters.outbound.inbox`: the `github_inbox` table and `SqlInbox`.
 - `starpulse.github.ports.events`: `Entry`, the `delivery` and its `attempts`, and the `Queue` protocol.
+- `starpulse.github.model.events`: `CONSUMER`, the queue name the GitHub inbox consumer registers under, for a consumer outside the package.
 - `starpulse.pulls.adapters.outbound.pull_store`: `refresh_pull(repo, number, store, now, graphql)`, which reads one pull request from GitHub and saves it, for a test that checks a fixture survives the real pull reader.
 - `starpulse.pulls.adapters.outbound.pulls`: `PullStore`, the store `refresh_pull` saves to.
+- `starpulse.pulls.adapters.inbound.task_actor`: `ACTOR`, the writer name the task actor's moves and refusals carry, for a test that publishes as it.
 - `starpulse.cli.demo`: `FILL`, the tasks each lane of the public demo's board holds, and `TITLES`, the titles it cycles through, for a fixture board that matches the demo's scale.
+- `starpulse.cli.agent_subscribe`: `subscribed(session, subject, config=None)`, whether a session is subscribed to a subject, for a command that must not subscribe it twice.
 
 ### Moved in 0.y
 
