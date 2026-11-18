@@ -1,35 +1,14 @@
-"""The GitHub adapter: a repository's pull requests and their checks become events on the pull-request machine.
+"""The GitHub adapter: a pull request and its check runs become events on the pull-request machine.
 
-    python -m starpulse.cli.github_adapter --repo OWNER/NAME [--interval 300] [--config FILE] [--key RE --branch RE --key-format FMT]
-
-Every `--interval` seconds it reads the repository's 30 most recently updated pull requests and appends their events
-to the event log in the database `--config` names (default `starpulse.toml` in the working directory), the store
-`starpulse serve` reads. Reads are signed in with `GITHUB_TOKEN` or `GH_TOKEN` when one is set; without, GitHub's lower
-unauthenticated rate limit applies. A second read of a pull request appends nothing new: each event's id is derived
-from the GitHub record behind it.
-
-The `github-pull-request` machine follows a pull request: opened, its checks passing or failing, merged or closed. An
-event is keyed by the task the pull request's branch names under the adapter's `TaskKeys`, else by the pull request
-itself (`owner/name#7`).
-
+Events arrive through the App webhook, which hands the recorded pull request and its check runs to `GitHubAdapter.events`.
 The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.md` or its branch names.
 """
 
-import argparse
-import os
-import re
-import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.stamps import epoch_of
-from starpulse.event_log import events as machine_events
-from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.opening import open_event_log
-from starpulse.github.adapters.outbound.rest import Transport, connect, get, repo_of
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 
@@ -56,7 +35,7 @@ class GitHubAdapter:
     keys: TaskKeys
 
     def events(self, repo: str, bundle: dict) -> list[dict]:
-        """The events `bundle` (`pull` and `check_runs`, as `read` returns it) moves the machines by, oldest first."""
+        """The events `bundle` (`pull` and `check_runs`, as GitHub answers them) moves the machines by, oldest first."""
         pull = bundle["pull"]
         pr = f"{repo}#{pull['number']}"
         task = self.keys.for_branch(pull["head"]["ref"])
@@ -87,74 +66,3 @@ class GitHubAdapter:
         elif pull["closed_at"]:
             events.append(event("github-pull-request", "PR_CLOSED", "github", pull["closed_at"], ""))
         return sorted(events, key=lambda e: e["time"])
-
-
-#: The page of check runs one read takes; GitHub's largest page.
-_PAGE = 100
-
-
-def read(transport: Transport, repo: str, number: int) -> dict:
-    """Pull request `number` of `repo` as `GitHubAdapter.events` takes it: the pull and the check runs of its head commit,
-    each as GitHub answers."""
-    pull = get(transport, f"/repos/{repo}/pulls/{number}")
-    return {
-        "pull": pull,
-        "check_runs": get(transport, f"/repos/{repo}/commits/{pull['head']['sha']}/check-runs?per_page={_PAGE}"),
-    }
-
-
-#: How many of a repository's most recently updated pull requests one poll reads.
-RECENT = 30
-
-
-def poll(transport: Transport, repo: str, adapter: GitHubAdapter, log: EventLog, seen: dict[int, str]) -> None:
-    """Append the events of `repo`'s recently updated pull requests to `log`.
-
-    An open pull request is read every poll, since its checks finish without touching its update time; a closed one only
-    when its `updated_at` is not the one `seen` holds. An event already in the log is not appended again.
-    """
-    listed = get(transport, f"/repos/{repo}/pulls?state=all&sort=updated&direction=desc&per_page={RECENT}")["items"]
-    for pull in listed:
-        if pull["state"] != "open" and seen.get(pull["number"]) == pull["updated_at"]:
-            continue
-        for event in adapter.events(repo, read(transport, repo, pull["number"])):
-            fields = {k: v for k, v in event.items() if k != "event_id" and v is not None}
-            log.publish(machine_events.STREAM, fields, event_id=event["event_id"])
-        seen[pull["number"]] = pull["updated_at"]
-
-
-def main(
-    argv: list[str] | None = None,
-    *,
-    discover: Callable[[Path | None], Path | None],
-    load: Callable[[Path | None], Any],
-) -> None:  # pragma: no mutate block — polling process boundary
-    """Poll the repository; `discover` and `load` read the root config, which the runtime owns and passes in."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("--repo", required=True, help="the repository to read, `owner/name` or its URL")
-    parser.add_argument("--interval", type=float, default=300.0, help="seconds between reads")
-    parser.add_argument("--config", type=Path, help="the TOML config whose database holds the event log")
-    parser.add_argument("--key", default=r"TASK-\d+", help="a whole task key")
-    parser.add_argument(
-        "--branch", default=r"(?i)(?:refs/heads/)?(?:[\w.-]+/)*task-(\d+)", help="group 1 names the key"
-    )
-    parser.add_argument("--key-format", default="TASK-{}", help="wraps the branch's group 1 into the key")
-    args = parser.parse_args(argv)
-    keys = TaskKeys(key=re.compile(args.key), branch=re.compile(args.branch), key_format=args.key_format)
-    try:
-        path = discover(args.config)
-        log = open_event_log(load(path).database_url, path)
-    except (OSError, ValueError) as exc:
-        parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
-
-    repo = repo_of(args.repo)
-    transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
-    adapter, seen = GitHubAdapter(keys), {}
-    print(f"github adapter reading {repo} every {args.interval:g}s", flush=True)
-    while True:
-        try:
-            poll(transport, repo, adapter, log, seen)
-        except OSError as exc:  # GitHub unreachable or refused: the next poll tries again
-            print(f"github adapter: {exc}", flush=True)
-        # adr-exempt: pending
-        time.sleep(args.interval)
