@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.cli.agent_wire import CliError
+from starpulse.cli.project import Project
 from starpulse.runtime.config import ConfigError, discover, load
 
 #: What a caller does for a step the project has not mapped.
@@ -71,7 +72,7 @@ def _superproject_hint(path: Path, name: str) -> str:
 
 def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Run one named command; the child's output streams to stderr and the document is its name, argv, exit and seconds."""
-    commands = _mapped(args)
+    project = _mapped(args)
     values = _Values()
     if args.task is not None:
         values["task"] = args.task
@@ -80,7 +81,7 @@ def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
         if not sep:
             raise CliError("usage", f"--arg {pair!r} is not NAME=VALUE")
         values[name] = value
-    argv = _argv(commands[args.name], values, args.args)
+    argv = _argv(project.commands[args.name], values, args.args)
     started = time.monotonic()
     try:
         done = subprocess.run(argv, stdout=2, check=False)
@@ -92,25 +93,25 @@ def run(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
         "exit": done.returncode,
         "seconds": round(time.monotonic() - started, 3),
         "ok": done.returncode == 0,
+        "pending": done.returncode == project.pending.get(args.name),
     }
 
 
-def _mapped(args: argparse.Namespace) -> Mapping[str, tuple[str, ...]]:
+def _mapped(args: argparse.Namespace) -> Project:
     path = discover(args.config)
     try:
-        commands = load(path).project.commands
+        project = load(path).project
     except (ConfigError, OSError, ValueError) as exc:
         raise CliError("refused", f"config: {exc}") from exc
-    if args.name not in commands:
+    if args.name not in project.commands:
         where = _superproject_hint(path or Path.cwd() / "starpulse.toml", args.name)
         raise CliError("not_found", f"no [project.commands] entry {args.name}{where}; do the step as {FALLBACK} says", fallback=FALLBACK)
-    return commands
+    return project
 
 
 def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """What `run NAME` needs: the `--arg` names its argv holds and, when it takes a `{body}`, the project's PR template."""
-    commands = _mapped(args)
-    argv = commands[args.name]
+    argv = _mapped(args).commands[args.name]
     fields = [f for element in argv for _, f, _, _ in string.Formatter().parse(element) if f]
     needed = list(dict.fromkeys(f for f in fields if f not in _FILLED))
     flags = "".join(f" --arg {name}=<{name}>" for name in needed)

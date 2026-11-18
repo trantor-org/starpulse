@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 __all__ = ["Project", "ProjectError", "parse_project"]
 
-_KEYS = {"commands"}
+_KEYS = {"commands", "pending"}
 _NAME = re.compile(r"[a-z][a-z0-9]*(-[a-z0-9]+)*")
 
 
@@ -24,6 +24,8 @@ class ProjectError(ValueError):
 class Project:
     commands: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     """Each configured step's argv, by name."""
+    pending: Mapping[str, int] = field(default_factory=dict)
+    """The exit code a step ends on while its work is still running, by name; any other non-zero exit is a failure."""
 
 
 def _argv(name: str, raw: object) -> tuple[str, ...]:
@@ -58,4 +60,12 @@ def parse_project(raw: object) -> Project:
     for name in table:
         if not _NAME.fullmatch(name):
             raise ProjectError(f"project.commands: name {name!r} is not lowercase words joined by hyphens")
-    return Project({name: _argv(name, argv) for name, argv in table.items()})
+    pending = raw.get("pending", {})
+    if not isinstance(pending, dict):
+        raise ProjectError("project.pending: must be a table")
+    for name, code in pending.items():
+        if name not in table:
+            raise ProjectError(f"project.pending: {name!r} is not a [project.commands] step")
+        if not isinstance(code, int) or isinstance(code, bool) or code < 1:
+            raise ProjectError(f"project.pending.{name}: an exit code is an integer of 1 or more")
+    return Project({name: _argv(name, argv) for name, argv in table.items()}, pending)

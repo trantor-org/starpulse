@@ -102,7 +102,7 @@ Every `/api` body is a pydantic model under `starpulse/contracts/api/dto/`, and 
 The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts.api`
 (writes `starpulse/schemas/api.schema.json`) and `pnpm --dir starpulse/web run gen:types` (writes `starpulse/web/src/api/types.gen.ts`),
 and commit both. CI's `static-checks` job regenerates them and fails on any difference.
-[`bench/`](../bench/README.md) holds the instance event-log and flow-read benchmarks, the page-latency harness that times every
+[`bench/`](benchmarks.md) holds the instance event-log and flow-read benchmarks, the page-latency harness that times every
 request and page surface against the 50 ms budget, and a Locust load test that holds that budget under many viewers.
 
 [`design/`](../design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`) and, behind
@@ -127,6 +127,6 @@ history. [`bench/flow_reads.py`](../bench/flow_reads.py) records 10 thousand, 1 
 a fixed rate into a SQLite store and reads the default week of each: the CPU p95 of health, the level and its trajectories
 at 1 million and at 10 million stayed within 1.6x of the p95 at 10 thousand in every run (one run: health 6.5, 6.3 and
 8.0 ms; level 171, 142 and 180 ms; trajectories 164, 135 and 155 ms), and no read touches the two raw tables. The full table and how to
-rerun it are in [`bench/README.md`](../bench/README.md#flow-reads). What still grows with the history: opening a store
+rerun it are in [Benchmarks](benchmarks.md#flow-reads). What still grows with the history: opening a store
 whose summaries are empty folds every row once (about 6 minutes for 10 million lane changes), and a history that
 supplies only `lane_rows` and `level_runs`, or a level on a machine other than the Board, is read whole.

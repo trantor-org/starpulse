@@ -151,7 +151,7 @@ if TYPE_CHECKING:
     from starpulse.runtime.config import Config
 
 #: What each exit code means, as the manifest says it.
-EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}
+EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found", 5: "a command's child ended pending"}
 #: Seconds an analytics read may take: the sessions route computes over the telemetry window and answers in ~15.
 _ANALYTICS_TIMEOUT_S = 60.0
 _STEPS_PAGE = 5000
@@ -1656,10 +1656,11 @@ def _parser() -> argparse.ArgumentParser:
         command_verbs,
         "run",
         "run the argv `[project.commands]` maps NAME to, offline, in this directory; its output goes to stderr. "
-        "An unknown NAME exits 4 with a `fallback`: do the step as the project's AGENTS.md says",
+        "An unknown NAME exits 4 with a `fallback`: do the step as the project's AGENTS.md says. A child that exits "
+        "the code `[project.pending]` declares for NAME, `deliver`'s pending verdict, makes this exit 5, never 1",
         _later("starpulse.cli.agent_commands", "run"),
-        ("name", "argv", "exit", "seconds", "ok"),
-        (0, 1, 2, 3, 4),
+        ("name", "argv", "exit", "seconds", "ok", "pending"),
+        (0, 1, 2, 3, 4, 5),
         reads_server=False,
     )
     command_run.add_argument("name", help="the step's name (`deliver`)")
@@ -1845,7 +1846,8 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] = os.envi
             for line in result:
                 print(json.dumps(line), flush=True)
             return 0
-        document, status = result, 0 if result.get("ok", True) else 1  # only `doctor` reports `ok`
+        # only `doctor` and `command run` report `ok`; a pending child is not a failure
+        document, status = result, 0 if result.get("ok", True) else 5 if result.get("pending") else 1
     except agent_wire.CliError as exc:
         document, status = {"error": str(exc), "code": exc.code, **exc.extra}, _ERROR_EXIT[exc.code]
     except KeyboardInterrupt:  # the one way a `watch` ends well
