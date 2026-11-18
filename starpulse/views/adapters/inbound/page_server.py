@@ -222,6 +222,7 @@ class PageServer:
         with socket.socket(self._quic.family, socket.SOCK_DGRAM) as nudge:
             while True:
                 nudge.sendto(b"", self.server_address)
+                # adr-exempt: handshake
                 await asyncio.sleep(NUDGE_S)
 
     async def _wait_and_wind_down(self) -> None:

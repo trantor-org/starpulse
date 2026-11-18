@@ -49,6 +49,7 @@ def exited(pid: int) -> bool:
     """Whether `pid` has exited, without waiting."""
     watch = ExitWatch(pid)
     try:
+        # adr-exempt: handshake
         return watch.wait(0)
     finally:
         watch.close()

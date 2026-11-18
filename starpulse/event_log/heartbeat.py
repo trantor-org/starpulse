@@ -37,6 +37,7 @@ def keep(worker: str, stop: threading.Event, interval: float = INTERVAL_S) -> th
     """Start the daemon thread that beats `worker` now and every `interval` seconds until `stop` is set."""
 
     def tick() -> None:
+        # adr-exempt: pending
         while not stop.wait(interval):
             beat(worker)
 

@@ -52,6 +52,7 @@ def _loop(
         while not stop.is_set():
             run_pass(kinds, housekeeping, metrics)
             publish_metrics(log, metrics.exposition() + kind_series(kinds))
+            # adr-exempt: sweeper
             stop.wait(interval_s)
     finally:
         lease.release()

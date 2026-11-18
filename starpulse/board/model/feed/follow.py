@@ -93,6 +93,7 @@ def follow(
                 break
             except Exception as exc:  # the database is unreachable; the next attempt retries
                 logger.warning("StarPulse: cannot reach the event log for %s, retrying: %s", stream, exc)
+                # adr-exempt: retry
                 stop.wait(RETRY_DELAY)
         else:
             return

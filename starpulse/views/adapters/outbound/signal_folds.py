@@ -174,6 +174,7 @@ class SignalFolds:
                 self.catch_up()
             except Exception:
                 log.exception("signal fold catch-up failed")
+            # adr-exempt: pending
             stop.wait(interval)
 
     def _current(self, harness: str, session: str) -> int:

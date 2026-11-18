@@ -480,6 +480,7 @@ class PageApp:
     async def drained(self, timeout: float) -> bool:
         """Wait up to `timeout` seconds for every request being answered to be done; whether they all were."""
         try:
+            # adr-exempt: handshake
             await asyncio.wait_for(self._quiet.wait(), timeout)
         except TimeoutError:
             return False

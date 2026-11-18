@@ -72,6 +72,7 @@ def keep_polling(
             logger.exception("pull requests: the poller crashed; restarting in %.0fs", delay)
         finally:
             running.clear()
+        # adr-exempt: retry
         stop.wait(delay)
         delay = min(delay * 2, longest)
 

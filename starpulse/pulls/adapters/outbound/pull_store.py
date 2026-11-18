@@ -356,6 +356,7 @@ class PullSync:
         self.project()
         self.serving.set()
         while not self._stop.is_set():
+            # adr-exempt: retry
             self._wake.wait(self.next_retry_in())
             self._wake.clear()  # before the drain: a request queued after it sets the event again
             self.serve_requests()

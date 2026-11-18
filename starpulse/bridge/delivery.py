@@ -105,6 +105,7 @@ class JetStreamMailbox:
 
 def run(delivery: Delivery, stop: StopEvent) -> None:
     """Pass over the consumers every `INTERVAL_S` until `stop` is set; a server that does not answer is tried again."""
+    # adr-exempt: pending
     while not stop.wait(INTERVAL_S):
         try:
             delivery.once()

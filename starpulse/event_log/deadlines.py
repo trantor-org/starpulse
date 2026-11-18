@@ -64,5 +64,6 @@ class Deadlines:
             for key in due:
                 del self._due[key]
             if not due and not stop.is_set():
+                # adr-exempt: handshake
                 self._changed.wait(max(0.0, min(self._due.values()) - now) if self._due else None)
             return due

@@ -169,6 +169,7 @@ class Snapshots:
         try:
             while not stop.is_set():
                 revised.wait()
+                # adr-exempt: debounce
                 if stop.wait(self._interval_s):
                     break
                 revised.clear()

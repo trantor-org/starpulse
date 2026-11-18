@@ -64,6 +64,7 @@ def _sqlite_wal(engine: Engine) -> None:
             except SQLAlchemyError:
                 if attempt == _WAL_ATTEMPTS - 1:
                     raise
+                # adr-exempt: handshake
                 time.sleep(0.05)
 
 

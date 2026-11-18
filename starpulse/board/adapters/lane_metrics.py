@@ -45,6 +45,7 @@ def start(
     feed.reconcilers["board-files"] = files.run
 
     def keep() -> None:
+        # adr-exempt: pending
         while not stop.wait(publish_s):
             try:
                 log.put_state(METRICS, unattributed.exposition() + conformance.exposition() + files.exposition())

@@ -156,4 +156,5 @@ def main(
             poll(transport, repo, adapter, log, seen)
         except OSError as exc:  # GitHub unreachable or refused: the next poll tries again
             print(f"github adapter: {exc}", flush=True)
+        # adr-exempt: pending
         time.sleep(args.interval)

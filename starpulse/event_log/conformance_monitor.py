@@ -364,6 +364,7 @@ class Conformance:
         return [*threads, saver]
 
     def _keep_saving(self, log: EventLog, stop: StopEvent, checkpoint_s: float) -> None:
+        # adr-exempt: pending
         while not stop.wait(checkpoint_s):
             self.save(log)
 

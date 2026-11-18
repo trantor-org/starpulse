@@ -209,6 +209,7 @@ class _Forked:
         while (code := self.poll()) is None:
             if deadline is not None and time.monotonic() >= deadline:
                 raise subprocess.TimeoutExpired(str(self.pid), timeout)
+            # adr-exempt: handshake
             time.sleep(0.01)
         return code
 
@@ -310,6 +311,7 @@ class _Preloaded:
         self._control.close()
         self.proc.stdin.close()
         try:
+            # adr-exempt: handshake
             self.proc.wait(5)
         except subprocess.TimeoutExpired:
             self.proc.kill()

@@ -449,6 +449,7 @@ class Supervisor:
         deadline = time.monotonic() + self._grace
         for proc in running:
             try:
+                # adr-exempt: handshake
                 proc.wait(max(0.0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
                 proc.kill()

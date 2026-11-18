@@ -160,6 +160,7 @@ def _sqlite_wal(dbapi_connection: Any) -> None:  # pragma: no mutate block — s
         except sqlite3.OperationalError:
             if attempt == _PRAGMA_ATTEMPTS - 1:
                 raise
+            # adr-exempt: handshake
             time.sleep(0.05)
     cursor.close()
 
@@ -362,6 +363,7 @@ class EventLog:
                 step()
             except Exception:
                 logger.exception(failure)
+                # adr-exempt: retry
                 stop.wait(RETRY_DELAY)
                 continue
             self.wait_for_append(seen, stop)
@@ -395,6 +397,7 @@ class EventLog:
                 name="eventlog-commit-watch",
                 daemon=True,
             ).start()
+            # adr-exempt: handshake
             baseline.wait(_SQLITE_BUSY_TIMEOUT)
 
     def prune(self, retention: float, now: float | None = None, *, archive_dir: Path) -> int:
@@ -625,6 +628,7 @@ class Tail:
                 if not delay:
                     logger.warning("Tail %s: poll failed, backing off until it succeeds: %s", self.stream, exc)
                 delay = min(delay * 2, MAX_POLL_BACKOFF) if delay else RETRY_DELAY
+                # adr-exempt: retry
                 stop.wait(delay)
                 continue
             if delay:
@@ -643,6 +647,7 @@ class Tail:
                     self._note_failure(exc, entry)
             self._summarize_failures()
             if retry:
+                # adr-exempt: retry
                 stop.wait(RETRY_DELAY)
             elif len(entries) < self.batch:
                 self.log.wait_for_append(seen, stop)

@@ -46,6 +46,7 @@ def save_on_change(stop: StopEvent, changed: threading.Event, save: Callable[[],
     try:
         while not stop.is_set():
             changed.wait()
+            # adr-exempt: debounce
             if stop.wait(debounce):
                 break
             changed.clear()

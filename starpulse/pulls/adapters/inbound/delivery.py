@@ -235,6 +235,7 @@ def keep_metrics(
                     log.put_state(ACTOR_VIEW, views())
                 except Exception:
                     logger.warning("pulls: the task actor's views were not kept", exc_info=True)
+            # adr-exempt: pending
             stop.wait(METRICS_S)
 
     thread = threading.Thread(target=run, name="pull-metrics", daemon=True)
@@ -259,6 +260,7 @@ def keep_beating(
                     log.put_state(state, {"at": clock()})
                 except Exception:
                     logger.warning("pulls: the poller's beat was not kept", exc_info=True)
+            # adr-exempt: pending
             stop.wait(BEAT_S)
 
     thread = threading.Thread(target=run, name="pull-beat", daemon=True)

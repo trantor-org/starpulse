@@ -266,6 +266,7 @@ def follow(url: str, runs: RunsSink, log: EventLog) -> None:  # pragma: no mutat
     def run() -> None:
         while True:
             poller.read()
+            # adr-exempt: pending
             time.sleep(POLL_INTERVAL)
 
     threading.Thread(target=run, name="woodpecker-runs", daemon=True).start()
