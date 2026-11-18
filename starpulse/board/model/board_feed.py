@@ -9,7 +9,6 @@ the event log (`machine_tasks`), and each runs adapter instance's workflows from
 import queue
 import threading
 import time
-from collections import deque
 from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -33,7 +32,6 @@ from starpulse.board.model.feed.reads import ReadMethods
 from starpulse.board.model.feed.records import RecordsMixin
 from starpulse.board.model.feed.runs import RunMethods
 from starpulse.board.model.feed.shared import (
-    _SENT_LOG,
     FEED_EVENT_RESEND,
     PUSHED_INSTANCE,
     SAVE_DEBOUNCE,
@@ -58,7 +56,6 @@ __all__ = [
     "PUSHED_INSTANCE",
     "Resumable",
     "SAVE_DEBOUNCE",
-    "_SENT_LOG",
     "entry_position",
     "follow",
     "logger",
@@ -172,13 +169,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         #: is recorded before the placement of its change is and a saved Board never holds a placed but unrecorded
         #: change. Taken before `_lock`.
         self.recording = threading.RLock()
-        #: Counts every publish, suppressed or not: a snapshot held at this number is out of date once it moves.
-        self._rev = 0
-        #: Counts the publishes put on subscribers' queues.
-        self._sent = 0
-        #: The last publishes put on subscribers' queues, each with its count, so a page handed an older snapshot is told
-        #: the changes that snapshot lacks.
-        self._sent_log: deque[tuple[int, str, dict]] = deque(maxlen=_SENT_LOG)
         #: Set by every publish, for whoever rebuilds a held snapshot on change.
         self.revised = threading.Event()
         #: Held for a whole Ledger build, which runs outside `_lock`, so builds never overlap; taken before `_lock`, never under it.
@@ -218,8 +208,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._gated: set[str] = set()
         self._dependents: dict[str, set[str]] = {}
         self._subscribers: list[queue.Queue] = []
-        #: The queues of the pages streaming `/api/events` (a subset of `_subscribers`), which `announce` reaches.
-        self._streams: list[queue.Queue] = []
         #: The pages with a Ledger open: the event each watches and the queue of that event's changed rows.
         self._watchers: list[tuple[str, queue.Queue]] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too

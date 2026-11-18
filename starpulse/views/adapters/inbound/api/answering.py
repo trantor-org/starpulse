@@ -13,6 +13,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.views.adapters.inbound.compression import Encoded, accepts_gzip
+from starpulse.views.adapters.inbound.snapshots import NotStored
 from starpulse.views.model.encoding import encode
 
 if TYPE_CHECKING:  # annotation only
@@ -85,6 +86,8 @@ def _built[T](request: Request, work: Callable[[], T]) -> T | Response:
     except ValidationError:
         logger.exception("StarPulse: %s %s built a body its model refuses", request.method, request.url.path)
         return answer(request, encode("error", {"error": "the server built a body its contract refuses"}), 500)
+    except NotStored:
+        return answer(request, encode("error", {"error": "the Board writer has stored no snapshot yet"}), 503, retry_after=1)
 
 
 async def on_worker(request: Request, work: Callable[[], Response]) -> Response:

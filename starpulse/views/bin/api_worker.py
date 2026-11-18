@@ -46,6 +46,7 @@ from starpulse.sessions.adapters.outbound.session_start import starter
 from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
+from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.adapters.outbound.gc_pauses import install as collect_by_requests
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.adapters.outbound.storage_metrics import cached, storage_exposition
@@ -54,10 +55,6 @@ from starpulse.views.adapters.outbound.webhook_command import command_webhook
 from starpulse.views.application.queries.answers import Answers
 from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
-
-#: How often (seconds) the warm `/api/snapshot` is rebuilt while the board changes: the bench judges it against 50 ms p95.
-SNAPSHOT_REFRESH_S = 2.0
-
 
 @dataclasses.dataclass(frozen=True)
 class Host:
@@ -120,8 +117,10 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse.event_log.readmodel.declared import declared_fields  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.projector import Projector  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.event_log.readmodel.snapshot_store import SnapshotStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.store import EventStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.pulls.adapters.outbound.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.views.model.encoding import stored_bodies  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     refresh_token, starts, reruns, run_safe, producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()
@@ -236,17 +235,16 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         history_lag_metrics=history_lag_metrics_of(log),
         autopilot_log=lambda: autopilot_log(log),
     )
+    snapshots = Snapshots(SnapshotStore(log.engine, stored_bodies), log, stop)
     collector = collect_by_requests(stop)
-    app = page_app(
-        feed, host.static, store, window, board, services, snapshot_refresh_s=SNAPSHOT_REFRESH_S, served=collector.served
-    )
+    app = page_app(feed, snapshots, host.static, store, window, board, services, served=collector.served)
     try:
         httpd = PageServer(
             app,
             (args.host, args.port),
             listening,
             tls=config.tls,
-            stopping=lambda: feed.announce("restarting", {"at": time.time()}),
+            stopping=lambda: snapshots.announce("restarting", {"at": time.time()}),
             drain_s=DRAIN_S,
         )
         host.announce_ready(os.environ)

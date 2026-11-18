@@ -47,6 +47,18 @@ class SnapshotStore:
             row = db.execute(select(snapshots.c.seq, snapshots.c.body).where(snapshots.c.view == view)).first()
         return None if row is None else (row.seq, row.body)
 
+    def stamp(self, view: str) -> tuple[int, float] | None:
+        """The sequence and the time of the stored body of `view`, read without the body: it changes when the body does,
+        a rebuild at an unmoved sequence included. None before the first fold."""
+        with self._engine.connect() as db:
+            row = db.execute(select(snapshots.c.seq, snapshots.c.stored_at).where(snapshots.c.view == view)).first()
+        return None if row is None else (row.seq, row.stored_at)
+
+    def head(self) -> int:
+        """The sequence of the newest delta, 0 while there is none."""
+        with self._engine.connect() as db:
+            return db.execute(select(func.max(snapshot_deltas.c.seq))).scalar() or 0
+
     def since(self, seq: int) -> list[tuple[int, str, dict]]:
         """The retained deltas after `seq`, oldest first, as (seq, kind, data)."""
         statement = select(snapshot_deltas).where(snapshot_deltas.c.seq > seq).order_by(snapshot_deltas.c.seq)

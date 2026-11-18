@@ -89,7 +89,9 @@ class ViewMethods:
 
     def cold_done(self) -> dict[str, str]:
         """The milestone of each Done Task the board flow leaves out and `milestone_done` counts, by id."""
-        return self._read_model.cold_done(self._roles.done, local_midnight(self._clock()))  # type: ignore[union-attr]
+        if self._read_model is None:
+            return {}  # the feed holds them in its snapshot
+        return self._read_model.cold_done(self._roles.done, local_midnight(self._clock()))
 
     def _done_fields(self) -> dict[str, Any]:
         """The snapshot's account of Done Tasks off the board; the caller holds the lock unless the feed has a read model."""
@@ -199,17 +201,14 @@ class ViewMethods:
         return "; ".join(f"{instance}: {error}" for instance, error in self._runs_errors.items()) or None
 
     def publish(self, kind: str, data: dict) -> None:
-        """Put `kind`/`data` on every stream subscriber (and the reconnect log), as an adapter's own `_publish` does."""
+        """Put `kind`/`data` on every subscriber, as an adapter's own `_publish` does."""
         self._publish(kind, data)
 
     def _publish(self, kind: str, data: dict) -> None:
         with self._lock:
-            self._rev += 1
             self.revised.set()
             if self._replaying() and not FEED_EVENT_RESEND.get(kind, False):
                 return  # a replayed delta is history: the snapshot once the stream is read carries its result
-            self._sent += 1
-            self._sent_log.append((self._sent, kind, data))
             for subscriber in self._subscribers:
                 subscriber.put((kind, data))
 
@@ -225,56 +224,9 @@ class ViewMethods:
             self._subscribers.append(subscriber)
             return subscriber
 
-    @property
-    def rev(self) -> int:
-        """How many publishes the feed has made; a snapshot taken at another number is out of date."""
-        return self._rev
-
-    def snapshot_at(self) -> tuple[int, int, dict[str, Any]]:
-        """The snapshot with the `rev` and the publish count it was taken at, as one reading. A read model's Tasks are
-        read after the count, outside the lock, so a publish the build overlaps is replayed after `sent` to a stream
-        that attaches: a Task delta carries the Task as it stands, so a replay of a change the read already holds ends
-        on the same page."""
-        with self._lock:
-            rev, sent = self._rev, self._sent
-            if self._read_model is None:
-                return rev, sent, self.snapshot()
-        return rev, sent, self.snapshot()
-
-    def watch_from(self, sent: int) -> tuple[list[tuple[str, dict]], queue.Queue] | None:
-        """The changes published after the `sent`-th, and the queue of every change after those: what a page needs on a
-        snapshot taken at that count. None when the feed no longer holds them all.
-        """
-        with self._lock:
-            missed = [(kind, data) for count, kind, data in self._sent_log if count > sent]
-            if len(missed) != self._sent - sent:
-                return None
-            subscriber: queue.Queue = queue.Queue()
-            self._subscribers.append(subscriber)
-            self._streams.append(subscriber)
-            return missed, subscriber
-
     def unsubscribe(self, subscriber: queue.Queue) -> None:
         with self._lock:
             self._subscribers.remove(subscriber)
-            if subscriber in self._streams:
-                self._streams.remove(subscriber)
-
-    def announce(self, kind: str, data: dict, wait_s: float = 1.0) -> None:
-        """Give every open stream one event outside the sent log, and wait up to `wait_s` for each stream to have
-        written it. A page that connects afterwards never sees it: it is about the process, not the Board.
-
-        A stream marks each item it took off its queue with `task_done`; the wait is for those marks.
-        """
-        with self._lock:
-            streams = list(self._streams)
-        for stream in streams:
-            stream.put((kind, data))
-        deadline = time.monotonic() + wait_s
-        for stream in streams:
-            while stream.unfinished_tasks and time.monotonic() < deadline:
-                # adr-exempt: handshake
-                time.sleep(0.005)
 
     def snapshot(self) -> dict[str, Any]:
         """What the page draws: every machine with its tasks, the workflow declarations, the workflows and their pools.
