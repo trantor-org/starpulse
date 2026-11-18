@@ -68,14 +68,6 @@ def reload(path: Path, config: BoardConfig, load: Callable[[Path | None], BoardC
         logger.info("reload: no Board setting changed")
 
 
-def start_writers(feed: BoardFeed, store: WriterStore, live: bool = True, log: EventLog | None = None) -> None:
-    """Date each task's lanes from the history. A `live` feed also records each lane a task enters as it places it; the
-    Board child places none live, as `serve` records the ones its writes make. `log` carries each lane change's actor
-    to the `board:lanes` entry."""
-    feed.date_lanes(store.lane_path)
-    feed.record_lanes(store, log, live=live)
-
-
 def start(
     config: BoardConfig,
     path: Path | None,
@@ -100,7 +92,7 @@ def start(
     feed.cap_lanes(MAX_HOURS * 3600)  # the widest window a page can ask for; an older lane stays only for an open task, and decoding the rest is the worker's heap
     store = PushedDates(history_store(config, base, feed.machines), log)  # a save also pushes the date to `serve`
     feed.ready.set()
-    start_writers(feed, store, live=False, log=log)
+    feed.record_lanes(store, log)  # the lane each write makes is recorded by `serve`; the Board child places none
     board.attach(log)  # the sweep's releases append the History events the read model folds
     board.sweep(feed, log, store.save_claim_expiries)
     threading.Thread(target=HeldSnapshot(feed, store=snapshots).run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded

@@ -2,20 +2,15 @@
 
 import threading
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
 
-from starpulse.event_log.wake import StopEvent
-
-if TYPE_CHECKING:  # annotation only: the event log opens the database stack
-    pass
 from starpulse.board.model.feed.shared import (
     CLAIM_EXPIRIES_STATE,
     DatesStore,
     ExpiriesStore,
     StateLog,
-    is_cold,
     logger,
 )
+from starpulse.event_log.wake import StopEvent
 
 
 class ClaimMethods:
@@ -42,27 +37,17 @@ class ClaimMethods:
 
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
-        with self._lock:
-            if self._read_model is not None:  # `_open` stays empty under the read model
-                prs = {agent["id"]: agent["prs"] for agent in self._read_model_hot()}
-            else:
-                prs = {
-                    task: agent["prs"] if not is_cold(agent) else self._cited.get(task)
-                    for task, agent in self._open.items()
-                }
-            return {task: list(links) for task, links in prs.items() if links}
+        prs = {agent["id"]: agent["prs"] for agent in self._hot()}
+        return {task: list(links) for task, links in prs.items() if links}
 
     def set_pulls(self, pulls: dict[str, list[dict]], answers: dict | None = None) -> None:
         """Take each task's pull request state and publish it when it differs from before; `answers` is what the
-        projection kept, saved with the Board so a restart need not ask GitHub again."""
+        projection kept."""
         with self._lock:
-            if answers is not None and answers != self._pull_answers:
-                self._pull_answers, self._pulls_unsaved = answers, True
-                self.unsaved.set()
+            if answers is not None:
+                self._pull_answers = answers
             if pulls == self._pulls:
                 return
-            self._pulls_unsaved = True
-            self.unsaved.set()
             self._pulls = pulls
             self._publish("pulls", {"pulls": pulls})
         self._refresh_ledgers()
@@ -83,13 +68,7 @@ class ClaimMethods:
                 if self._expiries.get(task) != expiries.get(task)
             ]
             self._expiries = dict(expiries)
-            for task_id in changed:
-                if (agent := self._open.get(task_id)) is not None:
-                    self._open[task_id] = self._expiring(agent)
-                    self._publish("task", {"id": task_id, "agent": self._open[task_id], "settled": None})
-        if self._read_model is None:
-            return
-        for task_id in changed:  # a read model holds no open task: its change is announced as the Task a build draws
+        for task_id in changed:  # the change is announced as the Task a build draws
             if (agent := self.drawn_task(task_id)[0]) is not None:
                 with self._lock:
                     self._publish("task", {"id": task_id, "agent": agent, "settled": None})

@@ -13,7 +13,7 @@ import logging
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Protocol
+from typing import Any
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
@@ -27,12 +27,6 @@ from starpulse.flow_metrics.adapters.outbound.history import (
 from starpulse.flow_metrics.bin.blocks import FlowMetricsConfig, flow_metrics_built_blocks
 
 logger = logging.getLogger(__name__)
-
-
-class Feed(Protocol):
-    """The board feed as far as this worker reads it."""
-
-    machines: Mapping[str, dict]
 
 
 def reload(path: Path, config: FlowMetricsConfig, load: Callable[[Path | None], FlowMetricsConfig]) -> None:
@@ -56,13 +50,13 @@ def start(
     stop: StopEvent,
     *,
     load: Callable[[Path | None], FlowMetricsConfig],
-    assemble: Callable[..., tuple[object, Feed]],
+    declared: Callable[..., tuple[Any, Mapping[str, dict], Any, Any]],
     history_store: Callable[[FlowMetricsConfig, Path, Mapping[str, dict]], HistoryStore],
 ) -> Callable[[], None]:
     """Start the History recorders over `log`, each ending when `stop` is set, and return their
-    reload. Raises `ValueError` as `assemble` does."""
-    _, feed = assemble(config, base, None, [])
-    store = history_store(config, base, feed.machines)
+    reload. Raises `ValueError` as `declared` does."""
+    _, machines, *_ = declared(config, base)
+    store = history_store(config, base, machines)
     threading.Thread(target=record_machine_events, args=(store, log, stop), name="machine-history", daemon=True).start()
     threading.Thread(target=record_verdicts, args=(store, log, stop), name="verdict-history", daemon=True).start()
     threading.Thread(
@@ -77,7 +71,7 @@ def main(
     *,
     discover: Callable[[Path | None], Path | None],
     load: Callable[[Path | None], FlowMetricsConfig],
-    assemble: Callable[..., tuple[object, Feed]],
+    declared: Callable[..., tuple[Any, Mapping[str, dict], Any, Any]],
     history_store: Callable[[FlowMetricsConfig, Path, Mapping[str, dict]], HistoryStore],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
@@ -99,7 +93,7 @@ def main(
             log,
             stop,
             load=load,
-            assemble=assemble,
+            declared=declared,
             history_store=history_store,
         )
     except ValueError as exc:

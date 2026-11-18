@@ -28,7 +28,7 @@ import time
 from collections.abc import Callable, Collection, Mapping
 from pathlib import Path
 
-from starpulse.board.adapters.session_activity import local_id
+from starpulse.event_log.claude_sessions import local_id
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.bridge.delivery import Event, Route
 from starpulse.bridge.subjects import INCIDENT

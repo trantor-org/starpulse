@@ -16,7 +16,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.adapters.session_activity import (
+from starpulse.event_log.claude_sessions import (
     DEFAULT_SESSIONS,
     DEFAULT_TRANSCRIPTS,
     holder_activity,

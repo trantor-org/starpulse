@@ -6,7 +6,7 @@ socket's backlog for the next one rather than being refused. The child builds th
 Board from the read model the Board child folds and starts no adapter watcher. Started by hand, without a handed
 socket, it binds `--host` and `--port` itself.
 
-`SIGTERM` finishes the requests it took (`serve_until_stopped`) and saves the Board it keeps; a config change replaces
+`SIGTERM` finishes the requests it took (`PageServer.run`); a config change replaces
 the process, as the page is built from the whole config once.
 """
 
@@ -34,7 +34,6 @@ from starpulse.pulls.adapters.inbound.delivery import (
     actor_views_of,
     follow_saves,
     metrics_of,
-    poller_problem,
     request_refresh,
 )
 from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
@@ -72,7 +71,6 @@ class Host:
     listen: Callable[..., socket.socket]
     announce: Callable[..., None]
     scheduler_remote: Callable[..., Any]
-    serve_until_stopped: Callable[..., None]
     announce_ready: Callable[[Any], None]
     assemble: Callable[..., tuple[Any, Any]]
     history_store: Callable[..., Any]
@@ -141,14 +139,10 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     window = HistoryWindow(feed, args.hours, log)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store = host.history_store(config, base, feed.machines)
-    feed.date_lanes(store.lane_path)
     feed.record_lanes(store, log)
     feed.record_ratings(log)
     feed.read_lanes(store.lane_rows)
-    # the instance indexes its board for search
     search = SearchIndex.open(log.engine, config.search)
-    if search is not None:
-        feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
     stop = StopEvent()
     board.attach(log)
     projector = Projector(log.engine, EventStore(log.engine), search)
@@ -183,7 +177,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     if config.task_actor:
         actor_metrics = metrics_of(log)
         actor_view = actor_views_of(log)
-    probes = dataclasses.replace(host.probes, poller=poller_problem(log))
     if refresh_token:
         pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
     host.announce(port)
@@ -206,7 +199,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         start_session=starter(config.session_start_url),
         events=cloudevents,
         scheduler=scheduler_runtime,
-        contract=ttl_cached(lambda: host.contract(feed.snapshot(), config, probes), _CONTRACT_TTL_S),
+        contract=ttl_cached(lambda: host.contract(feed.snapshot(), config, host.probes), _CONTRACT_TTL_S),
         ready=host.readiness(log, feed, config),
         pulls=pulls,
         telemetry=signal_folds,
@@ -250,7 +243,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
             drain_s=DRAIN_S,
         )
         host.announce_ready(os.environ)
-        host.serve_until_stopped(httpd, feed)
+        httpd.run()
     finally:
         stop.set()
         scheduler_stop.set()

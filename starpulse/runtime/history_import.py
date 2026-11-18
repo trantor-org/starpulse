@@ -18,7 +18,7 @@ from pathlib import Path
 
 from starpulse.runtime.config import ConfigError, discover, load
 from starpulse.event_log import lane_import
-from starpulse.runtime.assembly import assemble, history_store
+from starpulse.runtime.assembly import declared, history_store
 
 __all__ = ["main"]
 
@@ -45,10 +45,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     base = path.parent if path else Path.cwd()
     try:
-        _, feed = assemble(config, base, None, [])
+        _, machines, *_ = declared(config, base)
     except (OSError, ValueError) as exc:
         parser.error(f"the board does not assemble: {exc}")
-    store = history_store(config, base, feed.machines)
+    store = history_store(config, base, machines)
     imported = store.import_lanes(changes)
     print(
         json.dumps(

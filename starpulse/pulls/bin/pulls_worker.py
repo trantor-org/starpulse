@@ -77,7 +77,7 @@ class Delivery:
             stop.set()
             raise
         if sync:
-            follow_refreshes(log, lambda repo, number: sync.request(repo, number, urgent=True), stop)
+            follow_refreshes(log, lambda repo, number: sync.request(repo, number, urgent=True), sync.serving, stop)
             projection = RecordProjection(pulls, feed, sync.project, sync.request)
             handlers = {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}
             follow_events(log, feed, handlers, stop, resume=self._resume)
@@ -130,7 +130,7 @@ def start(
     `ValueError` as `worker_board` and `start_delivery` do."""
     board, feed = worker_board(config, base, log, stop)
     # the task actor records the lane of each write it makes under its own name; the placements of the Board are `serve`'s
-    feed.record_lanes(history_store(config, base, feed.machines), log, live=False)
+    feed.record_lanes(history_store(config, base, feed.machines), log)
     Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     store = PullStore(log.engine)

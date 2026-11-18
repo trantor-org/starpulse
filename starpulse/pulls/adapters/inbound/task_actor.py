@@ -96,8 +96,6 @@ ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
 _TERMINAL = ("MERGED", "CLOSED")
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
 PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
-
-HEARTBEAT_METRIC = "starpulse_task_actor_heartbeat_timestamp_seconds"
 RECOVERY_FINISHED_METRIC = "starpulse_task_actor_recovery_finished"
 MERGED_WAITING_METRIC = "starpulse_task_actor_merged_review_waiting"
 DERIVE_METRIC = "starpulse_task_actor_derive_seconds"
@@ -109,8 +107,6 @@ _STALLED_RESUMES = 2
 _DEPLOY_FAILED = re.compile(r"^Reopened from Done: Deploy of \S+ to .+? failed", re.M)
 #: Seconds between two progress lines of the start recovery.
 _PROGRESS_S = 30.0
-#: Seconds the idle actor loop waits for a change before it beats again.
-_HEARTBEAT_S = 30.0
 #: Seconds the exposition waits for the actor lock before it leaves out the series that need it.
 _LOCK_WAIT_S = 2.0
 #: Seconds the merged Review tasks count is kept, so a scrape loop never makes the scan over the open tasks a load.
@@ -450,9 +446,6 @@ class TaskActor:
         #: Set by a store save; `_saved_at` is the clock when the oldest unread save happened.
         self._saved = threading.Event()
         self._saved_at = 0.0
-        #: The wall clock of the actor's last beat, None before the first: it moves only while the actor loop, or the
-        #: start recovery, takes its turn, so a stuck actor with a live process stops moving it.
-        self._heartbeat: float | None = None
         #: Set after each turn of the actor loop, for the writer of its metrics and views.
         self.turned = threading.Event()
         #: The merged Review tasks, and the monotonic clock it was counted at.
@@ -467,7 +460,7 @@ class TaskActor:
 
     def exposition(self) -> str:
         """Prometheus text of the writes the board refused, how long a fact took to become a landed write, and whether the
-        actor is alive: its heartbeat, whether start recovery finished and the merged Review tasks not yet Done."""
+        actor is alive: whether start recovery finished and the merged Review tasks not yet Done."""
         with self._metrics:
             counts, total, refusals = list(self._buckets), self._sum, self._refusals
             timed = sorted(self._derive_seconds.items())
@@ -507,29 +500,15 @@ class TaskActor:
                 f"# HELP {RECOVERY_FINISHED_METRIC} 1 once the start recovery derived every open task, else 0.",
                 f"# TYPE {RECOVERY_FINISHED_METRIC} gauge",
                 f"{RECOVERY_FINISHED_METRIC} {int(self.ready.is_set())}",
-                *self._heartbeat_lines(),
                 *self._held_lines(held),
                 "",
             ]
         )
 
-    def _heartbeat_lines(self) -> list[str]:
-        beat = self._heartbeat
-        if beat is None:
-            return []
-        return [
-            f"# HELP {HEARTBEAT_METRIC} Unix time of the task actor's last turn of its loop, start recovery included.",
-            f"# TYPE {HEARTBEAT_METRIC} gauge",
-            f"{HEARTBEAT_METRIC} {beat:.3f}",
-        ]
-
-    def _beat(self) -> None:
-        self._heartbeat = self._wall()
-
     def _held_counts(self) -> tuple[int, int, list[str]] | None:
         """The series that read the actor's state under its lock (the tasks held for a pin) and the merged Review tasks,
         read after it is released. None when another thread holds the lock past `_LOCK_WAIT_S`: a scrape must answer
-        then, since a held lock is what the heartbeat and the recovery gauge report."""
+        then, since a held lock is what the recovery gauge reports."""
         if not self._lock.acquire(timeout=_LOCK_WAIT_S):
             return None
         try:
@@ -718,12 +697,8 @@ class TaskActor:
         stop.listen(stopped)
         try:
             while not stop.is_set():
-                self._beat()
                 self.turned.set()
-                try:
-                    kind, data = changes.get(timeout=_HEARTBEAT_S)
-                except queue.Empty:
-                    continue
+                kind, data = changes.get()
                 if kind in ("task", "move"):
                     handle = self._changed if kind == "task" else self._moved
                     try:
@@ -791,7 +766,6 @@ class TaskActor:
 
         def report(stage: str, done: int, total: int) -> None:
             nonlocal last
-            self._beat()
             now = self._clock()
             if now - last >= _PROGRESS_S:
                 last = now

@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from starpulse.board.adapters.session_activity import same_holder
+from starpulse.event_log.claude_sessions import same_holder
 from starpulse.board.model.view import board_columns
 from starpulse.views.adapters.inbound.snapshots import Served, Snapshots
 

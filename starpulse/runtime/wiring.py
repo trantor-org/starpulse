@@ -25,7 +25,6 @@ if (
     from starpulse.event_log.event_log import EventLog
     from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
     from starpulse.scheduler.adapters.remote import Remote
-    from starpulse.views.adapters.inbound.page_server import PageServer
 
 logger = logging.getLogger(__name__)
 
@@ -124,15 +123,6 @@ def scheduler_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog,
 
     follow_status(log, feed, stop)
     return Remote(log)
-
-
-def serve_until_stopped(server: PageServer, feed: BoardFeed) -> None:
-    """Serve until Ctrl-C or `SIGTERM`, then tell every open stream the server is restarting, finish the requests taken
-    and save the Board the feed keeps, so the next start resumes from it."""
-    try:
-        server.run()
-    finally:
-        feed.save()
 
 
 class Prepared(NamedTuple):

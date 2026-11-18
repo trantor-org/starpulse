@@ -1761,6 +1761,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         guard.standing,
         guard.readable,
         tuple(lane.label or labelled.get(lane.name, lane.name) for lane in rows.lanes if lane.role),
+        lambda task: recorded["reconcile"](task),
     )
 
     history = TaskHistory()

@@ -1,7 +1,6 @@
-"""What StarPulse draws, held in memory and kept current by the adapters.
+"""What StarPulse draws: the Board's tasks come from the read model, the other machines' tasks from the event log.
 
-The board adapter (`starpulse.board.model.seam`) places each Board task here, the server keeps each task's latest state,
-and every connected page gets one snapshot and then a delta per change. A restart resends only `snapshot` (`FEED_EVENT_RESEND`);
+Each connected page gets one snapshot and then a delta per change. A restart resends only `snapshot` (`FEED_EVENT_RESEND`);
 replayed deltas stay off the stream because that snapshot already carries their result. Each other machine's tasks arrive from
 the event log (`machine_tasks`), and each runs adapter instance's workflows from its adapter module.
 """
@@ -14,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.event_log import lane_events, rating_events
+from starpulse.event_log import rating_events
 from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.machine_engine.model.state_roles import StateRoles
@@ -38,7 +37,6 @@ from starpulse.board.model.feed.shared import (
     BoardStore,
     ExpiriesStore,
     LaneRecorder,
-    TaskIndex,
     entry_position,
     logger,
     read_model_lane_moves,
@@ -75,15 +73,11 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
     are the config's, each workflow as `<instance>/<workflow>`. `source` names what the Board is read from, for the
     page to show until the board adapter has read it. `commit` is each runs instance's `[runs.commit]` keys, by instance
     name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain.
-
-    Each open task carries `workable` and `workable_since`. A task is workable unless a dependency is not done (completed,
-    or in the `done` lane) or it waits on an event its Start Criteria name; it is then workable since the latest of
-    when it entered its lane and when each dependency was done.
-    A task that is not workable has `workable_since` None.
     """
 
     def __init__(
         self,
+        read_model: ReadModel,
         window_s: float | None = None,
         keys: TaskKeys | None = None,
         board_url: str | None = None,
@@ -97,7 +91,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
         clock: Callable[[], float] = time.time,
         roles: StateRoles | None = None,
-        read_model: ReadModel | None = None,
         standing: Callable[[str, str], Mapping[str, Any] | None] = lambda *_: None,
         readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
         default_profiles: Mapping[str, Mapping[str, str]] | None = None,
@@ -108,19 +101,17 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         #: a call returns (sampled, corrected).
         self.reconcilers: dict[str, Callable[[], tuple[int, int]]] = {}
         self._threads: list[threading.Thread] = []
-        #: When set, the Board's Tasks are read from it on each request and `_open` stays empty (D3: the feed holds no board).
+        #: Where the Board's Tasks are read from, on each request: the feed holds no board.
         self._read_model = read_model
         #: The `open_tasks` list this thread's `one_read` built, None outside one.
         self._pinned = threading.local()
         #: The read model's position the page's deltas have been published up to; the snapshot carries what came before.
-        self._followed = read_model.position() if read_model is not None else 0
+        self._followed = read_model.position()
         #: Which of the Board's States play which part (`Board.roles`); the default is Backlog.md's default statuses.
         self._roles = roles or StateRoles.of_statuses(DEFAULT_STATUSES)
         self._clock = clock
         #: The profile a Task with none of its own draws, by its `kind-*` then `size-*` label (`[board.default_profiles]`).
         self._default_profiles = default_profiles or {}
-        #: A task's lane changes as the history keeps them (`History.lane_path`), read while the feed replays.
-        self._lane_path: Callable[[str], list[dict]] = lambda _task: []
         #: Where a lane change the feed applies is kept (`HistoryStore`); None records nothing.
         self._lanes: LaneRecorder | None = None
         #: Where each lane change `_lanes` wrote is also appended as a `lane_events` entry; None appends nothing.
@@ -129,9 +120,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._ratings: rating_events.Ratings | None = None
         #: The tasks an accepted take-over flipped to interactive, shown in the snapshot.
         self._interactive: set[str] = set()
-        self._live_lanes = True
-        #: Each task placed or retracted is also kept in `_search`; None keeps none.
-        self._search: TaskIndex | None = None
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
@@ -141,16 +129,11 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._source = source
         self._drawn = machines if machines is not None else {"board": board_machine(DEFAULT_STATUSES)}
         #: The Board machine's moves by source lane, which a read-model agent offers; a task's done lane offers none.
-        self._lane_moves = read_model_lane_moves(self._drawn["board"]) if read_model is not None else {}
+        self._lane_moves = read_model_lane_moves(self._drawn["board"])
         #: The update the board's rules make to a task's move to a lane, which a read-model agent's moves carry.
         self._standing = standing
         #: What the board's `readable` rules find broken in a task's description, which a read-model agent carries.
         self._readable = readable
-        #: The settled states a task's settling is recorded as a move into: archived always, completed where the Board
-        #: has that state (a board whose last status is its final one settles there already).
-        self._settle_lanes = {lane_events.ARCHIVED} | (
-            {lane_events.COMPLETED} & {state["id"] for state in self._drawn["board"]["states"]}
-        )
         self._board_url = board_url
         self._commit = commit or {}
         self._ties = self._tied_to_events(cues)
@@ -176,19 +159,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._window_s = window_s
         #: How far back the snapshot's machine lanes read when no `window_s` narrows them (an open Task's lane stays); None: no cap.
         self._lane_cap_s: float | None = None
-        self._open: dict[str, dict] = {}
-        #: Each key a placed task was known by before, to the key it holds now.
+        #: Each key a task was known by before, to the key it holds now.
         self._aliases: dict[str, str] = {}
-        #: Each placed task's id to the ids it answered to before it was renamed.
-        self._renamed: dict[str, tuple[str, ...]] = {}
-        self._settled: dict[str, dict] = {}
-        #: Every placed task's assignee, a settled one's included, so a machine still drawing it keeps its colour.
-        self._assignees: dict[str, str] = {}
-        #: The pull request links every placed task cites, a settled one's included: its dependents read them for the
-        #: pin bump that applies each (`cited`).
-        self._cited: dict[str, list[str]] = {}
-        #: The `titled` entry of every cold done task, whose stub in `_open` holds no title or labels.
-        self._cold_titled: dict[str, dict] = {}
         self._dags: dict[str, list] = {}
         self._pools: dict[str, list] = {}
         #: Each instance's latest CPU reading (a `Cpu` as a dict); an instance that never reported one is absent.
@@ -199,27 +171,16 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._pulls: dict[str, list[dict]] = {}
         #: What the pull request projection kept (`PullRequests.answers`), saved so a restart reads warm.
         self._pull_answers: dict = {}
-        self._pulls_unsaved = False
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
         self._claims: dict[str, dict] = {}
         #: Each held working task's claim expiry from the claim-TTL sweep's latest pass, served as `claim_expires_at`.
         self._expiries: dict[str, float] = {}
-        #: The Waiting tasks whose description declares Start Criteria, and for each task the open tasks that list it as a dependency.
-        self._gated: set[str] = set()
-        self._dependents: dict[str, set[str]] = {}
         self._subscribers: list[queue.Queue] = []
         #: The pages with a Ledger open: the event each watches and the queue of that event's changed rows.
         self._watchers: list[tuple[str, queue.Queue]] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too
         self._expected: int | None = None
         self._seen = 0
-        self._saved = 0
-        #: Set by whatever `save` would write that it has not, for `keep_saved`.
-        self.unsaved = threading.Event()
-        self._store: tuple[BoardStore, str] | None = None
-        #: What the board adapter keeps of its own beside the Board, saved and resumed with it (`keep_source`).
-        self._kept: dict = {}
-        self._kept_saved = self._kept
         self._lane_rows: Callable[..., list[LaneRow]] | None = None
         #: Set once the stream has been read up to the last entry it held when the feed started.
         self.ready = threading.Event()

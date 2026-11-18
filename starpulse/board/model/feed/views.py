@@ -2,7 +2,6 @@
 
 import queue
 import time
-from contextlib import AbstractContextManager, nullcontext
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.ledger import (
@@ -20,7 +19,6 @@ from starpulse.board.model.feed.shared import (
     LEDGER_WINDOW,
     _cold_stub,
     done_dot,
-    is_cold,
     local_midnight,
     read_model_detail,
     summary_agent,
@@ -32,17 +30,12 @@ class ViewMethods:
         """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
         older ones remain. The page ends after the last stub sharing its final timestamp, so the next page's
         `entered < before` skips none."""
-        if self._read_model is not None:
-            size = limit + 1
-            while True:
-                rows = [_cold_stub(item) for item in self._read_model.archived(before, size)]
-                if len(rows) < size or rows[-1]["entered"] != rows[limit - 1]["entered"]:
-                    break
-                size *= 2
-        else:
-            with self._lock:
-                cold = sorted((a for a in self._open.values() if is_cold(a)), key=lambda a: a["entered"], reverse=True)
-            rows = [a for a in cold if before is None or a["entered"] < before]
+        size = limit + 1
+        while True:
+            rows = [_cold_stub(item) for item in self._read_model.archived(before, size)]
+            if len(rows) < size or rows[-1]["entered"] != rows[limit - 1]["entered"]:
+                break
+            size *= 2
         end = limit
         while end < len(rows) and rows[end]["entered"] == rows[limit - 1]["entered"]:
             end += 1
@@ -54,18 +47,12 @@ class ViewMethods:
             return {"dags": self._workflows(), "error": self._error()}
 
     def _hot(self) -> list[dict]:
-        """Every open task but the cold done ones; the caller holds the lock unless the feed has a read model."""
-        if self._read_model is not None:
-            return self._read_model_hot()
-        return [agent for agent in self._open.values() if not is_cold(agent)]
-
-    def _read_model_hot(self) -> list[dict]:
         """The live Tasks of the read model as agents, queried on each request: nothing of the Board is held between them."""
-        summaries = self._read_model.snapshot(self._roles.done, local_midnight(self._clock()))  # type: ignore[union-attr]
+        summaries = self._read_model.snapshot(self._roles.done, local_midnight(self._clock()))
         ready = {
             task_id
             for state in {summary["state"] for summary in summaries}
-            for task_id in self._read_model.ready(state, self._roles.done)  # type: ignore[union-attr]
+            for task_id in self._read_model.ready(state, self._roles.done)
         }
         return [self._hot_agent(summary, summary["id"] in ready) for summary in summaries]
 
@@ -80,46 +67,30 @@ class ViewMethods:
         """The agent a whole build draws on the board flow for the Task (a Done one as its dot), None when the Task is
         not live; and the milestone the build counts it in off the board, None when it counts in none."""
         done, since = self._roles.done, local_midnight(self._clock())
-        found = self._read_model.snapshot(done, since, task_id)  # type: ignore[union-attr]
+        found = self._read_model.snapshot(done, since, task_id)
         if not found:
-            return None, self._read_model.cold_done(done, since, task_id).get(task_id)  # type: ignore[union-attr]
-        ready = bool(self._read_model.ready(found[0]["state"], done, task_id))  # type: ignore[union-attr]
+            return None, self._read_model.cold_done(done, since, task_id).get(task_id)
+        ready = bool(self._read_model.ready(found[0]["state"], done, task_id))
         agent = self._hot_agent(found[0], ready)
         return (done_dot(agent) if agent["state"] == done else agent), None
 
     def cold_done(self) -> dict[str, str]:
         """The milestone of each Done Task the board flow leaves out and `milestone_done` counts, by id."""
-        if self._read_model is None:
-            return {}  # the feed holds them in its snapshot
         return self._read_model.cold_done(self._roles.done, local_midnight(self._clock()))
 
     def _done_fields(self) -> dict[str, Any]:
-        """The snapshot's account of Done Tasks off the board; the caller holds the lock unless the feed has a read model."""
-        if self._read_model is None:
-            cold = sorted(t for t, a in self._open.items() if is_cold(a))
-            return {"settled": dict(self._settled), "cold_done": cold, "milestone_done": {}}
+        """The snapshot's account of Done Tasks off the board."""
         since = local_midnight(self._clock())
         counts = self._read_model.milestone_done(self._roles.done, since)
         archived = self._read_model.archived_since(since)
         return {"settled": {}, "cold_done": [], "milestone_done": counts, "archived_today": archived}
-
-    def _flows_unheld(self, now: float) -> tuple[list[dict], dict[str, dict]]:
-        """`_flows` as a caller that does not hold the lock reads it: a read model answers from the store and holds none
-        of the feed's state, so it takes no lock (a build holding the feed lock for its queries kept a publish, and the
-        comment it announces, off the stream for as long as the build ran); a feed that holds its tasks reads under it."""
-        with self._reading():
-            return self._flows(now)
-
-    def _reading(self) -> AbstractContextManager:
-        """The lock a task read takes: none for a read model (it holds no feed state), the feed's otherwise."""
-        return nullcontext() if self._read_model is not None else self._lock
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
         """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
         reach = self._window_s if self._window_s is not None else self._lane_cap_s
         since = now - reach if reach is not None else None
         keep_open = self._roles.done if self._window_s is None else None
-        lanes = {} if self._read_model is None else self._read_model.machine_lanes(since, keep_open)
+        lanes = self._read_model.machine_lanes(since, keep_open)
         flows = [
             {
                 "name": "board",
@@ -130,7 +101,7 @@ class ViewMethods:
                 {
                     "name": name,
                     "machine": self._drawn[name],
-                    "agents": [self._modelled(a) for a in lanes.get(name, [])],
+                    "agents": [{**a, "model": a["model"] or ""} for a in lanes.get(name, [])],
                 }
                 for name in self._drawn
                 if name != "board"
@@ -142,7 +113,7 @@ class ViewMethods:
         """`GET /api/machines`: the next `limit` machines entered from `open_` (None: the In Progress machine) with
         activity older than `before` (None: the newest), `{open, machines, more}`, each machine whole with its
         derivation; None when `open_` is not a machine here."""
-        flows, derived = self._flows_unheld(time.time())
+        flows, derived = self._flows(time.time())
         if open_ is None:
             open_ = next((n for n, d in derived.items() if d["depth"] == 0), None)
         elif open_ not in derived:
@@ -230,12 +201,12 @@ class ViewMethods:
 
     def snapshot(self) -> dict[str, Any]:
         """What the page draws: every machine with its tasks, the workflow declarations, the workflows and their pools.
-        A read model's tasks are read before the lock is taken, because it holds none of them (see `_flows_unheld`)."""
+        The tasks are read before the lock is taken, because the feed holds none of them: a build holding the feed lock for
+        its queries would keep a publish, and the comment it announces, off the stream for as long as the build ran."""
         now = time.time()
-        with self._reading():
-            modelled = self._modelled_fields(now)
-            with self._lock:
-                return self._snapshot(now, modelled)
+        modelled = self._modelled_fields(now)
+        with self._lock:
+            return self._snapshot(now, modelled)
 
     def _modelled_fields(self, now: float) -> dict[str, Any]:
         """The snapshot's fields read from a store: the flows, the machine page and strip, the Done account, and the

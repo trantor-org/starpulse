@@ -93,8 +93,7 @@ to the server as `Board.waits`, and the task actor (`[board.actor]`, [Task actor
 when the fact holds; `Board.holds` withholds `deps_done` with reasons; `Board.unfinished` lists the work a merged task still has, which holds `pr_merged_unfinished`. The actor's series on `GET /metrics` are
 `starpulse_task_actor_refusals_total`, `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds`,
 `starpulse_task_actor_handoff_seconds`, `starpulse_task_merge_move_seconds`, `starpulse_task_actor_pin_held`,
-`starpulse_task_actor_heartbeat_timestamp_seconds`, `starpulse_task_actor_recovery_finished` and
-`starpulse_task_actor_merged_review_waiting`.
+`starpulse_task_actor_recovery_finished` and `starpulse_task_actor_merged_review_waiting`.
 `starpulse_board_lane_unattributed_total` counts the `board:lanes` entries appended since `serve` started that name no actor.
 `starpulse_autopilot_enabled` (0/1), `starpulse_autopilot_switch_changed_timestamp_seconds` (when the `scheduler.enabled`
 switch was last written), `starpulse_autopilot_ledger_runs` (rows in the run ledger) and

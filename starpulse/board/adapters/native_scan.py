@@ -1,9 +1,6 @@
 """The native board's scan: a project's task files in, the board contract out."""
 
 import contextlib
-import hashlib
-import importlib
-import inspect
 import logging
 import os
 import re
@@ -42,10 +39,6 @@ if TYPE_CHECKING:
     from starpulse.machine_engine.model.snapshot import Qualify
 
 logger = logging.getLogger(__name__)
-
-#: The modules whose code turns a task file into what the feed saves. A change to any of them, or to the project's config
-#: or machine, keeps the saved Board but reads every task file again (`_projection`).
-_PROJECTION = (__name__, "starpulse.board.model.board_feed", "starpulse.contracts.adapters")
 
 DEFAULT_PREFIX = "task"
 #: Where a task file sits decides whether it is in a lane or has left them; subtasks are ids like `task-1.1`.
@@ -221,16 +214,13 @@ class NativeScan:
         put: Callable[[BoardTask], None],
         moves: Mapping[str, Mapping[str, Move]] | None = None,
         retract: Callable[[str], None] = lambda _task: None,
-        files: Mapping[str, list] | None = None,
-        kept: Callable[[dict[str, list]], None] = lambda _files: None,
         retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
         refusal: Callable[[Mapping[str, Any], str, str], Mapping[str, Any] | None] = lambda *_: None,
         roles: StateRoles | None = None,
         readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
         statuses: tuple[str, ...] = (),
     ) -> None:
-        """`files` are the fingerprints a saved Board was placed from (`files`), so the first scan reads only the files
-        changed since; `kept` is handed them after each scan that placed or retracted a task. `retired` streams the
+        """`retired` streams the
         text of every retired task, or answers None while that is unchanged since it last answered (a `True` argument
         streams it regardless); a scan settles the ones in the done lane as completed, so a task depending on one is
         not left waiting on a file that is gone. Only their ids are kept, never their text. `refusal` answers, from a task's front matter and body and a lane,
@@ -252,21 +242,9 @@ class NativeScan:
         # keyed by the listing's path string, so a scan of unchanged files builds no Path
         self._seen: dict[str, tuple[int, int]] = {}
         self._ids: dict[str, str] = {}
-        self._kept = kept
         self._stop = threading.Event()
         self._wake: socket.socket | None = None
         self._scanning = threading.RLock()  # the poll thread and `settle()` both scan
-        for name, (mtime_ns, size, task_id) in (files or {}).items():
-            self._seen[str(self.root / name)] = (mtime_ns, size)
-            if task_id:
-                self._ids[str(self.root / name)] = task_id
-
-    def files(self) -> dict[str, list]:
-        """Each file scanned, by its path under the project, with its fingerprint and the task it holds (or None)."""
-        return {
-            os.path.relpath(path, self.root): [*fingerprint, self._ids.get(path)]
-            for path, fingerprint in self._seen.items()
-        }
 
     def scan(self) -> int:
         """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone;
@@ -306,22 +284,41 @@ class NativeScan:
                             changed |= self._place(member, settled_in[path], fingerprint)
                     gone |= {seen for seen in self._seen if os.path.dirname(seen) == path} - {m for m, _ in listed}
                 elif path.endswith(".md") and (folder := os.path.dirname(path)) in settled_in:
-                    try:
-                        stat = os.stat(path)
-                    except OSError:
+                    exists, read = self._read_if_changed(path, settled_in[folder])
+                    changed |= read
+                    if not exists:
                         gone.add(path)
-                        continue
-                    if (fingerprint := (stat.st_mtime_ns, stat.st_size)) != self._seen.get(path):
-                        changed |= self._place(path, settled_in[folder], fingerprint)
-            self._finish(gone & self._seen.keys(), changed)
+            gone &= self._seen.keys()
+            for path in gone:
+                changed |= self._moved_to(path)
+            self._finish(gone, changed)
+
+    def _moved_to(self, gone: str) -> bool:
+        """Place the file of the same name in another task folder, where a move left `gone`; whether one was read.
+
+        The watch can name the delete before the create, or lose the create: a task whose file only moved must not
+        read as on no store, to a reader that asks between the two."""
+        return any(  # a list, so every folder is read, not only up to the first hit
+            [
+                self._read_if_changed(str(self.root / folder / os.path.basename(gone)), settled)[1]
+                for folder, settled in _FOLDERS
+            ]
+        )
+
+    def _read_if_changed(self, path: str, settled: Literal["completed", "archived"] | None) -> tuple[bool, bool]:
+        """Whether the file `path` exists, and whether it was new or changed since the last scan and so read."""
+        try:
+            stat = os.stat(path)
+        except OSError:
+            return False, False
+        fingerprint = (stat.st_mtime_ns, stat.st_size)
+        return True, fingerprint != self._seen.get(path) and self._place(path, settled, fingerprint)
 
     def _finish(self, gone: Iterable[str], changed: bool) -> None:
         for path in list(gone):
             self._forget(path)
             changed = True
         self._settle(changed)
-        if changed:
-            self._kept(self.files())
 
     def _place(self, path: str, settled: Literal["completed", "archived"] | None, fingerprint: tuple[int, int]) -> bool:
         """Publish the task `path` holds, listed with `fingerprint`; whether it was read."""
@@ -446,7 +443,9 @@ class NativeScan:
                 moves[target] = type(move).model_validate({**move.model_dump(), **refused})
         return moves
 
-    def start(self, scanned: Callable[[], None] = lambda: None) -> threading.Thread:  # pragma: no mutate block — watch thread plumbing
+    def start(
+        self, scanned: Callable[[], None] = lambda: None
+    ) -> threading.Thread:  # pragma: no mutate block — watch thread plumbing
         """Watch the task folders, scan once, and read each path the watch names after, on a daemon thread, which it
         returns; `scanned` runs once, after the first scan. The watch opens before that scan, so a write between them is
         read twice, never missed. A folder made later, or a watch that lost events, is a scan of everything."""
@@ -544,6 +543,7 @@ def project_board(
     refusal: Callable[[Mapping[str, Any], str, str], Mapping[str, Any] | None] = lambda *_: None,
     readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
     statuses: tuple[str, ...] = (),
+    placed: Callable[[str], object] = lambda _task: False,
 ) -> SimpleNamespace:
     """The parts of the Board of the Markdown project in `root`, kept current by a directory watch, with the writers `writers` builds.
 
@@ -551,7 +551,8 @@ def project_board(
     and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text;
     `refusal` is the update a board rule that refuses a task's move to a lane makes to the move; `readable` answers
     what the board's `readable` rules find broken in a task's description, "" when it reads well. `statuses` are the
-    lanes the policy holds, which replace the config file's.
+    lanes the policy holds, which replace the config file's. `placed` brings a task's History to its file (or archives it
+    when the file is gone), which each scan calls for the tasks it finds changed.
     """
     config = read_config(root, statuses)
     require_project(root, config)
@@ -577,26 +578,13 @@ def project_board(
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         # Built here, not at load: a `Move` is an adapter model, and a board read never starts the watch.
-        # The first scan is the feed's replay: it places every file, the Ledger is built once at its end rather than
-        # once per task, and a write meeting it waits for the task it places.
-        # A restart resumes the Board the last run saved and re-reads only the files changed since it.
-        feed.await_stream()
-        files, projection = None, _projection(root, board_file, config.statuses)
-        if feed.resume(log.checkpoints, _state_key(root), lambda _cursor: True) is not None:
-            kept = feed.source()
-            files = kept.get("files")
-            if files and kept.get("projection") != projection:
-                # Other projection code, config or machine: the saved Board stays what readers serve, every file is read again with the
-                # new code, and a file gone meanwhile still retracts its task.
-                files = {name: [0, 0, task_id] for name, (_mtime, _size, task_id) in files.items()}
+        # The first scan places every file, a task's History through `placed`, and a write meeting it waits for the task it places.
         moves = board_moves(drawn, declared, lane_ids)
         scan = NativeScan(
             root,
-            feed.put,
+            lambda task: placed(task.id),
             moves,
-            feed.retract,
-            files=files,
-            kept=lambda scanned: feed.keep_source({"files": scanned, "projection": projection}),
+            placed,
             retired=retired,
             refusal=refusal,
             roles=roles,
@@ -604,8 +592,7 @@ def project_board(
             statuses=statuses,
         )
         scans.append(scan)
-        scan.start(scanned=lambda: feed.expect("0-0"))
-        feed.spawn(feed.keep_saved, "board-state")
+        scan.start()
 
     return SimpleNamespace(
         machines=machines,
@@ -618,22 +605,3 @@ def project_board(
         rescan=lambda: sum(scan.scan() for scan in scans),
         **writers(config, roles),
     )
-
-
-def _projection(root: Path, machine: Path | None, statuses: tuple[str, ...]) -> str:
-    """A hash of the code, config, machine and effective lanes that project a task file, saved beside the file
-    fingerprints: a Board saved under another keeps its tasks, but its fingerprints no longer say a file is placed."""
-    digest = hashlib.sha256()
-    digest.update("\0".join(statuses).encode())
-    for name in _PROJECTION:
-        digest.update(inspect.getsource(importlib.import_module(name)).encode())
-    for path in (root / "config.yml", machine):
-        if path is not None and path.is_file():
-            digest.update(path.read_bytes())
-    return digest.hexdigest()[:12]
-
-
-def _state_key(root: Path) -> str:
-    """The key a native board's Board is saved under: the project alone, so a deploy that changes what projects its tasks
-    keeps the saved Board (`_projection`)."""
-    return f"native:{root.resolve()}"

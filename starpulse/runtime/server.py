@@ -13,7 +13,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from starpulse.event_log import heartbeat
 from starpulse.runtime import launch, wiring
 from starpulse.runtime.closure import Reader
 from starpulse.runtime.config import Config, rehearsing
@@ -43,12 +42,12 @@ def refuse_unassemblable(
 
     from starpulse.event_log.migrate import StoreNotMigrated, require_migrated  # noqa: PLC0415
     from starpulse.event_log.opening import database_url  # noqa: PLC0415
-    from starpulse.runtime.assembly import assemble  # noqa: PLC0415
+    from starpulse.runtime.assembly import declared  # noqa: PLC0415
 
     base = args.config.parent if args.config else Path.cwd()
     try:
         require_migrated(create_engine(database_url(config.database_url, base)))
-        assemble(config, base, args.hours * 3600, ready.run_safe)
+        declared(config, base)
     except StoreNotMigrated as exc:
         parser.exit(1, f"{exc}\n")
     except ValueError as exc:
@@ -144,7 +143,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     # that child checks, and drops the stamps of the contexts the old image started unless it keeps the contexts child,
     # whose stamps are still true
     os.environ[BOOT_ENV] = boot_token(os.environ, adopted)
-    heartbeat.make_directory()  # the workers below beat into it, and the Page API's `/metrics` reads it
     if adopted and "contexts" not in adopted:
         forget_old_starts(config, args)
     ready = wiring.prepare(parser, args, config)
