@@ -1270,11 +1270,11 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   plan (`verifyPlan`, read through `Board.read`; a board with no reader has none), so a task whose every pull request
   closed unmerged stays. A state that parks work for a person may declare `waits: {pr_merged: MERGED}` to close a task
   whose delivery merged while it waited there.
-- `pr_closed_unmerged`: `pr_terminal` holds and no cited pull request merged. A state that waits on it, with the event
-  moving to Needs attention, parks the task there with the closed pull requests and a question to the operator as the
-  `## Needs attention` reason, as `overdue` does.
-  A task whose comments show an `Operator answer` after the last comment carrying that very question is not parked on it
-  again (this holds for every ask: `overdue`, `pr_closed_unmerged`, `pr_failing`); a different question parks it.
+- `pr_closed_unmerged`: `pr_terminal` holds and no cited pull request merged. A state that waits on it moves the task
+  with the comment `superseded: <pr-urls> closed unmerged` and asks nothing: whoever closed the pull requests has
+  already answered.
+  A task whose comments show an `Operator answer` after the last comment carrying an ask's question is not parked on it
+  again (`overdue`, `pr_failing`); a different question parks it.
 - `pr_closed_unmerged_complete`: `pr_closed_unmerged` holds and every acceptance criterion and Definition of Done item is
   checked, so a no-op task has nothing to ask. A state that waits on it may declare an event that closes the task.
 - `pr_merged_planned`: `pr_merged` without the plan condition, and the record carries a non-empty Verify plan. A state
@@ -1361,7 +1361,7 @@ the board's guards, so the comment lands) and the actor retries when the lint re
 A move from the working lane (the first resting State the lifecycle does not end in) to Waiting runs the board's
 `parked` command once, with `{id}` replaced by the task's id, so a board can tell the session that holds the task. A
 move from Waiting to Ready runs the board's `released` command the same way, so a board can resume the session that
-parked the task. A task In Progress whose holder settles idle (the harness machine's `SESSION_SETTLED`, from the session's Stop hook completing) runs the board's `idle` command with `{id}` and `{verdict}` `checkpoint` once, so a board can resume the holder to checkpoint; the next idle runs it with `confirm`, then releases the holder's claim in place (the task stays In Progress, with a comment naming why) and runs it with `restart`, so a board can start a session on the task; after three restarts the task stays In Progress with its idle chip, and a release or `restart` that fails is not counted and retries on the next idle; no idle moves the task to Needs attention. A session a restart started is not counted idle before its first prompt begins (the harness machine's `SESSION_STARTED`). A nonzero exit means the holder was busy or not reached, and that idle is not counted.
+parked the task. A task In Progress whose holder settles idle (the harness machine's `SESSION_SETTLED`, from the session's Stop hook completing) runs the board's `idle` command with `{id}` and `{verdict}` `checkpoint` once, so a board can resume the holder to checkpoint; the next idle runs it with `confirm`, then releases the holder's claim in place (the task stays In Progress, with a comment naming why) and runs it with `restart`, so a board can start a session on the task; after three restarts the task stays In Progress with its idle chip, and a release or `restart` that fails is not counted and retries on the next idle; no idle moves the task to Needs attention. A holder that settled while the task actor was down is treated as settling when the actor has indexed its tasks, unless a later harness event for the task shows it started again. A session a restart started is not counted idle before its first prompt begins (the harness machine's `SESSION_STARTED`). A nonzero exit means the holder was busy or not reached, and that idle is not counted.
 A move from the working lane to Review that the board refuses (an open review thread, a conflict, an unchecked criterion) publishes the `in-progress` machine event `REVIEW_REFUSED` once (reason in its data, so `task.<id>.review_refused` on the NATS bridge), until the task's facts change, so the holder is told why a ready pull request did not reach Review. A move from Review back to the working lane runs the board's `returned` command the same way, so a board can wake the session that delivered a pull request that turned draft or conflicting. A move on a `pr_merged_planned` fact runs the board's `verifying` command the same way, so a board can wake the session that delivered the task to run its post-merge QA. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
 check that waits on time after the merge. A command that exits nonzero is logged; the move stands.
 

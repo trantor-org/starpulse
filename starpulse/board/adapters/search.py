@@ -21,9 +21,9 @@ import logging
 import math
 import os
 import threading
-import time
 import urllib.request
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 from sqlalchemy import Connection, Engine, bindparam, text
@@ -32,6 +32,9 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from starpulse.board.model.search_config import Search
 from starpulse.contracts.adapters import BoardTask
 from starpulse.event_log.wake import StopEvent
+
+if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
@@ -130,17 +133,17 @@ _POOL = 50
 _BATCH = 1
 #: Rows changed since the held vectors were read beyond which reading them all again is cheaper than naming them.
 _RELOAD_AT = 500
-#: Seconds a held read of the vectors is trusted: `starpulse worker search` writes vectors this process never sees as
-#: a write, so an older read is made again.
-_SHARED_REFRESH_S = 30.0
+#: The newest rowid in the vectors table: `starpulse worker search` writes vectors this process never sees as a write,
+#: and a stored one replaces its row, so takes the next rowid. A held read made at another newest rowid is made again;
+#: the lookup is the table's last b-tree entry, not a scan.
+_NEWEST = text(f"SELECT coalesce(max(rowid), 0) FROM {_VECTORS}")
 _TEXT_LIMIT = 8000
 _TIMEOUT = 10.0
 #: Seconds each attempt at a search query's vector waits, and the attempts made, before ranking lexically, so a slow
 #: endpoint costs the order and not the answer. A healthy embedder answers in 1 to 3 s and a cold one is quick on retry.
 _QUERY_TIMEOUT = 3.5
 _QUERY_ATTEMPTS = 2
-#: Seconds `keep_embedding` waits between passes, and after a failed one.
-_POLL = 5.0
+#: Seconds `keep_embedding` waits after a failed pass before the next.
 _RETRY = 60.0
 _INSERT = text(
     f"INSERT INTO {_TABLE} (rowid, task, title, description, criteria, notes, comments, lane, digest) "
@@ -244,7 +247,7 @@ class SearchIndex:
         #: and the next search reads those rows alone, so a burst of writes never makes a search read every vector.
         self._near: _Near | None = None
         self._dirty: set[int] = set()
-        self._read_at = 0.0
+        self._newest: int | None = None
         #: Held by the one search refreshing `_near`, which reads and normalises outside `_lock` so a write never waits
         #: for it.
         self._refreshing = threading.Lock()
@@ -415,17 +418,20 @@ class SearchIndex:
         """Every embedded task whose vector has `dimension` numbers, with the vectors read again only for the rows a
         write has changed since the last read (all of them the first time, or when too many changed to name)."""
         with self._refreshing:
+            with self._engine.connect() as connection:
+                newest = connection.execute(_NEWEST).scalar_one()
             with self._lock:
                 changed, self._dirty = self._dirty, set()
             held = self._near
-            stale = time.monotonic() - self._read_at >= _SHARED_REFRESH_S
-            if held is not None and (held.matrix.shape[1] != dimension or len(changed) > _RELOAD_AT or stale):
-                held = None
-            if held is not None and not changed:
-                return held
             try:
+                if held is not None and (
+                    held.matrix.shape[1] != dimension or len(changed) > _RELOAD_AT or newest != self._newest
+                ):
+                    held = None
+                if held is not None and not changed:
+                    return held
                 self._near = self._read_near(held, changed, dimension)
-                self._read_at = time.monotonic()
+                self._newest = newest
             except BaseException:
                 with self._lock:
                     self._dirty |= changed
@@ -462,6 +468,7 @@ class SearchIndex:
             texts = [f"{r.title}\n{r.description}"[:_TEXT_LIMIT] for r in rows]
             vectors = self._embed(texts)
             with self._lock, self._engine.begin() as connection:
+                before = connection.execute(_NEWEST).scalar_one()
                 done = [
                     row.row
                     for row, vector in zip(rows, vectors, strict=True)
@@ -475,6 +482,8 @@ class SearchIndex:
                         },
                     ).rowcount
                 ]
+                if done and before == self._newest:  # only this process wrote since the last read: `_dirty` names it
+                    self._newest = connection.execute(_NEWEST).scalar_one()
                 self._dirty.update(done)
             stored += len(done)
             if not done:
@@ -487,16 +496,18 @@ class SearchIndex:
         with self._engine.connect() as connection:
             return embedded, connection.execute(text(f"SELECT count(*) FROM {_TABLE}")).scalar_one()
 
-    def keep_embedding(self, stop: StopEvent) -> None:
-        """Run `embed_pending` every few seconds until `stop` is set; a failed pass is logged and retried later."""
-        delay = _POLL
-        while not stop.wait(delay):
+    def keep_embedding(self, stop: StopEvent, log: "EventLog") -> None:
+        """Run `embed_pending` now and after each commit to the event log (a task change writes its index row) until
+        `stop` is set; a failed pass is logged and retried after `_RETRY` seconds."""
+
+        def catch_up() -> None:
             try:
                 self.embed_pending()
-                delay = _POLL
             except (EmbeddingError, SQLAlchemyError) as exc:
                 logger.warning("StarPulse: cannot embed tasks for search: %s", exc)
-                delay = _RETRY
+                stop.wait(_RETRY)
+
+        log.run_on_wake(stop, catch_up, "StarPulse: the search embedding pass failed")
 
     def _embed_query(self, query: str) -> array.array | None:
         """`query`'s vector, or None when no endpoint is configured or it cannot be reached: the order stays lexical."""

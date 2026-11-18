@@ -323,6 +323,7 @@ def default_starters(
     def github_events(own: threading.Event) -> Callable[[], None]:
         from starpulse.event_log.migrate import migrate_chain
         from starpulse.event_log.readmodel.read_model import ReadModel
+        from starpulse.event_log.watch import open_watch
         from starpulse.github.adapters.inbound import consumer
         from starpulse.github.adapters.outbound.ingest import HttpIngest
 
@@ -332,7 +333,7 @@ def default_starters(
             raise ValueError("github-events: the producer github holds no token in the environment")
         server = os.environ.get("STARPULSE_WRITE_URL") or f"http://127.0.0.1:{config.port}"
         return consumer.start(
-            config, base, own, migrate_chain, HttpIngest(server, token), _PullLinks(ReadModel(log.engine))
+            config, base, own, migrate_chain, HttpIngest(server, token), _PullLinks(ReadModel(log.engine)), open_watch
         )
 
     known: dict[str, Starter] = {

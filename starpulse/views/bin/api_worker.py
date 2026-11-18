@@ -20,8 +20,9 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.adapters.history_window import HistoryWindow
-from starpulse.board.adapters.lane_policy import lane_surfaces
 from starpulse.board.adapters.lane_metrics import metrics_of as lane_metrics_of
+from starpulse.board.adapters.lane_policy import lane_surfaces
+from starpulse.board.adapters.native import DEFAULT_PATH
 from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM
 from starpulse.bridge.metrics import metrics_of as bridge_metrics_of
 from starpulse.event_log import verdict_events
@@ -45,8 +46,9 @@ from starpulse.sessions.adapters.outbound.session_start import starter
 from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, _cached, page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
-from starpulse.views.adapters.outbound.gc_pauses import install as collect_on_a_timer
+from starpulse.views.adapters.outbound.gc_pauses import install as collect_by_requests
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
+from starpulse.views.adapters.outbound.storage_metrics import cached, storage_exposition
 from starpulse.views.adapters.outbound.take_over import command_take_over
 from starpulse.views.adapters.outbound.webhook_command import command_webhook
 from starpulse.views.application.queries.answers import Answers
@@ -106,11 +108,13 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
 ) -> None:
     """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child."""
 
+    from sqlalchemy.engine import make_url  # noqa: PLC0415 - the database stack loads after the config is accepted
+
     from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.board.model.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.application.queries.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.application.queries.machine_tasks import MachineDeltas  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.application.queries.verdicts import Verdicts  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.board.model.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.declared import declared_fields  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -220,13 +224,22 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         # the lane followers run in `starpulse worker contexts`; this process relays the metrics they keep
         lane_metrics=lane_metrics_of(log),
         autopilot_metrics=lambda: autopilot_exposition(log),
+        storage_metrics=cached(
+            lambda: storage_exposition(
+                database=Path(sqlite_file) if (sqlite_file := make_url(url).database) else None,
+                archive=base / config.event_log_archive_dir,
+                board=base / str(config.board.get("path", DEFAULT_PATH)),
+            )
+        ),
         sweeper_metrics=sweeper_metrics_of(log),
         bridge_metrics=bridge_metrics_of(log),
         history_lag_metrics=history_lag_metrics_of(log),
         autopilot_log=lambda: autopilot_log(log),
     )
-    app = page_app(feed, host.static, store, window, board, services, snapshot_refresh_s=SNAPSHOT_REFRESH_S)
-    collect_on_a_timer(stop)
+    collector = collect_by_requests(stop)
+    app = page_app(
+        feed, host.static, store, window, board, services, snapshot_refresh_s=SNAPSHOT_REFRESH_S, served=collector.served
+    )
     try:
         httpd = PageServer(
             app,

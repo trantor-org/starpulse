@@ -26,6 +26,7 @@ def prometheus(request: Request) -> Response:
         services.actor_metrics,
         services.lane_metrics,
         services.autopilot_metrics,
+        services.storage_metrics,
         services.sweeper_metrics,
         services.bridge_metrics,
         services.history_lag_metrics,

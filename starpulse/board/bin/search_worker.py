@@ -2,11 +2,12 @@
 index holds text of) as its own process, beside `serve`.
 
 It reads the config and the database `serve` does and meets `serve` only in the index tables there: `serve` writes the
-index rows (`feed.index_tasks`) and this worker writes the vectors, and a search in `serve` rereads the vectors on a
-timer (`starpulse.board.adapters.search`). The catch-up is resumable by construction: `SearchIndex.embed_pending` embeds
-what holds no vector of the configured model and stores each batch in one transaction, keyed by the text's digest, so a
-new process embeds exactly what the last one left and neither drops nor repeats an embedding. With no `embeddings_url`
-there is nothing to embed, and the worker holds idle rather than exit under the supervisor that would restart it.
+index rows (`feed.index_tasks`) and this worker writes the vectors, and a search in `serve` rereads the vectors once the
+store holds others (`starpulse.board.adapters.search`). The catch-up is resumable by construction:
+`SearchIndex.embed_pending` embeds what holds no vector of the configured model and stores each batch in one
+transaction, keyed by the text's digest, so a new process embeds exactly what the last one left and neither drops nor
+repeats an embedding. With no `embeddings_url` there is nothing to embed, and the worker holds idle rather than exit
+under the supervisor that would restart it.
 `SIGTERM` stops it; `SIGHUP` re-reads the config and, as the thread is built once, only says whether a restart is needed.
 """
 
@@ -55,7 +56,7 @@ def start(
         index = SearchIndex.open(log.engine, config.search)
         if index is None:
             raise ValueError(f"{path}: the database keeps no search index (SQLite with FTS5 is required)")
-        threading.Thread(target=index.keep_embedding, args=(stop,), name="search-embeddings", daemon=True).start()
+        threading.Thread(target=index.keep_embedding, args=(stop, log), name="search-embeddings", daemon=True).start()
     return lambda: reload(path, config, load)
 
 

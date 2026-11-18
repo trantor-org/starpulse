@@ -58,9 +58,11 @@ class ClaimMethods:
         with self._lock:
             if answers is not None and answers != self._pull_answers:
                 self._pull_answers, self._pulls_unsaved = answers, True
+                self.unsaved.set()
             if pulls == self._pulls:
                 return
             self._pulls_unsaved = True
+            self.unsaved.set()
             self._pulls = pulls
             self._publish("pulls", {"pulls": pulls})
         self._refresh_ledgers()

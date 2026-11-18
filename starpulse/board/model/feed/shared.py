@@ -38,8 +38,9 @@ _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 # The runs instance pushed workflows belong to, so the page names them `pushed/<workflow>`.
 PUSHED_INSTANCE = "pushed"
 
-#: How often a running reader saves the Board, in seconds; a restart reads again what arrived since.
-SAVE_INTERVAL = 60.0
+#: How long a running reader waits after a change before it saves the Board, in seconds, so a burst is one save; a
+#: restart reads again what arrived since.
+SAVE_DEBOUNCE = 10.0
 
 #: The worker states the board worker writes when it saves the dates a serving process adopts.
 CLAIM_EXPIRIES_STATE = "board:claim-expiries"

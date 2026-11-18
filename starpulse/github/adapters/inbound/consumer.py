@@ -1,16 +1,16 @@
 """The `events` consumer: each saved delivery that reports a pull request fact becomes one machine event, and one that reports a workflow run
 becomes one run event.
 
-`consume` makes one pass over the deliveries due; `run` repeats it on a thread until it is told to stop. A delivery is
-done once the ingest accepts its event (a repeat of the fact is accepted and collapses on the event id), is retried
-with a growing wait while the ingest is out of reach or the pull request is not yet linked to a task, and is dead at
-once when the ingest refuses the event for good.
+`consume` makes one pass over the deliveries due; `run` repeats it on each commit to the inbox until it is told to stop.
+A delivery is done once the ingest accepts its event (a repeat of the fact is accepted and collapses on the event id),
+is retried with a growing wait while the ingest is out of reach or the pull request is not yet linked to a task, and is
+dead at once when the ingest refuses the event for good.
 """
 
 import logging
 import os
+import selectors
 import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -23,16 +23,14 @@ from starpulse.github.adapters.outbound.inbox import Migrate, SqlInbox
 from starpulse.github.adapters.outbound.queue import SqlQueue
 from starpulse.github.adapters.outbound.rest import RateLimited, connect
 from starpulse.github.model.events import CONSUMER, REFUSED, cloudevent, facts_of, run_event_of
-from starpulse.github.ports.events import Entry, Ingest, Links, Queue
+from starpulse.github.ports.events import Entry, Ingest, Links, OpenWatch, Queue, Stop, Watch
 
 __all__ = ["consume", "open_queue", "run", "start"]
 
 logger = logging.getLogger(__name__)
 
-#: Seconds between two passes, and between two purges.
-_PASS_S = 1.0
-_PURGE_S = 3600.0
-
+RETRY_S = 1.0
+FALLBACK_S = 3600.0
 
 def _post(queue: Queue, ingest: Ingest, delivery_id: str, events: list[dict[str, Any]]) -> bool:
     for event in events:
@@ -92,21 +90,47 @@ def run(
     queue: Queue,
     ingest: Ingest,
     links: Links,
-    stop: threading.Event,
-    purge: Callable[[], None],
+    stop: Stop,
+    watch: Watch | None,
     checks: HeadChecks | None = None,
 ) -> None:
-    """Consume until `stop` is set, purging the rows past their retention once an hour."""
-    purged = 0.0
-    while not stop.is_set():
-        try:
-            consume(queue, ingest, links, checks)
-            if time.monotonic() - purged >= _PURGE_S:
-                purge()
-                purged = time.monotonic()
-        except Exception:
-            logger.exception("github events: pass failed")
-        stop.wait(_PASS_S)
+    """Consume once, then again whenever the inbox commits (`watch`) or a retry falls due, until `stop` is set.
+
+    The watch fires on any write to the inbox, this consumer's own included; the pass it causes finds nothing due and
+    writes nothing. A pass reads under the write lock, so it waits for a commit the watch announced before it is
+    visible. Without a watch (a Postgres inbox, or a platform with neither inotify nor kqueue) a pass runs every
+    `FALLBACK_S`, and says so once."""
+    stopped, signal = os.pipe()
+
+    def wake() -> None:
+        os.write(signal, b"x")
+
+    stop.listen(wake)
+    selector = selectors.DefaultSelector()
+    selector.register(stopped, selectors.EVENT_READ)
+    if watch is None:
+        logger.warning("github events: no file watch on the inbox; consuming every %ss", FALLBACK_S)
+    else:
+        selector.register(watch.fileno(), selectors.EVENT_READ)
+    try:
+        while not stop.is_set():
+            wait = None if watch else FALLBACK_S
+            try:
+                consume(queue, ingest, links, checks)
+                due = queue.due_in()
+                if due is not None:
+                    wait = due if wait is None else min(wait, due)
+            except Exception:
+                logger.exception("github events: pass failed")
+                wait = RETRY_S
+            selector.select(wait)
+            if watch is not None:
+                watch.drain()
+    finally:
+        stop.unlisten(wake)
+        selector.close()
+        os.close(stopped)
+        os.close(signal)
 
 
 def open_queue(config: Any, base: Path, migrate: Migrate, consumer: str = CONSUMER) -> tuple[SqlInbox, SqlQueue]:
@@ -119,12 +143,12 @@ def open_queue(config: Any, base: Path, migrate: Migrate, consumer: str = CONSUM
 
 
 def start(
-    config: Any, base: Path, stop: threading.Event, migrate: Migrate, ingest: Ingest, links: Links
+    config: Any, base: Path, stop: Stop, migrate: Migrate, ingest: Ingest, links: Links, open_watch: OpenWatch
 ) -> Callable[[], None]:
     """The `github-events` context: consume the inbox `[github]` names on a thread until `stop` is set. The listener's
     container holds no producer token, so this runs apart from it, over the same inbox, with the `ingest` that holds it.
 
-    The reconcile against GitHub is the sweeper's `github` kind, not a thread here. When the `github` producer may write
+    The reconcile against GitHub and the retention purge (`starpulse github purge`) are the sweeper's, not a thread here. When the `github` producer may write
     the `pr-checks` machine it also publishes each check delivery and its head's rollup (`HeadChecks`), reading GitHub
     with `GITHUB_TOKEN` or `GH_TOKEN`, as the pull request adapter does.
 
@@ -134,11 +158,16 @@ def start(
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     checks = HeadChecks(GitHubReader(connect(token))) if publishes_checks else None
 
+    url = inbox.engine.url
+    watch = open_watch(url.database) if url.get_backend_name() == "sqlite" and url.database else None
+
     def work() -> None:
         try:
-            run(queue, ingest, links, stop, queue.purge, checks)
+            run(queue, ingest, links, stop, watch, checks)
         finally:
             inbox.engine.dispose()
+            if watch is not None:
+                watch.close()
 
     threading.Thread(target=work, name="github-events", daemon=True).start()
     return lambda: None
