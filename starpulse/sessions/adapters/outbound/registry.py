@@ -39,3 +39,9 @@ class Registry:
             return Registration(**json.loads((self._directory / f"{key}.json").read_text()))
         except (OSError, ValueError, TypeError):
             return None
+
+    def keys(self) -> list[str]:
+        return sorted(file.stem for file in self._directory.glob("*.json"))
+
+    def delete(self, key: str) -> None:
+        (self._directory / f"{key}.json").unlink(missing_ok=True)
