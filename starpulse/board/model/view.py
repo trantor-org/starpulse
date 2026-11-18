@@ -90,39 +90,37 @@ def cold_agent(task_id: str, record: dict[str, Any], done: str, entered: float |
     }
 
 
-def _state_in(snapshot: dict[str, Any], flow: str, task: str) -> str | None:
-    """The state `task` is in within machine `flow`, None when the machine holds no such task."""
+def _newest(snapshot: dict[str, Any], flow: str, task: str) -> dict[str, Any] | None:
+    """`task`'s newest row in machine `flow`, the earlier on a tie; None when the machine holds none."""
     machine = next((f for f in snapshot["flows"] if f["name"] == flow), None)
-    return next((a["state"] for a in machine["agents"] if a.get("task") == task), None) if machine else None
+    rows = [a for a in machine["agents"] if a.get("task") == task] if machine else []
+    return max(rows, key=lambda a: a.get("active") or 0, default=None)
 
 
-def _holding(snapshot: dict[str, Any], links: list[dict[str, Any]], task: str) -> tuple[dict[str, Any], str, dict[str, Any]] | None:
-    """The first of `links`' submachines that holds `task`: its link, the state `task` holds in it, and its flow."""
-    for link in links:
-        flow = next((f for f in snapshot["flows"] if f["name"] == link["machine"]), None)
-        if flow and (state := _state_in(snapshot, link["machine"], task)):
-            return link, state, flow
-    return None
+def _holding(snapshot: dict[str, Any], links: list[dict[str, Any]], task: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """The link among `links` whose submachine holds `task` in its newest row, and that row."""
+    held = [(link, row) for link in links if (row := _newest(snapshot, link["machine"], task))]
+    return max(held, key=lambda pair: pair[1].get("active") or 0, default=None)
 
 
 def _phase(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | None, str | None, dict[str, Any] | None]:
-    """An In Progress task's `(phase, substate, flow)`: the state of the In Progress machine, the state of the first
-    submachine that phase links which holds the task, and that submachine's flow. Only the current phase's submachines
-    count."""
+    """An In Progress task's `(phase, substate, flow)`, picked as the kanban card's `climb` does: the newest row among
+    the submachines its In Progress row's state links, else among all the In Progress machine links, names the phase
+    (that link's state), the substate (that row's state) and the flow. A task held by no submachine reads the In
+    Progress row's state alone."""
     if agent["state"] != roles_of(snapshot).working:
         return None, None, None
     inner = board_flow(snapshot)["machine"].get("submachines") or [{}]
     machine = next((f for f in snapshot["flows"] if f["name"] == inner[0].get("machine")), None)
     if machine is None:
         return None, None, None
-    phase = _state_in(snapshot, machine["name"], agent["id"])
-    links = machine["machine"].get("submachines", [])
-    if phase is None:
-        # the subflows hold the task while the In Progress machine has no state for it: the first to hold it names the phase
-        held = _holding(snapshot, links, agent["id"])
-        return (None, None, None) if held is None else (held[0]["state"], held[1], held[2])
-    held = _holding(snapshot, [link for link in links if link["state"] == phase], agent["id"])
-    return (phase, None, None) if held is None else (phase, held[1], held[2])
+    row = _newest(snapshot, machine["name"], agent["id"])
+    links = [link for link in machine["machine"].get("submachines", []) if link["machine"] != machine["name"]]
+    held = _holding(snapshot, [link for link in links if row and link["state"] == row["state"]], agent["id"]) or _holding(snapshot, links, agent["id"])
+    if held is None:
+        return (row["state"], None, None) if row else (None, None, None)
+    link, held_row = held
+    return link["state"], held_row["state"], next(f for f in snapshot["flows"] if f["name"] == link["machine"])
 
 
 def _skill(substate: str | None, flow: dict[str, Any] | None) -> dict[str, Any] | None:

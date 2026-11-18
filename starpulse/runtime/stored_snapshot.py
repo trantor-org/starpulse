@@ -16,7 +16,10 @@ def stored_snapshots(feed: BoardFeed, log: EventLog, stop: StopEvent) -> Snapsho
     from; returns once the first snapshot is stored."""
     store = SnapshotStore(log.engine, stored_bodies)
     held = HeldSnapshot(feed, store=store)
-    threading.Thread(target=held.run, args=(stop,), name="held-snapshot", daemon=True).start()
+    writer = threading.Thread(target=held.run, args=(stop,), name="held-snapshot", daemon=True)
+    writer.start()
     if not held.started.wait(30):
         raise TimeoutError("the Board writer stored no snapshot in 30 s")
-    return Snapshots(store, log, stop)
+    snapshots = Snapshots(store, log, stop)
+    snapshots.readers.append(writer)
+    return snapshots
