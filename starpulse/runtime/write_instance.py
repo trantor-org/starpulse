@@ -22,12 +22,10 @@ from starpulse.runtime.config import load
 from starpulse.runtime.store_migrate import maintain
 from starpulse.board.adapters.native_scan import _live
 from starpulse.event_log.event_log import EventLog
-from starpulse.runtime.adapter_kit import assembled, serve, url
+from starpulse.runtime.adapter_kit import FOLDED_WITHIN_S, assembled, serve, url
 
 #: How long a stopped instance waits for the Board adapter's thread to end.
 PLACED_WITHIN_S = 5.0
-#: How long a settle waits for the Board writer to fold what the scan placed.
-FOLDED_WITHIN_S = 30.0
 #: Held while an instance starts its adapter, so the threads that start is the only new ones in the adapter registry.
 _STARTING = threading.Lock()
 _MISSING = re.compile(r"([\w-]+) (?:is not on the board|has no record to read)")
