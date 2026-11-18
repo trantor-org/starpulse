@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import NamedTuple, Protocol
 
 from starpulse.board.adapters.history_window import MAX_HOURS
+from starpulse.board.adapters.search import SearchIndex
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
 from starpulse.board.model.board_feed import BoardFeed, ExpiriesStore, LaneRecorder
 from starpulse.board.model.board_feed import follow as follow_stream
@@ -97,9 +98,11 @@ def start(
     board.sweep(feed, log, store.save_claim_expiries)
     threading.Thread(target=HeldSnapshot(feed, store=snapshots).run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
     MachineDeltas(feed, model).follow(stop, log)  # a context sharing this feed hears each machine row as a `move`
+    search = SearchIndex.open(log.engine, config.search)  # the one fold indexes search, as the API's second fold once did
     follow(
-        Projector(log.engine, EventStore(log.engine), log=log, drawn=feed.machines, keys=board.keys), feed, stop, log
-    )
+        Projector(log.engine, EventStore(log.engine), search, log=log, drawn=feed.machines, keys=board.keys),
+        feed, stop, log,
+    )  # fmt: skip
     feed.follow_dates(log, store, stop)  # the start criteria dates and claim expiries
     refusals = ClaimRefusals(feed)
     follow_stream(refusals, log, CLAIMS_STREAM, refusals.handle_entry, stop=stop)  # the claim refusals
