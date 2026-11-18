@@ -4,6 +4,10 @@ On a free-threaded build a collection stops every thread, and under CPU contenti
 threads: an automatic collection mid-request stalls the whole worker for tens of milliseconds to seconds, which is the
 `/api/task/{id}` p95 tail. A worker therefore turns automatic collection off and collects after a count of requests,
 on a thread of its own, so a request never waits for the collection it paid for.
+
+The first collection also freezes what survives it, so later ones scan only what the worker allocated since: a pass
+over the whole multi-gigabyte heap stalled every thread for 2-3 s. A cycle that dies after the freeze is not
+collected until the worker is replaced, which `--hours` bounds.
 """
 
 import ctypes
@@ -89,10 +93,14 @@ class Collector:
 
     def run(self, stop: StopEvent) -> None:
         stop.listen(self._due.set)
+        frozen = False
         try:
             while self._due.wait() and not stop.is_set():
                 self._due.clear()
                 gc.collect()
+                if not frozen:
+                    gc.freeze()  # what lives after the first collection is the loaded heap; a full pass over it took 2-3 s
+                    frozen = True
                 self._trim()
         finally:
             stop.unlisten(self._due.set)

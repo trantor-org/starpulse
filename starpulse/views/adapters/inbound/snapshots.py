@@ -31,6 +31,10 @@ IDLE_REFRESH_S = 30.0
 WARM_IDLE_PER_BUILD = 9.0
 
 
+#: The snapshot's fields `/api/flows` keeps: what the agent CLI reads of the board, the runs and the cues.
+FLOW_KEYS = ("flows", "roles", "settled", "cold_done", "pulls", "interactive", "ratings", "cues", "dags", "error")
+
+
 class Served(NamedTuple):
     #: The feed revision the snapshot was taken at.
     rev: int
@@ -75,6 +79,9 @@ class Snapshots:
         #: When (the clock's seconds) the snapshot `_full` was made from was built.
         self._full_at = 0.0
         self._taking = threading.Lock()
+        #: The `/api/flows` body and gzip made from one `take`, under `_flowing`.
+        self._flows: tuple[Served, Encoded] | None = None
+        self._flowing = threading.Lock()
         self._keys = itertools.count()
 
     @property
@@ -91,6 +98,17 @@ class Snapshots:
                 held = Served(*self._feed.snapshot_at())
                 self._taken = (self._clock(), held)
             return held
+
+    def flows(self) -> Encoded:
+        """The `/api/flows` body of the snapshot `take` returns, encoded and gzipped once however many requests ask: the
+        agent CLI reads it about once a second, and each read took seconds of CPU to draw and compress a megabyte."""
+        served = self.take()
+        with self._flowing:
+            if self._flows is None or self._flows[0] is not served:
+                drawn = full_snapshot(served.snapshot)
+                body = encode("flows", {key: drawn[key] for key in FLOW_KEYS if key in drawn})
+                self._flows = (served, Encoded.of(body))
+            return self._flows[1]
 
     def full(self) -> bytes:
         """The body of `?view=full`, encoded once per snapshot however many requests ask. With a warmer the body is

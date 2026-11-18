@@ -120,7 +120,9 @@ class BoardFiles:
             return 0, 0
 
     def run(self) -> tuple[int, int]:
-        """One pass: `(corrected, sampled)`, the sweeper's counts for the kind."""
+        """One pass: `(sampled, corrected)`, the order `_BoardKind` reads. `sampled` is the open tasks read and the tasks
+        the vector index holds; `corrected` is the lanes reconciled, the files a rescan had to read and the vectors
+        embedded, each a task a push should have placed (an unembedded task missed its index push)."""
         corrected = self._rescan() if self._rescan is not None else 0
         corrected += self._place()
         agents = self._feed.open_tasks()
@@ -138,7 +140,7 @@ class BoardFiles:
             )
             logger.error("StarPulse: board lanes differ from the task files after a re-read: %s", listed)
         embedded, indexed = self._embed()
-        return corrected + embedded, len(agents) + indexed
+        return len(agents) + indexed, corrected + embedded
 
     def exposition(self) -> str:
         """Prometheus text of the gauge: a series per persisting task, none when the board and the files agree."""

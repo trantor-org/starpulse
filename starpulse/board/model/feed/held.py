@@ -90,10 +90,12 @@ class HeldSnapshot:
         self._stale = False
 
     def run(self, stop: StopEvent) -> None:
-        """Build the snapshot, then fold the changes published since each publish as one, and a tick every `TICK`, until `stop`."""
+        """Build the snapshot and store it as a `snapshot` delta (a stream attached before the start missed what changed while
+        the writer was down, in no stored delta), then fold the changes published since each publish as one, and a tick
+        every `TICK`, until `stop`."""
         stop.listen(lambda: self._changes.put(None))  # type: ignore[arg-type]
         try:
-            self._rebuilt([])
+            self._rebuilt([], restarted=True)
             due = time.monotonic() + TICK  # a deadline, so a steady run of changes cannot keep the tick off
             while not stop.is_set():
                 try:
@@ -111,14 +113,14 @@ class HeldSnapshot:
         finally:
             self._feed.unsubscribe(self._changes)
 
-    def _rebuilt(self, changes: list[tuple[str, dict]]) -> None:
+    def _rebuilt(self, changes: list[tuple[str, dict]], restarted: bool = False) -> None:
         try:
             self.build()
         except Exception:
             logger.exception("StarPulse: the held snapshot could not be built; it is built again on the next change or tick")
             self._stale = True
             return
-        self._save(changes)
+        self._save([("snapshot", self.snapshot)] if restarted else changes)
 
     def _folded(self, changes: list[tuple[str, dict]]) -> None:
         try:
