@@ -13,7 +13,9 @@ deletes the session's consumer before the delivery route can read the move, so a
 names runs `end` here, before the drop so a retried entry runs it again, whether or not a consumer held the task: a
 session whose consumer was lost (a restart's `reconcile` read a holder the read model had not folded yet) is still
 bound to the task, and `end` is scoped to the task and idempotent. The entry's own lane says the task finished: the
-read model the holder is read from is projected on another tail and may not have folded the move yet.
+read model the holder is read from is projected on another tail and may not have folded the move yet. After each
+lane move and each `reconcile`, `settle` takes the names of the sessions that still have a consumer, so the
+registrations of the sessions that ended, and those an older release left, are removed.
 """
 
 import threading
@@ -49,9 +51,10 @@ class Subscriber:
         feed: Callable[[], Any],
         end: Callable[[str], None] | None = None,
         end_lanes: Collection[str] = (),
+        settle: Callable[[Collection[str]], None] | None = None,
     ) -> None:
         self._board, self._rules, self._store, self._feed = board, rules, store, feed
-        self._end, self._end_lanes = end, end_lanes
+        self._end, self._end_lanes, self._settle = end, end_lanes, settle
         self._lock = threading.Lock()
 
     def handle(self, entry: Entry) -> None:
@@ -61,6 +64,7 @@ class Subscriber:
                 return
             if entry.stream in (LANES, CLAIMS):
                 self._moved(task, str(entry.fields.get("lane") or ""))
+                self._settled()
             elif entry.stream == MACHINE and entry.fields.get("event") == OPENED and (number := pull_number(entry)):
                 holder, rules = self._holder(task)
                 self._grant(holder, task, expand(self._board, rules.pr_opened, task=task, pr=number))
@@ -101,6 +105,11 @@ class Subscriber:
                         changed |= subscription.add(origin, self._held(origin, rules))
                 if changed:
                     self._store.put(session, subscription)
+            self._settled()
+
+    def _settled(self) -> None:
+        if self._settle:
+            self._settle(self._store.sessions())
 
     def _moved(self, task: str, lane: str) -> None:
         holder, rules = ("", Rules()) if lane in FINISHED else self._holder(task)

@@ -268,7 +268,7 @@ def default_starters(
 
     def bridge(own: threading.Event) -> Callable[[], None]:
         from starpulse.bridge import worker
-        from starpulse.runtime.session_delivery import route
+        from starpulse.runtime.session_delivery import forget_ended, route
         from starpulse.sessions.adapters.outbound import claude_code_notify as claude
         from starpulse.sessions.adapters.outbound.registry import Registry, directory
 
@@ -279,6 +279,7 @@ def default_starters(
             now=time.monotonic,
         )
         end = claude.end_with(config.bridge.end)
+        registry = Registry(directory(base, config.bridge.sessions_dir))
         return worker.start(
             config.bridge.port,
             config.bridge.board,
@@ -287,7 +288,7 @@ def default_starters(
             lambda: shared()[1],
             own,
             route(
-                Registry(directory(base, config.bridge.sessions_dir)),
+                registry,
                 notifier,
                 claude.sessions_dir(os.environ),
                 config.bridge.quiet_moves,
@@ -296,6 +297,7 @@ def default_starters(
             ),
             end,
             config.bridge.end_lanes,
+            forget_ended(registry, claude.live_socket(claude.sessions_dir(os.environ)), claude.sessions_dir(os.environ)),
         )
 
     def search(own: threading.Event) -> Callable[[], None]:

@@ -7,7 +7,8 @@ cannot close the envelope the notifier wraps it in or span lines.
 A move of the session's task to a finished lane never reaches the session: posting it would start a turn and keep an
 ending session busy, and resuming an exited one would revive it. A move to a lane `[bridge] end_lanes` names runs the
 `[bridge] end` command once per task in the batch, after any line is posted: the session reaper's pass scoped to that
-task, which ends its session once it is idle and keeps a busy one for the record write at its turn's end.
+task, which ends its session once it is idle and keeps a busy one for the record write at its turn's end. The
+registration of a session that ended is removed by `forget_ended`, which the subscriber runs after each lane move.
 
 A move to any other lane whose writer `[bridge] quiet_moves` names for that lane is acked with no line too, and a batch
 left with no line notifies nothing; `self` names the receiving session, matched through the same running-session records
@@ -93,6 +94,12 @@ def _quieted(event: Event, quiet: Mapping[str, Collection[str]], own: str, sessi
     return SELF in writers and bool(own) and local_id(sessions, session) == own
 
 
+def _local(sessions: Path, name: str) -> str:
+    """The local session id a consumer named for a claude.ai URL holder resolves to; empty for any other name."""
+    url = _URL_HOLDER.fullmatch(name)
+    return local_id(sessions, f"https://claude.ai/code/{url[1]}") if url else ""
+
+
 def route(
     registry: Registry,
     notifier: Notifier,
@@ -106,9 +113,9 @@ def route(
     under its local id. `end` takes the id of each task a batch moved to a lane `end_lanes` names."""
 
     def registered(name: str) -> Registration | None:
-        if (found := registry.get(name)) or not (url := _URL_HOLDER.fullmatch(name)):
+        if found := registry.get(name):
             return found
-        local = local_id(sessions, f"https://claude.ai/code/{url[1]}")
+        local = _local(sessions, name)
         return registry.get(local) if local else None
 
     def find(name: str):  # noqa: ANN202
@@ -130,3 +137,17 @@ def route(
         return deliver
 
     return find
+
+
+def forget_ended(registry: Registry, alive: Callable[[str], str | None], sessions: Path) -> Callable[[Collection[str]], None]:
+    """Remove the registration of every session that is neither running nor named by a consumer in `names`: nothing
+    is delivered to it, and a session that returns registers again at its next turn's end."""
+
+    def forget(names: Collection[str]) -> None:
+        wanted = set(names)
+        wanted |= {_local(sessions, name) for name in names}
+        for key in registry.keys():
+            if key not in wanted and not ((registration := registry.get(key)) and alive(registration.session)):
+                registry.delete(key)
+
+    return forget
