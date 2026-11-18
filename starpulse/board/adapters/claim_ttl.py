@@ -163,7 +163,8 @@ def sweep(
     and text of the terminal halt a session's harness wrote as its last turn, None when it wrote none; a claim with no
     renewal after its session's halt is released before `ttl`. `seen_running` is when a workflow was last seen running for each Task, by lowercased id: it renews that Task's claim,
     since the workflow emits nothing while it waits. `alive` is whether a session's process runs: its claim is kept past
-    `ttl`, expiring `ttl` after this pass, since the session emits nothing while it waits on a background task.
+    `ttl`, since the session emits nothing while it waits on a background task; its expiry still reads its last
+    renewal plus `ttl`, so an idle live claim shows expired.
     """
     now = time.time() if now is None else now
     expiries = {} if expiries is None else expiries
@@ -190,7 +191,7 @@ def sweep(
         if renewed is None:
             continue
         live = alive(session)
-        expiries[row["id"]] = (now if live else renewed) + ttl
+        expiries[row["id"]] = renewed + ttl
         stale = not live and now - renewed >= ttl
         halt = None if stale else halted(session)
         if not stale and (halt is None or halt[0] < renewed):

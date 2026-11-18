@@ -112,6 +112,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from starpulse.board.application.queries.verdicts import Verdicts  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.board.model.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.event_log.migrate import StoreNotMigrated  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.declared import declared_fields  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -125,13 +126,13 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # Every reader keeps its own cursor over the one event log, so a second copy on another port sees every entry too.
     # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
     url = database_url(config.database_url, base)
-    log = EventLog(url)
-    # the page is drawn from the Task read model the projector folds, so no task file is read here
-    model = ReadModel(log.engine, declared_fields(config.board))
     try:
+        log = EventLog(url)
+        # the page is drawn from the Task read model the projector folds, so no task file is read here
+        model = ReadModel(log.engine, declared_fields(config.board))
         board, feed = host.assemble(config, base, args.hours * 3600, run_safe, model)
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
+    except (StoreNotMigrated, ValueError) as exc:
+        parser.exit(os.EX_CONFIG, f"{exc}\n")  # `serve` stops on this status at the child's first run
     window = HistoryWindow(feed, args.hours, log)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store = host.history_store(config, base, feed.machines)
