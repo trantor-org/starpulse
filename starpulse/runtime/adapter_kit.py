@@ -335,6 +335,9 @@ def serve(
     finally:
         server.close()
         stop.set()
+        # a reader of the log still mid-step reopens it after the close, and a thread starved under load has not begun
+        for reader in snapshots.readers:
+            reader.join(30)
         log.close()
 
 

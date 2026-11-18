@@ -3,6 +3,7 @@ import { MoveStore, place, type Post, type Reply } from "./move";
 import { NO_PREFS, applySuggestion, boardCount, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll, stackOf, toggleFold, whyHidden, withRecordPulls, type KanbanTask } from "./kanbanModel";
 import { climb, offBoardTask, prReadState } from "./kanbanModel";
 import type { Sky } from "../../render/sky";
+import phaseCases from "../../../../../tests/fixtures/board/phase_cases.json";
 import { merge } from "../../render/sky";
 import { LIFECYCLE_COLUMNS, LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import type { TaskRecord } from "./taskViewModel";
@@ -766,6 +767,18 @@ describe("climb", () => {
     },
   }) as unknown as Sky;
   const ip = (task: string, state: string, active = 1) => ({ "in-progress": [{ task, state, active }] });
+
+  it("lands on the machine and step the server's task view reports, for each task of the shared phase cases", () => {
+    const cases = phaseCases as unknown as { machines: Record<string, { links: Link[]; rows: Session[] }>; expect: Record<string, { machine: string | null; state: string | null }> };
+    const s = {
+      board: flow("board", ["in_progress"], [], [["in_progress", "in-progress"]]),
+      flows: Object.fromEntries(Object.entries(cases.machines).map(([name, m]) => [name, flow(name, [], m.rows, m.links)])),
+    } as unknown as Sky;
+
+    const seen = Object.fromEntries(Object.keys(cases.expect).map((id) => [id, { machine: climb(s, id)?.chain[0] ?? null, state: climb(s, id)?.state ?? null }]));
+
+    expect(seen).toEqual(Object.fromEntries(Object.entries(cases.expect).map(([id, e]) => [id, { machine: e.machine, state: e.state }])));
+  });
 
   it("names a task in a phase by that phase and its step over the phase's states", () => {
     const at = climb(sky({ ...ip("PROJ-1", "build"), build: [{ task: "PROJ-1", state: "red_proven", active: 9 }] }), "PROJ-1");

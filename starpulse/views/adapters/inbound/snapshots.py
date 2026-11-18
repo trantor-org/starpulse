@@ -54,12 +54,16 @@ class Snapshots:
         #: The newest delta put on the streams, and the queue of each stream open.
         self._head = store.head()
         self._streams: list[queue.Queue] = []
-        threading.Thread(
-            target=log.run_on_wake,
-            args=(stop, self._advance, "StarPulse: the stored deltas could not be read"),
-            name="snapshot-deltas",
-            daemon=True,
-        ).start()
+        #: The threads that read the log until `stop`, for an owner that closes the log to join first.
+        self.readers = [
+            threading.Thread(
+                target=log.run_on_wake,
+                args=(stop, self._advance, "StarPulse: the stored deltas could not be read"),
+                name="snapshot-deltas",
+                daemon=True,
+            )
+        ]
+        self.readers[0].start()
 
     def stored(self, view: str = "slim") -> tuple[int, Encoded]:
         """The sequence and body the writer stored for `view` (`slim` is the page's, `full` is `?view=full`'s); the body
