@@ -126,7 +126,8 @@ def _watch_commits(
                 connection.execute("BEGIN IMMEDIATE")
                 connection.execute("ROLLBACK")
             current = connection.execute("PRAGMA data_version").fetchone()[0]
-            if version is not None and current != version:
+            # after a failed check a commit may have landed before this baseline read: wake the readers once
+            if not healthy or (version is not None and current != version):
                 owner._wake()
             version, healthy = current, True
         except sqlite3.Error as exc:  # the file is locked or gone: wake the readers to look, and look again later
