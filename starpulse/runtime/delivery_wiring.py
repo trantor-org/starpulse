@@ -108,7 +108,7 @@ def start_delivery(
     live = LiveBuild(release.repo, running_commit) if release and release.settle == "release" else None
     actor = None
     if config.task_actor:
-        if board.edit is None:
+        if config.board_type != "native":
             raise ValueError("[board.actor] needs a board that edits tasks")
         actor = TaskActor(
             feed,
@@ -124,7 +124,6 @@ def start_delivery(
             holds=board.holds,
             read=board.read,
             unfinished=board.unfinished,
-            create=board.create,
             parked=board.parked,
             released=board.released,
             idle=board.idle,
@@ -147,8 +146,7 @@ def start_delivery(
         follow_until_events(actor.event_seen, lambda entry: subject_for(config.bridge.board, entry), log, stop)
         actor.start(stop)
         follow_holder_idle(actor.holder_settled, log, stop, actor.indexed)
-    if board.entered:
-        lane_events.follow_entered(board.entered, log, stop)
+    lane_events.follow_entered(board.entered, log, stop)
     sync = None
     if config.pull_requests and shutil.which("gh"):
         pull_requests = PullRequests(
@@ -170,6 +168,6 @@ def start_delivery(
         keep_beating(log, sync.serving, stop, state=SERVING)
         threading.Thread(target=keep_polling, args=(sync, stop, running), name="pull-reader", daemon=True).start()
     if config.release is not None:
-        if board.edit is None or not (feed.roles.waiting and feed.roles.ready):
+        if config.board_type != "native" or not (feed.roles.waiting and feed.roles.ready):
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
     return actor, sync

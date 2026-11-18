@@ -10,7 +10,6 @@ from starlette.requests import ClientDisconnect, Request
 from starlette.responses import PlainTextResponse, Response
 
 from starpulse.board.model import write_steps
-from starpulse.board.model.seam import OPERATOR, Written
 from starpulse.views.adapters.inbound.api.answering import answer, client, on_worker
 from starpulse.views.application.commands.guard import RETRY_AFTER_S, write_refusal
 from starpulse.views.model.encoding import encode
@@ -19,10 +18,6 @@ TaskWrite = Callable[[str, bytes], tuple[int, dict]]
 Pushed = Callable[[str | None, bytes], tuple[int, dict]]
 
 _BODY = "starpulse.body"  # in a write's scope: its `_Body`
-
-
-def no_writer(task: str, status: str, actor: str = OPERATOR) -> Written:
-    return Written(False, "no board writer is configured", unavailable=True)
 
 
 class _Body:

@@ -147,7 +147,7 @@ description, acceptance criteria, notes and comments, and a match in the title
 ranks above one in the description, which ranks above one in a criterion, a note or a comment; words are matched by their
 stem (`rotation` finds `rotate`). `score` is higher for a better match, `lane` is the lane the task is in now (or
 `completed` or `archived` once it settled) and `snippet` is the text around the match in the part `field` names, the first of title, description, criteria, notes, comments to hold a query word. The index is a SQLite FTS5
-table in the instance's own database, filled from the board adapter on the first read, so every adapter is searched the same way, and kept current as each task is placed, edited, moved or retracted; a
+table in the instance's own database, filled from the board on the first read, so every adapter is searched the same way, and kept current as each task is placed, edited, moved or retracted; a
 task placed again unchanged, as every task is on a restart, writes nothing. A SQLite built without FTS5 serves none: the route answers 404 and the verb exits 3.
 
 Without filters a search reaches every task, open or settled, of any age. Each `label` (repeatable) keeps only the
@@ -248,7 +248,7 @@ A move carries the actor that makes it. The machine YAML names, per event, who f
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}`; the page sends
 `operator`, and a move naming no actor is `anonymous` (`agent` when it names a session), never the operator. The server refuses an actor outside the event's writers before the board
 writer is asked, so a move declared for `operator` alone (sending an In Progress task back to Ready) is refused to
-`starpulse task move`, which always moves as `agent`. A board adapter's `writer` receives that actor as its third
+`starpulse task move`, which always moves as `agent`. The board's `writer` receives that actor as its third
 argument: `writer(task, status, actor)`. `/api/move` is unauthenticated on the LAN, so this stops an agent's
 accident, not an adversary.
 

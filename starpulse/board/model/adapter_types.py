@@ -1,11 +1,14 @@
-"""The adapters StarPulse ships, and the names a bare `[board]` or `[[runs]]` `type` resolves to.
+"""The modules StarPulse ships, and the names a `[board]` or `[[runs]]` `type` resolves to.
 
 This module imports nothing, so the config reads the table without importing an adapter. The table sits in the Board's
 model because an engine's name belongs only inside an adapter's own module and the config must not import one.
 """
 
-#: The board adapter type a config without a `[board]` table names.
+#: The board type a config without a `[board]` table names.
 DEFAULT_TYPE = "native"
+
+#: The board types a `[board]` table may name: the Markdown board, and the machines alone.
+BOARD_TYPES = ("native", "machines")
 
 #: Built-in type -> module. A dotted type is a module path an installed package provides and is not listed.
 BUILT_IN = {

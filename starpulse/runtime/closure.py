@@ -217,8 +217,8 @@ def code_of(entry: str, package: str = "starpulse", extra: tuple[str, ...] = ())
 
 
 def adapter_module(board_type: str) -> str:
-    """The module `board_type` maps to in `adapter_types`. `config` imports the board adapter lazily, so no entry's import
-    closure holds it and an edit to it would reach no child unless it is read with the closure.
+    """The module `board_type` (`native` or `machines`) maps to in `adapter_types`. `assembly` imports the board lazily, so no
+    entry's import closure holds it and an edit to it would reach no child unless it is read with the closure.
 
     Raises `ReloadError` when the type names no module."""
     from starpulse.board.model.adapter_types import module_name  # noqa: PLC0415 - `serve`'s closure holds no board module

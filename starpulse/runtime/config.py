@@ -1,11 +1,11 @@
-"""StarPulse's one config file: its board adapter, its history database, and which runs adapters run.
+"""StarPulse's one config file: its board, its history database, and which runs adapters run.
 
 Database credentials never live here; they come from the driver's environment, such as `PGPASSWORD`.
 With no file the view runs as an individual-contributor view of its own
 Markdown board in `./.starpulse/board`, keeping its history in a SQLite file, with no runs adapter.
 
-The `[board]` table names the board adapter by `type` (`starpulse.board`); the rest of the table is that
-adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.flow_metrics.adapters.outbound.history`).
+The `[board]` table names the board by `type` (`native` or `machines`); the rest of the table is that
+board's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.flow_metrics.adapters.outbound.history`).
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a built-in name from
 `board.model.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
@@ -16,7 +16,6 @@ The optional `[level]` table configures the flow graph drawn above the Board (`s
 """
 
 import importlib
-import importlib.util
 import json
 import os
 import tomllib
@@ -28,7 +27,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
+from starpulse.board.model.adapter_types import BOARD_TYPES, DEFAULT_TYPE, module_name
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.model.policy import refuse_retired
 from starpulse.board.model.search_config import Search, SearchError, parse_search
@@ -176,9 +175,9 @@ class Config:
     harnesses: Harnesses | None = None
     """The tiers and per-harness models `harnesses_file` declares; none when the config names no file."""
     board_type: str = DEFAULT_TYPE
-    """The board adapter module: a name under `starpulse`, or a dotted module path."""
+    """The board type: `native`, StarPulse's own markdown board, or `machines`, which draws machines and holds no task."""
     board: Mapping[str, object] = field(default_factory=dict)
-    """The `[board]` table, the adapter's settings."""
+    """The `[board]` table, the board type's settings."""
     database_url: str | None = None
     """The history store's SQLAlchemy URL; None keeps it in a SQLite file beside the config."""
     session_start_url: str | None = None
@@ -407,21 +406,15 @@ def _harnesses(file: ConfigFile, path: Path | None) -> Harnesses | None:
 
 
 def _board(table: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """The board adapter's type, and its table without `[board.actor]`; a type that names no adapter is a `ConfigError`."""
+    """The board's type, `native` or `machines`, and its table without `[board.actor]`; any other type is a `ConfigError`."""
     board = {key: value for key, value in table.items() if key != "actor"}
     try:
         refuse_retired(board)
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
     kind = board.get("type", DEFAULT_TYPE)
-    if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
-        raise ConfigError(f"board type {kind!r} is not a module name")
-    try:
-        found = importlib.util.find_spec(module_name(kind))
-    except ModuleNotFoundError, ValueError:
-        found = None
-    if found is None:
-        raise ConfigError(f"no board adapter of type {kind}")
+    if kind not in BOARD_TYPES:
+        raise ConfigError(f"board type {kind!r} is not native or machines")
     return kind, board
 
 

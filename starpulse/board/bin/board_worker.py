@@ -101,10 +101,8 @@ def start(
     store = PushedDates(history_store(config, base, feed.machines), log)  # a save also pushes the date to `serve`
     feed.ready.set()
     start_writers(feed, store, live=False, log=log)
-    if board.attach is not None:
-        board.attach(log)  # the sweep's releases append the History events the read model folds
-    if board.sweep is not None:
-        board.sweep(feed, log, store.save_claim_expiries)
+    board.attach(log)  # the sweep's releases append the History events the read model folds
+    board.sweep(feed, log, store.save_claim_expiries)
     threading.Thread(target=HeldSnapshot(feed, store=snapshots).run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
     MachineDeltas(feed, model).follow(stop, log)  # a context sharing this feed hears each machine row as a `move`
     follow(

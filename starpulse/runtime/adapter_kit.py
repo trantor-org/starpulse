@@ -1,16 +1,15 @@
 """The test kit an adapter author runs against their adapter.
 
 Subclass the kit for the contract the adapter writes, declare the adapter's task keys and branch
-examples (and, for a board, the team it derives for each task), and say how to produce its records;
-pytest collects the checks on the subclass:
+examples, and say how to produce its records; pytest collects the checks on the subclass:
 
-    class TestMyBoard(BoardAdapterKit):
+    class TestMyEvents(MachineEventsAdapterKit):
         keys = TaskKeys(key=re.compile(r"PROJ-\\d+"), branch=re.compile(r"feature/(PROJ-\\d+)"))
         branches = {"feature/PROJ-1-add-x": "PROJ-1", "main": None}
-        teams = {"PROJ-1": "PROJ"}
+        machines = {"in-progress": {...}}
 
         def produce(self) -> list[dict]:
-            return [{"id": "PROJ-1", "title": "Add x", "team": "PROJ", "lane": "in_progress"}]
+            return [{"task": "PROJ-1", "machine": "in-progress", "event": "WORKTREE_READY", "time": 1.7e9}]
 
 `produce` returns the records the adapter writes for StarPulse, as plain dicts shaped as the
 contract's JSON Schema (`starpulse.contracts.SCHEMAS`). A machine event may carry its `time` as text,
@@ -23,7 +22,6 @@ import json
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import replace
 from http.client import HTTPResponse
 from pathlib import Path
 from typing import Any, ClassVar
@@ -31,13 +29,10 @@ from typing import Any, ClassVar
 import jsonschema
 from pydantic import BaseModel
 
+from starpulse.board.adapters import machines_only
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.seam import (
-    Board,
-    MoveWriter,
-    Written,
-)
+from starpulse.board.model.seam import Board
 from starpulse.contracts.adapters import (
     SCHEMAS,
     BoardTask,
@@ -49,22 +44,20 @@ from starpulse.contracts.adapters import (
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.machine_fold import Placer
 from starpulse.event_log.wake import StopEvent
-from starpulse.runtime.stored_snapshot import stored_snapshots
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.runtime.assembly import assemble as _assemble
 from starpulse.runtime.config import Config
 from starpulse.runtime.store_migrate import maintain
+from starpulse.runtime.stored_snapshot import stored_snapshots
 from starpulse.views.adapters.inbound.asgi_app import page_app
 from starpulse.views.adapters.inbound.gate_request import GateRequest
 from starpulse.views.adapters.inbound.page_server import PageServer
-from starpulse.views.application.commands.moves import move_task
 from starpulse.views.ports.services import Services
 
 #: How long a settle or a served page waits for the Board writer to fold what was published.
 FOLDED_WITHIN_S = 30.0
 
 __all__ = [
-    "BoardAdapterKit",
     "MachineEventsAdapterKit",
     "RunsAdapterKit",
     "assembled",
@@ -107,79 +100,6 @@ class _AdapterKit:
         mapped = {ref: self.keys.for_branch(ref) for ref in self.branches}
         assert mapped == dict(self.branches)
         assert all(self.keys.matches(key) for key in mapped.values() if key)
-
-
-class BoardAdapterKit(_AdapterKit):
-    """For an adapter writing `BoardTask` records."""
-
-    _name = "board"
-    _model = BoardTask
-    #: The machines the page draws, the Board's as `board`, as the adapter's `starpulse.board.model.seam.Board` draws them.
-    machines: ClassVar[Mapping[str, dict]]
-    #: The team key the adapter derives for each task `produce` returns, by task key: the Backlog.md project or
-    #: GitHub repository its tracker places the task in. The kit holds each record to it.
-    teams: ClassVar[Mapping[str, str]]
-    #: The adapter's board writer over the project `produce` reads, when it has one; with a writer, `produce` offers
-    #: a move any actor may make and one the machine leaves to the operator.
-    writer: MoveWriter | None = None
-
-    def test_every_task_key_is_in_the_declared_scheme(self) -> None:
-        assert [t.id for t in self.records() if not self.keys.matches(t.id)] == []
-
-    def test_every_task_is_in_the_team_the_adapter_derives_from_its_tracker(self) -> None:
-        assert {t.id: t.team for t in self.records()} == dict(self.teams)
-
-    def _move(self, actor: str, permitted: bool) -> tuple[tuple[int, dict], list[str]]:
-        """Ask the server to make the first offered move `actor` is (`permitted`) or is not allowed; the writer's calls."""
-        assert self.writer is not None
-        calls: list[str] = []
-
-        def write(task: str, status: str, by: str) -> Written:
-            calls.append(task)
-            assert self.writer is not None
-            return self.writer(task, status, by)
-
-        feed = BoardFeed(keys=self.keys, machines=self.machines)
-        records = self.records()
-        for task in records:
-            feed.put(task)
-        offered = [
-            (task.id, column)
-            for task in records
-            for column, move in task.moves.items()
-            if move.allowed and move.permits(actor) == permitted
-        ]
-        assert offered, f"produce() offers no move that {actor} {'may' if permitted else 'may not'} make"
-        task, column = offered[0]
-        raw = json.dumps({"task": task, "to": column, "actor": actor}).encode()
-        return move_task("127.0.0.1", raw, feed, write), calls
-
-    def test_a_move_the_actor_may_make_is_written_by_the_board_writer(self) -> None:
-        if self.writer is None:
-            return
-        (status, reply), calls = self._move("operator", permitted=True)
-        assert (status, calls != []) == (200, True), reply
-
-    def test_a_move_the_machine_leaves_to_others_is_refused_to_an_agent_before_the_writer(self) -> None:
-        if self.writer is None:
-            return
-        (status, reply), calls = self._move("agent", permitted=False)
-        assert (status, calls) == (409, []), reply
-
-    def test_starpulse_places_every_task_in_its_lane_or_as_settled(self) -> None:
-        feed = BoardFeed(keys=self.keys, machines=self.machines)
-        for task in self.records():
-            feed.put(task)
-        lanes = {state["id"] for state in self.machines["board"]["states"]}
-        latest = {task.id: task for task in self.records()}
-        snapshot = feed.snapshot()
-        assert snapshot["flows"][0]["machine"] == self.machines["board"]
-        placed = {a["id"]: a["state"] for a in snapshot["flows"][0]["agents"]}
-        assert {t.id: t.lane for t in latest.values() if not t.settled} == placed
-        assert {t.id: t.settled for t in latest.values() if t.settled} == {
-            id: entry["state"] for id, entry in snapshot["settled"].items()
-        }
-        assert set(placed.values()) - lanes == set()
 
 
 class MachineEventsAdapterKit(_AdapterKit):
@@ -277,14 +197,6 @@ class RunsAdapterKit(_AdapterKit):
 # The helpers below drive an adapter through StarPulse's own server and feed.
 
 
-def _no_writer(task: str, status: str, actor: str = "") -> Written:
-    raise AssertionError(f"the test reached the board writer: {task} {status}")
-
-
-def _bare_board() -> Board:
-    return Board(machines=lambda qualify, workflows: {}, start=lambda feed, name, log: None)
-
-
 @contextmanager
 def serve(
     tmp_path: Path,
@@ -301,7 +213,7 @@ def serve(
     **services: Any,
 ) -> Iterator[PageServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends. `board` is the Board the routes write through (a
-    bare one when None; a move or start it has no writer for fails the test); `services` are the `Services` fields.
+    refusing one when None); `services` are the `Services` fields.
     `migrated` says the stores in `tmp_path` are already migrated, so the serve skips the pass that migrates them."""
     static = tmp_path / "static"
     (static / "assets").mkdir(parents=True, exist_ok=True)
@@ -314,8 +226,7 @@ def serve(
     for store in () if migrated else (settings, kept):
         maintain(store, machines, None)
     log = EventLog(settings)
-    board = board or _bare_board()
-    board = replace(board, writer=board.writer or _no_writer, assign=board.assign or _no_writer)
+    board = board or machines_only.refusing()
     stop = StopEvent()
     snapshots = server = None
     try:

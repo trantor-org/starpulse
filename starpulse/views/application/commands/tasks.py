@@ -66,7 +66,7 @@ _VERDICTS = {"pass": "PASS", "miss": "MISS"}
 
 
 def task_record(
-    feed: BoardFeed, read: TaskReader | None, task: str, read_archived: TaskReader | None = None
+    feed: BoardFeed, read: TaskReader, task: str, read_archived: TaskReader
 ) -> tuple[int, dict[str, Any]]:
     """The full record of `task` from the board's reader: the HTTP status and JSON body.
 
@@ -74,15 +74,13 @@ def task_record(
     opens it with this and sends it back as the `base` of an edit. Reading is not LAN-limited, like the snapshot. An
     archived task is read through `read_archived`, its body `archived`, so a closed task stays readable.
     """
-    if read is None:
-        return 404, {"error": "this board cannot read a task's full record"}
     held, archived, entered = feed.placement(task)
     if not (held or archived) and not feed.wait_replayed(0) and feed.wait_replayed(REPLAY_WAIT_S):
         held, archived, entered = feed.placement(task)
-    archived = not held and archived and read_archived is not None
+    archived = not held and archived
     if not held and not archived:
         return not_held(feed, task)
-    reader = read_archived if archived and read_archived is not None else read
+    reader = read_archived if archived else read
     if (record := reader(task)) is None:
         return 404, {"error": f"{task} has no record to read"}
     return 200, {"task": task, "record": record, "archived": archived, "entered": entered if archived else None, "done": feed.roles.done}
@@ -98,7 +96,7 @@ _PLAN_REASON = "planReason"
 
 @with_request(EditRequest, "Editing a task")
 def edit_task(
-    request: EditRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+    request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
 ) -> tuple[int, dict[str, Any]]:
     """Apply the edit `request` names to a task through `edit` in one write: the HTTP status and JSON body.
 
@@ -109,7 +107,7 @@ def edit_task(
 
 
 def _edited(
-    request: EditRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+    request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
 ) -> tuple[int, dict[str, Any]]:
     """One edit, as `edit_task` runs it.
 
@@ -128,8 +126,6 @@ def _edited(
             "error": 'an edit needs {"task": "TASK-N", "base": {...}, "changes": {...}, "comment": "<optional>"}'
         }
     who = who_of(request)
-    if read is None or edit is None:
-        return 404, {"error": "this board does not edit tasks"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     if holder_refusal(feed, agent, task, who) is not None and not comment.strip():
@@ -171,7 +167,7 @@ def _edited(
 
 
 @with_request(ArchiveRequest, "Archiving a task")
-def archive_task(request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver | None) -> tuple[int, dict[str, Any]]:
+def archive_task(request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver) -> tuple[int, dict[str, Any]]:
     """Archive the task `request` names, or each of its `tasks`, from whichever column it is in, through `archive`: the
     HTTP status and JSON body. A batch answers 200 with the tasks archived and each refused one's error, so one refusal
     leaves the others archived.
@@ -179,8 +175,6 @@ def archive_task(request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver
     A non-empty `reason` is the writer's to record on the task. The card leaves its column when the board adapter
     next reports the task archived, not on this answer.
     """
-    if archive is None:
-        return 404, {"error": "this board does not archive tasks"}
     reason, who = request.reason or "", who_of(request)
     if request.task is not None:
         return _archive_one(feed, archive, request.task, reason, who)
@@ -250,7 +244,7 @@ def record_rating(request: RatingRequest, feed: BoardFeed) -> tuple[int, dict[st
 
 @with_request(VerdictRequest, "Recording a verdict")
 def record_verdict(
-    request: VerdictRequest, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+    request: VerdictRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
 ) -> tuple[int, dict[str, Any]]:
     """Record the verdict `request` names for a post-merge check of a task as a comment on it, through `edit`: the HTTP
     status and JSON body.
@@ -265,8 +259,6 @@ def record_verdict(
     if verdict == "miss" and not fix:
         return 400, {"error": "a miss verdict names the task filed to fix it: add its id as fix"}
     evidence, who = request.evidence or "", who_of(request)
-    if read is None or edit is None:
-        return 404, {"error": "this board does not edit tasks"}
     if held_task(feed, task) is None:
         return not_held(feed, task)
     if verdict == "miss" and held_task(feed, fix) is None:
@@ -287,10 +279,10 @@ def record_verdict(
 def record_miss(
     request: MissRequest,
     feed: BoardFeed,
-    read: TaskReader | None,
-    edit: TaskEditor | None,
-    archive: TaskArchiver | None,
-    create: TaskCreator | None,
+    read: TaskReader,
+    edit: TaskEditor,
+    archive: TaskArchiver,
+    create: TaskCreator,
 ) -> tuple[int, dict[str, Any]]:
     """File the fix task `request` names for a missed post-merge check and record the MISS verdict naming it, in one
     call: the HTTP status and JSON body, which holds the fix's id.
@@ -302,8 +294,6 @@ def record_miss(
     if _unnamed(request):
         return 400, {"error": 'a miss needs {"task", "check", "fix": {"title", ...}[, "evidence"]}'}
     task, check, evidence, who = request.task, request.check, request.evidence or "", who_of(request)
-    if read is None or edit is None or archive is None or create is None:
-        return 404, {"error": "this board does not edit, archive and create tasks"}
     if held_task(feed, task) is None:
         return not_held(feed, task)
     with EDIT_LOCK:
@@ -325,15 +315,13 @@ def record_miss(
 
 @with_request(CompleteRequest, "Completing a task")
 def complete_task(
-    request: CompleteRequest, feed: BoardFeed, complete: TaskCompleter | None
+    request: CompleteRequest, feed: BoardFeed, complete: TaskCompleter
 ) -> tuple[int, dict[str, Any]]:
     """Complete the Done task `request` names through `complete`: the HTTP status and JSON body.
 
     The board's writer refuses a task that is not Done, which answers 409 with the writer's reason and skill.
     """
     task = request.task
-    if complete is None:
-        return 404, {"error": "this board does not complete tasks"}
     if held_task(feed, task) is None:
         return not_held(feed, task)
     written = complete(task)
@@ -343,15 +331,13 @@ def complete_task(
 
 
 @with_request(RestoreRequest, "Restoring a task")
-def restore_task(request: RestoreRequest, feed: BoardFeed, restore: TaskRestorer | None) -> tuple[int, dict[str, Any]]:
+def restore_task(request: RestoreRequest, feed: BoardFeed, restore: TaskRestorer) -> tuple[int, dict[str, Any]]:
     """Return the archived task `request` names to the board's tasks through `restore`: the HTTP status and JSON body.
 
     The restore places the task in a lane, so its writer is noted on the feed as any other move's is. The writer owns
     every other refusal (no archived file, the number already open, the name taken), which answers 409 with its reason.
     """
     task, who = request.task, who_of(request)
-    if restore is None:
-        return 404, {"error": "this board does not restore tasks"}
     written = record_written(feed, task, who, lambda: restore(task))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
@@ -377,7 +363,7 @@ def take_over_task(
 
 
 @with_request(RetireRequest, "Retiring a task")
-def retire_task(request: RetireRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+def retire_task(request: RetireRequest, board: Board) -> tuple[int, dict[str, Any]]:
     """Take the finished task `request` names off the board into its history store through the board's `retire`: the
     HTTP status and JSON body.
 
@@ -385,29 +371,22 @@ def retire_task(request: RetireRequest, board: Board | None) -> tuple[int, dict[
     which answers 409 with its reason.
     """
     task = request.task
-    if board is None or board.retire is None:
-        return 404, {"error": "this board does not retire tasks"}
     written = board.retire(task)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
 
 
-def retired_list(board: Board | None, task: str, milestone: str = "", fields: str = "") -> tuple[int, dict[str, Any]]:
+def retired_list(board: Board, task: str, milestone: str = "", fields: str = "") -> tuple[int, dict[str, Any]]:
     """The retired task `task` names, or every retired task for a blank one, each {task, name, text}, only those of
     `milestone` when it is not blank: the HTTP status and JSON body, whose `tasks` for a blank `task` may be an iterator
     reading a page of rows at a time. `fields=dependencies` answers each as {task, dependencies} alone, the ids its
     file lists. Reading is not LAN-limited."""
-    if board is None or board.retired is None:
-        return 404, {"error": "this board keeps no retired tasks"}
     if fields not in ("", "dependencies"):
         return 400, {"error": f"fields {fields!r} is not a retired projection; use dependencies"}
     if not fields:
         return 200, {"tasks": board.retired(task, milestone)}
-    if board.retired_projected is None:
-        edges = [(row["task"], dependencies(row["text"])) for row in board.retired(task, milestone)]
-    else:
-        edges = board.retired_projected(dependencies, task, milestone)
+    edges = board.retired_projected(dependencies, task, milestone)
     return 200, {"tasks": [{"task": id_, "dependencies": found} for id_, found in edges]}
 
 
@@ -416,12 +395,10 @@ RETIRED_PAGE = 200
 RETIRED_PAGE_LIMIT = 500
 
 
-def retired_page(board: Board | None, limit: str, before: str) -> tuple[int, dict[str, Any]]:
+def retired_page(board: Board, limit: str, before: str) -> tuple[int, dict[str, Any]]:
     """One page of the retired tasks, newest retired first, each {task, name, text}: at most `limit` (default
     `RETIRED_PAGE`, the text of a query) after the cursor `before`, and `next`, the cursor of the page that follows,
     when there is one: the HTTP status and JSON body. A limit or cursor that is malformed is 400."""
-    if board is None or board.retired_page is None:
-        return 404, {"error": "this board keeps no retired tasks"}
     try:
         size = int(limit) if limit else RETIRED_PAGE
         if not 0 < size <= RETIRED_PAGE_LIMIT:
@@ -433,13 +410,11 @@ def retired_page(board: Board | None, limit: str, before: str) -> tuple[int, dic
 
 
 @with_request(RetiredImportRequest, "Importing a retired task")
-def import_retired(request: RetiredImportRequest, board: Board | None) -> tuple[int, dict[str, Any]]:
+def import_retired(request: RetiredImportRequest, board: Board) -> tuple[int, dict[str, Any]]:
     """Keep the retired task file `request` holds, {name, text}, in the board's history store through its
     `import_retired`: the HTTP status and JSON body, which holds the task's id. The same file again is accepted; the
     writer's refusal (no id, a task on the board, other text under the kept number) answers 409."""
     name, text = request.name, request.text
-    if board is None or board.import_retired is None:
-        return 404, {"error": "this board does not import retired tasks"}
     written = board.import_retired(name, text)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
@@ -456,15 +431,13 @@ def _create_details(request: CreateSpec) -> dict[str, Any]:
 
 
 def _create(
-    spec: CreateSpec, who: Who, create: TaskCreator | None, feed: BoardFeed | None, siblings: Mapping[str, str]
+    spec: CreateSpec, who: Who, create: TaskCreator, feed: BoardFeed | None, siblings: Mapping[str, str]
 ) -> tuple[int, dict[str, Any]]:
     """Create the task `spec` names through `create`, in the lane its `status` names or else the board's starting
     lane, with each `ref:<label>` dependency replaced by the id `siblings` holds for the label."""
     title = (spec.title or "").strip()
     if not title or len(title) > _TITLE_MAX:
         return 400, {"error": f'a create needs {{"title": "<1 to {_TITLE_MAX} characters>"}}'}
-    if create is None:
-        return 404, {"error": "this board does not create tasks"}
     details = _create_details(spec)
     if "dependencies" in details:
         dependencies = [
@@ -484,7 +457,7 @@ def _create(
 
 @with_request(CreateRequest, "Creating a task")
 def create_task(
-    request: CreateRequest, create: TaskCreator | None, feed: BoardFeed | None = None
+    request: CreateRequest, create: TaskCreator, feed: BoardFeed | None = None
 ) -> tuple[int, dict[str, Any]]:
     """Create the task `request` names, or each of its `tasks`: the HTTP status and JSON body, which holds the new
     task's id.
@@ -501,7 +474,7 @@ def create_task(
     return _REPLAYS.run(request.request_key, lambda: _created(request, create, feed))
 
 
-def _created(request: CreateRequest, create: TaskCreator | None, feed: BoardFeed | None) -> tuple[int, dict[str, Any]]:
+def _created(request: CreateRequest, create: TaskCreator, feed: BoardFeed | None) -> tuple[int, dict[str, Any]]:
     who = who_of(request)
     if request.tasks is None:
         return _create(request, who, create, feed, {})

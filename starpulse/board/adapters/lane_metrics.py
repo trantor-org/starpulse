@@ -40,7 +40,7 @@ def start(
         review=feed.roles.review,
         work=work,
     )
-    files = BoardFiles(feed, board, rescan=getattr(board, "rescan", None), vectors=vectors)
+    files = BoardFiles(feed, board, vectors=vectors)
     written: tuple[str, dict[str, Any]] | None = None
     guard = threading.Lock()
 

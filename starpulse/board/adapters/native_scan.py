@@ -14,6 +14,7 @@ from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
@@ -27,7 +28,6 @@ from starpulse.board.adapters import project_machines
 from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.markdown import needs_attention_reason
 from starpulse.board.model.policy import Policy, waits_of
-from starpulse.board.model.seam import Board
 from starpulse.contracts.task_keys import TaskKeys
 from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
 from starpulse.event_log.watch import open_directory_watch
@@ -544,8 +544,8 @@ def project_board(
     refusal: Callable[[Mapping[str, Any], str, str], Mapping[str, Any] | None] = lambda *_: None,
     readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
     statuses: tuple[str, ...] = (),
-) -> Board:
-    """The Board of the Markdown project in `root`, kept current by a directory watch, with the writers `writers` builds.
+) -> SimpleNamespace:
+    """The parts of the Board of the Markdown project in `root`, kept current by a directory watch, with the writers `writers` builds.
 
     Any lane reaches any other unless `settings["machine"]` names a machine file (relative to `base`), whose transitions
     and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text;
@@ -607,7 +607,7 @@ def project_board(
         scan.start(scanned=lambda: feed.expect("0-0"))
         feed.spawn(feed.keep_saved, "board-state")
 
-    return Board(
+    return SimpleNamespace(
         machines=machines,
         start=start,
         keys=native_keys(config.prefix),

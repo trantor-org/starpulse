@@ -149,8 +149,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     if search is not None:
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
     stop = StopEvent()
-    if board.attach is not None:
-        board.attach(log)
+    board.attach(log)
     projector = Projector(log.engine, EventStore(log.engine), search)
     projector.catch_up()
     feed.follow_read_model()

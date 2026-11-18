@@ -88,7 +88,7 @@ internal and can change in any release.
   `deps_done_with_pr`, `deps_unresolved`, `owner_stale`, `criteria_met` or `overdue`) to the event that leaves the state when that fact holds. The loader refuses an
   unknown fact kind and an event that is not a transition out of the declaring state, naming the state and event, and
   exposes the declared map as `Compiled.waits` (`{state id: {fact kind: event}}`; a child flow's states carry their
-  `<state>_<child state>` id). Declaring `waits` fires nothing by itself: a board adapter hands the Board machine's map
+  `<state>_<child state>` id). Declaring `waits` fires nothing by itself: the board hands the Board machine's map
 to the server as `Board.waits`, and the task actor (`[board.actor]`, [Task actor](serving.md#task-actor)) fires the event
 when the fact holds; `Board.holds` withholds `deps_done` with reasons; `Board.unfinished` lists the work a merged task still has, which holds `pr_merged_unfinished`. The actor's series on `GET /metrics` are
 `starpulse_task_actor_refusals_total`, `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds`,
@@ -104,7 +104,7 @@ the store on each scrape.
 The modules an adapter may import. A context package exports exactly the names in its `__all__`; a `runtime` module
 is public for the names listed here:
 
-- `starpulse.board`: the board adapter seam (`Board`, `Written`, the writer, task, milestone and doc protocols, and the `NativeScan` reference adapter), the feed a board adapter places tasks on (`BoardFeed`, `BoardStore`, `Followed`, `Resumable`) and `CommitKeys`.
+- `starpulse.board`: the board the server calls directly (`Board`, `Written`, the writer, task, milestone and doc protocols, and the `NativeScan` scan), the feed the board places tasks on (`BoardFeed`, `BoardStore`, `Followed`, `Resumable`) and `CommitKeys`.
 - `starpulse.contracts`: the board (a `BoardTask` carries `acceptance_criteria` with `acceptance_checked`, `pause_reason` and `notes` beside its `description`), machine-event, CloudEvent (`CloudEvent`, the ingest's and `starpulse event emit`'s model), run-event (`RunEvent`), lane-event (`LaneEvent`), verdict-event (`VerdictEvent`), runs (`Dag`, `RecentRun`) records, their JSON Schemas, `EVENT_STREAMS` (the record of each event log stream), and `RunsSink`.
 - `starpulse.event_log`: the database event log readers tail; [Build a consumer](consumers.md) shows a reader that keeps its cursor in its own store.
 - `starpulse.flow_metrics`: the history store, and placing a task's events on a machine.

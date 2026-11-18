@@ -82,10 +82,8 @@ def machines_response(
     return encode("machines", {**found, "lanes": lanes() if lanes else {}}), 200
 
 
-def done_response(feed: BoardFeed, read: TaskReader | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
+def done_response(feed: BoardFeed, read: TaskReader, query: dict[str, list[str]]) -> tuple[bytes, int]:
     """The body and status for `/api/done`: the next page of cold done tasks, each read from the board for its card."""
-    if read is None:
-        return _error("this board cannot read a task's full record"), 404
     asked = _page_query(query, "done")
     if isinstance(asked, bytes):
         return asked, 400
