@@ -17,7 +17,7 @@ from typing import Protocol
 _IN_MODIFY, _IN_MOVED_FROM, _IN_MOVED_TO, _IN_CREATE, _IN_DELETE = 0x2, 0x40, 0x80, 0x100, 0x200
 _IN_NONBLOCK, _IN_CLOEXEC = os.O_NONBLOCK, os.O_CLOEXEC
 _INOTIFY_EVENTS = _IN_MODIFY | _IN_MOVED_FROM | _IN_MOVED_TO | _IN_CREATE | _IN_DELETE
-_IN_CLOSE_WRITE, _IN_Q_OVERFLOW = 0x8, 0x4000
+_IN_CLOSE_WRITE, _IN_Q_OVERFLOW, _IN_IGNORED = 0x8, 0x4000, 0x8000
 _DIRECTORY_EVENTS = _IN_CLOSE_WRITE | _IN_MOVED_FROM | _IN_MOVED_TO | _IN_CREATE | _IN_DELETE
 _INOTIFY_HEADER = struct.Struct("iIII")
 _KQUEUE_EVENTS_PER_READ = 64
@@ -197,6 +197,9 @@ class _InotifyDirectories:
                 name = data[start : start + length].rstrip(b"\0")
                 offset = start + length
                 if mask & _IN_Q_OVERFLOW:
+                    lost = True
+                elif mask & _IN_IGNORED:  # the watched directory is gone: `sync` watches whatever replaced it
+                    self._watched.pop(wd, None)
                     lost = True
                 elif wd in self._watched and name:
                     changed.add(os.fspath(self._watched[wd] / os.fsdecode(name)))

@@ -1,16 +1,6 @@
 """The sweeper's `board-files` kind: the board's files against the feed, the file lanes against the machine lanes, and the
-search vectors against the tasks. The directory watch (`NativeScan.start`) pushes every file change; this pass finds what
-it missed and counts each find as a correction.
-
-The board draws the Task Events read model, and the task file is only what a write leaves behind. A write that edits a
-file and records nothing (an archive's unlink of its dependents, before TASK-10187) leaves the row in the old lane and
-the board drawing it, with nothing to correct it until another write to that task.
-
-Each pass re-reads the files the watch did not place, then compares every open task's row state with its file's lane. A
-mismatch is reconciled (`Board.reconcile` appends the Events that bring the History to the file); one found again on the
-next pass has survived a re-read, so it is logged and exported as `starpulse_board_lane_mismatch` on `/metrics` for the
-Grafana rule to raise.
-"""
+search vectors against the tasks, each find counted as a correction. The StarPulse Operations doc's Board Lane Disagrees
+With the Task File section holds the scan sequence, the reconcile and the `starpulse_board_lane_mismatch` metric."""
 
 import logging
 import threading

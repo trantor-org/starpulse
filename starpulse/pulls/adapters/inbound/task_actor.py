@@ -693,7 +693,9 @@ class TaskActor:
                 self._index(agent)
             self._drop_holds_outside(tasks)
             self._read_pulls()
-            if self._idle is not None:  # a settle while down is replayed by `follow_holder_idle`; `confirm` spares a busy holder
+            if (
+                self._idle is not None
+            ):  # a settle while down is replayed by `follow_holder_idle`; `confirm` spares a busy holder
                 self._awaited |= {a["id"] for a in tasks if a["state"] == self._feed.roles.working and self._awaits(a)}
             open_ids = {agent["id"] for agent in tasks}
             self._derived = {name: digest for name, digest in self._derived.items() if name in open_ids}
@@ -1341,6 +1343,9 @@ class TaskActor:
         with self._lock:
             agent = self._feed.task(name, lean=True)
             if agent is None or agent["state"] != self._feed.roles.working or agent["prs"]:
+                return
+            if self._awaits(agent):
+                self._awaited.add(name)
                 return
             self._resumes.pop(name, None)
             self._stalled.discard(name)

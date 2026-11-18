@@ -353,6 +353,7 @@ class PullSync:
             threading.Thread(target=self._project_forever, name="pull-project", daemon=True).start()
         self.requeue_unknown()
         self.requeue_unrecorded()
+        self._wake.set()  # the requeues queue without waking: the wait below would hold them until a request
         self.project()
         self.serving.set()
         while not self._stop.is_set():

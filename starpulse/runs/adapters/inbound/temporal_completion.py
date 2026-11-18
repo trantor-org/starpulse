@@ -16,7 +16,7 @@ if TYPE_CHECKING:  # annotation only
 
 #: What each close state of the callback means as a run's status; Temporal reports a termination or timeout as `failed`.
 STATES = {"succeeded": "succeeded", "failed": "failed", "canceled": "aborted"}
-_LINK = re.compile(r"/workflows/(?P<workflow_id>[^/]+)/(?P<run_id>[^/]+)/history")
+_LINK = re.compile(r"/workflows/.+/(?P<run_id>[^/]+)/history")
 
 
 def completion(

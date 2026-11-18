@@ -119,6 +119,8 @@ class HeldSnapshot:
         except Exception:
             logger.exception("StarPulse: the held snapshot could not be built; it is built again on the next change or tick")
             self._stale = True
+            if self._store is not None:
+                self._unsaved += changes
             return
         self._save([("snapshot", self.snapshot)] if restarted else changes)
 
