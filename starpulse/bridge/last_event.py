@@ -1,10 +1,14 @@
-"""Whether an event subject's latest event already happened: the one the task actor reads when a task parks on it."""
+"""Whether an event subject's latest event already happened: the one the task actor reads when a task parks on it.
+
+The log is read first, since the history recorder copies an entry after it is appended and a park in that gap would
+miss it; the history holds the events the log has pruned."""
 
 from sqlalchemy import Engine, func, select
 
 from starpulse.bridge.subjects import token
+from starpulse.event_log.events import STREAM
 from starpulse.event_log.opening import last_machine_event
-from starpulse.event_log.tables import machine_events
+from starpulse.event_log.tables import events, machine_events
 
 #: The entities whose runs index their events (`alert.<rule>`, `deploy.<component>`), so the latest one is a lookup.
 LAST_READABLE = frozenset({"alert", "deploy"})
@@ -26,10 +30,18 @@ def _stored_run(engine: Engine, entity: str, run: str) -> str:
         return next((name for name in db.execute(newest).scalars() if token(name) == run), run)
 
 
+def _logged(engine: Engine, entity: str, run: str) -> str | None:
+    """The newest event `entity` appended to the log for the run whose subject token is `run`; None when it holds none."""
+    c = events.c
+    newest = select(c.fields).where(c.stream == STREAM, c.fields["machine"].as_string() == entity).order_by(c.id.desc())
+    with engine.connect() as db:
+        return next((f["event"] for f in db.execute(newest).scalars() if f.get("run") is not None and token(f["run"]) == run), None)
+
+
 def last_event_is(engine: Engine, subject: str) -> bool:
     """Whether the latest event of `subject`'s run, as the bridge names it, is the subject's own."""
     if not readable(subject):
         return False
     _, _, entity, run, event = subject.split(".")
-    last = last_machine_event(engine, entity, _stored_run(engine, entity, run))
+    last = _logged(engine, entity, run) or last_machine_event(engine, entity, _stored_run(engine, entity, run))
     return last is not None and token(last.removeprefix("PR_").lower()) == event

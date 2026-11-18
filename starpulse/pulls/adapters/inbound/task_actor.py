@@ -1259,14 +1259,14 @@ class TaskActor:
         )
         return max((at for at in merges if at is not None), default=None)
 
-    def holder_settled(self, name: str) -> None:
+    def holder_settled(self, name: str, wait_ended: bool = False) -> None:
         """A session settled. A task citing no pull request closes when every criterion is checked, else returns to Ready
         (`_end_without_pr`). Any other In Progress task whose holder is not busy (`confirm`) and that no event is awaited on
         has work left, so the `idle` hook resumes the same session with its phase machine's next step; the task stays In
         Progress and no clock runs. A settle an awaited event held runs again from the derivation that finds the wait
         ended, as the session that settled may never settle again. After `_STALLED_RESUMES` resumes with no progress (a phase or submachine event, a
         new head), the next one is first `escalate`d one profile and flagged on `RESUME_STALLED_METRIC`. An escalate that raises sends no resume and moves the task to
-        Needs attention at once; a flagged task whose session settles again with no progress moves there too. A task whose own pull requests have all ended is never resumed. A hook that
+        Needs attention at once; a flagged task whose session settles again with no progress moves there too, except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A hook that
         fails found the holder at work or the session start refused: the next settle tries again."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
@@ -1287,7 +1287,7 @@ class TaskActor:
                     return
                 progress = self._progress(agent)
                 before, count = self._resumes.get(name, (progress, 0))
-                if before != progress:
+                if before != progress or wait_ended:  # an awaited CI result is the wake, not a settle with no progress
                     count = 0
                     self._stalled.discard(name)
                 elif name in self._stalled:
@@ -1368,7 +1368,7 @@ class TaskActor:
             self._awaited.discard(name)
         elif not self._awaits(agent):
             self._awaited.discard(name)
-            self._queue(lambda: self.holder_settled(name))
+            self._queue(lambda: self.holder_settled(name, wait_ended=True))
 
     def _progress(self, agent: dict[str, Any]) -> tuple[Any, ...]:
         """What a task's progress reads: each submachine placement and the time of its last step, and the head of each own
