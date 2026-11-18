@@ -12,7 +12,6 @@ import hashlib
 import json
 import logging
 import re
-import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,7 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import Signal
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import signal_folds, signals
+from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.model import cells, flow, session_health, spend, steps, traces
 from starpulse.harness_telemetry.adapters.inbound.telemetry import stored_signal
 
@@ -167,15 +167,9 @@ class SignalFolds:
         for harness, session in keys:
             yield self._load(harness, session, since)[1]
 
-    def follow(self, stop: threading.Event, interval: float = 5.0) -> None:
-        """Run `catch_up` every `interval` seconds until `stop` is set; a pass that raises is logged and tried again."""
-        while not stop.is_set():
-            try:
-                self.catch_up()
-            except Exception:
-                log.exception("signal fold catch-up failed")
-            # adr-exempt: pending
-            stop.wait(interval)
+    def follow(self, stop: StopEvent) -> None:
+        """Run `catch_up` after each append or another process's commit until `stop` is set."""
+        self._events.run_on_wake(stop, self.catch_up, "signal fold catch-up failed")
 
     def _current(self, harness: str, session: str) -> int:
         """The rowid every view of the session is folded through under the current basis, 0 when one is missing."""

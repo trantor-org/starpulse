@@ -2,20 +2,21 @@
 
 import logging
 import threading
+import time
 from collections.abc import Callable, Collection
 from typing import Any
 
 from starpulse.board.adapters.board_files import BoardFiles
 from starpulse.event_log import lane_events
-from starpulse.event_log.conformance_monitor import Conformance
+from starpulse.event_log.conformance_monitor import Conformance, stalled_exposition
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.kept_text import kept_text
+from starpulse.event_log.kept_text import kept_state, kept_text
 from starpulse.event_log.wake import StopEvent
 
 logger = logging.getLogger(__name__)
 
 METRICS = "lanes.metrics"
-PUBLISH_S = 10.0
+STALLS = "lanes.stalls"
 
 
 def start(
@@ -24,14 +25,13 @@ def start(
     log: EventLog,
     stop: StopEvent,
     work: Collection[str] = (),
-    publish_s: float = PUBLISH_S,
     vectors: Callable[[], tuple[int, int]] | None = None,
 ) -> None:
     """Run the unattributed-lane count and the conformance monitor (`work`: the machines whose events are work) until
     `stop`, register the `board-files` pass over `feed` and `board` for the sweeper (`vectors` embeds the tasks that
-    hold none), and keep their exposition in `log` every `publish_s` seconds."""
+    hold none), and keep their exposition in `log` once at start and after each entry or pass that changed it. The
+    stalled gauge ages with no entry, so `log` keeps its deadlines and `metrics_of` counts them at scrape."""
     unattributed = lane_events.Unattributed()
-    unattributed.follow(log, stop)
     conformance = Conformance(
         feed.machines,
         entered=(feed.roles.done, lane_events.ARCHIVED),
@@ -40,21 +40,39 @@ def start(
         review=feed.roles.review,
         work=work,
     )
-    conformance.follow(log, stop)
     files = BoardFiles(feed, board, rescan=getattr(board, "rescan", None), vectors=vectors)
-    feed.reconcilers["board-files"] = files.run
+    written: tuple[str, dict[str, Any]] | None = None
+    guard = threading.Lock()
 
     def keep() -> None:
-        # adr-exempt: pending
-        while not stop.wait(publish_s):
+        nonlocal written
+        with guard:
             try:
-                log.put_state(METRICS, unattributed.exposition() + conformance.exposition() + files.exposition())
+                found = (
+                    unattributed.exposition() + conformance.exposition(stalled=False) + files.exposition(),
+                    conformance.stall_state(),
+                )
+                if found != written:
+                    log.put_state(METRICS, found[0])
+                    log.put_state(STALLS, found[1])
+                    written = found
             except Exception:
                 logger.warning("lane-metrics: the metrics were not kept", exc_info=True)
 
-    threading.Thread(target=keep, name="lane-metrics", daemon=True).start()
+    def sweep() -> tuple[int, int]:
+        try:
+            return files.run()
+        finally:
+            keep()
+
+    unattributed.follow(log, stop, keep)
+    conformance.follow(log, stop, after=keep)
+    feed.reconcilers["board-files"] = sweep
+    keep()
 
 
-def metrics_of(log: EventLog) -> Callable[[], str]:
-    """The followers' metrics text as last kept; empty before any was kept or when the log cannot be read."""
-    return kept_text(log, METRICS)
+def metrics_of(log: EventLog, clock: Callable[[], float] = time.time) -> Callable[[], str]:
+    """The followers' metrics text as last kept, with the stalled gauge counted at `clock`; empty before any was kept
+    or when the log cannot be read."""
+    kept, stalls = kept_text(log, METRICS), kept_state(log, STALLS)
+    return lambda: (text := kept()) and text + stalled_exposition(stalls(), clock())

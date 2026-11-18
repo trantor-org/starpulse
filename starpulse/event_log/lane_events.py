@@ -55,7 +55,9 @@ def entry(task: BoardTask, at: float, actor: str = "", session: str = "", harnes
         fields["labels"] = list(task.labels)
     if task.profile:
         fields["profile"] = task.profile
-    fields.update({name: value for name, value in (("actor", actor), ("session", session), ("harness", harness)) if value})
+    fields.update(
+        {name: value for name, value in (("actor", actor), ("session", session), ("harness", harness)) if value}
+    )
     return fields
 
 
@@ -70,6 +72,16 @@ def append(log: EventLog, event_id: str, task: str, lane: str, at: float, actor:
     """Append a lane entry of only the task, the lane, the time and the `actor` where given to `log` under `event_id`,
     fail-open."""
     return log.publish(STREAM, change(task, lane, at, actor), event_id=event_id)
+
+
+def then(handle: Callable[[Entry], None], after: Callable[[], None]) -> Callable[[Entry], None]:
+    """`handle`, then `after` once it returns."""
+
+    def handled(entry: Entry) -> None:
+        handle(entry)
+        after()
+
+    return handled
 
 
 def _follow(log: EventLog, handle: Callable[[Entry], None], name: str, stop: StopEvent) -> threading.Thread:
@@ -115,7 +127,7 @@ class Unattributed:
         name = UNATTRIBUTED_METRIC
         return f"# HELP {name} {UNATTRIBUTED_HELP}\n# TYPE {name} counter\n{name} {self.count()}\n"
 
-    def follow(self, log: EventLog, stop: StopEvent) -> threading.Thread:
-        """Count the entries `log` takes from now on, on a thread until `stop`."""
-        return _follow(log, self.handle, "lane-unattributed", stop)
+    def follow(self, log: EventLog, stop: StopEvent, after: Callable[[], None] = lambda: None) -> threading.Thread:
+        """Count the entries `log` takes from now on, on a thread until `stop`, calling `after` once each is counted."""
 
+        return _follow(log, then(self.handle, after), "lane-unattributed", stop)

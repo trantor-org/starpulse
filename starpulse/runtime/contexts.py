@@ -17,6 +17,7 @@ import logging
 import os
 import threading
 import time
+import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -227,7 +228,7 @@ def default_starters(
             config, path, base, log, own, load=load, assemble=assemble, history_store=history_store,
         )  # fmt: skip
 
-    def signal_folds(own: threading.Event) -> Callable[[], None]:
+    def signal_folds(own: StopEvent) -> Callable[[], None]:
         # the api worker reads the fold rows; folding them here keeps the catch-up off the Page API's GIL
         from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 
@@ -326,14 +327,17 @@ def default_starters(
         from starpulse.event_log.watch import open_watch
         from starpulse.github.adapters.inbound import consumer
         from starpulse.github.adapters.outbound.ingest import HttpIngest
+        from starpulse.runs.adapters.inbound.status_resync import Resync
 
         producer = next((p for p in config.producers if p.name == "github"), None)
         token = os.environ.get(producer.token_env, "") if producer else ""
         if not token:
             raise ValueError("github-events: the producer github holds no token in the environment")
         server = os.environ.get("STARPULSE_WRITE_URL") or f"http://127.0.0.1:{config.port}"
+        woodpecker = {urllib.parse.urlsplit(run.url or "").path.strip("/"): run.name for run in config.runs if run.type == "woodpecker"}
         return consumer.start(
-            config, base, own, migrate_chain, HttpIngest(server, token), _PullLinks(ReadModel(log.engine)), open_watch
+            config, base, own, migrate_chain, HttpIngest(server, token), _PullLinks(ReadModel(log.engine)), open_watch,
+            Resync(log, woodpecker),
         )
 
     known: dict[str, Starter] = {

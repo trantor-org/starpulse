@@ -83,7 +83,7 @@ class Delivery:
             follow_events(log, feed, handlers, stop, resume=self._resume)
             self._resume = True  # a reload resumes after this replay's cursor
         if actor:
-            keep_metrics(log, actor.exposition, stop, actor.views)
+            keep_metrics(log, actor.exposition, stop, actor.turned, actor.views)
 
     def stop(self) -> None:
         self._stop.set()

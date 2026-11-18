@@ -42,8 +42,12 @@ def _post(queue: Queue, ingest: Ingest, delivery_id: str, events: list[dict[str,
     return True
 
 
-def _one(queue: Queue, ingest: Ingest, links: Links, entry: Entry, checks: HeadChecks | None = None) -> None:
+def _one(
+    queue: Queue, ingest: Ingest, links: Links, entry: Entry, checks: HeadChecks | None = None, resync: Callable[[str, bytes], None] | None = None
+) -> None:
     delivery_id = entry.delivery.delivery_id
+    if resync is not None:
+        resync(entry.delivery.event, entry.delivery.body)
     run = run_event_of(entry.delivery.event, entry.delivery.body)
     if run is not None:
         _post(queue, ingest, delivery_id, [run])
@@ -76,11 +80,13 @@ def _one(queue: Queue, ingest: Ingest, links: Links, entry: Entry, checks: HeadC
         planned.settle()
 
 
-def consume(queue: Queue, ingest: Ingest, links: Links, checks: HeadChecks | None = None) -> None:
+def consume(
+    queue: Queue, ingest: Ingest, links: Links, checks: HeadChecks | None = None, resync: Callable[[str, bytes], None] | None = None
+) -> None:
     """Try each delivery due now once, then return."""
     for entry in queue.claim():
         try:
-            _one(queue, ingest, links, entry, checks)
+            _one(queue, ingest, links, entry, checks, resync)
         except Exception:
             logger.exception("github events: %s", entry.delivery.delivery_id)
             queue.fail(entry.delivery.delivery_id, "consumer error")
@@ -93,6 +99,7 @@ def run(
     stop: Stop,
     watch: Watch | None,
     checks: HeadChecks | None = None,
+    resync: Callable[[str, bytes], None] | None = None,
 ) -> None:
     """Consume once, then again whenever the inbox commits (`watch`) or a retry falls due, until `stop` is set.
 
@@ -116,7 +123,7 @@ def run(
         while not stop.is_set():
             wait = None if watch else FALLBACK_S
             try:
-                consume(queue, ingest, links, checks)
+                consume(queue, ingest, links, checks, resync)
                 due = queue.due_in()
                 if due is not None:
                     wait = due if wait is None else min(wait, due)
@@ -143,7 +150,8 @@ def open_queue(config: Any, base: Path, migrate: Migrate, consumer: str = CONSUM
 
 
 def start(
-    config: Any, base: Path, stop: Stop, migrate: Migrate, ingest: Ingest, links: Links, open_watch: OpenWatch
+    config: Any, base: Path, stop: Stop, migrate: Migrate, ingest: Ingest, links: Links, open_watch: OpenWatch,
+    resync: Callable[[str, bytes], None] | None = None,
 ) -> Callable[[], None]:
     """The `github-events` context: consume the inbox `[github]` names on a thread until `stop` is set. The listener's
     container holds no producer token, so this runs apart from it, over the same inbox, with the `ingest` that holds it.
@@ -151,6 +159,9 @@ def start(
     The reconcile against GitHub and the retention purge (`starpulse github purge`) are the sweeper's, not a thread here. When the `github` producer may write
     the `pr-checks` machine it also publishes each check delivery and its head's rollup (`HeadChecks`), reading GitHub
     with `GITHUB_TOKEN` or `GH_TOKEN`, as the pull request adapter does.
+
+    `resync`, when given, sees each delivery's event and body before its facts are read: the runtime root passes the runs
+    context's `Resync`, which turns a Woodpecker `status` into a `runs:resync` (`github` sits below `runs` and `event_log`).
 
     Returns the context's reload, which has nothing to re-read."""
     inbox, queue = open_queue(config, base, migrate)
@@ -163,7 +174,7 @@ def start(
 
     def work() -> None:
         try:
-            run(queue, ingest, links, stop, watch, checks)
+            run(queue, ingest, links, stop, watch, checks, resync)
         finally:
             inbox.engine.dispose()
             if watch is not None:
