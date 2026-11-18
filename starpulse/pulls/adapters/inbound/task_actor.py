@@ -447,6 +447,8 @@ class TaskActor:
         #: The wall clock of the actor's last beat, None before the first: it moves only while the actor loop, or the
         #: start recovery, takes its turn, so a stuck actor with a live process stops moving it.
         self._heartbeat: float | None = None
+        #: Set after each turn of the actor loop, for the writer of its metrics and views.
+        self.turned = threading.Event()
         #: The merged Review tasks, and the monotonic clock it was counted at.
         self._waiting: tuple[float, int] = (float("-inf"), 0)
         #: Set once the start's derivation of every open task is done. A task or move change, a store save and the
@@ -708,6 +710,7 @@ class TaskActor:
         try:
             while not stop.is_set():
                 self._beat()
+                self.turned.set()
                 try:
                     kind, data = changes.get(timeout=_HEARTBEAT_S)
                 except queue.Empty:
@@ -800,7 +803,9 @@ class TaskActor:
         open_ids = {agent["id"] for agent in self._feed.open_tasks()}
         names = {agent["id"] for agent in tasks} if BOARD in self._links else set()
         for parent in self._links.keys() - {BOARD}:
-            names.update(name for name in self._feed.machine_task_ids(parent) if self._feed.current_id(name) in open_ids)
+            names.update(
+                name for name in self._feed.machine_task_ids(parent) if self._feed.current_id(name) in open_ids
+            )
         swept = sorted(names)
         for done, name in enumerate(swept, 1):
             if stop is not None and stop.is_set():
@@ -1320,7 +1325,9 @@ class TaskActor:
             "Which?",
         )
         self._apply(
-            name, {"status": attention, "description": section_set(agent["description"], "Needs attention", reason)}, reason
+            name,
+            {"status": attention, "description": section_set(agent["description"], "Needs attention", reason)},
+            reason,
         )
 
     def _end_without_pr(self, name: str) -> None:

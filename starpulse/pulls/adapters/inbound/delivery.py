@@ -41,8 +41,6 @@ POLLER = "pulls.poller"
 SERVING = "pulls.serving"
 #: The worker state holding, by stream, the id of the last `follow_events` entry the replay handed over.
 CURSOR = "pulls.cursor"
-#: Seconds between the worker's writes of its metrics.
-METRICS_S = 15.0
 #: Seconds between the poller's beats, and how old its last beat may be before `serve` calls it down.
 BEAT_S = 15.0
 DOWN_S = 60.0
@@ -213,30 +211,37 @@ def follow_events(
     return threads
 
 
-def publish_metrics(log: EventLog, text: str) -> None:
-    """Keep the worker's exposition `text` for `serve` to relay."""
-    try:
-        log.put_state(METRICS, text)
-    except Exception:
-        logger.warning("pulls: the metrics were not kept", exc_info=True)
-
-
 def keep_metrics(
-    log: EventLog, exposition: Callable[[], str], stop: StopEvent, views: Callable[[], dict[str, Any]] | None = None
+    log: EventLog,
+    exposition: Callable[[], str],
+    stop: StopEvent,
+    turned: threading.Event,
+    views: Callable[[], dict[str, Any]] | None = None,
 ) -> threading.Thread:
-    """Write `exposition()`, and the task actor's `views()` when given, to the log every `METRICS_S` on a thread until
-    `stop`."""
+    """Write `exposition()`, and the task actor's `views()` when given, to the log after each turn the actor sets
+    `turned` for, when it differs from what was last written, on a thread until `stop`."""
 
     def run() -> None:
-        while not stop.is_set():
-            publish_metrics(log, exposition())
-            if views:
-                try:
-                    log.put_state(ACTOR_VIEW, views())
-                except Exception:
-                    logger.warning("pulls: the task actor's views were not kept", exc_info=True)
-            # adr-exempt: pending
-            stop.wait(METRICS_S)
+        written: dict[str, Any] = {}
+
+        def keep(name: str, read: Callable[[], Any]) -> None:
+            try:
+                if (value := read()) != written.get(name):
+                    log.put_state(name, value)
+                    written[name] = value
+            except Exception:
+                logger.warning("pulls: %s was not kept", name, exc_info=True)
+
+        stop.listen(turned.set)  # a stop wakes the wait below, which then sees it
+        try:
+            while not stop.is_set():
+                turned.wait()
+                turned.clear()
+                keep(METRICS, exposition)
+                if views:
+                    keep(ACTOR_VIEW, views)
+        finally:
+            stop.unlisten(turned.set)
 
     thread = threading.Thread(target=run, name="pull-metrics", daemon=True)
     thread.start()

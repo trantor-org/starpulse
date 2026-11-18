@@ -8,7 +8,6 @@ import json
 import os
 import re
 import threading
-import time
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
@@ -18,13 +17,13 @@ import yaml
 
 from starpulse.contracts.adapters import RunsSink, RunStatus
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.adapters.outbound import Unreported, node
+from starpulse.runs.adapters.outbound.resync import follow_resync
 
 #: The pipeline events shown first, in the order the page lists them; any other event the server reports follows.
 EVENTS = ("pull_request", "push", "cron", "manual")
 
-#: Seconds between two listings of the server.
-POLL_INTERVAL = 15.0
 #: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
 WORKER = "woodpecker"
 
@@ -259,14 +258,9 @@ def start(url: str) -> None:
     return
 
 
-def follow(url: str, runs: RunsSink, log: EventLog) -> None:  # pragma: no mutate block — thread wiring
-    """Show the pipelines of the repository at `url` on `runs`, read again every `POLL_INTERVAL` seconds."""
+def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:  # pragma: no mutate block — thread wiring
+    """Show the pipelines of the repository at `url` on `runs`: listed once now, then again for each `runs:resync` entry
+    naming the instance (`follow_resync`), which a commit status Woodpecker posts writes (`runs.adapters.inbound.status_resync`)."""
     poller = Poller(runs, get, url)
-
-    def run() -> None:
-        while True:
-            poller.read()
-            # adr-exempt: pending
-            time.sleep(POLL_INTERVAL)
-
-    threading.Thread(target=run, name="woodpecker-runs", daemon=True).start()
+    follow_resync(log, getattr(runs, "instance", None) or "", poller.read, stop or StopEvent())
+    threading.Thread(target=poller.read, name="woodpecker-runs", daemon=True).start()

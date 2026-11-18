@@ -207,8 +207,30 @@ class Conformance:
             return {task["id"] for task in self._open_tasks() if task["state"] == self._working}
         return {task for task, lane in self._lanes.items() if lane == self._working}
 
-    def exposition(self) -> str:
-        """Prometheus text of the counters, a series per machine (and per declared event) from the first scrape."""
+    def stall_state(self) -> dict[str, Any]:
+        """The working tasks already stalled and the epoch deadlines of the others, which the gauge counts as time passes
+        them (`stalled_exposition`); empty while the lane streams are not read up."""
+        with self._lock:
+            return self._stall_state()
+
+    def _stall_state(self) -> dict[str, Any]:
+        if not (self._caught_up() and self._working and self._review):
+            return {}
+        working = self._working_now()
+        live = {task: last for task, last in self._active.items() if task in working}
+        return {
+            "stalled": sum(task in self._stalled for task in live),
+            "due": sorted(last + STALL_S for task, last in live.items() if task not in self._stalled),
+        }
+
+    def _caught_up(self) -> bool:
+        return self._until is not None and all(
+            self._cursors.get(stream, 0) >= last for stream, last in self._until.items()
+        )
+
+    def exposition(self, stalled: bool = True) -> str:
+        """Prometheus text of the counters, a series per machine (and per declared event) from the first scrape; the
+        stalled gauge too unless `stalled` is False, for a reader that serves it at scrape."""
         with self._lock:
             counters = "".join(
                 f"# HELP {metric} {text}\n# TYPE {metric} counter\n"
@@ -222,9 +244,7 @@ class Conformance:
                 f'{OCCURRENCES_METRIC}{{machine="{_escape(name)}",event="{_escape(event)}"}} {count}\n'
                 for (name, event), count in self._occurrences.items()
             )
-            caught_up = self._until is not None and all(
-                self._cursors.get(stream, 0) >= last for stream, last in self._until.items()
-            )
+            caught_up = self._caught_up()
             entered = "".join(
                 f'{ENTERED_METRIC}{{lane="{_escape(lane)}"}} {count}\n' for lane, count in self._entered.items()
             )
@@ -234,18 +254,14 @@ class Conformance:
             )
             watched = ""
             if caught_up and self._working and self._review:
-                working = self._working_now()
-                now = self._clock()
-                stalled = sum(
-                    task in working and (task in self._stalled or now - last >= STALL_S)
-                    for task, last in self._active.items()
-                )
                 watched = (
                     f"# HELP {REVIEW_MOVES_METRIC} {REVIEW_MOVES_HELP}\n# TYPE {REVIEW_MOVES_METRIC} counter\n"
                     f"{REVIEW_MOVES_METRIC} {self._review_moves}\n"
-                    f"# HELP {WORKING_METRIC} {WORKING_HELP}\n# TYPE {WORKING_METRIC} gauge\n{WORKING_METRIC} {len(working)}\n"
-                    f"# HELP {STALLED_METRIC} {STALLED_HELP}\n# TYPE {STALLED_METRIC} gauge\n{STALLED_METRIC} {stalled}\n"
+                    f"# HELP {WORKING_METRIC} {WORKING_HELP}\n# TYPE {WORKING_METRIC} gauge\n"
+                    f"{WORKING_METRIC} {len(self._working_now())}\n"
                 )
+                if stalled:
+                    watched += stalled_exposition(self._stall_state(), self._clock())
             return (
                 f"{counters}# HELP {OCCURRENCES_METRIC} {OCCURRENCES_HELP}\n# TYPE {OCCURRENCES_METRIC} counter\n"
                 f"{occurrences}{entered_head}{entered}{watched}"
@@ -346,15 +362,23 @@ class Conformance:
         logger.info("conformance: resuming after %s", cursors)
         return cursors
 
-    def follow(self, log: EventLog, stop: StopEvent, checkpoint_s: float = CHECKPOINT_S) -> list[threading.Thread]:
+    def follow(
+        self,
+        log: EventLog,
+        stop: StopEvent,
+        checkpoint_s: float = CHECKPOINT_S,
+        after: Callable[[], None] = lambda: None,
+    ) -> list[threading.Thread]:
         """Read `log` from the saved checkpoint, or what it retains when none applies, then follow it, on a thread per
-        stream until `stop`, saving the checkpoint every `checkpoint_s`; the threads read the log, so the caller does
-        not wait on a long one."""
+        stream until `stop`, saving the checkpoint every `checkpoint_s` and calling `after` once each entry is handled;
+        the threads read the log, so the caller does not wait on a long one."""
         cursors = self._resumed(log)
         threads = []
         for stream, handle in ((lane_events.STREAM, self.handle_lane), (events.STREAM, self.handle_event)):
             tail = log.tail(stream, after=cursors.get(stream))
-            thread = threading.Thread(target=tail.run, args=(handle, stop), name=f"conformance-{stream}", daemon=True)
+            thread = threading.Thread(
+                target=tail.run, args=(lane_events.then(handle, after), stop), name=f"conformance-{stream}", daemon=True
+            )
             thread.start()
             threads.append(thread)
         saver = threading.Thread(
@@ -367,6 +391,15 @@ class Conformance:
         # adr-exempt: pending
         while not stop.wait(checkpoint_s):
             self.save(log)
+
+
+def stalled_exposition(state: Mapping[str, Any], now: float) -> str:
+    """Prometheus text of the stalled gauge at `now` from a `stall_state`: the tasks already stalled and those whose
+    deadline has passed; empty for no state."""
+    if not state:
+        return ""
+    stalled = state["stalled"] + sum(due <= now for due in state["due"])
+    return f"# HELP {STALLED_METRIC} {STALLED_HELP}\n# TYPE {STALLED_METRIC} gauge\n{STALLED_METRIC} {stalled}\n"
 
 
 def _escape(value: str) -> str:
