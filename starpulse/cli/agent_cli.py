@@ -1231,6 +1231,17 @@ def _parser() -> argparse.ArgumentParser:
         (0, 1, 2, 3, 4),
     )
     complete.add_argument("task", help="the task's key (`PROJ-45`)")
+    reopen = leaf(
+        task_verbs,
+        "reopen",
+        "return a Done task to In Progress; refused when it is not Done or a merged pull request cites it",
+        _in_tasks("task_reopen"),
+        ("task",),
+        (0, 1, 2, 3),
+    )
+    agent_flags.writer_flags(reopen)
+    reopen.add_argument("task", help="the Done task's key (`PROJ-45`)")
+    reopen.add_argument("--reason", required=True, help="why its work did not ship, recorded as a comment on the task")
     checkpoint = leaf(
         task_verbs,
         "checkpoint-ac",

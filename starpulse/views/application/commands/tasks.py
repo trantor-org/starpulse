@@ -10,12 +10,15 @@ from starpulse.board.adapters.native_scan import dependencies
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model import post_merge_checks
 from starpulse.board.model.seam import (
+    AGENT,
+    TASK_ACTOR,
     Board,
     TaskArchiver,
     TaskCompleter,
     TaskCreator,
     TaskEditor,
     TaskReader,
+    TaskReopener,
     TaskRestorer,
 )
 from starpulse.contracts.api.dto.requests import (
@@ -28,6 +31,7 @@ from starpulse.contracts.api.dto.requests import (
     EditRequest,
     MissRequest,
     RatingRequest,
+    ReopenRequest,
     RestoreRequest,
     RetiredImportRequest,
     RetireRequest,
@@ -344,6 +348,26 @@ def restore_task(request: RestoreRequest, feed: BoardFeed, restore: TaskRestorer
     """
     task, who = request.task, who_of(request)
     written = record_written(feed, task, who, lambda: restore(task))
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task}
+
+
+@with_request(ReopenRequest, "Reopening a task")
+def reopen_task(
+    request: ReopenRequest, feed: BoardFeed, reopen: TaskReopener, landed: Callable[[str], bool]
+) -> tuple[int, dict[str, Any]]:
+    """Return the Done task `request` names to In Progress through `reopen`: the HTTP status and JSON body.
+
+    A completed task reads as archived, so the feed holds no row `held_task` would pass; the writer owns every refusal
+    (not Done, the name taken) and `landed` says whether a merged pull request cites the task, which is refused too:
+    its work shipped, so a reopen would deliver it twice. Each refusal answers 409 with its reason. A session's reopen is the task actor's, as a claim's.
+    """
+    task, who = request.task, who_of(request)
+    if landed(task):
+        return 409, {"error": f"{task} has a merged pull request: its work shipped"}
+    who = who._replace(actor=TASK_ACTOR) if who.actor == AGENT else who
+    written = record_written(feed, task, who, lambda: reopen(task, request.reason, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}

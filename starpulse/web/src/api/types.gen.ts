@@ -17,6 +17,7 @@ export interface ApiContract {
     | TakenOver
     | RetiredImported
     | Completed
+    | Reopened
     | Claimed
     | Parked
     | ClaimReleased
@@ -79,6 +80,7 @@ export interface ApiContract {
     | TakeOverRequest
     | RetiredImportRequest
     | CompleteRequest
+    | ReopenRequest
     | ClaimRequest
     | ParkRequest
     | ReleaseRequest
@@ -191,6 +193,10 @@ export interface RetiredImported {
   [k: string]: unknown;
 }
 export interface Completed {
+  task: string;
+  [k: string]: unknown;
+}
+export interface Reopened {
   task: string;
   [k: string]: unknown;
 }
@@ -2481,6 +2487,16 @@ export interface RetiredImportRequest {
  * `POST /api/complete`: move the Done task `task` into the board's completed tasks.
  */
 export interface CompleteRequest {
+  task: string;
+}
+/**
+ * `POST /api/reopen`: return the Done task `task`, completed or not, to In Progress with `reason` as its comment.
+ */
+export interface ReopenRequest {
+  actor?: string | null;
+  harness?: string | null;
+  reason: string;
+  session?: string | null;
   task: string;
 }
 /**

@@ -126,6 +126,13 @@ class RestoreRequest(_Writer):
     task: str
 
 
+class ReopenRequest(_Writer):
+    """`POST /api/reopen`: return the Done task `task`, completed or not, to In Progress with `reason` as its comment."""
+
+    task: str
+    reason: NonBlank
+
+
 class TakeOverRequest(_Request):
     """`POST /api/take-over`: flip the unattended task `task` to interactive; its workflow types nothing more."""
 

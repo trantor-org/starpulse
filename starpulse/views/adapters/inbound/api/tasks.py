@@ -7,7 +7,8 @@
   `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
   `fields=dependencies`, unpaged.
 - `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `rating`, `miss`, `restore`, `take-over`, `retire`,
-  `retired/import`, `claim`, `park`, `review`, `complete` and `tasks`: a task's writes, each over the seams it needs.
+  `retired/import`, `claim`, `park`, `review`, `complete`, `reopen` and `tasks`: a task's writes, each over the
+  seams it needs.
 """
 
 import asyncio
@@ -42,6 +43,7 @@ from starpulse.views.application.commands.tasks import (
     record_miss,
     record_rating,
     record_verdict,
+    reopen_task,
     restore_task,
     retire_task,
     retired_list,
@@ -140,7 +142,11 @@ def routes(api: Api) -> list[ApiRoute]:
     feed, board, services = api.feed, api.board, api.services
     writer, assign = board.writer, board.assign
     read, edit, archive, create = board.read, board.edit, board.archive, board.create
-    restore, complete = board.restore, board.complete
+    restore, complete, reopen = board.restore, board.complete, board.reopen
+
+    def landed(task: str) -> bool:
+        _, body = _stored_record(api, task)
+        return any(pull.get("merged") or pull.get("state") == "MERGED" for pull in body.get("record", {}).get("pulls", []))
 
     def start(request: StartRequest) -> tuple[int, dict[str, Any]]:
         return start_requested(request, feed, assign, services.start_session, services.harnesses)
@@ -172,6 +178,7 @@ def routes(api: Api) -> list[ApiRoute]:
         "/park": (lambda client, raw: park_task(client, raw, feed, read, edit), "park"),
         "/review": (lambda client, raw: review_task(client, raw, feed, read, edit), "review"),
         "/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
+        "/reopen": (lambda client, raw: reopen_task(client, raw, feed, reopen, landed), "reopen"),
         "/tasks": (lambda client, raw: create_task(client, raw, create, feed), "create"),
     }
     return [

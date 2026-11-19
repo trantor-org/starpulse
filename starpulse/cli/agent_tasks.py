@@ -678,6 +678,12 @@ def task_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
     return {"task": record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 
+def task_reopen(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = agent_wire.server_url(args.server, environ), "/api/reopen"
+    status, reply = agent_wire.post(base, path, {"task": args.task, "reason": args.reason, **writer(args, environ)})
+    return {"task": record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+
+
 def task_retire(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/retire"
     status, reply = agent_wire.post(base, path, {"task": args.task})

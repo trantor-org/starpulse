@@ -46,6 +46,7 @@ __all__ = [
     "TaskEditor",
     "TaskReader",
     "TaskReleaser",
+    "TaskReopener",
     "TaskRestorer",
     "TaskRetirer",
     "Written",
@@ -135,6 +136,9 @@ class TaskArchiver(Protocol):
 #: Return an archived task's file to the board's tasks, unchanged. A task with no archived file, or whose number is
 #: already open or completed, is refused.
 TaskRestorer = Callable[[str], Written]
+#: Return a Done task, completed or not, to the working State with `reason` as its comment, as `actor`: `(task, reason, /,
+#: actor)`. A task that is not Done is refused.
+TaskReopener = Callable[..., Written]
 #: Take a finished task's file off the board into its retired tasks, kept whole. A Done task, or an archived one in any
 #: state, is retired; an open or unknown task, or one whose number is already retired with other text, is refused.
 TaskRetirer = Callable[[str], Written]
@@ -243,6 +247,8 @@ class Board:
     """What the board's `readable` rules find broken in the description of a task, or "" when it reads well."""
     complete: TaskCompleter
     """Completes a Done task."""
+    reopen: TaskReopener
+    """Returns a Done task to the working State, its file back in the board's tasks."""
     retire: TaskRetirer
     """Takes a finished task off the board into its retired tasks."""
     retired: RetiredReader
