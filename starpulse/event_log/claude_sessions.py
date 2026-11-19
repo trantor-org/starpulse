@@ -159,33 +159,33 @@ def _running(record: dict[str, Any]) -> bool:
         return False
 
 
-def _running_records(sessions: Path) -> Iterator[dict[str, Any]]:
+def _running_records(sessions: Path, match: Callable[[dict[str, Any]], bool]) -> Iterator[dict[str, Any]]:
+    """The records `match` accepts whose process runs: liveness costs a process lookup, so it is read only for a match."""
     for entry in sorted(sessions.glob("*.json")):
         try:
             data = json.loads(entry.read_text())
         except OSError, ValueError:
             continue
-        if isinstance(data, dict) and _running(data):
+        if isinstance(data, dict) and match(data) and _running(data):
             yield data
 
 
 def live_session(sessions: Path, session: str) -> bool:
     """Whether the process registered under `sessions` for `session` (its session id, bridge id or Remote Control URL) is still running."""
-    for record in _running_records(sessions) if session else ():
+    def names(record: dict[str, Any]) -> bool:
         bridge = record.get("bridgeSessionId")
-        if session in (record.get("sessionId"), bridge) or bool(bridge and session.endswith(f"/{bridge}")):
-            return True
-    return False
+        return session in (record.get("sessionId"), bridge) or bool(bridge and session.endswith(f"/{bridge}"))
+
+    return bool(session) and next(_running_records(sessions, names), None) is not None
 
 
 def live_socket(sessions: Path) -> Callable[[str], str | None]:
     """The inbox socket of the running process of a session, from Claude Code's per-process records in `sessions`."""
 
     def find(session: str) -> str | None:
-        for record in _running_records(sessions):
-            if record.get("sessionId") == session and record.get("messagingSocketPath"):
-                return str(record["messagingSocketPath"])
-        return None
+        records = _running_records(sessions, lambda record: record.get("sessionId") == session and bool(record.get("messagingSocketPath")))
+        record = next(records, None)
+        return str(record["messagingSocketPath"]) if record else None
 
     return find
 
@@ -196,10 +196,8 @@ def local_id(sessions: Path, assignee: str) -> str:
     bridge = assignee.rstrip("/").rsplit("/", 1)[-1] if assignee.startswith("http") else ""
     if not bridge:
         return assignee
-    for record in _running_records(sessions):
-        if record.get("bridgeSessionId") == bridge:
-            return str(record.get("sessionId", ""))
-    return ""
+    record = next(_running_records(sessions, lambda record: record.get("bridgeSessionId") == bridge), None)
+    return str(record.get("sessionId", "")) if record else ""
 
 
 def holder_activity(transcripts: Path, sessions: Path, assignee: str, *, now: float) -> dict[str, Any] | None:

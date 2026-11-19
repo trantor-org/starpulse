@@ -233,7 +233,7 @@ class PullSync:
         one when `number` is None; False, queueing nothing, for a repository this store does not track. A pull request
         already waiting is not queued twice, and an `urgent` one (a delivery's ask) is read before every other waiting
         one, which the events' rereads are."""
-        if repo not in self.tracked():
+        if repo not in self._store.repos() and repo not in self.tracked():  # a stored repository is tracked: no board read
             return False
         if number is None:
             for record in self._store.find(repo, state="OPEN"):
