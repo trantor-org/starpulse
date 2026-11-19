@@ -336,7 +336,7 @@ class _Observed:
         try:
             await self.app(scope, receive, send)
         finally:
-            request_durations.observe(self._route, time.monotonic() - started)
+            request_durations.observe(self._route, scope.get("query_string", b""), time.monotonic() - started)
 
 
 class PageApp:
