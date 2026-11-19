@@ -26,6 +26,7 @@ change how the page draws it; `docs/cli.md` describes each.
      START: [{from: ready, to: in_progress}]
      RETURN_READY: [{from: in_progress, to: ready}]
      SUBMIT: [{from: in_progress, to: review, if: {when: {pr: {exists: true}}}}]
+     MERGE: [{from: review, to: done}]
    bindings: {claim: START}
    writers:
      RETURN_READY: [{actor: operator, trigger: the board page}]
