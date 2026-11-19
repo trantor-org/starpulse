@@ -37,13 +37,11 @@ The `starpulse.board.Board` the server holds says:
   summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
   seconds in the from-state, per UTC day, machine, from-state and to-state), `starpulse_cases` (each task's or run's
   current state, when it entered it and its last event), `starpulse_lane_intervals` (each stay in a lane, with the source its event id names) and
-  `starpulse_lanes` (per source and lane, the tasks in it now and when one first entered it). A store whose summaries
-  are empty builds them from its rows when it opens (`HistoryStore.build_summaries`), and one that predates the lane
-  counts counts them from its intervals; one whose stays predate their source gains the column and fills it. It also rebuilds them when the machines it opens with place events otherwise
-  than the ones that folded them: `starpulse_summary_basis` keeps a fingerprint of the initial and final states, moves
-  and Board lanes, so an edit to a label or a position rebuilds nothing, and a store that predates the table rebuilds
-  once. `rebuild_summaries` replaces them in one transaction, folding the raw rows through the steps a write
-  takes. The summaries follow the order events were recorded, and cover only the machines the page draws when the
+  `starpulse_lanes` (per source and lane, the tasks in it now and when one first entered it). A store whose summaries carry no stamp, or one that differs, rebuilds them from its rows when
+  `starpulse migrate` maintains it (`HistoryStore.build_summaries`). The stamp is a `derived_stamp:summaries` settings row
+  hashing the summary table definitions, the initial and final states, moves and Board lanes of the machines, and the
+  fold's source, so an edit to a label or a position rebuilds nothing. `rebuild_summaries` folds the raw rows in memory through the steps a write takes, then drops, creates from metadata and fills
+  the tables in one transaction, so a reader sees the old or the new, never empty ones. The summaries follow the order events were recorded, and cover only the machines the page draws when the
   store opens. `/api/analytics/health` reads these summaries and never scan the two
   raw tables: health reads the stays that ended in its window or are still going and takes the tasks in each lane from
   the lane counts; the Board's level reads the trajectories of the tasks that changed lane in its window or the trailing

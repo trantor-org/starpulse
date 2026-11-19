@@ -29,9 +29,7 @@ from sqlalchemy import (
     Table,
     Text,
     create_engine,
-    delete,
     func,
-    insert,
     or_,
     select,
     update,
@@ -40,32 +38,31 @@ from sqlalchemy import event as sa_event
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import OperationalError
 
-from starpulse.event_log import events as machine_events
 from starpulse.event_log import breaking_change_events, lane_events, verdict_events
+from starpulse.event_log import events as machine_events
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import WAL_SIZE_LIMIT, EventLog, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
-from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 from starpulse.event_log.store import EventStore
+from starpulse.event_log.table_registry import clear_stamp, is_stamped, write_stamp
 from starpulse.event_log.tables import breaking_change_detections as _detections
 from starpulse.event_log.tables import breaking_changes as _breaking_changes
 from starpulse.event_log.tables import gaps as _gaps
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
 from starpulse.event_log.tables import task_verdicts as _task_verdicts
+from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 from starpulse.flow_metrics.adapters.outbound.summaries import (
     BOARD,
     SUMMARY_TABLES,
     Fold,
     Summariser,
     cases,
-    count_lanes,
     lane_intervals,
     lanes,
     read_case,
     source,
-    summary_basis,
     write_lane,
     write_step,
 )
@@ -473,19 +470,12 @@ class HistoryStore:
             return len(_held_ids(db, ids) - held)
 
     def build_summaries(self) -> None:
-        """Build the summaries from the raw rows when they are empty or were folded under other machines: the start-up
-        pass for a store that predates them or opens under an edited machine.
-
-        Summaries that hold rows under the machines this store opened with are left as they are, so a second call
-        changes nothing, except that lane counts a store lacks (its intervals predate them) are counted from the
-        intervals; `rebuild_summaries` replaces them.
-        """
-        with self.engine.begin() as db:
-            held = {table: db.execute(select(table).limit(1)).first() is not None for table in SUMMARY_TABLES}
-            if held[lane_intervals] and not held[lanes]:
-                count_lanes(db)
-            folded_under = db.execute(select(summary_basis.c.fingerprint)).scalar()
-        if folded_under != self._summariser.fingerprint() or not any(held.values()):
+        """Rebuild the summaries when they were not folded under this stamp: a store that predates it, or one opened
+        under edited machines or fold code. Summaries folded under it are left as they are, so a second call changes
+        nothing."""
+        with self.engine.connect() as db:
+            folded = is_stamped(db, "summaries", self._summariser.stamp())
+        if not folded:
             self.rebuild_summaries()
 
     def rebuild_summaries(self) -> None:
@@ -494,17 +484,21 @@ class HistoryStore:
 
         The rows are folded in memory while writers carry on, so a large history holds no lock for its length. The write
         lock is then taken only to swap the summaries in, after folding the rows recorded since the fold read them, so
-        the swap lasts as long as writing the summaries, and no row recorded meanwhile is missing from them.
+        the swap lasts as long as dropping, creating and writing the tables, and no row recorded meanwhile is missing
+        from them. A reader sees the old tables or the new, never an empty or missing one.
         """
+        stamp = self._summariser.stamp()
         fold = Fold(self._summariser)
         with self.engine.connect() as db:
             seen = self._fold_rows(db, fold, (0, 0))
         with self.engine.begin() as db:
-            for table in (*SUMMARY_TABLES, summary_basis):
-                db.execute(delete(table))  # the first write takes the lock, so the rows read next are the last
+            clear_stamp(db, "summaries")  # the first write takes the lock, so the rows read next are the last
+            for table in SUMMARY_TABLES:
+                table.drop(db)
+                table.create(db)
             self._fold_rows(db, fold, seen)
             fold.write(db)
-            db.execute(insert(summary_basis).values(fingerprint=self._summariser.fingerprint()))
+            write_stamp(db, "summaries", stamp)
         self._summaries_changed()
 
     @staticmethod

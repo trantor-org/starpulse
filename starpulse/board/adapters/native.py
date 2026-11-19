@@ -1861,28 +1861,44 @@ def _own(root: Path, read: Callable[[str], Any]) -> Callable[[str], Any]:
     return own
 
 
+#: How many tasks' standing verdicts `_standing` keeps, the oldest placed dropped first.
+_STANDING_KEPT = 512
+
+
 def _standing(root: Path, guard: Guard) -> Callable[[str, str], dict[str, Any] | None]:
     """The board rules' verdict on moving the task `task` to `lane` as its file stands now, or None for a task with no
-    file or no refusing rule."""
+    file or no refusing rule.
 
-    last: tuple[str, Path, tuple[int, int], dict, str] | None = None
+    A task's file is parsed once and each lane judged once while the file stands, the verdicts shared by every reader
+    thread: judging the rules costs tens of milliseconds, the file's read and parse under one."""
 
-    def standing(task: str, lane: str) -> dict[str, Any] | None:
-        nonlocal last
-        if last is not None and last[0] == task:
-            try:
-                if _stamp(last[1]) == last[2]:
-                    return guard.standing(last[3], last[4], lane)
-            except OSError:
-                pass
-        if (path := _find(root, task)) is None:
-            return None
+    judged: dict[str, tuple[Path, tuple[int, int], dict, str, dict[str, dict[str, Any] | None]]] = {}
+    judging = threading.Lock()
+
+    def current(task: str) -> tuple[Path, tuple[int, int], dict, str, dict[str, dict[str, Any] | None]] | None:
+        held = judged.get(task)
         try:
-            stamp = _stamp(path)
-            front, body = _split_record(path.read_text())
+            return held if held is not None and _stamp(held[0]) == held[1] else None
         except OSError:
             return None
-        last = (task, path, stamp, front, body)
-        return guard.standing(front, body, lane)
+
+    def standing(task: str, lane: str) -> dict[str, Any] | None:
+        if (held := current(task)) is not None and lane in held[4]:
+            return held[4][lane]
+        with judging:
+            if (held := current(task)) is None:
+                if (path := _find(root, task)) is None:
+                    return None
+                try:
+                    stamp = _stamp(path)
+                    front, body = _split_record(path.read_text())
+                except OSError:
+                    return None
+                held = judged[task] = (path, stamp, front, body, {})
+                if len(judged) > _STANDING_KEPT:
+                    del judged[next(iter(judged))]
+            if lane not in held[4]:
+                held[4][lane] = guard.standing(held[2], held[3], lane)
+            return held[4][lane]
 
     return standing

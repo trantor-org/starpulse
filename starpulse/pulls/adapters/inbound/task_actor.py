@@ -1259,7 +1259,8 @@ class TaskActor:
         (`_end_without_pr`). Any other In Progress task whose holder is not busy (`confirm`) and that no event is awaited on
         has work left, so the `idle` hook resumes the same session with its phase machine's next step; the task stays In
         Progress and no clock runs. A settle an awaited event held runs again from the derivation that finds the wait
-        ended, as the session that settled may never settle again. After `_STALLED_RESUMES` resumes with no progress (a phase or submachine event, a
+        ended, as the session that settled may never settle again, unless its holder is at work by then (a lens's end woke it): that
+        holder settles anew. After `_STALLED_RESUMES` resumes with no progress (a phase or submachine event, a
         new head), the next one is first `escalate`d one profile and flagged on `RESUME_STALLED_METRIC`. An escalate that raises sends no resume and moves the task to
         Needs attention at once; a flagged task whose session settles again with no progress moves there too, except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A hook that
         fails found the holder at work or the session start refused: the next settle tries again."""
@@ -1272,6 +1273,8 @@ class TaskActor:
                 self._stalled.discard(name)
                 return
             if self._idle is None:
+                return
+            if wait_ended and (placed := self._feed.machine_task(HARNESS_MACHINE, name)) and placed["state"] == "active":
                 return
             if self._awaits(agent):
                 self._awaited.add(name)
