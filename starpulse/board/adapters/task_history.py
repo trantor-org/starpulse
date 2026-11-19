@@ -282,16 +282,24 @@ class TaskHistory:
 
     def import_retired(self, rows: Iterable[tuple[str, str]], parse: Callable[[str], Record]) -> None:
         """Give each retired `(task, text)` row without History its `TaskImported` of `parse(text)` and an `Archived`."""
-        store = self._store
-        if store is None:
-            return
         for task, text in rows:
-            if store.head(KIND, task) == 0:
-                events = [
-                    self._new("TaskImported", seed(parse(text), 0.0), OPERATOR),
-                    self._new("Archived", {}, OPERATOR),
-                ]
-                store.append(KIND, task, 0, events)
+            self.imported(task, parse(text), True)
+
+    def imported(self, task: str, record: Record, archived: bool) -> bool:
+        """Give `task` without History its `TaskImported` of `record`, and an `Archived` when it has left the lanes; whether it got them."""
+        store = self._store
+        if store is None or store.head(KIND, task):
+            return False
+        events = [self._new("TaskImported", seed(record, 0.0), OPERATOR)]
+        if archived:
+            events.append(self._new("Archived", {}, OPERATOR))
+        store.append(KIND, task, 0, events)
+        return True
+
+    def edited(self, task: str, payload: dict[str, Any]) -> None:
+        """Append one `FieldsEdited` of `payload` (its `changes` and `meta`) to `task`'s History, by the operator."""
+        if self._store is not None:
+            self._store.append(KIND, task, self._store.head(KIND, task), [self._new("FieldsEdited", payload, OPERATOR)])
 
     def _append(
         self, task: str, before: Record | None, after: Record | None, actor: str, note: str, revision: str | None = None
