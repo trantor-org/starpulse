@@ -897,6 +897,9 @@ class TaskActor:
         with self._lock:
             self._exit_phase(data["id"])
             self._settle_awaited(data["id"])
+            agent = self._feed.task(data["id"], lean=True)
+            if agent and "phase_resumed" in self._waits.get(agent["state"], {}):
+                self._derive(data["id"], self._clock())
 
     def _exit_phase(self, task: str) -> None:
         """Send the exit event of the phase `task` is in when that phase's skill machine sits in the state its link exits
@@ -1826,6 +1829,20 @@ class TaskActor:
         """The not-green pull request of a task no running session holds."""
         return self._pr_unfinished(agent, False)
 
+    def _phase_resumed(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
+        """The time and comment of the newest step of a phase in `[sequences]` the task's session took after the task
+        entered its lane: the session going back to work is the event that sends the task back."""
+        entered = self._lane_entered.get(agent["id"], ("", 0.0))[1]
+        steps = [
+            (placed["active"], phase)
+            for phase in sorted({phase for sequence in self._sequences.values() for phase in sequence})
+            if (placed := self._feed.machine_task(phase, agent["id"])) and placed["active"] > entered
+        ]
+        if not steps:
+            return None
+        at, phase = max(steps)
+        return at, f"Its session resumed the {phase} phase. Sent back to In Progress."
+
     def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The dependencies once every one is done and merged, an empty tuple when the task has none, and no Start
         Criteria gate it."""
@@ -2034,6 +2051,7 @@ class TaskActor:
         "pr_conflicting": _pr_conflicting,
         "pr_unfinished_alive": _pr_unfinished_alive,
         "pr_unfinished_dead": _pr_unfinished_dead,
+        "phase_resumed": _phase_resumed,
         "deps_done": _deps_done,
         "deps_done_with_pr": _deps_done_with_pr,
         "deps_unresolved": _deps_unresolved,
