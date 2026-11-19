@@ -7,6 +7,7 @@ lies inside the window. A row carries the `basis` it was folded under: a change 
 or the analytics config makes the row stale, and the next `catch_up` folds it again, outside any request.
 """
 
+import bisect
 import dataclasses
 import hashlib
 import json
@@ -78,7 +79,7 @@ def basis(keys: TaskKeys | None, analytics: Analytics | None) -> str:
 _WINDOW = text(
     "SELECT view, harness, session, first_at, result FROM starpulse_signal_folds"
     " INDEXED BY ix_starpulse_signal_folds_last_at"  # SQLAlchemy's SQLite dialect renders no table hint
-    " WHERE view IN :views AND basis = :basis AND last_at >= :since ORDER BY first_at, harness, session"
+    " WHERE view IN :views AND basis = :basis AND last_at >= :floor ORDER BY first_at, harness, session"
 ).bindparams(bindparam("views", expanding=True)).columns(
     signal_folds.c.view, signal_folds.c.harness, signal_folds.c.session, signal_folds.c.first_at, signal_folds.c.result
 )
@@ -136,7 +137,7 @@ class SignalFolds:
         range of each view (every session ever folded) to test `last_at`, seconds for the `steps` view."""
         wanted = tuple(views)
         with self._engine.connect() as db:
-            rows = db.execute(_WINDOW, {"views": wanted, "basis": self.basis, "since": since}).all()
+            rows = db.execute(_WINDOW, {"views": wanted, "basis": self.basis, "floor": since}).all()
         answer: dict[str, list[Any]] = {view: [] for view in wanted}
         began = {(row.harness, row.session): row.first_at for row in rows}
         partial = [key for key, first_at in began.items() if first_at < since]
@@ -148,6 +149,29 @@ class SignalFolds:
             for view in wanted:
                 answer[view].append(VIEWS[view](found, self._keys, self._analytics))
         return answer
+
+    def step_window(self, since: float, after: float | None, wanted: int) -> dict[str, list[Any]]:
+        """The `steps` results of the sessions that can hold the `wanted` oldest steps after the time `after` (none: from
+        `since`), sessions read by when they began and the read stopped once a step before the next session's start
+        is past `wanted` of them, so a page costs its own sessions and not the window's. A session that ended before
+        `after` is skipped; one that began before `since` is folded again from its signals inside the window."""
+        floor = since if after is None else max(since, after)
+        times: list[float] = []  # the times, sorted, of the steps read after `after`, to tell when a page is complete
+        folds: list[Any] = []
+        with self._engine.connect() as db:
+            rows = db.execute(_WINDOW, {"views": ("steps",), "basis": self.basis, "floor": floor})
+            for row in rows:
+                ahead = bisect.bisect_left(times, row.first_at)
+                if ahead > wanted and times[wanted] > times[wanted - 1]:
+                    break  # every later session's steps come after these, so the page is among them
+                result = row.result
+                if row.first_at < since:
+                    result = VIEWS["steps"](self._load(row.harness, row.session, since)[1], self._keys, self._analytics)
+                folds.append(result)
+                for step in result:
+                    if after is None or step["at"] > after:
+                        bisect.insort(times, step["at"])
+        return {"steps": folds}
 
     def oldest(self) -> float | None:
         """The time of the oldest signal in the table, None when it is empty: the history the views can answer."""

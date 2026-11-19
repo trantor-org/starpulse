@@ -1,7 +1,7 @@
 """`starpulse worker scheduler`: the Scheduler context (the capacity sampler and the dispatch loop) as its own process,
 beside `serve`.
 
-It reads the config and the history database `serve` does and meets `serve` only in the event log
+It reads the config `serve` does and meets `serve` only in the event log
 (`starpulse.scheduler.adapters.remote`): it publishes the status the page strip draws and wakes on the settings `serve`
 writes. What a restart must keep (a task's one start, a harness's pause, the switch) is in that log, so a new process
 resumes where the last stopped. `SIGTERM` stops it; `SIGHUP` re-reads the config and rebuilds the runtime in the same
@@ -20,7 +20,6 @@ from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
-from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.scheduler.adapters.remote import follow_wakes, publisher
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.bin.blocks import SchedulerConfig, scheduler_fixed_blocks, scheduler_live_blocks
@@ -39,20 +38,15 @@ class Scheduler:
         board: Board,
         feed: BoardFeed,
         log: EventLog,
-        history: HistoryStore,
         probe: Callable[[], Mapping[str, float]] | None = None,
         *,
-        trajectories_response: Callable[..., tuple[bytes, int]],
-        cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
         starter: Callable[..., Any],
         delivered: Callable[[EventLog, Mapping[str, Any]], bool],
     ) -> None:
         self._config = config
-        self._trajectories_response = trajectories_response
-        self._cached = cached
         self._starter = starter
         self._delivered = delivered
-        self._built = (base, board, feed, log, history)
+        self._built = (base, board, feed, log)
         self._probe = probe
         self._stop = StopEvent()
         self._wakes = threading.Event()
@@ -61,21 +55,17 @@ class Scheduler:
     def start(self) -> None:
         """Start the sampler and the loop of the running config, each ending when `stop` is called, and wake the loop
         for each setting `serve` writes."""
-        base, board, feed, log, history = self._built
+        base, board, feed, log = self._built
         self._stop = stop = StopEvent()
         self.runtime = start_scheduler(
             self._config,
             base,
             feed,
             board,
-            history,
             log,
-            self._config.level,
             stop,
             probe=self._probe,
             publish=publisher(log, feed),
-            trajectories_response=self._trajectories_response,
-            cached=self._cached,
             starter=self._starter,
             delivered=self._delivered,
         )
@@ -122,9 +112,6 @@ def start(
     *,
     load: Callable[[Path | None], SchedulerConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
-    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], HistoryStore],
-    trajectories_response: Callable[..., tuple[bytes, int]],
-    cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
 ) -> Callable[[], None]:
@@ -137,9 +124,6 @@ def start(
         board,
         feed,
         log,
-        history_store(config, base, feed.machines),
-        trajectories_response=trajectories_response,
-        cached=cached,
         starter=starter,
         delivered=delivered,
     )
@@ -154,10 +138,7 @@ def main(
     discover: Callable[[Path | None], Path | None],
     load: Callable[[Path | None], SchedulerConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
-    history_store: Callable[[SchedulerConfig, Path, Mapping[str, dict]], HistoryStore],
     hold: Callable[[threading.Event, Callable[[], None]], None],
-    trajectories_response: Callable[..., tuple[bytes, int]],
-    cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
 ) -> None:
@@ -180,9 +161,6 @@ def main(
             stop,
             load=load,
             worker_board=worker_board,
-            history_store=history_store,
-            trajectories_response=trajectories_response,
-            cached=cached,
             starter=starter,
             delivered=delivered,
         )

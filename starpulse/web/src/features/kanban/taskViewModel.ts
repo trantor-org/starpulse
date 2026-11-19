@@ -299,7 +299,7 @@ export async function fetchRevisions(id: string, fetcher: typeof apiFetch = apiF
 /** A milestone as `GET /api/milestones/<id>` gives it, less its sections. */
 export interface MilestoneDoc { id: string; title: string; description: string; specs: string[] }
 
-/** A doc as `GET /api/docs` lists it. */
+/** A doc as `GET /api/docs?ids=` lists it. */
 export interface DocSummary { id: string; title: string; type: string }
 
 /** One row of the rail's Docs: `id` is empty for a linked file the board does not serve, and such a row does not open. */
@@ -317,13 +317,20 @@ async function getJson<T>(url: string, key: string, fetcher: typeof apiFetch): P
 
 export const fetchMilestone = (id: string, fetcher: typeof apiFetch = apiFetch) =>
   getJson<MilestoneDoc>(`/api/milestones/${encodeURIComponent(id)}`, "milestone", fetcher);
-export const fetchDocs = async (fetcher: typeof apiFetch = apiFetch): Promise<DocSummary[]> =>
-  (await getJson<DocSummary[]>("/api/docs", "docs", fetcher)) ?? [];
+/** The docs among `ids`, read in one request; no request when none is named, since the route never lists every doc. */
+export const fetchDocs = async (ids: string[], fetcher: typeof apiFetch = apiFetch): Promise<DocSummary[]> =>
+  ids.length ? (await getJson<DocSummary[]>(`/api/docs?ids=${ids.map(encodeURIComponent).join(",")}`, "docs", fetcher)) ?? [] : [];
 export const fetchDoc = (id: string, fetcher: typeof apiFetch = apiFetch) =>
   getJson<DocSummary & { body: string }>(`/api/docs/${encodeURIComponent(id)}`, "doc", fetcher);
 
 /** The doc a board file name or a milestone's Spec bullet starts with (`doc-993 - Title.md`, `doc-993 — path`), else empty. */
 const docId = (text: string): string => /^(doc-\d+)\b/.exec(text)?.[1] ?? "";
+
+const entryId = (entry: string): string => docId(entry) || docId(entry.split("/").pop()!);
+
+/** The ids of the docs a record's rail names: its milestone's specs, then the docs it links, each once. */
+export const linkedDocIds = (record: Pick<TaskRecord, "documentation">, milestone: MilestoneDoc | null): string[] =>
+  [...new Set([...(milestone?.specs ?? []), ...(record.documentation ?? [])].map(entryId).filter(Boolean))];
 
 /**
  * The rail's Docs rows for a record: its milestone, that milestone's specs, then the docs it links, each doc once. A title is the

@@ -1,6 +1,6 @@
 """Docs.
 
-- `GET /api/docs`, `/api/docs/{id}`: the docs, and one.
+- `GET /api/docs?ids=doc-1,doc-2`, `/api/docs/{id}`: the named docs without bodies, and one with its body.
 - `POST /api/docs`, `/api/docs/edit`, `/api/docs/archive`, `/api/docs/restore`: create, edit, archive and restore one.
 """
 
@@ -34,7 +34,8 @@ def record(request: Request) -> Response:
 
 @reading
 def listed(request: Request) -> Response:
-    status, body = docs_list(seams(request).board)
+    ids = [doc for doc in request.query_params.get("ids", "").split(",") if doc]
+    status, body = docs_list(seams(request).board, ids)
     return answer(request, encode("docs", body), status)
 
 

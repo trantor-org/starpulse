@@ -28,7 +28,6 @@ __all__ = [
     "DocArchiver",
     "DocCreator",
     "DocEditor",
-    "DocLister",
     "DocReader",
     "DocRestorer",
     "MilestoneArchiver",
@@ -179,8 +178,6 @@ MilestoneCreator = Callable[[str, Mapping[str, Any]], Written]
 MilestoneEditor = Callable[[str, Mapping[str, Any]], Written]
 #: Archive a milestone.
 MilestoneArchiver = Callable[[str], Written]
-#: Every open doc as `{id, title, type, created_date, updated_date, path}` without its body, oldest id first.
-DocLister = Callable[[], list[Mapping[str, Any]]]
 #: One doc's record with its `body`, or None when the board has no open doc with that id.
 DocReader = Callable[[str], Mapping[str, Any] | None]
 #: File a doc with this title and details (`type`: `specification`, `guide`, `readme` or `other`, the default; `folder`
@@ -276,8 +273,6 @@ class Board:
     """Saves a milestone's changes in one write."""
     archive_milestone: MilestoneArchiver
     """Archives a milestone."""
-    docs: DocLister
-    """Lists the open docs."""
     read_doc: DocReader
     """Reads one doc's record."""
     create_doc: DocCreator

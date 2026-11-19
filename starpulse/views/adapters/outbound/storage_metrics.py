@@ -2,6 +2,7 @@
 
 import os
 import stat
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -42,13 +43,15 @@ def storage_exposition(*, database: Path | None, archive: Path, board: Path) -> 
 
 
 def cached(read: Callable[[], str]) -> Callable[[], str]:
-    """`read`, asked at most once in `CACHE_S` seconds."""
+    """`read`, asked at most once in `CACHE_S` seconds; callers arriving during a read wait for it."""
     held: tuple[float, str] | None = None
+    lock = threading.Lock()
 
     def get() -> str:
         nonlocal held
-        if held is None or time.monotonic() - held[0] >= CACHE_S:
-            held = (time.monotonic(), read())
-        return held[1]
+        with lock:
+            if held is None or time.monotonic() - held[0] >= CACHE_S:
+                held = (time.monotonic(), read())
+            return held[1]
 
     return get

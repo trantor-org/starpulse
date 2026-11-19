@@ -26,7 +26,6 @@
     starpulse milestone add "Launch" --outcome "Shipped" --spec "doc-1 - spec" --adr docs/adr/a.md
     starpulse milestone edit m-106 --outcome "Shipped and measured"
     starpulse milestone archive m-106
-    starpulse doc list
     starpulse doc show doc-116
     starpulse doc create "Plan" --type specification --folder specs --body "# Plan"
     starpulse doc update doc-116 --body "# Plan, revised"
@@ -92,8 +91,7 @@ the history store, accepting the same file again, so a run a refusal stopped (ex
 in one write, refusing a criterion the task lacks (exit 1) without writing. A board that cannot do one answers exit 3.
 `milestone` reads and writes the board's milestone records (title, outcome, specs, ADRs, retro) through the server;
 a board that keeps none answers exit 3. A `--spec` or `--adr` on `milestone edit` replaces that whole list.
-`doc` reads and writes the board's doc records (title, type, dates, folder, body) the same way: `doc list` leaves the
-bodies out, `doc show` returns one with its `body`, and a board that keeps no docs answers exit 3. `doc restore`
+`doc` reads and writes the board's doc records (title, type, dates, folder, body) the same way: `doc show` returns one with its `body`, and a board that keeps no docs answers exit 3. `doc restore`
 returns an archived doc's file, unchanged, to `--folder` under the docs (the docs folder itself by default), refusing a doc
 that is open or a destination that exists (exit 1).
 `session records` reads no server: it prints a session's Claude Code transcript records grouped by the task each belongs to,
@@ -1399,15 +1397,6 @@ def _parser() -> argparse.ArgumentParser:
     milestone_archive.add_argument("milestone", help="the milestone's id (`m-106`)")
     doc = verbs.add_parser("doc", description="the Board's docs", help="the Board's docs")
     doc_verbs = doc.add_subparsers(dest="verb", required=True, metavar="verb")
-    doc_list = leaf(
-        doc_verbs,
-        "list",
-        "every open doc with its title, type, dates and path",
-        _in_tasks("doc_list"),
-        ("docs",),
-        (0, 2, 3),
-    )
-    doc_list.add_argument("--json", action="store_true", help="accepted for clarity: every verb prints JSON")
     doc_show = leaf(
         doc_verbs,
         "show",
@@ -1416,7 +1405,7 @@ def _parser() -> argparse.ArgumentParser:
         DOC_KEYS,
         (0, 2, 3, 4),
     )
-    doc_show.add_argument("doc", help="the doc's id (`doc-116`), as `doc list` shows it")
+    doc_show.add_argument("doc", help="the doc's id (`doc-116`)")
     doc_show.add_argument("--json", action="store_true", help="accepted for clarity: every verb prints JSON")
     doc_create = leaf(
         doc_verbs, "create", "file a doc and return its new id", _in_tasks("doc_create"), ("doc",), (0, 1, 2, 3)

@@ -29,7 +29,6 @@ starpulse task checkpoint-ac PROJ-45 2 "pytest exits 0"  # check criterion #2 an
 starpulse machine show in-progress               # a machine's states, transitions and the tasks now in each
 starpulse milestone list                         # every open milestone: title, outcome, specs and ADRs
 starpulse milestone add "Launch" --outcome "Shipped" --spec "doc-1 - plan" --adr docs/adr/a.md
-starpulse doc list                               # every open doc: title, type, dates and path, without bodies
 starpulse doc create "Plan" --type specification --folder specs --body "# Plan"
 starpulse runs list                              # each workflow as <instance>/<workflow> with its latest status
 starpulse runs start prod/nightly                # start a run-safe workflow through Run now; its run id
@@ -110,7 +109,6 @@ lists exactly the verbs there are.
 | `milestone add` | `TITLE`, `--outcome`, `--spec`, `--adr`, `--retro` | `milestone`: the new id (the next number past every open and archived milestone); `--spec` and `--adr` repeat; a blank title exits 1 |
 | `milestone edit` | `MILESTONE`, `--title`, `--outcome`, `--spec`, `--adr`, `--retro` | `milestone` and `changed`, the fields whose value differs; `--spec` or `--adr` given at all replaces that whole list, and a change that changes nothing writes nothing; naming no field exits 2, a refused change exits 1, an unknown milestone exits 4 |
 | `milestone archive` | `MILESTONE` | `milestone`: moves the file to `archive/milestones/`; refusals as `milestone edit` |
-| `doc list` | `--json` | `docs`: each open doc as `{id, title, type, created_date, updated_date, path}` with `path` relative to the board's `docs/`, by ascending number and without its body; `--json` is accepted and changes nothing, since every verb prints JSON; a board that keeps no docs exits 3 |
 | `doc show` | `DOC`, `--json` | one doc's record as above plus its `body`, the text after its front matter; one that is not open exits 4 |
 | `doc create` | `TITLE`, `--type`, `--folder`, `--body`, `--task` | `doc`: the new id (the next number past every open and archived doc); with `--task`, also `task` and `changed`, the doc's file added to that task's documentation in one edit; `--type` is `specification`, `guide`, `readme` or `other` (the default), `--folder` a folder of plain names under `docs/` such as `specs`; a blank title, an unknown type or a folder that leaves `docs/` exits 1 |
 | `doc update` | `DOC`, `--title`, `--type`, `--body` | `doc` and `changed`, the fields whose value differs; a change that changes nothing writes nothing, naming no field exits 2, a refused change exits 1, an unknown doc exits 4 |
@@ -208,7 +206,8 @@ longer than the telemetry history): one row per model request of the
 window, oldest first, that [Connect sources](sources.md#read-each-step-of-a-session) defines. `skill` is the skill
 most recently loaded in the session, `none` before any load; `activities` and `keys` hold one entry per tool call
 the step made, a key being the command the server's redactor left, else the tool's name; `tokens` is
-`{input, output, cache_read, cache_write, reasoning}`.
+`{input, output, cache_read, cache_write, reasoning}`. The server answers a page at a time and a page reads only the sessions it holds, so a
+week-wide read costs about one pass over the window, not one per page.
 
 `analytics transitions` reads `GET /api/analytics/transitions[?hours=N]` and `analytics cells` reads
 `GET /api/analytics/cells[?hours=N]`, each with the window and refusals of `analytics steps`. They place a task by its

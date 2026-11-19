@@ -27,7 +27,6 @@ from starpulse.board.model.seam import (
     DocArchiver,
     DocCreator,
     DocEditor,
-    DocLister,
     DocReader,
     DocRestorer,
     Written,
@@ -73,51 +72,95 @@ def _parsed(path: Path, mtime_ns: int, size: int) -> tuple[str, dict, str] | Non
     )
 
 
-def _files(root: Path, folder: str = "docs") -> list[tuple[Path, str, dict, str]]:
-    """Each doc's file under `folder` with its front matter lines, parsed front matter and body, by ascending number."""
-    found = []
-    for path in (root / folder).rglob("doc-*.md"):
+def _stamps(top: Path) -> tuple[tuple[str, int, int], ...]:
+    """Each `doc-*.md` file under `top` as (path, modification time, size), sorted: what `_files` keys its listing by."""
+    found: list[tuple[str, int, int]] = []
+    pending = [str(top)]
+    while pending:
         try:
-            stat = path.stat()
-            parsed = _parsed(path, stat.st_mtime_ns, stat.st_size)
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(entry.path)
+                    elif entry.name.startswith("doc-") and entry.name.endswith(".md"):
+                        stat = entry.stat()
+                        found.append((entry.path, stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            continue  # moved or removed while looking
+    return tuple(sorted(found))
+
+
+_listings: dict[Path, tuple[tuple[tuple[str, int, int], ...], list[tuple[Path, str, dict, str]]]] = {}
+
+
+def _files(root: Path, folder: str = "docs") -> list[tuple[Path, str, dict, str]]:
+    """Each doc's file under `folder` with its front matter lines, parsed front matter and body, by ascending number.
+
+    The listing is kept until a doc file under `folder` is added, removed or rewritten, so a read of an unchanged board
+    costs one stat per file, not a parse and a sort of every doc (60 to 75 ms over 1,600 docs, which starved the API).
+    """
+    top = root / folder
+    stamps = _stamps(top)
+    kept = _listings.get(top)
+    if kept is not None and kept[0] == stamps:
+        return list(kept[1])
+    found = []
+    for path, mtime_ns, size in stamps:
+        try:
+            parsed = _parsed(Path(path), mtime_ns, size)
         except OSError:
             continue  # moved or removed while looking
         if parsed is not None:
-            found.append((path, *parsed))
-    return sorted(found, key=lambda file: int(re.sub(r"\D", "", str(file[2]["id"])) or 0))
+            found.append((Path(path), *parsed))
+    files = sorted(found, key=lambda file: int(re.sub(r"\D", "", str(file[2]["id"])) or 0))
+    _listings[top] = (stamps, files)
+    return list(files)
 
 
 def _find(root: Path, doc: str, folder: str = "docs") -> tuple[Path, str, dict, str] | None:
     """The doc `doc` names: a path under `folder` (the record's `path`) before an id, which a recurred id shares."""
     files = _files(root, folder)
-    by_path = (file for file in files if file[0].relative_to(root / folder).as_posix() == doc)
+    prefix = f"{root / folder}/"  # a string compare: `relative_to` costs ~45 us a doc, most of a read over 1,600 docs
+    by_path = (file for file in files if str(file[0]) == prefix + doc)
     return next(by_path, None) or next((file for file in files if str(file[2]["id"]).strip() == doc), None)
 
 
-def _record(root: Path, path: Path, frontmatter: dict) -> dict[str, Any]:
-    # Sliced, not `relative_to`: that costs ~45 us a doc, most of a listing's time over hundreds of docs.
-    docs_prefix = f"{root / 'docs'}/"
+def _record(prefix: str, path: Path, frontmatter: dict) -> dict[str, Any]:
     return {
         "id": str(frontmatter["id"]).strip(),
         "title": str(frontmatter.get("title") or ""),
         "type": str(frontmatter.get("type") or ""),
         "created_date": str(frontmatter.get("created_date") or ""),
         "updated_date": str(frontmatter.get("updated_date") or ""),
-        "path": str(path).removeprefix(docs_prefix),
+        "path": str(path).removeprefix(prefix),
     }
 
 
-def lister(root: Path) -> DocLister:
-    """A board reader of every open doc under `docs/`, body left out, by ascending number."""
-    return lambda: [_record(root, path, frontmatter) for path, _, frontmatter, _ in _files(root)]
+def _named(root: Path, doc: str) -> tuple[Path, str, dict, str] | None:
+    """The open doc whose file is named `<doc> - <slug>.md`, read alone: the walk lists names and stats no other file."""
+    pending = [str(root / "docs")]
+    while pending:
+        try:
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(entry.path)
+                    elif entry.name.startswith(f"{doc} - ") and entry.name.endswith(".md"):
+                        stat = entry.stat()
+                        parsed = _parsed(Path(entry.path), stat.st_mtime_ns, stat.st_size)
+                        if parsed is not None and str(parsed[1]["id"]).strip() == doc:
+                            return Path(entry.path), *parsed
+        except OSError:
+            continue  # moved or removed while looking
+    return None
 
 
 def reader(root: Path) -> DocReader:
     """A board reader of one open doc's record with its body, or None."""
 
     def read(doc: str, /) -> dict[str, Any] | None:
-        found = _find(root, doc)
-        return {**_record(root, found[0], found[2]), "body": found[3]} if found else None
+        found = (re.fullmatch(r"doc-\d+", doc) and _named(root, doc)) or _find(root, doc)
+        return {**_record(f"{root / 'docs'}/", found[0], found[2]), "body": found[3]} if found else None
 
     return read
 
@@ -225,7 +268,7 @@ def editor(root: Path) -> DocEditor:
                 body = _body(changes["body"])
         except ValueError as refusal:  # raised before any file is written, so a refusal writes nothing
             return Written(False, f"{doc}: {refusal}")
-        was = _record(root, path, frontmatter)
+        was = _record(f"{root / 'docs'}/", path, frontmatter)
         if (title, kind, body) == (was["title"], was["type"], text):
             return Written(True, f"Updated doc {doc}")
         if title != was["title"]:

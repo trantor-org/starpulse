@@ -98,6 +98,7 @@ class Runtime:
         readings, at = self.sampler.readings()
         selected = self.harness.get()
         by = self.loop.sessions_by_harness() if self.loop is not None else {}  # one pass: it reads every open task
+        gate = {r.name: r for r in self.loop.readings()} if self.loop is not None else {}  # what a refusal judges
         dimensions = []
         for reading in readings:
             if reading.name == "sessions" and self.loop is not None:
@@ -108,7 +109,8 @@ class Runtime:
                     {"name": "sessions", "use": reading.use, "limit": self.policy.session_limit(selected)}
                 )
             else:
-                dimensions.append({"name": reading.name, "use": reading.use, "limit": reading.limit})
+                judged = gate.get(reading.name, reading)
+                dimensions.append({"name": reading.name, "use": judged.use, "limit": reading.limit})
         body: dict[str, Any] = {
             "enabled": self.toggle.get(),
             "harness": selected,
@@ -184,8 +186,6 @@ def build(
     claim: Callable[[str, str], Written] | None = None,
     requeue: Callable[[str, str], Written] | None = None,
     merged: Callable[[Mapping[str, Any]], bool] = lambda agent: False,
-    chain: Callable[[], Mapping[str, Mapping[str, Any]]] = dict,
-    p_goals: Callable[[], Mapping[str, float]] = dict,
     lane: str = "",
     transcript: Callable[[str], float | None] = lambda session: None,
 ) -> Runtime:
@@ -246,8 +246,6 @@ def build(
             ledger=Ledger(log),
             start=start,
             settle=settle,
-            chain=chain,
-            p_goals=p_goals,
             lane=lane,
             claim=claim,
             requeue=requeue,

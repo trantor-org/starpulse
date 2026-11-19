@@ -43,7 +43,7 @@ from sqlalchemy.exc import OperationalError
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import breaking_change_events, lane_events, verdict_events
 from starpulse.event_log.checkpoints import Checkpoints
-from starpulse.event_log.event_log import EventLog, insert_event
+from starpulse.event_log.event_log import WAL_SIZE_LIMIT, EventLog, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
@@ -93,10 +93,6 @@ _WINDOWS_KEPT = 8
 _ANSWER_BUCKET_S = 5.0
 _ANSWERS_KEPT = 32
 _Answer = tuple[bytes, int]
-
-#: The most the -wal file keeps after a checkpoint resets it. SQLite keeps the file at its high-water mark otherwise,
-#: so one burst left a 462 MB file holding a few hundred frames.
-_WAL_SIZE_LIMIT = 64 * 1024 * 1024
 
 #: How long a write waits on another process's write lock, in seconds. Every worker opens the store at `serve` start,
 #: and one rebuilding the summaries of a large history holds the lock for seconds.
@@ -224,7 +220,7 @@ def _sqlite_tune(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mut
     The server exits without disposing its pool, so a connection-close hook never runs; opening is when SQLite's own
     guidance runs `optimize`, and 0x10000 makes it look at every table, not only those this connection has touched.
     """
-    dbapi_connection.execute(f"PRAGMA journal_size_limit={_WAL_SIZE_LIMIT}")
+    dbapi_connection.execute(f"PRAGMA journal_size_limit={WAL_SIZE_LIMIT}")
     dbapi_connection.execute("PRAGMA optimize=0x10002")
 
 

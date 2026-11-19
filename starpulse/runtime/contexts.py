@@ -15,6 +15,7 @@ This module is part of the composition root (`starpulse.runtime`): it imports ea
 import argparse
 import logging
 import os
+import sys
 import threading
 import time
 import urllib.parse
@@ -39,6 +40,11 @@ Starter = Callable[[threading.Event], Callable[[], None]]
 BACKOFF_S = (1.0, 30.0)
 
 _JOIN_S = 5.0
+
+#: How long a thread keeps the interpreter before another may take it, in seconds. The default 5 ms made a thread that
+#: calls SQLite many times per event (the history recorder) wait that long for each call behind a CPU-bound context:
+#: 305 events/s alone fell to 4 with two such threads, and the machine-event copy fell minutes behind.
+SWITCH_INTERVAL_S = 0.0005
 
 
 #: The contexts that always run here, in start order; the run Adapters follow them (`adapter_contexts`).
@@ -189,15 +195,13 @@ def default_starters(
 
     def scheduler(own: threading.Event) -> Callable[[], None]:
         from starpulse.runtime.assembly import scheduler_board
-        from starpulse.runtime.wiring import trajectories_response
         from starpulse.scheduler.bin import scheduler_worker
         from starpulse.sessions.adapters.outbound.session_start import starter
-        from starpulse.views.adapters.outbound.ttl_cached import ttl_cached
 
         return scheduler_worker.start(
             config, path, base, log, own, load=load,
-            worker_board=lambda *_: scheduler_board(config, base, log, own), history_store=history_store,
-            trajectories_response=trajectories_response, cached=ttl_cached, starter=starter, delivered=own_pull_merged,
+            worker_board=lambda *_: scheduler_board(config, base, log, own),
+            starter=starter, delivered=own_pull_merged,
         )  # fmt: skip
 
     def runs(own: threading.Event) -> Callable[[], None]:
@@ -410,6 +414,7 @@ def run_contexts(
     `starters` replaces the real starters (tests); `started` is told each context's name as it starts, and without it a
     `serve` boot token (`hold.BOOT_ENV`) makes each start stamp the event log; `hold` is the wait for `SIGTERM` and `SIGHUP` (`runtime.hold`).
     Raises `ValueError` before any thread starts when a name is no context or a runs adapter cannot load."""
+    sys.setswitchinterval(SWITCH_INTERVAL_S)
     base = base or (path.parent if path else Path.cwd())
     if starters is None:
         log = EventLog(database_url(config.database_url, base))

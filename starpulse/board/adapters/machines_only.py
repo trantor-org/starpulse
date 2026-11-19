@@ -66,7 +66,6 @@ def refusing(**fields: Any) -> Board:
         "create_milestone": _refused,
         "edit_milestone": _refused,
         "archive_milestone": _refused,
-        "docs": lambda: [],
         "read_doc": _absent,
         "create_doc": _refused,
         "edit_doc": _refused,

@@ -46,7 +46,7 @@ from starpulse.event_log.tables import events, gaps, settings, signal_folds, sig
 from starpulse.event_log.wake import FALLBACK_WAKE_S, RETRY_DELAY, StopEvent
 from starpulse.event_log.watch import open_watch
 
-__all__ = ["Entry", "EventLog", "Tail"]
+__all__ = ["Entry", "EventLog", "Tail", "WAL_SIZE_LIMIT"]
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,12 @@ _NO_WATCH_LOGGED = threading.Event()
 #: How long SQLite waits on another process's write lock before an append gives up and fails open, in seconds. It
 #: outlasts the multi-second disk stalls of the host's weekly snapshot backup, which held writes past a 5 s wait.
 _SQLITE_BUSY_TIMEOUT = 30.0
+
+#: The most the -wal file keeps after a checkpoint resets it. SQLite keeps the file at its high-water mark otherwise,
+#: so one burst left a 462 MB file holding a few hundred frames. Only the connection whose commit restarts the log
+#: truncates it, so every connection to the database sets this, not the history store's alone: an unbounded writer
+#: restarting the log left a 4.4 GB file holding 1.5 GB of frames (21.6 GB at its worst, 2026-11-18).
+WAL_SIZE_LIMIT = 64 * 1024 * 1024
 
 #: How many times the log tries to switch its SQLite database to WAL, which fails at once, without waiting on the busy
 #: timeout, while another connection opens or closes the database.
@@ -167,9 +173,10 @@ def _sqlite_wal(dbapi_connection: Any) -> None:  # pragma: no mutate block — s
 
 
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
-    """The pragmas each connection keeps for itself: `synchronous` is not kept in the database file."""
+    """The pragmas each connection keeps for itself: the database file keeps neither `synchronous` nor the WAL limit."""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute(f"PRAGMA journal_size_limit={WAL_SIZE_LIMIT}")
     cursor.close()
 
 

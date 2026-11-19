@@ -127,7 +127,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "sequences": _owned_by("contexts"),
     "awaits": _owned_by("contexts"),
     "scheduler": _owned_by("contexts"),
-    "level": _owned_by("contexts"),
+    "level": _owned_by(),
     "session_start_url": _owned_by("contexts"),
     "event_log_retention_days": _owned_by("contexts"),
     "event_log_archive_dir": _owned_by("contexts"),

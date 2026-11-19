@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, useState } from "react";
+import { act, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -312,8 +312,9 @@ describe("editing one section at a time", () => {
     let redraw = () => {};
     function Host() {
       const [n, setN] = useState(0);
-      // oxlint-disable-next-line react/globals -- the test hands the host's redraw out to a key listener
-      redraw = () => flushSync(() => setN(n + 1));
+      useEffect(() => {
+        redraw = () => flushSync(() => setN((c) => c + 1));
+      }, []);
       return <TaskView {...props({ close: () => close(n) })} />;
     }
     const redrawFirst = () => redraw();
