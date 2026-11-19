@@ -1,0 +1,1 @@
+var e=e=>{if(!e?.method||e.method===`GET`)return e;let t=new Headers(e.headers);return t.has(`content-type`)||t.set(`content-type`,`application/json`),{...e,headers:t}},t=`operator`,n=(t,n)=>fetch(t,e(n));export{n,t};
