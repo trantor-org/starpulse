@@ -104,6 +104,8 @@ HOLDER_RESUME = "HOLDER_RESUME"
 DONE_HELD = "Held from Done:"
 #: Resumes with no progress between them before the next one escalates.
 _STALLED_RESUMES = 2
+#: Settles in a row whose resume failed before the task moves to Needs attention.
+_FAILED_RESUMES = 3
 _DEPLOY_FAILED = re.compile(r"^Reopened from Done: Deploy of \S+ to .+? failed", re.M)
 #: Seconds between two progress lines of the start recovery.
 _PROGRESS_S = 30.0
@@ -405,6 +407,8 @@ class TaskActor:
         self._resumes: dict[str, tuple[tuple[Any, ...], int]] = {}
         #: The tasks whose resume was escalated and has shown no progress since.
         self._stalled: set[str] = set()
+        #: Per In Progress task: the settles in a row whose resume failed after its holder was confirmed idle.
+        self._failed_resumes: dict[str, int] = {}
         #: The In Progress tasks whose holder settled while an event was awaited: the derivation that finds the wait
         #: ended settles them again, as no settle may follow.
         self._awaited: set[str] = set()
@@ -876,6 +880,7 @@ class TaskActor:
                 working = self._feed.roles.working
                 if now[0] != working:
                     self._resumes.pop(name, None)
+                    self._failed_resumes.pop(name, None)
                     self._stalled.discard(name)
                 if before and before[0] == self._review and now[0] == working:
                     if name not in self._own_send_backs:
@@ -1039,6 +1044,7 @@ class TaskActor:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
         self._resumes.pop(name, None)
+        self._failed_resumes.pop(name, None)
         self._stalled.discard(name)
         if self._sent_back.pop(name, None) is not None:
             self._keep_holds()
@@ -1249,6 +1255,7 @@ class TaskActor:
             self._awaited.discard(name)
             if agent is None or agent["state"] != self._feed.roles.working:
                 self._resumes.pop(name, None)
+                self._failed_resumes.pop(name, None)
                 self._stalled.discard(name)
                 return
             if self._idle is None:
@@ -1278,6 +1285,8 @@ class TaskActor:
                 self._idle(name, verdict)
             except Exception as error:
                 logger.info("task actor: %s settled but its holder was not %s: %s", name, verdict, error)
+                if verdict == "resume":
+                    self._resume_failed(name, error)
                 if verdict != "escalate":
                     return
                 logger.warning("task actor: %s flagged stalled without escalation: %s", name, error)
@@ -1288,17 +1297,27 @@ class TaskActor:
                         self._attend(name, "the escalation to a higher profile failed or no higher profile exists")
                 return
         with self._lock:
+            self._failed_resumes.pop(name, None)
             self._resumes[name] = (progress, 0 if escalate else count + 1)
             if escalate:
                 self._stalled.add(name)
 
-    def _attend(self, name: str, why: str) -> None:
+    def _resume_failed(self, name: str, error: Exception) -> None:
+        with self._lock:
+            failed = self._failed_resumes[name] = self._failed_resumes.get(name, 0) + 1
+            if failed >= _FAILED_RESUMES:
+                self._failed_resumes.pop(name)
+                self._attend(
+                    name, f"its holder's resume failed {failed} settles in a row: {error}", "could not be resumed"
+                )
+
+    def _attend(self, name: str, why: str, what: str = "was resumed with no progress") -> None:
         agent = self._feed.task(name, lean=True)
         attention = self._feed.roles.attention
         if agent is None or attention is None:
             return
         reason = attention_reason(
-            f"{name} was resumed with no progress",
+            f"{name} {what}",
             why,
             ("raise its profile and restart it", "rescope the task"),
             "Which?",
@@ -1325,6 +1344,7 @@ class TaskActor:
                 self._awaited.add(name)
                 return
             self._resumes.pop(name, None)
+            self._failed_resumes.pop(name, None)
             self._stalled.discard(name)
             criteria = agent.get("criteria", ())
             done = bool(criteria) and all(criterion["checked"] for criterion in criteria)
