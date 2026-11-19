@@ -6486,6 +6486,69 @@
       "title": "ReleaseRequest",
       "type": "object"
     },
+    "ReopenRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/reopen`: return the Done task `task`, completed or not, to In Progress with `reason` as its comment.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "type": "string"
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "reason"
+      ],
+      "title": "ReopenRequest",
+      "type": "object"
+    },
+    "Reopened": {
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "Reopened",
+      "type": "object"
+    },
     "RequiredCheck": {
       "properties": {
         "name": {
@@ -10726,6 +10789,9 @@
             "$ref": "#/$defs/Completed"
           },
           {
+            "$ref": "#/$defs/Reopened"
+          },
+          {
             "$ref": "#/$defs/Claimed"
           },
           {
@@ -10933,6 +10999,9 @@
           },
           {
             "$ref": "#/$defs/CompleteRequest"
+          },
+          {
+            "$ref": "#/$defs/ReopenRequest"
           },
           {
             "$ref": "#/$defs/ClaimRequest"

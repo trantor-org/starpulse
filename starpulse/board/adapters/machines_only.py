@@ -51,6 +51,7 @@ def refusing(**fields: Any) -> Board:
         "standing": _absent,
         "readable": lambda *_: "",
         "complete": _refused,
+        "reopen": _refused,
         "retire": _refused,
         "retired": lambda *_: (),
         "retired_projected": lambda *_: [],

@@ -63,6 +63,7 @@ from starpulse.board.model.seam import (
     HELD,
     MERGE_EVIDENCE,
     OPERATOR,
+    TASK_ACTOR,
     Board,
     MoveWriter,
     RetiredImporter,
@@ -73,6 +74,7 @@ from starpulse.board.model.seam import (
     TaskEditor,
     TaskReader,
     TaskReleaser,
+    TaskReopener,
     TaskRestorer,
     TaskRetirer,
     Written,
@@ -1322,7 +1324,7 @@ def _writer(
 
 
 class _Unheld(Exception):
-    """The task file no longer holds the claim a release judged."""
+    """The task file no longer holds the claim or the State a write judged."""
 
 
 def _releaser(root: Path, guard: Guard = Guard()) -> TaskReleaser:
@@ -1345,6 +1347,41 @@ def _releaser(root: Path, guard: Guard = Guard()) -> TaskReleaser:
             return Written(False, str(unheld))
 
     return release
+
+
+def _reopener(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Guard = Guard()) -> TaskReopener:
+    """A board writer that returns a Done task to the working State in one write, `reason` as the comment the Board
+    machine's REOPEN requires, and a completed task's file to `tasks/`; a task that is not Done is refused untouched."""
+    working = next((status for status in statuses if lane_id(status) == roles.working), "")
+
+    def reopen(task: str, reason: str, /, actor: str = TASK_ACTOR) -> Written:
+        def edit(frontmatter: dict, body: str) -> str:
+            held = str(frontmatter.get("status") or "")
+            if lane_id(held) != roles.done:
+                raise _Unheld(f"{task} is {held or 'without a status'}, not Done")
+            frontmatter["status"] = working
+            return _comment(body, f"Reopened from Done: {reason.strip()}", actor)
+
+        found = _find(root, task)
+        target = root / "tasks" / found.name if found is not None and found.parent.name == "completed" else None
+        if target is not None and target.exists():
+            return Written(False, f"{task}: {target} already exists")
+        try:
+            written = _update(root, task, edit, guard, actor)
+        except _Unheld as unheld:
+            return Written(False, str(unheld))
+        if written.ok and found is not None and target is not None:
+            path = found
+            try:
+                os.link(path, target)
+                path.unlink()
+            except FileExistsError:
+                return Written(False, f"{task}: {target} already exists")
+            except OSError as error:
+                return Written(False, f"{path}: {error}")
+        return _moved(written, working)
+
+    return reopen
 
 
 def _keeps(kept: re.Pattern[str], frontmatter: dict) -> bool:
@@ -1734,6 +1771,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "archive": _archiver(root, config.statuses, roles, gate),
             "restore": _restorer(root, retired, config.statuses, migrations, gate),
             "complete": _completer(root, config.statuses, roles, settings.get("complete_keep_labels")),
+            "reopen": _reopener(root, config.statuses, roles, gate),
             "retire": _retirer(root, retired, roles),
             "retired": _retired_reader(retired),
             "retired_projected": retired.projected,
@@ -1823,6 +1861,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             also=lambda task: _open_dependents(root, _names(root, task), made.roles.done),
         ),
         "restore": history.recorded(made.restore, read),
+        "reopen": history.recorded(made.reopen, read, actor_at=1),
         "complete": complete,
         "retire": history.recorded(made.retire, read),
         "create": history.created(made.create, read),

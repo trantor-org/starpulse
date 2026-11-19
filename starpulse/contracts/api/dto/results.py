@@ -75,6 +75,10 @@ class Completed(_Api):
     task: str
 
 
+class Reopened(_Api):
+    task: str
+
+
 class Claimed(_Api):
     task: str
     to: str
