@@ -29,7 +29,7 @@ def qualifier(domains: Mapping[str, Sequence[str]]) -> Qualify:
 
 
 def _titled(name: str) -> str:
-    """A state's name with every word capitalised (`In Progress`); python-statemachine capitalises only the first."""
+    """A state's name with every word capitalised (`In Progress`); a state's own `name` capitalises only the first."""
     return " ".join(word[:1].upper() + word[1:] for word in name.split(" "))
 
 

@@ -33,9 +33,9 @@ change how the page draws it; `docs/cli.md` describes each.
 
 2. `states` need exactly one `initial: true`; ids are lower-case `[a-z][a-z0-9_]*`. A `final` state ends the flow.
 3. Each `events` entry is a list of transitions: `from` is one state or a list, `to` is one state, and both must be
-   declared. A transition may carry `if` or `unless`, and an `action`.
+   declared. A transition may carry `if` or `unless`. Also give every non-final state an outgoing transition, and a path to a final state.
 4. A guard is `{when: {field: {equals: v}}}`, `{in: [..]}` or `{exists: true|false}` against the triggering event's
-   fields (every listed field must match), or the name of a guard the adapter registers in Python. A `when` field may
+   fields (every listed field must match). A guard has no other form: a named guard or an action is refused. A `when` field may
    not be `event`, `event_data`, `machine`, `model`, `source`, `state`, `target` or `transition`.
 5. `bindings` maps an adapter's own event name to the machine event it moves.
 6. `writers` names, per event, who fires it: `actor` is a bare name (`agent`, `operator`) or `<instance>/<workflow>` for
@@ -57,8 +57,8 @@ Done when the file names its states, events, bindings and writers and every even
 1. Run `starpulse machine validate .starpulse/machines/board.yaml`, passing the parent and each child file. It reads
    no server and answers `{ok, machines: [{path, ok, errors}]}`, each error `{file, line, message}`.
 2. Exit 1 means a file was refused: fix the error at its line and run it again.
-3. A guard or action given by name is not checked here, because the adapter registers it; a name the adapter does not
-   register is refused when the adapter loads the machine.
+3. It also refuses a state no route reaches from the initial state, a transition leaving a final state, a non-final
+   state with no outgoing transition, and a state with no path to a final state.
 
 Done when `ok` is true for every file.
 
@@ -66,7 +66,7 @@ Done when `ok` is true for every file.
 
 1. Run `starpulse machine import mermaid flow.mmd --out .starpulse/machines/flow.yaml`. It drafts the file from a
    `stateDiagram-v2` and answers `{written}`; it never overwrites an existing file, so pick a new `--out`.
-2. Edit the draft: events are named from the transition labels (`Deps done` becomes `DEPS_DONE`), and guards, actions,
+2. Edit the draft: events are named from the transition labels (`Deps done` becomes `DEPS_DONE`), and guards,
    bindings and writers are left for you to add.
 3. Run `starpulse machine validate` on the result.
 

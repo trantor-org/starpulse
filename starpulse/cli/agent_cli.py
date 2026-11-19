@@ -151,7 +151,14 @@ if TYPE_CHECKING:
     from starpulse.runtime.config import Config
 
 #: What each exit code means, as the manifest says it.
-EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found", 5: "a command's child ended pending"}
+EXIT_CODES = {
+    0: "ok",
+    1: "refused or invalid",
+    2: "usage",
+    3: "unavailable",
+    4: "not found",
+    5: "a command's child ended pending",
+}
 #: Seconds an analytics read may take: the sessions route computes over the telemetry window and answers in ~15.
 _ANALYTICS_TIMEOUT_S = 60.0
 _STEPS_PAGE = 5000
@@ -176,22 +183,6 @@ def _later(module: str, name: str) -> Verb:
 
 def _in_tasks(name: str) -> Verb:
     return _later("starpulse.cli.agent_tasks", name)
-
-
-class _AnyName(Mapping[str, Callable[..., Any]]):
-    """Every guard or action name an adapter might register: a file alone cannot say which names it will."""
-
-    def __getitem__(self, name: str) -> Callable[..., Any]:
-        return lambda *args, **kwargs: True
-
-    def __contains__(self, name: object) -> bool:
-        return True
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(())
-
-    def __len__(self) -> int:
-        return 0
 
 
 class _Parser(argparse.ArgumentParser):
@@ -262,7 +253,6 @@ def _lanes(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
     )
     from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
         MachineDefinitionError,
-        Registry,
     )
     from starpulse.runtime.config import discover  # noqa: PLC0415 - import cost, paid on first use
 
@@ -271,7 +261,7 @@ def _lanes(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
         machine = tomllib.loads(path.read_text()).get("board", {}).get("machine") if path else None
         if machine is None:
             raise agent_wire.CliError("usage", "the config declares no board.machine: there are no lanes to print")
-        compiled = load_machine(path.resolve().parent / str(machine), Registry(guards=_AnyName(), actions=_AnyName()))
+        compiled = load_machine(path.resolve().parent / str(machine))
     except (tomllib.TOMLDecodeError, MachineDefinitionError, OSError) as exc:
         raise agent_wire.CliError("refused", str(exc)) from exc
     lanes = {state.id: compiled.labels[state.id] for state in compiled.machine.states if not state.initial}
@@ -604,11 +594,10 @@ def _checked(path: Path) -> dict[str, Any]:
     )
     from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
         MachineDefinitionError,
-        Registry,
     )
 
     try:
-        load_machine(path, Registry(guards=_AnyName(), actions=_AnyName()))
+        load_machine(path)
     except MachineDefinitionError as error:
         errors = [{"file": str(error.file or path), "line": error.line, "message": str(error)}]
     except (AttributeError, TypeError) as error:  # a document that is no mapping, such as an empty file

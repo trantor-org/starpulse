@@ -17,7 +17,6 @@ from jsonschema.exceptions import ValidationError, best_match
 from starpulse.machine_engine.model.machine_definition import (
     Compiled,
     MachineDefinitionError,
-    Registry,
     compile_document,
 )
 from starpulse.machine_engine.model.machine_namespace import Definition, definition_of
@@ -59,9 +58,9 @@ def _line_of(text: str, parts: Iterable[str | int]) -> int:
     return node.start_mark.line + 1
 
 
-def load_machine(path: Path, registry: Registry = Registry()) -> Compiled:
+def load_machine(path: Path) -> Compiled:
     """Compile the machine file at `path`."""
-    return compile_document(read_document(path), path, registry)
+    return compile_document(read_document(path), path)
 
 
 #: Each read document by resolved path, with the modification time and size it was read at.
@@ -107,7 +106,11 @@ def _parse(path: Path) -> dict[str, Any]:
 def _watching(document: Any) -> list[str]:
     """The states of a machine `document` that still declare `waits`."""
     states = document.get("states") if isinstance(document, dict) else None
-    return [name for name, state in (states.items() if isinstance(states, dict) else ()) if isinstance(state, dict) and "waits" in state]
+    return [
+        name
+        for name, state in (states.items() if isinstance(states, dict) else ())
+        if isinstance(state, dict) and "waits" in state
+    ]
 
 
 def _spell_on(document: Any) -> None:
