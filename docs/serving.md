@@ -319,9 +319,6 @@ and no pointer, key or wheel input for 30 s. A tab in the background reloads at 
 records the build it reloaded for in `sessionStorage` (`starpulse.reloadedFor`), so a build that still differs after the
 reload does not reload it again.
 
-A demo page plays these states with `?link=`: `restart`, `update` (a restart that ships a new build) and `drop` play from
-live; `restarting`, `retrying`, `offline` and `updating` hold one state.
-
 ## Endpoint reference
 
 Every HTTP endpoint `starpulse serve` answers, with its payload and refusals. The schema is `starpulse/schemas/api.schema.json`; the implementation of a pull request row is `PullRequests._row`.
@@ -336,7 +333,6 @@ GET /              the page, built by `pnpm --filter @starpulse/web build` into 
                    /api/events connection and nothing else
 GET /board, /flow/<name>, /runs
                    the same page; it opens the level that draws that graph, then rewrites the address to /
-GET /?demo         the page driven by synthetic agents, for a look without live data
 GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, pools, flows: [{name,
                    machine, agents}], pulls, settled, error, now}: every machine with its tasks, the
                    workflow declarations, the workflows, each named `<instance>/<workflow>`, and the
@@ -1575,9 +1571,7 @@ into view it loads the next 20 older machines from `/api/machines`. The 24 h str
 entry, coloured by the state it was entered from (amber for a workflow launch), shades the rows in view as one
 stretch, and a click on a tick scrolls to its row. A click on a state of the top scrolls to the first machine it
 opens and picks it out; Escape steps back from the card, then the picked row, then the scroll to newest. A click on a task pins it and narrows the rows and the strip to
-the machines it holds a session in (`N machines holding <task>`); closing its card restores every row. A demo page (`?demo`) takes `&many=N` to grow the machines under
-the In Progress one to N, enough to scroll, and `&board=no-archived`, `no-attention`, `unlisted` or `fourteen` to reshape the Board for a Star Map
-review: a state taken out, a state no tier names, or fourteen states over thirty-three paths.
+the machines it holds a session in (`N machines holding <task>`); closing its card restores every row.
 
 ## Connect a tracker
 

@@ -130,7 +130,6 @@ is public for the names listed here:
 - `starpulse.pulls.adapters.outbound.pull_store`: `refresh_pull(repo, number, store, now, graphql)`, which reads one pull request from GitHub and saves it, for a test that checks a fixture survives the real pull reader.
 - `starpulse.pulls.adapters.outbound.pulls`: `PullStore`, the store `refresh_pull` saves to.
 - `starpulse.pulls.adapters.inbound.task_actor`: `ACTOR`, the writer name the task actor's moves and refusals carry, for a test that publishes as it.
-- `starpulse.cli.demo`: `FILL`, the tasks each lane of the public demo's board holds, and `TITLES`, the titles it cycles through, for a fixture board that matches the demo's scale.
 - `starpulse.cli.agent_subscribe`: `subscribed(session, subject, config=None)`, whether a session is subscribed to a subject, for a command that must not subscribe it twice.
 
 ### Moved in 0.y

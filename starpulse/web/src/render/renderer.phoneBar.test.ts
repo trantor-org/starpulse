@@ -77,7 +77,7 @@ describe("the phone view bar mounting after the Board's first layout", () => {
     const { renderer } = await import("./renderer");
     const cv = document.getElementById("c") as HTMLCanvasElement;
     stubContext(cv);
-    const r = renderer(cv, new HudStore(), { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! }, false);
+    const r = renderer(cv, new HudStore(), { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! });
     r.start();
     await vi.advanceTimersByTimeAsync(0);
     push.snapshot!(snap([task("TASK-1", "ready"), task("TASK-2", "in_progress"), task("TASK-3", "review")]));

@@ -78,7 +78,7 @@ describe("a Star Map whose first snapshot arrives while another view is shown", 
     const { renderer } = await import("./renderer");
     const cv = document.getElementById("c") as HTMLCanvasElement;
     stubContext(cv);
-    const r = renderer(cv, new HudStore(), { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! }, false);
+    const r = renderer(cv, new HudStore(), { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! });
     r.start();
     if (away) r.show(false);
     await vi.advanceTimersByTimeAsync(0);

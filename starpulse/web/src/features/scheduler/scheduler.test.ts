@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { ROUTES } from "../../demo/demo";
 import { SchedulerStore, level, type Dimension } from "./scheduler";
 
 /** What `GET /api/scheduler` answers today: the switch, harness, when the sampler last read, and each dimension's use against its limit. */
@@ -315,10 +314,6 @@ describe("the Autopilot card's store", () => {
     await Promise.all([store.setOn(false), store.setOn(true)]);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-  });
-
-  it("is a route the public demo serves", () => {
-    expect(ROUTES["/api/scheduler"]).toBeNull();
   });
 });
 

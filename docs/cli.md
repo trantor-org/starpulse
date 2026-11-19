@@ -52,14 +52,13 @@ starpulse skills install --claude --codex        # copy the bundled skills into 
 starpulse help --agent                           # every verb with its arguments, output keys and exit codes
 ```
 
-Four verbs work on files, and only `demo` without `--mockup` reads the server; each writes one JSON document the same way:
+Four verbs work on files; each writes one JSON document the same way:
 
 ```sh
 starpulse machine validate .starpulse/machines/*.yaml   # schema and compile errors, each with its file and line
 starpulse machine import mermaid flow.mmd               # draft a machine file from a stateDiagram-v2 diagram
 starpulse config check --config starpulse.toml          # unknown keys by name, and the effective config with defaults
 starpulse session records <session-id>                  # a session's transcript records grouped by task, read from the files
-starpulse demo --out demo.html                          # the self-contained demo page (reads the server's snapshot)
 ```
 
 These verbs read the running server (`starpulse serve`) over HTTP: `--server URL`, else `STARPULSE_URL`, else
@@ -134,7 +133,6 @@ lists exactly the verbs there are.
 | `command run` | `NAME`, `--task`, `--arg NAME=VALUE`, `--config`, `-- ARGS` | `name`, `argv`, `exit`, `seconds`, `ok` and `pending` (the child exited its declared pending code): runs the argv `[project.commands]` maps `NAME` to, offline, in this directory, with no shell, its output on stderr. Exit 0 when the child succeeds, 1 when it fails (its code is in `exit`), 5 when it exits the code `[project.pending]` declares for `NAME` (`deliver` declares 4), so a pending delivery is never read as a failure, 2 when a placeholder has no value or an element has a brace that is not a placeholder (write a literal brace as `{{` or `}}`), 3 when `argv[0]` cannot run, 4 when `NAME` has no entry, with `"fallback": "AGENTS.md"` |
 | `command show` | `NAME`, `--config` | `name`, `argv`, `args`, `invocation` and `pr_body_template`: what `command run NAME` needs, offline: the `--arg` names its argv holds, the call to make, and for an argv with `{body}` the project's pull request template (`path`, `text`), else `null`; an unmapped `NAME` exits 4 with the `fallback` |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load (a malformed `[project.commands]` entry included), or when a built-in board's machine names a writer workflow no `[[runs]]` domain lists, which `serve` refuses to start on |
-| `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
 | `session records` | `SESSION`, `--transcripts`, `--config` | `session`, `records` (the count) and `groups`, each `{task, records}` in the order the tasks are first named, `task` null for a session that names none; the records are the transcript's own JSON lines, read from `<transcripts>/<project>/<session>.jsonl` (`--transcripts`, else `[board] transcripts`, else `~/.claude/projects`) and never stored; a task is claimed by a branch the key scheme names or by a shell command or `Skill` call a `claims` pattern matches, and the records before the first claim join the first task; offline; exit 4 when no transcript of the session exists, 1 when the config does not load |
 | `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |

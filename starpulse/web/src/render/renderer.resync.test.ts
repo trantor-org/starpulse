@@ -95,7 +95,7 @@ describe("the Star Map seen again", () => {
     const { renderer } = await import("./renderer");
     const cv = document.getElementById("c") as HTMLCanvasElement;
     stubContext(cv);
-    const r = renderer(cv, new HudStore(), { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! }, false);
+    const r = renderer(cv, new HudStore(), { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! });
     r.start();
     await vi.advanceTimersByTimeAsync(0);
     push.handlers!.snapshot(snap("ready"));

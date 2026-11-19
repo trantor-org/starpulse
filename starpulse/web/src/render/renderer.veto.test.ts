@@ -85,7 +85,7 @@ describe("the working state", () => {
     const cv = document.getElementById("c") as HTMLCanvasElement;
     stubContext(cv);
     const hud = new HudStore();
-    const r = renderer(cv, hud, { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! }, false);
+    const r = renderer(cv, hud, { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! });
     beforeSnapshot?.(r);
     r.start();
     await vi.advanceTimersByTimeAsync(0);
