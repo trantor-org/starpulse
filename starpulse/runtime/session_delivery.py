@@ -28,7 +28,7 @@ import time
 from collections.abc import Callable, Collection, Mapping
 from pathlib import Path
 
-from starpulse.event_log.claude_sessions import local_id
+from starpulse.event_log.claude_sessions import local_id, local_ids
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.bridge.delivery import Event, Route
 from starpulse.bridge.subjects import INCIDENT
@@ -126,10 +126,15 @@ def _quieted(event: Event, quiet: Mapping[str, Collection[str]], own: str, sessi
     return SELF in writers and bool(own) and local_id(sessions, session) == own
 
 
+def _holder_bridge(name: str) -> str:
+    url = _URL_HOLDER.fullmatch(name)
+    return url[1] if url else ""
+
+
 def _local(sessions: Path, name: str) -> str:
     """The local session id a consumer named for a claude.ai URL holder resolves to; empty for any other name."""
-    url = _URL_HOLDER.fullmatch(name)
-    return local_id(sessions, f"https://claude.ai/code/{url[1]}") if url else ""
+    bridge = _holder_bridge(name)
+    return local_id(sessions, f"https://claude.ai/code/{bridge}") if bridge else ""
 
 
 def route(
@@ -177,7 +182,7 @@ def forget_ended(registry: Registry, alive: Callable[[str], str | None], session
 
     def forget(names: Collection[str]) -> None:
         wanted = set(names)
-        wanted |= {_local(sessions, name) for name in names}
+        wanted |= local_ids(sessions, [bridge for name in names if (bridge := _holder_bridge(name))])
         for key in registry.keys():
             if key not in wanted and not ((registration := registry.get(key)) and alive(registration.session)):
                 registry.delete(key)

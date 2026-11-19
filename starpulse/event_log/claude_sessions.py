@@ -13,7 +13,7 @@ import json
 import os
 import re
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -198,6 +198,15 @@ def local_id(sessions: Path, assignee: str) -> str:
         return assignee
     record = next(_running_records(sessions, lambda record: record.get("bridgeSessionId") == bridge), None)
     return str(record.get("sessionId", "")) if record else ""
+
+
+def local_ids(sessions: Path, bridges: Collection[str]) -> set[str]:
+    """The transcript ids of the running sessions whose records carry one of the `bridges` ids, from one read of the records."""
+    wanted = set(bridges)
+    if not wanted:
+        return set()
+    records = _running_records(sessions, lambda record: record.get("bridgeSessionId") in wanted)
+    return {str(record.get("sessionId", "")) for record in records}
 
 
 def holder_activity(transcripts: Path, sessions: Path, assignee: str, *, now: float) -> dict[str, Any] | None:

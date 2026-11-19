@@ -100,6 +100,7 @@ class Delivery:
                 logger.exception("delivery: a pass failed")
             else:
                 continue
+            # adr-exempt: retry
             stop.wait(RETRY_DELAY)
             self._woken.set()
 
