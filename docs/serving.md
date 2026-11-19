@@ -641,7 +641,10 @@ or SMB. When the project or config lives on network storage, set `database_url` 
 
 On every SQLite connection the store sets `journal_size_limit` to 64 MiB, so a checkpoint that resets the WAL
 truncates it to that bound instead of leaving the file at its high-water mark, and runs `PRAGMA optimize` so
-the planner statistics stay fresh. The limit bounds the file after a checkpoint; it does not cap growth between them.
+the planner statistics stay fresh. The limit bounds the file after a checkpoint; it does not cap growth between them,
+and SQLite restarts the log only when no reader is on it. A connection that returns to the pool with the `-wal` file
+past the limit therefore runs a `TRUNCATE` checkpoint, which waits up to a second for the readers on old frames, so
+readers that always overlap no longer keep the log from restarting.
 
 ```toml
 # Every top-level key and table is described in the settings reference below; a setting left out takes its default.

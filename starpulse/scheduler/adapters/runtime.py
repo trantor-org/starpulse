@@ -98,7 +98,8 @@ class Runtime:
         readings, at = self.sampler.readings()
         selected = self.harness.get()
         by = self.loop.sessions_by_harness() if self.loop is not None else {}  # one pass: it reads every open task
-        gate = {r.name: r for r in self.loop.readings()} if self.loop is not None else {}  # what a refusal judges
+        # what a refusal judges; with no sample read there is no dimension to judge, and `loop.readings` would sample one
+        gate = {r.name: r for r in self.loop.readings()} if self.loop is not None and readings else {}
         dimensions = []
         for reading in readings:
             if reading.name == "sessions" and self.loop is not None:
@@ -188,6 +189,7 @@ def build(
     merged: Callable[[Mapping[str, Any]], bool] = lambda agent: False,
     lane: str = "",
     transcript: Callable[[str], float | None] = lambda session: None,
+    nudges: bool = True,
 ) -> Runtime:
     """The switch kept in `log`'s store and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
 
@@ -255,5 +257,6 @@ def build(
             log=log,
             harness=harness,
             transcript=transcript,
+            nudges=nudges,
         )
     return Runtime(toggle, sampler, quiet_hours, harness, policy, session_caps, capacity_limits, loop, reading=feed.one_read)

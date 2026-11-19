@@ -41,7 +41,7 @@ from sqlalchemy.exc import OperationalError
 from starpulse.event_log import breaking_change_events, lane_events, verdict_events
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.checkpoints import Checkpoints
-from starpulse.event_log.event_log import WAL_SIZE_LIMIT, EventLog, insert_event
+from starpulse.event_log.event_log import WAL_SIZE_LIMIT, EventLog, bound_wal, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.store import EventStore
@@ -233,6 +233,7 @@ class HistoryStore:
     ) -> None:
         self.engine = engine or create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
         sa_event.listen(self.engine, "connect", _sqlite_tune)
+        bound_wal(self.engine)
         self._machines = machines
         self._retention = None if retention_days is None else retention_days * 86400.0
         self._summariser = Summariser(machines)

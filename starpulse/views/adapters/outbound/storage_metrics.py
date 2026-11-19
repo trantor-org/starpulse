@@ -51,7 +51,8 @@ def cached(read: Callable[[], str]) -> Callable[[], str]:
         nonlocal held
         with lock:
             if held is None or time.monotonic() - held[0] >= CACHE_S:
-                held = (time.monotonic(), read())
+                text = read()
+                held = (time.monotonic(), text)  # stamped when the read ends, so a slow read still serves its waiters
             return held[1]
 
     return get

@@ -83,6 +83,7 @@ def start_scheduler(
         lane=lane,
         clock=clock,
         transcript=transcript_written(Path(DEFAULT_TRANSCRIPTS).expanduser()),
+        nudges=board.idle is not None,
     )
     runtime.wire_status(publish or feed.publish)
     pressure = threading.Event()

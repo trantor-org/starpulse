@@ -11,7 +11,9 @@ _STRIKE = "~~"
 def resolved(criterion: Mapping[str, Any]) -> bool:
     """Whether `criterion` is checked or its text is struck through."""
     text = str(criterion["text"]).strip()
-    return bool(criterion["checked"]) or (len(text) > 2 * len(_STRIKE) and text.startswith(_STRIKE) and text.endswith(_STRIKE))
+    inner = text.removeprefix(_STRIKE).removesuffix(_STRIKE)
+    struck = len(text) > 2 * len(_STRIKE) and text.startswith(_STRIKE) and text.endswith(_STRIKE)
+    return bool(criterion["checked"]) or (struck and _STRIKE not in inner)
 
 
 def open_criteria(criteria: Iterable[Mapping[str, Any]]) -> list[tuple[int, str]]:
