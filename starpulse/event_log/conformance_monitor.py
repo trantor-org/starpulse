@@ -329,7 +329,8 @@ class Conformance:
         return cursors
 
     def _keep_review_moves(self, held: Mapping[str, Any]) -> None:
-        cursor = held.get("cursors", {}).get(lane_events.STREAM)
+        cursors = held.get("cursors")
+        cursor = cursors.get(lane_events.STREAM) if isinstance(cursors, Mapping) else None
         if isinstance(held.get("review_moves"), int) and isinstance(cursor, int):
             with self._lock:
                 self._review_moves, self._review_after = held["review_moves"], cursor

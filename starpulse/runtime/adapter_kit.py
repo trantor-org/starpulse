@@ -258,8 +258,11 @@ def serve(
             server.close()
         stop.set()
         # a reader of the log still mid-step reopens it after the close, and a thread starved under load has not begun
-        for reader in snapshots.readers if snapshots is not None else ():
+        readers = snapshots.readers if snapshots is not None else []
+        for reader in readers:
             reader.join(30)
+        if running := [reader.name for reader in readers if reader.is_alive()]:
+            raise RuntimeError(f"a reader still runs 30 s after the stop, so the log stays open: {running}")
         log.close()
         if drawn:
             drawn.close()

@@ -142,7 +142,7 @@ uv run python -m ci.seeded_server --port 8766 --dir .tmp/gate
 uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --repeat 3
 ```
 
-The seeded board is smaller than a live one: a cost that grows with the board is the nightly `soak.py`'s to find.
+The seeded board is smaller than a live one: a cost that grows with the board is the manual [soak](#soak)'s to find: no nightly job runs it, and the nightly latency job will not catch one.
 
 ## Soak
 
@@ -191,7 +191,8 @@ until the run ends.
 - A URL selects a running server and takes `--pid`; `--replay-multiple` is refused with one, and `--pid` without one.
 
 No schedule runs this mode: start it by hand for 4 hours against main's tip, and `release.yml` does not soak a tag. The
-run's directory, with `soak.json`, is removed when the run exits.
+seeded server's scratch directory is removed when the run exits; the report stays where `--report` names it
+(`.tmp/soak.json` above).
 
 **Replay rate.** The live instance's event log took 14,497 events in the 24 hours to 2026-10-10 09:30 MST, 1,312 of
 them lane changes, and 11,075 a day over the 7 days before. `LIVE_EVENTS_PER_DAY` in `soak.py` is 14,500, about 0.17
