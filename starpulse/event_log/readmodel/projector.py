@@ -1,6 +1,6 @@
 """The projector: folds Task Events into the read model and remembers how far it got."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import Connection, Engine, delete, select
@@ -9,7 +9,7 @@ from sqlalchemy.dialects import sqlite
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.readmodel import rows
-from starpulse.event_log.readmodel.fold import fold
+from starpulse.event_log.readmodel.fold import Row, apply
 from starpulse.event_log.readmodel.machine_fold import Placer, event_of
 from starpulse.event_log.readmodel.tables import criteria, machine_tasks, tasks
 from starpulse.event_log.store import EventStore, StoredEvent
@@ -75,15 +75,8 @@ class Projector:
         Each batch commits its rows and the checkpoint together, so a stop between batches resumes at the next Event
         and a stop inside one folds nothing.
         """
-        position, _ = self._checkpoints.load(CHECKPOINT)
-        folded = 0
-        while batch := self._store.read_after("task", position or 0, BATCH):
-            position = batch[-1].position
-            with self._engine.begin() as db:
-                self._fold(db, batch)
-                self._checkpoints.save(CHECKPOINT, position, conn=db)
-            folded += len(batch)
-        self._fold_machines()
+        folded = self._fold_tasks(resident=False)
+        self._fold_machines(resident=False)
         if index:
             self.index()
         return folded
@@ -94,7 +87,10 @@ class Projector:
             self._index_changed()
 
     def rebuild(self) -> int:
-        """Drop every row and the checkpoint and fold the whole History again; the number of Events folded."""
+        """Drop every row and the checkpoint and fold the whole History again; the number of Events folded.
+
+        The tables are empty, so the rows stay in memory through the fold and are written once at its end: a stop inside
+        it leaves them empty and the checkpoints at 0, which the next `catch_up` folds from the start."""
         with self._engine.begin() as db:
             db.execute(delete(criteria))
             db.execute(delete(tasks))
@@ -102,10 +98,38 @@ class Projector:
             self._checkpoints.save(CHECKPOINT, 0, conn=db)
             self._checkpoints.save(MACHINE_CHECKPOINT, 0, conn=db)
             self._checkpoints.save(SEARCH_CHECKPOINT, 0, conn=db)
-        return self.catch_up()
+        folded = self._fold_tasks(resident=True)
+        self._fold_machines(resident=True)
+        self.index()
+        return folded
 
-    def _fold_machines(self) -> None:
-        """Fold every `machine:events` entry past the machine checkpoint into `starpulse_machine_tasks`, a batch at a time."""
+    def _fold_tasks(self, *, resident: bool) -> int:
+        """Fold every Task Event past the checkpoint, a batch at a time; `resident` keeps every row in memory and writes
+        them with the checkpoint once the History is read, which only an empty table allows."""
+        position, _ = self._checkpoints.load(CHECKPOINT)
+        position = position or 0
+        held: dict[str, tuple[Row | None, int]] = {}
+        folded = 0
+        while batch := self._store.read_after("task", position, BATCH):
+            position = batch[-1].position
+            folded += len(batch)
+            if resident:
+                self._fold(batch, held, lambda _: (None, 0))
+                continue
+            folded_rows: dict[str, tuple[Row | None, int]] = {}
+            with self._engine.begin() as db:
+                self._fold(batch, folded_rows, lambda task: rows.load_at(db, task))
+                rows.save_all(db, folded_rows.values())
+                self._checkpoints.save(CHECKPOINT, position, conn=db)
+        if resident and held:
+            with self._engine.begin() as db:
+                rows.save_all(db, held.values())
+                self._checkpoints.save(CHECKPOINT, position, conn=db)
+        return folded
+
+    def _fold_machines(self, *, resident: bool) -> None:
+        """Fold every `machine:events` entry past the machine checkpoint into `starpulse_machine_tasks`, a batch at a time;
+        `resident` as in `_fold_tasks`."""
         if self._log is None or self._placer is None:
             return
         from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the log's stack loads when a log opens
@@ -113,32 +137,55 @@ class Projector:
 
         position, _ = self._checkpoints.load(MACHINE_CHECKPOINT)
         tail = Tail(self._log, STREAM, after=position or 0, batch=BATCH)
+        held: dict[tuple[str, str], tuple[dict, int]] = {}
+        last = position or 0
         while batch := tail.poll():
+            last = batch[-1].id
+            if resident:
+                self._place(batch, held, lambda *_: (None, 0))
+                continue
+            placed: dict[tuple[str, str], tuple[dict, int]] = {}
             with self._engine.begin() as db:
-                self._place(db, batch)
-                self._checkpoints.save(MACHINE_CHECKPOINT, batch[-1].id, conn=db)
+                self._place(batch, placed, lambda *key: self._load_machine(db, *key))
+                self._save_machines(db, placed)
+                self._checkpoints.save(MACHINE_CHECKPOINT, last, conn=db)
+        if resident and held:
+            with self._engine.begin() as db:
+                self._save_machines(db, held)
+                self._checkpoints.save(MACHINE_CHECKPOINT, last, conn=db)
 
-    def _place(self, db: Connection, batch: Sequence[Entry]) -> None:
-        """Place each machine event on its task, the batch's later events seeing the earlier ones, then save each row once.
+    def _place(
+        self,
+        batch: Sequence[Entry],
+        touched: dict[tuple[str, str], tuple[dict, int]],
+        load: Callable[..., tuple[dict | None, int]],
+    ) -> None:
+        """Place each machine event on its task in `touched`, the batch's later events seeing the earlier ones. `load`
+        gives a task's agent and entry when `touched` lacks it.
 
         A row remembers the entry it last folded (`seq`): an entry at or before it was folded already, so a stream read
         again (a second reader, a checkpoint reset) leaves each trail step once.
         """
-        touched: dict[tuple[str, str], tuple[dict, int]] = {}
         for entry in batch:
             event = event_of(entry.fields)
             if event is None:
                 continue
             key = (event.machine, event.task or event.run or "")
-            before, seq = touched[key] if key in touched else self._load_machine(db, *key)
+            before, seq = touched[key] if key in touched else load(*key)
             if entry.id <= seq:
                 continue
             placed = self._placer.place(before, event)
             if placed is not None:
                 flow, task, agent = placed
                 touched[flow, task] = (agent, entry.id)
-        for (flow, task), (agent, seq) in touched.items():
-            values = {
+
+    @staticmethod
+    def _save_machines(db: Connection, placed: Mapping[tuple[str, str], tuple[dict, int]]) -> None:
+        """Save each placed task's row once."""
+        if not placed:
+            return
+        values = [
+            {
                 "machine": flow,
                 "task": task,
                 "state": agent["state"],
@@ -146,9 +193,11 @@ class Projector:
                 "active_at": agent["active"],
                 "seq": seq,
             }
-            upsert = sqlite.insert(machine_tasks).values(**values)
-            set_ = {column: upsert.excluded[column] for column in values if column not in ("machine", "task")}
-            db.execute(upsert.on_conflict_do_update(index_elements=["machine", "task"], set_=set_))
+            for (flow, task), (agent, seq) in placed.items()
+        ]
+        upsert = sqlite.insert(machine_tasks)
+        set_ = {column: upsert.excluded[column] for column in values[0] if column not in ("machine", "task")}
+        db.execute(upsert.on_conflict_do_update(index_elements=["machine", "task"], set_=set_), values)
 
     @staticmethod
     def _load_machine(db: Connection, machine: str, task: str) -> tuple[dict | None, int]:
@@ -160,17 +209,21 @@ class Projector:
         ).first()
         return (row.agent, row.seq) if row else (None, 0)
 
-    def _fold(self, db, batch: list[StoredEvent]) -> None:
-        """Fold each Event onto its Task's row, then save each row once. A row remembers the position it last folded
-        (`seq`): an Event at or before it was folded already, so a second reader from a stale checkpoint adds nothing."""
-        touched: dict[str, tuple[dict | None, int]] = {}
+    @staticmethod
+    def _fold(
+        batch: list[StoredEvent],
+        held: dict[str, tuple[Row | None, int]],
+        load: Callable[[str], tuple[Row | None, int]],
+    ) -> None:
+        """Fold each Event onto its Task's row in `held`, loading a row it lacks. A row
+        remembers the position it last folded (`seq`): an Event at or before it was folded already, so a second reader
+        from a stale checkpoint adds nothing."""
         for event in batch:
-            row, seq = touched[event.subject_id] if event.subject_id in touched else rows.load_at(db, event.subject_id)
+            task = event.subject_id
+            row, seq = held[task] if task in held else load(task)
             if event.position <= seq:
                 continue
-            touched[event.subject_id] = (fold(row, event), event.position)
-        for row, seq in touched.values():
-            rows.save(db, row, seq)
+            held[task] = (apply(row, event), event.position)
 
     def _index_changed(self) -> None:
         """Make the search index hold every row folded since it last did, by whichever process folded it."""

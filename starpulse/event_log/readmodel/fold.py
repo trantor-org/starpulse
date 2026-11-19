@@ -137,7 +137,8 @@ _RULES: dict[str, Callable[[Row, StoredEvent], None]] = {
 }
 
 
-def _apply(row: Row | None, event: StoredEvent) -> Row:
+def apply(row: Row | None, event: StoredEvent) -> Row:
+    """`row` after `event`, changed in place; `row` is None before a Task's first Event."""
     rule = _RULES.get(event.type)
     if rule is None:
         raise UnknownEvent(f"{event.subject_id}: no fold rule for {event.type}")
@@ -149,12 +150,12 @@ def _apply(row: Row | None, event: StoredEvent) -> Row:
 
 def fold(row: Row | None, event: StoredEvent) -> Row:
     """`row` after `event`, as a new row; `row` is None before a Task's first Event."""
-    return _apply(copy.deepcopy(row), event)
+    return apply(copy.deepcopy(row), event)
 
 
 def replay(events: Iterable[StoredEvent]) -> Row:
     """The row a Task's whole History folds into; empty for no Events."""
     row: Row | None = None
     for event in events:
-        row = _apply(row, event)
+        row = apply(row, event)
     return row or {}
