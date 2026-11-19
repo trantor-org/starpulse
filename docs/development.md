@@ -25,28 +25,15 @@ the targets otherwise (the nightly and a manual dispatch select the whole suite)
 the one run did, including when `select` chose no test.
 A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
-A test's ceiling is 5 s for setup, call and teardown together (`SLOW_TEST_SECONDS` overrides it). In every run but the
-nightly, the pull-request gate and a local run included, a test fails at teardown past three times that
-(`SLOW_TEST_FAIL_SECONDS` overrides it; `ci/slow_tests.py`) once the seconds the process's threads waited on a CPU run
-queue (the scheduler's `run_delay`) are taken off, so a host at its CPU cap does not fail a test it kept off a CPU; the
-wait of a child process is not counted. The bound is stretched by the host's 1-minute load per CPU when that is above 1 (`SLOW_TEST_LOAD_SCALE=0` turns it off): the gate's host is shared, and one 0.7 s test took 9.4 s at a
-load of 4.6 per CPU. A test that already failed or errored is not failed again. Make a slow test faster, or keep it slow with `@pytest.mark.slow` and a `# Stays slow: <reason>`
-comment directly above it naming what the test must pay for (a server process, a container, a cold import).
-`OVER_CEILING` there lists the tests at or over 4 s when the bound landed, each with the slice that brings it under; that
-slice removes its entry. A budget test (leak, latency, soak) carries
-`@pytest.mark.nightly`: `addopts` deselects it, and only the nightly suite and a manual dispatch run it (`-m "not e2e"`
-in the `python` job of the `starpulse-nightly` pipeline).
-The screen below runs only in the nightly full suite and a manual `workflow_dispatch`, where the `starpulse-nightly` DAG sets `TEST_COST_REPORT=1`
-(and on `python-ft`, which reports and never fails the ceiling); any other run prints no section, annotation or summary row
-and writes no report. A test over 5 s is named at the end of the run, slowest first; in CI each is also a warning annotation
-on its `def` line and a row in the job summary. A test that burns more than 5 CPU-s (`SLOW_TEST_CPU_SECONDS` overrides it; self plus waited-for children)
-is named beside them with its CPU seconds and the growth of its worker's peak RSS, and the summary table has Wall s,
-CPU s and Peak MB columns. Containers a test starts run outside the process tree, so their CPU
-and memory are not counted. None of the screen fails the run.
-With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB also go to `test-cost.json`
-(`TEST_COST_REPORT_PATH` moves it), and the run reruns exactly those tests one by one under `pytest --memray`
-(`ci/memray_flagged.py`), then uploads the report and `memray/` (one allocation report per test plus `stats.json`) as the
-`test-cost-python` artifact; a test whose rerun left no report is named in `stats.json` and a `::warning`.
+A budget test (leak, latency, soak) carries `@pytest.mark.nightly`: `addopts` deselects it, and only the nightly suite and a
+manual dispatch run it (`-m "not e2e"` in the `python` job of the `starpulse-nightly` pipeline). No plugin screens a test's
+time: `pytest --durations=20` lists the slowest locally, `pytest --memray` profiles one test's allocations, and
+`pytest-timeout` fails a test that is still running after 120 s.
+The nightly's `python` job (and a manual dispatch) writes the run's JUnit report, `junit.xml` in the run directory, where
+each test's `time` is its setup, call and teardown together. `ci/memray_flagged.py JUNIT OUT_DIR` then reruns every test
+over 5 s, slowest first, one by one under `pytest --memray` and leaves in OUT_DIR (`memray/` in the nightly) one allocation report per test
+plus `stats.json`; a test whose rerun left no report is named in `stats.json` and a `::warning`. A test that grows
+slow fails nothing: it shows only in that list.
 The same nightly and dispatch runs record which source files each test executes: the run adds
 `--cov --cov-context=test` (line coverage of `starpulse` and `ci`, `[tool.coverage.run]`) and uploads its data as
 `coverage-data`. The `coverage-map` job, once the select job passed and whether the run was green or red (a
