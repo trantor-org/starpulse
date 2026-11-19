@@ -766,13 +766,16 @@ What does not map cleanly:
 
 ## Show pull requests and their checks
 
-Pull request events reach the event log only through the App webhook: point the App's webhook at the listener described in
-[Save GitHub webhook deliveries](#save-github-webhook-deliveries). Nothing polls GitHub.
+Pull request events reach the event log through the App webhook: point the App's webhook at the listener described in
+[Save GitHub webhook deliveries](#save-github-webhook-deliveries). The webhook is the normal delivery path. With
+`reconcile_token_env` set, the sweeper also reads GitHub and creates an inbox row for a closed pull request that no
+delivery reported ([Reconcile the inbox against GitHub](#reconcile-the-inbox-against-github)).
 
 - **`github-pull-request` machine.** `PR_OPENED`, then `CHECKS_PASSED` or `CHECKS_FAILED` once every check run on the
   head commit has completed, then `PR_MERGED` or `PR_CLOSED`.
-- **Keys.** An event is keyed by the task the pull request's branch names (the same key scheme as the Claude Code
-  receiver), else by the pull request as a run (`owner/name#7`).
+- **Keys.** Link the pull request's URL to the task as a reference. The consumer selects the unarchived task whose
+  references hold that URL and keys the event by it; a branch name alone is not enough. With no task linked it retries,
+  then skips the delivery as `no-task`.
 - **Deliveries** are verified with the App's webhook secret (`secret_env`). A redelivery appends nothing already in
   the log.
 

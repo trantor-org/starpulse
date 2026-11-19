@@ -66,6 +66,6 @@ def parse_project(raw: object) -> Project:
     for name, code in pending.items():
         if name not in table:
             raise ProjectError(f"project.pending: {name!r} is not a [project.commands] step")
-        if not isinstance(code, int) or isinstance(code, bool) or code < 1:
-            raise ProjectError(f"project.pending.{name}: an exit code is an integer of 1 or more")
+        if not isinstance(code, int) or isinstance(code, bool) or not 1 <= code <= 255:
+            raise ProjectError(f"project.pending.{name}: an exit code is an integer from 1 to 255")
     return Project({name: _argv(name, argv) for name, argv in table.items()}, pending)

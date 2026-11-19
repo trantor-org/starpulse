@@ -18,10 +18,15 @@ def stored_snapshots(feed: BoardFeed, log: EventLog, stop: StopEvent) -> Snapsho
     held = HeldSnapshot(feed, store=store)
     writer = threading.Thread(target=held.run, args=(stop,), name="held-snapshot", daemon=True)
     writer.start()
-    # adr-exempt: handshake
-    if not held.started.wait(30):
-        raise TimeoutError("the Board writer stored no snapshot in 30 s")
-    snapshots = Snapshots(store, log, stop)
+    try:
+        # adr-exempt: handshake
+        if not held.started.wait(30):
+            raise TimeoutError("the Board writer stored no snapshot in 30 s")
+        snapshots = Snapshots(store, log, stop)
+    except BaseException:
+        stop.set()
+        writer.join(30)
+        raise
     snapshots.caught_up = held.caught_up
     snapshots.readers.append(writer)
     return snapshots
