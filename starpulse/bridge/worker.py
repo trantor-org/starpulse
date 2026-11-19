@@ -88,8 +88,8 @@ def run(
             subscriber.handle(entry)
         except BadRequestError as exc:  # the server refuses this subscription for good; retrying only stalls the tail
             logger.error("bridge: entry %s subscription is refused and skipped: %s", entry.id, exc)
-        log.checkpoints.save(CHECKPOINT, entry.id)
         woke()
+        log.checkpoints.save(CHECKPOINT, entry.id)
 
     try:
         started, position = _await_start_position(log, stop)

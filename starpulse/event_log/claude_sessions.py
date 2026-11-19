@@ -174,7 +174,7 @@ def live_session(sessions: Path, session: str) -> bool:
     """Whether the process registered under `sessions` for `session` (its session id, bridge id or Remote Control URL) is still running."""
     def names(record: dict[str, Any]) -> bool:
         bridge = record.get("bridgeSessionId")
-        return session in (record.get("sessionId"), bridge) or bool(bridge and session.endswith(f"/{bridge}"))
+        return session in (record.get("sessionId"), bridge) or bool(bridge and session.rstrip("/").endswith(f"/{bridge}"))
 
     return bool(session) and next(_running_records(sessions, names), None) is not None
 
