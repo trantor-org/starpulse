@@ -13,10 +13,10 @@ Three summaries follow the raw rows, updated in the transaction that writes one:
   it, the count kept at zero once the last leaves. A read of how many tasks have finished, of where the history begins
   or of who reported does not count their stays.
 
-`starpulse_summary_basis` holds the fingerprint of the machines the summaries were folded under (`Summariser.fingerprint`:
-what places an event, not a label), so a store that opens under an edited machine rebuilds them: a rebuild happens
-when the summaries are empty, when that fingerprint differs from the machines the store opened with (or none was
-kept, as in a store that predates it), and after a repair or an import of lane history.
+The summaries carry a stamp in the settings table (`Summariser.stamp`: their table definitions, what places an event
+and the fold's own source, not a label), so a store that opens under an edited machine, table or fold rebuilds them: a
+rebuild happens when no stamp was kept or it differs, and after a repair or an import of lane history. The rebuild
+folds in memory and swaps the tables in one transaction, so a reader never sees them empty.
 
 Rows are folded in the order the store recorded them, not by their time, so a late event counts as a step of zero
 length and leaves its case where the latest recorded event put it. An event the store cannot attribute is not
@@ -26,7 +26,9 @@ through the same steps a write takes, in memory (`Fold`) so it holds the write l
 """
 
 import hashlib
+import inspect
 import json
+import sys
 from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime
 from typing import Any, NamedTuple
@@ -47,6 +49,7 @@ from sqlalchemy import (
     update,
 )
 
+from starpulse.event_log.table_registry import definition, stamp_of
 from starpulse.event_log.tables import metadata
 from starpulse.flow_metrics.model.level_metrics import UNATTRIBUTED
 from starpulse.machine_engine.model.transitions import tables as transitions
@@ -108,8 +111,8 @@ lanes = Table(
     PrimaryKeyConstraint("source", "lane"),
 )
 SUMMARY_TABLES = (step_summaries, cases, lane_intervals, lanes)
-#: The machines' fingerprint the summaries were folded under: one row, written with the rebuild that folds them.
-summary_basis = Table("starpulse_summary_basis", metadata, Column("fingerprint", String, primary_key=True))
+#: What the fold's code is: an edit to this module refolds the summaries, as an edit to the machines does.
+CODE_HASH = hashlib.sha256(inspect.getsource(sys.modules[__name__]).encode()).hexdigest()
 
 #: A case: the machine, the source that reported it, `task` or `run`, and its id.
 Key = tuple[str, str, str, str]
@@ -155,9 +158,10 @@ class Summariser:
         board = machines.get(BOARD)
         self._lanes = {key: s["id"] for s in board["states"] for key in (s["name"], s["id"])} if board else {}
 
-    def fingerprint(self) -> str:
-        """A digest of what places an event or lane change: each drawn machine's initial and final states and moves,
-        and the Board's lanes. An edit that moves no task (a label, a position) leaves it as it was."""
+    def stamp(self) -> str:
+        """The stamp of the summaries: their table definitions, the fold's code and what places an event or lane
+        change: each drawn machine's initial and final states and moves, and the Board's lanes. An edit that moves no
+        task (a label, a position) leaves it as it was."""
         placed = {
             name: {
                 "initial": table.initial,
@@ -166,8 +170,7 @@ class Summariser:
             }
             for name, table in self._tables.items()
         }
-        basis = json.dumps([placed, self._lanes], sort_keys=True)
-        return hashlib.sha256(basis.encode()).hexdigest()
+        return stamp_of(definition(SUMMARY_TABLES), json.dumps([placed, self._lanes], sort_keys=True), CODE_HASH)
 
     def event_key(self, machine: str, task: str | None, run: str | None, event_id: str) -> Key | None:
         """The case a machine event belongs to, or None when it has none or its machine is not drawn."""
@@ -332,22 +335,3 @@ class Fold:
         for table, rows in ((step_summaries, steps), (cases, placed), (lane_intervals, self._stays), (lanes, counts)):
             for start in range(0, len(rows), _CHUNK):
                 db.execute(insert(table), rows[start : start + _CHUNK])
-
-
-def count_lanes(db: Connection) -> None:
-    """Fill the empty lane counts from the lane intervals: per source and lane, the tasks still in it (zero when every
-    one has left) and the first time one entered."""
-    i = lane_intervals.c
-    counted: dict[tuple[str, str], list] = {}
-    for event_id, lane, entered, left in db.execute(
-        select(i.event_id, i.lane, i.entered_at, i.left_at).execution_options(yield_per=5000)
-    ):
-        count = counted.setdefault((source(event_id), lane), [0, entered])
-        count[0] += left is None
-        count[1] = min(count[1], entered)
-    rows = [
-        {"source": src, "lane": lane, "open_tasks": open_tasks, "first_at": first}
-        for (src, lane), (open_tasks, first) in counted.items()
-    ]
-    for start in range(0, len(rows), _CHUNK):
-        db.execute(insert(lanes), rows[start : start + _CHUNK])
