@@ -174,9 +174,10 @@ class PageServer:
             raise self._failure
 
     def close(self) -> None:
-        """Stop, wait for the server to finish and release the socket."""
+        """Stop, wait for the server to finish, when it started, and release the socket."""
         self.stop()
-        self._thread.join()
+        if self._thread.ident is not None:
+            self._thread.join()
         self.socket.close()
         if self._quic is not None:
             self._quic.close()

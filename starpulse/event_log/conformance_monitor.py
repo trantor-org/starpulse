@@ -337,7 +337,7 @@ class Conformance:
 
     def save(self, log: EventLog) -> None:
         """Save the `checkpoint` under `CHECKPOINT` when an entry was handled since the last save; a failed write is
-        logged and tried again at the next."""
+        logged and tried again a debounce later."""
         held = self.checkpoint()
         if held["cursors"] == self._saved:
             return
@@ -345,6 +345,7 @@ class Conformance:
             log.set_setting(CHECKPOINT, held)
         except Exception:
             logger.warning("conformance: cannot save the checkpoint", exc_info=True)
+            self._moved.set()
             return
         self._saved = held["cursors"]
 

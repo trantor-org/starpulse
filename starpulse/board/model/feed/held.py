@@ -120,9 +120,11 @@ class HeldSnapshot:
             self._feed.unsubscribe(self._changes)
 
     def caught_up(self, timeout: float) -> bool:
-        """Whether every change the feed published is folded into the snapshot, waiting up to `timeout` for the ones not."""
+        """Whether every change the feed published is folded into the snapshot and, with a store, stored, waiting up to
+        `timeout` for the ones not. A fold or save that failed is not caught up: the queue drains either way."""
         with self._changes.all_tasks_done:
-            return self._changes.all_tasks_done.wait_for(lambda: not self._changes.unfinished_tasks, timeout)
+            drained = self._changes.all_tasks_done.wait_for(lambda: not self._changes.unfinished_tasks, timeout)
+        return drained and not self._stale and not self._unsaved
 
     def _rebuilt(self, changes: list[tuple[str, dict]], restarted: bool = False) -> None:
         try:
