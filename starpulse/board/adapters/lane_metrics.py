@@ -29,7 +29,8 @@ def start(
 ) -> None:
     """Run the unattributed-lane count and the conformance monitor (`work`: the machines whose events are work) until
     `stop`, register the `board-files` pass over `feed` and `board` for the sweeper (`vectors` embeds the tasks that
-    hold none), and keep their exposition in `log` once at start and after each entry or pass that changed it. The
+    hold none), and keep their exposition in `log` once at start and after each entry or pass that changed it, the
+    monitor's entries once it has read the log it found, since a write per replayed entry outpaced no replay. The
     stalled gauge ages with no entry, so `log` keeps its deadlines and `metrics_of` counts them at scrape."""
     unattributed = lane_events.Unattributed()
     conformance = Conformance(
@@ -66,7 +67,7 @@ def start(
             keep()
 
     unattributed.follow(log, stop, keep)
-    conformance.follow(log, stop, after=keep)
+    conformance.follow(log, stop, after=lambda: conformance.caught_up() and keep())
     feed.reconcilers["board-files"] = sweep
     keep()
 

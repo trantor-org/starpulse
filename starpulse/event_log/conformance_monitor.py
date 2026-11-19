@@ -222,7 +222,7 @@ class Conformance:
             return self._stall_state()
 
     def _stall_state(self) -> dict[str, Any]:
-        if not (self._caught_up() and self._working and self._review):
+        if not (self.caught_up() and self._working and self._review):
             return {}
         working = self._working_now()
         live = {task: last for task, last in self._active.items() if task in working}
@@ -231,7 +231,8 @@ class Conformance:
             "due": sorted(last + STALL_S for task, last in live.items() if task not in self._stalled),
         }
 
-    def _caught_up(self) -> bool:
+    def caught_up(self) -> bool:
+        """Whether both streams are read up to the entries they held when `follow` began."""
         return self._until is not None and all(
             self._cursors.get(stream, 0) >= last for stream, last in self._until.items()
         )
@@ -252,7 +253,7 @@ class Conformance:
                 f'{OCCURRENCES_METRIC}{{machine="{_escape(name)}",event="{_escape(event)}"}} {count}\n'
                 for (name, event), count in self._occurrences.items()
             )
-            caught_up = self._caught_up()
+            caught_up = self.caught_up()
             entered = "".join(
                 f'{ENTERED_METRIC}{{lane="{_escape(lane)}"}} {count}\n' for lane, count in self._entered.items()
             )
