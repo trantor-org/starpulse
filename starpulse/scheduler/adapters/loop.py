@@ -145,7 +145,8 @@ class Loop:
     own pull request has merged, which leaves the task unstarted whatever its lane, `clock` is the loop's notion
     of now, `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, and
     `log` is the history store a restart restores in-flight runs and start times from, and `transcript` answers when a
-    session's transcript was last written, which lists a session the harness machine does not key to its task.
+    session's transcript was last written, which lists a session the harness machine does not key to its task, and `nudges`
+    whether the task actor nudges an idle holder (the board has an idle hook), which exempts a task with an open criterion from the idle clock.
     """
 
     def __init__(
@@ -167,8 +168,10 @@ class Loop:
         log: EventLog | None = None,
         harness: HarnessSetting | None = None,
         transcript: Callable[[str], float | None] = lambda session: None,
+        nudges: bool = True,
     ) -> None:
         self._feed = feed
+        self._nudges = nudges
         self._policy = policy
         self._toggle = toggle
         self._sampler = sampler
@@ -544,7 +547,10 @@ class Loop:
             logger.exception("StarPulse scheduler: cannot record the run of %s", task)
 
     def _nudged(self, task: str) -> bool:
-        """Whether the task actor, not the idle clock, handles the task's idle holder: no pull request, a criterion open."""
+        """Whether the task actor, not the idle clock, handles the task's idle holder: it nudges, and the task has no pull
+        request and a criterion open."""
+        if not self._nudges:
+            return False
         agent = self._feed.task(task, lean=True) or {}
         return not agent.get("prs") and bool(open_criteria(agent.get("criteria", ())))
 

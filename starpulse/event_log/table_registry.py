@@ -57,6 +57,7 @@ def unclassed(names: Iterable[str]) -> list[str]:
 
 def definition(tables: Iterable[Table]) -> str:
     """The DDL that creates `tables` and their indexes: a column or index edit changes it."""
+    tables = list(tables)
     return "\n".join(
         [str(CreateTable(table)) for table in tables]
         + sorted(str(CreateIndex(index)) for table in tables for index in table.indexes)

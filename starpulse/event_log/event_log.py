@@ -46,7 +46,7 @@ from starpulse.event_log.tables import events, gaps, settings, signal_folds, sig
 from starpulse.event_log.wake import FALLBACK_WAKE_S, RETRY_DELAY, StopEvent
 from starpulse.event_log.watch import open_watch
 
-__all__ = ["Entry", "EventLog", "Tail", "WAL_SIZE_LIMIT"]
+__all__ = ["Entry", "EventLog", "Tail", "WAL_SIZE_LIMIT", "bound_wal"]
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,13 @@ _SQLITE_BUSY_TIMEOUT = 30.0
 #: truncates it, so every connection to the database sets this, not the history store's alone: an unbounded writer
 #: restarting the log left a 4.4 GB file holding 1.5 GB of frames (21.6 GB at its worst, 2026-11-18).
 WAL_SIZE_LIMIT = 64 * 1024 * 1024
+
+#: How long a checkpoint that truncates an oversized -wal file waits on readers and the write lock, in milliseconds. It
+#: holds every writer off while it waits, so it gives up long before an append's own `_SQLITE_BUSY_TIMEOUT`.
+_WAL_TRUNCATE_WAIT_MS = 1000
+
+#: How long, in seconds, a truncate that found a reader still on the log leaves the next one.
+_WAL_TRUNCATE_RETRY_S = 5.0
 
 #: How many times the log tries to switch its SQLite database to WAL, which fails at once, without waiting on the busy
 #: timeout, while another connection opens or closes the database.
@@ -180,6 +187,48 @@ def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no 
     cursor.close()
 
 
+def bound_wal(engine: Engine) -> None:
+    """Truncate the engine's database's -wal file whenever a connection comes back to the pool with it past
+    `WAL_SIZE_LIMIT`.
+
+    `journal_size_limit` shrinks the file only when a commit restarts the log, and SQLite restarts it only at a moment
+    no reader is on any of its frames. Readers that always overlap (the contexts worker's, 2026-11-19) leave no such
+    moment, so the file grew to 2.5 GB while every checkpoint backfilled it. A `TRUNCATE` checkpoint holds writers off
+    until the readers on old frames end, and readers that begin meanwhile read the backfilled database file, so it
+    ends the overlap; it gives up after `_WAL_TRUNCATE_WAIT_MS` and is not tried again for `_WAL_TRUNCATE_RETRY_S`.
+    """
+    database = engine.url.database
+    if database in (None, "", ":memory:"):
+        return
+    wal = Path(f"{database}-wal")
+    gate = threading.Lock()
+    retry_at = 0.0
+
+    def truncate(dbapi_connection: Any, _record: Any) -> None:
+        nonlocal retry_at
+        if time.monotonic() < retry_at or not gate.acquire(blocking=False):
+            return
+        try:
+            if wal.stat().st_size <= WAL_SIZE_LIMIT:
+                return
+            retry_at = time.monotonic() + _WAL_TRUNCATE_RETRY_S
+            cursor = dbapi_connection.cursor()
+            wait_ms = cursor.execute("PRAGMA busy_timeout").fetchone()[0]
+            try:
+                cursor.execute(f"PRAGMA busy_timeout={_WAL_TRUNCATE_WAIT_MS}")
+                if not cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]:
+                    retry_at = 0.0
+            finally:
+                cursor.execute(f"PRAGMA busy_timeout={wait_ms}")
+                cursor.close()
+        except (OSError, sqlite3.OperationalError):  # no -wal file yet, or the checkpoint lost the lock: next checkin
+            pass
+        finally:
+            gate.release()
+
+    event.listen(engine, "checkin", truncate)
+
+
 class EventLog:
     """The log in one database. Opening it is lazy and retried, so a producer that starts before its database is
     reachable appends once it is."""
@@ -213,6 +262,7 @@ class EventLog:
                 if self._engine is None:
                     self._engine = _create_engine(self.url)
                 event.listen(self._engine, "connect", _sqlite_pragmas)
+                bound_wal(self._engine)
                 with self._engine.connect() as db:
                     _sqlite_wal(db.connection.dbapi_connection)
                 require_migrated(self._engine)

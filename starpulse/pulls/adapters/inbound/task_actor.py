@@ -1274,7 +1274,11 @@ class TaskActor:
                 return
             if self._idle is None:
                 return
-            if wait_ended and (placed := self._feed.machine_task(HARNESS_MACHINE, name)) and placed["state"] == "active":
+            if (
+                wait_ended
+                and (placed := self._feed.machine_task(HARNESS_MACHINE, name))
+                and placed["state"] == "active"
+            ):
                 return
             if self._awaits(agent):
                 self._awaited.add(name)
@@ -1299,7 +1303,7 @@ class TaskActor:
                     self._attend(name, "its escalated session settled again with no progress")
                     return
         if opened:
-            self._nudge(name, opened, ticks)
+            self._nudge(name, opened, ticks, wait_ended)
         elif ended:
             self._end_without_pr(name)
         else:
@@ -1329,10 +1333,10 @@ class TaskActor:
             if escalate:
                 self._stalled.add(name)
 
-    def _nudge(self, name: str, opened: list[tuple[int, str]], ticks: tuple[bool, ...]) -> None:
+    def _nudge(self, name: str, opened: list[tuple[int, str]], ticks: tuple[bool, ...], wait_ended: bool) -> None:
         """Resume an idle holder whose criteria are open; its hook's message names them. The `_NUDGES + 1`th idle with no
         criterion checked or struck through in between moves the task to Needs attention with them as the question. A holder
-        still busy (`confirm` raises) settles again and costs no nudge."""
+        still busy (`confirm` raises) settles again and costs no nudge, and the wake of an ended wait restarts the count."""
         try:
             self._idle(name, "confirm")
         except Exception as error:
@@ -1340,6 +1344,8 @@ class TaskActor:
             return
         with self._lock:
             before, count = self._resumes.get(name, (ticks, 0))
+            if wait_ended:  # an awaited CI result is the wake, not a settle with no progress
+                count = 0
             if before == ticks and count >= _NUDGES:
                 self._resumes.pop(name, None)
                 listing = "; ".join(f"#{number} {text}" for number, text in opened)

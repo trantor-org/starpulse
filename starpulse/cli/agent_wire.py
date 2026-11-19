@@ -19,7 +19,7 @@ DEFAULT_SERVER = "http://localhost:8766"
 BUSY_SENDS = 4
 BUSY_PAUSE_MAX_S = 8
 #: A create the server did not answer is sent again under its `request_key`, at most this many sends in all, pausing
-#: `KEYED_PAUSE_S` seconds between: the server answers a repeated key with the first send's task and files nothing.
+#: the server's `retry_after` (`KEYED_PAUSE_S` seconds when it names none, at most `BUSY_PAUSE_MAX_S`) between: the server answers a repeated key with the first send's task and files nothing.
 KEYED_SENDS = 4
 KEYED_PAUSE_S = 2
 
@@ -187,8 +187,9 @@ def post_keyed(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[st
         except CliError as unavailable:
             if unavailable.code != "unavailable" or send == KEYED_SENDS:
                 raise
+            pause = min(unavailable.extra.get("retry_after", KEYED_PAUSE_S), BUSY_PAUSE_MAX_S)
         # adr-exempt: retry
-        time.sleep(KEYED_PAUSE_S)
+        time.sleep(pause)
     raise AssertionError("unreachable")
 
 

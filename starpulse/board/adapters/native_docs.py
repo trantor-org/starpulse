@@ -137,8 +137,12 @@ def _record(prefix: str, path: Path, frontmatter: dict) -> dict[str, Any]:
 
 
 def _named(root: Path, doc: str) -> tuple[Path, str, dict, str] | None:
-    """The open doc whose file is named `<doc> - <slug>.md`, read alone: the walk lists names and stats no other file."""
+    """The one open doc whose file is named `<doc> - <slug>.md`, read alone: the walk lists names and stats no other file.
+
+    An id that recurs names several files, and `_find` decides which of them is the doc, so a recurred id gets None here.
+    """
     pending = [str(root / "docs")]
+    named: list[tuple[Path, str, dict, str]] = []
     while pending:
         try:
             with os.scandir(pending.pop()) as entries:
@@ -149,10 +153,10 @@ def _named(root: Path, doc: str) -> tuple[Path, str, dict, str] | None:
                         stat = entry.stat()
                         parsed = _parsed(Path(entry.path), stat.st_mtime_ns, stat.st_size)
                         if parsed is not None and str(parsed[1]["id"]).strip() == doc:
-                            return Path(entry.path), *parsed
+                            named.append((Path(entry.path), *parsed))
         except OSError:
             continue  # moved or removed while looking
-    return None
+    return named[0] if len(named) == 1 else None
 
 
 def reader(root: Path) -> DocReader:
