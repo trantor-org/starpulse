@@ -1,0 +1,50 @@
+"""`starpulse parity --config FILE [--import]`: whether every task of the board has a History that replays to its file.
+
+It reads the open, completed and archived task files the config's board holds and the retired tasks of the store the
+config names, and prints one JSON line: the tasks `checked`, those `missing` a History, those `differing` (each with its
+differing lines) and, with `--import`, the tasks `imported` first, each given one `TaskImported` Event. The store is
+read, and written only by `--import`. The exit code is 0 for an empty report, 1 for a report that lists a task, and 2 for
+a flag the command does not allow or a config that cannot be read."""
+
+import argparse
+import json
+from collections.abc import Sequence
+from pathlib import Path
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="starpulse parity", description="compare every task's History with its file")
+    parser.add_argument("--config", type=Path, help="the TOML config the server runs with (default starpulse.toml)")
+    parser.add_argument("--import", dest="load", action="store_true", help="first import each task without History")
+    args = parser.parse_args(argv)
+    from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that checks
+
+    from starpulse.board.adapters.task_parity import check, filed, import_missing  # noqa: PLC0415 - import cost, paid only by a run that checks
+    from starpulse.event_log.opening import database_url  # noqa: PLC0415 - import cost, paid only by a run that checks
+    from starpulse.event_log.store import EventStore  # noqa: PLC0415 - import cost, paid only by a run that checks
+    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid only by a run that checks
+
+    path = discover(args.config)
+    try:
+        config = load(path)
+    except (ConfigError, OSError, ValueError) as exc:
+        parser.error(f"{path}: {exc}")
+    base = path.parent if path else Path.cwd()
+    engine = create_engine(database_url(config.database_url, base))
+    root = base / str(config.board.get("path", "backlog"))
+    try:
+        imported = import_missing(filed(root, engine), engine) if args.load else []
+        report = check(filed(root, engine), EventStore(engine))
+    finally:
+        engine.dispose()
+    print(
+        json.dumps(
+            {
+                "checked": report.checked,
+                **({"imported": imported} if args.load else {}),
+                "missing": report.missing,
+                "differing": report.differing,
+            }
+        )
+    )
+    return 0 if report.clean else 1

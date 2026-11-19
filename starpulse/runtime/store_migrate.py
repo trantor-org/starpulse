@@ -4,8 +4,8 @@ Opening a store runs none of this (`HistoryStore` refuses one the chain has not 
 migrated here before `serve` opens it. Besides the schema and the summaries it moves the operator state once kept in
 files (the scheduler switch, the history window, the run ledger) into the store, each once: the file is logged as
 imported and renamed with `RETIRED_SUFFIX`, so a second run finds the schema at the chain's head and nothing to import.
-With `[board] source_labels` set it also moves each task's one label matching that regex to its `source`
-(`label_sources`), which a second run finds nothing left to move. It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
+With `[board] source_labels` set it also appends, to each task's History, the move of its one label matching that regex to
+its `source` (`label_sources`, which first imports a task without History), and a second run finds nothing left to move. It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
 not allow, a config that cannot be read, or a board the config does not assemble.
 """
 
@@ -80,7 +80,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if pattern := config.board.get("source_labels"):
         from starpulse.board.adapters.label_sources import move_key_labels  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
-        move_key_labels(base / str(config.board.get("path", "backlog")), str(pattern))
+        from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
+        engine = create_engine(url)
+        try:
+            move_key_labels(base / str(config.board.get("path", "backlog")), str(pattern), engine)
+        finally:
+            engine.dispose()
     print(json.dumps({"store": make_url(url).render_as_string(hide_password=True)}))
     return 0
 
