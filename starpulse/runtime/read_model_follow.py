@@ -12,7 +12,9 @@ __all__ = ["follow"]
 
 
 class _Projector(Protocol):
-    def catch_up(self, *, index: bool = True) -> int: ...
+    def fold_tasks(self) -> int: ...
+
+    def fold_machines(self) -> None: ...
 
     def index(self) -> None: ...
 
@@ -22,17 +24,25 @@ class _Feed(Protocol):
 
 
 def follow(projector: _Projector | None, feed: _Feed, stop: StopEvent, log: EventLog) -> threading.Thread:
-    """Run `projector.catch_up` (none: another process folds) and then `feed.follow_read_model` on each wake of `log`
-    until `stop`, then index the folded rows for search, so the page never waits on the index; a pass that raises is
-    logged and run again."""
+    """Run `projector.fold_tasks` (none: another process folds) on each wake of `log` until `stop`, on a thread of its
+    own so a new Task's row waits for no other fold. The returned thread folds the machines, runs
+    `feed.follow_read_model` and then indexes the folded rows for search, so the page never waits on the index. A pass
+    that raises is logged and run again."""
 
     def fold() -> None:
         if projector is not None:
-            projector.catch_up(index=False)
+            projector.fold_machines()
         feed.follow_read_model()
         if projector is not None:
             projector.index()
 
+    if projector is not None:
+        threading.Thread(
+            target=log.run_on_wake,
+            args=(stop, projector.fold_tasks, "StarPulse: the task fold pass failed"),
+            name="task-fold",
+            daemon=True,
+        ).start()
     thread = threading.Thread(
         target=log.run_on_wake,
         args=(stop, fold, "StarPulse: the read model pass failed"),

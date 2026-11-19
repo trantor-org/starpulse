@@ -669,9 +669,10 @@ class Tail:
         handle: Callable[[Entry], None],
         stop: StopEvent,
         transient: tuple[type[BaseException], ...] = (),
+        after_batch: Callable[[], None] | None = None,
     ) -> None:
-        """Read until `stop` is set, passing each entry to `handle`. Between reads an idle tail waits for an append
-        (`EventLog.wait_for_append`), which no timer ends.
+        """Read until `stop` is set, passing each entry to `handle`, then calling `after_batch` once per batch that held
+        an entry. Between reads an idle tail waits for an append (`EventLog.wait_for_append`), which no timer ends.
 
         A read that fails (the database went away) is retried after `RETRY_DELAY`, then after twice that for each further
         failure up to `MAX_POLL_BACKOFF`. The outage logs one warning, without a trace, and one line when a poll
@@ -708,6 +709,8 @@ class Tail:
                 except Exception as exc:  # a reader's bug must not stop the reader
                     self._note_failure(exc, entry)
             self._summarize_failures()
+            if entries and after_batch:
+                after_batch()
             if retry:
                 # adr-exempt: retry
                 stop.wait(RETRY_DELAY)
