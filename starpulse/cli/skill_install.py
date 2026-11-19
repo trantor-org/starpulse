@@ -11,7 +11,6 @@ anything, a named machine that is missing or a machine with a State that declare
 import hashlib
 import json
 import shutil
-from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -39,21 +38,11 @@ def machine_of(name: str, source: Path = SOURCE) -> str | None:
     return _front_matter(name, source).get("machine")
 
 
-class _EveryNameRegistered(dict):
-    """Claims every guard and action name, so the check reads a machine's shape without the adapter's Python."""
-
-    def __contains__(self, name: object) -> bool:
-        return True
-
-    def __getitem__(self, name: str) -> Callable[..., None]:
-        return lambda *args, **kwargs: None
-
-
 def _check_machines(source: Path) -> None:
     """Refuse the bundle when a skill names a missing machine or a machine has a State that declares no role."""
-    # imported here: a read verb loads this module and must not pull in the state machine library
+    # imported here: a read verb loads this module and must not pull in the machine compiler
     from starpulse.machine_engine.adapters.machine_loader import load_machine
-    from starpulse.machine_engine.model.machine_definition import Registry, role_of
+    from starpulse.machine_engine.model.machine_definition import role_of
 
     for name in names(source):
         file = machine_of(name, source)
@@ -62,8 +51,7 @@ def _check_machines(source: Path) -> None:
         path = source / name / file
         if not path.is_file():
             raise ValueError(f"{name} names machine {file}, which is missing")
-        registry = Registry(guards=_EveryNameRegistered(), actions=_EveryNameRegistered())
-        compiled = load_machine(path, registry)
+        compiled = load_machine(path)
         for state in compiled.roles:
             if role_of(compiled, state) is None:
                 raise ValueError(f"{path}: state {state} declares no role")
@@ -101,7 +89,7 @@ def install(root: Path, harnesses: list[str], force: bool, source: Path = SOURCE
     since install and `force` is false.
     """
     _check_machines(source)
-    plan =[(h, n, status(root, h, n, source)) for h in harnesses for n in names(source)]
+    plan = [(h, n, status(root, h, n, source)) for h in harnesses for n in names(source)]
     modified = [str(root / HARNESS_DIRS[h] / n) for h, n, was in plan if was == "modified"]
     if modified and not force:
         raise ValueError(f"modified since install: {', '.join(modified)}; rerun with --force to replace")

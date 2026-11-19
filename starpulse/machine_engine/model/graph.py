@@ -1,6 +1,6 @@
 """Generated paths through a declared machine, and strict conformance of a trace to it.
 
-A machine is a `python-statemachine` `StateChart`, passed as a zero-argument factory: the class itself (what
+A machine is a `runner.Machine`, passed as a zero-argument factory: the class itself (what
 `machine_definition.load_machine` compiles a `.starpulse/machines/` file to), or a function that builds it around a
 fresh model when its guards read extended state. Every snapshot is reached by replaying events on a new instance, so
 guards run exactly as they would in use.
@@ -17,9 +17,9 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from statemachine import StateChart
+from starpulse.machine_engine.model.runner import Machine as Running
 
-type Machine = Callable[[], StateChart]
+type Machine = Callable[[], Running]
 
 
 class Snapshot(NamedTuple):
@@ -83,29 +83,29 @@ class Step:
         return self.target is not None
 
 
-def _replay(new: Machine, events: Iterable[str]) -> StateChart:
+def _replay(new: Machine, events: Iterable[str]) -> Running:
     machine = new()
     for event in events:
         machine.send(event)
     return machine
 
 
-def _state(machine: StateChart) -> frozenset[str]:
+def _state(machine: Running) -> frozenset[str]:
     return frozenset(state.id for state in machine.configuration)
 
 
-def _key(machine: StateChart) -> Snapshot:
+def _key(machine: Running) -> Snapshot:
     return Snapshot(_state(machine), repr(sorted(vars(machine.model).items())))
 
 
-def _settled(machine: StateChart) -> bool:
+def _settled(machine: Running) -> bool:
     """Whether the machine is in a final state or one of the rests it names."""
     return machine.is_terminated or not _state(machine).isdisjoint(getattr(machine, "RESTS", ()))
 
 
-def _enabled(machine: StateChart) -> list[str]:
+def _enabled(machine: Running) -> list[str]:
     """The events the current snapshot can take, its guards included."""
-    return [event.id for event in machine.enabled_events()]
+    return machine.enabled_events()
 
 
 def shortest_paths(new: Machine) -> list[Path]:

@@ -28,13 +28,14 @@ if TYPE_CHECKING:
         Compiled,
         Cue,
         MachineDefinitionError,
-        Registry,
         Writer,
         refuse_unlisted,
         role_of,
         writers_of,
     )
     from starpulse.machine_engine.model.replay import Report, Violation, check_events, check_lanes
+    from starpulse.machine_engine.model.runner import Machine as RunningMachine
+    from starpulse.machine_engine.model.runner import State, Transition, machine_class
     from starpulse.machine_engine.model.snapshot import Qualify, describe, is_workflow, qualifier, writers
 
 #: Each name and the module that defines it. They load on first use, so importing one submodule of the context does not
@@ -66,7 +67,6 @@ _EXPORTS = {
     "Compiled": ("starpulse.machine_engine.model.machine_definition", "Compiled"),
     "Cue": ("starpulse.machine_engine.model.machine_definition", "Cue"),
     "MachineDefinitionError": ("starpulse.machine_engine.model.machine_definition", "MachineDefinitionError"),
-    "Registry": ("starpulse.machine_engine.model.machine_definition", "Registry"),
     "Writer": ("starpulse.machine_engine.model.machine_definition", "Writer"),
     "refuse_unlisted": ("starpulse.machine_engine.model.machine_definition", "refuse_unlisted"),
     "role_of": ("starpulse.machine_engine.model.machine_definition", "role_of"),
@@ -76,6 +76,10 @@ _EXPORTS = {
     "check_events": ("starpulse.machine_engine.model.replay", "check_events"),
     "check_lanes": ("starpulse.machine_engine.model.replay", "check_lanes"),
     "Qualify": ("starpulse.machine_engine.model.snapshot", "Qualify"),
+    "RunningMachine": ("starpulse.machine_engine.model.runner", "Machine"),
+    "State": ("starpulse.machine_engine.model.runner", "State"),
+    "Transition": ("starpulse.machine_engine.model.runner", "Transition"),
+    "machine_class": ("starpulse.machine_engine.model.runner", "machine_class"),
     "describe": ("starpulse.machine_engine.model.snapshot", "describe"),
     "is_workflow": ("starpulse.machine_engine.model.snapshot", "is_workflow"),
     "qualifier": ("starpulse.machine_engine.model.snapshot", "qualifier"),
@@ -94,10 +98,12 @@ __all__ = [
     "MachineDefinitionError",
     "Path",
     "Qualify",
-    "Registry",
     "Report",
+    "RunningMachine",
+    "State",
     "Step",
     "TraceViolation",
+    "Transition",
     "Verdict",
     "Violation",
     "Writer",
@@ -111,6 +117,7 @@ __all__ = [
     "dump",
     "fitness",
     "is_workflow",
+    "machine_class",
     "load_machine",
     "parse",
     "qualifier",

@@ -1,12 +1,9 @@
-"""Compile a YAML machine definition to a python-statemachine class.
+"""Compile a YAML machine definition to a `Machine` class.
 
 A machine is declared in YAML and validated against `machine.schema.json`, the
 published schema. States carry `initial` or `final`, or a `role` (`resting`, `waiting_on_fact`, `waiting_on_person`) that `role_of` answers by state, so code reads roles and never a deployment's state names; each event lists
-transitions from one or more states to one state. A guard is either a `when:`
-field match on the event that fires the transition (`equals`, `in`,
-`exists`) or the name of a guard an adapter registers in Python through a
-`Registry`; a transition may name a registered `action` the same way. Config
-holds no expressions or code, so a shared definition is never executable.
+transitions from one or more states to one state. A guard is a `when:` field match on the event that fires the
+transition (`equals`, `in`, `exists`). Config holds no expressions or code, so a shared definition is never executable.
 
 A machine composes with another through `submachines:`, each naming a state, a sibling machine file's stem and the
 events that machine's final states fire; the loader compiles each file on its own.
@@ -27,21 +24,22 @@ configured adapter lists, and the compiler refuses an `agent` writer of an event
 into a final state whose trigger is prose rather than a command or tool a
 session's transcript shows.
 
-The compiled class is an ordinary `StateChart`, so `board_client`'s paths,
-conformance and guard replay run on it unchanged.
+A definition the compiler refuses names its fault: not exactly one initial state, a transition naming an undeclared
+state, a state no route from the initial state reaches, a transition out of a final state, a non-final state with no
+outgoing transition, or a non-final state with no path to a final state.
+
+The compiled class is a `runner.Machine`, so `machine_engine`'s paths, conformance and guard replay run on it.
 """
 
 import logging
 import re
-from collections.abc import Callable, Collection, Mapping
+from collections import deque
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
-from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from statemachine import StateChart
-from statemachine.exceptions import InvalidDefinition
-from statemachine.io import create_machine_class_from_definition
+from starpulse.machine_engine.model.runner import Machine, State, Transition, field_matches, machine_class
 
 _LOG = logging.getLogger(__name__)
 
@@ -49,7 +47,6 @@ __all__ = [
     "Compiled",
     "Cue",
     "MachineDefinitionError",
-    "Registry",
     "Writer",
     "field_matches",
     "refuse_unlisted",
@@ -96,14 +93,6 @@ class MachineDefinitionError(ValueError):
 
 
 @dataclass(frozen=True)
-class Registry:
-    """The Python an adapter supplies for the names a definition uses: guards return a bool, actions act on the model."""
-
-    guards: Mapping[str, Callable[..., bool]] = field(default_factory=dict)
-    actions: Mapping[str, Callable[..., None]] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class Writer:
     """Who fires a machine event: an `actor` and the `trigger` it fires through."""
 
@@ -144,7 +133,7 @@ class Compiled:
     """A compiled machine, the adapter events that move it (`adapter event -> machine event`) and who fires each event."""
 
     name: str
-    machine: type[StateChart]
+    machine: type[Machine]
     bindings: Mapping[str, str]
     writers: Mapping[str, tuple[Writer, ...]]
     cues: tuple[Cue, ...] = ()
@@ -156,7 +145,7 @@ class Compiled:
     """Each retired name a state declares in `aliases`, by the state id it became."""
 
 
-def writers_of(machine: type[StateChart]) -> Mapping[str, tuple[Writer, ...]]:
+def writers_of(machine: type[Machine]) -> Mapping[str, tuple[Writer, ...]]:
     """The writers a compiled machine declares per event, `{}` for a machine written in Python."""
     return getattr(machine, "writers", {})
 
@@ -168,9 +157,9 @@ def role_of(compiled: Compiled, state: str) -> str | None:
     return compiled.roles[state]
 
 
-def compile_document(document: dict[str, Any], path: Path, registry: Registry = Registry()) -> Compiled:
+def compile_document(document: dict[str, Any], path: Path) -> Compiled:
     """Compile a machine `document` the schema has accepted; `path` names it in errors."""
-    states, bindings = _compile(document, path, registry)
+    states, bindings = _compile(document, path)
     writers = {
         event: tuple(Writer(**writer) for writer in declared) for event, declared in document.get("writers", {}).items()
     }
@@ -183,10 +172,8 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     cues = tuple(Cue(**cue) for cue in document.get("cues", ()))
     if unknown := sorted({cue.event for cue in cues} - document["events"].keys()):
         raise MachineDefinitionError(f"{path}: cues name events the machine lacks: {unknown}", path)
-    try:
-        machine = create_machine_class_from_definition(document["name"], states=states)
-    except InvalidDefinition as error:
-        raise MachineDefinitionError(f"{path}: {error}", path) from error
+    _check(list(states.values()), path)
+    machine = machine_class(document["name"], list(states.values()))
     machine.writers = writers
     machine.citations = _citations(document["events"])
     machine.source = document.get("source")
@@ -200,8 +187,8 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     )
 
 
-def _compile(document: dict[str, Any], path: Path, registry: Registry) -> tuple[dict[str, Any], dict[str, str]]:
-    """The library's state definitions and bindings for one machine file."""
+def _compile(document: dict[str, Any], path: Path) -> tuple[dict[str, State], dict[str, str]]:
+    """The states, with their transitions, and the bindings of one machine file."""
     declared = document["states"]
     if sum(bool(state.get("initial")) for state in declared.values()) != 1:
         raise MachineDefinitionError(f"{path}: a machine needs exactly one initial state", path)
@@ -213,7 +200,10 @@ def _compile(document: dict[str, Any], path: Path, registry: Registry) -> tuple[
     if unknown := {event for event in document.get("bindings", {}).values() if event not in document["events"]}:
         raise MachineDefinitionError(f"{path}: bindings name events the machine lacks: {sorted(unknown)}", path)
 
-    states: dict[str, Any] = {name: _state(state) for name, state in declared.items()}
+    states = {
+        name: State(name, initial=bool(state.get("initial")), final=bool(state.get("final")))
+        for name, state in declared.items()
+    }
     bindings = dict(document.get("bindings", {}))
     for event, transitions in document["events"].items():
         for transition in transitions:
@@ -221,19 +211,40 @@ def _compile(document: dict[str, Any], path: Path, registry: Registry) -> tuple[
             for name in (*sources, transition["to"]):
                 if name not in declared:
                     raise MachineDefinitionError(f"{path}: event {event} names undeclared state {name!r}", path)
-            target = {
-                "target": transition["to"],
-                **{
-                    callback: _guard(transition[key], registry, path)
-                    for key, callback in (("if", "cond"), ("unless", "unless"))
-                    if key in transition
-                },
-                **({"on": _named(transition["action"], registry.actions, path)} if "action" in transition else {}),
-            }
+            guards = {key: transition[key]["when"] for key in ("if", "unless") if key in transition}
             for source in sources:
-                states[source].setdefault("on", {}).setdefault(event, []).append(target)
+                states[source].transitions.append(
+                    Transition(states[source], states[transition["to"]], event, guards.get("if"), guards.get("unless"))
+                )
 
     return states, bindings
+
+
+def _check(states: list[State], path: Path) -> None:
+    """Refuse a definition with an unreachable state, a transition out of a final state, a dead end, or no way to finish."""
+    initial = next(state for state in states if state.initial)
+    reached = {initial}
+    queue = deque([initial])
+    while queue:
+        for transition in queue.popleft().transitions:
+            if transition.target not in reached:
+                reached.add(transition.target)
+                queue.append(transition.target)
+    if unreachable := [state.id for state in states if state not in reached]:
+        raise MachineDefinitionError(
+            f"{path}: unreachable states, no route from the initial state: {unreachable}", path
+        )
+    if leaving := [state.id for state in states if state.final and state.transitions]:
+        raise MachineDefinitionError(f"{path}: transitions leave final states: {leaving}", path)
+    if stuck := [state.id for state in states if not state.final and not state.transitions]:
+        raise MachineDefinitionError(f"{path}: states with no outgoing transition: {stuck}", path)
+    finishing = {state for state in states if state.final}
+    while finishing and (
+        more := {s for s in states if s not in finishing and any(t.target in finishing for t in s.transitions)}
+    ):
+        finishing |= more
+    if finishing and (unfinished := [state.id for state in states if state not in finishing]):
+        raise MachineDefinitionError(f"{path}: states with no path to a final state: {unfinished}", path)
 
 
 def _citations(events: Mapping[str, Any]) -> dict[tuple[str, str, str], Mapping[str, str]]:
@@ -269,65 +280,3 @@ def _sources(transition: Mapping[str, Any]) -> list[str]:
 
 def _role(declared: Mapping[str, Any]) -> str | None:
     return "initial" if declared.get("initial") else "final" if declared.get("final") else declared.get("role")
-
-
-def _state(declared: Mapping[str, Any]) -> dict[str, Any]:
-    return {key: declared[key] for key in ("initial", "final") if key in declared}
-
-
-def _guard(spec: Any, registry: Registry, path: Path) -> Callable[..., bool]:
-    """The Python behind a guard: a registered name, or a field match built from a `when:`."""
-    if isinstance(spec, str):
-        return _labelled(spec, _named(spec, registry.guards, path))
-    return _field_match(spec["when"])
-
-
-def _labelled(name: str, guard: Callable[..., bool]) -> Callable[..., bool]:
-    """The guard under its registered name, which the library labels it by in place of a lambda's `<lambda>`.
-
-    `wraps` keeps the guard's signature, so the library injects the same arguments into it."""
-
-    @wraps(guard)
-    def labelled(*args: Any, **kwargs: Any) -> bool:
-        return guard(*args, **kwargs)
-
-    labelled.__name__ = labelled.__qualname__ = name
-    return labelled
-
-
-def _named[F: Callable[..., Any]](name: str, table: Mapping[str, F], path: Path) -> F:
-    if name not in table:
-        raise MachineDefinitionError(f"{path}: {name!r} is not registered by the adapter", path)
-    return table[name]
-
-
-def field_matches(when: Mapping[str, Mapping[str, Any]], fields: Mapping[str, Any]) -> bool:
-    """Whether every field `when` lists matches `fields`: the grammar a guard's `when:` uses."""
-    return all(_holds(match, name in fields, fields.get(name)) for name, match in when.items())
-
-
-def _field_match(when: Mapping[str, Mapping[str, Any]]) -> Callable[..., bool]:
-    """A matcher named for the fields it reads, which the library labels the guard by: `{ready: {equals: true}}`
-    reads `ready`, any other match `kind == push`, `branch in [main, dev]`, `sha exists` or `sha missing`."""
-
-    def matches(**fields: Any) -> bool:
-        return field_matches(when, fields)
-
-    matches.__name__ = matches.__qualname__ = " and ".join(_label(name, match) for name, match in when.items())
-    return matches
-
-
-def _label(name: str, match: Mapping[str, Any]) -> str:
-    if "exists" in match:
-        return f"{name} {'exists' if match['exists'] else 'missing'}"
-    if "equals" in match:
-        return name if match["equals"] is True else f"{name} == {match['equals']}"
-    return f"{name} in [{', '.join(map(str, match['in']))}]"
-
-
-def _holds(match: Mapping[str, Any], present: bool, value: Any) -> bool:
-    if "exists" in match:
-        return present == match["exists"]
-    if not present:
-        return False
-    return value == match["equals"] if "equals" in match else value in match["in"]

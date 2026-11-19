@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "StarPulse machine definition",
-  "description": "A lifecycle machine declared under .starpulse/machines/. Guards are field matches on the triggering event or the name of a guard an adapter registers in Python; config holds no expressions or code.",
+  "description": "A lifecycle machine declared under .starpulse/machines/. Guards are field matches on the triggering event; config holds no expressions or code.",
   "type": "object",
   "additionalProperties": false,
   "required": ["name", "states", "events"],
@@ -137,7 +137,6 @@
         "to": {"type": "string"},
         "if": {"$ref": "#/$defs/guard"},
         "unless": {"$ref": "#/$defs/guard"},
-        "action": {"$ref": "#/$defs/registered"},
         "cite": {
           "description": "The sentence of a skill that sends a session down this transition, drawn as the edge's tooltip.",
           "type": "object",
@@ -218,21 +217,11 @@
         }
       }
     },
-    "registered": {
-      "description": "The name of a guard or action an adapter registers in Python.",
-      "type": "string",
-      "pattern": "^[a-z_][a-z0-9_]*$"
-    },
     "guard": {
-      "oneOf": [
-        {"$ref": "#/$defs/registered"},
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["when"],
-          "properties": {"when": {"$ref": "#/$defs/when"}}
-        }
-      ]
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["when"],
+      "properties": {"when": {"$ref": "#/$defs/when"}}
     },
     "when": {
       "description": "Every listed field of the triggering event must match.",

@@ -1696,15 +1696,6 @@ client = [
 ]
 
 [[package]]
-name = "python-statemachine"
-version = "3.2.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5f/30/52678909680544def104120a59fa64baf506b288702c600adb593a3479f8/python_statemachine-3.2.2.tar.gz", hash = "sha256:5968c5e07a537f7531b8b1d0a0d5067a3452c88941fa0ac6c244870d48f78325", size = 858814, upload-time = "2026-10-14T00:46:36.305Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/d1/d722672f4bfbe1176588157e0f9fa6dd5331a71922bed36aca0e79271535/python_statemachine-3.2.2-py3-none-any.whl", hash = "sha256:141d20e00776815692e424d3df825b1bd7ccaeedc6fda7787ddf249e767e1676", size = 167322, upload-time = "2026-10-14T00:46:34.988Z" },
-]
-
-[[package]]
 name = "pywin32"
 version = "312"
 source = { registry = "https://pypi.org/simple" }
@@ -2047,7 +2038,6 @@ dependencies = [
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pyjwt", extra = ["crypto"] },
-    { name = "python-statemachine" },
     { name = "pyyaml" },
     { name = "sqlalchemy" },
     { name = "starlette" },
@@ -2086,7 +2076,6 @@ requires-dist = [
     { name = "psutil", specifier = "==7.2.2" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8" },
-    { name = "python-statemachine", specifier = ">=3.2.1,<4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlalchemy", specifier = ">=2.1.1" },
     { name = "starlette", specifier = ">=1.9.0" },
