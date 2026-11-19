@@ -1,12 +1,8 @@
 // Every machine's tasks and the runs instances' workflows, pushed by /api/events: a snapshot on every connect, then one delta per change.
 
-import { demoServer, type DemoServerHandle } from "../demo/host";
-import { playLink } from "../demo/linkDemo";
 import type { SchedulerStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
 import { browserCache, type SnapshotCache } from "./savedSnapshot";
 import { keep, same } from "./same";
-
-export { embedded } from "../demo/host";
 
 /** The longest the page waits before it reopens a connection that has not opened since it dropped. */
 export const RETRY_CAP_MS = 3000;
@@ -120,7 +116,7 @@ export interface StreamHandlers {
 }
 
 /**
- * One EventSource on /api/events, or on a self-contained demo page its DemoServer, followed with no connection at all. The server opens
+ * One EventSource on /api/events. The server opens
  * each connection with a fresh snapshot, so a reconnect resyncs. The snapshot the page holds is kept in `kept` (browser storage), and a
  * page that loads while the server is down draws that one, marked `stale`, until the server's own arrives; null keeps and restores nothing. A browser waits seconds before it retries a source of its own, so the
  * page closes a dropped connection and opens a new one at once, then after 250 ms, 500 ms and so on up to RETRY_CAP_MS.
@@ -128,26 +124,9 @@ export interface StreamHandlers {
 export function openStream(
   handlers: StreamHandlers,
   open: (url: string) => EventSource = (url) => new EventSource(url),
-  demo: DemoServerHandle | null = demoServer(),
   early: EarlyStream | null = takeEarly(),
   kept: SnapshotCache | null = browserCache(),
 ): { close(): void } {
-  if (demo) {
-    handlers.live(true);
-    handlers.link?.("live");
-    const stopLink = playLink(handlers, new URLSearchParams(globalThis.location?.search ?? "").get("link"), LOST_MS);
-    const push = (snap: unknown) => handlers.snapshot(snap as Snapshot);
-    push(demo.snapshot);
-    const off = demo.subscribe(push);
-    demo.start();
-    return {
-      close() {
-        stopLink();
-        off();
-        demo.stop();
-      },
-    };
-  }
   let source: EventSource | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
@@ -321,7 +300,7 @@ export function openStream(
     else if (src.readyState === CLOSED) src.onerror?.(new Event("error"));
   };
 
-  connect(demo ? null : early);
+  connect(early);
   // the Board kept from the last load is drawn unless the server's has come first, or its connection has already been heard from
   kept?.read().then(
     (snap) => {

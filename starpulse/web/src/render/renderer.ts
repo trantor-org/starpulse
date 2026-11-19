@@ -8,7 +8,6 @@
 // zooms about the cursor between the level's fit and eight times it, and a drag
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
 import { apiFetch } from "../api/apiFetch";
-import { embedded } from "../demo/host";
 import { RunEvents } from "../features/fanout/fanoutModel";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { MACHINE, MUTED, token } from "./palette";
@@ -78,7 +77,7 @@ const STARS = Array.from({ length: 160 }, () => ({ x: rnd(), y: rnd(), r: rnd() 
 
 
 /** `onDrawn` runs once, in the frame whose canvas first shows the level (the page's first paint). */
-export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement }, demo: boolean, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS, onDrawn?: () => void): Renderer {
+export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement }, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS, onDrawn?: () => void): Renderer {
   const cx = cv.getContext("2d")!, { tip, panel } = els;
   const hhmm = (sec: number) => clockHm(sec, prefs().clock);
   let S: Sky | null = null, snap: Snapshot | null = null, scene: Scene | null = null;
@@ -119,7 +118,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // ZS: zoom beyond the fit size; K: absolute zoom. Text, pulses and dashes divide by these so they never balloon.
   const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
   let T = Date.now() / 1000, clock = 0, liveTasks = new Set<string>(), hotEdge = new Set<string>(), ZS = 1, K = 1;
-  let away = false, timer = 0, fanTimer = 0, stopped = false, saveT = 0, tick = 0;
+  let away = false, fanTimer = 0, stopped = false, saveT = 0, tick = 0;
   /** The snapshot after a resync is still to come; then the next Board frame places the phase branches and dots as they stand, not from where they last drew. */
   let resynced = false, replace = false;
   // a snapshot or delta behind another view skips the Star Map layout nothing draws, and lays it out when the map is shown or asked for
@@ -162,15 +161,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     return null;
   };
 
-  // A self-contained demo page: its embedded snapshot already holds every flow, and its address is not the server's.
-  const fixture = embedded() !== null;
-  // `?demo` and the embedded fixture load the walk helpers on demand; a served page never parses that tree for first paint.
-  let demoWalk: { live: (prev: Snapshot, next: Snapshot) => Snapshot; step: (prev: Snapshot) => Snapshot } | null = null;
-  if (demo || fixture) {
-    void import("../demo/demo").then((m) => {
-      demoWalk = { live: m.demoLive, step: m.demoStep };
-    });
-  }
   const level = (): Level => path[path.length - 1];
   const stateName = (id: string) => S?.board.machine.states.find((s) => s.id === id)?.name || id;
   const EVENTS = () => moves.events;
@@ -302,7 +292,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const push = (l: Level, fx: number, fy: number) => go([...path, l], fx, fy);
   /** The address that reproduces this level: the machine on top when it is not the state's own, and the row picked out on it. */
   function syncUrl() {
-    if (fixture || !S) return;
+    if (!S) return;
     const open = path[path.length - 1].kind === "machine" ? topFlow(S.tree.subs, path) : null;
     replaceSearch(location, levelSearch(location.search, { open, focus: pickedRow }), (url) => history.replaceState(null, "", url));
   }
@@ -431,25 +421,19 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   /** A hidden tab stops animating, so it drops the stream; on return the stream's fresh snapshot places everyone at once, replaying nothing missed. */
   const onVisibility = () => {
-    if (demo) return;
     if (document.hidden) {
       stream?.close();
       stream = null;
       resync();
-    } else stream ??= openStream(connection, undefined, undefined, undefined, null); // the page already holds a Board: the kept one is older
+    } else stream ??= openStream(connection, undefined, undefined, null); // the page already holds a Board: the kept one is older
   };
 
   // ---- data: every machine's tasks and the runs instances' workflows, pushed by the stream ----
   /** Each connect's snapshot and every delta after it, drawn at once. */
   function onSnapshot(next: Snapshot, kind?: Delta["kind"]) {
     const first = !S;
-    if (demo && snap && demoWalk) {
-      snap = demoWalk.live(snap, next);
-      return;
-    }
     if (kind === "ledgers" && S) return void applyLedgers(next);
     apply(next);
-    if (first && demo && !stopped) timer = window.setTimeout(demoTick, 1200);
     if (first && SIM && !stopped) simTick();
   }
   // Preview only: `&sim=1`, `&sim=2` or `&sim=3` re-reads the snapshot each time the mock's step clock ticks, so every simulated task takes its next step
@@ -488,11 +472,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     build: onBuild,
     scheduler: pushSchedulerStatus,
   };
-  const demoTick = () => {
-    if (stopped || !snap || !demoWalk) return;
-    apply(demoWalk.step(snap));
-    timer = window.setTimeout(demoTick, 600 + Math.random() * 1200);
-  };
   function apply(next: Snapshot) {
     const first = !S;
     snap = next;
@@ -508,7 +487,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       const at = levelParams(location.search);
       path = startPath(location.pathname, location.hash, recall<Path>("fv.path"), S.tree, at);
       if (drilled(path)) path = BOARD;
-      if (!fixture && retired(location.pathname, location.hash)) history.replaceState(null, "", "/" + viewSearch(location.search, viewOf(location.search), prefs().view));
+      if (retired(location.pathname, location.hash)) history.replaceState(null, "", "/" + viewSearch(location.search, viewOf(location.search), prefs().view));
       keep("fv.path", path);
     }
     if (first) unlaid = true;
@@ -1384,8 +1363,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       ledgerOpen?.stream.close();
       ledgerOpen = null;
       cancelReload?.();
-      clearTimeout(timer);
-      clearInterval(timer);
       clearInterval(fanTimer);
       clearTimeout(saveT);
       for (const [target, type] of wakers) target.removeEventListener(type, wake);

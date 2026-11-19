@@ -106,7 +106,7 @@ describe("the page's boot", () => {
     const mount = vi.fn();
     const { boot } = await import("./boot");
     boot(mount);
-    const onDrawn = made.calls[0][5] as () => void;
+    const onDrawn = made.calls[0][4] as () => void;
 
     onDrawn();
     expect(marked()).toBe(true);
@@ -137,7 +137,7 @@ describe("the page's boot", () => {
     boot(mount, preload);
 
     expect(preload, "the view's own chunk is asked for now, not once the page's first render reaches it").toHaveBeenCalledExactlyOnceWith("kanban");
-    expect(made.calls[0][5]).toBeUndefined();
+    expect(made.calls[0][4]).toBeUndefined();
     expect(document.getElementById("c")!.classList.contains("off")).toBe(true);
     expect(document.getElementById("crumb")!.classList.contains("off")).toBe(true);
     expect(made.spy.show).toHaveBeenCalledWith(false);
@@ -185,7 +185,7 @@ describe("the page's boot", () => {
     const { boot } = await import("./boot");
     boot(vi.fn());
 
-    expect(made.calls[0][5], "no first-frame mark waits on the Star Map").toBeUndefined();
+    expect(made.calls[0][4], "no first-frame mark waits on the Star Map").toBeUndefined();
     expect(document.getElementById("c")!.classList.contains("off")).toBe(true);
     expect(made.spy.show).toHaveBeenCalledWith(false);
   });

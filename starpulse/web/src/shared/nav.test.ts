@@ -75,6 +75,7 @@ describe("a retired per-graph address", () => {
     expect(retired("/board", "")).toBe(true);
     expect(retired("/flow/backlog", "")).toBe(true);
     expect(retired("/", "#sec-board")).toBe(true);
+    expect(retired("/starpulse/main/starpulse.html", "")).toBe(false);
   });
 });
 

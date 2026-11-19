@@ -1,6 +1,5 @@
 // The views the Board does not draw first, each loaded the first time it is shown. The entry chunk then evaluates only what the
 // Board draws; `prefetchViews` fetches the rest once the Board is on screen, so the first switch to a view finds it loaded.
-// The one-file build (`vite build --mode one-file`, for the demo) bundles these imports into its single script.
 import { lazy } from "react";
 
 const load = {

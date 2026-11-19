@@ -94,9 +94,8 @@ describe("index.html's early stream", () => {
     expect(win.__earlyRecord).toEqual({ id: "TASK-9", read: "read /api/task/TASK-9" });
   });
 
-  it("asks for no record when the address names no task or is a demo", () => {
+  it("asks for no record when the address names no task", () => {
     expect(start("?view=kanban").asked).toEqual([]);
-    expect(start("?demo&task=TASK-9").asked).toEqual([]);
   });
 
   it("stops holding events once the page listens itself", () => {

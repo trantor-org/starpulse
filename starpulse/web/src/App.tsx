@@ -135,7 +135,7 @@ export function App() {
 
   useEffect(() => {
     // a booted renderer outlives the page's tree: it was started before this mounted and is never stopped by it
-    const r = held?.renderer ?? makeRenderer(canvas.current!, store, { tip: tip.current!, panel: panel.current! }, new URLSearchParams(location.search).has("demo"), admin.get);
+    const r = held?.renderer ?? makeRenderer(canvas.current!, store, { tip: tip.current!, panel: panel.current! }, admin.get);
     renderer.current = r;
     // the In Progress sun is the Suns lenses drill-in of its first task, never the machine ledger: the renderer refuses that level and asks here
     r.onDrill(openDrill);

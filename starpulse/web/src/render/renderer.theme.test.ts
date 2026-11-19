@@ -68,7 +68,7 @@ describe("the night sky after a theme change", () => {
     const { renderer } = await import("./renderer");
     const cv = document.getElementById("c") as HTMLCanvasElement;
     const washes = stubContext(cv);
-    const r = renderer(cv, new HudStore(), { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! }, false);
+    const r = renderer(cv, new HudStore(), { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! });
     r.start();
     await vi.advanceTimersByTimeAsync(2000);
     expect(washes.at(-1)).toEqual([slate.bg1, slate.bg0]);

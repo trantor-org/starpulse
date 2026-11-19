@@ -74,7 +74,7 @@ export function boot(mount: () => void, preload?: (view: ViewName) => void): Boo
     preload?.(shown);
     void loadHudViews();
   }
-  const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? drawn : undefined);
+  const r = renderer(canvas, store, { tip, panel }, admin.get, star ? drawn : undefined);
   held = { store, admin, theme, records, renderer: r, canvas, tip, panel };
   r.start();
   watchModalMarks();

@@ -751,19 +751,6 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
     return refused
 
 
-def _demo(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    from starpulse.cli import demo  # noqa: PLC0415 - import cost, paid on first use
-
-    try:
-        return {"written": str(demo.build(args.out, agent_wire.server_url(args.server, environ), args.mockup))}
-    except urllib.error.URLError as exc:
-        raise agent_wire.CliError(
-            "unavailable", f"cannot reach StarPulse at {agent_wire.server_url(args.server, environ)}: {exc}"
-        ) from exc
-    except (OSError, ValueError) as exc:
-        raise agent_wire.CliError("refused", str(exc)) from exc
-
-
 def _help(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     return _manifest(_parser())
 
@@ -1767,16 +1754,6 @@ def _parser() -> argparse.ArgumentParser:
         reads_server=False,
     )
     config_check.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
-    page = leaf(
-        verbs,
-        "demo",
-        "build the self-contained demo page: the server's structure with every task replaced by a synthetic one",
-        _demo,
-        ("written",),
-        (0, 1, 2, 3),
-    )
-    page.add_argument("--out", type=Path, required=True, help="the HTML file to write")
-    page.add_argument("--mockup", type=Path, help="a design mockup directory to build instead of the server's page")
     check = leaf(
         verbs,
         "doctor",

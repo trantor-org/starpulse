@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
-import { DemoServer } from "../demo/demo";
 import { applyDelta, foldRows, openStream } from "./stream";
 import { openLedger } from "./ledgerStream";
 import type { ActiveRun, Dag, LedgerRow, Pool, RawTask, Snapshot } from ".";
@@ -304,7 +303,7 @@ describe("openStream", () => {
     it("is the connection: no second one opens, and what it received before the page listened reaches the page in order", () => {
       const pending = early(1, [raw("snapshot", board([agent("PROJ-1", "to_do")])), raw("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null })]);
 
-      openStream(handlers, open, null, pending);
+      openStream(handlers, open, pending);
 
       expect(FakeSource.made).toEqual([]);
       expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"]]);
@@ -313,7 +312,7 @@ describe("openStream", () => {
 
     it("goes on handing over the events it receives after the page took it over", () => {
       const pending = early(0, []);
-      openStream(handlers, open, null, pending);
+      openStream(handlers, open, pending);
 
       (pending.src as unknown as FakeSource).send("snapshot", board([agent("PROJ-1", "to_do")]));
 
@@ -323,51 +322,13 @@ describe("openStream", () => {
 
     it("opens a fresh connection at once when it was already given up, as it would its own", () => {
       const pending = early(2, []);
-      openStream(handlers, open, null, pending);
+      openStream(handlers, open, pending);
       expect(FakeSource.made).toEqual([]);
 
       vi.advanceTimersByTime(0);
 
       expect(FakeSource.made.map((f) => f.url)).toEqual([EVENTS]);
     });
-  });
-
-  it("follows an embedded page's demo server without opening a connection: its moves and its walk reach the page until closed", () => {
-    const machine = {
-      states: ["new", "to_do", "done"].map((id) => ({ id, name: id, initial: id === "new", final: false })),
-      transitions: [{ source: "to_do", target: "done", event: "FINISH" }],
-    };
-    const server = new DemoServer(board([agent("TASK-D1", "to_do")], { flows: [{ name: "board", machine, agents: [agent("TASK-D1", "to_do")] }] }));
-
-    const stream = openStream(handlers, open, server);
-    server.move("TASK-D1", "done");
-    vi.advanceTimersByTime(1200);
-    const walked = seen.length;
-    stream.close();
-    vi.advanceTimersByTime(60_000);
-
-    expect(FakeSource.made).toEqual([]);
-    expect(lives).toEqual([true]);
-    expect(seen.slice(0, 2).map(ids)).toEqual([["TASK-D1:to_do"], ["TASK-D1:done"]]);
-    expect([walked, seen.length]).toEqual([3, 3]); // the snapshot, the move, one walk step; nothing once closed
-  });
-
-  it("plays the connection state a demo page's address names, until the stream is closed", () => {
-    vi.stubGlobal("location", { search: "?link=restart" });
-    const links: string[] = [];
-    const machine = {
-      states: ["new", "to_do"].map((id) => ({ id, name: id, initial: id === "new", final: false })),
-      transitions: [{ source: "new", target: "to_do", event: "START" }],
-    };
-    const server = new DemoServer(board([agent("TASK-D1", "to_do")], { flows: [{ name: "board", machine, agents: [agent("TASK-D1", "to_do")] }] }));
-    const stream = openStream({ ...handlers, link: (state) => void links.push(state) }, open, server);
-
-    vi.advanceTimersByTime(2_000);
-    stream.close();
-    vi.advanceTimersByTime(60_000);
-    vi.unstubAllGlobals();
-
-    expect(links).toEqual(["live", "live", "restarting"]); // the demo's own live, then the played scenario's start and its restart
   });
 
   it("hands over the Board folded with each delta that follows", () => {
@@ -469,7 +430,7 @@ describe("openStream", () => {
       const asked = fetch(BODY);
       const src = new FakeSource(EVENTS);
       FakeSource.made = [];
-      openStream(handlers, open, null, { src: src as unknown as EventSource, events: [{ type: "snapshot", data: `ref ${BODY}` }], bodies: { [BODY]: asked } });
+      openStream(handlers, open, { src: src as unknown as EventSource, events: [{ type: "snapshot", data: `ref ${BODY}` }], bodies: { [BODY]: asked } });
 
       reads[0].settle(true, board([agent("PROJ-1", "to_do")]));
       await flush();
@@ -565,7 +526,7 @@ describe("openStream", () => {
     const withLinks = { ...handlers, link: (state: string) => void links.push(state) };
     const start = (held: Snapshot | null) => {
       const store = kept(held);
-      const stream = openStream(withLinks, open, null, null, store.cache);
+      const stream = openStream(withLinks, open, null, store.cache);
       return { ...store, stream };
     };
     const lane = (s: Snapshot | undefined) => (s ? ids(s) : []);
@@ -618,7 +579,7 @@ describe("openStream", () => {
       const store = kept(board([agent("PROJ-1", "to_do")]));
       let release: (s: Snapshot | null) => void = () => {};
       const slow = { ...store.cache, read: () => new Promise<Snapshot | null>((resolve) => void (release = resolve)) };
-      openStream(withLinks, open, null, null, slow);
+      openStream(withLinks, open, null, slow);
 
       last().send("snapshot", board([agent("PROJ-1", "done")]));
       release(board([agent("PROJ-1", "to_do")]));
@@ -641,7 +602,7 @@ describe("openStream", () => {
 
     it("marks the Board it held through a drop stale from the reconnect until the server's whole Board arrives", () => {
       const { cache } = kept(null);
-      openStream(withLinks, open, null, null, cache);
+      openStream(withLinks, open, null, cache);
       last().onopen?.();
       last().send("snapshot", board([agent("PROJ-1", "to_do")]));
 
@@ -655,7 +616,7 @@ describe("openStream", () => {
     });
 
     it("draws nothing from a store that is empty, unreadable or without a kept Board", async () => {
-      openStream(withLinks, open, null, null, { read: () => Promise.reject(new Error("blocked")), write: () => Promise.resolve() });
+      openStream(withLinks, open, null, { read: () => Promise.reject(new Error("blocked")), write: () => Promise.resolve() });
       await flush();
       start(null);
       await flush();
@@ -664,7 +625,7 @@ describe("openStream", () => {
     });
 
     it("lives with a store that refuses a write", async () => {
-      openStream(withLinks, open, null, null, { read: () => Promise.resolve(null), write: () => Promise.reject(new Error("quota")) });
+      openStream(withLinks, open, null, { read: () => Promise.resolve(null), write: () => Promise.reject(new Error("quota")) });
 
       last().send("snapshot", board([agent("PROJ-1", "to_do")]));
       await vi.advanceTimersByTimeAsync(2000);
@@ -863,7 +824,7 @@ describe("openStream", () => {
       early.readyState = 1;
       FakeSource.made = [];
 
-      openStream(watching, open, null, { src: early as unknown as EventSource, events: [{ type: "build", data: JSON.stringify({ id: "aaa" }) }] });
+      openStream(watching, open, { src: early as unknown as EventSource, events: [{ type: "build", data: JSON.stringify({ id: "aaa" }) }] });
       early.onerror?.();
       vi.advanceTimersByTime(0);
       last().send("build", { id: "bbb" });
@@ -895,7 +856,7 @@ describe("the page's sources", () => {
 
   it("keeps no timed refresh anywhere but the clock-only and non-data timers", () => {
     // each allowed timer repaints a clock stamp, a DOM busy state or a simulator (the drill-in's replay and move animation); none refetches live data
-    const clockOnly = /\/(App\.tsx|Kanban\.tsx|Dags\.tsx|SunsDrillIn\.tsx|reload\.ts|renderer\.ts|demo\.ts)$/;
+    const clockOnly = /\/(App\.tsx|Kanban\.tsx|Dags\.tsx|SunsDrillIn\.tsx|reload\.ts|renderer\.ts)$/;
     const timed = Object.entries(sources)
       .filter(([file, text]) => !clockOnly.test(file) && /setInterval|REFRESH_MS/.test(text))
       .map(([file]) => file);

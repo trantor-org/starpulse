@@ -7,8 +7,6 @@ pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page,
 uv run starpulse serve
 ```
 
-The build also writes `starpulse/static/one-file`, the same page as a single script, which `starpulse demo` inlines: a demo is one HTML file with no server to fetch a view's chunk from.
-
 `uv run pytest` runs the suite with Python alone: every store a test opens is a SQLite file.
 `tests/e2e/` holds the tests that run an operator's entry point end to end;
 `addopts` deselects them, so no default, pull-request or nightly run pays their seconds, and
@@ -96,7 +94,7 @@ upstream of it; `event_log`, `analytics`, `github`, `signals` and `contracts` ar
 The top level holds only the public modules the [Public surface](public-surface.md#public-surface) lists, each a facade over its feature.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 The page's `web/src` is organized by feature: `api/` (types, `apiFetch`, the event stream), `features/<name>/` (a view with its
-pure model and colocated tests), `render/` (the canvas), `shared/` and `demo/`. oxlint's `no-restricted-imports` (`.oxlintrc.json`) holds a feature
+pure model and colocated tests), `render/` (the canvas), and `shared/`. oxlint's `no-restricted-imports` (`.oxlintrc.json`) holds a feature
 to `api/`, `render/`, `shared/` and its own folder, so a feature never reaches into another's.
 Every `/api` body is a pydantic model under `starpulse/contracts/api/dto/`, and the server builds each response through it (`starpulse/views/model/encoding.py`).
 The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts.api`
@@ -107,12 +105,14 @@ request and page surface against the 50 ms budget, and a Locust load test that h
 
 [`design/`](../design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`) and, behind
 `?view=kanban`, a saved Board (`board.js`) drawn by `kanban.js`; both hold synthetic tasks only, never a real board's titles; view it with
-`uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse.cli.demo --mockup design --out
-mockup.html` writes it as one scrubbed file. [`ci/ui_preview.py`](../ci/ui_preview.py) builds the scrubbed demos against
-the demo config [`ci/preview.toml`](../ci/preview.toml). That config draws a fictional workspace at a working team's scale: the native board over the machines in
+`uv run python -m http.server 8781 --directory design`. [`ci/ui_preview.py`](../ci/ui_preview.py) builds the public demos: the page
+is the normal multi-file build replaying a recording of a seeded server's reads, read-only
+([`ci/demo_recording.py`](../ci/demo_recording.py) crawls the server and [`ci/replay.js`](../ci/replay.js) answers the page's `/api`
+reads from it, refusing a write), and the design mockup and element sheet are each one scrubbed file
+([`ci/design_demo.py`](../ci/design_demo.py)). The seeded server runs against the demo config [`ci/preview.toml`](../ci/preview.toml). That config draws a fictional workspace at a working team's scale: the native board over the machines in
 [`ci/.starpulse/machines/`](../ci/.starpulse/machines) is an eight-lane Board whose In Progress opens an in-progress machine of Build, Deliver and Review-fix phase machines, with
-the other lifecycle machines beside it, and five DAG domains, and `starpulse.cli.demo` fills it with
-synthetic tasks, sessions, runs and pools.
+the other lifecycle machines beside it, and five DAG domains, and [`ci/seeded_server.py`](../ci/seeded_server.py), the one seeder the screenshots and the latency gate share, fills it with
+synthetic tasks.
 
 After a push to `main` that changes the page (`starpulse/web/**`) or another preview input, the
 `starpulse-ui-preview` Woodpecker workflow runs `ci/ui_preview.py --main`, which republishes both demos under `main/` on the

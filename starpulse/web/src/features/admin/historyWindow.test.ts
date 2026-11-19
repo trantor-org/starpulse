@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { ROUTES } from "../../demo/demo";
 import { HistoryWindowStore, type WindowState } from "./historyWindow";
 
 const DECLARED: WindowState = { hours: 6, default: 6, overridden: false };
@@ -170,14 +169,13 @@ describe("the Server card's history window", () => {
     expect(heard).not.toHaveBeenCalled();
   });
 
-  it("is a route the public demo lists, with why it has no server window to read", async () => {
-    const why = ROUTES["/api/history-window"];
-    const demo = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({ error: why }), { status: 404 })));
-    const store = new HistoryWindowStore(demo);
+  it("is unavailable with the reason a server without a window answers", async () => {
+    const why = "this server has no history window";
+    const refused = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({ error: why }), { status: 404 })));
+    const store = new HistoryWindowStore(refused);
 
     await store.load();
 
-    expect(typeof why).toBe("string");
     expect(store.get().unavailable).toBe(why);
   });
 });

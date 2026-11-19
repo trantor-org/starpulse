@@ -75,7 +75,7 @@ describe("Kanban and DAGs HUD fields after the first snapshot", () => {
     const tip = document.getElementById("tip") as HTMLElement;
     const panel = document.getElementById("panel") as HTMLElement;
 
-    const r = renderer(cv, hud, { tip, panel }, false);
+    const r = renderer(cv, hud, { tip, panel });
     r.show(false); // away before any frame: the path ?view=kanban takes
     r.start();
     await vi.advanceTimersByTimeAsync(0);

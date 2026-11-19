@@ -24,8 +24,8 @@ export const onPhone = () => window.matchMedia?.(PHONE).matches ?? false;
 /** The view the page shows for the one an address or the Admin chose: the Kanban in place of the Star Map at phone width. */
 export const shownView = (view: ViewName, phone: boolean): ViewName => (phone && view === "constellation" ? "kanban" : view);
 
-/** Whether the address is a retired per-graph one (`/board`, `/flow/<name>`, `/#sec-<name>`): those open the Star Map whatever "Opens on" says. */
-export const retired = (pathname: string, hash: string) => pathname !== "/" || hash !== "";
+/** Whether the address is a retired per-graph one (`/board`, `/flow/<name>`, `/#sec-<name>`): those open the Star Map whatever "Opens on" says. A page file (the public demo's `starpulse.html`) is the root. */
+export const retired = (pathname: string, hash: string) => (pathname !== "/" && !pathname.endsWith(".html")) || hash !== "";
 
 /** The view an address opens: the one it names, or `fallback` (the Admin's "Opens on") when it names none. */
 export function viewOf(search: string, fallback: ViewName = "constellation"): ViewName {

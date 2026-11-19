@@ -78,7 +78,7 @@ async function load() {
   const cv = document.getElementById("c") as HTMLCanvasElement;
   stubContext(cv);
   const hud = new HudStore();
-  const page = renderer(cv, hud, { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! }, false);
+  const page = renderer(cv, hud, { tip: document.getElementById("tip")!, panel: document.getElementById("panel")! });
   page.start();
   await vi.advanceTimersByTimeAsync(0);
   return { hud, page };

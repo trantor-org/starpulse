@@ -1,5 +1,3 @@
-import { demoServer } from "../demo/host";
-
 /** A write says it is JSON, body or none: starpulse.runtime.server refuses any other, which a web page on another site cannot send without asking first. */
 const asJson = (init?: RequestInit): RequestInit | undefined => {
   if (!init?.method || init.method === "GET") return init;
@@ -11,5 +9,5 @@ const asJson = (init?: RequestInit): RequestInit | undefined => {
 /** Who the page's writes name as their actor: a write that names none is recorded as anonymous, never as the operator. */
 export const PAGE_ACTOR = "operator";
 
-/** `fetch` for the page's /api requests: answered by the demo server on a demo page, by starpulse.runtime.server otherwise. */
-export const apiFetch = (url: string, init?: RequestInit): Promise<Response> => demoServer()?.fetch(url, init) ?? fetch(url, asJson(init));
+/** `fetch` for the page's /api requests, answered by starpulse.runtime.server (the public demo's recording on a replay page). */
+export const apiFetch = (url: string, init?: RequestInit): Promise<Response> => fetch(url, asJson(init));
