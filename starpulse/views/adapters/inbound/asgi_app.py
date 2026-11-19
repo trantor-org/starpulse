@@ -31,6 +31,7 @@ from starlette.staticfiles import StaticFiles
 
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
+from starpulse.event_log.caught_up import CaughtUp
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
@@ -160,6 +161,18 @@ class _Gated:
         answer = Reply(asked.wfile.getvalue(), asked.status)
         answer.raw_headers = [(name.lower().encode("latin-1"), value.encode("latin-1")) for name, value in asked.sent]
         return answer
+
+
+class _CaughtUp:
+    """Applies what the workers keep in the log before a request under `/api` reads it, so no follower thread does."""
+
+    def __init__(self, app: ASGIApp, caught_up: CaughtUp, workers: CapacityLimiter) -> None:
+        self.app, self._caught_up, self._workers = app, caught_up, workers
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"].startswith("/api/") and self._caught_up.due():
+            await to_thread.run_sync(self._caught_up, abandon_on_cancel=True, limiter=scope.get(WORKERS, self._workers))
+        await self.app(scope, receive, send)
 
 
 _BUSY_RETRY_S = 1
@@ -353,6 +366,7 @@ class PageApp:
         gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
         seams: Api | None = None,
+        caught_up: CaughtUp | None = None,
     ) -> None:
         self._grpc = grpc
         self._flows = flows
@@ -384,7 +398,8 @@ class PageApp:
         admitted = Middleware(
             _Admitted, workers=self._workers, reserve=self._reserve, streams=self._streams, inflight=self._inflight
         )
-        self._app = Starlette(routes=table, middleware=[Middleware(Gzip), admitted, *gated])
+        fresh = [] if caught_up is None else [Middleware(_CaughtUp, caught_up=caught_up, workers=self._workers)]
+        self._app = Starlette(routes=table, middleware=[Middleware(Gzip), admitted, *gated, *fresh])
         self._app.state.api = seams  # what the read endpoints take their seams from
         self._app.state.workers = self._workers  # and the threads they run on
         self._app.state.pump = self.pump  # and a stream writes its frames through this
@@ -521,6 +536,7 @@ def page_app(
     services: Services = Services(),
     clock: Callable[[], float] = time.time,
     gate: Callable[[GateRequest], bool] | None = None,
+    caught_up: CaughtUp | None = None,
 ) -> PageApp:
     """The Page API over `feed`, serving the snapshot and deltas the Board writer stored (`snapshots`)."""
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
@@ -541,4 +557,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api)
+    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api, caught_up)

@@ -4,7 +4,7 @@
 `board-release` is not here: the release of dependents runs in the Delivery worker (`starpulse worker pulls`).
 
 It reads the config and the database `serve` does and meets `serve` only in the history there: this worker writes each
-claim expiry (`HistoryStore.save_claim_expiries`), and `serve` rereads it on each push (`BoardFeed.follow_dates`).
+claim expiry (`HistoryStore.save_claim_expiries`), and `serve` rereads it at a request after a push (`CaughtUp`).
 `SIGTERM` stops it; `SIGHUP` re-reads the config and, as
 the board and the writer are built once, only says whether a restart is needed.
 """

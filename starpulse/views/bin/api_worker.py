@@ -24,16 +24,20 @@ from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.adapters.lane_metrics import metrics_of as lane_metrics_of
 from starpulse.board.adapters.lane_policy import lane_surfaces
 from starpulse.board.adapters.native import DEFAULT_PATH
-from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM
+from starpulse.board.model.feed.shared import CLAIM_EXPIRIES_STATE
 from starpulse.bridge.metrics import metrics_of as bridge_metrics_of
-from starpulse.event_log import verdict_events
+from starpulse.event_log.caught_up import CaughtUp
 from starpulse.event_log.recorder_lag import metrics_of as history_lag_metrics_of
 from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.inbound.delivery import (
+    PROJECTION as PULLS_PROJECTION,
+)
+from starpulse.pulls.adapters.inbound.delivery import (
+    SAVED_STREAM,
     Projected,
     actor_views_of,
-    follow_saves,
     metrics_of,
+    refresh_on_save,
     request_refresh,
 )
 from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
@@ -42,6 +46,7 @@ from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
 from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
 from starpulse.scheduler.adapters.exposition import autopilot_exposition, autopilot_log
+from starpulse.scheduler.adapters.remote import Remote
 from starpulse.sessions.adapters.outbound.session_start import starter
 from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
 from starpulse.views.adapters.inbound.asgi_app import _CONTRACT_TTL_S, page_app
@@ -70,7 +75,6 @@ class Host:
     inherited_socket: Callable[[Any], socket.socket | None]
     listen: Callable[..., socket.socket]
     announce: Callable[..., None]
-    scheduler_remote: Callable[..., Any]
     announce_ready: Callable[[Any], None]
     assemble: Callable[..., tuple[Any, Any]]
     history_store: Callable[..., Any]
@@ -108,9 +112,6 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     from sqlalchemy.engine import make_url  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.board.application.queries.claim_refusals import ClaimRefusals  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.board.application.queries.verdicts import Verdicts  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.board.model.board_feed import follow  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.migrate import StoreNotMigrated  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -144,21 +145,19 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     stop = StopEvent()
     board.attach(log)
     feed.ready.set()
+    # no follower runs in this process: what the workers keep in the log is applied when a request reads it (`CaughtUp`)
+    caught_up = CaughtUp(log)
     # `starpulse worker board` dates when each task's Start Criteria were met and when each claim expires and pushes both
-    # to the log; this process adopts them on each push
-    feed.follow_dates(log, store, stop)
-    refusals = ClaimRefusals(feed)
-    follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry)
-    verdicts = Verdicts(feed)
-    follow(verdicts, log, verdict_events.STREAM, verdicts.handle_entry)
+    # to the log, and keeps the claim refusals and verdicts as the deltas a stream replays
+    caught_up.state(CLAIM_EXPIRIES_STATE, lambda: feed.serve_expiries(store.claim_expiries()))
     saved_after = log.head() or 0  # before the store loads: a save between the two is announced past it
     pulls = PullStore(log.engine)
-    follow_saves(pulls, log, stop, saved_after)
+    caught_up.entries(SAVED_STREAM, refresh_on_save(pulls), saved_after)
     pull_refresh = None
     actor_metrics = actor_view = None
     # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its
     # projection and asks it
-    Projected(log, feed).follow(stop)
+    caught_up.state(PULLS_PROJECTION, Projected(log, feed).apply)
     # the analytics routes read the per-session folds of the signal table; the `signal-folds` context of
     # `starpulse worker contexts` keeps them current, so no fold runs in this process
     signal_folds = SignalFolds(log, feed.keys, config.analytics)
@@ -166,15 +165,18 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks; an opt-in
     # worker's instance also shows the page whether that worker's process runs
     watched = {name: opt_in.Liveness(log, name) for name in opted_in}
-    runs_projection.Projected(log, feed, watched).follow(stop)
+    runs = runs_projection.Projected(log, feed, watched)
+    if watched:
+        runs.apply()
+        caught_up.every_read(runs.refresh)  # a worker that exits announces nothing to the log
+    else:
+        caught_up.state(runs_projection.PROJECTION, runs.apply)
     if config.task_actor:
         actor_metrics = metrics_of(log)
         actor_view = actor_views_of(log)
     if refresh_token:
         pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
     host.announce(port)
-    scheduler_stop = StopEvent()
-    scheduler_runtime = host.scheduler_remote(config, base, feed, log, scheduler_stop)
     from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     cloudevents = (
@@ -191,7 +193,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         harnesses=config.harnesses,
         start_session=starter(config.session_start_url),
         events=cloudevents,
-        scheduler=scheduler_runtime,
+        scheduler=Remote(log),
         contract=ttl_cached(lambda: host.contract(feed.snapshot(), config, host.probes), _CONTRACT_TTL_S),
         ready=host.readiness(log, feed, config),
         pulls=pulls,
@@ -225,7 +227,7 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     )
     snapshots = Snapshots(SnapshotStore(log.engine, stored_bodies), log, stop)
     gc.callbacks.append(PAUSES.callback)
-    app = page_app(feed, snapshots, host.static, store, window, board, services)
+    app = page_app(feed, snapshots, host.static, store, window, board, services, caught_up=caught_up)
     try:
         httpd = PageServer(
             app,
@@ -239,6 +241,5 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
         httpd.run()
     finally:
         stop.set()
-        scheduler_stop.set()
         log.close()
         store.engine.dispose()

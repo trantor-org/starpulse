@@ -179,7 +179,7 @@ class PullStore:
 
     def keep_listings(self) -> None:
         """Keep each listing of the records only the database holds until the process ends, for a store that refreshes
-        every save another process makes (`follow_saves`): a store that does not would miss a row written since."""
+        every save another process makes (`refresh_on_save`): a store that does not would miss a row written since."""
         self._keep_listings = True
 
     def subscribe(self, listener: Callable[[], None]) -> None:

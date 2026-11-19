@@ -293,13 +293,13 @@ class EventLog:
     ) -> threading.Thread:
         """Call `apply` each time the state under `name` is written after this call, on a thread until `stop`. The
         thread rereads the version when the log is appended to, here or by another process, and sleeps otherwise."""
-        seen = self._version_or(name, 0)
+        seen = self.version_or(name, 0)
 
         def run() -> None:
             nonlocal seen
             while not stop.is_set():
                 appends = self.appends
-                if (version := self._version_or(name, seen)) != seen:
+                if (version := self.version_or(name, seen)) != seen:
                     seen = version
                     apply()
                 self.wait_for_append(appends, stop)
@@ -308,10 +308,14 @@ class EventLog:
         thread.start()
         return thread
 
-    def _version_or(self, name: str, default: int) -> int:
+    def version(self, name: str) -> int:
+        """The version of the state kept under `name`, 0 when none is kept; raises when the store cannot be read."""
+        with self.engine.connect() as db:
+            return db.execute(_WORKER_VERSION, {"name": name}).scalar() or 0
+
+    def version_or(self, name: str, default: int) -> int:
         try:
-            with self.engine.connect() as db:
-                return db.execute(_WORKER_VERSION, {"name": name}).scalar() or 0
+            return self.version(name)
         except Exception:  # an unreadable store changes nothing, and the next look tries again
             logger.warning("EventLog: reading the version of %s failed", name, exc_info=True)
             return default

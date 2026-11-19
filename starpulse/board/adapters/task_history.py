@@ -207,8 +207,11 @@ class TaskHistory:
         reason_at: int | None = None,
         also: Callable[[str], Iterable[str]] | None = None,
         unstarted: Collection[str] | None = None,
+        rehydrates: bool = False,
     ) -> Callable[..., Written]:
         """`write` (a verb taking a task id first) that appends what it changed once it succeeds.
+
+        `rehydrates` is a write that returns a completed task to the active board (a reopen): its Events lead with `Rehydrated`.
 
         `actor_at` is the index in the arguments after the task of an actor passed positionally; `reason_at` that of an archive's reason.
         `also` names the other tasks the write edits, so an archive's removal of itself from its dependents is recorded too.
@@ -230,7 +233,7 @@ class TaskHistory:
                 revised = bool(reason and before and after) and revises_plan(
                     before.get("status") or "", before.get("plan") or "", after.get("plan") or "", unstarted or ()
                 )
-                self._append(task, before, after, actor, note.strip(), reason if revised else None)
+                self._append(task, before, after, actor, note.strip(), reason if revised else None, rehydrates)
                 for name, was in others.items():
                     self._append(name, was, read(name), actor, "")
             return written
@@ -302,7 +305,14 @@ class TaskHistory:
             self._store.append(KIND, task, self._store.head(KIND, task), [self._new("FieldsEdited", payload, OPERATOR)])
 
     def _append(
-        self, task: str, before: Record | None, after: Record | None, actor: str, note: str, revision: str | None = None
+        self,
+        task: str,
+        before: Record | None,
+        after: Record | None,
+        actor: str,
+        note: str,
+        revision: str | None = None,
+        rehydrates: bool = False,
     ) -> bool:
         """Append the Events that take `before` to `after`, and a numbered `PlanRevised` of `revision` when it is not None;
         whether any were appended."""
@@ -315,7 +325,8 @@ class TaskHistory:
                 return False  # retiring an archived task leaves the board no more than it already has
             base = before if before is not None else after
             held = _held(store, task, before) if head and before else before
-            events = _events(held or {}, after, note)
+            events = [("Rehydrated", {})] if rehydrates else []
+            events += _events(held or {}, after, note)
             if revision is not None:
                 events.append(("PlanRevised", {"ordinal": self._revisions(store, task) + 1, "reason": revision}))
             seeded = [("TaskImported", seed(base, 0.0))] if head == 0 and base else []
