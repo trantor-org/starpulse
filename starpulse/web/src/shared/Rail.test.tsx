@@ -12,4 +12,9 @@ describe("the right rail", () => {
     expect(headings[0]).toBe("Recent");
     expect(headings.at(-1)).toBe("Legend");
   });
+
+  it("draws the closed PR pip in the kanban legend as the pip draws it: faint dot, struck-through, dimmed", () => {
+    const html = renderToStaticMarkup(<Rail hud={hud} view="kanban" />);
+    expect(html).toMatch(/<span[^>]*line-through[^>]*opacity:0\.75[^>]*><i style="background:var\(--faint\)"><\/i>closed<\/span>/);
+  });
 });
