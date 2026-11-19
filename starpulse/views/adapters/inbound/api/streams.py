@@ -120,6 +120,7 @@ class Streams:
         self._snapshots = snapshots
         self._build = build
         self._event_text = EventText()
+        self._unmodelled: set[str] = {"tick"}  # the held snapshot's clock tick is stored for it, and is no page event
         self._column_views = ColumnViews()
 
     def board(self, request: Request) -> Response:
@@ -185,8 +186,11 @@ class Streams:
             logger.exception("StarPulse: /api/events sent a body its model refuses; the stream ends")
 
     def _event(self, name: str, data: dict) -> Iterator[bytes]:
-        if name in EVENTS:  # a `tick` ages the snapshot and the column views; it is no event of the page
+        if name in EVENTS:
             yield _frame(name, self._event_text(name, data))
+        elif name not in self._unmodelled:
+            self._unmodelled.add(name)
+            logger.error("StarPulse: /api/events has no event `%s`; its deltas are skipped", name)
 
     def _ledger(self, request: Request, event: str) -> Stream | Response:
         """`event`'s newest rows as a `page` event (`{rows, more}`), then a `rows` event (`{rows}`) each time rows of that
