@@ -239,7 +239,9 @@ class Conformance:
 
     def exposition(self, stalled: bool = True) -> str:
         """Prometheus text of the counters, a series per machine (and per declared event) from the first scrape; the
-        stalled gauge too unless `stalled` is False, for a reader that serves it at scrape."""
+        stalled gauge too unless `stalled` is False, for a reader that serves it at scrape. While a replay reads on, the
+        review-move count shows once an ignored checkpoint kept it, and the working-lane gauge when the board gives
+        `open_tasks`: neither depends on the entries replayed."""
         with self._lock:
             counters = "".join(
                 f"# HELP {metric} {text}\n# TYPE {metric} counter\n"
@@ -262,14 +264,18 @@ class Conformance:
                 f"# HELP {ENTERED_METRIC} {ENTERED_HELP}\n# TYPE {ENTERED_METRIC} counter\n" if entered else ""
             )
             watched = ""
-            if caught_up and self._working and self._review:
-                watched = (
-                    f"# HELP {REVIEW_MOVES_METRIC} {REVIEW_MOVES_HELP}\n# TYPE {REVIEW_MOVES_METRIC} counter\n"
-                    f"{REVIEW_MOVES_METRIC} {self._review_moves}\n"
-                    f"# HELP {WORKING_METRIC} {WORKING_HELP}\n# TYPE {WORKING_METRIC} gauge\n"
-                    f"{WORKING_METRIC} {len(self._working_now())}\n"
-                )
-                if stalled:
+            if self._working and self._review:
+                if caught_up or self._review_after:
+                    watched += (
+                        f"# HELP {REVIEW_MOVES_METRIC} {REVIEW_MOVES_HELP}\n# TYPE {REVIEW_MOVES_METRIC} counter\n"
+                        f"{REVIEW_MOVES_METRIC} {self._review_moves}\n"
+                    )
+                if caught_up or self._open_tasks is not None:
+                    watched += (
+                        f"# HELP {WORKING_METRIC} {WORKING_HELP}\n# TYPE {WORKING_METRIC} gauge\n"
+                        f"{WORKING_METRIC} {len(self._working_now())}\n"
+                    )
+                if caught_up and stalled:
                     watched += stalled_exposition(self._stall_state(), self._clock())
             return (
                 f"{counters}# HELP {OCCURRENCES_METRIC} {OCCURRENCES_HELP}\n# TYPE {OCCURRENCES_METRIC} counter\n"
