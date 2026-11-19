@@ -1531,7 +1531,12 @@ class TaskActor:
             if source == roles.waiting and target in (roles.ready, roles.review):
                 self._notice(self._released, name, "was released but its holder was not told")
             if target == roles.working:
-                self._notice(self._returned, name, "was sent back but its holder was not told")
+                self._notice(
+                    self._returned,
+                    name,
+                    "was sent back but its holder was not told",
+                    on_failure=lambda: self._return_unwoken(name),
+                )
             if target == roles.done:
                 self._notice(self._closed, name, "was closed but the board was not told")
             return True
@@ -1584,6 +1589,20 @@ class TaskActor:
         """Publish `event` on the task's topic, which the holder's consumer carries (`task.<id>.review_refused`)."""
         if self._log is not None:
             machine_events.publish(IN_PROGRESS, event, actor=ACTOR, task=name, data={"reason": reason}, log=self._log)
+
+    def _return_unwoken(self, name: str) -> None:
+        """A send-back whose holder no wake reached goes to Ready for a new session, unless the holder has since moved it."""
+        with self._lock:
+            agent = self._feed.task(name, lean=True)
+            if agent is None or agent["state"] != self._feed.roles.working:
+                return
+            self._write(
+                name,
+                self._feed.roles.ready,
+                "Returned to Ready: it was sent back to its session but its holder could not be woken.",
+                self._clock(),
+                source=agent["state"],
+            )
 
     def _hold_for_repair(self, name: str, refusal: str) -> None:
         """Leave a task whose release the board refused in its lane and comment the refusal, no operator

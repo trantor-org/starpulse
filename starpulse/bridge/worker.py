@@ -95,7 +95,9 @@ def run(
         started, position = _await_start_position(log, stop)
         if started:
             _reconcile(subscriber, stop)
-            Tail(log, "bridge", after=position, streams=STREAMS).run(handle, stop, transient=(Unavailable,))
+            Tail(log, "bridge", after=position, streams=STREAMS).run(
+                handle, stop, transient=(Unavailable,), after_batch=published.keep
+            )
     finally:
         publisher.close()
 

@@ -68,18 +68,22 @@ class Projector:
         self._placer = Placer(drawn, keys) if drawn is not None else None
         self._checkpoints = Checkpoints(engine)
 
-    def catch_up(self, *, index: bool = True) -> int:
-        """Fold every Task Event appended since the last checkpoint; the number folded. `index=False` leaves the search
-        index to a later `index()`, so a caller that tells a page of the fold does so first.
+    def catch_up(self) -> int:
+        """Fold every Task Event and machine event appended since the last checkpoints and index the rows for search; the
+        number of Task Events folded."""
+        folded = self.fold_tasks()
+        self.fold_machines()
+        self.index()
+        return folded
+
+    def fold_tasks(self) -> int:
+        """Fold every Task Event appended since the last checkpoint; the number folded, so a new Task's row waits for
+        no machine fold or search index.
 
         Each batch commits its rows and the checkpoint together, so a stop between batches resumes at the next Event
         and a stop inside one folds nothing.
         """
-        folded = self._fold_tasks(resident=False)
-        self._fold_machines(resident=False)
-        if index:
-            self.index()
-        return folded
+        return self._fold_tasks(resident=False)
 
     def index(self) -> None:
         """Make the search index hold every row folded since it last did; nothing without a search index."""
@@ -127,9 +131,12 @@ class Projector:
                 self._checkpoints.save(CHECKPOINT, position, conn=db)
         return folded
 
+    def fold_machines(self) -> None:
+        """Fold every `machine:events` entry past the machine checkpoint into `starpulse_machine_tasks`, a batch at a time."""
+        self._fold_machines(resident=False)
+
     def _fold_machines(self, *, resident: bool) -> None:
-        """Fold every `machine:events` entry past the machine checkpoint into `starpulse_machine_tasks`, a batch at a time;
-        `resident` as in `_fold_tasks`."""
+        """The fold of `fold_machines`; `resident` as in `_fold_tasks`."""
         if self._log is None or self._placer is None:
             return
         from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the log's stack loads when a log opens

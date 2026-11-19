@@ -29,9 +29,13 @@ class Published:
         )
 
     def count(self, subject: str) -> None:
-        """Count one message on `starpulse.<board>.<entity>.<id>.<event>` and keep the exposition for the Page API."""
+        """Count one message on `starpulse.<board>.<entity>.<id>.<event>`; `keep` writes the exposition."""
         *_, entity, _, event = subject.split(".")
         self._counter.labels(entity, event).inc()
+
+    def keep(self) -> None:
+        """Keep the exposition for the Page API: one write per batch of entries, not per entry, so a backlog behind a
+        contended database does not hold the bridge from a later entry such as a task's move to Done."""
         try:
             self._log.put_state(STATE, generate_latest(self._registry).decode())
         except Exception:
