@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 METRICS = "lanes.metrics"
 STALLS = "lanes.stalls"
+#: Seconds between the writes a replay makes, so the remaining-entries gauge in the kept text falls while the monitor reads on.
+PROGRESS_S = 10.0
 
 
 def start(
@@ -30,7 +32,8 @@ def start(
     """Run the unattributed-lane count and the conformance monitor (`work`: the machines whose events are work) until
     `stop`, register the `board-files` pass over `feed` and `board` for the sweeper (`vectors` embeds the tasks that
     hold none), and keep their exposition in `log` once at start and after each entry or pass that changed it, the
-    monitor's entries once it has read the log it found, since a write per replayed entry outpaced no replay. The
+    monitor's entries once it has read the log it found and every `PROGRESS_S` before, since a write per replayed
+    entry outpaced no replay. The
     stalled gauge ages with no entry, so `log` keeps its deadlines and `metrics_of` counts them at scrape."""
     unattributed = lane_events.Unattributed()
     conformance = Conformance(
@@ -66,8 +69,16 @@ def start(
         finally:
             keep()
 
+    next_write = time.monotonic() + PROGRESS_S
+
+    def progress() -> None:
+        nonlocal next_write
+        if conformance.caught_up() or time.monotonic() >= next_write:
+            next_write = time.monotonic() + PROGRESS_S
+            keep()
+
     unattributed.follow(log, stop, keep)
-    conformance.follow(log, stop, after=lambda: conformance.caught_up() and keep())
+    conformance.follow(log, stop, after=progress)
     feed.reconcilers["board-files"] = sweep
     keep()
 

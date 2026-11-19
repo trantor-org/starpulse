@@ -32,6 +32,7 @@ from sqlalchemy.engine import Engine
 
 from starpulse.board.model import criteria
 from starpulse.board.adapters import native_docs, native_milestones
+from starpulse.board.adapters.holder_idle import UNREACHABLE_EXIT, HolderUnreachable
 from starpulse.board.adapters.native_lookup import _aliases, _find, _SETTLED_NS, _stamp
 from starpulse.board.adapters.task_history import TaskHistory, revises_plan
 from starpulse.board.adapters.native_scan import (
@@ -1661,7 +1662,7 @@ def _holds(command: object, base: Path, root: Path | None = None, labels: object
     return holds
 
 
-def _notice(command: object, base: Path) -> Callable[..., None]:
+def _notice(command: object, base: Path, unreachable: bool = False) -> Callable[..., None]:
     """The `parked`, `released`, `idle`, `returned`, `enqueued`, `verifying`, `closed` or `entered` command
     (the last on any lane entry the board records, by whoever moves the task), run in `base` with `{id}` replaced by the
     task's id, after the task actor moves a task from the working lane to Waiting, from Waiting to Ready, sees its holder
@@ -1677,7 +1678,8 @@ def _notice(command: object, base: Path) -> Callable[..., None]:
         done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=HOOK_TIMEOUT, check=False)
         if done.returncode:
             said = done.stderr.strip() or done.stdout.strip() or "printed nothing"
-            raise ValueError(f"{shlex.join(argv)}: exit {done.returncode}: {said}")
+            error = HolderUnreachable if unreachable and done.returncode == UNREACHABLE_EXIT else ValueError
+            raise error(f"{shlex.join(argv)}: exit {done.returncode}: {said}")
 
     return notice
 
@@ -1760,7 +1762,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "unfinished": _holds(settings.get("unfinished"), base),
             "parked": _notice(settings.get("parked"), base),
             "released": _notice(settings.get("released"), base),
-            "idle": _notice(idle, base) if (idle := settings.get("idle")) else None,
+            "idle": _notice(idle, base, unreachable=True) if (idle := settings.get("idle")) else None,
             "returned": _notice(settings.get("returned"), base),
             "alive": _probe(settings.get("alive"), base),
             "enqueued": _notice(settings.get("enqueued"), base),

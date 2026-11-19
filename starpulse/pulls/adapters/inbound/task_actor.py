@@ -51,7 +51,7 @@ from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.adapters.holder_idle import HARNESS_MACHINE
+from starpulse.board.adapters.holder_idle import HARNESS_MACHINE, HolderUnreachable
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
@@ -1361,7 +1361,13 @@ class TaskActor:
             self._resumes[name] = (ticks, (count if before == ticks else 0) + 1)
 
     def _resume_failed(self, name: str, error: Exception) -> None:
+        """A holder no session can reach moves to Needs attention at once, since no later settle comes to count; any
+        other failure does on the `_FAILED_RESUMES`th in a row."""
         with self._lock:
+            if isinstance(error, HolderUnreachable):
+                self._failed_resumes.pop(name, None)
+                self._attend(name, f"no session can reach it, so no later settle comes: {error}", "could not be resumed")
+                return
             failed = self._failed_resumes[name] = self._failed_resumes.get(name, 0) + 1
             if failed >= _FAILED_RESUMES:
                 self._failed_resumes.pop(name)

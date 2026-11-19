@@ -28,7 +28,13 @@ import time
 from collections.abc import Callable, Collection, Mapping
 from pathlib import Path
 
-from starpulse.event_log.claude_sessions import local_id, local_ids
+from starpulse.contracts.signals import CLAUDE_CODE
+from starpulse.event_log import events as machine_events
+from starpulse.event_log.claude_sessions import live_process, local_id, local_ids
+from starpulse.event_log.event_log import EventLog
+from starpulse.harness_telemetry.adapters.inbound.telemetry import ClaimUnreadable, telemetry_log
+from starpulse.harness_telemetry.adapters.outbound.session_exit import ExitWatch, watch_registered
+from starpulse.harness_telemetry.model.harness import ended_id
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.bridge.delivery import Event, Route
 from starpulse.bridge.subjects import INCIDENT
@@ -188,3 +194,29 @@ def forget_ended(registry: Registry, alive: Callable[[str], str | None], session
                 registry.delete(key)
 
     return forget
+
+
+def exit_watcher(log: EventLog, registry: Registry, sessions: Path) -> Callable[[], None]:
+    """A sync that holds a process descriptor per registered session with a running process: when one exits, a clean
+    exit, kill or crash alike, `SESSION_ENDED` lands on the harness machine, under the task the session last claimed."""
+    telemetry = telemetry_log(log)
+
+    def ended(session: str, pid: int) -> None:
+        try:
+            claim = telemetry.last_claim(CLAUDE_CODE, session)
+        except ClaimUnreadable:
+            claim = None  # the end is kept under the session as a run rather than lost
+        task = claim[0] if claim else None
+        machine_events.publish(
+            "harness", "SESSION_ENDED", actor="claude-code", task=task, run=None if task else session,
+            event_id=ended_id(session, pid), log=log,
+        )
+
+    watch = ExitWatch(ended)
+    process_of = live_process(sessions)
+
+    def sync() -> None:
+        registered = (registration.session for key in registry.keys() if (registration := registry.get(key)))
+        watch_registered(registered, process_of, watch.watch)
+
+    return sync

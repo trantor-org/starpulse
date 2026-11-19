@@ -35,19 +35,20 @@ import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.signals import CLAUDE_CODE, Signal
-from starpulse.event_log import events as machine_events
+from starpulse.event_log import claude_sessions, events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import open_event_log
 from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.adapters.outbound import step_seconds
 from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
-from starpulse.harness_telemetry.model.harness import HARNESS
+from starpulse.harness_telemetry.model.harness import HARNESS, ended_id
 from starpulse.harness_telemetry.adapters.inbound.otlp import SETTLED, TOOL_RESULT, LogEvent, receiver
 from starpulse.harness_telemetry.adapters.inbound.telemetry import ClaimUnreadable, redactor, signals, telemetry_log
 
@@ -73,6 +74,8 @@ class ClaudeCodeAdapter:
     claimed_at: dict[str, float] = field(default_factory=dict, compare=False)
     #: Held while `claimed` and `claimed_at` change: the receiver serves each request on its own thread.
     lock: threading.Lock = field(default_factory=threading.Lock, compare=False)
+    #: A session's terminal halt, its time and text, when its last turn is one: a settle that follows it ends the session.
+    halted: Callable[[str], tuple[float, str] | None] = lambda _session: None
 
     def claim(self, found: Iterable[Signal]) -> None:
         """Note the task each `claim` signal in `found` names for its session, after the one it stored."""
@@ -87,7 +90,13 @@ class ClaudeCodeAdapter:
 
     def events(self, logs: list[LogEvent]) -> list[dict]:
         """The events `logs` move the harness machine by, in order."""
-        return [self._event(log) for log in logs if _moves(log) and self._first(log)]
+        found = []
+        for log in logs:
+            if _moves(log) and self._first(log):
+                found.append(self._event(log))
+                if log.kind == SETTLED and (halt := self.halted(log.session)):
+                    found.append(self._ended(log, halt[0]))
+        return found
 
     def _first(self, log: LogEvent) -> bool:
         if log.kind != SETTLED or not log.prompt:
@@ -110,11 +119,14 @@ class ClaudeCodeAdapter:
                     self.claimed.setdefault(session, None)
         return self.claimed[session]
 
-    def _event(self, log: LogEvent) -> dict:
+    def _ended(self, log: LogEvent, at: float) -> dict:
+        return {**self._event(log, "SESSION_ENDED"), "event_id": ended_id(log.session, f"halt-{at}")}
+
+    def _event(self, log: LogEvent, name: str | None = None) -> dict:
         task = self.keys.for_branch(log.branch) or self._claimed(log.session)
         return {
             "machine": HARNESS.name,
-            "event": HARNESS.bindings[log.kind],
+            "event": name or HARNESS.bindings[log.kind],
             "task": task,
             "run": None if task else log.session,
             "actor": ACTOR,
@@ -153,6 +165,7 @@ def publisher(log: EventLog) -> Callable[[dict], int | None]:
             task=event["task"],
             run=event["run"],
             now=event["time"],
+            event_id=event.get("event_id"),
             log=log,
         )
 
@@ -166,7 +179,12 @@ def bind(settings: ClaudeCode, config: Any, log: EventLog) -> ThreadingHTTPServe
     redact = redactor(settings.redactor) if settings.redactor else None
     telemetry = telemetry_log(log)
 
-    adapter = ClaudeCodeAdapter(keys, recall=lambda session: telemetry.last_claim(CLAUDE_CODE, session))
+    transcripts = Path(config.board.get("transcripts", claude_sessions.DEFAULT_TRANSCRIPTS)).expanduser()
+    adapter = ClaudeCodeAdapter(
+        keys,
+        recall=lambda session: telemetry.last_claim(CLAUDE_CODE, session),
+        halted=claude_sessions.terminal_halt(partial(claude_sessions.last_turn, transcripts)),
+    )
 
     def publish_signals(found: list[Signal]) -> None:
         adapter.claim(found)
