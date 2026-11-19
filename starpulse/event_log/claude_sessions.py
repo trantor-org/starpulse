@@ -25,12 +25,14 @@ __all__ = [
     "DEFAULT_TRANSCRIPTS",
     "holder_activity",
     "last_turn",
+    "live_process",
     "live_session",
     "live_socket",
     "local_id",
     "same_holder",
     "session_activity",
     "sessions_dir",
+    "terminal_halt",
     "transcript_written",
 ]
 
@@ -120,6 +122,31 @@ def last_turn(root: Path, session: str, *, size: int = TAIL_BYTES, ends: bool = 
     return None
 
 
+TERMINAL_HALTS = ("Autocompact is thrashing",)
+"""How the halts that end a session for good open: Claude Code writes each as a synthetic error reply."""
+
+
+def terminal_halt(last_turn: Callable[[str], dict | None]) -> Callable[[str], tuple[float, str] | None]:
+    """The moment and text of the terminal halt a session's transcript ends its turns with, from `last_turn`, the
+    session's newest transcript turn; None when its last turn is any other or it has none."""
+
+    def halt(session: str) -> tuple[float, str] | None:
+        turn = last_turn(session)
+        return _halt(turn) if turn is not None else None
+
+    return halt
+
+
+def _halt(turn: dict) -> tuple[float, str] | None:
+    message = turn.get("message") or {}
+    texts = [part.get("text", "") for part in message.get("content") or [] if isinstance(part, dict)]
+    text = "".join(texts)
+    synthetic = turn.get("isApiErrorMessage") and message.get("model") == "<synthetic>"
+    if not synthetic or not text.startswith(TERMINAL_HALTS):
+        return None
+    return datetime.fromisoformat(turn["timestamp"]).timestamp(), text
+
+
 def transcript_written(root: Path) -> Callable[[str], float | None]:
     """A reader of when `<root>/<project>/<session>.jsonl` was last written; None for no session or no transcript."""
 
@@ -170,13 +197,27 @@ def _running_records(sessions: Path, match: Callable[[dict[str, Any]], bool]) ->
             yield data
 
 
-def live_session(sessions: Path, session: str) -> bool:
-    """Whether the process registered under `sessions` for `session` (its session id, bridge id or Remote Control URL) is still running."""
+def _record_of(sessions: Path, session: str) -> dict[str, Any] | None:
     def names(record: dict[str, Any]) -> bool:
         bridge = record.get("bridgeSessionId")
         return session in (record.get("sessionId"), bridge) or bool(bridge and session.rstrip("/").endswith(f"/{bridge}"))
 
-    return bool(session) and next(_running_records(sessions, names), None) is not None
+    return next(_running_records(sessions, names), None) if session else None
+
+
+def live_session(sessions: Path, session: str) -> bool:
+    """Whether the process registered under `sessions` for `session` (its session id, bridge id or Remote Control URL) is still running."""
+    return _record_of(sessions, session) is not None
+
+
+def live_process(sessions: Path) -> Callable[[str], tuple[str, int] | None]:
+    """The local session id and pid of the running process of a session (any id `live_session` takes), None when none runs."""
+
+    def find(session: str) -> tuple[str, int] | None:
+        record = _record_of(sessions, session)
+        return (str(record["sessionId"]), int(record["pid"])) if record and record.get("sessionId") else None
+
+    return find
 
 
 def live_socket(sessions: Path) -> Callable[[str], str | None]:

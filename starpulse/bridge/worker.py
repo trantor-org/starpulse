@@ -100,8 +100,9 @@ def run(
         publisher.close()
 
 
-def _deliver(delivery: Delivery, link: Publisher, stop: StopEvent) -> None:
+def _deliver(delivery: Delivery, link: Publisher, stop: StopEvent, registered: Callable[[], None]) -> None:
     try:
+        registered()
         delivery.run(stop)
     finally:
         link.close()
@@ -119,11 +120,12 @@ def start(
     end_lanes: Collection[str] = (),
     settle: Callable[[Collection[str]], None] | None = None,
     reach: Mapping[str, Reach] | None = None,
+    registered: Callable[[], None] = lambda: None,
 ) -> Callable[[], None]:
     """Start the bridge over `log` for `board`, ending when `stop` is set; `feed()` is the board's read side. Return its reload.
 
     `route` finds how to reach a session's consumer: with it, the events waiting on a consumer it knows are delivered
-    (`bridge.delivery`). `reach` is each incident type's reach (`bridge.reach`). `end` runs for a task moved into a finished lane `end_lanes` names (`bridge.subscriber`), and `settle` after each lane move and `reconcile`.
+    (`bridge.delivery`). `reach` is each incident type's reach (`bridge.reach`). `end` runs for a task moved into a finished lane `end_lanes` names (`bridge.subscriber`), and `settle` after each lane move and `reconcile`. `registered` runs when the delivery starts and each time a session registers.
     """
     stream = f"starpulse-{board}"
     url = f"nats://127.0.0.1:{port}"
@@ -133,8 +135,8 @@ def start(
     if route:
         link = Publisher(url, stream, stream_subjects(board))
         delivery = Delivery(JetStreamMailbox(link, stream), route)
-        link.listen(wake_subject(board), delivery.wake)  # `starpulse subscribe` signals it once a session's route is registered
-        threading.Thread(target=_deliver, args=(delivery, link, stop), name="bridge-delivery", daemon=True).start()
+        link.listen(wake_subject(board), lambda: (registered(), delivery.wake()))  # `starpulse subscribe` signals it once a session's route is registered
+        threading.Thread(target=_deliver, args=(delivery, link, stop, registered), name="bridge-delivery", daemon=True).start()
     wake = delivery.wake if delivery else lambda: None
     threading.Thread(target=run, args=(log, publisher, board, subscriber, stop, wake), name="bridge", daemon=True).start()
     threading.Thread(target=serve, args=(url, board, subscriber, stop), name="bridge-requests", daemon=True).start()

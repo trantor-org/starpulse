@@ -53,6 +53,8 @@ WORKING_METRIC = "starpulse_board_in_progress_tasks"
 WORKING_HELP = "Tasks in the working lane now."
 STALLED_METRIC = "starpulse_board_in_progress_stalled_tasks"
 STALLED_HELP = "Tasks in the working lane now that had a stall, 5 minutes with no lane change and no work event or tool call, in their stay."
+REMAINING_METRIC = "starpulse_conformance_replay_remaining_entries"
+REMAINING_HELP = "Entry ids of the board and machine streams past the monitor's cursors up to the heads it found at start, 0 once it has read them."
 #: Seconds with no lane change and no task event after which a working task is stalled.
 STALL_S = 300.0
 _HARNESS, _COMMAND = "harness", "TOOL_USED"
@@ -263,6 +265,10 @@ class Conformance:
             entered_head = (
                 f"# HELP {ENTERED_METRIC} {ENTERED_HELP}\n# TYPE {ENTERED_METRIC} counter\n" if entered else ""
             )
+            remaining = ""
+            if self._until is not None:
+                left = sum(max(0, last - self._cursors.get(stream, 0)) for stream, last in self._until.items())
+                remaining = f"# HELP {REMAINING_METRIC} {REMAINING_HELP}\n# TYPE {REMAINING_METRIC} gauge\n{REMAINING_METRIC} {left}\n"
             watched = ""
             if self._working and self._review:
                 if caught_up or self._review_after:
@@ -279,7 +285,7 @@ class Conformance:
                     watched += stalled_exposition(self._stall_state(), self._clock())
             return (
                 f"{counters}# HELP {OCCURRENCES_METRIC} {OCCURRENCES_HELP}\n# TYPE {OCCURRENCES_METRIC} counter\n"
-                f"{occurrences}{entered_head}{entered}{watched}"
+                f"{occurrences}{remaining}{entered_head}{entered}{watched}"
             )
 
     def checkpoint(self) -> dict[str, Any]:

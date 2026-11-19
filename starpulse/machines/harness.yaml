@@ -3,15 +3,18 @@ states:
   idle: {initial: true}
   active: {}
   stopped: {}
+  ended: {}
 events:
   SESSION_STARTED:
-    - {from: [idle, active, stopped], to: active}
+    - {from: [idle, active, stopped, ended], to: active}
   SKILL_USED:
     - {from: [active, stopped], to: active}
   TOOL_USED:
     - {from: [active, stopped], to: active}
   SESSION_STOPPED:
     - {from: active, to: stopped}
+  SESSION_ENDED:
+    - {from: [active, stopped], to: ended}
   SESSION_SETTLED:
     - {from: [idle, active, stopped], to: stopped}
 bindings:
@@ -19,6 +22,7 @@ bindings:
   UserPromptSubmit: SESSION_STARTED
   PostToolUse: TOOL_USED
   Stop: SESSION_STOPPED
+  SessionEnd: SESSION_ENDED
   user_prompt: SESSION_STARTED
   skill_activated: SKILL_USED
   tool_result: TOOL_USED

@@ -15,3 +15,8 @@ MACHINES = Path(__file__).parents[2] / "machines"
 HARNESS = load_machine(MACHINES / "harness.yaml")
 #: The machine as the page draws it, keyed by name like a board adapter's machines.
 SESSION_MACHINES = {HARNESS.name: describe(HARNESS.machine)}
+
+
+def ended_id(session: str, process: int | str) -> str:
+    """The event id of a session's end: a clean exit and a watched process that name the same pid land once."""
+    return f"session-ended:{session}:{process}"

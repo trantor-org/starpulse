@@ -21,6 +21,11 @@ SETTLED = "SESSION_SETTLED"
 STOPPED = "SESSION_STOPPED"  # a turn's end, which trails a settle and says nothing of whether the session is idle
 WORKING = "in_progress"
 PARKED = frozenset({"needs_attention", "waiting", "done"})  # lanes whose holder ended its turn before the move
+UNREACHABLE_EXIT = 3  # the `[board] idle` resume found no session subscribed to the task's resume topic
+
+
+class HolderUnreachable(ValueError):
+    """The idle hook's resume reached no session: a retry on the next settle wakes no one, and none may come."""
 
 
 def _task_of(entry: Entry, event: str) -> str | None:
