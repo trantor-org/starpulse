@@ -1241,6 +1241,11 @@ class TaskActor:
         )
         return max((at for at in merges if at is not None), default=None)
 
+    def working(self) -> list[str]:
+        """The open tasks in the working lane, whose holders `follow_holder_idle` checks for a settle while down."""
+        with self._lock:
+            return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == self._feed.roles.working]
+
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
         """A session settled. A task citing no pull request closes when every criterion is checked, else returns to Ready
         (`_end_without_pr`). Any other In Progress task whose holder is not busy (`confirm`) and that no event is awaited on
