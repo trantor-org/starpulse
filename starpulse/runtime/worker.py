@@ -80,7 +80,6 @@ def main(argv: list[str] | None = None) -> None:
             inherited_socket=listen.inherited_socket,
             listen=listen.listen,
             announce=wiring.announce,
-            scheduler_remote=wiring.scheduler_remote,
             announce_ready=announce_ready,
             assemble=assemble,
             history_store=history_store,

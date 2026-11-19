@@ -159,40 +159,53 @@ def slim_snapshot(data: Any) -> Any:
 
 
 def encode_snapshot(data: Any, held: _Held) -> bytes:
-    """`encode("snapshot", data)`, with the JSON of each board task kept in `held` between calls.
+    """`encode("snapshot", slim_snapshot(data))`, with the JSON of each board task kept in `held` between calls.
 
     `held` maps `id(object)` to the object and its JSON: the feed replaces a task it changes rather than
     editing it, so one met again encodes the same, and one no longer listed is forgotten. Those are most of the
     snapshot, so a build after one change validates and dumps only what changed and the rest of the document.
     """
+    return _encode_held(data, held, slim_snapshot, _slim_task, lambda agents: {"move_sets": _move_sets(agents)})
+
+
+def _encode_held(
+    data: Any,
+    held: _Held,
+    shape: Callable[[Any], Any],
+    project: Callable[[Any], Any],
+    extra: Callable[[list[Any]], dict[str, Any]],
+) -> bytes:
+    """`encode("snapshot", shape(data))` with the board's tasks dumped as `encode_snapshot` holds them: the document is
+    shaped around no task, `extra` draws what the tasks add to it, and each task is spliced in as `project` draws it."""
     flows = data["flows"]
     if not flows or flows[0]["name"] != "board":
-        return encode("snapshot", slim_snapshot(data))
+        return encode("snapshot", shape(data))
     kept: _Held = {}
-    tasks = _dump_all(flows[0]["agents"], RawTask, held, kept, _slim_task)
+    tasks = _dump_all(flows[0]["agents"], RawTask, held, kept, project)
     held.clear()
     held.update(kept)
-    drawn = {
-        **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *flows[1:]]}),
-        "move_sets": _move_sets(flows[0]["agents"]),
-    }
+    drawn = {**shape({**data, "flows": [{**flows[0], "agents": []}, *flows[1:]]}), **extra(flows[0]["agents"])}
     body = encode("snapshot", drawn)
     try:
         return _splice(body, b'"agents":[]', b'"agents":[%s]' % b",".join(tasks), after=b'"flows":[{"name":"board"')
     except ValueError:  # the document is not drawn as it was: encode it whole
-        return encode("snapshot", slim_snapshot(data))
+        return encode("snapshot", shape(data))
 
 
 #: The snapshot's fields `/api/flows` keeps: what the agent CLI reads of the board, the runs and the cues.
 FLOW_KEYS = ("flows", "roles", "settled", "cold_done", "pulls", "interactive", "ratings", "cues", "dags", "error")
 
 
-def stored_bodies(data: Any, held: _Held) -> dict[str, bytes]:
-    """The bodies the API serves, by view: `/api/snapshot`'s for the page (`slim`) and `?view=full`, and `/api/flows`'s
-    (`flows`), so no read decodes or encodes the snapshot."""
+def stored_bodies(data: Any, held: dict[str, _Held]) -> dict[str, bytes]:
+    """The bodies the API serves, by view: `/api/snapshot`'s for the page (`slim`) and `?view=full`, each with its own
+    task JSON in `held[view]`, and `/api/flows`'s (`flows`), so no read decodes or encodes the snapshot."""
     full = full_snapshot(data)
     flows = {key: full[key] for key in FLOW_KEYS if key in full}
-    return {"slim": encode_snapshot(data, held), "full": encode("snapshot", full), "flows": encode("flows", flows)}
+    return {
+        "slim": encode_snapshot(data, held.setdefault("slim", {})),
+        "full": _encode_held(data, held.setdefault("full", {}), full_snapshot, lambda task: task, lambda _: {}),
+        "flows": encode("flows", flows),
+    }
 
 
 def _splice(body: bytes, marker: bytes, drawn: bytes, after: bytes = b"") -> bytes:

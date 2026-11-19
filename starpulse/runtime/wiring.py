@@ -9,7 +9,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.model.level import Level
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
 from starpulse.flow_metrics.model.trajectories import trajectory_analytics
@@ -21,10 +20,7 @@ from starpulse.runtime.config import Config, ConfigError, discover, load, runs_a
 if (
     TYPE_CHECKING
 ):  # annotation only: a runtime import would put the scheduler and the page in the Delivery worker's import closure
-    from starpulse.board.model.board_feed import BoardFeed
-    from starpulse.event_log.event_log import EventLog
     from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-    from starpulse.scheduler.adapters.remote import Remote
 
 logger = logging.getLogger(__name__)
 
@@ -110,19 +106,6 @@ def run_starts(adapters: Sequence[tuple[RunsInstance, ModuleType]]) -> dict[str,
 def announce(port: int) -> None:
     """Say on the terminal where the view is."""
     print(f"StarPulse on :{port}", flush=True)
-
-
-def scheduler_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog, stop: StopEvent) -> Remote:
-    """The scheduler `serve` answers `/api/scheduler` from: the `Remote` that reads the status the scheduler worker
-    publishes and writes the settings the worker reads. The loop itself runs in that worker, never in `serve`. The status
-    follower runs until `stop` is set.
-
-    The scheduler modules are imported here, not at the top, so `starpulse worker pulls` does not load them.
-    """
-    from starpulse.scheduler.adapters.remote import Remote, follow_status
-
-    follow_status(log, feed, stop)
-    return Remote(log)
 
 
 class Prepared(NamedTuple):

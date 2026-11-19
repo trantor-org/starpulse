@@ -55,7 +55,7 @@ from starpulse.board.adapters.holder_idle import HARNESS_MACHINE
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import attention_reason, section_set
+from starpulse.board.model.markdown import attention_reason, operator_answered, section_set
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
     COMMENT_CAP,
@@ -1388,7 +1388,7 @@ class TaskActor:
 
     def _end_without_pr(self, name: str) -> None:
         """A task citing no pull request and no open criterion has nothing left to resume once its holder ended: every criterion resolved in the
-        deliver phase closes it, any other returns it to Ready for a new session. A holder still busy (`confirm` raises) settles again."""
+        deliver phase closes it, as does one of a `kind-decide` task whose `## Needs attention` carries the operator's answer; any other returns it to Ready for a new session. A holder still busy (`confirm` raises) settles again."""
         try:
             self._idle(name, "confirm")
         except Exception as error:
@@ -1407,7 +1407,8 @@ class TaskActor:
             criteria = agent.get("criteria", ())
             checked = bool(criteria) and not open_criteria(criteria)
             delivering = (self._feed.machine_task(IN_PROGRESS, name) or {}).get("state") == "deliver"
-            done = checked and delivering
+            answered = "kind-decide" in agent["labels"] and operator_answered((self._feed.task(name) or {}).get("description", ""))
+            done = checked and (delivering or answered)
             target = self._feed.roles.done if done else self._feed.roles.ready
             comment = (
                 "Closed at its session's end: it cites no pull request and every criterion is checked."

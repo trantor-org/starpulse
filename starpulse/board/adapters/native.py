@@ -1861,7 +1861,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             also=lambda task: _open_dependents(root, _names(root, task), made.roles.done),
         ),
         "restore": history.recorded(made.restore, read),
-        "reopen": history.recorded(made.reopen, read, actor_at=1),
+        "reopen": history.recorded(made.reopen, read, actor_at=1, rehydrates=True),
         "complete": complete,
         "retire": history.recorded(made.retire, read),
         "create": history.created(made.create, read),

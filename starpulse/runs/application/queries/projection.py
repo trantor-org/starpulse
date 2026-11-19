@@ -117,12 +117,21 @@ class Projected:
         self._watched = dict(watched or {})
         self._refused: set[str] = set()
         self._applying = threading.Lock()
+        self._down_seen: dict[str, str | None] | None = None
 
     def apply(self) -> None:
         """Take the kept reports; none kept yet, or one unreadable, leaves the feed as it was. Applies run one at a
         time, so one that read an older state never sets the feed after one that read a newer."""
         with self._applying:
             self._apply()
+
+    def refresh(self) -> None:
+        """Apply the kept reports when a watched worker's reason to count as down has changed since the last apply."""
+        with self._applying:
+            down = {instance: liveness.problem() for instance, liveness in self._watched.items()}
+            if down != self._down_seen:
+                self._apply()
+                self._down_seen = down
 
     def _apply(self) -> None:
         try:

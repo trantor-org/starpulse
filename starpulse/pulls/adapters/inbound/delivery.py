@@ -6,7 +6,7 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
 - the worker keeps its latest projection in the `PROJECTION` worker state; `serve` applies it to its feed (`Projected`)
   when the state's version moves, so snapshots keep drawing pull request state;
 - the worker announces the records of each save on `SAVED_STREAM` (`announce_saves`); `serve` holds records in memory
-  and takes those from the database again (`follow_saves`), so `/api/pulls` never answers from before a save;
+  and takes those from the database again (`refresh_on_save`, at a request), so `/api/pulls` never answers from before a save;
 - a page's refresh request lands on `REFRESH_STREAM` (`request_refresh`) and the worker asks `PullSync` for it;
 - the actor's `/metrics` text is kept in the `METRICS` worker state for `serve` to relay.
 
@@ -106,15 +106,15 @@ def announce_saves(store: PullStore, log: EventLog) -> None:
     store.subscribe_saves(lambda keys: log.publish(SAVED_STREAM, {"keys": json.dumps(keys)}))
 
 
-def follow_saves(store: PullStore, log: EventLog, stop: StopEvent, after: int) -> threading.Thread:
-    """Refresh `store` with the records of each save announced past `after`, on a thread until `stop`. `after` is read
-    before the store loads, so a save between the load and the follow is not missed."""
+def refresh_on_save(store: PullStore) -> Callable[[Entry], None]:
+    """The handler of each save announced on `SAVED_STREAM`: it refreshes `store` with the records the save made. The
+    cursor it is read from is taken before the store loads, so a save between the load and the read is not missed."""
+    store.keep_listings()
 
     def handle(entry: Entry) -> None:
         store.refresh([(repo, int(number)) for repo, number in json.loads(entry.fields["keys"])])
 
-    store.keep_listings()
-    return _follow("pull-saved", log, SAVED_STREAM, after, handle, stop)
+    return handle
 
 
 def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable[[str, int | None], bool]:
