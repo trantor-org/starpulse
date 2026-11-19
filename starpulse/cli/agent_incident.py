@@ -13,7 +13,7 @@ from nats.errors import Error as NatsError
 from starpulse.event_log.claude_sessions import same_holder
 from starpulse.board.model.view import board_flow, roles_of
 from starpulse.bridge.reach import Reach
-from starpulse.bridge.subjects import token
+from starpulse.bridge.subjects import token, wake_subject
 from starpulse.cli import agent_wire
 from starpulse.cli.agent_subscribe import bridge
 from starpulse.cli.agent_tasks import record_call, task_claim, task_park, writer
@@ -21,14 +21,17 @@ from starpulse.cli.agent_tasks import record_call, task_claim, task_park, writer
 _TIMEOUT_S = 5.0
 
 
-def _publish(url: str, subject: str, body: bytes) -> None:
+def _publish(url: str, subject: str, body: bytes, wake: str = "") -> None:
     """One core NATS publish, flushed so it left this process; no stream or consumer is needed, so it works whenever
-    the server listens, with StarPulse's API down."""
+    the server listens, with StarPulse's API down. With `wake`, an empty message follows on that subject over the same
+    connection, so the bridge's delivery looks for the incident once it is stored."""
 
     async def send() -> None:
         client = await nats.connect(url, connect_timeout=_TIMEOUT_S, allow_reconnect=False)
         try:
             await client.publish(subject, body)
+            if wake:
+                await client.publish(wake)
             await client.flush(timeout=_TIMEOUT_S)
         finally:
             await client.close()
@@ -189,7 +192,7 @@ def open_incident(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
             raise
     body = {"type": kind, "key": key, "finder": session, "task": task, "at": int(time.time())}
     try:
-        _publish(f"nats://127.0.0.1:{config.port}", source, json.dumps(body).encode())
+        _publish(f"nats://127.0.0.1:{config.port}", source, json.dumps(body).encode(), wake_subject(config.board))
         published = True
     except agent_wire.CliError:
         if task is None:

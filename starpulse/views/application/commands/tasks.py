@@ -307,7 +307,12 @@ def record_miss(
         comment = post_merge_checks.verdict_comment(check, "MISS", evidence, body["task"])
         written = record_written(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
         if not written.ok:
-            archive(body["task"], f"the MISS verdict on {task} {check} was refused: {written.output}", actor=who.actor)
+            undone = archive(
+                body["task"], f"the MISS verdict on {task} {check} was refused: {written.output}", actor=who.actor
+            )
+            if not undone.ok:
+                error = f"{written.output}; fix {body['task']} was filed and could not be archived: {undone.output}"
+                return 409, {"error": error, "skill": written.skill}
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task, "check": check, "verdict": "MISS", "fix": body["task"]}
