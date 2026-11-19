@@ -1000,6 +1000,7 @@ class TaskActor:
             self._log.put_state(CHECKPOINT, {"rules": self._rules, "facts": facts})
         except Exception:  # the next save keeps it; a database error is a notice, not part of the derivation
             logger.exception("task actor: cannot keep the checkpoint")
+            self._derived_moved.set()
         else:
             self._kept = facts
 
@@ -1250,7 +1251,7 @@ class TaskActor:
             return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == self._feed.roles.working]
 
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
-        """A session settled. A task citing no pull request closes when every criterion is checked, else returns to Ready
+        """A session settled. A task citing no pull request closes when every criterion is checked in deliver, else returns to Ready
         (`_end_without_pr`). Any other In Progress task whose holder is not busy (`confirm`) and that no event is awaited on
         has work left, so the `idle` hook resumes the same session with its phase machine's next step; the task stays In
         Progress and no clock runs. A settle an awaited event held runs again from the derivation that finds the wait
@@ -1280,6 +1281,7 @@ class TaskActor:
                 before, count = self._resumes.get(name, (progress, 0))
                 if before != progress or wait_ended:  # an awaited CI result is the wake, not a settle with no progress
                     count = 0
+                    self._resumes[name] = (progress, 0)  # kept even when `confirm` finds the holder busy
                     self._stalled.discard(name)
                 elif name in self._stalled:
                     self._attend(name, "its escalated session settled again with no progress")
@@ -1337,8 +1339,8 @@ class TaskActor:
         )
 
     def _end_without_pr(self, name: str) -> None:
-        """A task citing no pull request has nothing left to resume once its holder ended: every criterion checked closes it,
-        any other returns it to Ready for a new session. A holder still busy (`confirm` raises) settles again."""
+        """A task citing no pull request has nothing left to resume once its holder ended: every criterion checked in the
+        deliver phase closes it, any other returns it to Ready for a new session. A holder still busy (`confirm` raises) settles again."""
         try:
             self._idle(name, "confirm")
         except Exception as error:
@@ -1355,12 +1357,15 @@ class TaskActor:
             self._failed_resumes.pop(name, None)
             self._stalled.discard(name)
             criteria = agent.get("criteria", ())
-            done = bool(criteria) and all(criterion["checked"] for criterion in criteria)
+            checked = bool(criteria) and all(criterion["checked"] for criterion in criteria)
+            delivering = (self._feed.machine_task(IN_PROGRESS, name) or {}).get("state") == "deliver"
+            done = checked and delivering
             target = self._feed.roles.done if done else self._feed.roles.ready
             comment = (
                 "Closed at its session's end: it cites no pull request and every criterion is checked."
                 if done
-                else "Returned to Ready at its session's end: it cites no pull request and a criterion is unchecked."
+                else "Returned to Ready at its session's end: it cites no pull request and "
+                + ("its session ended before the deliver phase." if checked else "a criterion is unchecked.")
             )
             self._write(name, target, comment, self._clock(), source=agent["state"])
 

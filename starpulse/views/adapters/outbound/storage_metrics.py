@@ -11,10 +11,10 @@ CACHE_S = 60.0
 
 
 def _size(path: Path, follow_symlinks: bool) -> int:
-    """The bytes of a regular file, 0 for anything else or a file gone since it was listed."""
+    """The bytes of a regular file, 0 for anything else or a file gone or unreadable since it was listed."""
     try:
         info = path.stat(follow_symlinks=follow_symlinks)
-    except FileNotFoundError:
+    except OSError:
         return 0
     return info.st_size if stat.S_ISREG(info.st_mode) else 0
 
