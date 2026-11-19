@@ -6,13 +6,14 @@ import logging
 import queue
 import threading
 import time
-from collections.abc import Awaitable, Callable, Generator, Sequence
+from collections.abc import Awaitable, Callable, Generator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
+from starpulse.contracts.api.registry import EVENTS
 from starpulse.views.adapters.inbound.api.answering import PLACE, answer, query, reading
 from starpulse.views.adapters.inbound.api.table import Stream
 from starpulse.views.adapters.inbound.column_stream import ColumnViews, Interest
@@ -169,7 +170,7 @@ class Streams:
             if (build := self._build()) is not None:
                 yield _frame("build", build)  # a page holding another build than this one is out of date
             for change in missed:
-                yield self._event(*change)
+                yield from self._event(*change)
             while True:
                 try:
                     change = changes.get(timeout=_PING_S)
@@ -177,14 +178,15 @@ class Streams:
                     yield _PING
                     continue
                 try:
-                    yield self._event(*change)
+                    yield from self._event(*change)
                 finally:
                     changes.task_done()  # `Snapshots.announce` waits for the marks of what it queued
         except ValidationError:
             logger.exception("StarPulse: /api/events sent a body its model refuses; the stream ends")
 
-    def _event(self, name: str, data: dict) -> bytes:
-        return _frame(name, self._event_text(name, data))
+    def _event(self, name: str, data: dict) -> Iterator[bytes]:
+        if name in EVENTS:  # a `tick` ages the snapshot and the column views; it is no event of the page
+            yield _frame(name, self._event_text(name, data))
 
     def _ledger(self, request: Request, event: str) -> Stream | Response:
         """`event`'s newest rows as a `page` event (`{rows, more}`), then a `rows` event (`{rows}`) each time rows of that

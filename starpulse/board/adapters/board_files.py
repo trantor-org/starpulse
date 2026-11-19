@@ -1,5 +1,5 @@
 """The sweeper's `board-files` kind: the board's files against the feed, the file lanes against the machine lanes, and the
-search vectors against the tasks, each find counted as a correction. The StarPulse Operations doc's Board Lane Disagrees
+search vectors against the tasks; a lane or file find is counted as a correction, an embedding is not. The StarPulse Operations doc's Board Lane Disagrees
 With the Task File section holds the scan sequence, the reconcile and the `starpulse_board_lane_mismatch` metric."""
 
 import logging
@@ -109,8 +109,9 @@ class BoardFiles:
 
     def run(self) -> tuple[int, int]:
         """One pass: `(sampled, corrected)`, the order `_BoardKind` reads. `sampled` is the open tasks read and the tasks
-        the vector index holds; `corrected` is the lanes reconciled, the files a rescan had to read and the vectors
-        embedded, each a task a push should have placed (an unembedded task missed its index push)."""
+        the vector index holds; `corrected` is the lanes reconciled and the files a rescan had to read, each a task a
+        push should have placed. Embedding is catch-up after an endpoint timeout or a worker restart, the pass's own
+        job, so it is sampled and never counted as a correction."""
         corrected = self._board.rescan()
         corrected += self._place()
         agents = self._feed.open_tasks()
@@ -126,8 +127,8 @@ class BoardFiles:
                 f"{task} (file {lanes[0]}, board {lanes[1]})" for task, lanes in sorted(persisting.items())
             )
             logger.error("StarPulse: board lanes differ from the task files after a re-read: %s", listed)
-        embedded, indexed = self._embed()
-        return len(agents) + indexed, corrected + embedded
+        _, indexed = self._embed()
+        return len(agents) + indexed, corrected
 
     def exposition(self) -> str:
         """Prometheus text of the gauge: a series per persisting task, none when the board and the files agree."""
