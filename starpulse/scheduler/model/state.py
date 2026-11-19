@@ -1,4 +1,4 @@
-"""Scheduler rows in the history store that a restart restores: in-flight runs, start times, last sample."""
+"""Scheduler rows in the history store that a restart restores: in-flight runs (a stopped one marked), start times, last sample."""
 
 import logging
 from collections.abc import Mapping

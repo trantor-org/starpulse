@@ -14,7 +14,7 @@ const bodies: Record<string, string> = {
 };
 const served: Record<string, unknown> = {
   "/api/milestones/m-89": { milestone: { id: "m-89", title: "Task dialog", description: "## Goal\n\nOne dialog.", specs: ["doc-993 — Task dialog redesign"] } },
-  "/api/docs": { docs: [{ id: "doc-993", title: "Task dialog redesign", type: "specification" }, { id: "doc-12", title: "Working notes", type: "other" }] },
+  "/api/docs?ids=doc-993,doc-12": { docs: [{ id: "doc-993", title: "Task dialog redesign", type: "specification" }, { id: "doc-12", title: "Working notes", type: "other" }] },
   "/api/docs/doc-993": { doc: { id: "doc-993", title: "Task dialog redesign", type: "specification", body: bodies["doc-993"] } },
   "/api/docs/doc-12": { doc: { id: "doc-12", title: "Working notes", type: "other", body: bodies["doc-12"] } },
 };
@@ -47,8 +47,11 @@ describe("the task view's Docs", () => {
     expect(urls.filter((u) => u.startsWith("/api/docs") || u.startsWith("/api/milestones"))).toEqual([]);
   });
 
-  it("lists the milestone, its spec and the linked doc in the rail", async () => {
+  it("lists the milestone, its spec and the linked doc in the rail, asking only for those docs", async () => {
     const host = await mount();
+    const urls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url));
+    expect(urls.filter((u) => u.startsWith("/api/docs?"))).toEqual(["/api/docs?ids=doc-993,doc-12"]);
+    expect(urls).not.toContain("/api/docs");
     expect(rows(host).map((r) => [r.querySelector(".kd")?.textContent, r.querySelector(".tt")?.textContent])).toEqual([
       ["Milestone", "m-89Task dialog"],
       ["Spec", "doc-993Task dialog redesign"],

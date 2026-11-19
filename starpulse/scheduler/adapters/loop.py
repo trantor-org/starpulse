@@ -8,7 +8,8 @@ status of a sample that leaves room for a task admission turned away. Each wake 
    lane it went to, its duration and its resource peak); a session that stops while the task is still in those lanes is
    finished as `session-ended` and held out of admission until the task leaves them;
 2. a session idle past `idle_minutes` with its task still open is returned to the eligible lane once, with a comment, when
-   it has no pull request; any other idle session is settled to Needs attention with a reason and is never started again;
+   it has no pull request; any other idle session is settled to Needs attention with a reason and is never started again.
+   A task with no pull request and an open acceptance criterion is exempt: the task actor nudges its holder on each settle;
 3. while the switch is on and the clock is outside the quiet hours, `decide` ranks the Ready tasks and the loop starts the first admitted, then decides again over
    readings that carry that run's demand, until none is admitted.
 
@@ -28,6 +29,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
+from starpulse.board.model.acceptance import open_criteria
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.markdown import attention_reason
 from starpulse.board.model.seam import Written
@@ -138,9 +140,7 @@ class Loop:
     """Starts admitted tasks through `start` and settles stuck ones through `settle`.
 
     `start` takes a task id and answers the session's address, raising `StartFailedError` when it cannot; `settle` moves a
-    task to Needs attention with the reason and says whether it did; `chain` is the trajectory chain `decide` ranks on
-    and `p_goals` each task's forecast chance of the goal in `lane`.
-    `lane` is the eligible lane, `claim` comments a started session's address on its task, `requeue` moves an idle task back
+    task to Needs attention with the reason and says whether it did; `lane` is the eligible lane, `claim` comments a started session's address on its task, `requeue` moves an idle task back
     to `lane` with a comment, `merged` says whether a task's
     own pull request has merged, which leaves the task unstarted whatever its lane, `clock` is the loop's notion
     of now, `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, and
@@ -158,14 +158,12 @@ class Loop:
         ledger: Ledger,
         start: Callable[..., str],
         settle: Callable[[str, str], Written],
-        chain: Callable[[], Mapping[str, Mapping[str, Any]]],
         lane: str,
         claim: Callable[[str, str], Written] | None = None,
         requeue: Callable[[str, str], Written] | None = None,
         merged: Callable[[Mapping[str, Any]], bool] = lambda agent: False,
         clock: Callable[[], float] = time.time,
         quiet_hours: Callable[[], QuietHours | None] = lambda: None,
-        p_goals: Callable[[], Mapping[str, float]] = dict,
         log: EventLog | None = None,
         harness: HarnessSetting | None = None,
         transcript: Callable[[str], float | None] = lambda session: None,
@@ -177,8 +175,6 @@ class Loop:
         self._ledger = ledger
         self._start = start
         self._settle = settle
-        self._chain = chain
-        self._p_goals = p_goals
         self._lane = lane
         self._claim = claim
         self._requeue = requeue
@@ -388,7 +384,9 @@ class Loop:
         due = []
         for task, run in self._running.items():
             seen = self._feed.machine_task(HARNESS.name, task)
-            due.append(max(run.started_at, seen["active"] if seen else 0.0) + limit + 1.0)
+            at = max(run.started_at, seen["active"] if seen else 0.0) + limit + 1.0
+            if at > now or not self._nudged(task):
+                due.append(at)
         due += [at for at in (self._full[1], *(retry for _, retry in self._failed.values())) if at > now]
         due += [row["until"] for row in self._paused.values() if row["until"] > now]
         return max(0.0, min(due) - now) if due else None
@@ -399,8 +397,8 @@ class Loop:
         return [{"task": t["id"], "title": t["title"]} for t in tasks if t["state"] == self._lane and needs_operator(t)]
 
     def in_flight(self) -> list[dict[str, Any]]:
-        """Every live session holding an In Progress task, oldest first, for `GET /api/scheduler`: the loop's runs, and
-        the sessions it did not track (a stopped one included, within `STALE_S` of its last event), whose address is unknown (`url` is empty) and whose start is the harness machine's
+        """Every live session holding an In Progress task, oldest first, for `GET /api/scheduler`: the loop's runs, its
+        stopped runs the sessions cap still counts (`_held_outside`, whatever their age), and the sessions it did not track (a stopped one included, within `STALE_S` of its last event), whose address is unknown (`url` is empty) and whose start is the harness machine's
         first move on the task, and the assignee sessions that wrote a transcript inside `STALE_S` with no harness machine row
         on the task, started when the task entered In Progress.
 
@@ -408,7 +406,9 @@ class Loop:
         """
         sessions = []
         agents = self._open_agents()
-        for task, run in list(self._running.items()):
+        counted = self._held_outside()
+        held = {task: run for task, run in list(self._parked.items()) if task in counted}
+        for task, run in [*list(self._running.items()), *held.items()]:
             agent = agents.get(task)
             sessions.append(
                 {
@@ -419,7 +419,7 @@ class Loop:
                     "url": run.session,
                 }
             )
-        outside = self._outside()
+        outside = {task: found for task, found in self._outside().items() if task not in held}
         for task, found in outside.items():
             agent, seen = found["agent"], found["seen"]
             sessions.append(
@@ -431,7 +431,7 @@ class Loop:
                     "url": "",
                 }
             )
-        for task, (agent, written) in self._transcribed(outside).items():
+        for task, (agent, written) in self._transcribed({**outside, **held}).items():
             sessions.append(
                 {
                     "task": task,
@@ -444,15 +444,17 @@ class Loop:
         return sorted(sessions, key=lambda session: session["started"])
 
     def _restore(self) -> None:
-        """Load in-flight runs and start times the last process saved; a missing or unreadable row is an empty set."""
+        """Load the in-flight runs, a stopped one marked, and the start times the last process saved; a missing or unreadable
+        row is an empty set."""
         if self._state is None:
             return
         for task, fields in self._state.inflight().items():
             if (run := _run_from(fields)) is not None:
-                self._running[task] = run
+                (self._parked if fields.get("stopped") else self._running)[task] = run
         self._starts = self._state.starts()
         self._note(restored=True)
-        logger.info("StarPulse scheduler: restored %d in-flight", len(self._running))
+        names = sorted({*self._running, *self._parked})
+        logger.info("StarPulse scheduler: restored %d in-flight: %s", len(names), ", ".join(names) or "none")
 
     def _remember(self) -> None:
         """Write start times first so a crash before the in-flight row still leaves the cooldown."""
@@ -463,7 +465,12 @@ class Loop:
             task: at for task, at in self._starts.items() if task in self._running or now - at < START_COOLDOWN
         }
         self._state.save_starts(self._starts)
-        self._state.save_inflight({task: asdict(run) for task, run in self._running.items()})
+        self._state.save_inflight(
+            {
+                **{task: asdict(run) for task, run in self._running.items()},
+                **{task: {**asdict(run), "stopped": True} for task, run in self._parked.items()},
+            }
+        )
 
     def _cooling(self, task: str, now: float) -> bool:
         started = self._starts.get(task)
@@ -536,6 +543,11 @@ class Loop:
         except Exception:  # the store is a database: any failure to write must not stop the loop
             logger.exception("StarPulse scheduler: cannot record the run of %s", task)
 
+    def _nudged(self, task: str) -> bool:
+        """Whether the task actor, not the idle clock, handles the task's idle holder: no pull request, a criterion open."""
+        agent = self._feed.task(task, lean=True) or {}
+        return not agent.get("prs") and bool(open_criteria(agent.get("criteria", ())))
+
     def _reap(self, now: float) -> None:
         """Settle each run idle past the limit with its task still open. A task with no pull request is returned to the
         eligible lane once, with a comment; any other settle moves it to Needs attention and it is never started again.
@@ -545,7 +557,7 @@ class Loop:
         for task, run in list(self._running.items()):
             seen = self._feed.machine_task(HARNESS.name, task)
             idle = now - max(run.started_at, seen["active"] if seen else 0.0)
-            if idle <= limit:
+            if idle <= limit or self._nudged(task):
                 continue
             minutes = f"its session was idle for {idle / 60:.0f} minutes (limit {self._policy.idle_minutes:g}) with the task still open"
             returns = self._kept_state(IDLE_KEY) or {}
@@ -574,7 +586,7 @@ class Loop:
         seen = self._feed.machine_task(HARNESS.name, task)
         return seen is not None and seen["state"] == "active"
 
-    def _readings(self) -> list[Reading]:
+    def readings(self) -> list[Reading]:
         """The sampler's readings with the demand of each run the sampler does not yet count added; none without a sample.
 
         The sessions dimension is the selected harness only: its own in-flight count against its session cap.
@@ -624,10 +636,8 @@ class Loop:
             lane or self._lane,
             readings,
             self._policy,
-            self._chain(),
             self._ledger,
             log=log,
-            p_goals=self._p_goals(),
         )
         if log:
             self._count(decisions)
@@ -684,7 +694,7 @@ class Loop:
         """
         if not self._sampler.readings()[0]:
             return None
-        tasks, decisions = self._decide(self._readings(), set(), log=False)
+        tasks, decisions = self._decide(self.readings(), set(), log=False)
         if not decisions:
             return None
         top = decisions[0]  # the admitted in enforced order come first, then the refused by depth
@@ -716,7 +726,7 @@ class Loop:
         `start-limit` with its refusal count while the session-start service's limit is full. Empty before the first sample."""
         if not self._sampler.readings()[0]:
             return self._block_rows([], (), self._clock())
-        readings = self._readings()
+        readings = self.readings()
         _, decisions = self._decide(readings, set(), log=False)
         return self._block_rows(readings, decisions[0].overfit if decisions else (), self._clock())
 
@@ -752,12 +762,12 @@ class Loop:
     def _admit(self, now: float) -> list[str]:
         started: list[str] = []
         if self._full[1] > now:  # the session limit is full: every start would be refused
-            readings = self._readings()
+            readings = self.readings()
             self._record(now, readings, self._decide(readings, set(), log=False)[1])
             return started
         last: tuple[list[Reading], list[Decision]] | None = None
         skipped = {task for task, (_, retry_at) in self._failed.items() if retry_at > now}  # still backing off
-        while readings := self._readings():
+        while readings := self.readings():
             tasks, decisions = self._decide(readings, skipped)
             last = (readings, decisions)
             prompt: dict[str, Any] = {}
@@ -824,6 +834,7 @@ class Loop:
                 self._running[task] = parked if parked is not None else self._stub(task, now, agents)
         if revived:
             self._save_held()
+            self._remember()
 
     def _stub(self, task: str, now: float, agents: Mapping[str, Mapping[str, Any]]) -> _Run:
         agent = agents.get(task) or {"labels": (), "model": ""}

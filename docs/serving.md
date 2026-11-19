@@ -1041,7 +1041,7 @@ frees its slot. A credit or usage pause for one
 harness lands in `pauses` and blocks admission for that harness only.
 `sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
 
-- `cpu` and `memory` are the host's busy share and used share, in percent, read with psutil.
+- `cpu` and `memory` are the host's busy share over the last 60 seconds and its used share, in percent, read with psutil. With a dispatch loop each is the use `blockedBy` judges, the sampled value plus the demand of a start the sampler does not count yet.
 - `sessions` counts the tasks with an active harness session; with a dispatch loop it counts the selected harness's `inFlight` sessions that are active, so a session stopped between a reply and its next tool result frees its slot.
 - `review` sums the `size-N` labels of the tasks in `review_lane`; a task without one counts `unsized_points`.
 
@@ -1127,8 +1127,7 @@ sends the browser's own zone with the times.
 ### Admission
 
 `scheduler.admission.decide` answers, for each workable task in the eligible lane, whether it fits and where it ranks. It is
-a pure function of the open tasks, the sampler's readings, the `[scheduler]` policy, the trajectory chain, each task's
-forecast P(goal), and the run ledger.
+a pure function of the open tasks, the sampler's readings, the `[scheduler]` policy and the run ledger.
 
 - **Demand.** A task draws `size points x its tier's weight` percent of CPU and of memory, one session, and its points of
   review. The tier is the middle word of its profile (`@agent-standard-high` is `standard`); a tier with no weight, or no
@@ -1144,15 +1143,10 @@ forecast P(goal), and the run ledger.
   the most open tasks waiting on them directly, then the deepest critical path (the task itself plus the longest chain
   of open tasks waiting on it), then the heaviest Priority weight, the lowest id breaking a tie. The weight is the `[scheduler.priority_matrix]`
   cell of the task's `<impact>/<urgency>` (`high/low`), 1 to 9 by default as the product of the two levels' places
-  (low 1, medium 2, high 3); a task missing either field ranks under `default`, 4. In shadow, the default, a second order
-  is only logged: `value / dominant share`, where value is weight times depth times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the task's forecast
-  chance of the goal in the eligible lane (`trajectory_analytics(...)["forecast"]`), else the chain's `p_goal` for that
-  lane, and 1 when the lane has no history. The loop reads those ranks whenever `[level]` is set. An optional predictor, a
-  function from a task's title and description to a score, replaces P(goal) in that shadow value and is logged; a
-  predictor that raises leaves the score empty.
+  (low 1, medium 2, high 3); a task missing either field ranks under `default`, 4.
 - **Log.** Each decision logs one line:
-  `StarPulse scheduler: <task> admitted|refused (<dimension> full|no agent profile) p_goal=<p> predictor=<score> shadow_rank=<n> enforced_rank=<n>`.
-  Ranks number the admitted tasks from 1; a refused task has none.
+  `StarPulse scheduler: <task> admitted|refused (<dimension> full|no agent profile) enforced_rank=<n>`.
+  The rank numbers the admitted tasks from 1; a refused task has none.
 
 The run ledger is the history store's `starpulse_scheduler_runs` table (migration 0016, renamed by 0028), one row per finished run: its task, tier,
 points, outcome, duration in seconds, the peak demand it drew on each dimension and the epoch second it was recorded. Event-log pruning never deletes

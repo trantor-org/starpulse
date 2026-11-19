@@ -109,20 +109,15 @@ def main(argv: list[str] | None = None) -> None:
         except (OSError, ValueError) as exc:
             parser.exit(1, f"{path}: {exc}\n")
     if args.context == "scheduler":
-        from starpulse.runtime.wiring import trajectories_response
         from starpulse.scheduler.bin import scheduler_worker
         from starpulse.sessions.adapters.outbound.session_start import starter
-        from starpulse.views.adapters.outbound.ttl_cached import ttl_cached
 
         return scheduler_worker.main(
             argv,
             parser,
             **loader,
             worker_board=scheduler_board,
-            history_store=history_store,
             hold=hold,
-            trajectories_response=trajectories_response,
-            cached=ttl_cached,
             starter=starter,
             delivered=own_pull_merged,
         )

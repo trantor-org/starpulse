@@ -183,9 +183,16 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
         return encode("snapshot", slim_snapshot(data))
 
 
+#: The snapshot's fields `/api/flows` keeps: what the agent CLI reads of the board, the runs and the cues.
+FLOW_KEYS = ("flows", "roles", "settled", "cold_done", "pulls", "interactive", "ratings", "cues", "dags", "error")
+
+
 def stored_bodies(data: Any, held: _Held) -> dict[str, bytes]:
-    """The bodies `/api/snapshot` serves, by view: the page's (`slim`) and `?view=full`'s."""
-    return {"slim": encode_snapshot(data, held), "full": encode("snapshot", full_snapshot(data))}
+    """The bodies the API serves, by view: `/api/snapshot`'s for the page (`slim`) and `?view=full`, and `/api/flows`'s
+    (`flows`), so no read decodes or encodes the snapshot."""
+    full = full_snapshot(data)
+    flows = {key: full[key] for key in FLOW_KEYS if key in full}
+    return {"slim": encode_snapshot(data, held), "full": encode("snapshot", full), "flows": encode("flows", flows)}
 
 
 def _splice(body: bytes, marker: bytes, drawn: bytes, after: bytes = b"") -> bytes:

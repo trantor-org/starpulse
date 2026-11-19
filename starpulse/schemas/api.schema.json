@@ -2335,7 +2335,7 @@
       "type": "object"
     },
     "Docs": {
-      "description": "`GET /api/docs`: every open doc, by ascending number.",
+      "description": "`GET /api/docs?ids=`: the named open docs, without bodies, in the order asked.",
       "properties": {
         "docs": {
           "items": {

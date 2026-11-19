@@ -514,7 +514,7 @@ export interface DocRecord {
   [k: string]: unknown;
 }
 /**
- * `GET /api/docs`: every open doc, by ascending number.
+ * `GET /api/docs?ids=`: the named open docs, without bodies, in the order asked.
  */
 export interface Docs {
   docs: DocSummary[];

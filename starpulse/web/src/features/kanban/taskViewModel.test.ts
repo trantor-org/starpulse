@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
-import { changedFields, ciHistory, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, editKey, fetchRecord, labelRuleError, menuKey, repoBase, repoPath, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
+import { changedFields, ciHistory, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, linkedDocIds, editKey, fetchRecord, labelRuleError, menuKey, repoBase, repoPath, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", tier: "leverage", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -400,13 +400,23 @@ describe("docLinks", () => {
   });
 });
 
+describe("linkedDocIds", () => {
+  it("names the id of every row docLinks draws, from a spec's bullet text or a linked file's path, each once", () => {
+    const milestone = { id: "m-1", title: "t", description: "d", specs: ["doc-7 — .starpulse/board/docs/specs/Renamed.md", "doc-8 — Title"] };
+    const record = { documentation: ["docs/specs/doc-8 - Title.md", "docs/doc-12 - Notes.md", "notes.md"] };
+
+    expect(linkedDocIds(record, milestone)).toEqual(["doc-7", "doc-8", "doc-12"]);
+    expect(linkedDocIds({}, null)).toEqual([]);
+  });
+});
+
 describe("the doc reads", () => {
   it("unwrap the board's milestone, list and doc, and give nothing when the board refuses", async () => {
     expect(await fetchMilestone("m-89", reply(200, { milestone: { id: "m-89" } }) as never)).toEqual({ id: "m-89" });
-    expect(await fetchDocs(reply(200, { docs: [{ id: "doc-1" }] }) as never)).toEqual([{ id: "doc-1" }]);
+    expect(await fetchDocs(["doc-1"], reply(200, { docs: [{ id: "doc-1" }] }) as never)).toEqual([{ id: "doc-1" }]);
     expect(await fetchDoc("doc-1", reply(200, { doc: { id: "doc-1", body: "b" } }) as never)).toEqual({ id: "doc-1", body: "b" });
     expect(await fetchMilestone("m-1", reply(404, { error: "no" }) as never)).toBeNull();
-    expect(await fetchDocs((async () => { throw new Error("offline"); }) as never)).toEqual([]);
+    expect(await fetchDocs(["doc-1"], (async () => { throw new Error("offline"); }) as never)).toEqual([]);
   });
 });
 

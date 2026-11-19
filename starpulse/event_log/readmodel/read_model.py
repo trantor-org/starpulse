@@ -139,15 +139,15 @@ class ReadModel:
     def _machine_rows(
         self, machine: str | None, since: float | None, keep_open: str | None = None
     ) -> list[tuple[str, dict[str, Any], int]]:
-        statement = select(machine_tasks.c.machine, machine_tasks.c.agent, machine_tasks.c.seq)
+        statement = select(machine_tasks.c.machine, machine_tasks.c.task, machine_tasks.c.agent, machine_tasks.c.seq)
         if machine is not None:
             statement = statement.where(machine_tasks.c.machine == machine)
         if since is not None:
             recent = machine_tasks.c.active_at >= since
             statement = statement.where(recent if keep_open is None else or_(recent, machine_tasks.c.task.in_(queries.open_ids(keep_open))))
-        statement = statement.order_by(machine_tasks.c.machine, machine_tasks.c.task)
-        with self._engine.connect() as db:
-            return [tuple(row) for row in db.execute(statement).all()]
+        with self._engine.connect() as db:  # no ORDER BY: it makes SQLite scan the whole table in key order
+            found = sorted(db.execute(statement).all(), key=lambda row: (row.machine, row.task))
+        return [(row.machine, row.agent, row.seq) for row in found]
 
     def _summaries(self, statement: Select[Any]) -> list[dict[str, Any]]:
         with self._engine.connect() as db:

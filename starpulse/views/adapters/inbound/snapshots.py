@@ -20,17 +20,12 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
 from starpulse.event_log.wake import StopEvent
 from starpulse.views.adapters.inbound.compression import Encoded
-from starpulse.views.model.encoding import encode
 
 logger = logging.getLogger(__name__)
 
 
 class NotStored(Exception):
     """The Board writer has stored no snapshot yet."""
-
-
-#: The snapshot's fields `/api/flows` keeps: what the agent CLI reads of the board, the runs and the cues.
-FLOW_KEYS = ("flows", "roles", "settled", "cold_done", "pulls", "interactive", "ratings", "cues", "dags", "error")
 
 
 class Served(NamedTuple):
@@ -48,9 +43,6 @@ class Snapshots:
         self._lock = threading.Lock()
         #: The bodies event streams sent by reference and pages have not fetched yet, by key.
         self._refs: dict[str, Encoded] = {}
-        #: The `/api/flows` body and gzip made from one `take`, under `_flowing`.
-        self._flows: tuple[Served, Encoded] | None = None
-        self._flowing = threading.Lock()
         self._keys = itertools.count()
         #: The body last read of each view, with the stamp and sequence it was stored at; a newer stamp replaces it.
         self._bodies: dict[str, tuple[tuple[int, float], int, Encoded]] = {}
@@ -73,8 +65,8 @@ class Snapshots:
         self.readers[0].start()
 
     def stored(self, view: str = "slim") -> tuple[int, Encoded]:
-        """The sequence and body the writer stored for `view` (`slim` is the page's, `full` is `?view=full`'s); the body
-        is read from the store only when it was stored again."""
+        """The sequence and body the writer stored for `view` (`slim` is the page's, `full` is `?view=full`'s, `flows`
+        is `/api/flows`'s); the body is read from the store only when it was stored again."""
         stamp = self._store.stamp(view)
         if stamp is None:
             raise NotStored(view)
@@ -90,14 +82,9 @@ class Snapshots:
         return row[0], encoded
 
     def flows(self) -> Encoded:
-        """The `/api/flows` body of the snapshot `take` returns, encoded and gzipped once however many requests ask: the
-        agent CLI reads it about once a second."""
-        served = self.take()
-        with self._flowing:
-            if self._flows is None or self._flows[0] is not served:
-                body = encode("flows", {key: served.snapshot[key] for key in FLOW_KEYS if key in served.snapshot})
-                self._flows = (served, Encoded.of(body))
-            return self._flows[1]
+        """The `/api/flows` body the writer stored, which the agent CLI reads about once a second: no read decodes or
+        encodes the snapshot."""
+        return self.stored("flows")[1]
 
     def take(self) -> Served:
         """The stored full snapshot as a dict, decoded once per stored body however many streams and requests read it."""

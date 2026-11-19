@@ -1,25 +1,30 @@
 // The task view's Docs: the rail rows for a task's milestone, spec and linked docs, and the reader that draws one in the dialog's place.
 import { useEffect, useState } from "react";
 import { Md } from "./Markdown";
-import { docLinks, fetchDoc, fetchDocs, fetchMilestone, type DocLink, type DocSummary, type MilestoneDoc, type TaskRecord } from "./taskViewModel";
+import { docLinks, fetchDoc, fetchDocs, fetchMilestone, linkedDocIds, type DocLink, type DocSummary, type MilestoneDoc, type TaskRecord } from "./taskViewModel";
 
 type Loaded = { milestone: MilestoneDoc | null; docs: DocSummary[] };
 
 /**
  * The Docs rows for `record` and the milestone they open, read once the task has a milestone or a linked doc and `settled` says its own
- * record has arrived, so the 150 KB docs list never shares the connection with the record read a click is waiting on; a read the board
+ * record has arrived, so the docs read never shares the connection with the record read a click is waiting on; a read the board
  * refuses leaves its rows closed.
  */
 export function useDocs(record: Pick<TaskRecord, "milestone" | "documentation">, settled: boolean): { links: DocLink[]; milestone: MilestoneDoc | null } {
   const [loaded, setLoaded] = useState<Loaded>({ milestone: null, docs: [] });
   const { milestone } = record;
-  const linked = Boolean(record.documentation?.length);
+  const entries = (record.documentation ?? []).join("\n"); // a new record with the same links reads nothing again
+  const linked = entries !== "";
   useEffect(() => {
     if (!settled || (!milestone && !linked)) return;
     let live = true;
-    void Promise.all([milestone ? fetchMilestone(milestone) : null, fetchDocs()]).then(([found, docs]) => live && setLoaded({ milestone: found, docs }));
+    void (async () => {
+      const found = milestone ? await fetchMilestone(milestone) : null; // its specs are among the docs to name
+      const docs = await fetchDocs(linkedDocIds({ documentation: entries ? entries.split("\n") : [] }, found));
+      if (live) setLoaded({ milestone: found, docs });
+    })();
     return () => { live = false; };
-  }, [milestone, linked, settled]);
+  }, [milestone, entries, linked, settled]);
   return { links: docLinks(record, loaded.milestone, loaded.docs), milestone: loaded.milestone };
 }
 

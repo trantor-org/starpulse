@@ -447,7 +447,7 @@ def task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
         raise agent_wire.CliError("usage", "name the task's title, or --batch FILE for several")
     if args.source and (held := _open_with_source(args, environ, args.source)):
         return {"task": held[0]["id"], "existing": True}
-    status, reply = agent_wire.post(base, path, {**_created_task(args), **writer(args, environ)})
+    status, reply = agent_wire.post_keyed(base, path, {**_created_task(args), **writer(args, environ)})
     return {"task": record_call(base, path, status, reply, ok=(201,))["task"]}
 
 
@@ -455,7 +455,7 @@ def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: st
     """The batch create of the JSON list `args.batch` names (`-` for stdin) for `task_create`."""
     text = sys.stdin.read() if args.batch == "-" else Path(args.batch).read_text()
     specs = json.loads(text)
-    status, reply = agent_wire.post(base, path, {"tasks": specs, **writer(args, environ)})
+    status, reply = agent_wire.post_keyed(base, path, {"tasks": specs, **writer(args, environ)})
     results = record_call(base, path, status, reply)["results"]
     created = [result["task"] for result in results if "task" in result]
     refused = {str(position): result["error"] for position, result in enumerate(results, 1) if "error" in result}
@@ -805,12 +805,6 @@ def milestone_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> d
     base, path = agent_wire.server_url(args.server, environ), "/api/milestones/archive"
     status, reply = agent_wire.post(base, path, {"milestone": args.milestone})
     return {"milestone": record_call(base, path, status, reply)["milestone"]}
-
-
-def doc_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/docs"
-    status, reply = agent_wire.get(base, path)
-    return {"docs": record_call(base, path, status, reply, noun="doc")["docs"]}
 
 
 def doc_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

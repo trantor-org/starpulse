@@ -1,23 +1,20 @@
 """Admission: whether a Ready task fits the capacity left, and in what order the tasks that fit go.
 
-A task's demand is priced by what a task of its tier and size has drawn. The tasks that fit rank two ways. The enforced
-order is the task's `tier` field's position in `TIERS`, then the heaviest Priority weight, the most open tasks waiting
+A task's demand is priced by what a task of its tier and size has drawn. The tasks that fit go in the
+order of the task's `tier` field's position in `TIERS`, then the heaviest Priority weight, the most open tasks waiting
 on it directly, the deepest critical path and the id; nothing but the field picks a task's tier, and no dependents lift
 crosses tiers. A task in a `LEFTOVER_TIERS` tier (`decide`) ranks after every other task and is priced against the
 headroom less the demand of every other task admitted, so it takes only the room the others leave. Its session frames the
-choice and parks for the operator. The shadow order is `value / dominant share` (Dominant Resource
-Fairness), where value is that weight times depth times the chance of the goal. The shadow order is only logged beside the enforced one until a calibration
-report earns it the enforced place (`shadow=False`).
+choice and parks for the operator.
 
-The rule is pure over the sampler's readings, the policy, the run ledger, the board's tasks, the trajectory chain and
-each task's forecast P(goal); the loop that acts on it is not here. It reads the headroom it is given, so a caller that starts a task passes the readings
+The rule is pure over the sampler's readings, the policy, the run ledger and the board's tasks; the loop that acts on it
+is not here. It reads the headroom it is given, so a caller that starts a task passes the readings
 again, with that task's demand in them, before deciding the next.
 """
 
 import logging
-import math
 import re
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -66,10 +63,9 @@ class Decision:
 
     It is `admitted` when its `demand` fits every dimension's headroom, else `blocked_by` the first dimension it overfits;
     `overfit` lists every one it overfits, in gate order, empty for a task refused `NO_PROFILE`.
-    `depth` is the longest chain of open tasks waiting on it; `p_goal` the forecast chance of the goal for that task in
-    the eligible lane, else the chain's chance from the lane; `predictor` the optional predictor's score; `priority` the Priority matrix cell the task ranked by (`<impact>/<urgency>`,
-    or `default` for a task with neither) and `weight` that cell's Priority weight. The ranks number
-    the admitted tasks from 1: `shadow_rank` by value over dominant share and `enforced_rank` by the order admission follows.
+    `depth` is the longest chain of open tasks waiting on it; `priority` the Priority matrix cell the task ranked by
+    (`<impact>/<urgency>`, or `default` for a task with neither) and `weight` that cell's Priority weight.
+    `enforced_rank` numbers the admitted tasks from 1 by the order admission follows.
     """
 
     task: str
@@ -77,11 +73,8 @@ class Decision:
     blocked_by: str | None
     demand: Mapping[str, float]
     depth: int
-    p_goal: float
-    predictor: float | None
     priority: str = "default"
     weight: float = 1.0
-    shadow_rank: int | None = None
     enforced_rank: int | None = None
     overfit: tuple[str, ...] = ()
 
@@ -156,32 +149,6 @@ def _depths(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
     return {task["id"]: depth(task["id"], frozenset()) for task in tasks}
 
 
-def ranks_from_trajectories_body(body: Mapping[str, Any], lane: str) -> dict[str, Any]:
-    """The chain and per-task P(goal) `decide` ranks on, taken from a trajectories analytics body.
-
-    `p_goals` is each forecast row whose `state` is `lane` (a Ready task's going run); a task with no row falls back to
-    the lane's chain chance inside `decide`.
-    """
-    chain = body.get("chain") or {}
-    p_goals: dict[str, float] = {}
-    for row in body.get("forecast") or ():
-        chance = row.get("p_goal")
-        if row.get("state") == lane and chance is not None:
-            p_goals[row["task"]] = float(chance)
-    return {"chain": chain, "p_goals": p_goals}
-
-
-def _score(predictor: Callable[[str], float] | None, task: Mapping[str, Any]) -> float | None:
-    """The predictor's score for the task's text, None without a predictor or when it fails: it is only a shadow."""
-    if predictor is None:
-        return None
-    try:
-        return predictor(f"{task.get('title', '')}\n{task.get('description', '')}")
-    except Exception:  # a predictor is third-party code; admission must not wait on its bug
-        logger.exception("StarPulse scheduler: the predictor failed on %s", task["id"])
-        return None
-
-
 def _why(blocked_by: str | None) -> str:
     """The refusal a log line gives: the dimension that is full or the missing profile."""
     return blocked_by if blocked_by == NO_PROFILE else f"{blocked_by} full"
@@ -192,13 +159,9 @@ def decide(
     lane: str,
     readings: Collection[Reading],
     policy: Scheduler,
-    chain: Mapping[str, Mapping[str, Any]],
     ledger: Ledger,
     *,
-    predictor: Callable[[str], float] | None = None,
-    shadow: bool = True,
     log: bool = True,
-    p_goals: Mapping[str, float] | None = None,
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
@@ -206,18 +169,12 @@ def decide(
     leftover-tier task is priced against the headroom less the demand of every other task admitted, so it starts only
     when nothing else needs the room, and ranks after them.
 
-    `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. `chain` is the
-    trajectory analytics' chain (`trajectory_analytics(...)["chain"]`); `p_goals` is each task's forecast chance of the
-    goal in `lane`. A task with no forecast row uses the lane's chain chance, and a lane with no row gives P(goal) 1.
-    With `shadow` on, the predictor's score and P(goal) rank only the shadow order; off, that order is enforced. Each
-    decision is logged unless `log` is off, as for a read that only looks.
+    `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. Each decision is
+    logged unless `log` is off, as for a read that only looks.
     """
     depths, dependents = _depths(tasks), _dependents(tasks)
-    limits = {reading.name: reading.limit for reading in readings}
     headroom = {reading.name: reading.limit - reading.use for reading in readings}
-    lane_p_goal = chain.get(lane, {}).get("p_goal", 1.0)
-    chances = p_goals or {}
-    decisions, values, keys = [], {}, {}
+    decisions, keys = [], {}
     reserved = dict.fromkeys(DIMENSIONS, 0.0)
     workable = [task for task in tasks if task["state"] == lane and task["workable"]]
 
@@ -232,32 +189,19 @@ def decide(
             blocked_by = overfit[0] if overfit else None
         if blocked_by is None and not _leftover(task):
             reserved = {name: reserved[name] + need[name] for name in DIMENSIONS}
-        score = _score(predictor, task)
-        p_goal = chances.get(task["id"], lane_p_goal)
         priority, weight = policy.priority_of(task)
-        decision = Decision(
-            task["id"], blocked_by is None, blocked_by, need, depths[task["id"]], p_goal, score, priority, weight, overfit=overfit
-        )
-        share = max(need[name] / limits[name] if limits[name] else math.inf for name in DIMENSIONS)
-        values[decision.task] = decision.weight * decision.depth * (p_goal if score is None else score) / share
+        decision = Decision(task["id"], blocked_by is None, blocked_by, need, depths[task["id"]], priority, weight, overfit=overfit)
         keys[decision.task] = _enforced_key(task, dependents.get(decision.task, 0), decision)
         decisions.append(decision)
     admitted = [d for d in decisions if d.admitted]
-    by_shadow = sorted(admitted, key=lambda d: (-values[d.task], -d.depth, d.task))
-    by_rule = sorted(admitted, key=lambda d: keys[d.task])
-    enforced = by_rule if shadow else by_shadow
-    shadow_rank = {d.task: rank for rank, d in enumerate(by_shadow, 1)}
-    enforced_rank = {d.task: rank for rank, d in enumerate(enforced, 1)}
-    ranked = [replace(d, shadow_rank=shadow_rank[d.task], enforced_rank=enforced_rank[d.task]) for d in enforced]
+    enforced = sorted(admitted, key=lambda d: keys[d.task])
+    ranked = [replace(d, enforced_rank=rank) for rank, d in enumerate(enforced, 1)]
     refused = sorted((d for d in decisions if not d.admitted), key=lambda d: (-d.depth, d.task))
     for decision in [*ranked, *refused] if log else ():
         logger.info(
-            "StarPulse scheduler: %s %s p_goal=%.2f predictor=%s shadow_rank=%s enforced_rank=%s",
+            "StarPulse scheduler: %s %s enforced_rank=%s",
             decision.task,
             "admitted" if decision.admitted else f"refused ({_why(decision.blocked_by)})",
-            decision.p_goal,
-            decision.predictor,
-            decision.shadow_rank,
             decision.enforced_rank,
         )
     return [*ranked, *refused]

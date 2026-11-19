@@ -1739,7 +1739,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "retired_projected": retired.projected,
             "retired_page": retired.page,
             "import_retired": _importer(root, retired),
-            "docs": native_docs.lister(root),
             "read_doc": native_docs.reader(root),
             "create_doc": native_docs.creator(root),
             "edit_doc": native_docs.editor(root),

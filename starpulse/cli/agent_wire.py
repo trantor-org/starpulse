@@ -6,6 +6,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
@@ -17,6 +18,10 @@ DEFAULT_SERVER = "http://localhost:8766"
 #: each wait capped at `BUSY_PAUSE_MAX_S` seconds: a refusal is a saturated pool, over within moments.
 BUSY_SENDS = 4
 BUSY_PAUSE_MAX_S = 8
+#: A create the server did not answer is sent again under its `request_key`, at most this many sends in all, pausing
+#: `KEYED_PAUSE_S` seconds between: the server answers a repeated key with the first send's task and files nothing.
+KEYED_SENDS = 4
+KEYED_PAUSE_S = 2
 
 
 class CliError(Exception):
@@ -167,6 +172,24 @@ def post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any
         return exc.code, reply
     except (OSError, ValueError) as exc:
         raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
+
+
+def post_keyed(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """`post` of a create `body` under a fresh `request_key`, sent again with that key while the server is unavailable.
+
+    A send that timed out may have applied, so only a repeat under its key is safe: the server answers it with the
+    first send's answer. The last send's `CliError` is raised after `KEYED_SENDS` sends.
+    """
+    keyed = {**body, "request_key": uuid.uuid4().hex}
+    for send in range(1, KEYED_SENDS + 1):
+        try:
+            return post(base, path, keyed)
+        except CliError as unavailable:
+            if unavailable.code != "unavailable" or send == KEYED_SENDS:
+                raise
+        # adr-exempt: retry
+        time.sleep(KEYED_PAUSE_S)
+    raise AssertionError("unreachable")
 
 
 def _json_or_empty(resp: Any) -> dict[str, Any]:

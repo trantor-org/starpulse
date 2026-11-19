@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from starpulse.flow_metrics.model.level import Level
     from starpulse.scheduler.model.config import Scheduler
 
 
@@ -16,7 +15,6 @@ class SchedulerConfig(Protocol):
     board_type: str
     board: Mapping[str, object]
     scheduler: Scheduler
-    level: Level | None
     session_start_url: str | None
 
 
@@ -27,4 +25,4 @@ def scheduler_fixed_blocks(config: SchedulerConfig) -> tuple:
 
 def scheduler_live_blocks(config: SchedulerConfig) -> tuple:
     """What of `config` the runtime is built from; a change to anything else needs no rebuild."""
-    return (config.scheduler, config.level, config.session_start_url)
+    return (config.scheduler, config.session_start_url)

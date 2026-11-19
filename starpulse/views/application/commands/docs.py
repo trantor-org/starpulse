@@ -20,9 +20,13 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
 logger = logging.getLogger(__name__)
 
 
-def docs_list(board: Board) -> tuple[int, dict[str, Any]]:
-    """The open docs the board keeps, bodies left out: the HTTP status and JSON body. Reading is not LAN-limited."""
-    return 200, {"docs": board.docs()}
+def docs_list(board: Board, ids: list[str]) -> tuple[int, dict[str, Any]]:
+    """The open docs among `ids`, in that order and bodies left out: the HTTP status and JSON body. A doc that is not
+    open is skipped, and no ids is refused, since nothing needs every doc. Reading is not LAN-limited."""
+    if not ids:
+        return 400, {"error": "name the docs: /api/docs?ids=doc-1,doc-2"}
+    found = (board.read_doc(doc) for doc in ids)
+    return 200, {"docs": [{key: value for key, value in record.items() if key != "body"} for record in found if record]}
 
 
 def doc_record(board: Board, doc: str) -> tuple[int, dict[str, Any]]:

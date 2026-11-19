@@ -58,6 +58,7 @@ machine_tasks = Table(
     Column("seq", Integer, nullable=False),
     Index("ix_starpulse_machine_tasks_machine_active", "machine", "active_at"),
     Index("ix_starpulse_machine_tasks_seq", "seq"),
+    Index("ix_starpulse_machine_tasks_active", "active_at"),
 )
 
 #: One row per Acceptance Criterion or Definition of Done item, numbered from 1 within its kind.

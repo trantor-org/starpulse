@@ -344,7 +344,14 @@ _ROUTE_VIEWS = {
 
 
 def _held_folds(
-    telemetry: SignalFoldReader, window: float, kind: str, now: float, label: str, views: tuple[str, ...] = (), span: int = 1
+    telemetry: SignalFoldReader,
+    window: float,
+    kind: str,
+    now: float,
+    label: str,
+    views: tuple[str, ...] = (),
+    span: int = 1,
+    read: Callable[[float], dict[str, list[Any]]] | None = None,
 ) -> dict[str, list[Any]] | tuple[bytes, int]:
     """The per-session fold results of the `views` for the last `window` hours as of `now`, or the 503 response for a
     database that cannot be read.
@@ -354,7 +361,8 @@ def _held_folds(
     try:
         oldest = telemetry.oldest()
         history = _history_s(oldest, now)
-        held = None if window * span * 3600 > history else telemetry.window(now - window * span * 3600, views)
+        since = now - window * span * 3600
+        held = None if window * span * 3600 > history else (read or (lambda at: telemetry.window(at, views)))(since)
     except Exception as exc:  # the event log's database is unreachable
         logger.warning("%s: signal table unreadable: %s", label, exc)
         return _error("the telemetry log cannot be read"), 503
@@ -428,10 +436,17 @@ def steps_response(
         return paged, 400
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot report session steps"), 501
-    held = _held_folds(telemetry, window, "session_steps", now, "steps", ("steps",))
+    after, limit = paged
+    held = _held_folds(
+        telemetry,
+        window,
+        "session_steps",
+        now,
+        "steps",
+        read=lambda since: telemetry.step_window(since, after and after[0], limit),
+    )
     if isinstance(held, tuple):
         return held
-    after, limit = paged
     every = combine_steps(held["steps"])
     start = bisect_right(every, after, key=_step_key) if after is not None else 0
     end = start + limit

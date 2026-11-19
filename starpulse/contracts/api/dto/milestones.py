@@ -76,7 +76,7 @@ class DocRecord(DocSummary):
 
 
 class Docs(_Api):
-    """`GET /api/docs`: every open doc, by ascending number."""
+    """`GET /api/docs?ids=`: the named open docs, without bodies, in the order asked."""
 
     docs: list[DocSummary]
 

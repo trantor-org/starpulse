@@ -1,6 +1,6 @@
 """The run ledger: each scheduler run's outcome, duration and resource peak, kept against its task.
 
-It is the labelled data the admission rule learns demand from and an optional predictor trains on. One row per run in
+It is the labelled data the admission rule learns demand from. One row per run in
 the history store's `starpulse_scheduler_runs` table, so a restart keeps it and the store's snapshot carries it.
 """
 

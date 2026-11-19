@@ -4,7 +4,6 @@
 imported at the top of `starpulse.runtime.server`, so the Delivery worker's import closure holds no scheduler module.
 """
 
-import json
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -17,18 +16,12 @@ from starpulse.contracts.adapters import Move
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS, transcript_written
 from starpulse.event_log.wake import StopEvent
-from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
-from starpulse.flow_metrics.model.level import Level
 from starpulse.scheduler.adapters.pressure import watch
 from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
 from starpulse.scheduler.bin.blocks import SchedulerConfig
 from starpulse.scheduler.model.config import ACTOR as SCHEDULER
-from starpulse.scheduler.model.admission import ranks_from_trajectories_body
-
-#: How long the dispatch loop holds the trajectory chain it ranks on: the analytics read the whole history.
-_CHAIN_TTL_S = 300
 
 
 def start_scheduler(
@@ -36,15 +29,11 @@ def start_scheduler(
     base: Path,
     feed: BoardFeed,
     board: Board,
-    history: HistoryStore,
     log: EventLog,
-    level: Level | None,
     stop: StopEvent,
     probe: Callable[[], Mapping[str, float]] | None = None,
     publish: Callable[[str, dict[str, Any]], None] | None = None,
     *,
-    trajectories_response: Callable[..., tuple[bytes, int]],
-    cached: Callable[[Callable[[], dict[str, Any]], float], Callable[[], dict[str, Any]]],
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
     clock: Callable[[], float] = time.time,
@@ -53,8 +42,7 @@ def start_scheduler(
 
     The loop admits from the lane `[scheduler] lane` names (else the board's initial lane), starts a session through
     `session_start_url` (else the built-in tmux starter in `base`), and settles a stuck one by moving it to Needs
-    attention through the board's editor. Its chain and per-task P(goal) are the trajectory analytics' when this
-    server has a `[level]` table. `runtime` passes `trajectories_response`, `cached`, `starter` and `delivered`, as no context imports it.
+    attention through the board's editor. `runtime` passes `starter` and `delivered`, as no context imports them.
     """
 
     def move(task: str, to: str, comment: str) -> Written:
@@ -82,22 +70,6 @@ def start_scheduler(
     def requeue(task: str, comment: str) -> Written:
         return move(task, lane, comment)
 
-    def read_ranks() -> dict[str, Any]:
-        empty: dict[str, Any] = {"chain": {}, "p_goals": {}}
-        if level is None:
-            return empty
-        query: dict[str, list[str]] = {}
-        body, status = trajectories_response(history, query, level, feed.machines, time.time())
-        if status == 400:
-            history_s = json.loads(body).get("history_s")
-            if history_s:
-                query = {"hours": [str(float(history_s) / 3600)]}
-                body, status = trajectories_response(history, query, level, feed.machines, time.time())
-        if status != 200:
-            return empty
-        return ranks_from_trajectories_body(json.loads(body), lane)
-
-    ranks = cached(read_ranks, _CHAIN_TTL_S)
     runtime = build_scheduler(
         config.scheduler,
         log,
@@ -108,8 +80,6 @@ def start_scheduler(
         claim=claim,
         requeue=requeue,
         merged=merged,
-        chain=lambda: ranks()["chain"],
-        p_goals=lambda: ranks()["p_goals"],
         lane=lane,
         clock=clock,
         transcript=transcript_written(Path(DEFAULT_TRANSCRIPTS).expanduser()),

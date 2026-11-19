@@ -53,6 +53,7 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse.board.adapters.holder_idle import HARNESS_MACHINE
 from starpulse.board.model import criteria
+from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.markdown import attention_reason, section_set
 from starpulse.board.model.rollup import checks_verdict
@@ -104,6 +105,8 @@ HOLDER_RESUME = "HOLDER_RESUME"
 DONE_HELD = "Held from Done:"
 #: Resumes with no progress between them before the next one escalates.
 _STALLED_RESUMES = 2
+#: Nudges an idle holder with an open criterion gets before the next idle moves its task to Needs attention.
+_NUDGES = 3
 #: Settles in a row whose resume failed before the task moves to Needs attention.
 _FAILED_RESUMES = 3
 _DEPLOY_FAILED = re.compile(r"^Reopened from Done: Deploy of \S+ to .+? failed", re.M)
@@ -1251,7 +1254,8 @@ class TaskActor:
             return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == self._feed.roles.working]
 
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
-        """A session settled. A task citing no pull request closes when every criterion is checked in deliver, else returns to Ready
+        """A session settled. A holder whose task has an open criterion (neither checked nor struck through) is nudged by
+        `_nudge`, pull request or not. A task citing no pull request and no open criterion closes when it is in deliver, else returns to Ready
         (`_end_without_pr`). Any other In Progress task whose holder is not busy (`confirm`) and that no event is awaited on
         has work left, so the `idle` hook resumes the same session with its phase machine's next step; the task stays In
         Progress and no clock runs. A settle an awaited event held runs again from the derivation that finds the wait
@@ -1277,6 +1281,11 @@ class TaskActor:
                 own = self._own_prs(agent)
                 if own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
                     return
+            items = agent.get("criteria", ())
+            if opened := open_criteria(items):
+                ticks = tuple(resolved(item) for item in items)
+                self._stalled.discard(name)
+            elif not ended:
                 progress = self._progress(agent)
                 before, count = self._resumes.get(name, (progress, 0))
                 if before != progress or wait_ended:  # an awaited CI result is the wake, not a settle with no progress
@@ -1286,9 +1295,14 @@ class TaskActor:
                 elif name in self._stalled:
                     self._attend(name, "its escalated session settled again with no progress")
                     return
-        if ended:
+        if opened:
+            self._nudge(name, opened, ticks)
+        elif ended:
             self._end_without_pr(name)
-            return
+        else:
+            self._resume(name, progress, count)
+
+    def _resume(self, name: str, progress: tuple[Any, ...], count: int) -> None:
         escalate = count >= _STALLED_RESUMES
         for verdict in ("confirm", *(("escalate",) if escalate else ()), "resume"):
             try:
@@ -1312,6 +1326,37 @@ class TaskActor:
             if escalate:
                 self._stalled.add(name)
 
+    def _nudge(self, name: str, opened: list[tuple[int, str]], ticks: tuple[bool, ...]) -> None:
+        """Resume an idle holder whose criteria are open; its hook's message names them. The `_NUDGES + 1`th idle with no
+        criterion checked or struck through in between moves the task to Needs attention with them as the question. A holder
+        still busy (`confirm` raises) settles again and costs no nudge."""
+        try:
+            self._idle(name, "confirm")
+        except Exception as error:
+            logger.info("task actor: %s settled but its holder was not confirm: %s", name, error)
+            return
+        with self._lock:
+            before, count = self._resumes.get(name, (ticks, 0))
+            if before == ticks and count >= _NUDGES:
+                self._resumes.pop(name, None)
+                listing = "; ".join(f"#{number} {text}" for number, text in opened)
+                self._attend(
+                    name,
+                    f"it settled idle after {_NUDGES} nudges with no criterion checked or struck through",
+                    "has open criteria",
+                    f"Open: {listing}. Which will you resolve, strike through or rescope?",
+                )
+                return
+        try:
+            self._idle(name, "resume")
+        except Exception as error:
+            logger.info("task actor: %s settled but its holder was not resume: %s", name, error)
+            self._resume_failed(name, error)
+            return
+        with self._lock:
+            self._failed_resumes.pop(name, None)
+            self._resumes[name] = (ticks, (count if before == ticks else 0) + 1)
+
     def _resume_failed(self, name: str, error: Exception) -> None:
         with self._lock:
             failed = self._failed_resumes[name] = self._failed_resumes.get(name, 0) + 1
@@ -1321,7 +1366,7 @@ class TaskActor:
                     name, f"its holder's resume failed {failed} settles in a row: {error}", "could not be resumed"
                 )
 
-    def _attend(self, name: str, why: str, what: str = "was resumed with no progress") -> None:
+    def _attend(self, name: str, why: str, what: str = "was resumed with no progress", ask: str = "Which?") -> None:
         agent = self._feed.task(name, lean=True)
         attention = self._feed.roles.attention
         if agent is None or attention is None:
@@ -1330,7 +1375,7 @@ class TaskActor:
             f"{name} {what}",
             why,
             ("raise its profile and restart it", "rescope the task"),
-            "Which?",
+            ask,
         )
         self._apply(
             name,
@@ -1339,7 +1384,7 @@ class TaskActor:
         )
 
     def _end_without_pr(self, name: str) -> None:
-        """A task citing no pull request has nothing left to resume once its holder ended: every criterion checked in the
+        """A task citing no pull request and no open criterion has nothing left to resume once its holder ended: every criterion resolved in the
         deliver phase closes it, any other returns it to Ready for a new session. A holder still busy (`confirm` raises) settles again."""
         try:
             self._idle(name, "confirm")
@@ -1357,7 +1402,7 @@ class TaskActor:
             self._failed_resumes.pop(name, None)
             self._stalled.discard(name)
             criteria = agent.get("criteria", ())
-            checked = bool(criteria) and all(criterion["checked"] for criterion in criteria)
+            checked = bool(criteria) and not open_criteria(criteria)
             delivering = (self._feed.machine_task(IN_PROGRESS, name) or {}).get("state") == "deliver"
             done = checked and delivering
             target = self._feed.roles.done if done else self._feed.roles.ready
@@ -1365,7 +1410,7 @@ class TaskActor:
                 "Closed at its session's end: it cites no pull request and every criterion is checked."
                 if done
                 else "Returned to Ready at its session's end: it cites no pull request and "
-                + ("its session ended before the deliver phase." if checked else "a criterion is unchecked.")
+                + ("its session ended before the deliver phase." if checked else "it holds no criterion.")
             )
             self._write(name, target, comment, self._clock(), source=agent["state"])
 
