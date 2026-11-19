@@ -1,6 +1,8 @@
 """A Task row as the tables hold it: `fold`'s row in, the same row out, with the criteria in their own table."""
 
-from sqlalchemy import Connection, delete, func, insert, select
+from collections.abc import Iterable
+
+from sqlalchemy import Connection, bindparam, delete, func, insert, select
 from sqlalchemy.dialects import sqlite
 
 from starpulse.event_log.readmodel.fold import Row
@@ -38,11 +40,17 @@ def after(db: Connection, seq: int, limit: int) -> list[tuple[Row, int]]:
     return [(row, position) for task_id, position in found.all() if (row := load(db, task_id)) is not None]
 
 
-def save(db: Connection, row: Row, seq: int) -> None:
-    """Replace the Task's row and criteria with `row`, folded up to stream position `seq`."""
-    values = {key: value for key, value in row.items() if key != "criteria"} | {"seq": seq}
-    upsert = sqlite.insert(tasks).values(**values)
-    db.execute(upsert.on_conflict_do_update(index_elements=["id"], set_={key: upsert.excluded[key] for key in values if key != "id"}))
-    db.execute(delete(criteria).where(criteria.c.task_id == row["id"]))
-    if row["criteria"]:
-        db.execute(insert(criteria), [{"task_id": row["id"]} | item for item in row["criteria"]])
+def save_all(db: Connection, folded: Iterable[tuple[Row, int]]) -> None:
+    """Replace each Task's row and criteria with its row, folded up to its stream position: one statement per table."""
+    items = list(folded)
+    if not items:
+        return
+    values = [{key: value for key, value in row.items() if key != "criteria"} | {"seq": seq} for row, seq in items]
+    upsert = sqlite.insert(tasks)
+    db.execute(
+        upsert.on_conflict_do_update(index_elements=["id"], set_={key: upsert.excluded[key] for key in values[0] if key != "id"}),
+        values,
+    )
+    db.execute(delete(criteria).where(criteria.c.task_id == bindparam("task")), [{"task": row["id"]} for row, _ in items])
+    if numbered := [{"task_id": row["id"]} | item for row, _ in items for item in row["criteria"]]:
+        db.execute(insert(criteria), numbered)
