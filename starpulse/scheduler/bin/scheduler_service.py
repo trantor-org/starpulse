@@ -12,7 +12,6 @@ from typing import Any
 
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
-from starpulse.contracts.adapters import Move
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS, transcript_written
 from starpulse.event_log.wake import StopEvent
@@ -21,7 +20,6 @@ from starpulse.scheduler.adapters.runtime import Runtime
 from starpulse.scheduler.adapters.runtime import build as build_scheduler
 from starpulse.scheduler.adapters.starter import builtin_starter
 from starpulse.scheduler.bin.blocks import SchedulerConfig
-from starpulse.scheduler.model.config import ACTOR as SCHEDULER
 
 
 def start_scheduler(
@@ -41,22 +39,8 @@ def start_scheduler(
     """The scheduler's runtime with its sampler and dispatch loop running on daemon threads until `stop` is set.
 
     The loop admits from the lane `[scheduler] lane` names (else the board's initial lane), starts a session through
-    `session_start_url` (else the built-in tmux starter in `base`), and settles a stuck one by moving it to Needs
-    attention through the board's editor. `runtime` passes `starter` and `delivered`, as no context imports them.
+    `session_start_url` (else the built-in tmux starter in `base`). `runtime` passes `starter` and `delivered`, as no context imports them.
     """
-
-    def move(task: str, to: str, comment: str) -> Written:
-        """The task moved to lane `to` as the scheduler, if the machine offers the scheduler that move, as an API move is judged."""
-        edit = board.edit
-        held = feed.held(task) or {}
-        if (offered := held.get("moves", {}).get(to)) is not None and not (found := Move.read(offered)).permits(SCHEDULER):
-            return Written(False, found.for_actor(SCHEDULER).reason)
-        return feed.record_write(task, (SCHEDULER, "", ""), lambda: edit(task, {"status": to}, comment, actor=SCHEDULER))
-
-    def settle(task: str, reason: str) -> Written:
-        if board.roles.attention is None:
-            return Written(False, "this board's machine has no lane that waits on a person", unavailable=True)
-        return move(task, board.roles.attention, reason)
 
     def claim(task: str, comment: str) -> Written:
         return board.edit(task, {}, comment)
@@ -67,23 +51,17 @@ def start_scheduler(
     initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
     lane = config.scheduler.eligible_lane(initial)
 
-    def requeue(task: str, comment: str) -> Written:
-        return move(task, lane, comment)
-
     runtime = build_scheduler(
         config.scheduler,
         log,
         feed,
         probe,
         start=starter(config.session_start_url, by="scheduler") or builtin_starter(base),
-        settle=settle,
         claim=claim,
-        requeue=requeue,
         merged=merged,
         lane=lane,
         clock=clock,
         transcript=transcript_written(Path(DEFAULT_TRANSCRIPTS).expanduser()),
-        nudges=board.idle is not None,
     )
     runtime.wire_status(publish or feed.publish)
     pressure = threading.Event()

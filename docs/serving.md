@@ -771,7 +771,6 @@ applied_by = "pin-bump"
 # lane = "to_do"          # the lane whose tasks are eligible; unset: the board's initial lane
 # review_lane = "qa"     # the lane whose tasks' points are the review load; unset: the board's lane that waits on a pull request
 # unsized_points = 3      # the points a task with no `size-N` label counts as, a whole number of 1 or more
-# idle_minutes = 30       # minutes a started session may sit idle with its task still open before it is settled
 # state_dir = "state"     # where `starpulse migrate` imports the older switch and run-ledger files from, relative to this file; unset: beside it
 # [scheduler.tier_weights]  # what a point costs on each agent tier; a tier left out keeps its weight
 # fast = 1
@@ -1196,13 +1195,8 @@ multiplexer (herdr) sets `session_start_url` to a service that starts them there
 When a run's task leaves the eligible lane and `in_progress`, the loop writes its outcome (the lane it went to), duration and
 peak to the ledger. When the harness session stops while the task is still in those lanes, the run is written as
 `session-ended` and the task is held out of admission until a person or the sweep moves it; a later tool or start on the
-same session revives that run instead of starting another. A started session that has been idle longer than
-`idle_minutes` (the harness's last active event, or its start before any) with its task still open is returned once to the
-eligible lane with a comment, when the task cites no pull request (the run is written `idle-returned`, and the task's count
-is kept under `scheduler.idle_returns`). Any other idle session is settled once: the task moves to `needs_attention` with a
-comment saying why and is never started again; so is an idle session of a task already returned once, or one that cites a
-pull request. A board with no editor, or no `needs_attention` lane, refuses the move; the loop logs the
-refusal and retries on the next sampler period. The sampler period (60 seconds) is the only timer; it finishes and settles
+same session revives that run instead of starting another.
+The scheduler never moves a task for an idle session. The sampler period (60 seconds) is the only timer; it finishes
 runs and never admits.
 
 The runs in flight, each task's last start time and the last capacity sample live in `starpulse_worker_state`
