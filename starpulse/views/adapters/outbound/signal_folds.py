@@ -3,13 +3,13 @@
 A fold of one harness session is a plain-JSON result (`fold_health` and its siblings). `catch_up` folds only the
 sessions with `starpulse_signals` rows above the stored cursor (`CURSOR` in the settings), so a restart reads no row
 the cursor already passed, and `window` answers a read from the stored results with no signal read for a session that
-lies inside the window. A row carries the `basis` it was folded under: a change to the fold code, the task-key claims
-or the analytics config makes the row stale, and the next `catch_up` folds it again, outside any request.
+lies inside the window. The folds and the analytics answers are one derived family, `FAMILY`, folded under one `stamp`: a change to the
+fold code, the task-key claims or the analytics config leaves the stored stamp unequal, and the next `catch_up` drops
+the family's rows and folds every session again, outside any request.
 """
 
 import bisect
 import dataclasses
-import hashlib
 import json
 import logging
 import re
@@ -25,14 +25,18 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import Signal
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.tables import signal_folds, signals
+from starpulse.event_log.table_registry import clear_stamp, definition, is_stamped, stamp_of, write_stamp
+from starpulse.event_log.tables import analytics_answers, settings, signal_folds, signals
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.model import cells, flow, session_health, spend, steps, traces
 from starpulse.harness_telemetry.adapters.inbound.telemetry import stored_signal
 
-__all__ = ["CURSOR", "VIEWS", "SignalFolds", "basis"]
+__all__ = ["CURSOR", "FAMILY", "VIEWS", "SignalFolds", "stamp"]
 
 log = logging.getLogger(__name__)
+
+#: The family of `starpulse.event_log.table_registry` the folds and the answers belong to.
+FAMILY = "signals"
 
 #: The settings key holding the highest `starpulse_signals` rowid every session at or below it has been folded past.
 CURSOR = "signal_folds_cursor"
@@ -65,21 +69,22 @@ def canonical(value: Any) -> Any:
     return value
 
 
-def basis(keys: TaskKeys | None, analytics: Analytics | None) -> str:
-    """The fingerprint a fold row is valid under: the model sources and the signal contract, the task keys, the
-    analytics config and the views kept."""
-    digest = hashlib.sha256()
-    for path in sorted(Path(model.__file__).parent.glob("*.py")) + [Path(signal_contract.__file__)]:
-        digest.update(path.name.encode() + path.read_bytes())
-    digest.update(json.dumps([canonical(keys), canonical(analytics)], sort_keys=True, default=str).encode())
-    digest.update(json.dumps(sorted(VIEWS)).encode())  # a view added or dropped refolds every session for it
-    return digest.hexdigest()
+def stamp(keys: TaskKeys | None, analytics: Analytics | None) -> str:
+    """The stamp the signal folds and answers are valid under: their table definitions, the model sources and the
+    signal contract, the task keys, the analytics config and the views kept."""
+    sources = sorted(Path(model.__file__).parent.glob("*.py")) + [Path(signal_contract.__file__)]
+    return stamp_of(
+        definition([signal_folds, analytics_answers]),
+        *(path.name + path.read_text() for path in sources),
+        json.dumps([canonical(keys), canonical(analytics)], sort_keys=True, default=str),
+        json.dumps(sorted(VIEWS)),  # a view added or dropped refolds every session for it
+    )
 
 
 _WINDOW = text(
     "SELECT view, harness, session, first_at, result FROM starpulse_signal_folds"
     " INDEXED BY ix_starpulse_signal_folds_last_at"  # SQLAlchemy's SQLite dialect renders no table hint
-    " WHERE view IN :views AND basis = :basis AND last_at >= :floor ORDER BY first_at, harness, session"
+    " WHERE view IN :views AND last_at >= :floor ORDER BY first_at, harness, session"
 ).bindparams(bindparam("views", expanding=True)).columns(
     signal_folds.c.view, signal_folds.c.harness, signal_folds.c.session, signal_folds.c.first_at, signal_folds.c.result
 )
@@ -93,16 +98,18 @@ class SignalFolds:
         self._engine = events.engine
         self._keys = keys
         self._analytics = analytics
-        self.basis = basis(keys, analytics)
+        self.stamp = stamp(keys, analytics)
 
     def catch_up(self) -> int:
-        """Fold what is new or stale and return how many sessions were folded.
+        """Fold what is new, or everything when the family's stamp changed, and return how many sessions were folded.
 
-        A session with a row above the cursor, and one folded under an older basis, is folded from all its stored
-        signals and replaces its fold rows. The cursor moves past every session that folded; a session whose fold
-        raised is logged and left, and the cursor stops before its first new row so the next pass tries it again.
-        Raises when the database does."""
-        folded = self._refold_stale()
+        A session with a row above the cursor is folded from all its stored signals and replaces its fold rows. A
+        stamp that differs from the stored one first drops the folds and answers and rewinds the cursor, and the new
+        stamp is kept once the pass has folded past every session. The cursor moves past every session that folded; a
+        session whose fold raised is logged and left, and the cursor stops before its first new row so the next pass
+        tries it again. Raises when the database does."""
+        rebuilt = self._drop_changed()
+        folded = 0
         cursor = self._events.setting(CURSOR) or 0
         with self._engine.connect() as db:
             new = db.execute(
@@ -128,6 +135,9 @@ class SignalFolds:
                 failed.append(first_row)
         if new:
             self._events.set_setting(CURSOR, min([reached, *(row - 1 for row in failed)]))
+        if rebuilt:
+            with self._engine.begin() as db:
+                write_stamp(db, FAMILY, self.stamp)
         return folded
 
     def window(self, since: float, views: Iterable[str] = tuple(VIEWS)) -> dict[str, list[Any]]:
@@ -137,7 +147,7 @@ class SignalFolds:
         range of each view (every session ever folded) to test `last_at`, seconds for the `steps` view."""
         wanted = tuple(views)
         with self._engine.connect() as db:
-            rows = db.execute(_WINDOW, {"views": wanted, "basis": self.basis, "floor": since}).all()
+            rows = db.execute(_WINDOW, {"views": wanted, "floor": since}).all()
         answer: dict[str, list[Any]] = {view: [] for view in wanted}
         began = {(row.harness, row.session): row.first_at for row in rows}
         partial = [key for key, first_at in began.items() if first_at < since]
@@ -159,7 +169,7 @@ class SignalFolds:
         times: list[float] = []  # the times, sorted, of the steps read after `after`, to tell when a page is complete
         folds: list[Any] = []
         with self._engine.connect() as db:
-            rows = db.execute(_WINDOW, {"views": ("steps",), "basis": self.basis, "floor": floor})
+            rows = db.execute(_WINDOW, {"views": ("steps",), "floor": floor})
             for row in rows:
                 ahead = bisect.bisect_left(times, row.first_at)
                 if ahead > wanted and times[wanted] > times[wanted - 1]:
@@ -196,27 +206,29 @@ class SignalFolds:
         self._events.run_on_wake(stop, self.catch_up, "signal fold catch-up failed")
 
     def _current(self, harness: str, session: str) -> int:
-        """The rowid every view of the session is folded through under the current basis, 0 when one is missing."""
+        """The rowid every view of the session is folded through, 0 when one is missing."""
         with self._engine.connect() as db:
             through = db.execute(
                 select(func.min(signal_folds.c.folded_through), func.count())
                 .where(
                     signal_folds.c.harness == harness,
                     signal_folds.c.session == session,
-                    signal_folds.c.basis == self.basis,
                 )
             ).one()
         return through[0] if through[1] == len(VIEWS) else 0
 
-    def _refold_stale(self) -> int:
+    def _drop_changed(self) -> bool:
+        """Drop the folds and answers and rewind the cursor when they were not folded under this stamp; whether it did.
+        The stamp goes first, so a pass that stops partway is not taken for a finished one."""
         with self._engine.connect() as db:
-            stale = db.execute(
-                select(signal_folds.c.harness, signal_folds.c.session)
-                .where(signal_folds.c.basis != self.basis)
-                .group_by(signal_folds.c.harness, signal_folds.c.session)
-                .order_by(func.max(signal_folds.c.last_at).desc())  # the windows a read asks for heal first
-            ).all()
-        return sum(self._fold(harness, session) for harness, session in stale)
+            if is_stamped(db, FAMILY, self.stamp):
+                return False
+        with self._engine.begin() as db:
+            clear_stamp(db, FAMILY)
+            db.execute(delete(signal_folds))
+            db.execute(delete(analytics_answers))
+            db.execute(delete(settings).where(settings.c.key == CURSOR))
+        return True
 
     def _load(self, harness: str, session: str, since: float = 0.0) -> tuple[int, list[Signal]]:
         """The highest rowid and the signals of one session at or after `since`, oldest first; a field a row stores as
@@ -250,7 +262,6 @@ class SignalFolds:
                 "first_at": first_at,
                 "last_at": last_at,
                 "folded_through": through,
-                "basis": self.basis,
                 "result": result,
             }
             for view, result in stored.items()

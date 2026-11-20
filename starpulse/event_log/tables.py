@@ -265,9 +265,10 @@ signals = Table(
 )
 
 #: One view's fold of one harness session, as plain JSON: the persisted result the analytics views combine. A session's
-#: rows are folded together, `folded_through` being the highest `starpulse_signals` rowid they read and `basis` the
-#: fingerprint of the fold code, task keys and analytics config they were folded under. `first_at` and `last_at` are the
-#: times of the session's first and last signal; the hourly prune deletes rows whose `last_at` is past the keep window.
+#: rows are folded together, `folded_through` being the highest `starpulse_signals` rowid they read. `basis` is dead,
+#: written as empty: the `signals` family's stamp replaced it and the baseline squash drops the column. `first_at` and
+#: `last_at` are the times of the session's first and last signal; the hourly prune deletes rows whose `last_at` is
+#: past the keep window.
 signal_folds = Table(
     "starpulse_signal_folds",
     metadata,
@@ -277,7 +278,7 @@ signal_folds = Table(
     Column("first_at", Float, nullable=False),
     Column("last_at", Float, nullable=False),
     Column("folded_through", Integer, nullable=False),
-    Column("basis", String, nullable=False),
+    Column("basis", String, nullable=False, default=""),
     Column("result", JSON, nullable=False),
     PrimaryKeyConstraint("view", "harness", "session"),
     Index("ix_starpulse_signal_folds_last_at", "last_at"),
