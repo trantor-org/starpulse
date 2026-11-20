@@ -140,8 +140,6 @@ def _argv(tool: Mapping[str, Any], task: str, arguments: Mapping[str, Any]) -> l
             return ["task", "park", task, f"--comment={arguments['reason']}", *([f"{flag}={until}"] if until else [])]
         case "board_defer":
             return ["task", "park", task, f"--operator={arguments['question']}"]
-        case "board_finalize":
-            return ["command", "run", "finalize", "--task", task]
         case _:
             return ["task", "move", task, tool["to"]]
 

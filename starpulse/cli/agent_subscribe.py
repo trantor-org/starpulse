@@ -43,6 +43,21 @@ def _target(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[Any, 
     return config, token(session), subjects
 
 
+def _registry(config: Path | None, configured: str | None) -> Registry:
+    return Registry(directory(config.parent if config else Path.cwd(), configured))
+
+
+def routed(session: str, config: Path | None = None) -> bool:
+    """Whether the bridge's delivery has a route to `session`: a registration under its consumer name, or under the local
+    session a claude.ai URL names; without one its events wait on the consumer and no turn starts."""
+    found = discover(config)
+    try:
+        registry = _registry(found, load(found).bridge.sessions_dir if found else None)
+    except (ConfigError, OSError, ValueError):
+        return False
+    return any(registry.get(token(name)) for name in filter(None, {session, local_id(sessions_dir(os.environ), session)}))
+
+
 def _register(args: argparse.Namespace, environ: Mapping[str, str]) -> bool:
     """Record how to reach the calling session, from the inbox the harness gave its process, for the bridge's delivery."""
     socket, secret = environ.get("CLAUDE_CODE_MESSAGING_SOCKET", ""), environ.get("CLAUDE_CODE_MESSAGING_TOKEN", "")
@@ -57,8 +72,7 @@ def _register(args: argparse.Namespace, environ: Mapping[str, str]) -> bool:
         configured = load(config).bridge.sessions_dir if config else None
     except (ConfigError, OSError, ValueError) as exc:
         raise CliError("refused", f"config: {exc}") from exc
-    base = config.parent if config else Path.cwd()
-    Registry(directory(base, configured)).put(token(session), Registration(session, socket, secret, str(Path.cwd())))
+    _registry(config, configured).put(token(session), Registration(session, socket, secret, str(Path.cwd())))
     _wake_delivery(args)
     return True
 

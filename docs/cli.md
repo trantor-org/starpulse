@@ -321,7 +321,7 @@ and runs contracts, the adapter kit, the CloudEvents ingest) and `setting-up-sta
 `doctor`). It also bundles two task phase skills, each with its phase machine: `fix-checks` (read a red check's log, fix a branch
 fault through delivery, or park on the owner of a base or flaky fault) and `mitigate` (stop a failing service's growing
 impact, recheck its health, and diagnose only once it is green). They reach a project's own behavior only through StarPulse verbs and
-`starpulse command run` with the `start`, `test`, `check`, `deliver`, `pr-status`, `finalize`, `check-logs`, `health`, `snapshot` and
+`starpulse command run` with the `start`, `test`, `check`, `deliver`, `pr-status`, `check-logs`, `health`, `snapshot` and
 `mitigate` commands; a command
 the project does not map exits 4, and the skill does that step as the project's `AGENTS.md` says. `starpulse command show NAME` reads the same table without running it: it prints the `--arg` names the command's argv needs and, for a command with a `{body}`, the project's pull request template (the first of `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/pull_request_template.md`, `pull_request_template.md` beside the config), so a delivery skill's body keeps the project's sections on the first attempt. `skills install`
 copies them to `.claude/skills` (`--claude`) or `.agents/skills` (`--codex`) in the working directory, or with `--user`
@@ -496,11 +496,11 @@ Revert the edit, then declare the change and revise again.
 
 `GET /api/machines` carries a top-level `lanes` map from the board policy (the database when its tables hold rows, else the
 files): each lane's allowed harness `tools`, its typed `exits` and its bound `skill`. An exit tool exists for each event an
-agent may fire from the lane: `board_review`, `board_park(reason, until)`, `board_defer(question)`, `board_finalize`, and
+agent may fire from the lane: `board_review`, `board_park(reason, until)`, `board_defer(question)`, and
 `board_<event>` for any other. Each carries the JSON schema generated from the lane's exits; `until` is a task id
 (`TASK-9`, `TASK-9#2`; sent as `--until-task`) or a list of alert or deploy event subjects (sent as `--until`).
 Every argument is text, and each is passed as `--flag=value`, so a value that starts with a dash stays a value. The tools run
-the agent CLI's verbs (`task move`, `task park`, `command run finalize`): a policy exit's `trigger` is prose, so the verb
+the agent CLI's verbs (`task move`, `task park`): a policy exit's `trigger` is prose, so the verb
 for each typed tool is fixed here, and only the tool's existence, route target and schema come from the policy.
 
 `starpulse mcp` serves those tools to the session over stdio (MCP, one JSON-RPC message a line). It takes its task from
