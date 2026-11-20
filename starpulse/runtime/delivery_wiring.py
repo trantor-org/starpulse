@@ -120,7 +120,6 @@ def start_delivery(
             returned=board.returned,
             alive=board.alive,
             enqueued=board.enqueued,
-            verifying=board.verifying,
             closed=board.closed,
             live=live,
             main_green=_main_green(config, pins),

@@ -263,7 +263,9 @@ Cursor left out, by task then the phase's first step. Its columns:
 
 Blind spot: `starting-task` stays in force through the build, so the skill alone cannot split `claim` from `implement`;
 the first edit does, and a task worked by hand with no skill loaded is still placed by it. A task with no labels has
-no norm.
+no norm, and neither has a `batch-umbrella` task: its size counts the members it folds in, so it takes no norm and
+leaves its size's norm to the tasks that do one job (90 of 116 size 8 execute tasks in 192 hours, median 1.29 M WTE
+against 3.81 M for the other 26, above size 5's 2.72 M).
 
 ## Graph a transition's activities and diff a fast run against a slow one
 

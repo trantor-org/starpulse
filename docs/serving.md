@@ -678,7 +678,6 @@ type = "native"
 # returned = "my-returned {id}"  # runs after the task actor moves a task into the working lane (a Review task whose pull request turned red, draft or conflicting, or a failed post-merge QA), so the session that delivered it is woken to fix it
 # alive = "my-alive {id}"  # exits 0 while the session holding the task is alive; `pr_unfinished_alive` holds on it, `pr_unfinished_dead` on a nonzero exit
 # enqueued = "my-enqueued {id}"  # runs when a same-lane route fires (an `ENQUEUE` that leaves the task where it is), such as queueing a green Review pull request for merge
-# verifying = "my-verifying {id}"  # runs after the task actor moves a task on a merge that leaves post-merge QA to run (`pr_merged_planned`: the task carries a Verify plan), so the session that delivered it is woken to run that QA
 # closed = "my-closed {id}"  # runs after the task actor moves a task to Done, so the board can file what follows the close (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # transcripts = "~/.claude/projects"  # where Claude Code writes each session's transcript; the harness telemetry reads a session's last turn there, and a terminal halt (a synthetic error reply opening `Autocompact is thrashing`) ends the session with a `SESSION_ENDED` event; only the transcript's last 64 KiB is read
@@ -1254,8 +1253,7 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `pr_terminal`: every pull request the task cites is merged or closed in the PR store. A merged one is written with its
   merge commit as the proof in the edit's comment. A record that says merged with no merge time (an event's word, not
   a read of GitHub) is not terminal until the store's next read settles it.
-- `pr_merged`: `pr_terminal` holds, at least one cited pull request merged, and the task's record carries no Verify
-  plan (`verifyPlan`, read through `Board.read`; a board with no reader has none), so a task whose every pull request
+- `pr_merged`: `pr_terminal` holds and at least one cited pull request merged, so a task whose every pull request
   closed unmerged stays. A state that parks work for a person may declare `waits: {pr_merged: MERGED}` to close a task
   whose delivery merged while it waited there.
 - `pr_closed_unmerged`: `pr_terminal` holds and no cited pull request merged. A state that waits on it moves the task
@@ -1265,10 +1263,6 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   again (`overdue`, `pr_failing`); a different question parks it.
 - `pr_closed_unmerged_complete`: `pr_closed_unmerged` holds and every acceptance criterion and Definition of Done item is
   checked, so a no-op task has nothing to ask. A state that waits on it may declare an event that closes the task.
-- `pr_merged_planned`: `pr_merged` without the plan condition, and the record carries a non-empty Verify plan. A state
-  lists it before `pr_merged` to route a merge by plan, as in `waits: {pr_merged_planned: MERGED_VERIFY, pr_merged:
-  MERGED}`: a planned task takes `MERGED_VERIFY`, an unplanned one `MERGED`. A read of the record that raises holds
-  neither until the task is derived again.
 - `pr_merged_unfinished`: `pr_merged` holds and the board's `unfinished` command prints a non-empty JSON array of the
   work the merge leaves, so a task whose planned pull request in another repo never opened does not close. The edit's
   comment names the merge proof and the work left. A state lists it before `pr_merged` and maps it to a move into
@@ -1350,7 +1344,7 @@ A move from the working lane (the first resting State the lifecycle does not end
 `parked` command once, with `{id}` replaced by the task's id, so a board can tell the session that holds the task. A
 move from Waiting to Ready runs the board's `released` command the same way, so a board can resume the session that
 parked the task. A task In Progress whose holder settles idle (the harness machine's `SESSION_SETTLED`, from the session's Stop hook completing) runs the board's `idle` command with `{id}` and `{verdict}` `confirm`, so a board can say whether the holder is busy; a nonzero `confirm` leaves the task for the next settle. An idle holder is then run with `resume`, so a board can wake it in place with its next step; after two resumes with no progress the next settle runs `escalate` first, and an `escalate` that fails moves the task to Needs attention. A task with an open criterion is nudged instead: its fourth idle settle with no criterion resolved since moves it to Needs attention. A `resume` that exits nonzero is retried on the next settle, and the third in a row moves the task to Needs attention; one that exits 3 means no session can receive the wake, so no later settle comes, and moves the task to Needs attention at once. A holder that settled while the task actor was down is treated as settling when the actor has indexed its tasks, unless a later harness event for the task shows it started again.
-A move from the working lane to Review that the board refuses (an open review thread, a conflict, an unchecked criterion) publishes the `in-progress` machine event `REVIEW_REFUSED` once (reason in its data, so `task.<id>.review_refused` on the NATS bridge), until the task's facts change, so the holder is told why a ready pull request did not reach Review. A move from Review back to the working lane runs the board's `returned` command the same way, so a board can wake the session that delivered a pull request that turned draft or conflicting. A move on a `pr_merged_planned` fact runs the board's `verifying` command the same way, so a board can wake the session that delivered the task to run its post-merge QA. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
+A move from the working lane to Review that the board refuses (an open review thread, a conflict, an unchecked criterion) publishes the `in-progress` machine event `REVIEW_REFUSED` once (reason in its data, so `task.<id>.review_refused` on the NATS bridge), until the task's facts change, so the holder is told why a ready pull request did not reach Review. A move from Review back to the working lane runs the board's `returned` command the same way, so a board can wake the session that delivered a pull request that turned draft or conflicting. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
 check that waits on time after the merge. A command that exits nonzero is logged; the move stands.
 
 A write the board refuses is logged and counted, and is not retried until the task's facts change; checking the last

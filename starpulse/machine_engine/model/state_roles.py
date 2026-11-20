@@ -13,8 +13,8 @@ __all__ = ["StateRoles"]
 
 #: The fact kind each point of the task lifecycle waits on: the first State to wait on dependencies, and Start Criteria met.
 _UNMET, _MET = "deps_unresolved", "criteria_met"
-#: The facts a pull request's end can be: every cited one ended, or also at least one merged, with or without a Verify plan.
-_PULL_REQUEST = ("pr_terminal", "pr_merged", "pr_merged_planned")
+#: The facts a pull request's end can be: every cited one ended, or also at least one merged.
+_PULL_REQUEST = ("pr_terminal", "pr_merged")
 
 
 @dataclass(frozen=True)
