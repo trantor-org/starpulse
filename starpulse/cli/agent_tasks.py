@@ -867,7 +867,7 @@ def search(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
         "before": args.before,
     }
     query = {"q": " ".join(args.query), **{key: value for key, value in given.items() if value is not None}}
-    path = f"/api/search?{urllib.parse.urlencode(query, doseq=True)}"
+    path = f"/api/search{'/similar' if args.similar else ''}?{urllib.parse.urlencode(query, doseq=True)}"
     status, reply = agent_wire.get(base, path)
     found = record_call(base, path, status, reply, noun="search")
     return {"query": found["query"], "hits": found["hits"]}

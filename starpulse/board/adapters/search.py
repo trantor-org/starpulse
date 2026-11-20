@@ -22,6 +22,7 @@ import math
 import os
 import threading
 import urllib.request
+from collections import OrderedDict
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -139,10 +140,14 @@ _RELOAD_AT = 500
 _NEWEST = text(f"SELECT coalesce(max(rowid), 0) FROM {_VECTORS}")
 _TEXT_LIMIT = 8000
 _TIMEOUT = 10.0
-#: Seconds each attempt at a search query's vector waits, and the attempts made, before ranking lexically, so a slow
-#: endpoint costs the order and not the answer. A healthy embedder answers in 1 to 3 s and a cold one is quick on retry.
+#: Seconds each attempt at a search query's vector waits, and the attempts made, by a search that waits (`wait=True`) or
+#: by the background fill of one that does not. A healthy embedder answers in 1 to 3 s and a cold one is quick on retry.
 _QUERY_TIMEOUT = 3.5
 _QUERY_ATTEMPTS = 2
+#: Query vectors kept (least recently used out first), and background fills in flight at once: a search never embeds
+#: its own query, so a repeat finds the vector held and a burst of new queries cannot pile on the endpoint.
+_QUERY_VECTORS = 256
+_FILLING_MAX = 4
 #: Seconds `keep_embedding` waits after a failed pass before the next.
 _RETRY = 60.0
 _INSERT = text(
@@ -251,6 +256,10 @@ class SearchIndex:
         #: Held by the one search refreshing `_near`, which reads and normalises outside `_lock` so a write never waits
         #: for it.
         self._refreshing = threading.Lock()
+        self._queries: OrderedDict[str, array.array] = OrderedDict()
+        self._filling: set[str] = set()
+        #: Guards `_queries` and `_filling` alone, so a search never waits behind a write holding `_lock`.
+        self._queries_lock = threading.Lock()
         self._url = settings.embeddings_url if settings else None
         self._model = settings.model if settings else None
         self._recipe = f"{self._model} {_EMBEDDED_TEXT}"
@@ -360,11 +369,16 @@ class SearchIndex:
         labels: Sequence[str] = (),
         finished_since: float | None = None,
         before: tuple[str, int] | None = None,
+        wait: bool = False,
     ) -> list[dict]:
         """The tasks holding every word of `query`, best first, as `{task, title, lane, score, snippet}`; `score` is
         higher for a better match and `snippet` is the text around it. With an embeddings endpoint the order blends
         each hit's lexical score with the similarity of its vector to the query's, and a task that holds none of the
         query's words is a hit too when its vector is near the query's (its snippet is the task's opening).
+
+        The query's vector is the one held from an earlier search of it; a query not yet held answers lexically at
+        once and is embedded in the background for the next. With `wait` the search embeds the query itself first
+        (up to `_QUERY_ATTEMPTS` times `_QUERY_TIMEOUT` seconds) and blends it.
 
         A hit carries every one of `labels`, and with `finished_since` (epoch seconds) a task that finished before it
         is no hit; an open task always may be. With `before` (a task key's prefix and number) a hit is a task of its prefix with a lower
@@ -373,7 +387,7 @@ class SearchIndex:
         if not match:
             return []
         limit = max(1, limit)
-        vector = self._embed_query(query)
+        vector = self._query_vector(query, wait)
         filtered, narrowing = _filtered(labels, finished_since, before, row="row")
         with self._engine.connect() as connection:
             if vector is None:
@@ -512,15 +526,44 @@ class SearchIndex:
 
         log.run_on_wake(stop, catch_up, "StarPulse: the search embedding pass failed")
 
-    def _embed_query(self, query: str) -> array.array | None:
-        """`query`'s vector, or None when no endpoint is configured or it cannot be reached: the order stays lexical."""
+    def _query_vector(self, query: str, wait: bool) -> array.array | None:
+        """`query`'s held vector, else (with `wait`) its embedding, else None with the embedding started in the
+        background: None keeps the order lexical, and no endpoint configured calls nothing."""
         if not self._url:
             return None
+        with self._queries_lock:
+            if (held := self._queries.get(query)) is not None:
+                self._queries.move_to_end(query)
+                return held
+            if not wait:
+                if query in self._filling or len(self._filling) >= _FILLING_MAX:
+                    return None
+                self._filling.add(query)
+        if wait:
+            return self._embed_query(query)
+        threading.Thread(target=self._fill, args=(query,), daemon=True).start()
+        return None
+
+    def _fill(self, query: str) -> None:
+        try:
+            self._embed_query(query)
+        finally:
+            with self._queries_lock:
+                self._filling.discard(query)
+
+    def _embed_query(self, query: str) -> array.array | None:
+        """`query`'s vector from the endpoint, kept for the next search of it; None when it cannot be reached."""
         for attempt in range(_QUERY_ATTEMPTS):
             try:
-                return array.array("f", self._embed([query], _QUERY_TIMEOUT)[0])
+                vector = array.array("f", self._embed([query], _QUERY_TIMEOUT)[0])
             except EmbeddingError as exc:
                 logger.warning("StarPulse: cannot embed the search query (attempt %d): %s", attempt + 1, exc)
+                continue
+            with self._queries_lock:
+                self._queries[query] = vector
+                while len(self._queries) > _QUERY_VECTORS:
+                    self._queries.popitem(last=False)
+            return vector
         return None
 
     def _embed(self, texts: list[str], timeout: float = _TIMEOUT) -> list[list[float]]:

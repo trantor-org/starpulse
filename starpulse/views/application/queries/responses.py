@@ -211,11 +211,14 @@ _SEARCH_HITS = 10
 _SEARCH_LIMIT = 100
 
 
-def search_response(search: SearchIndex | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
+def search_response(
+    search: SearchIndex | None, query: dict[str, list[str]], *, wait: bool = False
+) -> tuple[bytes, int]:
     """The body and status for `/api/search`: the tasks holding every word of `?q=`, best first, at most `?limit=`;
     each repeated `?label=` keeps only the tasks carrying it, and `?finished_within_days=` drops a task that finished
     (settled, or entered the done lane) longer ago than that many days; `?before=` (a task key) keeps only the tasks of
-    its prefix created before it, before `limit` cuts.
+    its prefix created before it, before `limit` cuts. `wait` is `/api/search/similar`: it embeds a query it holds no
+    vector for before it answers, where `/api/search` answers by words at once and embeds in the background.
 
     A server with no index is 404; a blank `q`, a `limit` that is not an integer from 1 to 100, a
     `finished_within_days` that is not a positive integer or a `before` that is no task key is 400."""
@@ -238,7 +241,7 @@ def search_response(search: SearchIndex | None, query: dict[str, list[str]]) -> 
             "and a task key ?before="
         ), 400
     since = None if days is None else time.time() - days * 86400
-    hits = search.search(words, limit, labels=query.get("label", []), finished_since=since, before=before)
+    hits = search.search(words, limit, labels=query.get("label", []), finished_since=since, before=before, wait=wait)
     return encode("search", {"query": words, "hits": hits}), 200
 
 

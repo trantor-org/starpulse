@@ -162,6 +162,7 @@ RESPONSES: dict[str, Any] = {
     "/api/breaking-changes": BreakingChanges,
     "/api/pulls": Pulls,
     "/api/search": SearchResults,
+    "/api/search/similar": SearchResults,
     "/api/scheduler": SchedulerStatus,
 }
 
