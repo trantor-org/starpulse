@@ -110,11 +110,17 @@ class Sampler:
         """Sample now, then once each time `wake` is set (a pressure trigger fired) until `stop` is set; never on a timer."""
         stop.listen(wake.set)
         try:
-            self.sample()
+            self._sample_safely()
             while not stop.is_set():
                 wake.wait()
                 wake.clear()
                 if not stop.is_set():
-                    self.sample()
+                    self._sample_safely()
         finally:
             stop.unlisten(wake.set)
+
+    def _sample_safely(self) -> None:
+        try:
+            self.sample()
+        except Exception:  # one bad sample must not end the thread; the next pressure trigger samples again
+            logger.exception("StarPulse: the scheduler sampler raised; it samples again at the next trigger")

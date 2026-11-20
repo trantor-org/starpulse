@@ -60,6 +60,7 @@ from starpulse.scheduler.model.usage_limit import until as usage_until
 logger = logging.getLogger(__name__)
 
 SESSION_ENDED = "session-ended"
+SESSION_GONE = "session-gone"
 HELD_KEY = "scheduler.held"
 PAUSES_KEY = "scheduler.harness_pauses"
 #: Seconds a task whose start failed waits before its first retry; each further failure doubles it, up to `START_BACKOFF_MAX`.
@@ -218,6 +219,12 @@ class Loop:
             return False
         seen = self._feed.machine_task(HARNESS.name, task)
         return now - max(run.started_at, seen["active"] if seen else 0.0) <= STALE_S
+
+    def _gone(self, task: str, run: _Run, agents: Mapping[str, Mapping[str, Any]], now: float) -> bool:
+        """Whether a run's task sits in a lane the loop admits from and its session has made no move inside `STALE_S`: the
+        session ended without a Stop, so the run is no longer in flight and the task is Ready work again."""
+        agent = agents.get(task)
+        return agent is not None and agent["state"] in self._lanes() and not self._at_work(task, run, agents, now)
 
     def _held_outside(self) -> set[str]:
         """The In Progress tasks `_running` does not hold that a session holds, idle on a wake or mid-turn: an idle session
@@ -429,8 +436,11 @@ class Loop:
         row is an empty set."""
         if self._state is None:
             return
+        now = self._clock()
+        agents = self._open_agents()
         for task, fields in self._state.inflight().items():
-            if (run := _run_from(fields)) is not None:
+            run = _run_from(fields)
+            if run is not None and (fields.get("stopped") or not self._gone(task, run, agents, now)):
                 (self._parked if fields.get("stopped") else self._running)[task] = run
         self._starts = self._state.starts()
         self._note(restored=True)
@@ -504,6 +514,9 @@ class Loop:
             if state not in (*self._lanes(), self._feed.roles.working):
                 self._close(task, run, state or "closed", now)
                 continue
+            if self._gone(task, run, agents, now):
+                self._close(task, run, SESSION_GONE, now)
+                continue
             seen = self._feed.machine_task(HARNESS.name, task)
             if seen is not None and seen["state"] == "stopped":
                 self._hold(task)
@@ -539,7 +552,7 @@ class Loop:
             self._sampler.sample()
             readings, _ = self._sampler.readings()
         taken: dict[str, float] = {}
-        for task, run in self._running.items():
+        for task, run in list(self._running.items()):  # the loop thread changes the running set
             if not self._counted(task):
                 for name, need in run.demand.items():
                     if name == "sessions":

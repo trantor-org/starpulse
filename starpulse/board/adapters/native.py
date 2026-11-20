@@ -752,6 +752,7 @@ def _editor(
     link: _Linker = _unlinked,
     attention: str | None = None,
     unstarted: frozenset[str] = frozenset(),
+    done: str | None = None,
 ) -> TaskEditor:
     """A board writer that applies every change to a task's file in one write, or refuses the whole edit.
 
@@ -761,7 +762,8 @@ def _editor(
     key, a status is spelled as its lane is, a checklist item without a number is new, and `link` reads a doc id in the
     documentation list as its file. A move to the `attention` lane with comment text also writes that text as the task's
     `## Needs attention` section, the reason the lane's guard reads. `planReason` is no field: a plan rewritten on a task
-    outside the `unstarted` lanes needs one, and the History records it.
+    outside the `unstarted` lanes needs one, and the History records it. A completed task edited into a lane other than `done`
+    leaves `completed/` for `tasks/`.
     """
     spelled = {lane_id(status): status for status in statuses}
 
@@ -792,6 +794,8 @@ def _editor(
             written = _update(root, task, apply, judged, actor)
         except ValueError as refusal:  # raised before the file is written, so a refusal writes nothing
             return Written(False, f"{task}: {refusal}")
+        if status and lane_id(status) not in {done, COMPLETED}:
+            written = _reactivated(root, task, written)  # a completed task edited out of Done leaves `completed/`
         return _moved(written, spelled.get(lane_id(status), status)) if status else written
 
     return edit
@@ -1363,6 +1367,21 @@ def _releaser(root: Path, guard: Guard = Guard()) -> TaskReleaser:
     return release
 
 
+def _reactivated(root: Path, task: str, written: Written) -> Written:
+    """`written`, its task's file moved from `completed/` to `tasks/` when the write left it there; a name taken refuses."""
+    if not written.ok or (edited := _find(root, task)) is None or edited.parent.name != "completed":
+        return written
+    target = root / "tasks" / edited.name
+    try:
+        os.link(edited, target)
+        edited.unlink()
+    except FileExistsError:
+        return Written(False, f"{task}: {target} already exists")
+    except OSError as error:
+        return Written(False, f"{edited}: {error}")
+    return written
+
+
 def _reopener(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Guard = Guard()) -> TaskReopener:
     """A board writer that returns a Done task to the working State in one write, `reason` as the comment the Board
     machine's REOPEN requires, and a completed task's file to `tasks/`; a task that is not Done is refused untouched."""
@@ -1384,19 +1403,20 @@ def _reopener(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
             written = _update(root, task, edit, guard, actor)
         except _Unheld as unheld:
             return Written(False, str(unheld))
-        if written.ok and (edited := _find(root, task)) is not None and edited.parent.name == "completed":
-            # the file `_update` edited, which a completion may have moved since the lookup above
-            target = root / "tasks" / edited.name
-            try:
-                os.link(edited, target)
-                edited.unlink()
-            except FileExistsError:
-                return Written(False, f"{task}: {target} already exists")
-            except OSError as error:
-                return Written(False, f"{edited}: {error}")
-        return _moved(written, working)
+        return _moved(_reactivated(root, task, written), working)
 
     return reopen
+
+
+def _leaves_completed(root: Path, done: str | None) -> Callable[..., bool]:
+    """Whether an edit moves a completed task out of Done: the test of `_editor`'s move out of `completed/`."""
+
+    def leaves(task: str, changes: Mapping[str, Any], /, *_: Any, **__: Any) -> bool:
+        lane = lane_id(str(changes.get("status") or ""))
+        found = _find(root, task)
+        return bool(lane) and lane not in {done, COMPLETED} and found is not None and found.parent.name == "completed"
+
+    return leaves
 
 
 def _keeps(kept: re.Pattern[str], frontmatter: dict) -> bool:
@@ -1782,7 +1802,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "enqueued": _notice(settings.get("enqueued"), base),
             "closed": _notice(settings.get("closed"), base),
             "entered": _entered(settings.get("entered"), base, root, settings.get("entered_labels")),
-            "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles)),
+            "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles), roles.done),
             "archive": _archiver(root, config.statuses, roles, gate),
             "restore": _restorer(root, retired, config.statuses, migrations, gate),
             "complete": _completer(root, config.statuses, roles, settings.get("complete_keep_labels")),
@@ -1869,7 +1889,11 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "writer": completing(archiving(made.writer)),
         "assign": history.recorded(made.assign, read),
         "release": history.recorded(made.release, read, actor_at=1),
-        "edit": completing_edit(history.recorded(made.edit, read, unstarted=_unstarted(made.roles))),
+        "edit": completing_edit(
+            history.recorded(
+                made.edit, read, unstarted=_unstarted(made.roles), rehydrates=_leaves_completed(root, made.roles.done)
+            )
+        ),
         "archive": history.recorded(
             made.archive,
             read,
