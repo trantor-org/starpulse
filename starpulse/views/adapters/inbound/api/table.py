@@ -35,11 +35,12 @@ Watch = Callable[["Incoming", Arrival], AbstractContextManager[Any]]
 
 class ReadRoute(NamedTuple):
     """A GET at `path` (under `/api`), answered by the Starlette endpoint `handler`; `watch`, when set, times each
-    read."""
+    read; `params` are the query names the handler reads, the request-duration histogram's shape vocabulary."""
 
     path: str
     handler: Endpoint
     watch: Watch | None = None
+    params: frozenset[str] = frozenset()
 
 
 class WriteRoute(NamedTuple):

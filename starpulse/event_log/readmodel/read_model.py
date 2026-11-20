@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy import Engine, Select, func, or_, select
+from sqlalchemy import Engine, Select, func, select, union_all
 
 from starpulse.event_log.readmodel import queries, rows
 from starpulse.event_log.readmodel.declared import Declared
@@ -139,15 +139,25 @@ class ReadModel:
     def _machine_rows(
         self, machine: str | None, since: float | None, keep_open: str | None = None
     ) -> list[tuple[str, dict[str, Any], int]]:
-        statement = select(machine_tasks.c.machine, machine_tasks.c.task, machine_tasks.c.agent, machine_tasks.c.seq)
+        mt = machine_tasks.c
+        statement = select(mt.machine, mt.task, mt.agent, mt.seq)
         if machine is not None:
-            statement = statement.where(machine_tasks.c.machine == machine)
+            statement = statement.where(mt.machine == machine)
+        if since is None:
+            statement = statement.order_by(mt.machine, mt.task)
+        elif keep_open is None:
+            statement = statement.where(mt.active_at >= since)
+        else:
+            open_ids = queries.open_ids(keep_open)
+            statement = union_all(
+                statement.where(mt.task.in_(open_ids)), statement.where(mt.active_at >= since, mt.task.not_in(open_ids))
+            )
+        with self._engine.connect() as db:
+            found = [tuple(row) for row in db.execute(statement).all()]
         if since is not None:
-            recent = machine_tasks.c.active_at >= since
-            statement = statement.where(recent if keep_open is None else or_(recent, machine_tasks.c.task.in_(queries.open_ids(keep_open))))
-        with self._engine.connect() as db:  # no ORDER BY: it makes SQLite scan the whole table in key order
-            found = sorted(db.execute(statement).all(), key=lambda row: (row.machine, row.task))
-        return [(row.machine, row.agent, row.seq) for row in found]
+            # Sorted here: an ORDER BY in the windowed SQL makes SQLite walk every row's primary key, not the `active_at` index.
+            found.sort(key=lambda row: row[:2])
+        return [(machine, agent, seq) for machine, _, agent, seq in found]
 
     def _summaries(self, statement: Select[Any]) -> list[dict[str, Any]]:
         with self._engine.connect() as db:

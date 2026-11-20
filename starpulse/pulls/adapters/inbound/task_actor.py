@@ -415,6 +415,8 @@ class TaskActor:
         #: The In Progress tasks whose holder settled while an event was awaited: the derivation that finds the wait
         #: ended settles them again, as no settle may follow.
         self._awaited: set[str] = set()
+        #: The `_awaited` tasks whose held event was a session's end, not a settle: the wait's end revives them.
+        self._revive_held: set[str] = set()
         #: The board hooks of moves already written, run one at a time in the order written by their own thread: a
         #: hook runs a command for seconds, and run under `_lock` it held back the move of every task behind it.
         self._notices: queue.SimpleQueue[Callable[[], None] | None] = queue.SimpleQueue()
@@ -1267,6 +1269,7 @@ class TaskActor:
         with self._lock:
             agent = self._feed.task(name, lean=True)
             self._awaited.discard(name)
+            self._revive_held.discard(name)
             if agent is None or agent["state"] != self._feed.roles.working:
                 self._resumes.pop(name, None)
                 self._failed_resumes.pop(name, None)
@@ -1308,6 +1311,59 @@ class TaskActor:
             self._end_without_pr(name)
         else:
             self._resume(name, progress, count)
+
+    def holder_ended(self, name: str, wait_ended: bool = False) -> None:
+        """A session's process ended. A holder whose task still has work (an open criterion, or a pull request of its own
+        not yet ended) is revived by the `idle` hook's `revive` verdict, which reopens the session in place, else starts one
+        on its profile from the task's checkpoint, and moves the claim to it; the task stays In Progress. A revival is a
+        nudge: the `_NUDGES + 1`th with no progress (a criterion checked, a phase or head change) moves the task to Needs
+        attention, as does a revival no session can serve, naming why. An awaited event holds the revival until it ends. A
+        task with no work left is the settle's (`holder_settled`), and a held revival whose holder is at work again by the time the
+        wait ends is dropped."""
+        with self._lock:
+            agent = self._feed.task(name, lean=True)
+            self._revive_held.discard(name)
+            if agent is None or agent["state"] != self._feed.roles.working or self._idle is None:
+                return
+            if wait_ended and (placed := self._feed.machine_task(HARNESS_MACHINE, name)) and placed["state"] == "active":
+                return
+            items = agent.get("criteria", ())
+            opened = open_criteria(items)
+            if not agent["prs"] and not opened:
+                return
+            own = self._own_prs(agent)
+            if agent["prs"] and own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
+                return
+            if self._awaits(agent):
+                self._awaited.add(name)
+                self._revive_held.add(name)
+                return
+            key = tuple(resolved(item) for item in items) if opened else self._progress(agent)
+            before, count = self._resumes.get(name, (key, 0))
+            count = count if before == key else 0
+            if count >= _NUDGES:
+                self._resumes.pop(name, None)
+                self._attend(
+                    name, f"its session ended and was revived {_NUDGES} times with no progress", "keeps ending", "Which?"
+                )
+                return
+        try:
+            self._idle(name, "revive")
+        except Exception as error:
+            logger.warning("task actor: %s's session ended and could not be revived: %s", name, error)
+            with self._lock:
+                now = self._feed.task(name, lean=True)
+                if now and now["state"] == self._feed.roles.working:
+                    self._attend(
+                        name,
+                        f"no session can start for it: {error}",
+                        "could not be revived",
+                        "Start one by hand or rescope?",
+                        ("start a session on it by hand", "rescope the task"),
+                    )
+            return
+        with self._lock:
+            self._resumes[name] = (key, count + 1)
 
     def _resume(self, name: str, progress: tuple[Any, ...], count: int) -> None:
         escalate = count >= _STALLED_RESUMES
@@ -1381,7 +1437,14 @@ class TaskActor:
                     name, f"its holder's resume failed {failed} settles in a row: {error}", "could not be resumed"
                 )
 
-    def _attend(self, name: str, why: str, what: str = "was resumed with no progress", ask: str = "Which?") -> None:
+    def _attend(
+        self,
+        name: str,
+        why: str,
+        what: str = "was resumed with no progress",
+        ask: str = "Which?",
+        options: Sequence[str] = ("raise its profile and restart it", "rescope the task"),
+    ) -> None:
         agent = self._feed.task(name, lean=True)
         attention = self._feed.roles.attention
         if agent is None or attention is None:
@@ -1389,7 +1452,7 @@ class TaskActor:
         reason = attention_reason(
             f"{name} {what}",
             why,
-            ("raise its profile and restart it", "rescope the task"),
+            options,
             ask,
         )
         self._apply(
@@ -1438,7 +1501,10 @@ class TaskActor:
             self._awaited.discard(name)
         elif not self._awaits(agent):
             self._awaited.discard(name)
-            self._queue(lambda: self.holder_settled(name, wait_ended=True))
+            if name in self._revive_held:
+                self._queue(lambda: self.holder_ended(name, wait_ended=True))
+            else:
+                self._queue(lambda: self.holder_settled(name, wait_ended=True))
 
     def _progress(self, agent: dict[str, Any]) -> tuple[Any, ...]:
         """What a task's progress reads: each submachine placement and the time of its last step, and the head of each own

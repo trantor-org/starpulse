@@ -42,7 +42,7 @@ def routes(api: Api) -> list[ApiRoute]:
         return history_window(client(request), request.method, whole(request), window)
 
     return [
-        ReadRoute("/history", history),
+        ReadRoute("/history", history, params=frozenset({"hours", "machine", "task"})),
         ReadRoute("/history-window", read_window),
         WriteRoute("/history-window", ("PUT", "DELETE"), guarded("window", write_window)),
     ]

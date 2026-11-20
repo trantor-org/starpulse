@@ -22,4 +22,4 @@ def breaking_changes(request: Request) -> Response:
 
 
 def routes(api: Api) -> list[ApiRoute]:
-    return [ReadRoute("/breaking-changes", breaking_changes)]
+    return [ReadRoute("/breaking-changes", breaking_changes, params=frozenset({"open"}))]

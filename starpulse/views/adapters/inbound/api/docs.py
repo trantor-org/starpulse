@@ -44,7 +44,7 @@ def routes(api: Api) -> list[ApiRoute]:
 
     return [
         ReadRoute("/docs/{id:path}", record),
-        ReadRoute("/docs", listed),
+        ReadRoute("/docs", listed, params=frozenset({"ids"})),
         WriteRoute(
             "/docs", ("POST",), guarded("doc_create", whole_body(lambda client, raw: create_doc(client, raw, board)))
         ),

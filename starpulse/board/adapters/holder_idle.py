@@ -1,5 +1,5 @@
-"""The events that tell a task's holder it went idle: a harness session settling on the task's branch, or another
-session moving the task it parked back to In Progress."""
+"""The events that tell a task's holder it went idle or died: a harness session settling or ending on the task's
+branch, or another session moving the task it parked back to In Progress."""
 
 import threading
 import time
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 HARNESS_MACHINE = "harness"
 SETTLED = "SESSION_SETTLED"
+ENDED = "SESSION_ENDED"
 STOPPED = "SESSION_STOPPED"  # a turn's end, which trails a settle and says nothing of whether the session is idle
 WORKING = "in_progress"
 PARKED = frozenset({"needs_attention", "waiting", "done"})  # lanes whose holder ended its turn before the move
@@ -35,8 +36,8 @@ def _task_of(entry: Entry, event: str) -> str | None:
     return fields.get("task") if entry.stream == MACHINE_STREAM and moved else None
 
 
-def _idle(engine: Engine, task: str, until: float) -> bool:
-    """Whether the newest harness event of `task` up to `until`, a stop apart, is a settle: one indexed lookup."""
+def _newest(engine: Engine, task: str, until: float) -> str | None:
+    """The newest harness event of `task` up to `until`, a stop apart: one indexed lookup."""
     c = machine_events.c
     newest = (
         select(c.event)
@@ -45,7 +46,7 @@ def _idle(engine: Engine, task: str, until: float) -> bool:
         .limit(1)
     )
     with engine.connect() as db:
-        return db.execute(newest).scalar() == SETTLED
+        return db.execute(newest).scalar()
 
 
 def follow_holder_idle(
@@ -54,15 +55,17 @@ def follow_holder_idle(
     stop: StopEvent,
     ready: threading.Event,
     working: Callable[[], list[str]],
+    ended: Callable[[str], None] = lambda _task: None,
 ) -> threading.Thread:
     """Call `settled` with the task of each session that settles, and of each task moved from a parked lane to In
-    Progress, after this call, within the event's own latency. The mover may not be the holder, which settled when it
+    Progress, after this call, within the event's own latency; call `ended` with the task of each session whose process
+    ends. The mover may not be the holder, which settled when it
     parked the task and settles no more, so the move is the only event that tells it. A task parked before this call
     and moved after a server restart is not seen, because the lane map starts empty.
 
     Once `ready` is set (the actor has indexed its tasks) it also calls `settled` once with each task of `working`
-    whose newest harness event before this call, a `SESSION_STOPPED` aside, is a settle: its holder settled while the
-    actor was down and was not started again since. The cost is one indexed lookup per working task, never a read of
+    whose newest harness event before this call, a `SESSION_STOPPED` aside, is a settle (`settled`) or an end (`ended`):
+    its holder settled or died while the actor was down and was not started again since. The cost is one indexed lookup per working task, never a read of
     the stream. Nothing is called before `ready`, and the live tail's rows wait for it."""
     from starpulse.event_log.event_log import Tail  # the server imports no database stack until a store opens
 
@@ -76,6 +79,8 @@ def follow_holder_idle(
             lanes[task] = lane
         elif task := _task_of(entry, SETTLED):
             settled(task)
+        elif task := _task_of(entry, ENDED):
+            ended(task)
 
     def run() -> None:
         stop.listen(ready.set)  # a stop wakes the wait below, which then sees it
@@ -86,9 +91,12 @@ def follow_holder_idle(
 
         def follow() -> None:
             # a failed pass raises, and `run_on_wake` reads again before any settle is called
-            idle = [task for task in working() if _idle(log.engine, task, started)]
-            for task in idle:
+            tasks = working()
+            newest = {task: _newest(log.engine, task, started) for task in tasks}
+            for task in [task for task in tasks if newest[task] == SETTLED]:
                 settled(task)
+            for task in [task for task in tasks if newest[task] == ENDED]:
+                ended(task)
             tail.run(handle, stop)
 
         log.run_on_wake(stop, follow, "holder idle: cannot read the settles while the actor was down")
