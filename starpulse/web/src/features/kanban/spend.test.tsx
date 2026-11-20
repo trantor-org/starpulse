@@ -40,16 +40,19 @@ describe("spend", () => {
 
   it("asks the server once a minute, and again after a few seconds when it failed", async () => {
     const fetcher = answer([phase({})]);
-    await fetchSpend(fetcher, 0);
-    await fetchSpend(fetcher, 30_000);
+    await fetchSpend("TASK-1", fetcher, 0);
+    await fetchSpend("TASK-1", fetcher, 30_000);
     expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith("/api/task-spend/TASK-1");
+    await fetchSpend("TASK-2", fetcher, 30_000);
+    expect(fetcher).toHaveBeenCalledWith("/api/task-spend/TASK-2");
     forgetSpend();
-    expect(await fetchSpend(vi.fn(async () => ({ ok: false }) as Response), 0)).toBeNull();
+    expect(await fetchSpend("TASK-1", vi.fn(async () => ({ ok: false }) as Response), 0)).toBeNull();
     forgetSpend();
-    expect(await fetchSpend(vi.fn(async () => { throw new Error("down"); }), 0)).toBeNull();
+    expect(await fetchSpend("TASK-1", vi.fn(async () => { throw new Error("down"); }), 0)).toBeNull();
     const retry = answer([phase({})]);
-    expect(await fetchSpend(retry, 1_000)).toBeNull();
-    expect(await fetchSpend(retry, 6_000)).toHaveLength(1);
+    expect(await fetchSpend("TASK-1", retry, 1_000)).toBeNull();
+    expect(await fetchSpend("TASK-1", retry, 6_000)).toHaveLength(1);
   });
 
   it("flags a task far above its norm and names each phase with its steps, compactions and models", async () => {

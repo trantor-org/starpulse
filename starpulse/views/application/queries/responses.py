@@ -1,5 +1,6 @@
 """The read routes' bodies and statuses: each takes the stores it reads and answers `(bytes, status)`."""
 
+import json
 import logging
 import math
 import re
@@ -359,7 +360,7 @@ def _held_folds(
     """The per-session fold results of the `views` for the last `window` hours as of `now`, or the 503 response for a
     database that cannot be read.
 
-    The oldest signal the table holds is where its history begins: a window that starts before it is 400 with the
+    The oldest signal folded is where its history begins: a window that starts before it is 400 with the
     history's length (`history_s`), never answered with its missing hours as empty, as `level_response` refuses one."""
     try:
         oldest = telemetry.oldest()
@@ -519,6 +520,17 @@ def spend_response(
         return held
     report = combine_spend(sorted(held["spend"], key=lambda fold: (fold["harness"], fold["session"])), titled())
     return encode("spend", {"now": now, "window_s": window * 3600, "spend": report}), 200
+
+
+def task_spend_response(week: tuple[bytes, int], task: str) -> tuple[bytes, int]:
+    """The body and status for `/api/task-spend/<task>`: the task's phases of the `week` answer `spend_response`
+    gave, none for a task that spent nothing in the window; a refusal passes through."""
+    body, status = week
+    if status != 200:
+        return week
+    report = json.loads(body)
+    rows = [row for row in report["spend"] if row["task"] == task]
+    return encode("taskSpend", {"task": task, "now": report["now"], "window_s": report["window_s"], "spend": rows}), 200
 
 
 def cells_response(
