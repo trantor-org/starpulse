@@ -119,7 +119,6 @@ _SETTINGS = {
     "returned",
     "alive",
     "enqueued",
-    "verifying",
     "closed",
     "validate",
     "python_path",
@@ -1677,12 +1676,12 @@ def _holds(command: object, base: Path, root: Path | None = None, labels: object
 
 
 def _notice(command: object, base: Path, unreachable: bool = False) -> Callable[..., None]:
-    """The `parked`, `released`, `idle`, `returned`, `enqueued`, `verifying`, `closed` or `entered` command
+    """The `parked`, `released`, `idle`, `returned`, `enqueued`, `closed` or `entered` command
     (the last on any lane entry the board records, by whoever moves the task), run in `base` with `{id}` replaced by the
     task's id, after the task actor moves a task from the working lane to Waiting, from Waiting to Ready, sees its holder
     go idle (with `{verdict}` replaced by the idle step), sends it from Review
-    back to the working lane, reads its pull request ready in Review, moves it on a merge that leaves its post-merge QA
-    to run, or moves it to Done. A nonzero exit raises with what the command said. With no command it tells no one."""
+    back to the working lane, reads its pull request ready in Review, or moves it to Done. A nonzero exit raises with what
+    the command said. With no command it tells no one."""
     if not command:
         return lambda _task, _verdict="": None
     parts = shlex.split(str(command))
@@ -1780,7 +1779,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "returned": _notice(settings.get("returned"), base),
             "alive": _probe(settings.get("alive"), base),
             "enqueued": _notice(settings.get("enqueued"), base),
-            "verifying": _notice(settings.get("verifying"), base),
             "closed": _notice(settings.get("closed"), base),
             "entered": _entered(settings.get("entered"), base, root, settings.get("entered_labels")),
             "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles)),

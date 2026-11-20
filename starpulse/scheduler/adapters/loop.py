@@ -222,7 +222,7 @@ class Loop:
     def _held_outside(self) -> set[str]:
         """The In Progress tasks `_running` does not hold that a session holds, idle on a wake or mid-turn: an idle session
         is still a resident process, so a stalled downstream fills the sessions cap instead of piling up In Progress. A
-        task a verify miss sent back with no live session is Ready work (`_candidate`), not a held one."""
+        task sent back with no live session is Ready work (`_candidate`), not a held one."""
         live = self._live()
         working = self._feed.roles.working
         return {

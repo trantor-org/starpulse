@@ -56,13 +56,12 @@ __all__ = [
 
 #: The top-level keys that only change how the page draws a machine.
 DRAWING = ("tiers", "main_line", "rests", "submachines", "launches", "next")
-#: The fact kinds a lane's watch may name: what the task actor derives from a task's pull request, Verify plan, dependencies and criteria.
+#: The fact kinds a lane's watch may name: what the task actor derives from a task's pull request, dependencies and criteria.
 WAIT_FACTS = (
     "pr_terminal",
     "pr_merged",
     "pr_closed_unmerged",
     "pr_closed_unmerged_complete",
-    "pr_merged_planned",
     "pr_merged_unfinished",
     "pr_ready",
     "pr_failing",

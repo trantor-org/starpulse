@@ -79,7 +79,6 @@ def refusing(**fields: Any) -> Board:
         "returned": _nothing,
         "alive": lambda *_: False,
         "enqueued": _nothing,
-        "verifying": _nothing,
         "closed": _nothing,
         "entered": _nothing,
         "attach": _nothing,

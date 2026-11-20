@@ -123,7 +123,7 @@ PROJECTION_METRIC = "starpulse_task_actor_projection_seconds"
 HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 MERGE_MOVE_METRIC = "starpulse_task_merge_move_seconds"
 #: The facts whose write moves a task because its pull requests ended; the merge-to-move histogram observes them.
-_MERGE_FACTS = frozenset({"pr_terminal", "pr_merged", "pr_merged_planned", "pr_merged_unfinished"})
+_MERGE_FACTS = frozenset({"pr_terminal", "pr_merged", "pr_merged_unfinished"})
 #: Most seconds start recovery waits for the saves and changes pending before it takes its next task, so steady traffic
 #: slows recovery down but never stops it.
 _YIELD_S = 2.0
@@ -134,7 +134,7 @@ SENT_BACK = "pulls.sent_back"
 #: derived under, so a start derives only the tasks that changed since.
 CHECKPOINT = "pulls.task_actor_checkpoint"
 #: Bumped when a fact function reads something new or reads it differently: a checkpoint of another revision is unread.
-_FACTS_REVISION = 2
+_FACTS_REVISION = 3
 #: Seconds between two saves of the checkpoint while the actor runs.
 #: Seconds after a task's derived facts change before the checkpoint is saved.
 _CHECKPOINT_DEBOUNCE_S = 10.0
@@ -286,7 +286,7 @@ class TaskActor:
     Board machine's transitions. `edit` is the board's task editor. `repos`, `pin_rule` and `pins` are the `[release]`
     pin-bump rule (`unblock.PinGate`): a dependency in a pinned repository is merged on the parent's pin bump.
     `latest` says whether an event subject's last event already happened (None: none has), and `holds` the reasons the board withholds a task's `deps_done` (`Board.holds`). `read` is the
-    board's task reader (`Board.read`), which tells `pr_merged` and `pr_merged_planned` apart by the task's Verify plan.
+    board's task reader (`Board.read`).
     `unfinished` is the work a task whose pull requests merged still has (`Board.unfinished`). `main_green` is the SHA of main's latest passed Validate (None: none passed, or no source),
     and `owner_source` the `source` prefix of the tasks that pass closes while nothing waits on them (empty: none).
     """
@@ -312,7 +312,6 @@ class TaskActor:
         returned: Callable[[str], None] = _ignore,
         alive: Callable[[str], bool] = lambda _task: False,
         enqueued: Callable[[str], None] = _ignore,
-        verifying: Callable[[str], None] = _ignore,
         live: LiveBuild | None = None,
         advance: Callable[[str, str, str], None] | None = None,
         read: TaskReader = lambda _task: None,
@@ -366,7 +365,6 @@ class TaskActor:
         self._returned = returned
         self._alive = alive
         self._enqueued = enqueued
-        self._verifying = verifying
         #: The lanes that wait on their tasks' dependencies, whose derivation flags a wait nothing ends.
         self._sweep_lanes = {lane for lane, facts in waits.items() if "deps_done" in facts}
         #: The lanes that wait on a task's Start Criteria.
@@ -1240,8 +1238,6 @@ class TaskActor:
                 return
             merged = self._merged_at(agent) if fact in _MERGE_FACTS else None
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes, merged=merged):
-                if fact == "pr_merged_planned":
-                    self._notice(self._verifying, name, "entered post-merge QA but its holder was not told")
                 return
 
     def _merged_at(self, agent: dict[str, Any]) -> float | None:
@@ -1836,20 +1832,9 @@ class TaskActor:
         proof = "; ".join(parts)
         return proof, f"{MERGE_EVIDENCE} {proof}"
 
-    def _planned(self, agent: dict[str, Any]) -> bool | None:
-        """Whether the task's record carries a Verify plan; None when the board's read raises, which settles neither
-        route until the task is derived again."""
-        try:
-            record = self._read(agent["id"])
-        except Exception as error:
-            logger.warning("task actor: cannot read the Verify plan of %s: %s", agent["id"], error)
-            return None
-        return bool(record and record.get("verifyPlan"))
-
-    def _merged(self, agent: dict[str, Any], planned: bool) -> tuple[str, str] | None:
-        """The merge evidence when every pull request the task cites has ended and at least one merged, and the task's
-        Verify plan is present exactly when `planned`, else None: a delivery closed unmerged is no proof of the work. A
-        closed one beside a merged one holds the task, since the board refuses a merge proof while a cited PR is not
+    def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The merge evidence when every pull request the task cites has ended and at least one merged, else None: a
+        delivery closed unmerged is no proof of the work. A closed one beside a merged one holds the task, since the board refuses a merge proof while a cited PR is not
         merged: the hold comment names it for the holder to drop."""
         terminal = self._pr_terminal(agent)
         records = [self._record(url) for url in self._proof_prs(agent)]
@@ -1860,7 +1845,7 @@ class TaskActor:
             reason = f"{cited} closed unmerged; drop it with `backlog-task update --remove-ref` to close the task"
             self._note_hold(agent, (reason,), DONE_HELD)
             return None
-        return terminal if terminal and merged and self._planned(agent) is planned else None
+        return terminal if terminal and merged else None
 
     def _pr_closed_unmerged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The closed pull requests and the archive reason when every pull request the task cites has ended and none
@@ -1880,19 +1865,11 @@ class TaskActor:
             return None
         return closed[0], f"Every pull request it cites closed unmerged and every criterion is checked: {closed[0]}."
 
-    def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """`_merged` for a task with no Verify plan."""
-        return self._merged(agent, planned=False)
-
-    def _pr_merged_planned(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """`_merged` for a task with a Verify plan."""
-        return self._merged(agent, planned=True)
-
     def _pr_merged_unfinished(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The merge evidence and what is left when the task's pull requests merged, with or without a Verify plan, and
-        the board reports work unfinished, else None. A command that fails reports its error: the task returns to its
+        """The merge evidence and what is left when the task's pull requests merged and the board reports work
+        unfinished, else None. A command that fails reports its error: the task returns to its
         holder, never closes."""
-        merged = self._pr_merged(agent) or self._pr_merged_planned(agent)
+        merged = self._pr_merged(agent)
         if merged is None:
             return None
         try:
@@ -2247,7 +2224,6 @@ class TaskActor:
         "pr_merged": _pr_merged,
         "pr_closed_unmerged": _pr_closed_unmerged,
         "pr_closed_unmerged_complete": _pr_closed_unmerged_complete,
-        "pr_merged_planned": _pr_merged_planned,
         "pr_merged_unfinished": _pr_merged_unfinished,
         "pr_ready": _pr_ready,
         "pr_failing": _pr_failing,

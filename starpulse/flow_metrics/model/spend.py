@@ -11,7 +11,8 @@ cache read 0.1, an output token 5. `task_wte` sums a task's phases. A cell (kind
 has, per phase, a `phase_norm_wte`, the median `wte` of that phase over the cell's tasks that ran it; a row whose
 profile cell is under `MIN_N` falls back to the mixed kind x size cell, and its `norm_profile` says which cell it
 took (its own profile, `mixed`, or null with no norm). A phase over `FLAG_RATIO` times it is `phase_above_norm`. A task's `norm_wte` sums the norms of the phases it ran, so a qa round
-is weighed against peers' qa, and a task over `FLAG_RATIO` times it is `above_norm`.
+is weighed against peers' qa, and a task over `FLAG_RATIO` times it is `above_norm`. A `batch-umbrella` task is in no
+norm cell: its size counts the members it folds in, so its spend neither takes a norm nor skews its size's.
 
 A row's `profile` is the `<model>-<effort>` of its first main-thread step, so a subagent's model does not stand for
 the session's; a row of subagent steps alone takes its first step's.
@@ -174,14 +175,18 @@ def _flagged(
     for (task, _), row in rows.items():
         total[task] += row["wte"]
     cells = {task: cell_of(tasks, task) or (None, None) for task in total}
+    peers = {
+        task: (None, None) if "batch-umbrella" in (tasks.get(task, {}).get("labels") or ()) else cell
+        for task, cell in cells.items()
+    }
     own: dict[tuple[Any, str, str], list[float]] = defaultdict(list)
     mixed: dict[tuple[Any, str], list[float]] = defaultdict(list)
     for (task, phase), row in rows.items():
-        own[(cells[task], phase, row["profile"])].append(row["wte"])
-        mixed[(cells[task], phase)].append(row["wte"])
+        own[(peers[task], phase, row["profile"])].append(row["wte"])
+        mixed[(peers[task], phase)].append(row["wte"])
 
     def norm_of(task: str, phase: str) -> tuple[float | None, str | None]:
-        cell = cells[task]
+        cell = peers[task]
         if cell[0] is None:
             return None, None
         for values, used in (

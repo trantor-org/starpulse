@@ -314,9 +314,6 @@ class Board:
     enqueued: Callable[[str], None]
     """Puts a Review task's ready pull request in the merge queue, given the task's id, when the task actor reads
     `pr_ready` in Review; the task stays in Review and a raise is logged."""
-    verifying: Callable[[str], None]
-    """Tells whoever held a task that the task actor moved it on a merge that leaves post-merge QA to run (its Verify
-    plan), given its id, so the session that delivered it runs that QA; a raise is logged and the move stands."""
     closed: Callable[[str], None]
     """Tells the board that the task actor moved a task to Done, given its id, so it can file what follows the close; a
     raise is logged and the close stands."""
