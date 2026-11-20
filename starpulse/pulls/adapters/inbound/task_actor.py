@@ -1326,6 +1326,16 @@ class TaskActor:
         else:
             self._resume(name, progress, count)
 
+    def holder_entered(self, name: str) -> None:
+        """A task moved from a parked lane to In Progress settles like an idle holder, except after the operator's answer:
+        its claim told the holder through the task topic, and a resume on top costs the answering session a turn."""
+        with self._lock:
+            agent = self._feed.task(name, lean=True)
+            texts = self._comments(agent) if agent else None
+        if texts and _ANSWER_COMMENT.match(texts[-1]):
+            return
+        self.holder_settled(name)
+
     def holder_ended(self, name: str, wait_ended: bool = False) -> None:
         """A session's process ended. A holder whose task still has work (an open criterion, or a pull request of its own
         not yet ended) is revived by the `idle` hook's `revive` verdict, which reopens the session in place, else starts one

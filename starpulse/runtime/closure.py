@@ -61,7 +61,6 @@ CONTEXT_ENTRIES = (
     "starpulse.sessions.adapters.outbound.claude_code_notify",
     "starpulse.sessions.adapters.outbound.registry",
     "starpulse.sessions.adapters.outbound.session_start",
-    "starpulse.views.adapters.outbound.ttl_cached",
     "starpulse.views.model.encoding",
     "starpulse.views.adapters.outbound.signal_folds",  # `contexts` imports it late; its fold code sets every fold basis
     _ADAPTER_ENTRY,

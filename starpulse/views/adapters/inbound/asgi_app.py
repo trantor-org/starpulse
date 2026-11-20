@@ -119,10 +119,6 @@ def build_gauge(static: Path) -> str:
     return f'# HELP {name} The id of the page build served.\n# TYPE {name} gauge\n{name}{{build="{build}"}} 1\n'
 
 
-#: How long `/api/doctor` holds its report: the checks read the scheduler and run `git`.
-_CONTRACT_TTL_S = 60
-
-
 class _Build(StaticFiles):
     """The build's files; one under `/assets/` is kept by the browser for good."""
 
