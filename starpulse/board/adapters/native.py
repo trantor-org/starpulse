@@ -96,8 +96,7 @@ DEFAULT_PATH = ".starpulse/board"
 #: `validate` the `module:function` that may refuse a task write before it lands, `python_path` the directories, relative
 #: to the config, put at the front of `sys.path` before `validate` is imported, `task_file_name` the form of the name a created task's
 #: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent),
-#: `policy` the `[board.policy]` table `starpulse policy revision` reads, `claim_ttl` the seconds a claim
-#: lives without an event (0: no claim sweep), `transcripts` the directory of the sessions' transcripts, `complete_done` (boolean) that a task
+#: `policy` the `[board.policy]` table `starpulse policy revision` reads, `transcripts` the directory of the sessions' transcripts, `complete_done` (boolean) that a task
 #: landing in Done, and each Done task `tasks/` holds when the board starts, moves on to `completed/`, `complete_keep_labels` (a regex) that a Done task with a label fully matching it stays in `tasks/`, `policy_rows` the stored policy
 #: (its guards, profiles and watches) that `assemble` hands the board; no config sets it. `entered` is the command run
 #: (`{id}` the task's id) for each lane change `board:lanes` records, and `entered_labels` (a regex) limits it to a task
@@ -129,7 +128,6 @@ _SETTINGS = {
     "entry",
     "warn_actors",
     "policy",
-    "claim_ttl",
     "transcripts",
     "complete_done",
     "complete_keep_labels",
@@ -1834,12 +1832,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)
         made.start(feed, group, log)
-        sweep(feed, log, lambda _expiries: None)  # this process serves its own sweep's expiries
-
-    def sweep(feed: BoardFeed, log: EventLog, persist: Callable[[dict[str, float]], None]) -> None:
-        from starpulse.board.adapters import claim_ttl  # noqa: PLC0415 — keeps the board's import light
-
-        claim_ttl.start(final, feed, log, settings, persist)
 
     read = made.read
 
@@ -1893,7 +1885,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         **{
             **vars(made),
             "start": start,
-            "sweep": sweep,
             "attach": attach,
             "standing": _standing(root, guard),
             "readable": guard.readable,
