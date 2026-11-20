@@ -5,7 +5,8 @@ migrated here before `serve` opens it. Besides the schema and the summaries it m
 files (the scheduler switch, the history window, the run ledger) into the store, each once: the file is logged as
 imported and renamed with `RETIRED_SUFFIX`, so a second run finds the schema at the chain's head and nothing to import.
 With `[board] source_labels` set it also appends, to each task's History, the move of its one label matching that regex to
-its `source` (`label_sources`, which first imports a task without History), and a second run finds nothing left to move. It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
+its `source` (`label_sources`, which first imports a task without History), and a second run finds nothing left to move.
+Each task's History is archived exactly when its file sits in `completed/` or `archive/tasks/` (`settle_archived`), the file winning. It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
 not allow, a config that cannot be read, or a board the config does not assemble.
 """
 
@@ -56,11 +57,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"{path}: {exc}")
     base = path.parent if path else Path.cwd()
     if args.floor:
-        from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
-
+        from starpulse.event_log.event_log import store_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
         from starpulse.event_log.migrate import store_state  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
-        engine = create_engine(database_url(config.database_url, base))
+        engine = store_engine(database_url(config.database_url, base))
         print(json.dumps(store_state(engine)))
         return 0
     try:
@@ -77,16 +77,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         keys=board.keys,
         fold=True,
     )
-    if pattern := config.board.get("source_labels"):
-        from starpulse.board.adapters.label_sources import move_key_labels  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.board.adapters.label_sources import move_key_labels  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.board.adapters.settle_archived import settle_archived  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.board.adapters.task_parity import align_claims, filed  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.event_log.event_log import store_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
-        from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
-
-        engine = create_engine(url)
-        try:
-            move_key_labels(base / str(config.board.get("path", "backlog")), str(pattern), engine)
-        finally:
-            engine.dispose()
+    root = base / str(config.board.get("path", "backlog"))
+    engine = store_engine(url)
+    try:
+        settle_archived(root, engine)
+        if pattern := config.board.get("source_labels"):
+            move_key_labels(root, str(pattern), engine)
+        align_claims(filed(root, engine), engine)
+    finally:
+        engine.dispose()
     print(json.dumps({"store": make_url(url).render_as_string(hide_password=True)}))
     return 0
 
@@ -107,15 +111,13 @@ def maintain(
     With `fold` (the `starpulse migrate` run, the only writer besides the Board child) it folds the Task History and the
     `machine:events` the store holds into the read model, placing machine tasks with `keys`.
     """
-    from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
-
-    from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.event_log.event_log import EventLog, store_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.migrate import migrate  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.readmodel.projector import Projector  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.store import EventStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.flow_metrics.adapters.outbound.history import HistoryStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
-    engine = create_engine(url)
+    engine = store_engine(url)
     try:
         migrate(engine)
         log = EventLog(url, engine=engine)  # opened after the migration: an unmigrated store refuses its events

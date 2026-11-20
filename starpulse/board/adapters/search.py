@@ -75,9 +75,11 @@ _SEARCH = (
 _DIGEST = text(f"SELECT digest FROM {_TABLE} WHERE rowid = :row")
 _DELETE = text(f"DELETE FROM {_TABLE} WHERE rowid = :row")
 _VECTORS = "starpulse_task_vectors"
+#: `id` only grows (AUTOINCREMENT), so a vector stored again after its row was dropped never takes the old row's id:
+#: a search tells a changed vector from its task's row and id alone, without reading the vector.
 _CREATE_VECTORS = (
-    f"CREATE TABLE IF NOT EXISTS {_VECTORS} ("
-    "task_row INTEGER NOT NULL, model TEXT NOT NULL, vector BLOB NOT NULL, PRIMARY KEY (task_row, model))"
+    f"CREATE TABLE IF NOT EXISTS {_VECTORS} (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "task_row INTEGER NOT NULL, model TEXT NOT NULL, vector BLOB NOT NULL, UNIQUE (task_row, model))"
 )
 _DROP_VECTORS = text(f"DELETE FROM {_VECTORS} WHERE task_row = :row")
 #: What a search may filter a task by, a row per task: its labels, each on its own line so a label matches whole, and
@@ -134,10 +136,13 @@ _POOL = 50
 _BATCH = 1
 #: Rows changed since the held vectors were read beyond which reading them all again is cheaper than naming them.
 _RELOAD_AT = 500
-#: The newest rowid in the vectors table: `starpulse worker search` writes vectors this process never sees as a write,
-#: and a stored one replaces its row, so takes the next rowid. A held read made at another newest rowid is made again;
-#: the lookup is the table's last b-tree entry, not a scan.
-_NEWEST = text(f"SELECT coalesce(max(rowid), 0) FROM {_VECTORS}")
+#: The vectors table's row count and newest id. Other processes write it (`starpulse worker search` stores vectors, the
+#: board worker's fold drops them), and as ids only grow, no write leaves both unchanged: an unchanged pair keeps the
+#: held vectors without reading a key.
+_SHAPE = text(f"SELECT count(*), coalesce(max(rowid), 0) FROM {_VECTORS}")
+#: Each vector's task row and id, read from the key index alone (about 20 ms for 17,000 vectors, where reading them all
+#: took seconds): a row whose id differs from the held one, or that appeared or went, is the only one read again.
+_KEYS = text(f"SELECT task_row, rowid FROM {_VECTORS} WHERE model = :model")
 _TEXT_LIMIT = 8000
 _TIMEOUT = 10.0
 #: Seconds each attempt at a search query's vector waits, and the attempts made, by a search that waits (`wait=True`) or
@@ -215,6 +220,19 @@ def _drop_without_comments(connection: Connection) -> None:
         connection.exec_driver_sql(f"DROP TABLE {_TABLE}")
 
 
+def _ids_grow(connection: Connection) -> None:
+    """Copies a vectors table made before its ids only grew into one whose ids do, keeping every vector."""
+    made = connection.exec_driver_sql(f"SELECT sql FROM sqlite_master WHERE name = '{_VECTORS}'").scalar()
+    if made is None or "AUTOINCREMENT" in made:
+        return
+    connection.exec_driver_sql(f"ALTER TABLE {_VECTORS} RENAME TO {_VECTORS}_old")
+    connection.exec_driver_sql(_CREATE_VECTORS)
+    connection.exec_driver_sql(
+        f"INSERT INTO {_VECTORS} (task_row, model, vector) SELECT task_row, model, vector FROM {_VECTORS}_old"
+    )
+    connection.exec_driver_sql(f"DROP TABLE {_VECTORS}_old")
+
+
 def _named(hit: dict) -> dict:
     """`hit` with its `field` column index as the field's name; a match in no one column (-1) is the title's."""
     hit["field"] = _FIELDS[hit["field"] if hit["field"] >= 0 else 1]
@@ -248,11 +266,11 @@ class SearchIndex:
     def __init__(self, engine: Engine, settings: Search | None = None) -> None:
         self._engine = engine
         self._lock = threading.Lock()
-        #: The embedded tasks' unit vectors, read once. A write that changes a task's vector adds its row to `_dirty`
-        #: and the next search reads those rows alone, so a burst of writes never makes a search read every vector.
+        #: The embedded tasks' unit vectors, read once, with the `_SHAPE` and `_KEYS` they were read at: the next search
+        #: reads again only the rows whose key changed, whichever process wrote them.
         self._near: _Near | None = None
-        self._dirty: set[int] = set()
-        self._newest: int | None = None
+        self._shape: tuple[int, int] | None = None
+        self._keys: dict[int, int] = {}
         #: Held by the one search refreshing `_near`, which reads and normalises outside `_lock` so a write never waits
         #: for it.
         self._refreshing = threading.Lock()
@@ -276,6 +294,7 @@ class SearchIndex:
             with engine.begin() as connection:
                 _drop_without_comments(connection)
                 connection.execute(text(_CREATE))
+                _ids_grow(connection)
                 connection.execute(text(_CREATE_VECTORS))
                 connection.execute(text(_CREATE_FACETS))
                 if index._url:
@@ -351,7 +370,6 @@ class SearchIndex:
         connection.execute(_DELETE, {"row": row})
         connection.execute(_DROP_VECTORS, {"row": row})
         connection.execute(_INSERT, {"row": row, "digest": digest, **fields})
-        self._dirty.add(row)
 
     def remove(self, task_id: str) -> None:
         """Drop `task_id` from the index; a task the index does not hold is a no-op."""
@@ -359,7 +377,6 @@ class SearchIndex:
             connection.execute(_DELETE, {"row": _row(task_id)})
             connection.execute(_DROP_VECTORS, {"row": _row(task_id)})
             connection.execute(_DROP_FACETS, {"row": _row(task_id)})
-            self._dirty.add(_row(task_id))
 
     def search(
         self,
@@ -429,27 +446,23 @@ class SearchIndex:
         return sorted(hits, key=lambda hit: -hit["score"])[:limit]
 
     def _near_vectors(self, dimension: int) -> _Near:
-        """Every embedded task whose vector has `dimension` numbers, with the vectors read again only for the rows a
-        write has changed since the last read (all of them the first time, or when too many changed to name)."""
+        """Every embedded task whose vector has `dimension` numbers, with the vectors read again only for the rows any
+        process has stored or dropped since the last read (all of them the first time, or when too many changed to
+        name). The keys are read before the vectors, so a write between the two is read again next time, never missed."""
         with self._refreshing:
-            with self._engine.connect() as connection:
-                newest = connection.execute(_NEWEST).scalar_one()
-            with self._lock:
-                changed, self._dirty = self._dirty, set()
             held = self._near
-            try:
-                if held is not None and (
-                    held.matrix.shape[1] != dimension or len(changed) > _RELOAD_AT or newest != self._newest
-                ):
-                    held = None
-                if held is not None and not changed:
+            if held is not None and held.matrix.shape[1] != dimension:
+                held = None
+            with self._engine.connect() as connection:
+                shape = tuple(connection.execute(_SHAPE).one())
+                if held is not None and shape == self._shape:
                     return held
-                self._near = self._read_near(held, changed, dimension)
-                self._newest = newest
-            except BaseException:
-                with self._lock:
-                    self._dirty |= changed
-                raise
+                keys = dict(connection.execute(_KEYS, {"model": self._recipe}).all())
+            changed = {row for row, key in keys.items() if self._keys.get(row) != key} | (self._keys.keys() - keys)
+            if len(changed) > _RELOAD_AT:
+                held = None
+            self._near = self._read_near(held, changed, dimension)
+            self._shape, self._keys = shape, keys
             return self._near
 
     def _read_near(self, held: _Near | None, changed: set[int], dimension: int) -> _Near:
@@ -481,8 +494,7 @@ class SearchIndex:
                 break
             texts = [f"{r.title}\n{r.description}"[:_TEXT_LIMIT] for r in rows]
             vectors = self._embed(texts)
-            with self._lock, self._engine.begin() as connection:
-                before = connection.execute(_NEWEST).scalar_one()
+            with self._engine.begin() as connection:
                 done = [
                     row.row
                     for row, vector in zip(rows, vectors, strict=True)
@@ -496,9 +508,6 @@ class SearchIndex:
                         },
                     ).rowcount
                 ]
-                if done and before == self._newest:  # only this process wrote since the last read: `_dirty` names it
-                    self._newest = connection.execute(_NEWEST).scalar_one()
-                self._dirty.update(done)
             stored += len(done)
             if not done:
                 break

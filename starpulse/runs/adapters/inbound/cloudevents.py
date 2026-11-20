@@ -111,6 +111,8 @@ class CloudEventsIngest:
         for stream, event_id, fields in entries:
             if self._log.publish(stream, fields, event_id=event_id) is None:
                 return 503, {"error": "the event log did not take the event; send it again"}
+        if any(stream == run_events.STREAM for stream, _, _ in entries):
+            self._log.publish(run_events.RESYNC, {"instance": name})
         return 201, {"accepted": True}
 
     def _entry(self, producer: Producer, event: object) -> tuple[str, str, dict[str, Any]]:

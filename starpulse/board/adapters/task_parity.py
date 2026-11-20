@@ -19,7 +19,7 @@ from starpulse.board.model.markdown import render
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore
 
-__all__ = ["Filed", "Parity", "check", "filed", "import_missing"]
+__all__ = ["Filed", "Parity", "align_claims", "check", "filed", "import_missing"]
 
 Record = Mapping[str, Any]
 _SHOWN = 6
@@ -63,7 +63,7 @@ def _replayed(row: Record) -> dict[str, Any]:
     record |= {key: row["meta"].get(key) for key in _META}
     for kind, key in _KINDS.items():
         record[key] = [item for item in row["criteria"] if item["kind"] == kind]
-    record["session"] = row["assignee"]
+    record["assignee"] = row["assignee"]
     record["comments"] = [{"text": item["text"]} for item in row["comments"]]
     return record
 
@@ -105,3 +105,18 @@ def import_missing(items: Iterable[Filed], engine: Engine) -> list[str]:
     history = TaskHistory()
     history.attach(engine)
     return [item.task for item in items if history.imported(item.task, item.record, item.archived)]
+
+
+def align_claims(items: Iterable[Filed], engine: Engine) -> list[str]:
+    """Set the claim of each of `items` whose History holds another to its file's, a `FieldsEdited` of `assignee`; the tasks that got one."""
+    store, history = EventStore(engine), TaskHistory()
+    history.attach(engine)
+    aligned = []
+    for item in items:
+        if not store.head(KIND, item.task):
+            continue
+        held = item.record.get("assignee") or ""
+        if replay(store.read(KIND, item.task))["assignee"] != held:
+            history.edited(item.task, {"changes": {"assignee": held}})
+            aligned.append(item.task)
+    return aligned

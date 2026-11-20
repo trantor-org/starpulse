@@ -47,7 +47,7 @@ from starpulse.event_log.tables import events, gaps, settings, signal_folds, sig
 from starpulse.event_log.wake import FALLBACK_WAKE_S, RETRY_DELAY, StopEvent
 from starpulse.event_log.watch import open_watch
 
-__all__ = ["Entry", "EventLog", "Tail", "WAL_SIZE_LIMIT", "bound_wal"]
+__all__ = ["Entry", "EventLog", "Tail", "WAL_SIZE_LIMIT", "bound_wal", "store_engine"]
 
 logger = logging.getLogger(__name__)
 
@@ -264,7 +264,7 @@ class EventLog:
         with self._lock:
             if not self._ready:
                 if self._engine is None:
-                    self._engine = _create_engine(self.url)
+                    self._engine = store_engine(self.url)
                 if not self._listening:
                     event.listen(self._engine, "connect", _sqlite_pragmas)
                     bound_wal(self._engine)
@@ -774,7 +774,8 @@ def insert_event(db: Connection, stream: str, fields: Mapping[str, Any], key: st
     return cursor
 
 
-def _create_engine(url: str) -> Engine:
+def store_engine(url: str) -> Engine:
+    """An engine on the store at `url` that waits on a locked SQLite database as long as the server does."""
     if make_url(url).database in (None, "", ":memory:"):  # one in-memory database per connection: no pool to size
         return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
     return create_engine(

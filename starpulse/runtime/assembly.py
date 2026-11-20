@@ -265,8 +265,8 @@ def runs_kind(log: EventLog, adapters: Sequence[tuple[RunsInstance, ModuleType]]
 
 
 class GithubKind:
-    """The sweeper's `github` kind: one reconcile pass of the inbox against GitHub. A list read is a sample, a
-    redelivery asked or an inbox row inserted a correction."""
+    """The sweeper's `github` kind: one reconcile pass of the inbox against GitHub. A list read is a sample, an
+    inbox row inserted a correction; a redelivery asked is the webhook pushed again, so it is none."""
 
     name = "github"
 
@@ -311,16 +311,15 @@ class _BoardKind:
 
 
 def board_kinds(shared: Callable[[], tuple[Board, BoardFeed]]) -> list[_BoardKind]:
-    """The `claims`, `waiting`, `board-files` and `pulls` kinds over the board and feed `shared` hands out, read at the first pass
-    (the Board context may publish them after the sweeper starts). The adapter that keeps a claim's deadline, the task
-    actor that releases a Waiting task and the pull request reader register their pass on the feed; a kind whose owner is not running in this process
-    samples nothing."""
+    """The `waiting`, `board-files` and `pulls` kinds over the board and feed `shared` hands out, read at the first pass
+    (the Board context may publish them after the sweeper starts). The task actor that releases a Waiting task and the
+    pull request reader register their pass on the feed; a kind whose owner is not running in this process samples
+    nothing."""
 
     def registered(name: str) -> Callable[[], tuple[int, int]]:
         return lambda: shared()[1].reconcilers.get(name, lambda: (0, 0))()
 
     return [
-        _BoardKind("claims", registered("claims")),
         _BoardKind("waiting", registered("waiting")),
         _BoardKind("board-files", registered("board-files")),
         _BoardKind("pulls", registered("pulls")),

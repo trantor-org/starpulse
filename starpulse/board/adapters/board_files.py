@@ -81,14 +81,17 @@ class BoardFiles:
         corrected = 0
         known = {agent["id"] for agent in self._feed.open_tasks()} | set(self._feed.done_tasks())
         for task, aliases in files:
-            if task not in known:
-                corrected += bool(self._board.reconcile(task))
+            if task not in known and self._board.reconcile(task):
+                logger.warning("StarPulse: the board-files pass reconciled %s, a listed file the feed lacked", task)
+                corrected += 1
             for alias in aliases:
                 self._feed.alias(alias, task)
         renamed = {alias for _task, aliases in files for alias in aliases} - {task for task, _aliases in files}
         absent = {task for task in known if task in renamed or self._board.read(task) is None}
         for task in absent & self._absent:
-            corrected += bool(self._board.reconcile(task))
+            if self._board.reconcile(task):
+                logger.warning("StarPulse: the board-files pass reconciled %s, a task whose file is gone", task)
+                corrected += 1
         self._absent = absent
         return corrected
 
@@ -97,6 +100,7 @@ class BoardFiles:
         with self._feed.recording:
             if not self._board.reconcile(task):
                 return False
+            logger.warning("StarPulse: the board-files pass reconciled %s, whose file lane is %s", task, lane)
             self._feed.record_written(task, lane, time.time(), (RECONCILER, "", ""))
             return True
 

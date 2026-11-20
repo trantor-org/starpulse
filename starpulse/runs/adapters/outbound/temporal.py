@@ -5,13 +5,14 @@
 the `runs` contract's `Dag` records: a running execution is an `ActiveRun` with the activity it is on, that activity's
 attempt and the failure its last attempt ended in; a closed one is a `RecentRun`, and a failed one carries the activity
 it failed on, that activity's attempt and the failure. A closed execution never changes, so its history is read once.
-`read` feeds the sweeper's `runs` kind; a start reaches the page as a `StepStarted` event its starter posts, a close as a completion callback (`POST /api/temporal-completion`). `start` is None, so a workflow
+`read` feeds the sweeper's `runs` kind; a start reaches the page as a `StepStarted` event its starter posts, a close as a completion callback (`POST /api/temporal-completion`), and each asks `follow` to list the server again. `start` is None, so a workflow
 has no Run now: these workflows start from the Board's lifecycle, not from the page.
 """
 
 import base64
 import json
 import re
+import threading
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
@@ -19,7 +20,9 @@ from datetime import UTC, datetime, timedelta
 
 from starpulse.contracts.adapters import RunsSink, RunStatus
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.wake import StopEvent
 from starpulse.runs.adapters.outbound import Unreported, node
+from starpulse.runs.adapters.outbound.resync import follow_resync
 
 #: The workflow types shown, in the order the page lists them.
 TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow", "CommandWorkflow")
@@ -316,7 +319,16 @@ def start(url: str) -> None:
     return
 
 
-def follow(url: str, runs: RunsSink, log: EventLog) -> None:
-    """Nothing to follow: the server pushes each close to `POST /api/temporal-completion`, and the sweeper's `runs` kind
-    compares `read` with the projection."""
-    return
+def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:
+    """Show the workflows of the server at `url` on `runs`: listed once now, then again for each `runs:resync` entry
+    naming the instance (`follow_resync`), which every run event pushed under the instance's name writes
+    (`CloudEventsIngest.write`): a start its starter posts, a close the server's completion callback."""
+    poller = Poller(runs, get, url)
+    one_read = threading.Lock()
+
+    def relist() -> None:
+        with one_read:
+            poller.read()
+
+    follow_resync(log, getattr(runs, "instance", None) or "", relist, stop or StopEvent())
+    threading.Thread(target=relist, name="temporal-runs", daemon=True).start()
