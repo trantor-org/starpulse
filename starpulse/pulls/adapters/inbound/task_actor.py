@@ -1484,9 +1484,8 @@ class TaskActor:
             self._stalled.discard(name)
             criteria = agent.get("criteria", ())
             checked = bool(criteria) and not open_criteria(criteria)
-            delivering = (self._feed.machine_task(IN_PROGRESS, name) or {}).get("state") == "deliver"
             answered = "kind-decide" in agent["labels"] and operator_answered((self._feed.task(name) or {}).get("description", ""))
-            done = checked and (delivering or answered)
+            done = checked and (self._in_deliver_phase(name) or answered)
             target = self._feed.roles.done if done else self._feed.roles.ready
             comment = (
                 "Closed at its session's end: it cites no pull request and every criterion is checked."
@@ -1495,6 +1494,19 @@ class TaskActor:
                 + ("its session ended before the deliver phase." if checked else "it holds no criterion.")
             )
             self._write(name, target, comment, self._clock(), source=agent["state"])
+
+    def _in_deliver_phase(self, name: str) -> bool:
+        """Whether `name` is in its deliver phase as the board shows it: the In Progress machine stands in `deliver`, or
+        the In Progress link whose machine holds the task newest is the deliver link (the In Progress machine may never
+        have stepped onto it)."""
+        if (self._feed.machine_task(IN_PROGRESS, name) or {}).get("state") == "deliver":
+            return True
+        held = [
+            (link, placed)
+            for link in self._links.get(IN_PROGRESS, ())
+            if (placed := self._feed.machine_task(link["machine"], name))
+        ]
+        return bool(held) and max(held, key=lambda pair: pair[1]["active"])[0]["state"] == "deliver"
 
     def _settle_awaited(self, name: str) -> None:
         if name not in self._awaited:

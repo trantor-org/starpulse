@@ -183,18 +183,15 @@ def build(
     clock: Callable[[], float] = time.time,
     *,
     start: Callable[..., str] | None = None,
-    settle: Callable[[str, str], Written] | None = None,
     claim: Callable[[str, str], Written] | None = None,
-    requeue: Callable[[str, str], Written] | None = None,
     merged: Callable[[Mapping[str, Any]], bool] = lambda agent: False,
     lane: str = "",
     transcript: Callable[[str], float | None] = lambda session: None,
-    nudges: bool = True,
 ) -> Runtime:
     """The switch kept in `log`'s store and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
 
-    With `start` and `settle` it also builds the dispatch loop over them, admitting from `lane` and keeping its run ledger
-    beside the switch; a capacity crossing then wakes it. Without them there is only the switch and the sampler.
+    With `start` it also builds the dispatch loop over it, admitting from `lane` and keeping its run ledger
+    beside the switch; a capacity crossing then wakes it. Without it there is only the switch and the sampler.
     """
     loop: Loop | None = None
 
@@ -239,7 +236,7 @@ def build(
     toggle = Toggle(log)
     quiet_hours = QuietHoursSetting(log)
     harness = HarnessSetting(log)
-    if start is not None and settle is not None:
+    if start is not None:
         loop = Loop(
             feed=feed,
             policy=policy,
@@ -247,16 +244,13 @@ def build(
             sampler=sampler,
             ledger=Ledger(log),
             start=start,
-            settle=settle,
             lane=lane,
             claim=claim,
-            requeue=requeue,
             merged=merged,
             clock=clock,
             quiet_hours=quiet_hours.get,
             log=log,
             harness=harness,
             transcript=transcript,
-            nudges=nudges,
         )
     return Runtime(toggle, sampler, quiet_hours, harness, policy, session_caps, capacity_limits, loop, reading=feed.one_read)

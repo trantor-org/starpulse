@@ -2,8 +2,7 @@
 
 With no block the scheduler has everything it needs: the board's initial lane is the eligible lane, the built-in
 tier weights price a task by its tier, an unsized task counts as `unsized_points`, and the four capacity
-dimensions have the limits below, and a session idle for `idle_minutes` with its task still open is settled to Needs
-attention. `lane`, `review_lane`, `unsized_points`, `idle_minutes`, `state_dir`, `[scheduler.tier_weights]`,
+dimensions have the limits below. `lane`, `review_lane`, `unsized_points`, `state_dir`, `[scheduler.tier_weights]`,
 `[scheduler.priority_matrix]` and `[scheduler.limits]` each override one default; a key left out keeps its default.
 """
 
@@ -29,7 +28,6 @@ _KEYS = {
     "lane",
     "review_lane",
     "unsized_points",
-    "idle_minutes",
     "state_dir",
     "tier_weights",
     "priority_matrix",
@@ -44,9 +42,9 @@ _KEYS = {
 ACTOR = "starpulse/scheduler"
 
 
+
 class SchedulerError(ValueError):
     """The block cannot be run from; the message names the key to fix."""
-
 
 
 def served(config_limit: float, override: float | None) -> dict[str, object]:
@@ -66,8 +64,6 @@ class Scheduler:
     """The lane whose tasks' points are the review load; none: the board's lane that waits on a pull request."""
     unsized_points: int = 3
     """The points a task with no `size-N` label counts as."""
-    idle_minutes: float = 30
-    """How long a session may sit with no event before its still-open task is settled to Needs attention."""
     state_dir: str | None = None
     """Where the files the switch and the run ledger were kept in before the store are imported from, relative to the config's directory; none: beside the config."""
     tier_weights: Mapping[str, float] = field(default_factory=lambda: {"fast": 1, "standard": 2, "deep": 4})
@@ -204,7 +200,6 @@ def parse_scheduler(raw: object) -> Scheduler:
     unsized = raw.get("unsized_points", defaults.unsized_points)
     if isinstance(unsized, bool) or not isinstance(unsized, int) or unsized < 1:
         raise SchedulerError("scheduler unsized_points must be a whole number of 1 or more")
-    idle = _number(raw.get("idle_minutes", defaults.idle_minutes), "idle_minutes")
     state_dir = raw.get("state_dir")
     if state_dir is not None and not (isinstance(state_dir, str) and state_dir):
         raise SchedulerError("scheduler state_dir must be a directory path")
@@ -223,7 +218,6 @@ def parse_scheduler(raw: object) -> Scheduler:
         lane,
         review_lane,
         unsized,
-        idle,
         state_dir,
         {**defaults.tier_weights, **weights},
         {**defaults.priority_matrix, **matrix},

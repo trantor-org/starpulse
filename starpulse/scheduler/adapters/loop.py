@@ -1,4 +1,4 @@
-"""The scheduler loop: admits Ready tasks into sessions as capacity allows, records each run and settles a stuck one.
+"""The scheduler loop: admits Ready tasks into sessions as capacity allows, and records each run.
 
 It wakes on events, never on a dispatch timer: a task entering the eligible lane (or becoming workable there), a
 session stopping, the toggle turning on, a capacity dimension crossing its limit (`wake`) and the feed's `scheduler`
@@ -7,15 +7,12 @@ status of a sample that leaves room for a task admission turned away. Each wake 
 1. a run whose task left the eligible lane and In Progress is finished and written to the ledger (its outcome is the
    lane it went to, its duration and its resource peak); a session that stops while the task is still in those lanes is
    finished as `session-ended` and held out of admission until the task leaves them;
-2. a session idle past `idle_minutes` with its task still open is returned to the eligible lane once, with a comment, when
-   it has no pull request; any other idle session is settled to Needs attention with a reason and is never started again.
-   A task with no pull request and an open acceptance criterion is exempt: the task actor nudges its holder on each settle;
-3. while the switch is on and the clock is outside the quiet hours, `decide` ranks the Ready tasks and the loop starts the first admitted, then decides again over
+2. while the switch is on and the clock is outside the quiet hours, `decide` ranks the Ready tasks and the loop starts the first admitted, then decides again over
    readings that carry that run's demand, until none is admitted.
 
 A run holds its capacity from its start until its task leaves In Progress. While the harness has not yet seen its session
 active the loop adds its demand to the sampler's readings itself; once it is active the sampler counts it. The one wake
-a timer makes (`period`) only finishes and settles runs, so an idle session is found without any event arriving.
+a timer makes (`period`) only finishes runs.
 
 The runs in flight, each task's last start time and the last capacity sample live in the history store, so a restart
 restores them. A start still inside `START_COOLDOWN` is not admitted again when that restore misses the run.
@@ -29,9 +26,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
-from starpulse.board.model.acceptance import open_criteria
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import attention_reason
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import StartFailedError
 from starpulse.event_log.event_log import EventLog
@@ -65,10 +60,6 @@ from starpulse.scheduler.model.usage_limit import until as usage_until
 logger = logging.getLogger(__name__)
 
 SESSION_ENDED = "session-ended"
-SETTLE_REFUSED = "settle-refused"
-IDLE_RETURNED = "idle-returned"
-#: Idle returns counted per task, `{task: n}`, so a task that idles again after a return is settled, not returned again.
-IDLE_KEY = "scheduler.idle_returns"
 HELD_KEY = "scheduler.held"
 PAUSES_KEY = "scheduler.harness_pauses"
 #: Seconds a task whose start failed waits before its first retry; each further failure doubles it, up to `START_BACKOFF_MAX`.
@@ -137,16 +128,14 @@ class _Run:
 
 
 class Loop:
-    """Starts admitted tasks through `start` and settles stuck ones through `settle`.
+    """Starts admitted tasks through `start`.
 
-    `start` takes a task id and answers the session's address, raising `StartFailedError` when it cannot; `settle` moves a
-    task to Needs attention with the reason and says whether it did; `lane` is the eligible lane, `claim` comments a started session's address on its task, `requeue` moves an idle task back
-    to `lane` with a comment, `merged` says whether a task's
-    own pull request has merged, which leaves the task unstarted whatever its lane, `clock` is the loop's notion
-    of now, `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, and
-    `log` is the history store a restart restores in-flight runs and start times from, and `transcript` answers when a
-    session's transcript was last written, which lists a session the harness machine does not key to its task, and `nudges`
-    whether the task actor nudges an idle holder (the board has an idle hook), which exempts a task with an open criterion from the idle clock.
+    `start` takes a task id and answers the session's address, raising `StartFailedError` when it cannot; `lane` is the
+    eligible lane, `claim` comments a started session's address on its task, `merged` says whether a task's own pull
+    request has merged, which leaves the task unstarted whatever its lane, `clock` is the loop's notion of now,
+    `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, `log` is the
+    history store a restart restores in-flight runs and start times from, and `transcript` answers when a session's
+    transcript was last written, which lists a session the harness machine does not key to its task.
     """
 
     def __init__(
@@ -158,29 +147,23 @@ class Loop:
         sampler: Sampler,
         ledger: Ledger,
         start: Callable[..., str],
-        settle: Callable[[str, str], Written],
         lane: str,
         claim: Callable[[str, str], Written] | None = None,
-        requeue: Callable[[str, str], Written] | None = None,
         merged: Callable[[Mapping[str, Any]], bool] = lambda agent: False,
         clock: Callable[[], float] = time.time,
         quiet_hours: Callable[[], QuietHours | None] = lambda: None,
         log: EventLog | None = None,
         harness: HarnessSetting | None = None,
         transcript: Callable[[str], float | None] = lambda session: None,
-        nudges: bool = True,
     ) -> None:
         self._feed = feed
-        self._nudges = nudges
         self._policy = policy
         self._toggle = toggle
         self._sampler = sampler
         self._ledger = ledger
         self._start = start
-        self._settle = settle
         self._lane = lane
         self._claim = claim
-        self._requeue = requeue
         self._merged = merged
         self._clock = clock
         self._quiet_hours = quiet_hours
@@ -331,7 +314,6 @@ class Loop:
         self._finish(now, agents)
         self._revive(now, agents)
         self._release(now, agents)
-        self._reap(now)
         if not admit:
             return []
         if (why := self._admission_off(now)) is not None:
@@ -353,7 +335,7 @@ class Loop:
         return None
 
     def run_forever(self, stop: StopEvent) -> None:
-        """Tick on each wanted event until `stop` is set, and when a deadline falls due: an idle limit, a start backoff or a
+        """Tick on each wanted event until `stop` is set, and when a deadline falls due: a start backoff or a
         credit pause ending. A capacity event samples first, so the session and review counts follow the event."""
         self._feed.wait_replayed()
         events = self._feed.follow_changes()
@@ -381,16 +363,9 @@ class Loop:
             self._feed.unsubscribe(events)
 
     def _next_due(self, now: float) -> float | None:
-        """Seconds to the earliest deadline the loop must wake for with no event, or None: a run's idle limit, the end of a
+        """Seconds to the earliest deadline the loop must wake for with no event, or None: the end of a
         sessions-full wait, a failed start's backoff or a credit pause."""
-        limit = self._policy.idle_minutes * 60
-        due = []
-        for task, run in self._running.items():
-            seen = self._feed.machine_task(HARNESS.name, task)
-            at = max(run.started_at, seen["active"] if seen else 0.0) + limit + 1.0
-            if at > now or not self._nudged(task):
-                due.append(at)
-        due += [at for at in (self._full[1], *(retry for _, retry in self._failed.values())) if at > now]
+        due = [at for at in (self._full[1], *(retry for _, retry in self._failed.values())) if at > now]
         due += [row["until"] for row in self._paused.values() if row["until"] > now]
         return max(0.0, min(due) - now) if due else None
 
@@ -545,47 +520,6 @@ class Loop:
             self._ledger.record(record)
         except Exception:  # the store is a database: any failure to write must not stop the loop
             logger.exception("StarPulse scheduler: cannot record the run of %s", task)
-
-    def _nudged(self, task: str) -> bool:
-        """Whether the task actor, not the idle clock, handles the task's idle holder: it nudges, and the task has no pull
-        request and a criterion open."""
-        if not self._nudges:
-            return False
-        agent = self._feed.task(task, lean=True) or {}
-        return not agent.get("prs") and bool(open_criteria(agent.get("criteria", ())))
-
-    def _reap(self, now: float) -> None:
-        """Settle each run idle past the limit with its task still open. A task with no pull request is returned to the
-        eligible lane once, with a comment; any other settle moves it to Needs attention and it is never started again.
-
-        A write the board refuses closes the run too, so its slot and demand free and it is not retried each tick."""
-        limit = self._policy.idle_minutes * 60
-        for task, run in list(self._running.items()):
-            seen = self._feed.machine_task(HARNESS.name, task)
-            idle = now - max(run.started_at, seen["active"] if seen else 0.0)
-            if idle <= limit or self._nudged(task):
-                continue
-            minutes = f"its session was idle for {idle / 60:.0f} minutes (limit {self._policy.idle_minutes:g}) with the task still open"
-            returns = self._kept_state(IDLE_KEY) or {}
-            if self._requeue is not None and not returns.get(task) and not (self._feed.task(task, lean=True) or {}).get("prs"):
-                self._keep_state(IDLE_KEY, {**returns, task: 1})
-                written, outcome = (
-                    self._requeue(task, f"Scheduler returned {task} to Ready: {minutes}. It has no pull request."),
-                    IDLE_RETURNED,
-                )
-            else:
-                reason = attention_reason(
-                    f"Scheduler settled {task}: {minutes}",
-                    "the scheduler does not start it again, and a settle after a return or with a pull request needs triage",
-                    ("resume it in a new session", "return it to Ready", "close it"),
-                    "Resume it, return it to Ready, or close it?",
-                )
-                written, outcome = self._settle(task, reason), self._feed.roles.attention or "settled"
-            if written.ok:
-                self._close(task, run, outcome, now)
-            else:
-                logger.warning("StarPulse scheduler: cannot move %s, releasing its run: %s", task, written.output)
-                self._close(task, run, SETTLE_REFUSED, now)
 
     def _counted(self, task: str) -> bool:
         """Whether the sampler already counts the task's session: its harness machine is active."""
