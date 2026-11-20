@@ -4,6 +4,7 @@ The board still writes the task's file; this records, per write, the intent the 
 with no History yet is seeded with a `TaskImported` of its record before the write, so a replay equals the row."""
 
 import json
+from collections import Counter
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
@@ -110,7 +111,7 @@ def _held(store: EventStore, task: str, before: Record) -> Record:
     row = replay(store.read(KIND, task))
     filed = seed(before, 0.0)
     own = {key: row[name] for key, name in _OWN.items() if row[name] != filed[name]}
-    return {**before, **own, "assignee": row["assignee"], "source": row["meta"].get("source", "")}
+    return {**before, **own, "assignee": row["assignee"], "source": row["meta"].get("source", ""), "comments": row["comments"]}
 
 
 def _field_changes(before: Record, after: Record) -> dict[str, Any]:
@@ -163,10 +164,24 @@ def revises_plan(status: str, held: str, plan: str, unstarted: Collection[str]) 
     return bool(held) and plan != held and lane_id(status) not in unstarted
 
 
+def _comment_events(before: Record, after: Record) -> list[Event]:
+    """A `CommentAdded` for each comment of `after` that `before` does not hold, so a note the file holds alone is recorded
+    though the History holds others the file lacks."""
+    held = Counter(item.get("text", "") for item in _comments(before))
+    events: list[Event] = []
+    for item in _comments(after):
+        text = item.get("text", "")
+        if held[text]:
+            held[text] -= 1
+        else:
+            events.append(("CommentAdded", {"text": text}))
+    return events
+
+
 def _events(before: Record, after: Record | None, note: str) -> list[Event]:
     """The Events that take `before` to `after`; None is a task that left the board, `{}` one that was not on it."""
     if after is None:
-        return ([("CommentAdded", {"text": note})] if note else []) + [("Archived", {})]
+        return ([("CommentAdded", {"text": f"Archived: {note}"})] if note else []) + [("Archived", {})]
     if not before:
         return [("Rehydrated", {}), _restored(after)]
     events: list[Event] = []
@@ -181,7 +196,7 @@ def _events(before: Record, after: Record | None, note: str) -> list[Event]:
     if before.get("status") != after.get("status"):
         events.append(("Transitioned", {"from": before.get("status"), "to": after.get("status")}))
     events += _criteria_events(before, after)
-    events += [("CommentAdded", {"text": item.get("text", "")}) for item in _comments(after)[len(_comments(before)) :]]
+    events += _comment_events(before, after)
     if before.get("assignee") != after.get("assignee"):
         held = after.get("assignee")
         events.append(("Claimed", {"assignee": held}) if held else ("Released", {}))
@@ -212,11 +227,12 @@ class TaskHistory:
         reason_at: int | None = None,
         also: Callable[[str], Iterable[str]] | None = None,
         unstarted: Collection[str] | None = None,
-        rehydrates: bool = False,
+        rehydrates: bool | Callable[..., bool] = False,
     ) -> Callable[..., Written]:
         """`write` (a verb taking a task id first) that appends what it changed once it succeeds.
 
-        `rehydrates` is a write that returns a completed task to the active board (a reopen): its Events lead with `Rehydrated`.
+        `rehydrates` is a write that returns a completed task to the active board (a reopen): its Events lead with `Rehydrated`. A callable takes the task and the write's arguments, before it, and
+        says whether this call is one.
 
         `actor_at` is the index in the arguments after the task of an actor passed positionally; `reason_at` that of an archive's reason.
         `also` names the other tasks the write edits, so an archive's removal of itself from its dependents is recorded too.
@@ -227,6 +243,7 @@ class TaskHistory:
             before = read(task)
             others = {name: read(name) for name in also(task)} if also else {}
             reason = _plan_reason(args) if unstarted is not None else ""
+            rehydrating = rehydrates(task, *args, **kwargs) if callable(rehydrates) else rehydrates
             written = write(task, *args, **kwargs)
             if written.ok:
                 actor = kwargs.get("actor") or (
@@ -238,7 +255,7 @@ class TaskHistory:
                 revised = bool(reason and before and after) and revises_plan(
                     before.get("status") or "", before.get("plan") or "", after.get("plan") or "", unstarted or ()
                 )
-                self._append(task, before, after, actor, note.strip(), reason if revised else None, rehydrates)
+                self._append(task, before, after, actor, note.strip(), reason if revised else None, rehydrating)
                 for name, was in others.items():
                     self._append(name, was, read(name), actor, "")
             return written

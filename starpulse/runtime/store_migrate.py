@@ -78,6 +78,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         keys=board.keys,
         fold=True,
     )
+    from starpulse.board.adapters.comment_parity import reconcile_comments  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.board.adapters.files_win import bring_to_files  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.board.adapters.label_sources import move_key_labels  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.board.adapters.settle_archived import settle_archived  # noqa: PLC0415 - import cost, paid only by a run that migrates
@@ -91,6 +92,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if pattern := config.board.get("source_labels"):
             move_key_labels(root, str(pattern), engine)
         align_claims(filed(root, engine), engine)
+        reconcile_comments(root, engine)
         if config.board.get("files_win"):
             brought = bring_to_files(filed(root, engine), engine)
             logger.info("migrate: brought %d task Histories to their files", brought)
