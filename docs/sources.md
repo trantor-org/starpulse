@@ -243,9 +243,10 @@ Cursor left out, by task then the phase's first step. Its columns:
 
 - `task`, `kind`, `size`: the task and its board labels `kind-<kind>` and `size-<n>`, null when it has none.
 - `phase`: `claim`, `implement`, `qa`, `deliver` or `review_fix`. The skills `qa`, `deliver`, `review-fix` and
-  `cr-triage` set their phase. Every other step is `claim` until the first step of the task that edits a file (`Edit`,
-  `Write`, `MultiEdit`, `NotebookEdit`, `StrReplace`), across all its sessions in the window, and `implement` from it; a
-  task with no edit in the window is all `implement`, so a window that starts mid-task does not bill its work to `claim`.
+  `cr-triage` set their phase. Every other step is `claim` until the step that carries the task's claim, or the first
+  step of the task that edits a file (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `StrReplace`) when no claim is in
+  the window, across all its sessions in the window, and `implement` after it; a task with no edit and no claim in the
+  window is all `implement`, so a window that starts mid-task does not bill its work to `claim`.
 - `steps`, `side_steps`: model requests and the subagents' share of them.
 - `input`, `output`, `cache_read`, `cache_write`: the phase's tokens. `wte` weighs them as the provider prices them
   against one uncached input token: a cache write 1.25, a cache read 0.1, an output token 5.
@@ -377,6 +378,10 @@ threshold, min_sessions, cases, clustered, clusters}`, and a cluster is:
   its activity order, the median of its distances to them, and its trace (`stop_activities` dropped, adjacent repeats
   collapsed). An outlier is `{case, distance, deletions, insertions}`: its distance from the medoid, the medoid's
   activities it lacks and its own that the medoid lacks.
+
+The first read of a query nobody has asked since its saved answer was dropped waits for a fold. A 168 hour fold with
+`outliers` over 1,300 cases takes under `COLD_READ_BUDGET_S` (8) CPU seconds, so a reader that waits 120 s on
+a busy host gets its answer; a test holds that budget.
 
 What a cluster *is for*, and what to do about one, is the reader's: the server computes no label and keeps no verdict.
 A cluster's `key` is not continuous with one a different implementation computed from the same sessions, because the

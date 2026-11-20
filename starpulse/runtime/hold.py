@@ -20,11 +20,15 @@ SUPERVISED_ENV = "STARPULSE_SUPERVISED"
 #: Freed pages stay resident on the free-threaded build until mimalloc's purge delay lapses; `0` returns them at once.
 PURGE_DELAY_ENV = "MIMALLOC_PURGE_DELAY"
 
+#: glibc gives each thread that allocates its own 64 MB arena, up to eight per core, and keeps what the thread freed:
+#: the contexts worker's 150 long-lived threads held 805 MB of a 1.27 GB heap that way.
+ARENA_MAX_ENV = "MALLOC_ARENA_MAX"
+
 
 def supervised_env() -> dict[str, str]:
     """The environment of a process `serve` supervises: `serve`'s own, marked supervised, with an immediate mimalloc
-    purge unless the operator's environment already names a delay."""
-    return {PURGE_DELAY_ENV: "0", **os.environ, SUPERVISED_ENV: "1"}
+    purge and four malloc arenas unless the operator's environment already names either."""
+    return {PURGE_DELAY_ENV: "0", ARENA_MAX_ENV: "4", **os.environ, SUPERVISED_ENV: "1"}
 
 
 #: Set to a descriptor number when the process was handed the page's listening socket on it: by `serve` to the Page API

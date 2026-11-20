@@ -14,7 +14,7 @@ import hashlib
 import heapq
 import math
 from collections import Counter, defaultdict
-from collections.abc import Hashable, Iterable, Sequence
+from collections.abc import Hashable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from itertools import groupby
 from statistics import median
@@ -95,17 +95,20 @@ def _vectors(documents: list[set[str]], min_df: int, max_df: float) -> list[dict
 
 def _nearness(vectors: Sequence[dict[str, float]]) -> dict[int, dict[int, float]]:
     """The cosine distance between each pair of unit `vectors` that share a feature; others are 1 apart, not stored."""
-    postings: dict[str, list[int]] = defaultdict(list)
+    postings: dict[str, list[tuple[int, float]]] = defaultdict(list)
     for i, vector in enumerate(vectors):
-        for f in vector:
-            postings[f].append(i)
-    near: dict[int, dict[int, float]] = {i: {} for i in range(len(vectors))}
+        for f, w in vector.items():
+            postings[f].append((i, w))
+    dots: list[dict[int, float]] = [defaultdict(float) for _ in vectors]
     for members in postings.values():
-        for a, i in enumerate(members):
-            for j in members[a + 1 :]:
-                if j not in near[i]:
-                    d = max(0.0, 1 - sum(w * vectors[j].get(f, 0.0) for f, w in vectors[i].items()))
-                    near[i][j] = near[j][i] = d
+        for a, (i, wi) in enumerate(members):
+            row = dots[i]
+            for j, wj in members[a + 1 :]:
+                row[j] += wi * wj
+    near: dict[int, dict[int, float]] = {i: {} for i in range(len(vectors))}
+    for i, row in enumerate(dots):
+        for j, dot in row.items():
+            near[i][j] = near[j][i] = max(0.0, 1 - dot)
     return near
 
 
@@ -168,15 +171,35 @@ def trace_clusters(
     return sorted(clusters, key=lambda c: (-c.sessions, -len(c.cases), c.descriptors))
 
 
-def lcs_length(a: Sequence[Hashable], b: Sequence[Hashable]) -> int:
-    """The length of the longest common subsequence of `a` and `b`, by bit-parallel dynamic programming."""
-    positions: dict[Hashable, int] = defaultdict(int)
+def _masks(a: Sequence[Hashable]) -> dict[Hashable, int]:
+    masks: dict[Hashable, int] = defaultdict(int)
     for i, x in enumerate(a):
-        positions[x] |= 1 << i
-    row = (1 << len(a)) - 1
+        masks[x] |= 1 << i
+    return masks
+
+
+def _bit_rows(a: Sequence[Hashable], b: Sequence[Hashable], masks: dict[Hashable, int] | None = None) -> Iterator[int]:
+    """The bit-parallel longest-common-subsequence row before `b` and after each of its items: a zero bit `k` of the
+    row after `b[:j]` says the prefix `a[:k + 1]` gained a match, so the zeros below bit `i` are the LCS of `a[:i]`
+    and `b[:j]`."""
+    masks = _masks(a) if masks is None else masks
+    full = row = (1 << len(a)) - 1
+    yield row
     for y in b:
-        mask = positions.get(y, 0)
-        row = ((row + (row & mask)) | (row & ~mask)) & ((1 << len(a)) - 1)
+        mask = masks.get(y, 0)
+        row = ((row + (row & mask)) | (row & ~mask)) & full
+        yield row
+
+
+def lcs_length(a: Sequence[Hashable], b: Sequence[Hashable], masks: dict[Hashable, int] | None = None) -> int:
+    """The length of the longest common subsequence of `a` and `b`, by bit-parallel dynamic programming; `masks` is
+    `_masks(a)` when the caller holds it."""
+    masks = _masks(a) if masks is None else masks
+    full = row = (1 << len(a)) - 1
+    for y in b:
+        mask = masks.get(y)
+        if mask:  # an item of `a` nowhere leaves the row as it is
+            row = ((row + (row & mask)) | (row & ~mask)) & full
     return len(a) - row.bit_count()
 
 
@@ -185,22 +208,23 @@ def trace(case: Case, stop: frozenset[str] = frozenset()) -> list[str]:
     return [a for a, _ in groupby(a for a in case.activities if a not in stop)]
 
 
-def _distance(a: Sequence[str], b: Sequence[str]) -> float:
+def _distance(a: Sequence[str], b: Sequence[str], masks: dict[Hashable, int] | None = None) -> float:
     longest = max(len(a), len(b))
-    return 1 - lcs_length(a, b) / longest if longest else 0.0
+    return 1 - lcs_length(a, b, masks) / longest if longest else 0.0
 
 
 def _unmatched(reference: Sequence[str], observed: Sequence[str]) -> tuple[str, ...]:
     """The items of `reference` outside one longest common subsequence with `observed`, in reference order."""
-    table = [[0] * (len(observed) + 1) for _ in range(len(reference) + 1)]
-    for i, x in enumerate(reference):
-        for j, y in enumerate(observed):
-            table[i + 1][j + 1] = table[i][j] + 1 if x == y else max(table[i][j + 1], table[i + 1][j])
+    rows = list(_bit_rows(reference, observed))
+
+    def common(i: int, j: int) -> int:
+        return i - (rows[j] & ((1 << i) - 1)).bit_count()
+
     left, i, j = [], len(reference), len(observed)
     while i:
         if j and reference[i - 1] == observed[j - 1]:
             i, j = i - 1, j - 1
-        elif j and table[i][j - 1] >= table[i - 1][j]:
+        elif j and common(i, j - 1) >= common(i - 1, j):
             j -= 1
         else:
             left.append(reference[i - 1])
@@ -212,7 +236,11 @@ def dispersion(cluster: Cluster, count: int, stop: frozenset[str] = frozenset())
     """The cluster's medoid, the case closest to every other by normalized LCS distance between traces, and the
     `count` cases whose traces lie furthest from it."""
     traces = [trace(c, stop) for c in cluster.cases]
-    distances = [[_distance(a, b) for b in traces] for a in traces]
+    distances = [[0.0] * len(traces) for _ in traces]
+    for i, a in enumerate(traces):
+        masks = _masks(a)
+        for j in range(i + 1, len(traces)):
+            distances[i][j] = distances[j][i] = _distance(a, traces[j], masks)
     medoid = min(range(len(traces)), key=lambda i: sum(distances[i]))
     others = [i for i in range(len(traces)) if i != medoid]
     ranked = sorted(others, key=lambda i: (-distances[medoid][i], cluster.cases[i].session))

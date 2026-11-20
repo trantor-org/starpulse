@@ -607,7 +607,7 @@ Scheduler and the task actor, which all call those verbs.
   The fold ignores the Event; `GET /api/history?task=` reports the count as `plan_revisions`.
 - A Task whose stream is empty is seeded first with a `TaskImported` of its record, so a replay equals the row for tasks
   written before History.
-- An append that finds the head moved reads it again and retries once, then raises `StaleVersion`.
+- An append that finds the head moved reads it again and retries, up to five attempts in all, then raises `StaleVersion`: the directory scan's import and reconcile append to the same History while a write does.
 - A board whose log is not attached records nothing.
 
 A deployment declares its own Task fields in `[board.fields]`:

@@ -17,7 +17,7 @@ from starpulse.scheduler.model.capacity_limits import NAMES, CapacityLimitSettin
 from starpulse.scheduler.model.config import Scheduler
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.scheduler.model.harness_setting import HarnessSetting
-from starpulse.scheduler.model.inputs import STALE_S, review_points, sessions_held
+from starpulse.scheduler.model.inputs import review_points, sessions_held
 from starpulse.scheduler.model.ledger import Ledger
 from starpulse.scheduler.adapters.loop import GATE_HISTORY_SERVED, Loop
 from starpulse.scheduler.adapters.probe import LocalProbe
@@ -27,7 +27,6 @@ from starpulse.scheduler.model.sampler import Crossing, Reading, Sampler
 from starpulse.scheduler.model.state import SchedulerState
 from starpulse.scheduler.model.toggle import Toggle
 from starpulse.event_log.event_log import EventLog
-from starpulse.harness_telemetry.model.harness import HARNESS
 
 logger = logging.getLogger(__name__)
 
@@ -215,12 +214,7 @@ def build(
     sampler = Sampler(
         policy.effective_limits,
         probe or LocalProbe(),
-        sessions=lambda: sessions_held(
-            feed.open_tasks(),
-            feed.roles.working,
-            feed.machine_tasks(HARNESS.name, since=clock() - STALE_S),
-            clock(),
-        ),
+        sessions=lambda: sessions_held(feed.open_tasks(), feed.roles.working),
         review=lambda: review_points(feed.open_tasks(), policy.reviewed_lane(feed.roles.review), policy.unsized_points),
         on_crossing=crossed,
         clock=clock,
