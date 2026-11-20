@@ -46,6 +46,11 @@ class ViewMethods:
         with self._lock:
             return {"dags": self._workflows(), "error": self._error()}
 
+    def contract_inputs(self) -> dict[str, Any]:
+        """The `dags` and `cues` of the snapshot, the only two fields the doctor's contract checks read, with no board read."""
+        with self._lock:
+            return {"dags": self._workflows(), "cues": list(self._cues)}
+
     def _hot(self) -> list[dict]:
         """The live Tasks of the read model as agents, queried on each request: nothing of the Board is held between them."""
         summaries = self._read_model.snapshot(self._roles.done, local_midnight(self._clock()))
