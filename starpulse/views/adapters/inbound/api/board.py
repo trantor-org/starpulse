@@ -4,6 +4,8 @@
 - `GET /api/ready`: 200 when the server can serve the board, 503 naming each component that is not ready.
 - `GET /api/runs`: every runs workflow with its latest run, and the error a runs instance reported.
 - `GET /api/machines`, `/api/done`, `/api/search`: the lifecycle machines, the Done lane and a search of the tasks.
+- `GET /api/search/similar`: `/api/search` that waits to embed a new query, for a caller that needs the tasks nearest
+  in meaning, not an answer within a budget.
 - `GET /api/harnesses`: the harnesses a session may start on.
 """
 
@@ -53,6 +55,11 @@ def search(request: Request) -> Response:
 
 
 @reading
+def similar(request: Request) -> Response:
+    return answer(request, *search_response(seams(request).services.search, query(request), wait=True))
+
+
+@reading
 def harnesses(request: Request) -> Response:
     return answer(request, encode("harnesses", (seams(request).services.harnesses or Harnesses((), {})).as_json()))
 
@@ -64,5 +71,6 @@ routes: list[ApiRoute] = [
     ReadRoute("/machines", machines, params=frozenset({"before", "limit", "open"})),
     ReadRoute("/done", done, params=frozenset({"before", "limit"})),
     ReadRoute("/search", search, params=frozenset({"before", "finished_within_days", "label", "limit", "q"})),
+    ReadRoute("/search/similar", similar, params=frozenset({"before", "finished_within_days", "label", "limit", "q"})),
     ReadRoute("/harnesses", harnesses),
 ]

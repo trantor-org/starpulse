@@ -54,7 +54,7 @@ internal and can change in any release.
 - `GET /api/analytics/cost-to-go` and its body in `api.schema.json`: the expected agent steps to a run's end from each
   state of each skill machine, with the times the state was left (see
   [Connect sources](sources.md#read-the-steps-still-to-come-from-each-state-of-a-skill-machine)).
-- `starpulse search QUERY` and its route `GET /api/search?q=`: the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
+- `starpulse search QUERY` and its routes `GET /api/search?q=` and `GET /api/search/similar?q=` (`--similar`, which waits to embed a new query): the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
 - `GET /api/analytics/missed-loads` and `GET /api/analytics/trace-clusters` and their bodies in `api.schema.json`:
   the skills a session did not load for work that should have loaded them, and the work that recurs across sessions
   with the sessions an eval run stamped (the `[analytics]` `eval_attribute`) left out (see

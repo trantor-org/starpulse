@@ -881,6 +881,11 @@ def _parser() -> argparse.ArgumentParser:
     search.add_argument(
         "--before", help="only tasks of this key's prefix created before it, kept before the limit cuts (`PROJ-45`)"
     )
+    search.add_argument(
+        "--similar",
+        action="store_true",
+        help="wait to embed a new query, so tasks near its meaning rank, instead of answering by words at once",
+    )
     task = verbs.add_parser("task", description="one task of the Board", help="one task of the Board")
     task_verbs = task.add_subparsers(dest="verb", required=True, metavar="verb")
     show = leaf(
