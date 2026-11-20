@@ -82,7 +82,8 @@ class RecordsMixin:
         if self._lanes is None:
             return
         task_id, lane = self._keys.canonical(task_id) if self._keys else task_id, lane_id(lane)
-        event = None if self._lane_log is None else lane_events.change(task_id, lane, at, *who)
+        kind = "" if self._lane_log is None else str((self._read_model.task(task_id) or {}).get("type") or "")
+        event = None if self._lane_log is None else lane_events.change(task_id, lane, at, *who, kind=kind)
         try:
             if self._lanes.record_lane(f"{task_id}@{lane}@{at}", task_id, lane, at, event=event) and event is not None:
                 self._lane_log.committed()

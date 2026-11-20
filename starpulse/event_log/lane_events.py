@@ -61,10 +61,12 @@ def entry(task: BoardTask, at: float, actor: str = "", session: str = "", harnes
     return fields
 
 
-def change(task: str, lane: str, at: float, actor: str = "", session: str = "", harness: str = "") -> dict[str, Any]:
-    """The fields of a lane entry of only the task, the lane, the time and the `actor`, `session` and `harness` where
-    given."""
-    named = {"actor": actor, "session": session, "harness": harness}
+def change(
+    task: str, lane: str, at: float, actor: str = "", session: str = "", harness: str = "", kind: str = ""
+) -> dict[str, Any]:
+    """The fields of a lane entry of only the task, the lane, the time and the `actor`, `session`, `harness` and task
+    type (`kind`) where given."""
+    named = {"actor": actor, "session": session, "harness": harness, "type": kind}
     return {"task": task, "lane": lane, "time": at, **{name: value for name, value in named.items() if value}}
 
 

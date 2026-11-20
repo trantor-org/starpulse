@@ -58,13 +58,26 @@ REMAINING_HELP = "Entry ids of the board and machine streams past the monitor's 
 #: Seconds with no lane change and no task event after which a working task is stalled.
 STALL_S = 300.0
 _HARNESS, _COMMAND = "harness", "TOOL_USED"
+DONE_METRIC = "starpulse_tasks_done_total"
+DONE_HELP = "Recorded lane entries into the done lane, per task type; a type the board does not declare counts as other."
+TRANSITIONS_METRIC = "starpulse_machine_transitions_total"
+TRANSITIONS_HELP = "Recorded moves along a transition a machine declares, per machine, source state and target state."
+LANE_SECONDS_METRIC = "starpulse_task_lane_duration_seconds"
+LANE_SECONDS_HELP = "Seconds a task stayed in a lane, observed when it left, per lane."
+JOB_SECONDS_METRIC = "starpulse_job_run_duration_seconds"
+JOB_SECONDS_HELP = "Seconds from a job's first event to its machine's final state, per machine; a job is an instance keyed by a run."
+#: Upper bounds, in seconds, of a lane stay (a minute to a week) and of a job run (a second to four hours).
+LANE_BOUNDS_S = (60.0, 300.0, 900.0, 3600.0, 14400.0, 43200.0, 86400.0, 259200.0, 604800.0)
+JOB_BOUNDS_S = (1.0, 5.0, 15.0, 60.0, 300.0, 900.0, 3600.0, 14400.0)
+#: The `type` label of a done task whose type the board does not declare.
+OTHER_TYPE = "other"
 NO_EVENT_METRIC = "starpulse_harness_active_no_event_seconds"
 NO_EVENT_HELP = "Seconds since the last lane move, work event or tool call of the quietest working task whose harness reads active; 0 when none."
 
 #: The setting the counts and states are saved under, with the last entry of each stream they cover.
 CHECKPOINT = "conformance:checkpoint"
 #: Raised when what a checkpoint holds, or how an entry is counted, changes, so an older one is replayed over.
-CHECKPOINT_VERSION = 6
+CHECKPOINT_VERSION = 7
 #: Seconds after a cursor moves before its changed checkpoint is saved.
 CHECKPOINT_DEBOUNCE_S = 10.0
 _STREAMS = (lane_events.STREAM, events.STREAM)
@@ -79,7 +92,8 @@ def _basis(
     work: Collection[str] = (),
 ) -> str:
     """The fingerprint of what the counts are judged against: each machine's states and transitions, the lanes
-    whose entries are counted, the working and review lanes, and the machines whose events are work."""
+    whose entries are counted, the working, review and done lanes and the declared types, and the machines whose
+    events are work."""
     shapes = {
         name: [
             sorted((s["id"], bool(s["initial"]), bool(s["final"])) for s in machine["states"]),
@@ -90,6 +104,38 @@ def _basis(
     return hashlib.sha256(
         json.dumps([CHECKPOINT_VERSION, list(machines), shapes, sorted(entered), list(watched), sorted(work)]).encode()
     ).hexdigest()
+
+
+class _Histogram:
+    """Cumulative bucket counts of observed seconds, kept as plain data for the checkpoint."""
+
+    def __init__(self, bounds: tuple[float, ...]) -> None:
+        self.bounds = bounds
+        self.counts = [0] * len(bounds)
+        self.total = 0
+        self.seconds = 0.0
+
+    def observe(self, seconds: float) -> None:
+        self.counts = [count + (seconds <= bound) for count, bound in zip(self.counts, self.bounds, strict=True)]
+        self.total += 1
+        self.seconds += seconds
+
+    def lines(self, metric: str, label: str, value: str) -> str:
+        series = f'{label}="{_escape(value)}"'
+        buckets = "".join(
+            f'{metric}_bucket{{{series},le="{bound:g}"}} {count}\n'
+            for bound, count in zip(self.bounds, self.counts, strict=True)
+        )
+        return (
+            f'{buckets}{metric}_bucket{{{series},le="+Inf"}} {self.total}\n'
+            f"{metric}_sum{{{series}}} {self.seconds}\n{metric}_count{{{series}}} {self.total}\n"
+        )
+
+    def held(self) -> dict[str, Any]:
+        return {"counts": self.counts, "total": self.total, "seconds": self.seconds}
+
+    def restore(self, held: Mapping[str, Any]) -> None:
+        self.counts, self.total, self.seconds = list(held["counts"]), held["total"], held["seconds"]
 
 
 class Conformance:
@@ -105,8 +151,11 @@ class Conformance:
         clock: Callable[[], float] = time.time,
         open_tasks: Callable[[], Iterable[Mapping[str, Any]]] | None = None,
         sessions: Mapping[str, dict] = {},
+        done: str | None = None,
+        types: Collection[str] = (),
     ) -> None:
         self._names = list(machines)
+        self._done, self._types = done, set(types)
         self._entered: dict[str, int] = dict.fromkeys(entered, 0)
         self._working, self._review = working, review
         self._review_moves = 0
@@ -122,7 +171,7 @@ class Conformance:
         #: The work events of each task outside the working lane as far as the lane stream has read; its entry into the
         #: lane takes those at or after it, and its exit drops those up to it, whichever stream is read first.
         self._seen: dict[str, list[float]] = {}
-        self._basis = _basis(machines, entered, (working, review), self._work)
+        self._basis = _basis(machines, entered, (working, review, done, *sorted(self._types)), self._work)
         #: The id of the last entry of each stream handled, which the counts cover.
         self._cursors: dict[str, int] = {}
         self._saved: dict[str, int] = {}
@@ -137,6 +186,30 @@ class Conformance:
         self._judged: dict[str, int] = defaultdict(int)
         self._occurrences: dict[tuple[str, str], int] = {
             (name, event): 0 for name, table in tables_.items() for event in sorted(table.moves)
+        }
+        #: The done entries per `type` label: the declared types, none and other from the first scrape.
+        self._done_types: dict[str, int] = dict.fromkeys((*sorted(self._types), "", OTHER_TYPE), 0)
+        self._tables = tables_
+        #: The declared moves, by `(machine, source, target)`, of the machines that give counters; a self loop is no move.
+        self._transitions: dict[tuple[str, str, str], int] = {
+            (BOARD, source, target): 0 for source, target in sorted(self._lane_moves) if source != target
+        }
+        for name in self._names:
+            if name in self._tables:
+                self._transitions.update(
+                    {(name, source, target): 0 for event in sorted(self._tables[name].moves)
+                     for source, targets in self._tables[name].moves[event].items()
+                     for target in sorted(targets) if source != target}
+                )
+        #: When each task entered the lane it is in, for the stay observed when it leaves.
+        self._lane_since: dict[str, float] = {}
+        self._lane_hist: dict[str, _Histogram] = {
+            state["id"]: _Histogram(LANE_BOUNDS_S) for state in machines.get(BOARD, {}).get("states", ())
+        }
+        #: When each run of a machine, a job, had its first event, until it reaches a final state.
+        self._run_start: dict[str, dict[str, float]] = {}
+        self._job_hist: dict[str, _Histogram] = {
+            name: _Histogram(JOB_BOUNDS_S) for name in self._names if self._tables.get(name) and self._tables[name].finals
         }
         self._lock = threading.Lock()
         #: The last entry of each stream when `follow` began, which the lane-entered counts are held back until read;
@@ -165,6 +238,7 @@ class Conformance:
                     self._enter(task, entry.at)
             if lane in self._entered:
                 self._entered[lane] += 1
+            self._export_lane(task, source, lane, entry)
             if self._review and source == self._working and lane == self._review and entry.id > self._review_after:
                 self._review_moves += 1
             if BOARD not in self._names or source is None:
@@ -189,7 +263,55 @@ class Conformance:
             self._judged[machine] += 1
             if (machine, event) in self._occurrences:
                 self._occurrences[machine, event] += 1
-            self._violations[machine] += self._judges[machine].judge(key, event) is not None
+            judge = self._judges[machine]
+            before = judge.states(key)
+            refused = judge.judge(key, event) is not None
+            self._violations[machine] += refused
+            if not refused and machine in self._names:
+                self._export_event(machine, event, key, before, bool(entry.fields.get("task")), entry.at)
+
+    def _export_lane(self, task: str, source: str | None, lane: str, entry: Entry) -> None:
+        since = self._lane_since.get(task)
+        self._lane_since[task] = entry.at
+        if source in self._lane_hist and since is not None:
+            self._lane_hist[source].observe(max(0.0, entry.at - since))
+        if (BOARD, source, lane) in self._transitions:
+            self._transitions[BOARD, source, lane] += 1
+        if self._done and lane == self._done:
+            kind = entry.fields.get("type") or ""
+            self._done_types["" if not kind else kind if kind in self._types else OTHER_TYPE] += 1
+
+    def _export_event(
+        self, machine: str, event: str, key: str, before: frozenset[str], of_task: bool, at: float
+    ) -> None:
+        table = self._tables[machine]
+        for source, target in table.steps(before, event):
+            if (machine, source, target) in self._transitions:
+                self._transitions[machine, source, target] += 1
+        if of_task or machine not in self._job_hist:
+            return
+        started = self._run_start.setdefault(machine, {}).setdefault(key, at)
+        if (states := self._judges[machine].states(key)) and states <= table.finals:
+            del self._run_start[machine][key]
+            self._job_hist[machine].observe(max(0.0, at - started))
+
+    def _exports(self) -> str:
+        done = "".join(f'{DONE_METRIC}{{type="{_escape(kind)}"}} {count}\n' for kind, count in self._done_types.items())
+        moves = "".join(
+            f'{TRANSITIONS_METRIC}{{flow="{_escape(flow)}",from="{_escape(source)}",to="{_escape(target)}"}} {count}\n'
+            for (flow, source, target), count in self._transitions.items()
+        )
+        text = f"# HELP {TRANSITIONS_METRIC} {TRANSITIONS_HELP}\n# TYPE {TRANSITIONS_METRIC} counter\n{moves}" if moves else ""
+        if self._done:
+            text += f"# HELP {DONE_METRIC} {DONE_HELP}\n# TYPE {DONE_METRIC} counter\n{done}"
+        for metric, help_, label, hists in (
+            (LANE_SECONDS_METRIC, LANE_SECONDS_HELP, "lane", self._lane_hist),
+            (JOB_SECONDS_METRIC, JOB_SECONDS_HELP, "flow", self._job_hist),
+        ):
+            if hists:
+                text += f"# HELP {metric} {help_}\n# TYPE {metric} histogram\n"
+                text += "".join(hist.lines(metric, label, value) for value, hist in hists.items())
+        return text
 
     def _enter(self, task: str, entered: float) -> None:
         last = entered
@@ -293,7 +415,7 @@ class Conformance:
                     watched += stalled_exposition(self._stall_state(), self._clock())
             return (
                 f"{counters}# HELP {OCCURRENCES_METRIC} {OCCURRENCES_HELP}\n# TYPE {OCCURRENCES_METRIC} counter\n"
-                f"{occurrences}{remaining}{entered_head}{entered}{watched}"
+                f"{occurrences}{remaining}{entered_head}{entered}{watched}{self._exports() if caught_up else ''}"
             )
 
     def checkpoint(self) -> dict[str, Any]:
@@ -309,6 +431,12 @@ class Conformance:
                 "judged": dict(self._judged),
                 "entered": dict(self._entered),
                 "review_moves": self._review_moves,
+                "done_types": dict(self._done_types),
+                "transitions": [[*move, count] for move, count in self._transitions.items()],
+                "lane_since": dict(self._lane_since),
+                "lane_hist": {lane: hist.held() for lane, hist in self._lane_hist.items()},
+                "run_start": {name: dict(runs) for name, runs in self._run_start.items()},
+                "job_hist": {name: hist.held() for name, hist in self._job_hist.items()},
                 "active": dict(self._active),
                 "stalled": sorted(self._stalled),
                 "seen": {task: list(times) for task, times in self._seen.items()},
@@ -339,6 +467,16 @@ class Conformance:
             self._judged = defaultdict(int, held["judged"])
             self._entered = {lane: held["entered"].get(lane, 0) for lane in self._entered}
             self._review_moves = held["review_moves"]
+            self._done_types.update(held["done_types"])
+            for flow, source, target, count in held["transitions"]:
+                if (flow, source, target) in self._transitions:
+                    self._transitions[flow, source, target] = count
+            self._lane_since = dict(held["lane_since"])
+            for lane, hist in self._lane_hist.items():
+                hist.restore(held["lane_hist"][lane])
+            self._run_start = {name: dict(runs) for name, runs in held["run_start"].items()}
+            for name, hist in self._job_hist.items():
+                hist.restore(held["job_hist"][name])
             self._active = dict(held["active"])
             self._stalled = set(held["stalled"])
             self._seen = {task: list(times) for task, times in held["seen"].items()}

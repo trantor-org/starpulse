@@ -29,6 +29,7 @@ def start(
     work: Collection[str] = (),
     vectors: Callable[[], tuple[int, int]] | None = None,
     sessions: Mapping[str, dict] = {},
+    types: Collection[str] = (),
 ) -> None:
     """Run the unattributed-lane count and the conformance monitor (`work`: the machines whose events are work) until
     `stop`, register the `board-files` pass over `feed` and `board` for the sweeper (`vectors` embeds the tasks that
@@ -45,6 +46,8 @@ def start(
         review=feed.roles.review,
         work=work,
         sessions=sessions,
+        done=feed.roles.done,
+        types=types,
     )
     files = BoardFiles(feed, board, vectors=vectors)
     written: tuple[str, dict[str, Any]] | None = None
