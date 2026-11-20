@@ -270,6 +270,7 @@ def default_starters(
             work_machines(feed.machines, BOARD, feed.roles.working),
             vectors=search.embed_missing if search is not None else None,
             sessions=SESSION_MACHINES,
+            types=config.board.get("types", ()),
         )
         return lambda: logger.info("lane-metrics: the board config is read at start; restart to apply a change")
 

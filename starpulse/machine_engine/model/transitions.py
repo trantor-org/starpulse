@@ -91,9 +91,8 @@ class Table:
         if not moves:
             return frozenset()
         here = current or frozenset({self.initial})
-        sources = here | ({self.initial} if here & self.finals else set())
         if not lenient:
-            return frozenset(target for source in sources for target in moves.get(source, ()))
+            return frozenset(target for _, target in self.steps(current, event))
         (state,) = here
         for source in (state, self.initial if state in self.finals else None):
             if source in moves:
@@ -102,6 +101,14 @@ class Table:
         if leads:
             return frozenset(leads) if len(leads) == 1 else frozenset()
         return here
+
+    def steps(self, current: frozenset[str], event: str) -> frozenset[tuple[str, str]]:
+        """The declared `(source, target)` pairs `event` follows from the states a task may be in (none: not yet placed);
+        a task in a final state may begin again from the initial one."""
+        here = current or frozenset({self.initial})
+        sources = here | ({self.initial} if here & self.finals else set())
+        moves = self.moves.get(event, {})
+        return frozenset((source, target) for source in sources for target in moves.get(source, ()))
 
     def target(self, current: str | None, event: str) -> str | None:
         """Where `event` leaves a task now at `current` by the lenient rule, or None when it leaves it nowhere definite."""
