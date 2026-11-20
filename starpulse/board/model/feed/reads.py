@@ -39,10 +39,6 @@ class ReadMethods:
         key = next(iter(live or held), task_id)
         return key, rows.get(key)
 
-    def _keyed(self, task_id: str) -> str:
-        """The key the read model holds `task_id` under, as `_found` finds it."""
-        return self._found(task_id)[0]
-
     def _read_model_moves(self, summary: Mapping[str, Any]) -> dict:
         """The moves a read-model Task offers: the Board machine's out of its lane, a done Task's reopen among them."""
         return self._lane_moves.get(lane_id(summary["state"]), {})
@@ -60,9 +56,11 @@ class ReadMethods:
         done = lane_id(summary["state"]) in done_lanes(self._roles.done)
         return {"readable": "" if done else self._readable(summary, summary["description"])}
 
-    def _read_model_agent(self, task_id: str, lean: bool = False, row: Mapping[str, Any] | None = None) -> dict | None:
+    def _read_model_agent(
+        self, task_id: str, lean: bool = False, row: Mapping[str, Any] | None = None, settled_done: bool = False
+    ) -> dict | None:
         row = row or self._read_model.task(task_id)
-        if row is None or row["archived"]:
+        if row is None or (row["archived"] and not (settled_done and lane_id(row["state"]) == self._roles.done)):
             return None
         ready = bool(self._read_model.ready(row["state"], self._roles.done, task_id))
         moves = self._read_model_moves(row)
@@ -87,8 +85,9 @@ class ReadMethods:
         return len(changed)
 
     def held(self, task_id: str) -> dict | None:
-        """The open Board task as `task` has it."""
-        return self._read_model_agent(self._keyed(task_id))
+        """The open Board task as `task` has it, or a settled Done one, which a reopen reaches."""
+        key, row = self._found(task_id)
+        return self._read_model_agent(key, row=row, settled_done=True)
 
     def current_id(self, task_id: str) -> str:
         """The id the task answers to now: `task_id` itself unless a rename gave the task another."""

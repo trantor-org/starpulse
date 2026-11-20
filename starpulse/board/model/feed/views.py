@@ -111,16 +111,16 @@ class ViewMethods:
 
     def machine_rows(self, open_: str | None, before: float | None, limit: int) -> dict | None:
         """`GET /api/machines`: the next `limit` machines entered from `open_` (None: the In Progress machine) with
-        activity older than `before` (None: the newest), `{open, machines, more}`, each machine whole with its
-        derivation; None when `open_` is not a machine here."""
-        flows, derived = self._flows(time.time())
+        activity older than `before` (None: the newest), `{open, machines, more}`, each machine's `name` and `last`
+        activity, which is all the page pages by (the snapshot holds the bodies); None when `open_` is not a machine
+        here."""
+        _, derived = self._flows(time.time())
         if open_ is None:
             open_ = next((n for n, d in derived.items() if d["depth"] == 0), None)
         elif open_ not in derived:
             return None
         names, more = machine_page(derived, open_, before=before, limit=limit)
-        by_name = {f["name"]: f for f in flows}
-        return {"open": open_, "machines": [{**by_name[n], **derived[n]} for n in names], "more": more}
+        return {"open": open_, "machines": [{"name": n, "last": derived[n]["last"]} for n in names], "more": more}
 
     def machine_fields(self, flows: list[dict], derived: dict[str, dict], now: float) -> dict:
         """The snapshot's `machinePage` (names of the In Progress machine's first page of rows; their bodies are in

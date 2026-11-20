@@ -97,8 +97,8 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     return board
 
 
-#: Dependencies one `/api/task-records` request asks for.
-_RECORDS_PAGE = 50
+#: Dependencies one `/api/task-records` request asks for: a record costs about 3 ms, so 8 stay inside the 50 ms p95.
+_RECORDS_PAGE = 8
 
 #: Done tasks one `/api/done` request asks for.
 _COLD_PAGE = 100

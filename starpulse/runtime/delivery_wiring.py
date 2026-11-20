@@ -153,6 +153,7 @@ def start_delivery(
             pulls.subscribe(actor.store_changed)
             project = _then(actor.timed_projection(project), actor.pulls_changed)
         sync = PullSync(pulls, feed, config.repos, project=project, stop=stop)
+        feed.reconcilers["pulls"] = sync.reconcile
         threading.Thread(target=keep_polling, args=(sync, stop), name="pull-reader", daemon=True).start()
     if config.release is not None:
         if config.board_type != "native" or not (feed.roles.waiting and feed.roles.ready):

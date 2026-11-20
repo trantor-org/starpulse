@@ -254,8 +254,9 @@ Cursor left out, by task then the phase's first step. Its columns:
 - `models`, `first_at`, `last_at`: the models used and the epoch seconds of the phase's first and last step.
 - `profile`: `<model>-<effort>` of the phase's first main-thread step (its first step when a subagent made every
   step), each `unknown` when the harness recorded none; the key per-profile norms group by.
-- `task_wte`: `wte` over the task's phases in the window. `phase_norm_wte`: the median `wte` of the tasks of its kind and
-  size that ran this phase, null under 5 such tasks. `phase_above_norm`: `wte` is over 3 times it. `norm_wte`: the sum
+- `task_wte`: `wte` over the task's phases in the window. `phase_norm_wte`: the median `wte` of the tasks of its kind, size and
+  `profile` that ran this phase; a profile with under 5 such tasks falls back to the kind and size cell, and null under 5
+  there. `norm_profile`: the profile of the cell used, `mixed` for the fallback pooling every profile, null with no norm. `phase_above_norm`: `wte` is over 3 times it. `norm_wte`: the sum
   of `phase_norm_wte` over the phases the task ran (null when any is null), so a task that ran qa is weighed against
   peers' qa. `above_norm`: `task_wte` is over 3 times `norm_wte`.
 

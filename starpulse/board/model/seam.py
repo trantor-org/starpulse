@@ -86,6 +86,8 @@ class Written(NamedTuple):
     board that does not say), and the server then records nothing for it: the board's watch records the placement."""
     at: float | None = None
     """When the write put the task there, in epoch seconds; set with `lane`."""
+    moves: tuple[tuple[str, str], ...] = ()
+    """Each other task the write moved at `at`, with the lane it put it in: the server records them as the request's actor."""
     lint: bool = False
     transient: bool = False
     """The write raised a locked-database error that outlasted its retries: no refusal of the change, so the task stays put."""

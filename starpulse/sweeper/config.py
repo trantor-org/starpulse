@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 #: The kind the sweeper itself provides; a declared kind may not take its name.
-BUILT_IN = ("readers", "claims", "waiting", "board-files")
+BUILT_IN = ("readers", "claims", "waiting", "board-files", "pulls")
 
 
 class SweeperError(ValueError):

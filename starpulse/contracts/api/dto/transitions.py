@@ -58,7 +58,12 @@ class SpendPhase(_Api):
     )
     above_norm: bool = Field(description="`task_wte` is over three times `norm_wte`.")
     phase_norm_wte: float | None = Field(
-        description="The median `wte` of this phase over the tasks of the task's kind and size that ran it; null under five."
+        description="The median `wte` of this phase over the tasks of the task's kind, size and `profile` that ran it, "
+        "or of its kind and size when that profile has under five; null under five."
+    )
+    norm_profile: str | None = Field(
+        description="The `profile` of the cell `phase_norm_wte` came from, or `mixed` for the kind and size cell pooling every profile; "
+        "null when there is no norm."
     )
     phase_above_norm: bool = Field(description="`wte` is over three times `phase_norm_wte`.")
 

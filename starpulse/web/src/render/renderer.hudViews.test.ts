@@ -92,4 +92,24 @@ describe("Kanban and DAGs HUD fields after the first snapshot", () => {
     expect(hud.get().dagData?.dags.map((d) => d.name)).toEqual(["temporal/deliver"]);
     r.stop();
   });
+
+  it("keeps the runs feed error out of the header line", async () => {
+    const { renderer } = await import("./renderer");
+    const hud = new HudStore();
+    const cv = document.getElementById("c") as HTMLCanvasElement;
+    stubContext(cv);
+    const r = renderer(cv, hud, { tip: document.getElementById("tip") as HTMLElement, panel: document.getElementById("panel") as HTMLElement });
+    r.show(false);
+    r.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    push.snapshot!({ ...snap([task("TASK-1", "ready")]), error: "runs: worker exited" });
+
+    await vi.waitFor(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(hud.get().stats).toMatch(/^live · .+ MST$/);
+    });
+    r.stop();
+  });
 });

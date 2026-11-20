@@ -4337,23 +4337,8 @@
       "type": "object"
     },
     "MachineRow": {
-      "description": "A machine of `GET /api/machines`: whole, with its derivation.",
+      "description": "A machine of `GET /api/machines`: its name and when it last moved, which the page pages by; the snapshot holds the rest.",
       "properties": {
-        "agents": {
-          "items": {
-            "$ref": "#/$defs/RawTask"
-          },
-          "type": "array"
-        },
-        "chain": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "depth": {
-          "type": "integer"
-        },
         "last": {
           "anyOf": [
             {
@@ -4364,56 +4349,13 @@
             }
           ]
         },
-        "machine": {
-          "$ref": "#/$defs/Machine"
-        },
         "name": {
           "type": "string"
-        },
-        "nested": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "parent": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "stuck": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Stuck"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ties": {
-          "items": {
-            "$ref": "#/$defs/Tie"
-          },
-          "type": "array"
         }
       },
       "required": [
         "name",
-        "machine",
-        "agents",
-        "ties",
-        "parent",
-        "depth",
-        "chain",
-        "nested",
-        "last",
-        "stuck"
+        "last"
       ],
       "title": "MachineRow",
       "type": "object"
@@ -9025,6 +8967,17 @@
           },
           "type": "array"
         },
+        "norm_profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The `profile` of the cell `phase_norm_wte` came from, or `mixed` for the kind and size cell pooling every profile; null when there is no norm."
+        },
         "norm_wte": {
           "anyOf": [
             {
@@ -9060,7 +9013,7 @@
               "type": "null"
             }
           ],
-          "description": "The median `wte` of this phase over the tasks of the task's kind and size that ran it; null under five."
+          "description": "The median `wte` of this phase over the tasks of the task's kind, size and `profile` that ran it, or of its kind and size when that profile has under five; null under five."
         },
         "profile": {
           "default": "",
@@ -9119,6 +9072,7 @@
         "norm_wte",
         "above_norm",
         "phase_norm_wte",
+        "norm_profile",
         "phase_above_norm"
       ],
       "title": "SpendPhase",

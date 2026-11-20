@@ -404,9 +404,9 @@ GET /api/ready     {ready, components}: 200 when the event log is at the schema 
                    `starpulse rehearse` read it
 GET /api/machines[?open=NAME][&before=T][&limit=N]
                    {open, machines, more}: the next `limit` machines (default 20, at most 100) entered from the machine
-                   `open` (default the In Progress machine), newest activity first, each whole as a snapshot `flows`
-                   entry with its derivation. `before` is the `last` of the last machine held (epoch seconds; none:
-                   the newest; a machine with no task counts as 0), machines sharing the boundary activity all come in
+                   `open` (default the In Progress machine), newest activity first, each as `{name, last}` (the snapshot
+                   `flows` already holds the body and derivation). `before` is the `last` of the last machine held (epoch
+                   seconds; none: the newest; a machine with no task counts as 0), machines sharing the boundary activity all come in
                    one page, so walking `before` neither repeats nor skips one. An `open` that is not a machine here is
                    404, a `before` that is not a finite number or a `limit` outside 1-100 is 400
 GET /api/done[?before=T][&limit=N]
@@ -587,7 +587,7 @@ Board and read only by id; `task`, `held` and `is_done` are single-row reads, `i
 ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged. `serve`
 folds the History into the read tables on each commit to the store: `Projector.fold_tasks` on a `task-fold` thread of its own, so a new Task's row waits for no other fold, and on the `read-model-follow` thread `Projector.fold_machines`, then `follow_read_model`, then `Projector.index` for search, so the page never waits on the index, draws the board from them
 so the board reader opens no task file. The read model is the only read path; a config that still sets the old `read_model` key is refused as unknown. Run `starpulse import-board` first. In this mode entered and workable-since times are approximated, and the overlays for runs,
-pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record, whose `createdBy` is the session that filed the task (`created_by` in its front matter, empty when none); an archived task is read from the archive too, its body `archived: true` and `entered`, when the read model last changed its row (a Done task's entry into Done); the record carries the stored pull requests it cites as `pulls`. `GET /api/task-records?ids=A,B` returns those records in one read as `{records: [...]}`, leaving out a task the board cannot read. The search index is its
+pulls and acceptance criteria are empty on the board card; `/api/task/<id>` returns the full record, whose `createdBy` is the session that filed the task (`created_by` in its front matter, empty when none); an archived task is read from the archive too, its body `archived: true` and `entered`, when the read model last changed its row (a Done task's entry into Done); the record carries the stored pull requests it cites as `pulls`. `GET /api/task-records?ids=A,B` returns those records in one read as `{records: [...]}`, leaving out a task the board cannot read. A record costs about 3 ms, so a read of 8 ids holds p95 under the 50 ms budget in a local load run and 50 ids read about 180 ms; the agent CLI reads 8 at a time. The search index is its
 own FTS table, queried by term and never by loading Tasks; `put` still feeds it, so the cutover feeds it from the read model.
 `ci/test_read_model_latency.py` (nightly) serves 20,000 Tasks with 18,000 archived and holds every read surface to the page
 budget and the board to its soft memory limit.
@@ -1547,8 +1547,8 @@ The machines entered from an open machine (the In Progress one at the top) are i
 as recent as the newest task of the machine and every machine nested below it, ties break by name, and a machine with no
 task comes last. The snapshot's `flows` carries every machine; `machinePage` (`{open, machines, more}`) names the In
 Progress machine's first 20 rows. `GET /api/machines?open=<machine>&before=<last>&limit=20` returns the next page of any
-level as `{open, machines, more}`, each machine whole as a `flows` entry with its derivation. `open` defaults to the In
-Progress machine, `before` is the `last` of the last row held (0 for a machine with no task), and `limit` runs 1 to 100.
+level as `{open, machines, more}`, each machine as `{name, last}` (the snapshot's `flows` already holds its body, so the
+page pages by these two fields). `open` defaults to the In Progress machine, `before` is the `last` of the last row held (0 for a machine with no task), and `limit` runs 1 to 100.
 Rows sharing the boundary activity come together, so a page can run past `limit` and walking it neither repeats nor skips
 a machine. An unknown `open` is 404; a `before` that is not a finite number or a `limit` out of range is 400.
 

@@ -898,7 +898,7 @@ def _graph(root: Path) -> Callable[[], dict[str, list[str]]]:
 
 
 def _unlinker(
-    task: str, names: set[str], reason: str, ready: str | None, waiting: str | None
+    task: str, names: set[str], reason: str, ready: str | None, waiting: str | None, actor: str
 ) -> Callable[[dict, str], str]:
     """An edit that drops `task` from a task's dependencies and says why; a Waiting task left with no dependency and
     no Start Criteria moves to `ready`, since the release pass reads only Waiting tasks that still have one."""
@@ -918,8 +918,8 @@ def _unlinker(
         held = lane_id(str(frontmatter.get("status") or "")) == waiting
         if held and not kept and ready is not None and not criteria.authored(body):
             frontmatter["status"] = ready
-            return _comment(body, f"{note}; no dependency is left, so it moved to {ready}.")
-        return _comment(body, note)
+            return _comment(body, f"{note}; no dependency is left, so it moved to {ready}.", actor)
+        return _comment(body, note, actor)
 
     return edit
 
@@ -945,11 +945,22 @@ def _archiver(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
             return noted
         names = _names(root, task)
         dependents = _open_dependents(root, names, roles.done)
+        moves = []
         for dependent in dependents:
-            if not (
-                unlinked := _update(root, dependent, _unlinker(task, names, reason, ready, roles.waiting), guard, actor)
-            ).ok:
+            unlink = _unlinker(task, names, reason, ready, roles.waiting, actor)
+            released = False
+
+            def edit(frontmatter: dict, body: str) -> str:
+                nonlocal released
+                before = frontmatter.get("status")
+                body = unlink(frontmatter, body)
+                released = frontmatter.get("status") != before
+                return body
+
+            if not (unlinked := _update(root, dependent, edit, guard, actor)).ok:
                 return unlinked
+            if released and ready is not None:
+                moves.append((dependent, ready))
         target = root / "archive" / "tasks" / path.name
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -957,7 +968,7 @@ def _archiver(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
         except OSError as error:
             return Written(False, f"{path}: {error}")
         unlinked = f"; removed it from the dependencies of {', '.join(dependents)}" if dependents else ""
-        return _moved(Written(True, f"Archived task {task}{unlinked}"), ARCHIVED)
+        return _moved(Written(True, f"Archived task {task}{unlinked}"), ARCHIVED)._replace(moves=tuple(moves))
 
     return archive
 
@@ -1299,13 +1310,17 @@ def _writer(
     root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Guard = Guard(), claims: _Claims = _Claims()
 ) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
+    A move to `archived` is an archive, so the file leaves `tasks/` and `restore` finds it.
 
     An agent's claim (a move to the working State that names its session) also records the session as the task's assignee,
     and a claim, landed or refused, is recorded on `board:claims`.
     """
     spelled = {lane_id(status): status for status in statuses}
+    archive = _archiver(root, statuses, roles, guard)
 
     def write(task: str, status: str, actor: str, session: str = "") -> Written:
+        if lane_id(status) == ARCHIVED:
+            return archive(task, "", actor)
         claim = actor != OPERATOR and session and lane_id(status) == roles.working
 
         def edit(frontmatter: dict, body: str) -> str:

@@ -31,6 +31,10 @@ _PASSED = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 _RUNNING = {"IN_PROGRESS", "QUEUED", "WAITING", "PENDING", "REQUESTED", "EXPECTED"}
 
 
+#: The stored values a sweep compares with GitHub's answer, by served name.
+_COMPARED = ("state", "isDraft", "mergeable", "baseRefName", "headRefOid", "checks", "threads")
+
+
 def _selection(number: int) -> str:
     """The alias reading PR `number`: its facts, its required checks at the head commit and its review threads."""
     return f"""
@@ -317,6 +321,35 @@ class PullSync:
                 logger.exception("pull requests: %s#%d failed to refresh", repo, number)
                 self._retry(repo, number)
         return served
+
+    def reconcile(self) -> tuple[int, int]:
+        """The sweeper's `pulls` pass: read each tracked repository's stored open pull requests in one query, save each
+        record as a refresh does, and return (those read, those whose stored `_COMPARED` values GitHub changed). A
+        `mergeable` GitHub has not computed is no answer: the stored one stays and the read is asked again."""
+        sampled = corrected = 0
+        for repo in self.tracked():
+            stored = {record["number"]: record for record in self._store.find(repo, state="OPEN")}
+            if not stored:
+                continue
+            read = self._graphql(repo, _query(stored))
+            for number, before in stored.items():
+                if not (node := read[f"p{number}"]):
+                    continue
+                node["files"] = _all_files(repo, node, self._graphql)
+                record = _record(repo, node, self._clock(), rulesets.contexts(read, node["baseRefName"]))
+                if record["state"] == "OPEN" and not record["mergeSettled"]:
+                    self._retry(repo, number)
+                if record["mergeable"] == "UNKNOWN":
+                    record["mergeable"] = before["mergeable"]
+                self._store.save([record])
+                after = self._store.find(repo, number)[0]
+                sampled += 1
+                if changed := [name for name in _COMPARED if after[name] != before[name]]:
+                    corrected += 1
+                    logger.warning("pull requests: starpulse/sweeper corrected %s#%d: %s", repo, number, ", ".join(changed))
+        if corrected:
+            self.project()
+        return sampled, corrected
 
     def serve_requests(self) -> None:
         """Read each queued pull request alone, then project once."""
