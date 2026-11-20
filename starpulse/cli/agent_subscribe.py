@@ -2,6 +2,7 @@
 JetStream consumer."""
 
 import argparse
+import os
 from collections.abc import Mapping
 from contextlib import closing
 from pathlib import Path
@@ -13,6 +14,7 @@ from starpulse.bridge.requests import ask
 from starpulse.bridge.subjects import stream_subjects, token, wake_subject
 from starpulse.bridge.subscriptions import covers, explicit_subject
 from starpulse.cli.agent_wire import CliError
+from starpulse.event_log.claude_sessions import local_id, sessions_dir
 from starpulse.runtime.config import ConfigError, discover, load
 from starpulse.sessions.ports.notify import Registration
 from starpulse.sessions.adapters.outbound.registry import Registry, directory
@@ -105,13 +107,16 @@ def register(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, 
 
 
 def subscribed(session: str, subject: str, config: Path | None = None) -> bool:
-    """Whether `session`'s consumer filters cover the board's `subject`; False when the bridge is off or unreachable."""
+    """Whether the consumer of `session`, or of the local session a claude.ai URL names, filters the board's `subject`;
+    False when the bridge is off or unreachable."""
     try:
         settings = bridge(argparse.Namespace(config=config))
         stream = f"starpulse-{settings.board}"
         link = Publisher(f"nats://127.0.0.1:{settings.port}", stream, stream_subjects(settings.board))
         with closing(link):
-            filters = Consumers(link, stream).get(token(session)).filters
+            consumers = Consumers(link, stream)
+            names = filter(None, {session, local_id(sessions_dir(os.environ), session)})
+            filters = [held for name in names for held in consumers.get(token(name)).filters]
     except (CliError, Unavailable, OSError):
         return False
     return any(covers(held, f"starpulse.{settings.board}.{subject}") for held in filters)
