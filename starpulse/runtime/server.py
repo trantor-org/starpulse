@@ -71,7 +71,7 @@ def admit_at_start(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         parser.exit(1, f"{exc}\n")
 
 
-def stay_until_stopped() -> None:  # pragma: no mutate block — process boundary
+def stay_until_stopped() -> None:
     """Block until Ctrl-C or `SIGTERM`: `serve` has no page of its own while a child serves it.
 
     The wait is a read of the signal wakeup pipe, not an `Event`: the kernel may hand a signal to the supervisor's thread,
@@ -104,7 +104,7 @@ def forget_old_starts(config: Config, args: argparse.Namespace) -> None:
         logging.getLogger(__name__).warning("serve: cannot drop the old image's context stamps", exc_info=True)
 
 
-def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
+def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO)  # the GraphQL cost of each pull request read is an INFO line
     parser = serve_parser()
     args = parser.parse_args(argv)

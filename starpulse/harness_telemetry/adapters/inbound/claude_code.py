@@ -228,7 +228,7 @@ def main(
     *,
     discover: Callable[[Path | None], Path | None],
     load: Callable[[Path | None], Any],
-) -> None:  # pragma: no mutate block — serve_forever process boundary
+) -> None:
     """Serve the receiver; `discover` and `load` read the root config, which the runtime owns and passes in."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--host", default="127.0.0.1")

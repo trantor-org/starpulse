@@ -152,7 +152,7 @@ def announce_ready(environ: MutableMapping[str, str]) -> None:
         pass
 
 
-def watch_supervisor() -> None:  # pragma: no mutate block — process boundary
+def watch_supervisor() -> None:
     """End this process with `SIGTERM` when its stdin pipe from `serve` closes; a no-op outside a supervised child.
 
     Called as the process starts: until `hold` installs its handler `SIGTERM` ends the process, and after it `stop` is set.
@@ -163,7 +163,7 @@ def watch_supervisor() -> None:  # pragma: no mutate block — process boundary
         threading.Thread(target=_term_at_eof, daemon=True).start()
 
 
-def hold(stop: StopEvent, reload: Callable[[], None]) -> None:  # pragma: no mutate block — process boundary
+def hold(stop: StopEvent, reload: Callable[[], None]) -> None:
     """Block until `SIGTERM`, running `reload` for each `SIGHUP`, one at a time.
 
     The wait is a read of the signal wakeup pipe, not an `Event`: a handler runs between two bytecodes of the main
@@ -186,7 +186,7 @@ def hold(stop: StopEvent, reload: Callable[[], None]) -> None:  # pragma: no mut
         os.close(wake)
 
 
-def _term_at_eof() -> None:  # pragma: no mutate block — process boundary
+def _term_at_eof() -> None:
     # the descriptor, not `sys.stdin.buffer`: a buffered read holds a lock the interpreter cannot take at shutdown
     while os.read(0, 4096):
         pass

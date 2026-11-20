@@ -28,7 +28,7 @@ class _SchedAttr(ctypes.Structure):  # struct sched_attr, SCHED_ATTR_SIZE_VER0
     )
 
 
-def _syscall(attr: _SchedAttr) -> int:  # pragma: no mutate block — kernel boundary
+def _syscall(attr: _SchedAttr) -> int:
     number = _SYS_SCHED_SETATTR.get(platform.machine())
     if number is None:
         return -1

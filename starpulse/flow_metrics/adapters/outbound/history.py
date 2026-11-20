@@ -211,7 +211,7 @@ def machine_steps(machine: dict, rows: list[tuple[float, str]]) -> tuple[list[di
     return path, len(path)
 
 
-def _sqlite_tune(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+def _sqlite_tune(dbapi_connection: Any, _record: Any) -> None:
     """Bound the -wal file and refresh the planner statistics, as each pooled connection opens.
 
     The server exits without disposing its pool, so a connection-close hook never runs; opening is when SQLite's own
@@ -560,9 +560,7 @@ class HistoryStore:
         """Each pushed workflow's steps, in the order they were first reported, with the steps each waits on."""
         steps = _learned_steps.c
         with self.engine.connect() as db:
-            # pragma: no mutate start — a fresh test table scans in insertion order
             rows = db.execute(select(steps.workflow, steps.step, steps.depends).order_by(steps.id)).all()
-            # pragma: no mutate end
         graphs: dict[str, dict[str, list[str]]] = {}
         for workflow, step, depends in rows:
             graphs.setdefault(workflow, {})[step] = json.loads(depends)
@@ -572,9 +570,7 @@ class HistoryStore:
         """Every recorded gap as `{stream, after_id, before_id, lost}`, oldest first."""
         g = _gaps.c
         with self.engine.connect() as db:
-            # pragma: no mutate start — a fresh test table scans in insertion order
             rows = db.execute(select(g.stream, g.after_id, g.before_id, g.lost).order_by(g.id)).all()
-            # pragma: no mutate end
         return [{"stream": s, "after_id": a, "before_id": b, "lost": n} for s, a, b, n in rows]
 
     def health_stays(self, machine: dict, *, start: float, now: float, stuck_s: float) -> LaneStays:

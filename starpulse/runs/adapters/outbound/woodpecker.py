@@ -52,7 +52,7 @@ def request(url: str) -> urllib.request.Request:
     return urllib.request.Request(url, headers={"Authorization": f"Bearer {os.environ.get('WOODPECKER_TOKEN', '')}"})
 
 
-def get(url: str):  # pragma: no mutate block — process boundary
+def get(url: str):
     """The JSON the server at `url` answers; a failure to reach it raises `OSError`."""
     with urllib.request.urlopen(request(url), timeout=_TIMEOUT) as response:
         return json.load(response)
@@ -97,7 +97,9 @@ def _nodes(workflows: list[dict], needs: dict[str, list[str]]) -> list[dict]:
     for w in workflows:
         wf = w["name"]
         out.append(node(wf, [d for d in needs.get(wf, []) if d in names], _status(w["state"])))
-        steps = sorted((c for c in w.get("children") or [] if c.get("type") != "service"), key=lambda c: c.get("pid", 0))
+        steps = sorted(
+            (c for c in w.get("children") or [] if c.get("type") != "service"), key=lambda c: c.get("pid", 0)
+        )
         waits = any(c.get("depends_on") for c in steps)
         known = {c["name"] for c in steps}
         clone = next((f"{wf} / {c['name']}" for c in steps if c.get("type") == "clone"), wf)
@@ -119,8 +121,12 @@ class Poller:
         self.server, self.repo = _split(url)
         self.repo_id: int | None = None
         self._reading = threading.Lock()
-        self.seen: dict[tuple[int, str], dict] = {}  # (pipeline number, status) -> its detail; a closed one never changes
-        self.needs: dict[int, dict[str, list[str]]] = {}  # pipeline number -> the workflows each workflow's file waits on
+        self.seen: dict[
+            tuple[int, str], dict
+        ] = {}  # (pipeline number, status) -> its detail; a closed one never changes
+        self.needs: dict[
+            int, dict[str, list[str]]
+        ] = {}  # pipeline number -> the workflows each workflow's file waits on
 
     def _api(self, path: str):
         return self.fetch(f"{self.server}/api/repos/{path}")
@@ -148,7 +154,10 @@ class Poller:
     def _needs(self, number: int) -> dict[str, list[str]]:
         if number not in self.needs:
             files = self._api(f"{self._id()}/pipelines/{number}/config")
-            loaded = {f["name"]: yaml.safe_load(base64.b64decode(f["data"], validate=True)).get("depends_on") or [] for f in files}
+            loaded = {
+                f["name"]: yaml.safe_load(base64.b64decode(f["data"], validate=True)).get("depends_on") or []
+                for f in files
+            }
             self.needs[number] = {n: [d] if isinstance(d, str) else d for n, d in loaded.items()}
         return self.needs[number]
 
@@ -159,7 +168,7 @@ class Poller:
         try:
             workflows = self._detail(pipe).get("workflows") or []
             return _nodes(workflows, self._needs(pipe["number"]) if len(workflows) > 1 else {})
-        except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError):
+        except OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError:
             return []
 
     def _base(self, pipe: dict) -> dict:
@@ -260,7 +269,7 @@ def start(url: str) -> None:
     return
 
 
-def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:  # pragma: no mutate block — thread wiring
+def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:
     """Show the pipelines of the repository at `url` on `runs`: listed once now, then again for each `runs:resync` entry
     naming the instance (`follow_resync`), which a commit status Woodpecker posts writes (`runs.adapters.inbound.status_resync`)."""
     poller = Poller(runs, get, url)

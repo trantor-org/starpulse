@@ -151,7 +151,7 @@ class Timers:
             self.sink.set_dags(None, f"unreadable response ({type(exc).__name__}: {exc})")
 
 
-def systemctl(args: list[str]) -> str:  # pragma: no mutate block — process boundary
+def systemctl(args: list[str]) -> str:
     """Run `systemctl` with `args`, in UTC, and answer what it printed."""
     try:
         done = subprocess.run(
@@ -238,13 +238,15 @@ def _call(serial: int, member: str, path: str, interface: str, destination: str)
     fields = b""
     for code, sig, value in ((1, b"o", path), (2, b"s", interface), (3, b"s", member), (6, b"s", destination)):
         raw = value.encode()
-        fields += b"\0" * (-len(fields) % 8) + bytes([code, 1]) + sig + b"\0" + struct.pack("<I", len(raw)) + raw + b"\0"
+        fields += (
+            b"\0" * (-len(fields) % 8) + bytes([code, 1]) + sig + b"\0" + struct.pack("<I", len(raw)) + raw + b"\0"
+        )
     head = b"l\x01\x00\x01" + struct.pack("<III", 0, serial, len(fields))
     return head + fields + b"\0" * (-len(fields) % 8)
 
 
 @contextmanager
-def _subscribed(user: bool) -> Iterator[None]:  # pragma: no mutate block — process boundary
+def _subscribed(user: bool) -> Iterator[None]:
     """Hold `Manager.Subscribe` on one manager's bus for the block. systemd sends a unit's `PropertiesChanged` signals on
     that bus only while some client is subscribed, and `gdbus monitor` never subscribes: the system manager has other
     subscribers (logind), the user manager has none, so its units' signals would never come. systemd drops the
@@ -273,7 +275,7 @@ def _subscribed(user: bool) -> Iterator[None]:  # pragma: no mutate block — pr
         yield
 
 
-def monitor(user: bool) -> Iterator[str]:  # pragma: no mutate block — process boundary
+def monitor(user: bool) -> Iterator[str]:
     """The lines `gdbus monitor` prints for one manager's bus until it exits, with the manager subscribed meanwhile;
     closing the generator ends the child. `setpriv` sets the parent-death signal and execs, so no Python runs between
     fork and exec."""
@@ -294,9 +296,7 @@ def monitor(user: bool) -> Iterator[str]:  # pragma: no mutate block — process
     raise OSError(f"gdbus monitor {bus} exited with {process.returncode}")
 
 
-def follow(  # pragma: no mutate block — thread wiring
-    url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None
-) -> None:
+def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:
     """Show the timers `url` allowlists on `runs`, moved by the signals of their units. A monitor that exits is started
     again at once and its timers read again, since a signal may have fallen in the gap; a `runs:resync` entry naming the
     instance reads them all again. The threads end when `stop` is set; the server passes none."""

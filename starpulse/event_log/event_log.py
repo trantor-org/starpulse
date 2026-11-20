@@ -123,7 +123,9 @@ def _watch_commits(
     if watch is None:
         if not _NO_WATCH_LOGGED.is_set():
             _NO_WATCH_LOGGED.set()
-            logger.warning("EventLog: no file watch on this platform; waking on commits by other processes every %ss", fallback)
+            logger.warning(
+                "EventLog: no file watch on this platform; waking on commits by other processes every %ss", fallback
+            )
     else:
         selector.register(watch.fileno(), selectors.EVENT_READ)
     version = None
@@ -165,7 +167,7 @@ def _watch_commits(
         watch.close()
 
 
-def _sqlite_wal(dbapi_connection: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+def _sqlite_wal(dbapi_connection: Any) -> None:
     """Switch the database to WAL. The mode is kept in the database file, so the log does it once, not per connection."""
     cursor = dbapi_connection.cursor()
     for attempt in range(_PRAGMA_ATTEMPTS):
@@ -180,7 +182,7 @@ def _sqlite_wal(dbapi_connection: Any) -> None:  # pragma: no mutate block — s
     cursor.close()
 
 
-def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
     """The pragmas each connection keeps for itself: the database file keeps neither `synchronous` nor the WAL limit."""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA synchronous=NORMAL")
@@ -222,7 +224,7 @@ def bound_wal(engine: Engine) -> None:
             finally:
                 cursor.execute(f"PRAGMA busy_timeout={wait_ms}")
                 cursor.close()
-        except (OSError, sqlite3.OperationalError):  # no -wal file yet, or the checkpoint lost the lock: next checkin
+        except OSError, sqlite3.OperationalError:  # no -wal file yet, or the checkpoint lost the lock: next checkin
             pass
         finally:
             gate.release()
@@ -490,7 +492,8 @@ class EventLog:
                 return pruned
             _archive(archive_dir, batch)
             with engine.begin() as db:
-                db.execute(delete(events).where(
+                db.execute(
+                    delete(events).where(
                         events.c.id > last,
                         events.c.id <= batch[-1].id,
                         events.c.at < cutoff,

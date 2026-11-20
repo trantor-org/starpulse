@@ -164,7 +164,7 @@ def main(
     *,
     discover: Callable[[Path | None], Path | None],
     load: Callable[[Path | None], Any],
-) -> None:  # pragma: no mutate block — process boundary
+) -> None:
     """Read the transcripts; `discover` and `load` read the root config, which the runtime owns and passes in."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--root", type=Path, default=Path.home() / ".cursor" / "projects", help="Cursor's projects dir")

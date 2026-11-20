@@ -29,7 +29,7 @@ def attested(text: str) -> str:
     return f'<cross-session-message from-mode="bypass">\n{text}\n</cross-session-message>'
 
 
-def post_inbox(sock: str, token: str, text: str) -> None:  # pragma: no mutate block — the socket is the process boundary.
+def post_inbox(sock: str, token: str, text: str) -> None:
     """Post the attested `text` to a session's inbox socket as a user message after an auth line; `OSError` when it refuses."""
     lines = [
         {"type": "auth", "token": token},
@@ -45,7 +45,7 @@ def post_inbox(sock: str, token: str, text: str) -> None:  # pragma: no mutate b
             pass
 
 
-def resume_with(command: Sequence[str]) -> Callable[[Registration, str], bool]:  # pragma: no mutate block — spawns claude.
+def resume_with(command: Sequence[str]) -> Callable[[Registration, str], bool]:
     """Resume by running `command` with the session id and the prompt appended, in the session's directory.
 
     `{session}` and `{cwd}` in an element of `command` are replaced by the session's id and directory; a session whose
@@ -64,14 +64,14 @@ def resume_with(command: Sequence[str]) -> Callable[[Registration, str], bool]: 
                 timeout=_RESUME_TIMEOUT_S,
                 check=False,
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except OSError, subprocess.TimeoutExpired:
             return False
         return done.returncode == 0
 
     return resume
 
 
-def end_with(command: Sequence[str]) -> Callable[[str], None] | None:  # pragma: no mutate block — spawns the reaper.
+def end_with(command: Sequence[str]) -> Callable[[str], None] | None:
     """End a task's sessions by running `command` with `{task}` in an element replaced by the task id; none when empty."""
     if not command:
         return None
@@ -79,7 +79,9 @@ def end_with(command: Sequence[str]) -> Callable[[str], None] | None:  # pragma:
     def end(task: str) -> None:
         argv = [part.replace("{task}", task) for part in command]
         try:
-            done = subprocess.run(argv, capture_output=True, timeout=_RESUME_TIMEOUT_S, check=False)  # fixed argv, no shell
+            done = subprocess.run(
+                argv, capture_output=True, timeout=_RESUME_TIMEOUT_S, check=False
+            )  # fixed argv, no shell
         except (OSError, subprocess.TimeoutExpired) as exc:
             logger.warning("bridge: ending %s failed: %s", task, exc)
             return

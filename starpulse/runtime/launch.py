@@ -25,7 +25,7 @@ def workdir(python: str) -> Path | None:
     return path.parents[1].parent if path.parent.name == "bin" and (path.parents[1] / "pyvenv.cfg").is_file() else None
 
 
-def exec_self() -> None:  # pragma: no mutate block — process boundary
+def exec_self() -> None:
     """Replace this process with `serve` on the interpreter now behind the launcher, in that release's directory.
 
     The release then current is the directory the relative config path and the control file resolve against."""
