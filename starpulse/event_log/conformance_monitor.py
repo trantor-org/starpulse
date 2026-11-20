@@ -58,6 +58,8 @@ REMAINING_HELP = "Entry ids of the board and machine streams past the monitor's 
 #: Seconds with no lane change and no task event after which a working task is stalled.
 STALL_S = 300.0
 _HARNESS, _COMMAND = "harness", "TOOL_USED"
+NO_EVENT_METRIC = "starpulse_harness_active_no_event_seconds"
+NO_EVENT_HELP = "Seconds since the last lane move, work event or tool call of the quietest working task whose harness reads active; 0 when none."
 
 #: The setting the counts and states are saved under, with the last entry of each stream they cover.
 CHECKPOINT = "conformance:checkpoint"
@@ -102,6 +104,7 @@ class Conformance:
         work: Collection[str] = (),
         clock: Callable[[], float] = time.time,
         open_tasks: Callable[[], Iterable[Mapping[str, Any]]] | None = None,
+        sessions: Mapping[str, dict] = {},
     ) -> None:
         self._names = list(machines)
         self._entered: dict[str, int] = dict.fromkeys(entered, 0)
@@ -126,7 +129,8 @@ class Conformance:
         #: Set when an entry moves a cursor, so the saver writes the checkpoint after a debounce.
         self._moved = threading.Event()
         self._lane_moves = lane_moves(machines[BOARD]) if BOARD in machines else set()
-        tables_ = tables(machines)
+        # `sessions` are judged too but kept out of `_names`, so they add no counter series.
+        tables_ = tables({**sessions, **machines})
         self._judges = {name: EventJudge(table) for name, table in tables_.items()}
         self._lanes: dict[str, str] = {}
         self._violations: dict[str, int] = defaultdict(int)
@@ -231,7 +235,11 @@ class Conformance:
         return {
             "stalled": sum(task in self._stalled for task in live),
             "due": sorted(last + STALL_S for task, last in live.items() if task not in self._stalled),
+            "active_since": min((last for task, last in live.items() if self._harness_active(task)), default=None),
         }
+
+    def _harness_active(self, task: str) -> bool:
+        return _HARNESS in self._judges and self._judges[_HARNESS].states(task) == {"active"}
 
     def caught_up(self) -> bool:
         """Whether both streams are read up to the entries they held when `follow` began."""
@@ -430,7 +438,14 @@ def stalled_exposition(state: Mapping[str, Any], now: float) -> str:
     if not state:
         return ""
     stalled = state["stalled"] + sum(due <= now for due in state["due"])
-    return f"# HELP {STALLED_METRIC} {STALLED_HELP}\n# TYPE {STALLED_METRIC} gauge\n{STALLED_METRIC} {stalled}\n"
+    since = state.get("active_since")  # a state kept before this series existed has none until the monitor rewrites it
+    quiet = (
+        0.0 if since is None else max(now - since, 0.0)
+    )  # an entry stamped after the scrape clock reads 0, never negative
+    return (
+        f"# HELP {STALLED_METRIC} {STALLED_HELP}\n# TYPE {STALLED_METRIC} gauge\n{STALLED_METRIC} {stalled}\n"
+        f"# HELP {NO_EVENT_METRIC} {NO_EVENT_HELP}\n# TYPE {NO_EVENT_METRIC} gauge\n{NO_EVENT_METRIC} {quiet}\n"
+    )
 
 
 def _escape(value: str) -> str:

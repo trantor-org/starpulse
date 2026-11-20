@@ -48,7 +48,17 @@ SWITCH_INTERVAL_S = 0.0005
 
 
 #: The contexts that always run here, in start order; the run Adapters follow them (`adapter_contexts`).
-BACKGROUND_CONTEXTS = ("pulls", "scheduler", "runs", "flow-metrics", "signal-folds", "lane-metrics", "search", "board", "sweeper")
+BACKGROUND_CONTEXTS = (
+    "pulls",
+    "scheduler",
+    "runs",
+    "flow-metrics",
+    "signal-folds",
+    "lane-metrics",
+    "search",
+    "board",
+    "sweeper",
+)
 
 #: The contexts a rehearsal runs: the rest poll a service, start a session or a run, run a declared command or listen on a port.
 REHEARSED_CONTEXTS = ("flow-metrics", "signal-folds", "board")
@@ -248,12 +258,18 @@ def default_starters(
         from starpulse.board.adapters.search import SearchIndex
         from starpulse.event_log.conformance_monitor import BOARD
         from starpulse.flow_metrics.model.liveness import work_machines
+        from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 
         board, feed = shared()
         search = SearchIndex.open(log.engine, config.search) if config.search.embeddings_url else None
         followers.start(
-            feed, board, log, own, work_machines(feed.machines, BOARD, feed.roles.working),
+            feed,
+            board,
+            log,
+            own,
+            work_machines(feed.machines, BOARD, feed.roles.working),
             vectors=search.embed_missing if search is not None else None,
+            sessions=SESSION_MACHINES,
         )
         return lambda: logger.info("lane-metrics: the board config is read at start; restart to apply a change")
 
@@ -344,9 +360,19 @@ def default_starters(
         if not token:
             raise ValueError("github-events: the producer github holds no token in the environment")
         server = os.environ.get("STARPULSE_WRITE_URL") or f"http://127.0.0.1:{config.port}"
-        woodpecker = {urllib.parse.urlsplit(run.url or "").path.strip("/"): run.name for run in config.runs if run.type == "woodpecker"}
+        woodpecker = {
+            urllib.parse.urlsplit(run.url or "").path.strip("/"): run.name
+            for run in config.runs
+            if run.type == "woodpecker"
+        }
         return consumer.start(
-            config, base, own, migrate_chain, HttpIngest(server, token), _PullLinks(ReadModel(log.engine)), open_watch,
+            config,
+            base,
+            own,
+            migrate_chain,
+            HttpIngest(server, token),
+            _PullLinks(ReadModel(log.engine)),
+            open_watch,
             Resync(log, woodpecker),
         )
 

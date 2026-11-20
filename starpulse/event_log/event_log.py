@@ -39,6 +39,7 @@ from typing import Any, NamedTuple
 from sqlalchemy import Engine, bindparam, create_engine, delete, event, func, select
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.engine import Connection, make_url
+from sqlalchemy.pool import NullPool
 
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.migrate import require_migrated
@@ -776,3 +777,15 @@ def _create_engine(url: str) -> Engine:
     return create_engine(
         url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT}, pool_size=_POOL_SIZE, max_overflow=_POOL_OVERFLOW
     )
+
+
+def unpooled_engine(engine: Engine) -> Engine:
+    """An engine on `engine`'s database that opens a connection for each use and closes it after. sqlite keeps the last
+    bound parameter of every cached statement until that statement runs again on its connection, so a writer of large
+    values on pooled connections parks a copy of one on each of them (TASK-15710). An in-memory database is one
+    connection already: `engine` itself."""
+    if engine.url.database in (None, "", ":memory:"):
+        return engine
+    unpooled = create_engine(engine.url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT}, poolclass=NullPool)
+    event.listen(unpooled, "connect", _sqlite_pragmas)
+    return unpooled
