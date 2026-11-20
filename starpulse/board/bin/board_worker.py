@@ -1,10 +1,10 @@
-"""`starpulse worker board`: the Board context's writer (the lane dating and the claim sweep) as its own process, beside
+"""`starpulse worker board`: the Board context's writer (the lane dating) as its own process, beside
 `serve`.
 
 `board-release` is not here: the release of dependents runs in the Delivery worker (`starpulse worker pulls`).
 
 It reads the config and the database `serve` does and meets `serve` only in the history there: this worker writes each
-claim expiry (`HistoryStore.save_claim_expiries`), and `serve` rereads it at a request after a push (`CaughtUp`).
+lane date (`PushedDates`), and `serve` rereads it at a request after a push (`CaughtUp`).
 `SIGTERM` stops it; `SIGHUP` re-reads the config and, as
 the board and the writer are built once, only says whether a restart is needed.
 """
@@ -94,8 +94,7 @@ def start(
     store = PushedDates(history_store(config, base, feed.machines), log)  # a save also pushes the date to `serve`
     feed.ready.set()
     feed.record_lanes(store, log)  # the lane each write makes is recorded by `serve`; the Board child places none
-    board.attach(log)  # the sweep's releases append the History events the read model folds
-    board.sweep(feed, log, store.save_claim_expiries)
+    board.attach(log)
     threading.Thread(target=HeldSnapshot(feed, store=snapshots).run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
     MachineDeltas(feed, model).follow(stop, log)  # a context sharing this feed hears each machine row as a `move`
     search = SearchIndex.open(log.engine, config.search)  # the one fold indexes search, as the API's second fold once did

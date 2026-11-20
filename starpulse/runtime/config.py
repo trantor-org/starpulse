@@ -448,12 +448,11 @@ def rehearsing() -> bool:
 
 def rehearsal(raw: dict[str, Any], spec: dict[str, str]) -> dict[str, Any]:
     """`raw` as a rehearsal loads it: the copy of the store in `spec`, its pruned rows archived in `spec`'s scratch
-    directory, and TLS, telemetry, adapters, producers, pull requests and every outbound call off, and the claim sweep, which would release claims in the live board files. `repos` and `runs` stay: Board
+    directory, and TLS, telemetry, adapters, producers, pull requests and every outbound call off. `repos` and `runs` stay: Board
     assembly checks the writers and the release against them; `contexts_of` starts no context that reads them out."""
     kept = {key: value for key, value in raw.items() if key not in _OUTBOUND}
     return {
         **kept,
-        "board": {**raw.get("board", {}), "claim_ttl": 0},  # the board's files are the live ones: no claim sweep
         "pull_requests": False,
         "database_url": spec["database_url"],
         "event_log_archive_dir": spec["archive_dir"],

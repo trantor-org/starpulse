@@ -34,7 +34,6 @@ def refusing(**fields: Any) -> Board:
     return Board(**{
         "machines": lambda qualify, workflows: {},
         "start": _nothing,
-        "sweep": _nothing,
         "keys": None,
         "cues": lambda _qualify: (),
         "waits": {},

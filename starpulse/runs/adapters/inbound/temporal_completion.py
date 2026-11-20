@@ -4,10 +4,11 @@ Temporal's server posts it once a workflow started with a `completion_callbacks`
 ingest answers. The producer's bearer token rides the callback's own `Authorization` header; `Nexus-Operation-State`
 (`succeeded`, `failed` or `canceled`) is the close and `Nexus-Link` names the workflow id and run id. The close lands
 on `runs:events` as the run's `StepFinished` under the producer's name, its id the run id, so a retry appends nothing.
+A closed `task_lifecycle` workflow, whose id ends in its task id, calls `closed` with that task: its claim ends with it.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote
 
@@ -16,11 +17,16 @@ if TYPE_CHECKING:  # annotation only
 
 #: What each close state of the callback means as a run's status; Temporal reports a termination or timeout as `failed`.
 STATES = {"succeeded": "succeeded", "failed": "failed", "canceled": "aborted"}
-_LINK = re.compile(r"/workflows/.+/(?P<run_id>[^/]+)/history")
+_LINK = re.compile(r"/workflows/(?P<workflow_id>.+)/(?P<run_id>[^/]+)/history")
+_TASK = re.compile(r"TASK-\d+")
 
 
 def completion(
-    events: CloudEventsIngest, authorization: str | None, headers: Mapping[str, str], query: Mapping[str, str]
+    events: CloudEventsIngest,
+    authorization: str | None,
+    headers: Mapping[str, str],
+    query: Mapping[str, str],
+    closed: Callable[[str], None] = lambda _task: None,
 ) -> tuple[int, dict[str, Any]]:
     """Answer one callback: `(status, JSON body)`. `query` names the workflow type, which the callback does not carry."""
     if (name := events.owner(authorization)) is None:
@@ -38,4 +44,8 @@ def completion(
         "subject": run_id,
         "data": {"workflow": workflow, "status": status},
     }
-    return events.write(name, [event])
+    status_code, body = events.write(name, [event])
+    task = link["workflow_id"].rpartition("/")[2]
+    if status_code < 300 and workflow == "task_lifecycle" and _TASK.fullmatch(task):
+        closed(task)
+    return status_code, body

@@ -315,3 +315,18 @@ def start_task(
 ) -> tuple[int, dict[str, Any]]:
     """`POST /api/start`: `start_requested` for the request body a page or a client posts."""
     return start_requested(request, feed, assign, start_session, harnesses, clock)
+
+
+def release_closed(feed: BoardFeed, task: str, release: TaskReleaser, announce: Callable[[str], None]) -> bool:
+    """End the claim a closed workflow held on `task`, leaving it in its lane for a session to start on; False when no
+    session holds it."""
+    if (agent := held_task(feed, task)) is None or agent.get("assignee") in (None, "", RELEASED_ASSIGNEE):
+        return False
+    state, holder = agent["state"], agent["assignee"]
+    if not record_written(feed, task, Who(TASK_ACTOR, "", ""), lambda: release(task, state, session=holder, actor=TASK_ACTOR)).ok:
+        return False
+    try:
+        announce(task)
+    except Exception:
+        logger.exception("workflow close: the released notice for %s failed", task)
+    return True

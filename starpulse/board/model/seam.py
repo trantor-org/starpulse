@@ -213,9 +213,6 @@ class Board:
     start: Callable[[BoardFeed, str, EventLog], None]
     """Begin placing the Board's tasks on the feed, on threads of its own; the text is a name unique to this
     running view, and the log is the event log of the view's database."""
-    sweep: Callable[[BoardFeed, EventLog, Callable[[dict[str, float]], None]], None]
-    """Begin releasing the claims that outlive their TTL on the feed's tasks, on a thread of its own; `start`
-    begins it too, and a view that reads the Task read model instead of calling `start` calls it alone."""
     keys: TaskKeys | None
     """The board's task key scheme; None places any key, as the machines board does."""
     cues: Callable[[Qualify], Sequence[dict]]
