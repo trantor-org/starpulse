@@ -94,7 +94,8 @@ class ClaudeCodeAdapter:
         for log in logs:
             if _moves(log) and self._first(log):
                 found.append(self._event(log))
-                if log.kind == SETTLED and (halt := self.halted(log.session)):
+                halt = self.halted(log.session) if log.kind == SETTLED else None
+                if halt and (log.time is None or halt[0] <= log.time):  # a settle older than the halt is another turn's
                     found.append(self._ended(log, halt[0]))
         return found
 

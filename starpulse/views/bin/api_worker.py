@@ -166,11 +166,9 @@ def serve_page(  # pragma: no mutate block — serve_forever process boundary
     # worker's instance also shows the page whether that worker's process runs
     watched = {name: opt_in.Liveness(log, name) for name in opted_in}
     runs = runs_projection.Projected(log, feed, watched)
+    caught_up.state(runs_projection.PROJECTION, runs.apply)
     if watched:
-        runs.apply()
         caught_up.every_read(runs.refresh)  # a worker that exits announces nothing to the log
-    else:
-        caught_up.state(runs_projection.PROJECTION, runs.apply)
     if config.task_actor:
         actor_metrics = metrics_of(log)
         actor_view = actor_views_of(log)
