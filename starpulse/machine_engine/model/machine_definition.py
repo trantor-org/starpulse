@@ -69,6 +69,7 @@ WAIT_FACTS = (
     "pr_draft",
     "pr_conflicting",
     "phase_resumed",
+    "operator_pushback",
     "pr_unfinished_alive",
     "pr_unfinished_dead",
     "deps_done",

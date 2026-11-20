@@ -22,6 +22,10 @@ _LISTED = 5
 #: sessions a cluster needs to be reported.
 _CLUSTER_THRESHOLD, _CLUSTER_MIN_SESSIONS = 0.8, 5
 
+#: The CPU seconds the fold of a cold 168 hour `/api/analytics/trace-clusters` read with outliers may take: its readers
+#: wait 120 s, and a host under load runs the fold several times slower than an idle one.
+COLD_READ_BUDGET_S = 8.0
+
 
 def _whole(query: dict[str, list[str]], key: str, default: int) -> int | None:
     """The whole number of at least 0 `key` gives, `default` when absent; None for anything else."""

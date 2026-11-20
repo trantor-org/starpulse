@@ -1,10 +1,10 @@
 """The spend report: per task and phase, the tokens a task burned and what they weigh against the task's cell.
 
 A phase is a task's stretch of steps (`steps.session_owned`, a subagent's counted to its task). A step under
-`qa`, `deliver` or `review-fix` (`cr-triage` too) is that phase. Every other step is `claim` until the first step
-that edits a file and `implement` from it, over all the task's sessions in the window; a task with no edit in the
-window is all `implement`. Loading `starting-task` stays in force through the build, so that skill alone cannot
-split the two.
+`qa`, `deliver` or `review-fix` (`cr-triage` too) is that phase. Every other step is `claim` until the step that
+carries the task's claim, or the first step that edits a file when no claim is in the window, and `implement` after
+it, over all the task's sessions in the window; a task with no edit and no claim in the window is all `implement`.
+Loading `starting-task` stays in force through the build, so that skill alone cannot split the two.
 
 `wte` weighs a step's tokens as the provider prices them against one uncached input token: a cache write 1.25, a
 cache read 0.1, an output token 5. `task_wte` sums a task's phases. A cell (kind x size x row `profile`) of at least `MIN_N` tasks
@@ -20,6 +20,7 @@ the session's; a row of subagent steps alone takes its first step's.
 from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from math import inf
 from statistics import median
 from typing import Any
 
@@ -49,21 +50,25 @@ def _edits(owned: Owned) -> bool:
 
 def fold_spend(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> dict[str, Any]:
     """The fold of one session's `signals`: its `harness` and `session`, its captured, non-auxiliary steps that belong
-    to a task, each with whether it `edits`, and each task's compaction times, as plain JSON data `combine_spend` reads."""
+    to a task, each with whether it `edits`, and each task's first claim time and compaction times, as plain JSON data `combine_spend` reads."""
     owned = [
         {**o.step, "edits": _edits(o)}
         for o in session_owned(signals, keys, analytics)
         if o.step["captured"] and o.step["origin"] != "auxiliary" and o.step["task"]
     ]
     compactions: dict[str, list[float]] = defaultdict(list)
+    claims: dict[str, float] = {}
     for task, s in attributed(session_signals(signals, keys, analytics), keys) if signals else ():
         if task and s.kind == "compaction":
             compactions[task].append(s.time)
+        elif task and s.kind == "claim":
+            claims.setdefault(task, s.time)
     first = signals[0] if signals else None
     return {
         "harness": first.harness if first else "",
         "session": first.session if first else "",
         "steps": owned,
+        "claims": claims,
         "compactions": dict(compactions),
     }
 
@@ -75,13 +80,16 @@ def _phase(step: Mapping[str, Any], editing: bool) -> str:
     return _SKILL_PHASE.get(skill) or ("implement" if editing else "claim")
 
 
-def _phases(steps: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
-    """Each of `steps` with its phase."""
+def _phases(steps: list[dict[str, Any]], claims: Mapping[str, float]) -> list[tuple[str, dict[str, Any]]]:
+    """Each of `steps` with its phase, `claims` the time each task was first claimed."""
     first_edit: dict[str, float] = {}
     for step in steps:
         if step["edits"]:
             first_edit.setdefault(step["task"], step["at"])
-    return [(_phase(step, step["at"] >= first_edit.get(step["task"], 0)), step) for step in steps]
+    return [
+        (_phase(step, step["at"] >= first_edit.get(step["task"], 0) or step["at"] > claims.get(step["task"], inf)), step)
+        for step in steps
+    ]
 
 
 def _row(task: str, phase: str) -> dict[str, Any]:
@@ -116,7 +124,11 @@ def combine_spend(folds: Iterable[Mapping[str, Any]], tasks: Mapping[str, Mappin
     steps = sorted((step for fold in held for step in fold["steps"]), key=lambda step: step["at"])
     rows: dict[tuple[str, str], dict[str, Any]] = {}
     main_profiled: set[tuple[str, str]] = set()
-    for phase, step in _phases(steps):
+    claims: dict[str, float] = {}
+    for fold in held:
+        for task, at in fold.get("claims", {}).items():
+            claims[task] = min(at, claims.get(task, at))
+    for phase, step in _phases(steps, claims):
         key = (step["task"], phase)
         row = rows.setdefault(key, _row(step["task"], phase))
         tokens = step["tokens"]

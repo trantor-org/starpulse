@@ -22,6 +22,8 @@ RECONCILER = "starpulse/lane-sweep"
 #: The writer of Events an editor import appends: the operator's break-glass edit, not a command of the board (D5).
 BREAK_GLASS = "break-glass"
 _break_glass: ContextVar[bool] = ContextVar("break_glass", default=False)
+#: Each stale head is another append that landed (the directory scan's first import, then its reconcile of the write's own file change), so a few rereads settle it.
+_APPEND_ATTEMPTS = 5
 
 
 @contextmanager
@@ -319,7 +321,7 @@ class TaskHistory:
         store = self._store
         if store is None:
             return False
-        for _ in range(2):
+        for _ in range(_APPEND_ATTEMPTS):
             head = store.head(KIND, task)
             if after is None and head and store.read(KIND, task, head - 1)[-1].type == "Archived":
                 return False  # retiring an archived task leaves the board no more than it already has

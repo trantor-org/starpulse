@@ -208,11 +208,14 @@ class Loop:
         return use
 
     def _at_work(self, task: str, run: _Run, agents: Mapping[str, Mapping[str, Any]], now: float) -> bool:
-        """Whether a run's session holds a slot: its task is held In Progress, or its start or last harness event is inside
-        `STALE_S`. A session at a prompt that never claimed its task is a resident process doing no work."""
-        agent = agents.get(task)
-        if agent is not None and agent["state"] == self._feed.roles.working:
+        """Whether a run's session holds a slot: its task is held In Progress, or still in the eligible lane with its start
+        or last harness event inside `STALE_S`. A task in any other lane holds none: its session is reaped or about to be.
+        A session at a prompt that never claimed its task is a resident process doing no work."""
+        state = agents[task]["state"] if task in agents else None
+        if state == self._feed.roles.working:
             return True
+        if state not in self._lanes():
+            return False
         seen = self._feed.machine_task(HARNESS.name, task)
         return now - max(run.started_at, seen["active"] if seen else 0.0) <= STALE_S
 

@@ -30,9 +30,9 @@ def _key(instance: str) -> str:
     return f"runs.worker.{instance}"
 
 
-def announce(log: EventLog, instance: str, pid: int | None = None) -> None:
-    """Write the process id that runs `instance`'s worker to the log, once per start."""
-    log.put_state(_key(instance), {"pid": os.getpid() if pid is None else pid})
+def announce(log: EventLog, instance: str, pid: int | None = None, *, ending: bool = False) -> None:
+    """Write the process id that runs `instance`'s worker to the log, once per start and once more when it is told to end."""
+    log.put_state(_key(instance), {"pid": os.getpid() if pid is None else pid, "ending": ending})
 
 
 class Liveness:
@@ -43,20 +43,30 @@ class Liveness:
         self._instance = instance
         self._gone = gone
 
-    def _pid(self) -> int | None:
+    def _kept(self) -> dict:
         _, kept = self._log.state(_key(self._instance))
-        pid = kept.get("pid") if isinstance(kept, dict) else None
+        return kept if isinstance(kept, dict) else {}
+
+    def _pid(self) -> int | None:
+        pid = self._kept().get("pid")
         return pid if isinstance(pid, int) else None
 
     def problem(self) -> str | None:
         """Why the worker counts as down, or None while its process runs."""
         try:
-            pid = self._pid()
+            kept = self._kept()
         except Exception as exc:
             return f"the event log cannot be read: {exc}"
-        if pid is None:
+        pid = kept.get("pid")
+        if not isinstance(pid, int):
             return f"the {self._instance} worker has not reported"
-        return f"the {self._instance} worker (pid {pid}) exited" if self._gone(pid) else None
+        if not self._gone(pid):
+            return None
+        return (
+            f"the {self._instance} worker was stopped"
+            if kept.get("ending")
+            else f"the {self._instance} worker (pid {pid}) exited"
+        )
 
     def follow(self, changed: Callable[[], None], stop: StopEvent) -> None:
         """Call `changed` when the announced process exits and when a worker announces itself, on threads until `stop`."""

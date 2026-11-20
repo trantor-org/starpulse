@@ -1,11 +1,13 @@
 """`starpulse worker <github-actions|systemd|woodpecker>`: a run Adapter as its own process, which `serve` starts as a child for each `[[runs]]` instance that names it.
 
-It announces its process id in the event log. `SIGTERM` stops it; `SIGHUP` re-reads the config.
+It announces its process id in the event log. `SIGTERM` stops it and marks the announced process as ending, so its exit reads as a stop; `SIGHUP` re-reads the config.
 """
 
 import argparse
+import logging
 import threading
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,15 @@ from starpulse.runs.application.queries.projection import Publisher
 from starpulse.runs.bin.blocks import RunsConfig
 from starpulse.runs.bin.runs_worker import reload
 from starpulse.runs.model import opt_in
+
+logger = logging.getLogger(__name__)
+
+
+def _ending(log: EventLog, name: str) -> None:
+    try:
+        opt_in.announce(log, name, ending=True)
+    except Exception:  # a failed write never aborts the stop that called it
+        logger.warning("%s: cannot mark the worker as ending", name, exc_info=True)
 
 
 def start(
@@ -36,6 +47,10 @@ def start(
     for instance, adapter in adapters:
         adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
         opt_in.announce(log, instance.name)
+        ending = partial(_ending, log, instance.name)
+        stop.listen(ending)
+        if stop.is_set():
+            ending()
     return lambda: reload(path, config, load)
 
 

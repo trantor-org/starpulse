@@ -1,7 +1,6 @@
 """The capacity inputs the board feeds: the review load and the sessions held.
 
-Both read the feed's agents (`BoardFeed.open_tasks`, `BoardFeed.machine_tasks("harness")`), so the sampler stays
-independent of the feed.
+Both read the feed's open tasks (`BoardFeed.open_tasks`), so the sampler stays independent of the feed.
 """
 
 import re
@@ -24,21 +23,12 @@ def review_points(tasks: Iterable[Mapping[str, Any]], lane: str | None, unsized:
     return sum(points(task["labels"], unsized) for task in tasks if task["state"] == lane)
 
 
-def sessions_held(
-    tasks: Iterable[Mapping[str, Any]],
-    working: str,
-    agents: Iterable[Mapping[str, Any]],
-    now: float,
-    stale_s: float = STALE_S,
-) -> int:
-    """The sessions the host runs: each task in the `working` lane, idle on a wake or mid-turn, and each task whose
-    harness machine is `active` with an event within `stale_s`, in any lane.
+def sessions_held(tasks: Iterable[Mapping[str, Any]], working: str) -> int:
+    """The sessions the host runs: each task in the `working` lane, idle on a wake or mid-turn.
 
     A held session is a resident process whether or not it is mid-turn, so a stalled downstream (CI, deliver) fills the
     sessions limit instead of piling up In Progress. It counts the operator's own sessions beside the scheduler's,
-    because each takes the host's CPU and memory alike. A session killed mid-tool never gets its Stop, so its machine
-    reads `active` until the history window drops it; the bound stops that session holding a slot.
+    because each takes the host's CPU and memory alike. A task that left the lane, or closed, holds no slot: its session
+    is reaped or about to be, and a killed one never gets its Stop, so its harness machine reads `active` for `STALE_S`.
     """
-    held = {task["id"] for task in tasks if task["state"] == working}
-    live = {agent["id"] for agent in agents if agent["state"] == "active" and now - agent["active"] <= stale_s}
-    return len(held | live)
+    return sum(task["state"] == working for task in tasks)

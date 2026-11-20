@@ -147,7 +147,9 @@ _DAY_S = 86_400.0
 LOCK_BACKOFF_S = (0.1, 0.4, 1.6)
 
 #: The facts whose event parks a task in Needs attention: the comment is also its `## Needs attention` reason, a question.
-_ASKS = ("overdue", "pr_failing")
+_ASKS = ("overdue", "pr_failing", "operator_pushback")
+#: The opening of the comment `backlog-task update --pushback` records.
+_PUSHBACK = "Operator pushback:"
 
 #: The skill machine whose lens states are a wait on a verdict, and the machine of an alert whose end is `RESOLVED`.
 _SLE_DAYS, _GRACE_DAYS = 7, 2
@@ -871,7 +873,8 @@ class TaskActor:
             rearmed = agent["state"] in self._timed_lanes and tuple(
                 criteria.expect_dates(agent["description"])
             ) != self._dates.get(name, ())
-            if before == (now := _view(agent)) and not (repaired or rearmed or regated):
+            pushable = "operator_pushback" in self._waits.get(agent["state"], {})  # a comment leaves the view as it was
+            if before == (now := _view(agent)) and not (repaired or rearmed or regated or pushable):
                 return
             self._index(agent)
             if now[0] == self._feed.roles.working:  # a refused move is tried again on the changed record
@@ -1570,16 +1573,21 @@ class TaskActor:
                 return True
         return False
 
-    def _answered(self, agent: dict[str, Any], ask: str) -> bool:
-        """Whether the operator already answered this very ask: an `Operator answer` comment follows the last time the
-        task carried `ask`, so parking the task on it again would put the question to them twice. A new ask (another
-        pull request, another reason) is a new question."""
+    def _comments(self, agent: dict[str, Any]) -> list[str] | None:
+        """The texts of the task's comments, oldest first, None when the read fails."""
         try:
             comments = (self._read(agent["id"]) or {}).get("comments") or []
         except Exception as error:
             logger.warning("task actor: cannot read the comments of %s: %s", agent["id"], error)
+            return None
+        return [str(comment.get("text") or "") for comment in comments]
+
+    def _answered(self, agent: dict[str, Any], ask: str) -> bool:
+        """Whether the operator already answered this very ask: an `Operator answer` comment follows the last time the
+        task carried `ask`, so parking the task on it again would put the question to them twice. A new ask (another
+        pull request, another reason) is a new question."""
+        if (texts := self._comments(agent)) is None:
             return False
-        texts = [str(comment.get("text") or "") for comment in comments]
         asked = [index for index, text in enumerate(texts) if text.strip() == ask.strip()]
         return bool(asked) and any(_ANSWER_COMMENT.match(text) for text in texts[asked[-1] + 1 :])
 
@@ -1878,15 +1886,10 @@ class TaskActor:
     def _deploy_reopened(self, agent: dict[str, Any]) -> bool:
         """Whether the task's latest reopen from Done was a failed deploy of its merge. A read that fails leaves the pass
         unsettled, so the next one asks again."""
-        try:
-            comments = (self._read(agent["id"]) or {}).get("comments") or []
-        except Exception as error:
+        if (texts := self._comments(agent)) is None:
             self._unsettled = True
-            logger.warning("task actor: cannot read the comments of %s: %s", agent["id"], error)
             return False
-        reopens = [
-            text for comment in comments if (text := str(comment.get("text") or "")).startswith("Reopened from Done: ")
-        ]
+        reopens = [text for text in texts if text.startswith("Reopened from Done: ")]
         return bool(reopens) and _DEPLOY_FAILED.search(reopens[-1]) is not None
 
     def _pr_ready(self, agent: dict[str, Any]) -> tuple[str, str] | None:
@@ -2008,6 +2011,17 @@ class TaskActor:
             return None
         at, phase = max(steps)
         return at, f"Its session resumed the {phase} phase. Sent back to In Progress."
+
+    def _operator_pushback(self, agent: dict[str, Any]) -> tuple[str, str] | None:
+        """The words of the operator's pushback when it is the task's newest comment: the move it causes, or the
+        answer to it, is a newer comment, so a task that returns to its lane carries no old pushback."""
+        if (texts := self._comments(agent)) is None:
+            self._unsettled = True
+            return None
+        newest = texts[-1].strip() if texts else ""
+        if not newest.startswith(_PUSHBACK):
+            return None
+        return newest, newest.removeprefix(_PUSHBACK).strip()
 
     def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The dependencies once every one is done and merged, an empty tuple when the task has none, and no Start
@@ -2218,6 +2232,7 @@ class TaskActor:
         "pr_unfinished_alive": _pr_unfinished_alive,
         "pr_unfinished_dead": _pr_unfinished_dead,
         "phase_resumed": _phase_resumed,
+        "operator_pushback": _operator_pushback,
         "deps_done": _deps_done,
         "deps_done_with_pr": _deps_done_with_pr,
         "deps_unresolved": _deps_unresolved,
