@@ -1232,9 +1232,15 @@ def _importer(root: Path, retired: _Retired) -> RetiredImporter:
 
 
 def _restorer(
-    root: Path, retired: _Retired, statuses: tuple[str, ...], migrations: Mapping[str, str], guard: Guard
+    root: Path,
+    retired: _Retired,
+    statuses: tuple[str, ...],
+    migrations: Mapping[str, str],
+    guard: Guard,
+    done: str,
 ) -> TaskRestorer:
-    """A board writer that returns an archived or retired task's file to `tasks/` under its own name.
+    """A board writer that returns an archived or retired task's file to `tasks/` under its own name, and a completed
+    task's file whose status left Done, which the board holds as archived, to `tasks/` in that status.
 
     An archived task keeps the State it was archived in. When the active definition lacks it, the file lands in the
     State its `migrations` entry names, and a State with no entry refuses the restore.
@@ -1244,8 +1250,10 @@ def _restorer(
     replaced."""
 
     def restore(task: str, /) -> Written:
-        if _find(root, task) is not None:
-            return Written(False, f"{task} is already on the board")
+        if (found := _find(root, task)) is not None:
+            if found.parent.name != "completed" or lane_id(str(_split(found.read_text())[0].get("status"))) == done:
+                return Written(False, f"{task} is already on the board")
+            return _reactivated(root, task, Written(True, f"Restored task {task}"))
         if (path := _find(root, task, ("archive/tasks",))) is None:
             return retired.take(task, root / "tasks") or Written(
                 False, f"{task} has no archived task file in {root / 'archive' / 'tasks'} and is not retired"
@@ -1312,7 +1320,8 @@ def _writer(
     root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Guard = Guard(), claims: _Claims = _Claims()
 ) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
-    A move to `archived` is an archive, so the file leaves `tasks/` and `restore` finds it.
+    A move to `archived` is an archive, so the file leaves `tasks/` and `restore` finds it; a move out of Done returns a
+    completed task's file to `tasks/`.
 
     An agent's claim (a move to the working State that names its session) also records the session as the task's assignee,
     and a claim, landed or refused, is recorded on `board:claims`.
@@ -1332,6 +1341,8 @@ def _writer(
             return body
 
         written = _update(root, task, edit, guard, actor)
+        if lane_id(status) not in {roles.done, COMPLETED}:
+            written = _reactivated(root, task, written)  # a completed task moved out of Done leaves `completed/`
         if claim and written.ok:
             claims.claimed(task, actor, session)
         elif claim:
@@ -1408,13 +1419,16 @@ def _reopener(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
     return reopen
 
 
+def _completed(root: Path, task: str) -> bool:
+    return (found := _find(root, task)) is not None and found.parent.name == "completed"
+
+
 def _leaves_completed(root: Path, done: str | None) -> Callable[..., bool]:
     """Whether an edit moves a completed task out of Done: the test of `_editor`'s move out of `completed/`."""
 
     def leaves(task: str, changes: Mapping[str, Any], /, *_: Any, **__: Any) -> bool:
         lane = lane_id(str(changes.get("status") or ""))
-        found = _find(root, task)
-        return bool(lane) and lane not in {done, COMPLETED} and found is not None and found.parent.name == "completed"
+        return bool(lane) and lane not in {done, COMPLETED} and _completed(root, task)
 
     return leaves
 
@@ -1804,7 +1818,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "entered": _entered(settings.get("entered"), base, root, settings.get("entered_labels")),
             "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles), roles.done),
             "archive": _archiver(root, config.statuses, roles, gate),
-            "restore": _restorer(root, retired, config.statuses, migrations, gate),
+            "restore": _restorer(root, retired, config.statuses, migrations, gate, roles.done),
             "complete": _completer(root, config.statuses, roles, settings.get("complete_keep_labels")),
             "reopen": _reopener(root, config.statuses, roles, gate),
             "retire": _retirer(root, retired, roles),
@@ -1879,7 +1893,10 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         return land
 
     def archiving(write: MoveWriter) -> MoveWriter:
-        moves = history.recorded(write, read, actor_at=1)
+        leaves = _leaves_completed(root, made.roles.done)
+        moves = history.recorded(
+            write, read, actor_at=1, rehydrates=lambda task, status, *_: leaves(task, {"status": status})
+        )
         archives = history.recorded(
             write, read, actor_at=1, also=lambda task: _open_dependents(root, _names(root, task), made.roles.done)
         )
@@ -1900,7 +1917,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             reason_at=0,
             also=lambda task: _open_dependents(root, _names(root, task), made.roles.done),
         ),
-        "restore": history.recorded(made.restore, read),
+        "restore": history.recorded(made.restore, read, rehydrates=lambda task: _completed(root, task)),
         "reopen": history.recorded(made.reopen, read, actor_at=1, rehydrates=True),
         "complete": complete,
         "retire": history.recorded(made.retire, read),

@@ -1,7 +1,7 @@
 """The reconcile pass: recover the GitHub facts the inbox never received.
 
 `reconcile` makes one pass, which the sweeper's `github` kind runs (`GithubKind`); there is no timer of its own. A pass
-does two things, each alone so one failing does not stop the
+does each of these alone, so one failing does not stop the
 other:
 
 - It pages the App's deliveries back from a cursor and asks GitHub to redeliver each GUID the inbox lacks whose

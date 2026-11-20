@@ -26,7 +26,9 @@ from starpulse.board.adapters.lane_policy import lane_surfaces
 from starpulse.board.adapters.native import DEFAULT_PATH
 from starpulse.board.model.feed.shared import CLAIM_EXPIRIES_STATE
 from starpulse.bridge.metrics import metrics_of as bridge_metrics_of
+from starpulse.bridge.subjects import CHECKPOINT, STREAMS
 from starpulse.event_log.caught_up import CaughtUp
+from starpulse.event_log.follower_lag import metrics_of as follower_lag_metrics_of
 from starpulse.event_log.recorder_lag import metrics_of as history_lag_metrics_of
 from starpulse.event_log.wake import StopEvent
 from starpulse.pulls.adapters.inbound.delivery import (
@@ -220,6 +222,7 @@ def serve_page(
         sweeper_metrics=sweeper_metrics_of(log),
         bridge_metrics=bridge_metrics_of(log),
         history_lag_metrics=history_lag_metrics_of(log),
+        follower_lag_metrics=follower_lag_metrics_of(log, CHECKPOINT, STREAMS),
         autopilot_log=lambda: autopilot_log(log),
     )
     snapshots = Snapshots(SnapshotStore(log.engine, stored_bodies), log, stop)

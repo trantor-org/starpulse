@@ -32,7 +32,7 @@ from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.model import cells, flow, session_health, spend, steps, traces
 from starpulse.harness_telemetry.adapters.inbound.telemetry import stored_signal
 
-__all__ = ["CURSOR", "FAMILY", "VIEWS", "SignalFolds", "stamp"]
+__all__ = ["CURSOR", "FAMILY", "VIEWS", "SignalFolds", "changed", "stamp"]
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +89,34 @@ _WINDOW = text(
 ).bindparams(bindparam("views", expanding=True)).columns(
     signal_folds.c.view, signal_folds.c.harness, signal_folds.c.session, signal_folds.c.first_at, signal_folds.c.result
 )
+
+
+def changed(events: EventLog, after: int, views: Iterable[str], since: float = 0.0) -> tuple[int, dict[str, list[Any]]]:
+    """The per-session results of the `views` for each session folded past the rowid `after` and through the cursor
+    (and with a signal at or after `since`), oldest first, with the cursor to pass as `after` next time.
+
+    A session counts once its fold's rowid is at or below the cursor, which only moves past sessions that folded, so a
+    mark taken from this never skips a session that a pass is still folding; a session that grew is folded again at a
+    higher rowid and comes back. A refold under a new `stamp` lands at the same rowid, so a changed fold waits for the
+    session's next signal."""
+    through = events.setting(CURSOR) or 0
+    wanted = tuple(views)
+    query = (
+        select(signal_folds.c.view, signal_folds.c.result)
+        .where(
+            signal_folds.c.view.in_(wanted),
+            signal_folds.c.folded_through > after,
+            signal_folds.c.folded_through <= through,
+            signal_folds.c.last_at >= since,
+        )
+        .order_by(signal_folds.c.first_at, signal_folds.c.harness, signal_folds.c.session)
+    )
+    with events.engine.connect() as db:
+        rows = db.execute(query).all()
+    answer: dict[str, list[Any]] = {view: [] for view in wanted}
+    for view, result in rows:
+        answer[view].append(result)
+    return through, answer
 
 
 class SignalFolds:

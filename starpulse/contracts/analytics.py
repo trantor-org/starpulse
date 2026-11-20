@@ -12,7 +12,7 @@ StarPulse reads missed skill loads and trace clusters from the harness exports (
   a task whose title matches `title` (a regular expression, case-insensitive) or one carrying `label`. A case that
   ran a trigger without activating the skill is a missed load; a skill with no declaration is never reported.
 
-What a session's own events say about its work is read against six more keys, so the package names no instance's
+What a session's own events say about its work is read against more keys, so the package names no instance's
 tasks or skills (`GET /api/analytics/sessions`):
 
 - `injected_openings`: prefixes of a prompt's text. A prompt that opens with one is labelled `injected` (a harness
@@ -33,7 +33,7 @@ tasks or skills (`GET /api/analytics/sessions`):
 - `completion_skill` and `completion_call`: a task is complete in a session that loaded the skill and ran a shell
   command matching the call.
 
-Four more keys name the instance's vocabulary for reading its sessions and scoring its tasks:
+More keys name the instance's vocabulary for reading its sessions and scoring its tasks:
 
 - `eval_attribute`: the OTLP attribute (on a resource or a record) that stamps an eval run's purpose; none: no run is
   an eval.

@@ -22,15 +22,15 @@
     starpulse task checkpoint-ac PROJ-45 2 "pytest exits 0"
     starpulse machine show in-progress
     starpulse milestone list
-    starpulse milestone show m-106
-    starpulse milestone add "Launch" --outcome "Shipped" --spec "doc-1 - spec" --adr docs/adr/a.md
-    starpulse milestone edit m-106 --outcome "Shipped and measured"
-    starpulse milestone archive m-106
-    starpulse doc show doc-116
+    starpulse milestone show <milestone>
+    starpulse milestone add "Launch" --outcome "Shipped" --spec "<doc> - spec" --adr docs/adr/a.md
+    starpulse milestone edit <milestone> --outcome "Shipped and measured"
+    starpulse milestone archive <milestone>
+    starpulse doc show <doc>
     starpulse doc create "Plan" --type specification --folder specs --body "# Plan"
-    starpulse doc update doc-116 --body "# Plan, revised"
-    starpulse doc archive doc-116
-    starpulse doc restore doc-116 --folder specs
+    starpulse doc update <doc> --body "# Plan, revised"
+    starpulse doc archive <doc>
+    starpulse doc restore <doc> --folder specs
     starpulse runs list
     starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
@@ -38,7 +38,7 @@
     starpulse analytics liveness --stalled-minutes 5
     starpulse analytics transitions --hours 168
     starpulse analytics cells --hours 720
-    starpulse analytics estimates --hours 720 --milestone m-305
+    starpulse analytics estimates --hours 720 --milestone <milestone>
     starpulse analytics graph --hours 168
     starpulse analytics stages --hours 168
     starpulse analytics diff --hours 168

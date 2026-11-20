@@ -53,7 +53,7 @@ REPORT_RESULTS = {"passed": "pass", "failing": "failing", "pending": "pending"}
 Record = dict[str, Any]
 
 
-def _bare_detail(at: float) -> Record:
+def bare_detail(at: float) -> Record:
     """What the Board reads of a record that no read of GitHub made: nothing known of files or the merge commit."""
     stamp = iso_utc(at)
     ci = {"createdAt": stamp, "mergeable": "UNKNOWN", "merged": False, "mergedAt": None}
@@ -66,7 +66,7 @@ def _bare_detail(at: float) -> Record:
     }
 
 
-def _opened(repo: str, number: int, body: str, at: float) -> Record:
+def opened(repo: str, number: int, body: str, at: float) -> Record:
     """A record for a pull request the events open: draft, no checks, only what the task says of its body."""
     return {
         "repo": repo,
@@ -88,14 +88,14 @@ def _opened(repo: str, number: int, body: str, at: float) -> Record:
         "headRefName": "",
         "unresolvedThreads": None,
         "title": "",
-        "detail": _bare_detail(at),
+        "detail": bare_detail(at),
     }
 
 
 def _closed(state: str) -> Callable[[Record, Mapping[str, Any], float], Record]:
     def delta(record: Record, _fields: Mapping[str, Any], at: float) -> Record:
         stamp = iso_utc(at) if state == "MERGED" else None
-        detail = record["detail"] or _bare_detail(at)
+        detail = record["detail"] or bare_detail(at)
         ci = detail["ci"] | {"merged": state == "MERGED", "mergedAt": stamp}
         return {"state": state, "mergedAt": stamp, "detail": detail | {"mergedAt": stamp, "ci": ci}}
 
@@ -234,7 +234,7 @@ class RecordProjection:
                 moved.append((repo, number))  # a record the events open holds no files until GitHub is read
             if name not in _DELTAS:
                 continue
-            record = found[0] if found else _opened(repo, number, self._body(key), at)
+            record = found[0] if found else opened(repo, number, self._body(key), at)
             stamps = {"fetchedAt": max(at, record["fetchedAt"]), "updatedAt": iso_utc(at)}  # a late event never ages it
             patched = record | _DELTAS[name](record, fields, at) | stamps
             if not found or patched != record:

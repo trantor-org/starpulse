@@ -326,7 +326,7 @@ class Reader:
 
     def __call__(self, name: str) -> Reading:
         config = self._config()
-        # a worker's main takes the root config loader from `runtime` (spec doc-966, D6), so its entry imports none
+        # a worker's main takes the root config loader from `runtime`, so its entry imports none
         extra = CONTEXT_ENTRIES if name == "contexts" else ()
         code = code_of(ENTRIES[name], extra=("starpulse.runtime.config", adapter_module(config.board_type), *extra))
         return Reading(code, *_blocks(name, config, self._base))

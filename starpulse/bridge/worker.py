@@ -20,15 +20,14 @@ from starpulse.bridge.metrics import Published
 from starpulse.bridge.publisher import Publisher, Unavailable
 from starpulse.bridge.requests import serve
 from starpulse.bridge.reach import Reach
-from starpulse.bridge.subjects import STREAMS, payload, stream_subjects, subject_for, wake_subject
+from starpulse.bridge.subjects import CHECKPOINT, STREAMS, payload, stream_subjects, subject_for, wake_subject
 from starpulse.bridge.subscriber import Subscriber
 from starpulse.bridge.subscriptions import Rules
 from starpulse.event_log.event_log import Entry, EventLog, Tail
+from starpulse.event_log.follower_lag import DELIVERY, Behind
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 
 logger = logging.getLogger(__name__)
-
-CHECKPOINT = "bridge:nats"
 
 
 def _start_position(log: EventLog) -> int | None:
@@ -136,7 +135,7 @@ def start(
     delivery: Delivery | None = None
     if route:
         link = Publisher(url, stream, stream_subjects(board))
-        delivery = Delivery(JetStreamMailbox(link, stream), route)
+        delivery = Delivery(JetStreamMailbox(link, stream), route, behind=Behind(log, DELIVERY))
         link.listen(wake_subject(board), lambda: (registered(), delivery.wake()))  # `starpulse subscribe` signals it once a session's route is registered
         threading.Thread(target=_deliver, args=(delivery, link, stop, registered), name="bridge-delivery", daemon=True).start()
     wake = delivery.wake if delivery else lambda: None

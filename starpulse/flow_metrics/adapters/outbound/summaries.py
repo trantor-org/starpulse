@@ -1,6 +1,6 @@
 """What the history store keeps on write, so a read of flow health or the level need not fold every row.
 
-Three summaries follow the raw rows, updated in the transaction that writes one:
+Summaries follow the raw rows, updated in the transaction that writes one:
 
 - `starpulse_step_summaries`: per UTC day, machine, from-state and to-state, how many steps were taken and the seconds
   spent in the from-state before them. The dwell in a state is the duration of the steps leaving it.

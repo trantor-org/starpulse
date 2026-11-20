@@ -17,8 +17,10 @@ from typing import Any
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.migrate import migrate_chain
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
+from starpulse.event_log.watch import open_watch
 from starpulse.pulls.adapters.inbound.delivery import (
     Projected,
     Publisher,
@@ -27,6 +29,7 @@ from starpulse.pulls.adapters.inbound.delivery import (
     follow_refreshes,
     keep_metrics,
 )
+from starpulse.pulls.adapters.inbound import pull_deliveries
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.adapters.outbound.pull_events import JOBS_STREAM, MACHINE_STREAM, RecordProjection
 from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -135,6 +138,8 @@ def start(
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     store = PullStore(log.engine)
     announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
+    if config.github:  # a delivery writes its record whether or not a task cites the pull request
+        pull_deliveries.start(config, base, stop, store, migrate_chain, open_watch)
     # a store that holds records was built by the replays before; a new or wiped one rebuilds from the whole retention.
     # Read before any loop writes a record.
     delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=bool(store.repos()))

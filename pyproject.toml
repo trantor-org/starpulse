@@ -107,7 +107,7 @@ layers = [
     "starpulse.machine_engine | starpulse.github",
     "starpulse.contracts",
 ]
-# The two composition roots share one root config loader, which sits in `runtime` (spec doc-966, D6).
+# The two composition roots share one root config loader, which sits in `runtime`.
 ignore_imports = ["starpulse.cli.** -> starpulse.runtime.config"]
 
 [[tool.importlinter.contracts]]

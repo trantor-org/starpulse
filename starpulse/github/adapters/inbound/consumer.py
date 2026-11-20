@@ -25,7 +25,7 @@ from starpulse.github.adapters.outbound.rest import RateLimited, connect
 from starpulse.github.model.events import CONSUMER, REFUSED, cloudevent, facts_of, run_event_of
 from starpulse.github.ports.events import Entry, Ingest, Links, OpenWatch, Queue, Stop, Watch
 
-__all__ = ["consume", "open_queue", "run", "start"]
+__all__ = ["consume", "follow", "open_queue", "run", "start"]
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,13 @@ def run(
     checks: HeadChecks | None = None,
     resync: Callable[[str, bytes], None] | None = None,
 ) -> None:
-    """Consume once, then again whenever the inbox commits (`watch`) or a retry falls due, until `stop` is set.
+    """Consume once, then again whenever the inbox commits (`watch`) or a retry falls due, until `stop` is set."""
+    follow(queue, stop, watch, lambda: consume(queue, ingest, links, checks, resync), "github events")
+
+
+def follow(queue: Queue, stop: Stop, watch: Watch | None, step: Callable[[], None], name: str) -> None:
+    """Call `step` once, then again whenever the inbox commits (`watch`) or a retry of `queue` falls due, until `stop`
+    is set. `name` prefixes the log lines of the consumer.
 
     The watch fires on any write to the inbox, this consumer's own included; the pass it causes finds nothing due and
     writes nothing. A pass reads under the write lock, so it waits for a commit the watch announced before it is
@@ -116,19 +122,19 @@ def run(
     selector = selectors.DefaultSelector()
     selector.register(stopped, selectors.EVENT_READ)
     if watch is None:
-        logger.warning("github events: no file watch on the inbox; consuming every %ss", FALLBACK_S)
+        logger.warning("%s: no file watch on the inbox; consuming every %ss", name, FALLBACK_S)
     else:
         selector.register(watch.fileno(), selectors.EVENT_READ)
     try:
         while not stop.is_set():
             wait = None if watch else FALLBACK_S
             try:
-                consume(queue, ingest, links, checks, resync)
+                step()
                 due = queue.due_in()
                 if due is not None:
                     wait = due if wait is None else min(wait, due)
             except Exception:
-                logger.exception("github events: pass failed")
+                logger.exception("%s: pass failed", name)
                 wait = RETRY_S
             selector.select(wait)
             if watch is not None:

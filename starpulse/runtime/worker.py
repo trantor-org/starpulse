@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> None:
     from starpulse.runtime.config import discover, load
     from starpulse.runtime.hold import hold
 
-    # each context's bin reads its section of the root config, which only the runtime loads (spec doc-966, D6)
+    # each context's bin reads its section of the root config, which only the runtime loads
     loader = {"discover": discover, "load": load}
 
     if args.context == "contexts":

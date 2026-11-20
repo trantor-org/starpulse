@@ -12,6 +12,7 @@ class PullsConfig(Protocol):
     """The config section the Delivery worker reads; `runtime` loads the root config and hands it in, as no context imports it."""
 
     database_url: str | None
+    github: object | None
     board_type: str
     board: Mapping[str, object]
     task_actor: bool
@@ -25,7 +26,7 @@ class PullsConfig(Protocol):
 
 def pulls_fixed_blocks(config: PullsConfig) -> tuple:
     """What of `config` the worker's board and history database were built from at start; a change needs a restart."""
-    return (config.database_url, config.board_type, config.board)
+    return (config.database_url, config.board_type, config.board, config.github)
 
 
 def pulls_delivery_blocks(config: PullsConfig) -> tuple:

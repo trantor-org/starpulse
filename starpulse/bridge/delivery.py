@@ -19,6 +19,7 @@ from typing import Protocol
 from starpulse.bridge.consumers import all_consumers
 from starpulse.bridge.publisher import Publisher, Unavailable
 from starpulse.event_log.deadlines import Deadlines
+from starpulse.event_log.follower_lag import Behind
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 
 logger = logging.getLogger(__name__)
@@ -51,8 +52,10 @@ Route = Callable[[str], Handler | None]
 
 
 class Delivery:
-    def __init__(self, mailbox: Mailbox, route: Route, *, clock: Callable[[], float] = time.time) -> None:
-        self._mailbox, self._route, self._clock = mailbox, route, clock
+    def __init__(
+        self, mailbox: Mailbox, route: Route, *, clock: Callable[[], float] = time.time, behind: Behind | None = None
+    ) -> None:
+        self._mailbox, self._route, self._clock, self._behind = mailbox, route, clock, behind
         self._unrouted: set[str] = set()
         self._woken = threading.Event()
         self._deadlines = Deadlines(lambda _name: self.wake(), clock=clock)
@@ -61,6 +64,7 @@ class Delivery:
         self._woken.set()
 
     def once(self) -> None:
+        stuck = False
         for name, ack_wait in self._mailbox.waiting().items():
             handler = self._route(name)
             if handler is None:
@@ -79,7 +83,12 @@ class Delivery:
                 raise
             except Exception:  # noqa: BLE001 — one session's failure never stops delivery to the rest
                 logger.exception("delivery: session %s failed", name)
+            stuck = True
             self._deadlines.arm(name, self._clock() + ack_wait)
+        if self._behind and stuck:
+            self._behind.since(self._clock())
+        elif self._behind:
+            self._behind.caught_up()
 
     def run(self, stop: StopEvent) -> None:
         """Pass over the consumers each time woken, and once at start, until `stop` is set; a pass that failed (the
@@ -96,6 +105,8 @@ class Delivery:
                 self.once()
             except Unavailable as exc:
                 logger.warning("delivery: the NATS server did not answer: %s", exc)
+                if self._behind:
+                    self._behind.since(self._clock())
             except Exception:  # noqa: BLE001 — a failed pass never ends delivery
                 logger.exception("delivery: a pass failed")
             else:
