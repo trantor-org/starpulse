@@ -480,8 +480,8 @@ either unset the delivery half fails each pass, logged and naming the variable; 
 
 The pass keeps `starpulse_github_redeliveries_total`, `starpulse_github_reconcile_rows_total{kind}` and
 `starpulse_github_reconcile_cursor_lag_seconds{cursor}` (`deliveries`, `pull-rows:<repository>`) in its process, as
-`Reconciled.exposition()`; the sweeper worker keeps them beside its own counts for `/metrics`. The alert pages on
-inserted rows only, since a redelivery is the recovery path working.
+`Reconciled.exposition()`; the sweeper worker keeps them beside its own counts for `/metrics`. The sweeper counts inserted rows only as the kind's
+corrections, since a redelivery is GitHub pushing the delivery again, the recovery path working.
 
 ## Report runs from any scheduler
 

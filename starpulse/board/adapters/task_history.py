@@ -96,7 +96,7 @@ def seed(record: Record, at: float) -> dict[str, Any]:
     for key, name in _OWN.items():
         seed[name] = list(record.get(key) or []) if key in _LISTS else record.get(key) or ""
     seed["meta"] = {key: record[key] for key in _META if record.get(key)}
-    seed["assignee"] = record.get("session") or ""
+    seed["assignee"] = record.get("assignee") or ""
     seed["criteria"] = _fold_criteria(record)
     seed["comments"] = [
         {"at": at, "actor": item.get("author", ""), "text": item.get("text", "")} for item in _comments(record)
@@ -110,7 +110,7 @@ def _held(store: EventStore, task: str, before: Record) -> Record:
     row = replay(store.read(KIND, task))
     filed = seed(before, 0.0)
     own = {key: row[name] for key, name in _OWN.items() if row[name] != filed[name]}
-    return {**before, **own, "source": row["meta"].get("source", "")}
+    return {**before, **own, "assignee": row["assignee"], "source": row["meta"].get("source", "")}
 
 
 def _field_changes(before: Record, after: Record) -> dict[str, Any]:
@@ -305,6 +305,15 @@ class TaskHistory:
         """Append one `FieldsEdited` of `payload` (its `changes` and `meta`) to `task`'s History, by the operator."""
         if self._store is not None:
             self._store.append(KIND, task, self._store.head(KIND, task), [self._new("FieldsEdited", payload, OPERATOR)])
+
+    def settle(self, task: str, archived: bool) -> bool:
+        """Append an `Archived`, or a `Rehydrated`, to `task`'s History when it replays the other way; whether it did."""
+        store = self._store
+        head = store.head(KIND, task) if store else 0
+        if store is None or not head or replay(store.read(KIND, task))["archived"] == archived:
+            return False
+        store.append(KIND, task, head, [self._new("Archived" if archived else "Rehydrated", {}, OPERATOR)])
+        return True
 
     def _append(
         self,

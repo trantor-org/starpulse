@@ -32,8 +32,8 @@ class Reconciled:
         self._corrected = 0
 
     def redelivered(self) -> None:
+        """A redelivery was asked: the webhook a listener outage refused, pushed again, so no state is corrected."""
         self._redeliveries.inc()
-        self._corrected += 1
 
     def inserted(self, kind: str) -> None:
         self._rows.labels(kind).inc()
@@ -44,7 +44,7 @@ class Reconciled:
         self._sampled += 1
 
     def take(self) -> tuple[int, int]:
-        """The lists read and the facts recovered (a redelivery asked, a row inserted) since the last `take`."""
+        """The lists read and the rows inserted since the last `take`; a redelivery asked is GitHub pushing the delivery again, not a correction."""
         taken = (self._sampled, self._corrected)
         self._sampled = self._corrected = 0
         return taken
