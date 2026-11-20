@@ -70,7 +70,7 @@ from starpulse.event_log import events as machine_events
 from starpulse.event_log.deadlines import Deadlines
 from starpulse.event_log.wake import StopEvent, save_on_change
 from starpulse.pulls.adapters.inbound.unblock import PinGate
-from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record
+from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record, uncited
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
 
 if TYPE_CHECKING:  # annotation only: the pull store and the event log open the database stack
@@ -438,8 +438,8 @@ class TaskActor:
         self._own_send_backs: set[str] = set()
         #: The record each task's release was last refused on by the board, so a repaired record is tried again.
         self._lint_held: dict[str, tuple[Any, ...]] = {}
-        #: The refusal of a working task's Review move its holder was last told, so a standing refusal wakes it once.
-        self._review_refused: dict[str, str] = {}
+        #: The notes of a working task's Review refusals its holder was told, so a standing refusal wakes it once.
+        self._review_refused: dict[str, set[str]] = {}
         self._metrics = threading.Lock()
         self._refusals = 0
         #: How many writes landed within each bound of `BUCKETS_S`, then how many in all, and their seconds summed.
@@ -1267,7 +1267,7 @@ class TaskActor:
         ended, as the session that settled may never settle again, unless its holder is at work by then (a lens's end woke it): that
         holder settles anew. After `_STALLED_RESUMES` resumes with no progress (a phase or submachine event, a
         new head), the next one is first `escalate`d one profile and flagged on `RESUME_STALLED_METRIC`. An escalate that raises sends no resume and moves the task to
-        Needs attention at once; a flagged task whose session settles again with no progress moves there too, except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A hook that
+        Needs attention at once; a flagged task whose session settles again with no progress moves there too, except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A task citing none of its own while an open pull request names it (`uncited`) moves to Needs attention at once, its record being the defect. A hook that
         fails found the holder at work or the session start refused: the next settle tries again."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
@@ -1295,6 +1295,15 @@ class TaskActor:
             ended = not agent["prs"]
             if not ended:
                 own = self._own_prs(agent)
+                if not own and (found := uncited(self._store, agent)):
+                    self._attend(
+                        name,
+                        f"it cites no pull request of its own, yet {found[0]} is open and names it",
+                        "has an uncited pull request",
+                        "Which?",
+                        ("cite the pull request on the task", "rescope the task"),
+                    )
+                    return
                 if own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
                     return
             items = agent.get("criteria", ())
@@ -1415,7 +1424,7 @@ class TaskActor:
                     name,
                     f"it settled idle after {_NUDGES} nudges with no criterion checked or struck through",
                     "has open criteria",
-                    f"Open: {listing}. Which will you resolve, strike through or rescope?",
+                    ask=f"Open: {listing}. Which will you resolve, strike through or rescope?",
                 )
                 return
         try:
@@ -1655,24 +1664,36 @@ class TaskActor:
         self._wake_holder(name, "DONE_REFUSED", reason)
 
     def _hold_review(self, name: str, refusal: str) -> None:
-        """Comment the refusal of a working task's move to Review on the task and wake its holder with it, once while
-        the refusal stands: the move is tried again when the task's record or its pull request changes, so without the
-        note and the wake a pull request with green checks sits In Progress with the reason only in the service log."""
-        told = self._review_refused.get(name) == refusal
+        """Comment the refusal of a working task's move to Review on the task and wake its holder with it, once per
+        refusal and pull request head: the move is tried again when the task's record or its pull request changes, so
+        without the note and the wake a pull request with green checks sits In Progress with the reason only in the
+        service log. The note names the head, so a restart, a lane round trip or a refusal that returns does not
+        repeat what the task's comments already hold."""
+        agent = self._feed.task(name, lean=True)
         reason = refusal.rstrip(".")
-        if not told:
-            written = self._apply(
-                name,
-                {},
-                f"Review refused: {reason}. The task actor tries the move again when the task or its pull request changes; do not retry it",
-            )
-            if not written.ok:
-                logger.warning("task actor: the Review refusal of %s was not commented: %s", name, written.output)
-        self._lint_held[name] = _lint_record(self._feed.task(name, lean=True))  # an edit that repairs it is a change
-        if told:
+        heads = ", ".join(sorted(head[:12] for head in self._heads(agent).values()))
+        note = (
+            f"Review refused: {reason}. The task actor tries the move again when the task or its pull request changes; "
+            f"do not retry it{f' (head {heads})' if heads else ''}"
+        )
+        self._lint_held[name] = _lint_record(agent)  # an edit that repairs it is a change
+        told = self._review_refused.setdefault(name, set())
+        if note in told or note in self._comment_texts(name):
+            told.add(note)
             return
-        self._review_refused[name] = refusal
+        written = self._apply(name, {}, note)
+        if not written.ok:
+            logger.warning("task actor: the Review refusal of %s was not commented: %s", name, written.output)
+        told.add(note)
         self._wake_holder(name, "REVIEW_REFUSED", reason)
+
+    def _comment_texts(self, name: str) -> set[str]:
+        try:
+            comments = (self._read(name) or {}).get("comments") or []
+        except Exception as error:  # an unread board comments again, which a repeat costs less than a lost refusal
+            logger.warning("task actor: cannot read the comments of %s: %s", name, error)
+            return set()
+        return {str(comment.get("text") or "").strip() for comment in comments}
 
     def _wake_holder(self, name: str, event: str, reason: str) -> None:
         """Publish `event` on the task's topic, which the holder's consumer carries (`task.<id>.review_refused`)."""

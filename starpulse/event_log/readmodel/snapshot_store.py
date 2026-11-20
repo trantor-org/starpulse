@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import Engine, delete, func, insert, select, update
 
+from starpulse.event_log.event_log import unpooled_engine
 from starpulse.event_log.readmodel.tables import snapshot_deltas, snapshots
 
 #: The deltas kept behind the stored sequence, so a page that read the snapshot a moment ago still replays what followed;
@@ -19,13 +20,14 @@ class SnapshotStore:
     def __init__(self, engine: Engine, encode: Callable[[Any, dict], Mapping[str, bytes]], keep: int = KEEP) -> None:
         self._engine, self._encode, self.keep = engine, encode, keep
         self._held: dict = {}
+        self._writer = unpooled_engine(engine)
 
     def save(self, changes: Sequence[tuple[str, dict]], snapshot: Any | None, at: float, current: bool = True) -> int:
         """Append `changes` as deltas, store `snapshot` with the sequence of the last one, and prune the deltas behind the
         window; all in one transaction. Returns that sequence. With no `snapshot` the stored one keeps its body, and
         moves to that sequence only when `current` (it already reflects the changes)."""
         bodies = None if snapshot is None else self._encode(snapshot, self._held)
-        with self._engine.begin() as db:
+        with self._writer.begin() as db:
             head = db.execute(select(func.max(snapshot_deltas.c.seq))).scalar() or 0
             if changes:
                 db.execute(

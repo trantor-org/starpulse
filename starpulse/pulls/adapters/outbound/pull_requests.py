@@ -42,12 +42,15 @@ def pull_record(store: PullStore, url: str) -> dict[str, Any] | None:
     return records[0] if records else None
 
 
+def _named_tasks(record: dict[str, Any]) -> set[str]:
+    return set(_TASK_ID.findall(f"{record.get('headRefName', '')} {record.get('title', '')}".lower()))
+
+
 def delivers(store: PullStore, url: str, task_id: str) -> bool:
     """Whether the pull request at `url` can be `task_id`'s delivery: one whose branch or title names tasks and not this
     one is another task's, a reference only."""
     found = pull_record(store, url)
-    text = f"{found.get('headRefName', '')} {found.get('title', '')}" if found else ""
-    named = set(_TASK_ID.findall(text.lower()))
+    named = _named_tasks(found) if found else set()
     return not named or task_id.lower() in named
 
 
@@ -55,6 +58,16 @@ def own_prs(store: PullStore, agent: dict[str, Any]) -> list[str]:
     """The cited pull requests that are not another task's delivery: one whose branch or title names tasks and not
     this one is a reference, never proof of this task's work."""
     return [url for url in agent["prs"] if delivers(store, url, agent["id"])]
+
+
+def uncited(store: PullStore, agent: dict[str, Any]) -> list[str]:
+    """The open pull requests whose branch or title names the task and that it does not cite."""
+    return [
+        url
+        for record in store.find(state="OPEN", bodies=False)
+        if agent["id"].lower() in _named_tasks(record)
+        and (url := f"https://github.com/{record['repo']}/pull/{record['number']}") not in agent["prs"]
+    ]
 
 
 def landed(store: PullStore, record: dict[str, Any]) -> bool:

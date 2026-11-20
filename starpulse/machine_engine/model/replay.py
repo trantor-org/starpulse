@@ -88,6 +88,10 @@ class EventJudge:
             return None
         return " | ".join(sorted(here))
 
+    def states(self, key: str) -> frozenset[str]:
+        """The states `key` may be in; empty for a key no event reached."""
+        return self._where.get(key, frozenset())
+
     def held(self) -> dict[str, list[str]]:
         """The states each key judged so far may be in, as plain data `restore` takes back."""
         return {key: sorted(states) for key, states in self._where.items()}

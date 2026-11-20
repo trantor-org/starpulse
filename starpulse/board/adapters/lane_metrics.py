@@ -3,7 +3,7 @@
 import logging
 import threading
 import time
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from typing import Any
 
 from starpulse.board.adapters.board_files import BoardFiles
@@ -28,10 +28,11 @@ def start(
     stop: StopEvent,
     work: Collection[str] = (),
     vectors: Callable[[], tuple[int, int]] | None = None,
+    sessions: Mapping[str, dict] = {},
 ) -> None:
     """Run the unattributed-lane count and the conformance monitor (`work`: the machines whose events are work) until
     `stop`, register the `board-files` pass over `feed` and `board` for the sweeper (`vectors` embeds the tasks that
-    hold none), and keep their exposition in `log` once at start and after each entry or pass that changed it, the
+    hold none, `sessions` the harness machine the monitor judges beside the board's), and keep their exposition in `log` once at start and after each entry or pass that changed it, the
     monitor's entries once it has read the log it found and every `PROGRESS_S` before, since a write per replayed
     entry outpaced no replay. The
     stalled gauge ages with no entry, so `log` keeps its deadlines and `metrics_of` counts them at scrape."""
@@ -43,6 +44,7 @@ def start(
         open_tasks=feed.open_tasks,
         review=feed.roles.review,
         work=work,
+        sessions=sessions,
     )
     files = BoardFiles(feed, board, vectors=vectors)
     written: tuple[str, dict[str, Any]] | None = None
