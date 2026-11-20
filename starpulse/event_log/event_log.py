@@ -195,8 +195,8 @@ def bound_wal(engine: Engine) -> None:
     `WAL_SIZE_LIMIT`.
 
     `journal_size_limit` shrinks the file only when a commit restarts the log, and SQLite restarts it only at a moment
-    no reader is on any of its frames. Readers that always overlap (the contexts worker's, 2026-11-19) leave no such
-    moment, so the file grew to 2.5 GB while every checkpoint backfilled it. A `TRUNCATE` checkpoint holds writers off
+    no reader is on any of its frames. Readers that always overlap (the contexts worker's) leave no such
+    moment, so the file grows without bound while every checkpoint backfills it. A `TRUNCATE` checkpoint holds writers off
     until the readers on old frames end, and readers that begin meanwhile read the backfilled database file, so it
     ends the overlap; it gives up after `_WAL_TRUNCATE_WAIT_MS` and is not tried again for `_WAL_TRUNCATE_RETRY_S`.
     """
@@ -786,7 +786,7 @@ def store_engine(url: str) -> Engine:
 def unpooled_engine(engine: Engine) -> Engine:
     """An engine on `engine`'s database that opens a connection for each use and closes it after. sqlite keeps the last
     bound parameter of every cached statement until that statement runs again on its connection, so a writer of large
-    values on pooled connections parks a copy of one on each of them (TASK-15710). An in-memory database is one
+    values on pooled connections parks a copy of one on each of them. An in-memory database is one
     connection already: `engine` itself."""
     if engine.url.database in (None, "", ":memory:"):
         return engine

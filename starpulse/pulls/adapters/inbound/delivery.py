@@ -80,7 +80,7 @@ class Projected:
         """Take the kept projection; none kept yet, or one unreadable, leaves the feed as it was. Applies run one at a
         time, so one that read an older projection never sets the feed after one that read a newer.
 
-        A projection kept before a pull carried its `repo` (TASK-7845) is unreadable: its pulls fail the snapshot
+        A projection kept before a pull carried its `repo` is unreadable: its pulls fail the snapshot
         contract, so every `/api/snapshot` would 500 until the worker keeps a new one.
         """
         with self._applying:

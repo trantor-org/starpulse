@@ -65,4 +65,5 @@ class Services:
     sweeper_metrics: Callable[[], str] | None = None
     bridge_metrics: Callable[[], str] | None = None
     history_lag_metrics: Callable[[], str] | None = None
+    follower_lag_metrics: Callable[[], str] | None = None
     autopilot_log: Callable[[], dict[str, Any]] | None = None

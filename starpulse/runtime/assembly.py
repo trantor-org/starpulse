@@ -62,7 +62,7 @@ def _pull_store(engine: Engine) -> PullStore:
 def own_pull_merged(log: EventLog, agent: Mapping[str, Any]) -> bool:
     """Whether a pull request `agent` owns has merged; the scheduler reads it through `runtime`, as no context imports another.
 
-    Asked of every Ready task on every tick, so it reads only the rows of the pull requests `agent` cites (TASK-9620)."""
+    Asked of every Ready task on every tick, so it reads only the rows of the pull requests `agent` cites."""
     from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, merged  # only the scheduler worker needs them
 
     if not agent["prs"]:

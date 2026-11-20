@@ -2036,14 +2036,32 @@ class TaskActor:
         entered its lane: the session going back to work is the event that sends the task back."""
         entered = self._lane_entered.get(agent["id"], ("", 0.0))[1]
         steps = [
-            (placed["active"], phase)
+            (at, phase)
             for phase in sorted({phase for sequence in self._sequences.values() for phase in sequence})
-            if (placed := self._feed.machine_task(phase, agent["id"])) and placed["active"] > entered
+            if (placed := self._feed.machine_task(phase, agent["id"]))
+            and (at := self._resumed_at(phase, placed, entered)) is not None
         ]
         if not steps:
             return None
         at, phase = max(steps)
         return at, f"Its session resumed the {phase} phase. Sent back to In Progress."
+
+    @staticmethod
+    def _resumed_at(phase: str, placed: dict[str, Any], entered: float) -> float | None:
+        # A delivery run that began before the task entered its lane is the holder finishing the run that put it there,
+        # so its steps never count: a run ends with its `DELIVER_FINISHED`, and only one that begins after `entered` is
+        # work resuming.
+        if phase != "deliver":
+            return placed["active"] if placed["active"] > entered else None
+        began: float | None = None
+        newest = None
+        for step in placed["trail"]:
+            began = step["at"] if began is None else began
+            if began > entered:
+                newest = step["at"]
+            if step["event"] == "DELIVER_FINISHED":
+                began = None
+        return newest
 
     def _operator_pushback(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The words of the operator's pushback when it is the task's newest comment: the move it causes, or the

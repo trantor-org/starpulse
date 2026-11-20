@@ -54,6 +54,8 @@ assignee changes and new tasks to them in Python, reads a task's full record (pr
 criteria, plan, notes and definition of done) back for the task view, applies an edit to a task's file in one write,
 and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments; a restore moves that
 file back to `tasks/` unchanged and never replaces a file there.
+A move, edit or reopen out of Done returns a completed task's file to `tasks/`, and a restore does the same for a
+`completed/` file whose status already left Done, which the board would otherwise hold as archived.
 A retire takes a finished task's file (a Done task in `tasks/`, or any in `completed/` or `archive/tasks/`) off the
 board into the history store's `starpulse_retired_tasks` table (migration 0017), one row per front matter `id` with
 the file's name and text byte for byte, which event-log pruning never touches; a board keeps none until it starts,

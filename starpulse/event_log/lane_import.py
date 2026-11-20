@@ -2,7 +2,7 @@
 
 A line carries the fields of a `board:lanes` entry (`lane_events`) and the `event_id` that makes it land once:
 
-    {"event_id": "ff971697-...", "task": "TASK-1095", "lane": "Done", "time": 1790289615.0}
+    {"event_id": "ff971697-...", "task": "PROJ-1095", "lane": "Done", "time": 1790289615.0}
 
 `lane` is the board's status as its tracker spelled it and `time` the epoch second the task entered it. Blank lines are
 skipped, and a field beyond these four is ignored, so an exporter may carry its own. `HistoryStore.import_lanes` folds

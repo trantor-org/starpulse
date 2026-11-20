@@ -69,10 +69,13 @@ def follow_holder_idle(
     its holder settled or died while the actor was down and was not started again since. The cost is one indexed lookup per working task, never a read of
     the stream. Nothing is called before `ready`, and the live tail's rows wait for it."""
     from starpulse.event_log.event_log import Tail  # the server imports no database stack until a store opens
+    from starpulse.event_log.follower_lag import HOLDER_IDLE, Behind
 
     lanes: dict[str, str] = {}
+    behind = Behind(log, HOLDER_IDLE)
 
     def handle(entry: Entry) -> None:
+        behind.handled(entry.at)
         if entry.stream == LANE_STREAM:
             task, lane = entry.fields.get("task", ""), entry.fields.get("lane", "")
             if lane == WORKING and lanes.get(task) in PARKED:
@@ -84,6 +87,7 @@ def follow_holder_idle(
             ended(task)
 
     def run() -> None:
+        behind.since(started)  # trailing from the call until the lookup below is done
         stop.listen(ready.set)  # a stop wakes the wait below, which then sees it
         if not stop.is_set():
             ready.wait()
@@ -98,6 +102,7 @@ def follow_holder_idle(
                 settled(task)
             for task in [task for task in tasks if newest[task] == ENDED]:
                 ended(task)
+            behind.caught_up()
             tail.run(handle, stop)
 
         log.run_on_wake(stop, follow, "holder idle: cannot read the settles while the actor was down")

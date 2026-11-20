@@ -306,7 +306,7 @@ server with no contract to read answers `{ok: true, checks: []}`.
 each component that is not ready.
 
 `rehearse --config <c> --database-url <copy>` is the dress rehearsal of a release: it migrates the COPY, starts
-`serve` on it at a loopback ephemeral port, polls `/api/ready` and stops the server. It exits 0 when the server was
+`serve` on it on a free loopback port below the ephemeral range, polls `/api/ready` and stops the server. It exits 0 when the server was
 ready within `--budget` seconds (default 120) and 1 otherwise, printing the unready components and the end of the
 server's log. The server runs with `STARPULSE_REHEARSE` set: the config drops its TLS, telemetry, session start,
 tokens, take-over command, producers and `[bridge]` (no `nats` child) and polls no pull requests, only the `board`, `flow-metrics` and `signal-folds` contexts run

@@ -1,7 +1,7 @@
 """`starpulse rehearse --config FILE --database-url URL`: start the real `serve` on a copy of a store and report whether it got ready.
 
 It migrates the store `--database-url` names through the config (`starpulse migrate`), starts `serve` from the same
-config on a loopback port the kernel picks, with TLS, telemetry, adapters, producers and every outbound call off and
+config on a free loopback port below the kernel's ephemeral range, with TLS, telemetry, adapters, producers and every outbound call off and
 pruned rows archived in a scratch directory (`config.rehearsal`), polls `GET /api/ready` until it answers 200 or
 `--budget` seconds pass, and stops the server. It exits 0 only when the server got ready, and otherwise 1 naming
 what did not. The store must be a copy: the rehearsal migrates it and `serve` writes to it.
@@ -10,6 +10,7 @@ what did not. The store must be a copy: the rehearsal migrates it and `serve` wr
 import argparse
 import json
 import os
+import random
 import signal
 import socket
 import subprocess
@@ -51,9 +52,15 @@ def store_url(database_url: str) -> str:
 
 
 def free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
+    """A loopback port below the kernel's ephemeral range, which another process's `bind(0)` can take before `serve` binds."""
+    while True:
+        port = random.randrange(20_000, 32_768)
+        with socket.socket() as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
 
 
 def read_ready(port: int) -> tuple[int | None, dict | None]:

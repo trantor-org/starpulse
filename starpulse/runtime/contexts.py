@@ -2,7 +2,7 @@
 
 Each context (Board, Delivery, Scheduler, Runs, Flow Metrics, Search and the run Adapters) keeps the `start` its own
 `starpulse worker <context>` process runs; here each runs on a thread named `ctx-<name>` over one event log, one board
-and one read-model fold, where `serve` today supervises a process for each (spec doc-1054, D1 and D2).
+and one read-model fold, where `serve` today supervises a process for each.
 
 A context whose `start` raises is stopped, waits a growing backoff and starts again on its own thread, while every other
 context's thread stays. A context that hangs, or whose loop dies after `start` returned, is not restarted. `SIGTERM`
