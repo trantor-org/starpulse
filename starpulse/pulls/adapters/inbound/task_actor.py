@@ -1353,7 +1353,7 @@ class TaskActor:
                 self._awaited.add(name)
                 self._revive_held.add(name)
                 return
-            key = tuple(resolved(item) for item in items) if opened else self._progress(agent)
+            key = (tuple(resolved(item) for item in items), self._progress(agent)) if opened else self._progress(agent)
             before, count = self._resumes.get(name, (key, 0))
             count = count if before == key else 0
             if count >= _NUDGES:
@@ -1513,10 +1513,11 @@ class TaskActor:
         have stepped onto it)."""
         if (self._feed.machine_task(IN_PROGRESS, name) or {}).get("state") == "deliver":
             return True
+        since = (self._phase(BOARD, name) or {}).get("since", 0.0)
         held = [
             (link, placed)
             for link in self._links.get(IN_PROGRESS, ())
-            if (placed := self._feed.machine_task(link["machine"], name))
+            if (placed := self._feed.machine_task(link["machine"], name)) and placed["active"] >= since
         ]
         return bool(held) and max(held, key=lambda pair: pair[1]["active"])[0]["state"] == "deliver"
 
@@ -2035,14 +2036,16 @@ class TaskActor:
 
     def _operator_pushback(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The words of the operator's pushback when it is the task's newest comment: the move it causes, or the
-        answer to it, is a newer comment, so a task that returns to its lane carries no old pushback."""
+        answer to it, is a newer comment, so a task that returns to its lane carries no old pushback. Words that
+        ask nothing get the question Needs attention requires."""
         if (texts := self._comments(agent)) is None:
             self._unsettled = True
             return None
         newest = texts[-1].strip() if texts else ""
         if not newest.startswith(_PUSHBACK):
             return None
-        return newest, newest.removeprefix(_PUSHBACK).strip()
+        words = newest.removeprefix(_PUSHBACK).strip()
+        return newest, words if "?" in words else f"{words}\n\nWhat change does it call for?"
 
     def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The dependencies once every one is done and merged, an empty tuple when the task has none, and no Start

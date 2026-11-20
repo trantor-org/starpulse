@@ -272,6 +272,7 @@ class PullSync:
             return
         self._attempts[repo, number] = tried + 1
         self._retrying.append((self._clock() + self._retry_delays[tried], repo, number))
+        self._wake.set()  # the sweeper's thread may call this while the reader waits on no deadline
 
     def next_retry_in(self) -> float | None:
         """Seconds until the earliest failed read is asked again; none when no read waits."""
