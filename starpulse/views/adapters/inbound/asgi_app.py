@@ -36,11 +36,10 @@ from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.api import metrics
-from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, WORKERS, target
+from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, WORKERS
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
 from starpulse.views.adapters.inbound.compression import Gzip
-from starpulse.views.adapters.inbound.gate_request import GateRequest
 from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.adapters.outbound import request_durations
 from starpulse.views.model.encoding import encode, event
@@ -134,33 +133,6 @@ class _Build(StaticFiles):
         if scope["path"].startswith(_ASSETS):
             response.headers["cache-control"] = _KEPT
         return response
-
-
-class _Gated:
-    """Answers or admits each request before any route sees it, whatever its method and path."""
-
-    def __init__(self, app: ASGIApp, gate: Callable[[GateRequest], bool], workers: CapacityLimiter) -> None:
-        self.app, self._gate, self._workers = app, gate, workers
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            refused = await to_thread.run_sync(
-                self._refusal, Incoming(scope), abandon_on_cancel=True, limiter=scope.get(WORKERS, self._workers)
-            )
-            if refused is not None:
-                await refused(scope, receive, send)
-                return
-        await self.app(scope, receive, send)
-
-    def _refusal(self, request: Incoming) -> Reply | None:
-        """The gate's answer when it refuses the request, or None when it admits it."""
-        query = request.url.query
-        asked = GateRequest(request.method, target(request) + (f"?{query}" if query else ""), request.headers)
-        if self._gate(asked):
-            return None
-        answer = Reply(asked.wfile.getvalue(), asked.status)
-        answer.raw_headers = [(name.lower().encode("latin-1"), value.encode("latin-1")) for name, value in asked.sent]
-        return answer
 
 
 class _CaughtUp:
@@ -356,8 +328,7 @@ class _Observed:
 
 class PageApp:
     """The ASGI app of the page: `api` are the routes under `/api` (one module a resource, mounted together), `metrics`
-    the route beside them and the rest is the build's static files. `gate`, when set, answers or admits each request
-    before any route sees it."""
+    the route beside them and the rest is the build's static files."""
 
     def __init__(
         self,
@@ -365,7 +336,6 @@ class PageApp:
         metrics: list[ApiRoute],
         static: Path,
         flows: Collection[str],
-        gate: Callable[[GateRequest], bool] | None = None,
         grpc: ASGIApp | None = None,
         seams: Api | None = None,
         caught_up: CaughtUp | None = None,
@@ -396,12 +366,11 @@ class PageApp:
             Route("/flow/{flow}", self._flow, methods=["GET"]),
             Route("/{path:served}", self._file, methods=["GET"]),
         ]
-        gated = [] if gate is None else [Middleware(_Gated, gate=gate, workers=self._workers)]
         admitted = Middleware(
             _Admitted, workers=self._workers, reserve=self._reserve, streams=self._streams, inflight=self._inflight
         )
         fresh = [] if caught_up is None else [Middleware(_CaughtUp, caught_up=caught_up, workers=self._workers)]
-        self._app = Starlette(routes=table, middleware=[Middleware(Gzip), admitted, *gated, *fresh])
+        self._app = Starlette(routes=table, middleware=[Middleware(Gzip), admitted, *fresh])
         self._app.state.api = seams  # what the read endpoints take their seams from
         self._app.state.workers = self._workers  # and the threads they run on
         self._app.state.pump = self.pump  # and a stream writes its frames through this
@@ -436,7 +405,7 @@ class PageApp:
         self, scope: MutableMapping[str, Any], receive: Any, send: Any, started: Callable[[], None]
     ) -> None:
         if self._grpc is not None and scope["path"].startswith(CLOUDEVENTS_GRPC_PATH):
-            await self._grpc(scope, receive, send)  # its own token, so no gate; a gRPC body is read by the handler
+            await self._grpc(scope, receive, send)  # its own token; a gRPC body is read by the handler
             return
         body_done, dropping = False, None
 
@@ -537,7 +506,6 @@ def page_app(
     board: Board,
     services: Services = Services(),
     clock: Callable[[], float] = time.time,
-    gate: Callable[[GateRequest], bool] | None = None,
     caught_up: CaughtUp | None = None,
 ) -> PageApp:
     """The Page API over `feed`, serving the snapshot and deltas the Board writer stored (`snapshots`)."""
@@ -559,4 +527,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), gate, grpc, api, caught_up)
+    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), grpc, api, caught_up)

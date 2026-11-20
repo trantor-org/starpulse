@@ -51,7 +51,6 @@ from starpulse.runtime.placed import assembled as placed_assembled
 from starpulse.runtime.store_migrate import maintain
 from starpulse.runtime.stored_snapshot import stored_snapshots
 from starpulse.views.adapters.inbound.asgi_app import page_app
-from starpulse.views.adapters.inbound.gate_request import GateRequest
 from starpulse.views.adapters.inbound.page_server import PageServer
 from starpulse.views.ports.services import Services
 
@@ -207,7 +206,6 @@ def serve(
     history: HistoryStore | None = None,
     window: HistoryWindow | None = None,
     clock: Callable[[], float] = time.time,
-    gate: Callable[[GateRequest], bool] | None = None,
     port: int = 0,
     tls: tuple[Path, Path] | None = None,
     migrated: bool = False,
@@ -243,7 +241,6 @@ def serve(
             board,
             Services(**services),
             clock,
-            gate,
         )
         server = PageServer(
             app, ("127.0.0.1", port), tls=tls, stopping=lambda: snapshots.announce("restarting", {"at": time.time()})

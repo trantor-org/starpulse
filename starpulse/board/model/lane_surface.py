@@ -29,7 +29,6 @@ _NAMES = {
     "PARK_ON_CRITERIA": "board_park",
     "PARK_ON_TASK": "board_park",
     "DEFER": "board_defer",
-    "FINALIZE": "board_finalize",
 }
 _TEXT = {"type": "string", "pattern": r"\S"}
 _SCHEMAS: dict[str, dict[str, Any]] = {
