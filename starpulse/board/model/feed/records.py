@@ -96,6 +96,9 @@ class RecordsMixin:
             write_steps.step("feed")
             written = write()
             if written.ok and written.lane:
-                self.record_written(task or written.output, written.lane, written.at or time.time(), who)
+                at = written.at or time.time()
+                self.record_written(task or written.output, written.lane, at, who)
+                for moved, lane in written.moves:
+                    self.record_written(moved, lane, at, who)
                 write_steps.step("record")
         return written

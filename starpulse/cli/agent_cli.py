@@ -1544,7 +1544,8 @@ def _parser() -> argparse.ArgumentParser:
         (
             "spend",
             "each task's tokens by phase (claim, implement, qa, deliver, review fix): weighted tokens, cache reads, peak "
-            "context, compactions and models, with the task's total against its kind and size norm",
+            "context, compactions and models, with the task's total against its kind, size and profile norm "
+            "(`norm_profile` names the cell, `mixed` when the profile had too few tasks)",
             _spend,
             SPEND_KEYS,
         ),

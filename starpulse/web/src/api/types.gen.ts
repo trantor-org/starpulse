@@ -2181,19 +2181,11 @@ export interface ExitTool {
   [k: string]: unknown;
 }
 /**
- * A machine of `GET /api/machines`: whole, with its derivation.
+ * A machine of `GET /api/machines`: its name and when it last moved, which the page pages by; the snapshot holds the rest.
  */
 export interface MachineRow {
-  agents: RawTask[];
-  chain: string[];
-  depth: number;
   last: number | null;
-  machine: Machine;
   name: string;
-  nested: string[];
-  parent: string | null;
-  stuck: Stuck | null;
-  ties: Tie[];
   [k: string]: unknown;
 }
 /**
@@ -3135,6 +3127,10 @@ export interface SpendPhase {
   last_at: number;
   models: string[];
   /**
+   * The `profile` of the cell `phase_norm_wte` came from, or `mixed` for the kind and size cell pooling every profile; null when there is no norm.
+   */
+  norm_profile: string | null;
+  /**
    * The sum of `phase_norm_wte` over the task's phases; null when any is null.
    */
   norm_wte: number | null;
@@ -3152,7 +3148,7 @@ export interface SpendPhase {
    */
   phase_above_norm: boolean;
   /**
-   * The median `wte` of this phase over the tasks of the task's kind and size that ran it; null under five.
+   * The median `wte` of this phase over the tasks of the task's kind, size and `profile` that ran it, or of its kind and size when that profile has under five; null under five.
    */
   phase_norm_wte: number | null;
   /**

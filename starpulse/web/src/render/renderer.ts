@@ -555,7 +555,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const next: Partial<HudState> = {
       path,
       tree: sky.tree,
-      stats: sky.error ? `live · ${at} MST · ${sky.error}` : `live · ${at} MST`,
+      stats: `live · ${at} MST`,
       states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: stateCount(sky, s.id) })),
       counts: Object.fromEntries(Object.values(sky.flows).map((f) => [f.name, f.agents.length])),
       hostCounts: Object.fromEntries(Object.entries(sky.tree.subs).flatMap(([state, flows]) => flows.map((f) => [`${state}/${f}`, hosted(sky, f, state).length]))),

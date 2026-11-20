@@ -5,7 +5,6 @@ from typing import Any
 from pydantic import Field
 
 from starpulse.contracts.api._base import _Api
-from starpulse.contracts.api.dto.flow import FlowSnapshot, Stuck, Tie
 from starpulse.contracts.api.dto.ledger import LedgerRow
 from starpulse.contracts.api.dto.task import RawTask
 
@@ -31,16 +30,11 @@ class LedgerChange(_Api):
     rows: list[LedgerRow]
 
 
-class MachineRow(FlowSnapshot):
-    """A machine of `GET /api/machines`: whole, with its derivation."""
+class MachineRow(_Api):
+    """A machine of `GET /api/machines`: its name and when it last moved, which the page pages by; the snapshot holds the rest."""
 
-    ties: list[Tie]
-    parent: str | None
-    depth: int
-    chain: list[str]
-    nested: list[str]
+    name: str
     last: float | None
-    stuck: Stuck | None
 
 
 class ExitTool(_Api):

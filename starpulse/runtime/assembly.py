@@ -311,9 +311,9 @@ class _BoardKind:
 
 
 def board_kinds(shared: Callable[[], tuple[Board, BoardFeed]]) -> list[_BoardKind]:
-    """The `claims`, `waiting` and `board-files` kinds over the board and feed `shared` hands out, read at the first pass
-    (the Board context may publish them after the sweeper starts). The adapter that keeps a claim's deadline and the task
-    actor that releases a Waiting task register their pass on the feed; a kind whose owner is not running in this process
+    """The `claims`, `waiting`, `board-files` and `pulls` kinds over the board and feed `shared` hands out, read at the first pass
+    (the Board context may publish them after the sweeper starts). The adapter that keeps a claim's deadline, the task
+    actor that releases a Waiting task and the pull request reader register their pass on the feed; a kind whose owner is not running in this process
     samples nothing."""
 
     def registered(name: str) -> Callable[[], tuple[int, int]]:
@@ -323,4 +323,5 @@ def board_kinds(shared: Callable[[], tuple[Board, BoardFeed]]) -> list[_BoardKin
         _BoardKind("claims", registered("claims")),
         _BoardKind("waiting", registered("waiting")),
         _BoardKind("board-files", registered("board-files")),
+        _BoardKind("pulls", registered("pulls")),
     ]

@@ -219,7 +219,7 @@ class RecordProjection:
         saved, moved = [], []
         targets = self._targets(key, name, fields)
         named = self._named(fields)
-        if named and name[0] == GITHUB_MACHINE and name not in CLOSING and named not in targets:
+        if named and (name[0] == GITHUB_MACHINE or name in _REREADS) and name not in CLOSING and named not in targets:
             # the task's citation may reach this worker after the event does: read the pull request the event names
             # rather than drop it, which would leave the store without it until a later event of its own
             if not self._store.find(repo=named[0], number=named[1]):
