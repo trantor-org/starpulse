@@ -238,6 +238,7 @@ class EventLog:
         self._fallback_interval = fallback_interval
         self._engine = engine
         self._ready = False
+        self._listening = False  # the listeners go on once, however many opens a refused store takes
         self._lock = threading.Lock()
         self._appended = threading.Condition()
         self._appends = 0
@@ -261,8 +262,10 @@ class EventLog:
             if not self._ready:
                 if self._engine is None:
                     self._engine = _create_engine(self.url)
-                event.listen(self._engine, "connect", _sqlite_pragmas)
-                bound_wal(self._engine)
+                if not self._listening:
+                    event.listen(self._engine, "connect", _sqlite_pragmas)
+                    bound_wal(self._engine)
+                    self._listening = True
                 with self._engine.connect() as db:
                     _sqlite_wal(db.connection.dbapi_connection)
                 require_migrated(self._engine)

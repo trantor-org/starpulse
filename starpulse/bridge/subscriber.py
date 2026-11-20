@@ -130,7 +130,7 @@ class Subscriber:
         holder, rules, incidents = self._holder(row)
         holder = token(claimant) if claimant else holder
         state = lane_id(str((row or {}).get("state") or ""))
-        behind = bool(lane and state) and state not in FINISHED and state != lane_id(lane)
+        behind = bool(lane) and lane not in FINISHED and (row is None or bool(state) and state != lane_id(lane))
         held = [] if behind else self._store.holding(token(task))
         dropping = [session for session in held if session != holder]
         if self._end and lane in FINISHED and lane in self._end_lanes:

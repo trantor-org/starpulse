@@ -1371,15 +1371,16 @@ def _reopener(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
             written = _update(root, task, edit, guard, actor)
         except _Unheld as unheld:
             return Written(False, str(unheld))
-        if written.ok and found is not None and target is not None:
-            path = found
+        if written.ok and (edited := _find(root, task)) is not None and edited.parent.name == "completed":
+            # the file `_update` edited, which a completion may have moved since the lookup above
+            target = root / "tasks" / edited.name
             try:
-                os.link(path, target)
-                path.unlink()
+                os.link(edited, target)
+                edited.unlink()
             except FileExistsError:
                 return Written(False, f"{task}: {target} already exists")
             except OSError as error:
-                return Written(False, f"{path}: {error}")
+                return Written(False, f"{edited}: {error}")
         return _moved(written, working)
 
     return reopen

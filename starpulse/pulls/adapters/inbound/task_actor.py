@@ -1282,6 +1282,9 @@ class TaskActor:
                 and (placed := self._feed.machine_task(HARNESS_MACHINE, name))
                 and placed["state"] == "active"
             ):
+                self._resumes.pop(name, None)
+                self._failed_resumes.pop(name, None)
+                self._stalled.discard(name)
                 return
             if self._awaits(agent):
                 self._awaited.add(name)
