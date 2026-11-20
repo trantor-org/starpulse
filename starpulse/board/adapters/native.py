@@ -1859,8 +1859,15 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
         return land
 
+    def archiving(write: MoveWriter) -> MoveWriter:
+        moves = history.recorded(write, read, actor_at=1)
+        archives = history.recorded(
+            write, read, actor_at=1, also=lambda task: _open_dependents(root, _names(root, task), made.roles.done)
+        )
+        return lambda task, status, *rest: (archives if lane_id(status) == ARCHIVED else moves)(task, status, *rest)
+
     recorded = {
-        "writer": completing(history.recorded(made.writer, read, actor_at=1)),
+        "writer": completing(archiving(made.writer)),
         "assign": history.recorded(made.assign, read),
         "release": history.recorded(made.release, read, actor_at=1),
         "edit": completing_edit(history.recorded(made.edit, read, unstarted=_unstarted(made.roles))),

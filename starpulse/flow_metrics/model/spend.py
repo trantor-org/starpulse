@@ -20,7 +20,6 @@ the session's; a row of subagent steps alone takes its first step's.
 from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from math import inf
 from statistics import median
 from typing import Any
 
@@ -87,7 +86,15 @@ def _phases(steps: list[dict[str, Any]], claims: Mapping[str, float]) -> list[tu
         if step["edits"]:
             first_edit.setdefault(step["task"], step["at"])
     return [
-        (_phase(step, step["at"] >= first_edit.get(step["task"], 0) or step["at"] > claims.get(step["task"], inf)), step)
+        (
+            _phase(
+                step,
+                step["at"] > claims[step["task"]]
+                if step["task"] in claims
+                else step["at"] >= first_edit.get(step["task"], 0),
+            ),
+            step,
+        )
         for step in steps
     ]
 
@@ -190,8 +197,7 @@ def _flagged(
     for (task, _), (value, _) in norm.items():
         phase_norms[task].append(value)
     task_norm = {
-        task: None if None in norms else sum(n for n in norms if n is not None)
-        for task, norms in phase_norms.items()
+        task: None if None in norms else sum(n for n in norms if n is not None) for task, norms in phase_norms.items()
     }
     return [
         {
@@ -203,8 +209,7 @@ def _flagged(
             "above_norm": task_norm[task] is not None and total[task] > FLAG_RATIO * task_norm[task],
             "phase_norm_wte": norm[(task, phase)][0],
             "norm_profile": norm[(task, phase)][1],
-            "phase_above_norm": norm[(task, phase)][0] is not None
-            and row["wte"] > FLAG_RATIO * norm[(task, phase)][0],
+            "phase_above_norm": norm[(task, phase)][0] is not None and row["wte"] > FLAG_RATIO * norm[(task, phase)][0],
         }
         for (task, phase), row in sorted(rows.items(), key=lambda kv: (kv[0][0], kv[1]["first_at"]))
     ]
