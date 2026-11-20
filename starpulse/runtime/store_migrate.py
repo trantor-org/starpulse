@@ -6,7 +6,8 @@ files (the scheduler switch, the history window, the run ledger) into the store,
 imported and renamed with `RETIRED_SUFFIX`, so a second run finds the schema at the chain's head and nothing to import.
 With `[board] source_labels` set it also appends, to each task's History, the move of its one label matching that regex to
 its `source` (`label_sources`, which first imports a task without History), and a second run finds nothing left to move.
-Each task's History is archived exactly when its file sits in `completed/` or `archive/tasks/` (`settle_archived`), the file winning. It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
+Each task's History is archived exactly when its file sits in `completed/` or `archive/tasks/` (`settle_archived`), the file winning.
+With `[board] files_win` set it also appends, to each task's History that replays differently from its file, the Events that bring it to the file (`files_win`), and a second run finds nothing left to bring. It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
 not allow, a config that cannot be read, or a board the config does not assemble.
 """
 
@@ -77,6 +78,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         keys=board.keys,
         fold=True,
     )
+    from starpulse.board.adapters.files_win import bring_to_files  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.board.adapters.label_sources import move_key_labels  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.board.adapters.settle_archived import settle_archived  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.board.adapters.task_parity import align_claims, filed  # noqa: PLC0415 - import cost, paid only by a run that migrates
@@ -89,6 +91,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if pattern := config.board.get("source_labels"):
             move_key_labels(root, str(pattern), engine)
         align_claims(filed(root, engine), engine)
+        if config.board.get("files_win"):
+            brought = bring_to_files(filed(root, engine), engine)
+            logger.info("migrate: brought %d task Histories to their files", brought)
     finally:
         engine.dispose()
     print(json.dumps({"store": make_url(url).render_as_string(hide_password=True)}))

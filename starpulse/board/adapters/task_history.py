@@ -140,7 +140,10 @@ def _criteria_events(before: Record, after: Record) -> list[Event]:
                 events.append(
                     ("CriterionChecked", {"kind": kind, "n": item["n"], "checked": bool(item.get("checked"))})
                 )
-        events += [("CriterionAdded", {"kind": kind, "text": item["text"]}) for item in items[len(kept) :]]
+        for item in items[len(kept) :]:
+            events.append(("CriterionAdded", {"kind": kind, "text": item["text"]}))
+            if item.get("checked"):
+                events.append(("CriterionChecked", {"kind": kind, "n": item["n"], "checked": True}))
     return events
 
 
@@ -299,6 +302,17 @@ class TaskHistory:
         if archived:
             events.append(self._new("Archived", {}, OPERATOR))
         store.append(KIND, task, 0, events)
+        return True
+
+    def brought_to(self, task: str, held: Record, record: Record) -> bool:
+        """Append the Events that take the `held` record a History replays to `record`, the file's; whether any were needed."""
+        store = self._store
+        events = _events(held, record, "")
+        if store is None or not events:
+            return False
+        store.append(
+            KIND, task, store.head(KIND, task), [self._new(kind, payload, RECONCILER) for kind, payload in events]
+        )
         return True
 
     def edited(self, task: str, payload: dict[str, Any]) -> None:
