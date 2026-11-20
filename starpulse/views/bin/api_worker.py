@@ -98,7 +98,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser, *, host: Host)
     serve_page(parser, args, config, ready, listening or host.listen(parser, args), host=host)
 
 
-def serve_page(  # pragma: no mutate block — serve_forever process boundary
+def serve_page(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
     config: ApiConfig,

@@ -115,7 +115,7 @@ def _event_name(edge: Edge) -> str:
 def dump(draft: dict[str, Any], source: str = "") -> str:
     """The draft as YAML, headed by a note that its guards and actions are still to write."""
     header = f"# Draft imported from {source}: add guards and actions by hand.\n" if source else ""
-    return header + yaml.safe_dump(draft, sort_keys=False)  # pragma: no mutate: `None` and `False` both keep key order
+    return header + yaml.safe_dump(draft, sort_keys=False)
 
 
 def import_file(source: Path, out: Path | None = None) -> Path:
@@ -139,4 +139,3 @@ def main(argv: list[str] | None = None) -> None:
     except (MachineDefinitionError, OSError) as error:
         parser.error(f"{args.source}: {error}")
     print(f"Wrote {out}")
-

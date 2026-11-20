@@ -410,13 +410,14 @@ class TaskActor:
         self._resumes: dict[str, tuple[tuple[Any, ...], int]] = {}
         #: The tasks whose resume was escalated and has shown no progress since.
         self._stalled: set[str] = set()
-        #: Per In Progress task: the settles in a row whose resume failed after its holder was confirmed idle.
-        self._failed_resumes: dict[str, int] = {}
         #: The In Progress tasks whose holder settled while an event was awaited: the derivation that finds the wait
         #: ended settles them again, as no settle may follow.
         self._awaited: set[str] = set()
         #: The `_awaited` tasks whose held event was a session's end, not a settle: the wait's end revives them.
         self._revive_held: set[str] = set()
+        #: The In Progress tasks whose holder settled but `confirm` found it busy: the next move of a machine other than
+        #: the session's own settles them again, as an idle session may never settle again; its own activity ends the hold.
+        self._busy: set[str] = set()
         #: The board hooks of moves already written, run one at a time in the order written by their own thread: a
         #: hook runs a command for seconds, and run under `_lock` it held back the move of every task behind it.
         self._notices: queue.SimpleQueue[Callable[[], None] | None] = queue.SimpleQueue()
@@ -885,8 +886,8 @@ class TaskActor:
                 self._review_refused.pop(name, None)
                 working = self._feed.roles.working
                 if now[0] != working:
+                    self._busy.discard(name)
                     self._resumes.pop(name, None)
-                    self._failed_resumes.pop(name, None)
                     self._stalled.discard(name)
                 if before and before[0] == self._review and now[0] == working:
                     if name not in self._own_send_backs:
@@ -903,6 +904,7 @@ class TaskActor:
         with self._lock:
             self._exit_phase(data["id"])
             self._settle_awaited(data["id"])
+            self._settle_busy(data)
             agent = self._feed.task(data["id"], lean=True)
             if agent and "phase_resumed" in self._waits.get(agent["state"], {}):
                 self._derive(data["id"], self._clock())
@@ -1054,8 +1056,8 @@ class TaskActor:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
         self._resumes.pop(name, None)
-        self._failed_resumes.pop(name, None)
         self._stalled.discard(name)
+        self._busy.discard(name)
         if self._sent_back.pop(name, None) is not None:
             self._keep_holds()
         self._lint_held.pop(name, None)
@@ -1263,15 +1265,17 @@ class TaskActor:
         ended, as the session that settled may never settle again, unless its holder is at work by then (a lens's end woke it): that
         holder settles anew. After `_STALLED_RESUMES` resumes with no progress (a phase or submachine event, a
         new head), the next one is first `escalate`d one profile and flagged on `RESUME_STALLED_METRIC`. An escalate that raises sends no resume and moves the task to
-        Needs attention at once; a flagged task whose session settles again with no progress moves there too, except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A task citing none of its own while an open pull request names it (`uncited`) moves to Needs attention at once, its record being the defect. A hook that
-        fails found the holder at work or the session start refused: the next settle tries again."""
+        Needs attention at once; a flagged task whose session settles again with no progress moves there too, except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A task citing none of its own while an open pull request names it (`uncited`) moves to Needs attention at once, its record being the defect. A `confirm` that
+        raises (the holder is busy) holds the task: the next move of a machine other than the harness settles it again, and the
+        session's own activity ends the hold. A `resume` that fails is sent again at once until `_FAILED_RESUMES` fail, when the
+        task moves to Needs attention, as a holder whose resume was lost settles no more."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
             self._awaited.discard(name)
             self._revive_held.discard(name)
+            self._busy.discard(name)
             if agent is None or agent["state"] != self._feed.roles.working:
                 self._resumes.pop(name, None)
-                self._failed_resumes.pop(name, None)
                 self._stalled.discard(name)
                 return
             if self._idle is None:
@@ -1282,7 +1286,6 @@ class TaskActor:
                 and placed["state"] == "active"
             ):
                 self._resumes.pop(name, None)
-                self._failed_resumes.pop(name, None)
                 self._stalled.discard(name)
                 return
             if self._awaits(agent):
@@ -1378,15 +1381,12 @@ class TaskActor:
 
     def _resume(self, name: str, progress: tuple[Any, ...], count: int) -> None:
         escalate = count >= _STALLED_RESUMES
-        for verdict in ("confirm", *(("escalate",) if escalate else ()), "resume"):
+        if not self._confirmed(name):
+            return
+        if escalate:
             try:
-                self._idle(name, verdict)
+                self._idle(name, "escalate")
             except Exception as error:
-                logger.info("task actor: %s settled but its holder was not %s: %s", name, verdict, error)
-                if verdict == "resume":
-                    self._resume_failed(name, error)
-                if verdict != "escalate":
-                    return
                 logger.warning("task actor: %s flagged stalled without escalation: %s", name, error)
                 with self._lock:
                     now = self._feed.task(name, lean=True)
@@ -1394,23 +1394,45 @@ class TaskActor:
                         self._stalled.add(name)
                         self._attend(name, "the escalation to a higher profile failed or no higher profile exists")
                 return
+        if not self._resume_sent(name):
+            return
         with self._lock:
-            self._failed_resumes.pop(name, None)
             self._resumes[name] = (progress, 0 if escalate else count + 1)
             if escalate:
                 self._stalled.add(name)
+
+    def _confirmed(self, name: str) -> bool:
+        try:
+            self._idle(name, "confirm")
+        except Exception as error:
+            logger.info("task actor: %s settled but its holder was not confirm: %s", name, error)
+            with self._lock:
+                self._busy.add(name)
+            return False
+        return True
+
+    def _resume_sent(self, name: str) -> bool:
+        """Send the holder's resume. One that fails is sent again at once, no clock, until `_resume_failed` parks the
+        task: a holder whose resume was lost settles no more, so no later settle comes to send it."""
+        failed = 0
+        while True:
+            try:
+                self._idle(name, "resume")
+                return True
+            except Exception as error:
+                logger.info("task actor: %s settled but its holder was not resume: %s", name, error)
+                failed += 1
+                if not self._resume_failed(name, error, failed):
+                    return False
 
     def _nudge(self, name: str, opened: list[tuple[int, str]], ticks: tuple[bool, ...], wait_ended: bool) -> None:
         """Resume an idle holder whose criteria are open; its hook's message names them. The `_NUDGES + 1`th idle with no
         criterion checked or struck through in between moves the task to Needs attention with them as the question. A holder
         still busy (`confirm` raises) settles again and costs no nudge, and the wake of an ended wait restarts the count."""
-        try:
-            self._idle(name, "confirm")
-        except Exception as error:
-            logger.info("task actor: %s settled but its holder was not confirm: %s", name, error)
+        if not self._confirmed(name):
             return
         with self._lock:
-            before, count = self._resumes.get(name, (ticks, 0))
+            before, count =self._resumes.get(name, (ticks, 0))
             if wait_ended:  # an awaited CI result is the wake, not a settle with no progress
                 count = 0
             if before == ticks and count >= _NUDGES:
@@ -1423,30 +1445,26 @@ class TaskActor:
                     ask=f"Open: {listing}. Which will you resolve, strike through or rescope?",
                 )
                 return
-        try:
-            self._idle(name, "resume")
-        except Exception as error:
-            logger.info("task actor: %s settled but its holder was not resume: %s", name, error)
-            self._resume_failed(name, error)
+        if not self._resume_sent(name):
             return
         with self._lock:
-            self._failed_resumes.pop(name, None)
             self._resumes[name] = (ticks, (count if before == ticks else 0) + 1)
 
-    def _resume_failed(self, name: str, error: Exception) -> None:
-        """A holder no session can reach moves to Needs attention at once, since no later settle comes to count; any
-        other failure does on the `_FAILED_RESUMES`th in a row."""
+    def _resume_failed(self, name: str, error: Exception, failed: int) -> bool:
+        """Whether the resume is sent again: a holder no session can reach moves to Needs attention at once, since no
+        later settle comes to count; any other failure does on the `_FAILED_RESUMES`th in a row; a task no longer In
+        Progress needs none."""
         with self._lock:
+            agent = self._feed.task(name, lean=True)
+            if agent is None or agent["state"] != self._feed.roles.working:
+                return False
             if isinstance(error, HolderUnreachable):
-                self._failed_resumes.pop(name, None)
                 self._attend(name, f"no session can reach it, so no later settle comes: {error}", "could not be resumed")
-                return
-            failed = self._failed_resumes[name] = self._failed_resumes.get(name, 0) + 1
-            if failed >= _FAILED_RESUMES:
-                self._failed_resumes.pop(name)
-                self._attend(
-                    name, f"its holder's resume failed {failed} settles in a row: {error}", "could not be resumed"
-                )
+                return False
+            if failed < _FAILED_RESUMES:
+                return True
+            self._attend(name, f"its holder's resume failed {failed} times in a row: {error}", "could not be resumed")
+            return False
 
     def _attend(
         self,
@@ -1475,20 +1493,16 @@ class TaskActor:
     def _end_without_pr(self, name: str) -> None:
         """A task citing no pull request and no open criterion has nothing left to resume once its holder ended: every criterion resolved in the
         deliver phase closes it, as does one of a `kind-decide` task whose `## Needs attention` carries the operator's answer; any other returns it to Ready for a new session. A holder still busy (`confirm` raises) settles again."""
-        try:
-            self._idle(name, "confirm")
-        except Exception as error:
-            logger.info("task actor: %s settled but its holder was not confirm: %s", name, error)
+        if not self._confirmed(name):
             return
         with self._lock:
-            agent = self._feed.task(name, lean=True)
+            agent =self._feed.task(name, lean=True)
             if agent is None or agent["state"] != self._feed.roles.working or agent["prs"]:
                 return
             if self._awaits(agent):
                 self._awaited.add(name)
                 return
             self._resumes.pop(name, None)
-            self._failed_resumes.pop(name, None)
             self._stalled.discard(name)
             criteria = agent.get("criteria", ())
             checked = bool(criteria) and not open_criteria(criteria)
@@ -1516,6 +1530,16 @@ class TaskActor:
             if (placed := self._feed.machine_task(link["machine"], name)) and placed["active"] >= since
         ]
         return bool(held) and max(held, key=lambda pair: pair[1]["active"])[0]["state"] == "deliver"
+
+    def _settle_busy(self, data: dict[str, Any]) -> None:
+        name = data["id"]
+        if name not in self._busy:
+            return
+        if data.get("machine") != HARNESS_MACHINE:
+            self._busy.discard(name)
+            self._queue(lambda: self.holder_settled(name))
+        elif (data.get("agent") or {}).get("state") == "active":  # the session works again, so a settle will follow
+            self._busy.discard(name)
 
     def _settle_awaited(self, name: str) -> None:
         if name not in self._awaited:

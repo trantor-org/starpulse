@@ -142,7 +142,7 @@ def _runs_cursor(root: int, children: dict[int, list[int]], cursor: set[int]) ->
     return False
 
 
-class TmuxPanes:  # pragma: no mutate block — process boundary
+class TmuxPanes:
     """`Panes` over the host's tmux: the `task-N` sessions whose pane runs Cursor's agent."""
 
     def sessions(self) -> list[str]:
@@ -160,7 +160,7 @@ class TmuxPanes:  # pragma: no mutate block — process boundary
         _run(["tmux", "kill-session", "-t", f"={name}"])
 
 
-def _run(command: list[str]) -> str:  # pragma: no mutate block — process boundary
+def _run(command: list[str]) -> str:
     done = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
     return done.stdout if done.returncode == 0 else ""
 
@@ -171,7 +171,7 @@ def main(
     *,
     discover: Callable[[Path | None], Path | None],
     load: Callable[[Path | None], Any],
-) -> None:  # pragma: no mutate block — process boundary
+) -> None:
     """Reset the sessions over the limit; `starter` builds the session starter from the config's `session_start_url`,
     so Harness Telemetry imports no Sessions code; `discover` and `load` read the root config, which the runtime owns."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)

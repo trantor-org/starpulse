@@ -443,9 +443,7 @@ class NativeScan:
                 moves[target] = type(move).model_validate({**move.model_dump(), **refused})
         return moves
 
-    def start(
-        self, scanned: Callable[[], None] = lambda: None
-    ) -> threading.Thread:  # pragma: no mutate block — watch thread plumbing
+    def start(self, scanned: Callable[[], None] = lambda: None) -> threading.Thread:
         """Watch the task folders, scan once, and read each path the watch names after, on a daemon thread, which it
         returns; `scanned` runs once, after the first scan. The watch opens before that scan, so a write between them is
         read twice, never missed. A folder made later, or a watch that lost events, is a scan of everything."""

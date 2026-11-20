@@ -85,7 +85,9 @@ def _tested_on_older_base(node: dict) -> bool:
     """Whether GitHub's MERGEABLE answer was computed on a base commit that is no longer the base's tip: it recomputes
     lazily after the base moves, so the answer can still be the one from before the push."""
     base = ((node.get("baseRef") or {}).get("target") or {}).get("oid")
-    parents = {parent["oid"] for parent in ((node.get("potentialMergeCommit") or {}).get("parents") or {}).get("nodes", [])}
+    parents = {
+        parent["oid"] for parent in ((node.get("potentialMergeCommit") or {}).get("parents") or {}).get("nodes", [])
+    }
     return node["mergeable"] == "MERGEABLE" and bool(base and parents) and base not in parents
 
 
@@ -237,7 +239,9 @@ class PullSync:
         one when `number` is None; False, queueing nothing, for a repository this store does not track. A pull request
         already waiting is not queued twice, and an `urgent` one (a delivery's ask) is read before every other waiting
         one, which the events' rereads are."""
-        if repo not in self._store.repos() and repo not in self.tracked():  # a stored repository is tracked: no board read
+        if (
+            repo not in self._store.repos() and repo not in self.tracked()
+        ):  # a stored repository is tracked: no board read
             return False
         if number is None:
             for record in self._store.find(repo, state="OPEN"):
@@ -347,7 +351,9 @@ class PullSync:
                 sampled += 1
                 if changed := [name for name in _COMPARED if after[name] != before[name]]:
                     corrected += 1
-                    logger.warning("pull requests: starpulse/sweeper corrected %s#%d: %s", repo, number, ", ".join(changed))
+                    logger.warning(
+                        "pull requests: starpulse/sweeper corrected %s#%d: %s", repo, number, ", ".join(changed)
+                    )
         if corrected:
             self.project()
         return sampled, corrected
@@ -372,7 +378,7 @@ class PullSync:
             except Exception:
                 logger.exception("pull requests: the Board's pull requests failed to project")
 
-    def _project_forever(self) -> None:  # pragma: no mutate block — timer loop
+    def _project_forever(self) -> None:
         """Project whenever asked, asks made meanwhile coalescing into one run."""
         while not self._stop.is_set():
             self._projection.wait()
@@ -380,13 +386,13 @@ class PullSync:
             if not self._stop.is_set():
                 self._project_now()
 
-    def _wake_on_stop(self) -> None:  # pragma: no mutate block — timer loop
+    def _wake_on_stop(self) -> None:
         """Wake the loops that wait on an event of their own once `stop` is set."""
         self._stop.wait()
         self._wake.set()
         self._projection.set()
 
-    def serve_forever(self) -> None:  # pragma: no mutate block — timer loop
+    def serve_forever(self) -> None:
         """Once the Board replay is done, so the first projection sees every task, project what the store already
         holds, then serve each refresh asked for until `stop`. No timer reads a pull request: a webhook asks for each
         read, and the sweeper's `github` kind recovers a fact no webhook delivered. Projection runs on its own thread:

@@ -183,7 +183,7 @@ class PullRequests:
         wake = threading.Event()
         stop.listen(wake.set)
 
-        def run() -> None:  # pragma: no mutate block — timer loop
+        def run() -> None:
             while not stop.is_set():
                 wake.wait()
                 wake.clear()

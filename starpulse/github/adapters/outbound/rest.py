@@ -62,7 +62,7 @@ def get(transport: Transport, path: str) -> dict:
     return body
 
 
-def connect(token: str | None, timeout: float = 30.0) -> Transport:  # pragma: no mutate block — HTTP boundary
+def connect(token: str | None, timeout: float = 30.0) -> Transport:
     """A transport to the GitHub API (`GITHUB_API_URL`, else api.github.com), signed in with `token` when there is one."""
     base = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"} | (
@@ -94,7 +94,7 @@ def connect(token: str | None, timeout: float = 30.0) -> Transport:  # pragma: n
 _NEXT = re.compile(r'<([^>]+)>;\s*rel="next"')
 
 
-def connect_client(  # pragma: no mutate block — HTTP boundary
+def connect_client(
     token: Callable[[], str | None], app_token: Callable[[], str] | None = None, timeout: float = 30.0
 ) -> Client:
     """A conditional client to the GitHub API (`GITHUB_API_URL`, else api.github.com), signed in with the token `token`

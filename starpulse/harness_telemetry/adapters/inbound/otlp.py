@@ -183,8 +183,8 @@ def receiver(
     class Handler(BaseHTTPRequestHandler):
         def _reply(self, status: int, body: bytes = b"{}", content_type: str = "application/json") -> None:
             self.send_response(status)
-            self.send_header("Content-Type", content_type)  # pragma: no mutate: names are case-insensitive
-            self.send_header("Content-Length", str(len(body)))  # pragma: no mutate: names are case-insensitive
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
 
@@ -200,12 +200,12 @@ def receiver(
             if self.path != "/v1/logs":
                 self._reply(404)
                 return
-            declared = self.headers.get("Content-Type", "")  # pragma: no mutate: case-insensitive; any non-json default
+            declared = self.headers.get("Content-Type", "")
             if "json" not in declared:
                 self._reply(415, b'{"error": "send OTLP as json: set encoding = \\"json\\" on the exporter"}')
                 return
             try:
-                length = int(self.headers.get("Content-Length") or 0)  # pragma: no mutate: names are case-insensitive
+                length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 length = -1
             if length < 0:
@@ -216,7 +216,7 @@ def receiver(
                 return
             raw = self.rfile.read(length)
             try:
-                if self.headers.get("Content-Encoding") == "gzip":  # pragma: no mutate: names are case-insensitive
+                if self.headers.get("Content-Encoding") == "gzip":
                     raw = gzip.decompress(raw)
                 payload: Any = json.loads(raw)
                 events = parse(payload) if isinstance(payload, dict) else []

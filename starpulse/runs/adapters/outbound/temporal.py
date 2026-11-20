@@ -47,7 +47,7 @@ _STATUS: dict[str, RunStatus] = {
 _FAILURE_WIDTH = 240
 
 
-def get(url: str) -> dict:  # pragma: no mutate block — process boundary
+def get(url: str) -> dict:
     """The JSON the server at `url` answers; a failure to reach it raises `OSError`."""
     with urllib.request.urlopen(url, timeout=_TIMEOUT) as response:
         return json.load(response)
@@ -107,8 +107,12 @@ def _label(attributes: dict) -> str:
     """The name of an activity or child workflow; a command step is named by the `id` of the step its second input holds."""
     name = attributes.get("activityType", {}).get("name") or attributes["workflowType"]["name"]
     try:
-        step = json.loads(base64.b64decode(attributes["input"]["payloads"][1]["data"])).get("id") if name == _COMMAND_STEP else None
-    except (KeyError, IndexError, ValueError, AttributeError):
+        step = (
+            json.loads(base64.b64decode(attributes["input"]["payloads"][1]["data"])).get("id")
+            if name == _COMMAND_STEP
+            else None
+        )
+    except KeyError, IndexError, ValueError, AttributeError:
         step = None
     return step if isinstance(step, str) and step else name
 
@@ -127,7 +131,13 @@ def _nodes(events: list[dict], started: set[str]) -> list[dict]:
         if kind in _OPENING:
             label = _label(attributes)
             same = sum(n["label"].partition(" #")[0] == label for n in opened.values())
-            opened[number] = {"id": number, "label": label if not same else f"{label} #{same + 1}", "status": "running" if attributes.get("activityId") in started else "queued", "closed": 0, "attempt": 1}
+            opened[number] = {
+                "id": number,
+                "label": label if not same else f"{label} #{same + 1}",
+                "status": "running" if attributes.get("activityId") in started else "queued",
+                "closed": 0,
+                "attempt": 1,
+            }
         elif kind in _STATE:
             found = opened[int(attributes.get("scheduledEventId") or attributes["initiatedEventId"])]
             found["status"] = _STATE[kind]
@@ -167,7 +177,9 @@ class Poller:
         if _status(execution) == "failed":
             params = urllib.parse.urlencode({"execution.runId": run_id, "maximumPageSize": _HISTORY_EVENTS})
             quoted = urllib.parse.quote(workflow_id, safe="")
-            events = self.fetch(f"{self.base}{_NAMESPACE}/workflows/{quoted}/history-reverse?{params}")["history"]["events"]
+            events = self.fetch(f"{self.base}{_NAMESPACE}/workflows/{quoted}/history-reverse?{params}")["history"][
+                "events"
+            ]
             details = _failure_of(events)
         self.closed[run_id] = details
         return details
@@ -179,13 +191,15 @@ class Poller:
             return self.drawn[run_id]
         params = urllib.parse.urlencode({"execution.runId": run_id, "maximumPageSize": _GRAPH_EVENTS})
         try:
-            history = self.fetch(f"{self.base}{_NAMESPACE}/workflows/{urllib.parse.quote(workflow_id, safe='')}/history?{params}")
+            history = self.fetch(
+                f"{self.base}{_NAMESPACE}/workflows/{urllib.parse.quote(workflow_id, safe='')}/history?{params}"
+            )
             if history.get("nextPageToken"):
                 raise ValueError("history is longer than one page")
             nodes = _nodes(history["history"]["events"], self.started.get(run_id, set()))
         except OSError:
             return []
-        except (ValueError, KeyError, TypeError, AttributeError):
+        except ValueError, KeyError, TypeError, AttributeError:
             nodes = []
         if not live:
             self.drawn[run_id] = nodes
@@ -247,7 +261,9 @@ class Poller:
     def _workflow(self, name: str, running: list[dict], closed) -> dict:
         active = sorted((self._active(e) for e in running), key=lambda run: run["startedAt"])
         recent = sorted(
-            (self._recent(e) for e in closed if e["type"]["name"] == name), key=lambda run: run["finishedAt"], reverse=True
+            (self._recent(e) for e in closed if e["type"]["name"] == name),
+            key=lambda run: run["finishedAt"],
+            reverse=True,
         )
         latest = max(active, key=lambda run: run["startedAt"]) if active else recent[0] if recent else None
         by_run = {e["execution"]["runId"]: e for e in [*running, *closed]}
