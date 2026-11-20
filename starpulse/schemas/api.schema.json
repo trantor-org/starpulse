@@ -8901,7 +8901,7 @@
       "type": "object"
     },
     "Spend": {
-      "description": "`GET /api/analytics/spend`: each task's tokens by phase, oldest task first, Codex left out.",
+      "description": "The analytics spend route's body: each task's tokens by phase, oldest task first, Codex left out.",
       "properties": {
         "now": {
           "type": "number"
@@ -9844,6 +9844,34 @@
         "startedAt"
       ],
       "title": "TaskRun",
+      "type": "object"
+    },
+    "TaskSpend": {
+      "description": "`GET /api/task-spend/{id}`: one task's tokens by phase over the window, the rows `Spend` holds for it.",
+      "properties": {
+        "now": {
+          "type": "number"
+        },
+        "spend": {
+          "items": {
+            "$ref": "#/$defs/SpendPhase"
+          },
+          "type": "array"
+        },
+        "task": {
+          "type": "string"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "spend",
+        "task"
+      ],
+      "title": "TaskSpend",
       "type": "object"
     },
     "Tie": {
@@ -11045,6 +11073,9 @@
     "taskRecords": {
       "$ref": "#/$defs/TaskRecords"
     },
+    "taskSpend": {
+      "$ref": "#/$defs/TaskSpend"
+    },
     "traceClusters": {
       "$ref": "#/$defs/TraceClusters"
     },
@@ -11079,6 +11110,7 @@
     "sessionSteps",
     "transitions",
     "spend",
+    "taskSpend",
     "cells",
     "estimates",
     "graph",

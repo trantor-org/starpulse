@@ -2,6 +2,7 @@
 
 - `GET /api/analytics/health`, `liveness`, `sessions`, `steps`, `transitions`, `spend`, `cells`, `estimates`, `graph`, `stages`, `cost-to-go`, `diff`,
   `missed-loads` and `trace-clusters`: each filtered by the query.
+- `GET /api/task-spend/{id}`: one task's spend, read from the stored `spend` fold rows.
 """
 
 from collections.abc import Callable
@@ -26,6 +27,7 @@ from starpulse.views.application.queries.responses import (
     spend_response,
     stages_response,
     steps_response,
+    task_spend_response,
     transitions_response,
 )
 from starpulse.views.application.queries.trace_responses import missed_loads_response, trace_clusters_response
@@ -40,13 +42,15 @@ def _kept(
     compute: Callable[[], tuple[bytes, int]],
     now: Callable[[], float],
     span: int = 1,
+    path: str | None = None,
 ) -> tuple[bytes, int]:
-    """`compute`'s answer, or the kept answer to this query when the deployment keeps them (`Answers`); a query that
-    only refuses (`refuses_at_once`, the window `span` x `hours`) never waits behind a fold."""
+    """`compute`'s answer, or the kept answer to this query, kept under `path` (the request's own: none) when the
+    deployment keeps them (`Answers`); a query that only refuses (`refuses_at_once`, the window `span` x `hours`)
+    never waits behind a fold."""
     if services.answers is None:
         return compute()
     return services.answers.answer(
-        request.url.path,
+        path or request.url.path,
         str(sorted(request.query_params.multi_items())),
         compute,
         lambda: refuses_at_once(services.telemetry, asked, now(), span),
@@ -108,6 +112,22 @@ def _titled(respond: _Respond, span: int = 1) -> Endpoint:
     return endpoint
 
 
+@reading
+def task_spend(request: Request) -> Response:
+    api = seams(request)
+    services = api.services
+    asked = query(request)
+    week = _kept(
+        request,
+        services,
+        asked,
+        lambda: spend_response(services.telemetry, asked, api.feed.keys, api.feed.titled, api.clock(), services.analytics),
+        api.clock,
+        path="/api/analytics/spend",  # the week answer every task and the board-wide read share
+    )
+    return answer(request, *task_spend_response(week, request.path_params["id"]))
+
+
 def _ranked(respond: _Respond) -> Endpoint:
     @reading
     def endpoint(request: Request) -> Response:
@@ -136,6 +156,7 @@ routes: list[ApiRoute] = [
     ReadRoute("/analytics/steps", _sessions(steps_response), params=frozenset({"after", "hours", "limit"})),
     ReadRoute("/analytics/transitions", _titled(transitions_response), params=frozenset({"hours"})),
     ReadRoute("/analytics/spend", _titled(spend_response), params=frozenset({"hours"})),
+    ReadRoute("/task-spend/{id:path}", task_spend, params=frozenset({"hours"})),
     ReadRoute("/analytics/cells", _titled(cells_response), params=frozenset({"hours"})),
     ReadRoute("/analytics/estimates", _titled(estimates_response), params=frozenset({"hours", "milestone"})),
     ReadRoute("/analytics/graph", _titled(graph_response), params=frozenset({"hours"})),

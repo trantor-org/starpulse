@@ -12,6 +12,7 @@ import bisect
 import dataclasses
 import json
 import logging
+import math
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
@@ -150,14 +151,15 @@ class SignalFolds:
             rows = db.execute(_WINDOW, {"views": wanted, "floor": since}).all()
         answer: dict[str, list[Any]] = {view: [] for view in wanted}
         began = {(row.harness, row.session): row.first_at for row in rows}
-        partial = [key for key, first_at in began.items() if first_at < since]
+        found = {
+            key: self._load(*key, since)[1] for key, first_at in began.items() if first_at < since
+        }
         for row in rows:
-            if began[row.harness, row.session] >= since:
+            signals_in_window = found.get((row.harness, row.session))
+            if signals_in_window:
+                answer[row.view].append(VIEWS[row.view](signals_in_window, self._keys, self._analytics))
+            else:
                 answer[row.view].append(row.result)
-        for harness, session in partial:
-            found = self._load(harness, session, since)[1]
-            for view in wanted:
-                answer[view].append(VIEWS[view](found, self._keys, self._analytics))
         return answer
 
     def step_window(self, since: float, after: float | None, wanted: int) -> dict[str, list[Any]]:
@@ -175,8 +177,8 @@ class SignalFolds:
                 if ahead > wanted and times[wanted] > times[wanted - 1]:
                     break  # every later session's steps come after these, so the page is among them
                 result = row.result
-                if row.first_at < since:
-                    result = VIEWS["steps"](self._load(row.harness, row.session, since)[1], self._keys, self._analytics)
+                if row.first_at < since and (in_window := self._load(row.harness, row.session, since)[1]):
+                    result = VIEWS["steps"](in_window, self._keys, self._analytics)
                 folds.append(result)
                 for step in result:
                     if after is None or step["at"] > after:
@@ -184,9 +186,10 @@ class SignalFolds:
         return {"steps": folds}
 
     def oldest(self) -> float | None:
-        """The time of the oldest signal in the table, None when it is empty: the history the views can answer."""
+        """The time of the oldest folded signal, None when nothing is folded: the history the views can answer. It
+        reads the fold rows, so it holds with the signals table empty."""
         with self._engine.connect() as db:
-            return db.execute(select(func.min(signals.c.time))).scalar_one()
+            return db.execute(select(func.min(signal_folds.c.first_at))).scalar_one()
 
     def sessions(self, since: float = 0.0) -> Iterator[list[Signal]]:
         """The signals at or after `since` of each session that has one, a session at a time, oldest first, so a
@@ -230,7 +233,7 @@ class SignalFolds:
             db.execute(delete(settings).where(settings.c.key == CURSOR))
         return True
 
-    def _load(self, harness: str, session: str, since: float = 0.0) -> tuple[int, list[Signal]]:
+    def _load(self, harness: str, session: str, since: float = -math.inf) -> tuple[int, list[Signal]]:
         """The highest rowid and the signals of one session at or after `since`, oldest first; a field a row stores as
         null is absent, as the decoder expects."""
         with self._engine.connect() as db:

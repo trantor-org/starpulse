@@ -110,6 +110,7 @@ export interface ApiContract {
   taskMoves: TaskMoves;
   taskRecord: TaskRecord;
   taskRecords: TaskRecords;
+  taskSpend: TaskSpend;
   traceClusters: TraceClusters;
   trajectories: Trajectories;
   transitions: Transitions;
@@ -3097,7 +3098,7 @@ export interface MachineEntryFrom {
   [k: string]: unknown;
 }
 /**
- * `GET /api/analytics/spend`: each task's tokens by phase, oldest task first, Codex left out.
+ * The analytics spend route's body: each task's tokens by phase, oldest task first, Codex left out.
  */
 export interface Spend {
   now: number;
@@ -3271,6 +3272,16 @@ export interface TaskRecord {
  */
 export interface TaskRecords {
   records: TaskRecord[];
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/task-spend/{id}`: one task's tokens by phase over the window, the rows `Spend` holds for it.
+ */
+export interface TaskSpend {
+  now: number;
+  spend: SpendPhase[];
+  task: string;
+  window_s: number;
   [k: string]: unknown;
 }
 /**

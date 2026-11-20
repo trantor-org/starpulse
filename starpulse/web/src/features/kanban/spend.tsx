@@ -1,35 +1,36 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api/apiFetch";
-import type { Spend, SpendPhase } from "../../api";
+import type { SpendPhase, TaskSpend } from "../../api";
 
-/** How long the page keeps a spend answer: the report folds a week of model requests, so the drawer asks once a minute at most. */
+/** How long the page keeps a task's spend answer: the report folds a week of model requests, so the drawer asks once a minute at most per task. */
 const TTL_MS = 60_000;
 /** A failed read is asked again after this, so a blip does not read as a minute of nothing. */
 const FAILED_TTL_MS = 5_000;
 
-let cached: { at: number; ttl: number; answer: Promise<SpendPhase[] | null> } | null = null;
+const cached = new Map<string, { at: number; ttl: number; answer: Promise<SpendPhase[] | null> }>();
 
-/** Every task's phases over the last week; `null` when the read is refused, times out or answers something else, kept for a few seconds only. */
-export function fetchSpend(fetcher: typeof apiFetch = apiFetch, now: number = Date.now()): Promise<SpendPhase[] | null> {
-  if (cached && now - cached.at < cached.ttl) return cached.answer;
+/** One task's phases over the last week; `null` when the read is refused, times out or answers something else, kept for a few seconds only. */
+export function fetchSpend(task: string, fetcher: typeof apiFetch = apiFetch, now: number = Date.now()): Promise<SpendPhase[] | null> {
+  const kept = cached.get(task);
+  if (kept && now - kept.at < kept.ttl) return kept.answer;
   const answer = (async (): Promise<SpendPhase[] | null> => {
     try {
-      const response = await fetcher("/api/analytics/spend");
+      const response = await fetcher(`/api/task-spend/${encodeURIComponent(task)}`);
       if (!response.ok) return null;
-      const body: Partial<Spend> | null = await response.json().catch(() => null);
+      const body: Partial<TaskSpend> | null = await response.json().catch(() => null);
       return Array.isArray(body?.spend) ? body.spend : null;
     } catch {
       return null;
     }
   })();
   const entry = { at: now, ttl: TTL_MS, answer };
-  cached = entry;
+  cached.set(task, entry);
   void answer.then((rows) => { if (rows === null) entry.ttl = FAILED_TTL_MS; });
   return answer;
 }
 
-/** Forget the cached answer, so the next read asks again. */
-export const forgetSpend = (): void => { cached = null; };
+/** Forget the cached answers, so the next read asks again. */
+export const forgetSpend = (): void => { cached.clear(); };
 
 /** Weighted tokens as `812`, `4.2K`, `1.3M`. */
 export function compactWte(wte: number): string {
@@ -69,12 +70,12 @@ export function SpendRows({ rows }: { rows: SpendPhase[] }) {
   </div>;
 }
 
-/** The task's spend, read once per minute for the whole board; "Reading spend…" until the read answers, "Spend unavailable" when it fails. */
+/** The task's spend, read once per minute per task; "Reading spend…" until the read answers, "Spend unavailable" when it fails. */
 export function SpendRail({ task }: { task: string }) {
   const [rows, setRows] = useState<SpendPhase[] | null | "unavailable">(null);
   useEffect(() => {
     let live = true;
-    void fetchSpend().then((all) => { if (live) setRows(all === null ? "unavailable" : phasesOf(all, task)); });
+    void fetchSpend(task).then((all) => { if (live) setRows(all === null ? "unavailable" : phasesOf(all, task)); });
     return () => { live = false; };
   }, [task]);
   if (rows === null) return <span className="none" role="status">Reading spend…</span>;

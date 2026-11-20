@@ -69,11 +69,17 @@ class SpendPhase(_Api):
 
 
 class Spend(_Api):
-    """`GET /api/analytics/spend`: each task's tokens by phase, oldest task first, Codex left out."""
+    """The analytics spend route's body: each task's tokens by phase, oldest task first, Codex left out."""
 
     now: float
     window_s: float
     spend: list[SpendPhase]
+
+
+class TaskSpend(Spend):
+    """`GET /api/task-spend/{id}`: one task's tokens by phase over the window, the rows `Spend` holds for it."""
+
+    task: str
 
 
 class Cell(_Api):
