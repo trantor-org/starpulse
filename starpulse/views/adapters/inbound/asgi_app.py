@@ -341,15 +341,17 @@ class _Observed:
     """Observes each read of its route in `starpulse_request_duration_seconds`, from the request's arrival to the last
     byte sent."""
 
-    def __init__(self, app: ASGIApp, route: str) -> None:
-        self.app, self._route = app, route
+    def __init__(self, app: ASGIApp, route: str, params: frozenset[str]) -> None:
+        self.app, self._route, self._params = app, route, params
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         started = time.monotonic()
+        client = next((value.decode("latin-1") for key, value in scope["headers"] if key == b"x-starpulse-client"), "")
         try:
             await self.app(scope, receive, send)
         finally:
-            request_durations.observe(self._route, scope.get("query_string", b""), time.monotonic() - started)
+            seconds = time.monotonic() - started
+            request_durations.observe(self._route, self._params, scope.get("query_string", b""), client, seconds)
 
 
 class PageApp:
@@ -495,14 +497,14 @@ class PageApp:
         `observed_under` and its path template, when given."""
         at = route.path
         match route:
-            case ReadRoute(_, handler, watch):
+            case ReadRoute(_, handler, watch, params):
                 timed = (
                     []
                     if watch is None
                     else [Middleware(_Timed, watch=watch, workers=self._workers, streams=self._streams)]
                 )
                 if observed_under is not None:
-                    timed = [Middleware(_Observed, route=observed_under + at), *timed]
+                    timed = [Middleware(_Observed, route=observed_under + at, params=params), *timed]
                 return Route(at, handler, methods=["GET"], middleware=timed)
             case WriteRoute(_, methods, handler):
                 return Route(at, handler, methods=list(methods))

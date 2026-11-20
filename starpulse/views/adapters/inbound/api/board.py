@@ -61,8 +61,8 @@ routes: list[ApiRoute] = [
     ReadRoute("/doctor", doctor),
     ReadRoute("/ready", ready),
     ReadRoute("/runs", runs),
-    ReadRoute("/machines", machines),
-    ReadRoute("/done", done),
-    ReadRoute("/search", search),
+    ReadRoute("/machines", machines, params=frozenset({"before", "limit", "open"})),
+    ReadRoute("/done", done, params=frozenset({"before", "limit"})),
+    ReadRoute("/search", search, params=frozenset({"before", "finished_within_days", "label", "limit", "q"})),
     ReadRoute("/harnesses", harnesses),
 ]

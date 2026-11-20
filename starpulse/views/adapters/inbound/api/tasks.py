@@ -184,7 +184,7 @@ def routes(api: Api) -> list[ApiRoute]:
     return [
         ReadRoute("/task/{id:path}", task, timed),
         ReadRoute("/moves/{id:path}", moves),
-        ReadRoute("/task-records", task_records),
-        ReadRoute("/retired", retired),
+        ReadRoute("/task-records", task_records, params=frozenset({"ids"})),
+        ReadRoute("/retired", retired, params=frozenset({"before", "fields", "limit", "milestone", "task"})),
         *(WriteRoute(path, ("POST",), guarded(kind, whole_body(handler))) for path, (handler, kind) in writes.items()),
     ]

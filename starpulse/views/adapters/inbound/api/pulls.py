@@ -107,4 +107,4 @@ def routes(api: Api) -> list[ApiRoute]:
     def push(request: Request) -> Response | None:
         return None if refresh is None else pushed(request, "ingest", refresh, MAX_REFRESH_BODY)
 
-    return [ReadRoute("/pulls", pulls, timed), WriteRoute("/pulls/refresh", ("POST",), writing(push))]
+    return [ReadRoute("/pulls", pulls, timed, params=frozenset({"bodies", "body_contains", "number", "repo", "state", "task"})), WriteRoute("/pulls/refresh", ("POST",), writing(push))]

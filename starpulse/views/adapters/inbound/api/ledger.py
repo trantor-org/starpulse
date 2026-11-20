@@ -30,5 +30,5 @@ def routes(api: Api) -> list[ApiRoute]:
     # The stream first: its path is also the read's, whose `{rest:path}` takes the `/events` too.
     return [
         StreamRoute("/ledger/{rest:path}/events", streaming(api.streams.ledger_rows)),
-        ReadRoute("/ledger/{rest:path}", ledger),
+        ReadRoute("/ledger/{rest:path}", ledger, params=frozenset({"before", "limit"})),
     ]

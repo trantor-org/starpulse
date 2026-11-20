@@ -48,6 +48,6 @@ def routes(api: Api) -> list[ApiRoute]:
         StreamRoute("/held", streaming(streams.held)),
         StreamRoute("/lanes", streaming(streams.lanes)),
         ReadRoute("/events/body/{key:path}", body),
-        ReadRoute("/snapshot", snapshot),
+        ReadRoute("/snapshot", snapshot, params=frozenset({"view"})),
         ReadRoute("/flows", flows),
     ]
