@@ -363,7 +363,7 @@ class CiFile(_Table):
             "The Board state ids the shipped `ci` machine is attached to as a sub-flow; one the Board lacks is "
             "refused. StarPulse ships one `ci` machine, which GitHub moves and StarPulse only observes (its `source` "
             "is GitHub). With `gh` available, each task with a PR is one agent in that flow, and its trail is the "
-            "PR's pushes, check results, re-runs, conflicts, rebases and merge, read from GitHub every minute and "
+            "PR's pushes, check results, re-runs, conflicts, rebases, merge and close, read from GitHub every minute and "
             "kept in the event log (`machine:events`)."
         ),
     )

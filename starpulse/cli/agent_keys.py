@@ -13,7 +13,7 @@ SNAPSHOT_KEYS = (
     "machineStrip",
     "claims",
     "settled",
-    "cold_done",
+    "move_sets",
     "milestone_done",
     "archived_today",
     "ratings",

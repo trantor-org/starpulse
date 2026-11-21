@@ -254,7 +254,7 @@ class PullRequests:
         if self._trail:
             self._trail.record(
                 {
-                    task: [parse(url, stored[url]["detail"]["ci"]) for url in prs if url in stored]
+                    task: [parse(url, stored[url]["detail"]["ci"], stored[url]["headRefOid"]) for url in prs if url in stored]
                     for task, prs in wanted.items()
                 }
             )

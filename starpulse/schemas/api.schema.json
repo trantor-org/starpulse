@@ -2785,18 +2785,6 @@
           ],
           "default": null
         },
-        "count": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "How many rows the flow holds; `/api/flows` carries only the rows of tasks In Progress on the board."
-        },
         "depth": {
           "anyOf": [
             {
@@ -2882,132 +2870,6 @@
         "agents"
       ],
       "title": "FlowSnapshot",
-      "type": "object"
-    },
-    "Flows": {
-      "description": "`GET /api/flows`: the whole of every flow and what the agent CLI reads beside it, with none of the snapshot's pages.",
-      "properties": {
-        "cold_done": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The ids of the done tasks the feed holds as a stub, left out of `flows`."
-        },
-        "cues": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/Cue"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "dags": {
-          "items": {
-            "$ref": "#/$defs/DagBody"
-          },
-          "type": "array"
-        },
-        "error": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "flows": {
-          "items": {
-            "$ref": "#/$defs/FlowSnapshot"
-          },
-          "type": "array"
-        },
-        "interactive": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "type": "boolean"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "pulls": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "items": {
-                  "$ref": "#/$defs/Pull"
-                },
-                "type": "array"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "ratings": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "$ref": "#/$defs/Rating"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "roles": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Roles"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "settled": {
-          "additionalProperties": {
-            "$ref": "#/$defs/Settled"
-          },
-          "type": "object"
-        }
-      },
-      "required": [
-        "flows",
-        "settled",
-        "dags",
-        "error"
-      ],
-      "title": "Flows",
       "type": "object"
     },
     "Forecast": {
@@ -8669,7 +8531,7 @@
             }
           ],
           "default": null,
-          "description": "The ids of the done tasks from before local midnight that the board feed holds as a stub, left out of `flows`: the full view (`?view=full`) only, the page reads them from `/api/done` and `/api/task/<id>`."
+          "description": "The ids of the done tasks from before local midnight that the board feed holds as a stub, left out of `flows`: the stored body never carries them (the page reads them from `/api/done` and `/api/task/<id>`), a feed's own snapshot does."
         },
         "cpu": {
           "anyOf": [
@@ -9618,6 +9480,56 @@
       "title": "TakenOver",
       "type": "object"
     },
+    "TaskCostToGo": {
+      "description": "`GET /api/task-cost-to-go/{id}`: the task's kind and size, and the rows `CostToGo` holds for them; no kind or size, no rows.",
+      "properties": {
+        "cost_to_go": {
+          "items": {
+            "$ref": "#/$defs/StateCost"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "now": {
+          "type": "number"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task": {
+          "type": "string"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "cost_to_go",
+        "task",
+        "kind",
+        "size"
+      ],
+      "title": "TaskCostToGo",
+      "type": "object"
+    },
     "TaskCriterion": {
       "description": "One acceptance criterion of a Board task and whether it is checked.",
       "properties": {
@@ -9680,6 +9592,56 @@
         "settled"
       ],
       "title": "TaskDelta",
+      "type": "object"
+    },
+    "TaskDiff": {
+      "description": "`GET /api/task-diff/{id}`: the task's kind and size, and the rows `RunDiffs` holds for them; no kind or size, no rows.",
+      "properties": {
+        "diff": {
+          "items": {
+            "$ref": "#/$defs/RunDiff"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "now": {
+          "type": "number"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task": {
+          "type": "string"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "diff",
+        "task",
+        "kind",
+        "size"
+      ],
+      "title": "TaskDiff",
       "type": "object"
     },
     "TaskEventHistory": {
@@ -10932,9 +10894,6 @@
       },
       "type": "array"
     },
-    "flows": {
-      "$ref": "#/$defs/Flows"
-    },
     "graph": {
       "$ref": "#/$defs/FlowGraph"
     },
@@ -11095,6 +11054,12 @@
     "stages": {
       "$ref": "#/$defs/SubStages"
     },
+    "taskCostToGo": {
+      "$ref": "#/$defs/TaskCostToGo"
+    },
+    "taskDiff": {
+      "$ref": "#/$defs/TaskDiff"
+    },
     "taskEventHistory": {
       "$ref": "#/$defs/TaskEventHistory"
     },
@@ -11145,6 +11110,8 @@
     "transitions",
     "spend",
     "taskSpend",
+    "taskDiff",
+    "taskCostToGo",
     "cells",
     "estimates",
     "graph",
@@ -11160,7 +11127,6 @@
     "contractReport",
     "readyReport",
     "runs",
-    "flows",
     "taskRecord",
     "taskMoves",
     "taskRecords",

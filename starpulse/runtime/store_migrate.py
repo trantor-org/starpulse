@@ -116,11 +116,13 @@ def maintain(
 
     With a `base` (the config's directory) it also imports the operator files found there, and in `state_dir` under it.
     With `fold` (the `starpulse migrate` run, the only writer besides the Board child) it folds the Task History and the
-    `machine:events` the store holds into the read model, placing machine tasks with `keys`.
+    `machine:events` the store holds into the read model, placing machine tasks with `keys`; the read model and the
+    stored snapshot, and the claim expiries and summaries, are rebuilt first when their stamp differs.
     """
     from starpulse.event_log.event_log import EventLog, store_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.migrate import migrate  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.readmodel.projector import Projector  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.event_log.readmodel.snapshot_store import build as build_snapshots  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.store import EventStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.flow_metrics.adapters.outbound.history import HistoryStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
@@ -129,10 +131,14 @@ def maintain(
         migrate(engine)
         log = EventLog(url, engine=engine)  # opened after the migration: an unmigrated store refuses its events
         if fold:
-            Projector(engine, EventStore(engine), log=log, drawn=machines, keys=keys).catch_up()
+            projector = Projector(engine, EventStore(engine), log=log, drawn=machines, keys=keys)
+            projector.build()
+            build_snapshots(engine, projector.stamp())
         if base is not None:
             import_files(log, base, base / (state_dir or ""))
-        HistoryStore(url, machines, engine, retention_days=retention_days).build_summaries()
+        history = HistoryStore(url, machines, engine, retention_days=retention_days)
+        history.build_summaries()
+        history.build_claim_expiries()
     finally:
         engine.dispose()
 

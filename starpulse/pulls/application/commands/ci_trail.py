@@ -1,11 +1,11 @@
 """A task's pull requests as moves of the shipped `ci` machine, published to `machine:events`.
 
 GitHub answers what a pull request is now, not what it went through. `parse` keeps the parts of that answer that say
-when it was opened, pushed to, force-pushed, checked, conflicted and merged, and `steps` turns them into the machine's
+when it was opened, pushed to, force-pushed, checked, conflicted, merged and closed, and `steps` turns them into the machine's
 events in order. `CiTrail` publishes each step under an id made of the pull request and the fact (`ci:<url>:push:<sha>`),
 so the log's own dedupe makes every poll idempotent, across a restart too, and the log is the only history kept.
 
-GitHub dates a push, a force-push, a check suite and a merge. It dates neither an earlier attempt of a re-run suite nor
+GitHub dates a push, a force-push, a check suite, a merge and a close. It dates neither an earlier attempt of a re-run suite nor
 a conflict, so a conflict is stamped by the poll that first saw it and an earlier attempt takes the time of the step
 before it. A conflict is left only by a new head, because the machine leaves Conflicting by REBASED alone.
 """
@@ -53,22 +53,31 @@ class Head:
 
 @dataclass(frozen=True)
 class PullHistory:
-    """What GitHub says of one pull request that dates its CI: opened, heads in push order, conflict, merge."""
+    """What GitHub says of one pull request that dates its CI: opened, heads in push order, conflict, merge, close.
+
+    `head` is the pull request's head now, which a push that started no checks makes newer than the last of `heads`;
+    `closed` is a close without a merge; `closed_at` is None when the record predates the read of its date.
+    """
 
     url: str
     opened: float
     heads: tuple[Head, ...]
+    head: str
     conflicting: bool
     merged_at: float | None
+    closed: bool
+    closed_at: float | None
 
 
 @dataclass(frozen=True)
 class Step:
-    """One event of the machine, with the id that makes it the same event on every poll."""
+    """One event of the machine, with the id that makes it the same event on every poll, and the fields it carries:
+    a conflict names the head it was judged at, so delivery can drop it once the pull request moved past that head."""
 
     event_id: str
     event: str
     at: float
+    data: Mapping[str, str] | None
 
 
 def _ran(suite: dict) -> bool:
@@ -76,8 +85,8 @@ def _ran(suite: dict) -> bool:
     return suite["status"] == "COMPLETED" or bool(suite.get("workflowRun"))
 
 
-def parse(url: str, node: dict) -> PullHistory:
-    """The history in one GraphQL `pullRequest` node (the `Pull` fragment of `pull_requests`)."""
+def parse(url: str, node: dict, head: str) -> PullHistory:
+    """The history in one GraphQL `pullRequest` node (the `Pull` fragment of `pull_requests`) whose head is `head`."""
     chain = [item["commit"] for item in node.get("commits", {}).get("nodes", [])]
     heads: dict[str, Head] = {}
     for commit in chain:
@@ -101,9 +110,12 @@ def parse(url: str, node: dict) -> PullHistory:
     return PullHistory(
         url=url,
         opened=epoch_of(node["createdAt"]),
-        heads=tuple(sorted(heads.values(), key=lambda head: head.at)),
+        heads=tuple(sorted(heads.values(), key=lambda pushed: pushed.at)),
+        head=head,
         conflicting=node.get("mergeable") == "CONFLICTING" and not node.get("merged") and not node.get("closed"),
         merged_at=epoch_of(node["mergedAt"]) if node.get("mergedAt") else None,
+        closed=bool(node.get("closed")) and not node.get("merged"),
+        closed_at=epoch_of(node["closedAt"]) if node.get("closedAt") else None,
     )
 
 
@@ -137,19 +149,22 @@ def steps(pull: PullHistory, *, seen_at: float, floor: float = 0.0) -> list[Step
     """
     out: list[Step] = []
 
-    def add(key: str, event: str, at: float | None) -> None:
+    def add(key: str, event: str, at: float | None, data: Mapping[str, str] | None = None) -> None:
         previous = out[-1].at if out else floor
-        out.append(Step(f"ci:{pull.url}:{key}", event, previous if at is None else max(at, previous)))
+        out.append(Step(f"ci:{pull.url}:{key}", event, previous if at is None else max(at, previous), data))
 
     add("opened", "PR_OPENED", pull.opened)
     for head in pull.heads:
         add(f"{'rebase' if head.forced else 'push'}:{head.oid}", "REBASED" if head.forced else "PUSHED", head.at)
         for key, event, at in _checks(head):
             add(key, event, at)
+    last = pull.heads[-1].oid if pull.heads else "none"
     if pull.conflicting:
-        add(f"conflict:{pull.heads[-1].oid if pull.heads else 'none'}", "CONFLICTED", seen_at)
+        add(f"conflict:{last}", "CONFLICTED", seen_at, {"head": pull.head} if pull.head else None)
     if pull.merged_at is not None:
         add("merged", "MERGED", pull.merged_at)
+    elif pull.closed:
+        add(f"closed:{last}", "CLOSED", pull.closed_at)
     return out
 
 
@@ -188,6 +203,7 @@ class CiTrail:
                             task=task,
                             now=step.at,
                             event_id=step.event_id,
+                            data=step.data,
                             log=self._log,
                         )
                         is None

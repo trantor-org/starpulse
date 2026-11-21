@@ -60,7 +60,7 @@ _Held = dict[int, tuple[Any, bytes]]
 
 
 def _dump_all(
-    items: Iterable[Any], annotation: Any, held: _Held, kept: _Held, project: Callable[[Any], Any] = lambda item: item
+    items: Iterable[Any], annotation: Any, held: _Held, kept: _Held, project: Callable[[Any], Any]
 ) -> list[bytes]:
     """The JSON of each of `items` as `project` draws it: the one `held` has for the object, else made now. Each is
     recorded in `kept`."""
@@ -136,11 +136,6 @@ def _drawn_pulls(pulls: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[
     }
 
 
-def full_snapshot(data: Any) -> Any:
-    """`data` as `?view=full` sends it: whole, but with each pull request drawn as the page is sent it."""
-    return {**data, "pulls": _drawn_pulls(data["pulls"])} if data.get("pulls") else data
-
-
 def slim_snapshot(data: Any) -> Any:
     """`data` as the page is sent it: each Board task without its description, criteria and moves (it reads them
     from `/api/task/<id>` on open, and the moves through the `move_sets` table; an active task keeps its
@@ -159,80 +154,29 @@ def slim_snapshot(data: Any) -> Any:
 
 
 def encode_snapshot(data: Any, held: _Held) -> bytes:
-    """`encode("snapshot", slim_snapshot(data))`, with the JSON of each board task kept in `held` between calls.
+    """`encode("snapshot", slim_snapshot(data))`, the one body the API serves, with the JSON of each board task kept in
+    `held` between calls.
 
     `held` maps `id(object)` to the object and its JSON: the feed replaces a task it changes rather than
     editing it, so one met again encodes the same, and one no longer listed is forgotten. Those are most of the
     snapshot, so a build after one change validates and dumps only what changed and the rest of the document.
     """
-    return _encode_held(data, held, slim_snapshot, _slim_task, lambda agents: {"move_sets": _move_sets(agents)})
-
-
-def _encode_held(
-    data: Any,
-    held: _Held,
-    shape: Callable[[Any], Any],
-    project: Callable[[Any], Any],
-    extra: Callable[[list[Any]], dict[str, Any]],
-) -> bytes:
-    """`encode("snapshot", shape(data))` with the board's tasks dumped as `encode_snapshot` holds them: the document is
-    shaped around no task, `extra` draws what the tasks add to it, and each task is spliced in as `project` draws it."""
     flows = data["flows"]
     if not flows or flows[0]["name"] != "board":
-        return encode("snapshot", shape(data))
+        return encode("snapshot", slim_snapshot(data))
     kept: _Held = {}
-    tasks = _dump_all(flows[0]["agents"], RawTask, held, kept, project)
+    tasks = _dump_all(flows[0]["agents"], RawTask, held, kept, _slim_task)
     held.clear()
     held.update(kept)
-    drawn = {**shape({**data, "flows": [{**flows[0], "agents": []}, *flows[1:]]}), **extra(flows[0]["agents"])}
+    drawn = {
+        **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *flows[1:]]}),
+        "move_sets": _move_sets(flows[0]["agents"]),
+    }
     body = encode("snapshot", drawn)
     try:
         return _splice(body, b'"agents":[]', b'"agents":[%s]' % b",".join(tasks), after=b'"flows":[{"name":"board"')
     except ValueError:  # the document is not drawn as it was: encode it whole
-        return encode("snapshot", shape(data))
-
-
-#: The snapshot's fields `/api/flows` keeps: what the agent CLI reads of the board, the runs and the cues.
-FLOW_KEYS = ("flows", "roles", "settled", "cold_done", "pulls", "interactive", "ratings", "cues", "dags", "error")
-
-
-def common_flows(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-    """The flows every `/api/flows` read gets: the board whole, and of each other flow its machine and the rows of the
-    tasks the board holds in its working state, without their steps and trail, beside a `count` of all its rows."""
-    working = {row["id"] for row in snapshot["flows"][0]["agents"] if row["state"] == snapshot["roles"]["working"]}
-    return [
-        {**snapshot["flows"][0], "count": len(snapshot["flows"][0]["agents"])},
-        *(
-            {
-                **{key: value for key, value in flow.items() if key not in ("agents", "ties")},
-                "agents": [
-                    {key: value for key, value in row.items() if key not in ("steps", "trail")}
-                    for row in flow["agents"]
-                    if row.get("task") in working
-                ],
-                "count": len(flow["agents"]),
-            }
-            for flow in snapshot["flows"][1:]
-        ),
-    ]
-
-
-def common_dags(dags: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The workflows every `/api/flows` read gets: each without the run lists (`active`, `failed`, `closed`) only the
-    page reads."""
-    return [{key: value for key, value in dag.items() if key not in ("active", "failed", "closed")} for dag in dags]
-
-
-def stored_bodies(data: Any, held: dict[str, _Held]) -> dict[str, bytes]:
-    """The bodies the API serves, by view: `/api/snapshot`'s for the page (`slim`) and `?view=full`, each with its own
-    task JSON in `held[view]`, and `/api/flows`'s (`flows`), so no read decodes or encodes the snapshot."""
-    full = full_snapshot(data)
-    flows = {**{key: full[key] for key in FLOW_KEYS if key in full}, "flows": common_flows(full), "dags": common_dags(full.get("dags", []))}
-    return {
-        "slim": encode_snapshot(data, held.setdefault("slim", {})),
-        "full": _encode_held(data, held.setdefault("full", {}), full_snapshot, lambda task: task, lambda _: {}),
-        "flows": encode("flows", flows),
-    }
+        return encode("snapshot", slim_snapshot(data))
 
 
 def _splice(body: bytes, marker: bytes, drawn: bytes, after: bytes = b"") -> bytes:

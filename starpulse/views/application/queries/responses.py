@@ -17,7 +17,7 @@ from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.api.dto.health import SessionStep
 from starpulse.flow_metrics.model import analytics
-from starpulse.flow_metrics.model.cells import cell_report, combine_cost, estimate_report
+from starpulse.flow_metrics.model.cells import cell_of, cell_report, combine_cost, estimate_report
 from starpulse.flow_metrics.model.flow import combine_cost_to_go, combine_diff, combine_edges, combine_stages
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
 from starpulse.flow_metrics.model.liveness import liveness, work_machines, working_stays
@@ -531,6 +531,32 @@ def task_spend_response(week: tuple[bytes, int], task: str) -> tuple[bytes, int]
     report = json.loads(body)
     rows = [row for row in report["spend"] if row["task"] == task]
     return encode("taskSpend", {"task": task, "now": report["now"], "window_s": report["window_s"], "spend": rows}), 200
+
+
+def _cohort_response(
+    week: tuple[bytes, int], task: str, titled: Callable[[], Mapping[str, Mapping[str, Any]]], label: str, contract: str
+) -> tuple[bytes, int]:
+    raw, status = week
+    if status != 200:
+        return week
+    report = json.loads(raw)
+    cell = cell_of(titled(), task)
+    rows = [row for row in report[label] if cell == (row["kind"], row["size"])]
+    kind, size = cell or (None, None)
+    answer = {"task": task, "kind": kind, "size": size, "now": report["now"], "window_s": report["window_s"], label: rows}
+    return encode(contract, answer), 200
+
+
+def task_diff_response(week: tuple[bytes, int], task: str, titled: Callable[[], Mapping[str, Mapping[str, Any]]]) -> tuple[bytes, int]:
+    """The body and status for `/api/task-diff/<task>`: the rows of the `week` answer `diff_response` gave for the
+    task's kind and size, none for a task without that label; a refusal passes through."""
+    return _cohort_response(week, task, titled, "diff", "taskDiff")
+
+
+def task_cost_to_go_response(week: tuple[bytes, int], task: str, titled: Callable[[], Mapping[str, Mapping[str, Any]]]) -> tuple[bytes, int]:
+    """The body and status for `/api/task-cost-to-go/<task>`: the rows of the `week` answer `cost_to_go_response`
+    gave for the task's kind and size, none for a task without that label; a refusal passes through."""
+    return _cohort_response(week, task, titled, "cost_to_go", "taskCostToGo")
 
 
 def cells_response(

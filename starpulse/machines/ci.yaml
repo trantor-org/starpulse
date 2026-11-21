@@ -1,4 +1,4 @@
-# One pull request's CI as GitHub moves it. A merged pull request is not final: a task's second PR reopens it.
+# One pull request's CI as GitHub moves it. A merged or closed pull request is not final: a task's second PR reopens it.
 name: ci
 source: GitHub
 states:
@@ -8,9 +8,10 @@ states:
   failing: {}
   conflicting: {}
   merged: {}
+  closed: {}
 events:
   PUSHED:
-    - {from: [opened, failing, passing], to: running}
+    - {from: [opened, failing, passing, closed], to: running}
   CHECKS_PASSED:
     - {from: running, to: passing}
   CHECKS_FAILED:
@@ -24,4 +25,6 @@ events:
   MERGED:
     - {from: passing, to: merged}
   PR_OPENED:
-    - {from: merged, to: opened}
+    - {from: [merged, closed], to: opened}
+  CLOSED:
+    - {from: [opened, running, passing, failing, conflicting], to: closed}

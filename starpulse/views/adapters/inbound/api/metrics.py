@@ -30,6 +30,7 @@ def prometheus(request: Request) -> Response:
         services.bridge_metrics,
         services.history_lag_metrics,
         services.follower_lag_metrics,
+        services.child_cpu_metrics,
         api.snapshots.metrics,
         api.page_gauge,
     )

@@ -11,7 +11,7 @@ from starpulse.board.model.rollup import checks_verdict
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.tables import pull_requests
 
-__all__ = ["HOLD_WINDOW", "PullStore"]
+__all__ = ["HOLD_WINDOW", "PullStore", "stored_head"]
 
 #: The GraphQL names a record is served under, by column.
 _FIELDS = {
@@ -272,3 +272,11 @@ class PullStore:
                         del self._listed[next(iter(self._listed))]
                     self._listed[(repo, state, bodies)] = rows
         return [record for record in rows if (record["repo"], record["number"]) not in held]
+
+
+def stored_head(engine: Engine, repo: str, number: int) -> str | None:
+    """The head the database holds for `repo`'s pull request `number`, None when it holds none: read from the database,
+    not a `PullStore`'s memory, which a save in another process leaves behind."""
+    with engine.connect() as db:
+        query = select(pull_requests.c.head).where(pull_requests.c.repo == repo, pull_requests.c.number == number)
+        return db.execute(query).scalar()

@@ -96,10 +96,17 @@ def _closed(state: str) -> Callable[[Record, Mapping[str, Any], float], Record]:
     def delta(record: Record, _fields: Mapping[str, Any], at: float) -> Record:
         stamp = iso_utc(at) if state == "MERGED" else None
         detail = record["detail"] or bare_detail(at)
-        ci = detail["ci"] | {"merged": state == "MERGED", "mergedAt": stamp}
+        closed = {"closed": state == "CLOSED", "closedAt": None if stamp else iso_utc(at)}
+        ci = detail["ci"] | {"merged": state == "MERGED", "mergedAt": stamp} | closed
         return {"state": state, "mergedAt": stamp, "detail": detail | {"mergedAt": stamp, "ci": ci}}
 
     return delta
+
+
+def reopened(record: Record, _fields: Mapping[str, Any], at: float) -> Record:
+    """An open record again, its CI detail no longer closed."""
+    detail = record["detail"] or bare_detail(at)
+    return {"state": "OPEN", "detail": detail | {"ci": detail["ci"] | {"closed": False, "closedAt": None}}}
 
 
 def _threads(_record: Record, fields: Mapping[str, Any], _at: float) -> Record:
@@ -138,7 +145,7 @@ def _reported(record: Record, fields: Mapping[str, Any], _at: float) -> Record:
 #: What each event causes in the record, by (machine, event); a push leaves the head to the next `ci:jobs` entry.
 _DELTAS: dict[tuple[str, str], Callable[[Record, Mapping[str, Any], float], Record]] = {
     (GITHUB_MACHINE, "PR_OPENED"): lambda *_: {"state": "OPEN"},
-    REOPENING: lambda *_: {"state": "OPEN"},
+    REOPENING: reopened,
     (GITHUB_MACHINE, "CONFLICTED"): lambda *_: {"mergeable": "CONFLICTING"},
     (GITHUB_MACHINE, "MERGEABLE"): lambda *_: {"mergeable": "MERGEABLE"},
     (GITHUB_MACHINE, "THREADS_CHANGED"): _threads,

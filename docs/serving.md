@@ -357,9 +357,9 @@ GET /api/events/body/<key>
                    server has built four newer ones
 GET /api/snapshot  the document /api/events sends on connect, as one response: without each task's description,
                    criteria and moves (`/api/task/<id>`, `move_sets`) and with only the day's settled tasks;
-                   `?view=full` is the whole document, which `starpulse snapshot` reads
-GET /api/flows[?machine=NAME]  the board flow whole (full tasks, moves) and, of each other flow, its machine, a `count` of its rows and the rows of the tasks the board has In Progress (no steps, trail or ties); `?machine=` reads that one flow whole, 404 for an unknown name; with `roles`, every `settled` entry, `cold_done`, `pulls`, `interactive`,
-                   `ratings`, `cues`, `dags` (each without its `active`, `failed` and `closed` run lists) and `error`: what `starpulse board|task|machines|machine|doctor|incident` read (`machine` the named flow whole); the Board writer stores the body and the API serves its bytes (gzip once per stored body); `?machine=` is encoded per request from the stored full snapshot
+                   `?view=full` and `/api/flows` send this same stored body (gzip once per stored body), which
+                   `starpulse snapshot` and `starpulse board|task|machines|machine|doctor|incident` read; a verb
+                   that needs a task's description or criteria reads `/api/task/<id>`
 GET /api/runs      {dags, error}: every runs workflow with its latest run, and what a runs instance reported: `starpulse runs list`
 GET /api/ledger/<event>[?before=T][&limit=N]
                    {rows, more}: one Ledger's next `limit` rows (default 20, at most 100) older than `before` (epoch
@@ -560,8 +560,12 @@ nothing and the running workers stay on the active version.
 
 `starpulse/event_log/readmodel` folds the `task` streams into tables that answer reads by index, so no read loads every
 Task. A `Projector(engine, store)` folds events past its checkpoint (`read-model:tasks`, in `Checkpoints`); each batch of 500
-commits its rows and the checkpoint together. `rebuild()` empties the tables and replays from position 0; a replay and an
-incremental fold give the same rows. Given a `SearchIndex` as `search`, the projector also writes each folded Task's search
+commits its rows and the checkpoint together. The read model, the stored snapshot and the claim expiries are derived families on the table registry: each keeps a stamp
+in `starpulse_settings` (`derived_stamp:<family>`), and writer start (`build()`, from `starpulse migrate`) folds the read model
+again only when it differs, from the table definitions, the fold and placement code and the machines that place a task.
+`rebuild()` folds the whole History in memory, then swaps the tables, rows, fold cursors and stamp in one transaction, so a
+reader sees the old rows or the new, never none; a replay and an incremental fold give the same rows. Consumer cursors in
+`starpulse_checkpoints` keep their place, and no checkpoint name carries a hash. Given a `SearchIndex` as `search`, the projector also writes each folded Task's search
 row in that transaction, in lane `archived` when the row is archived and not Done (an archived Done Task keeps the `Done` lane); no non-test code constructs it yet, so `serve` does not.
 
 - `starpulse_tasks` (migration 0029) has a typed column per StarPulse field, JSON `fields`, `meta` and `comments`, and
@@ -582,7 +586,7 @@ row in that transaction, in lane `archived` when the row is archived and not Don
 `BoardFeed(read_model=ReadModel(engine))` serves the page from it: the reader switch, with no bridge between the two
 paths. The feed holds no Task: each `snapshot()` queries the live set, so a Task Done before local midnight is off the
 Board and read only by id; `task`, `held` and `is_done` are single-row reads, `is_resident` is always false,
-`cold_page` pages `archived`, and the snapshot carries no archived Task (`cold_done` is empty). The Scheduler's
+`cold_page` pages `archived`, and the snapshot carries no archived Task. The Scheduler's
 `open_tasks` and the write guards go through the same reads. `follow_read_model()` publishes the Tasks changed since it last
 ran as page deltas, to run after each `Projector.catch_up`. Without a read model the in-memory path serves unchanged. `serve`
 folds the History into the read tables on each commit to the store: `Projector.fold_tasks` on a `task-fold` thread of its own, so a new Task's row waits for no other fold, and on the `read-model-follow` thread `Projector.fold_machines`, then `follow_read_model`, then `Projector.index` for search, so the page never waits on the index, draws the board from them
@@ -952,7 +956,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 
 #### [ci]
 
-- `states` (list of text, required): The Board state ids the shipped `ci` machine is attached to as a sub-flow; one the Board lacks is refused. StarPulse ships one `ci` machine, which GitHub moves and StarPulse only observes (its `source` is GitHub). With `gh` available, each task with a PR is one agent in that flow, and its trail is the PR's pushes, check results, re-runs, conflicts, rebases and merge, read from GitHub every minute and kept in the event log (`machine:events`).
+- `states` (list of text, required): The Board state ids the shipped `ci` machine is attached to as a sub-flow; one the Board lacks is refused. StarPulse ships one `ci` machine, which GitHub moves and StarPulse only observes (its `source` is GitHub). With `gh` available, each task with a PR is one agent in that flow, and its trail is the PR's pushes, check results, re-runs, conflicts, rebases, merge and close, read from GitHub every minute and kept in the event log (`machine:events`).
 
 #### [[producers]]
 
@@ -1523,8 +1527,8 @@ publishes nothing, so a page keeps a card until it reloads. The page's snapshot 
   `task` delta carries the new number;
 - `settled` keeps the tasks created or settled since the start of the day before local midnight, and `milestone_done` (`{milestone: count}`)
   counts every settled completed task by milestone;
-- `/api/snapshot?view=full` is the whole document `starpulse snapshot` reads: full tasks, every `settled` entry and `cold_done`,
-  the ids of the cold done tasks; the other CLI verbs read `/api/flows`, `/api/runs`, `/api/task/<id>` and the routes above, never the snapshot.
+- `/api/snapshot`, `?view=full` and `/api/flows` serve this one stored body: the CLI verbs read `/api/flows`, `/api/runs`,
+  `/api/task/<id>` and the routes above, and a verb that needs a task's description or criteria reads `/api/task/<id>`.
 
 `GET /api/done[?before=<entered>][&limit=20]` returns `{tasks, more}`, the next page of cold done tasks, newest done
 first, each `{id, title, state, model, labels, milestone, type, entered}`, its card fields from the read model when the feed has one (no board file is opened), else read from the board on request. `before` is

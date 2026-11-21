@@ -562,9 +562,15 @@ export function ciHistory(task: KanbanTask): CiHistory | null {
   return { pulls, total: { runs: sum("runs"), reruns: sum("reruns"), rebases: sum("rebases"), conflicts: sum("conflicts") } };
 }
 
-/** The pull requests the CI trail names that the task's list does not (a closed one): the panel draws each as a row of its own. */
+/**
+ * The pull requests the CI trail names that the task's list does not (a closed one): the panel draws each as a row of
+ * its own, closed unless its trail merged it, since a trail recorded before the ci machine had a closed state ends at
+ * the last check it saw.
+ */
 export const unlistedPulls = (task: KanbanTask, history: CiHistory | null): CiPull[] =>
-  (history?.pulls ?? []).filter((c) => !task.prs.some((p) => p.number === c.number));
+  (history?.pulls ?? [])
+    .filter((c) => !task.prs.some((p) => p.number === c.number))
+    .map((c) => (c.state === "merged" ? c : { ...c, state: "closed" }));
 
 /** What the Session section draws for a task: the claiming session's link and id, and the line the in-progress machine gives it. */
 export interface SessionView { url: string; line: string; id: string }

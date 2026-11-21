@@ -92,7 +92,6 @@ from starpulse.contracts.api.dto.snapshot import (
     BuildEvent,
     ClaimDelta,
     DagsDelta,
-    Flows,
     LedgersDelta,
     MoveDelta,
     PullsDelta,
@@ -110,6 +109,8 @@ from starpulse.contracts.api.dto.transitions import (
     RunDiffs,
     Spend,
     SubStages,
+    TaskCostToGo,
+    TaskDiff,
     TaskSpend,
     Transitions,
 )
@@ -141,6 +142,8 @@ class ApiContract(_Api):
     transitions: Transitions
     spend: Spend
     taskSpend: TaskSpend
+    taskDiff: TaskDiff
+    taskCostToGo: TaskCostToGo
     cells: Cells
     estimates: Estimates
     graph: FlowGraph
@@ -156,7 +159,6 @@ class ApiContract(_Api):
     contractReport: ContractReport
     readyReport: ReadyReport
     runs: Runs
-    flows: Flows
     taskRecord: TaskRecord
     taskMoves: TaskMoves
     taskRecords: TaskRecords

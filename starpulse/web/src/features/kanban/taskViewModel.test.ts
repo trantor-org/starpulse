@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
-import { changedFields, ciHistory, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, linkedDocIds, editKey, fetchRecord, labelRuleError, menuKey, repoBase, repoPath, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
+import { changedFields, ciHistory, unlistedPulls, detailFields, docLinks, fetchDoc, fetchDocs, fetchMilestone, linkedDocIds, editKey, fetchRecord, labelRuleError, menuKey, repoBase, repoPath, postComment, saveSection, saveTask, SECTION_FIELDS, setDetailField, taskActivity, taskBody, toggleItem, type MenuState, type TaskRecord } from "./taskViewModel";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", tier: "leverage", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -328,6 +328,13 @@ describe("a task's CI history", () => {
   it("keeps a pull request absent from the task's list from shifting another's counts, and links it by the url its id holds", () => {
     const history = ciHistory(task({ prs: [pull(15)] }));
     expect(history?.pulls.map((p) => [p.number, p.url, p.runs])).toEqual([[12, url(12), 1], [15, url(15), 2]]);
+  });
+
+  it("draws an unlisted pull request as closed, not the last CI state its trail recorded, unless its trail merged it", () => {
+    const listed = task({ prs: [pull(12)] });
+    expect(unlistedPulls(listed, ciHistory(listed)).map((p) => [p.number, p.state])).toEqual([[15, "closed"]]);
+    const merged = task({ prs: [pull(15)] });
+    expect(unlistedPulls(merged, ciHistory(merged)).map((p) => [p.number, p.state])).toEqual([[12, "merged"]]);
   });
 
   it("has no history for a task outside the ci machine, and counts a step without an id on the pull request before it", () => {

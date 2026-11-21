@@ -3,8 +3,7 @@
 
 - `GET /api/events`, `/api/held`, `/api/lanes`: streams of the Board, a session's held tasks and its lanes.
 - `GET /api/events/body/{key}`: the snapshot body a `ref` event names.
-- `GET /api/snapshot`: the Board's snapshot, or the full one with `?view=full`.
-- `GET /api/flows`: the board whole and each other flow's machine and working-task rows, with the roles, settled tasks, pulls and runs the agent CLI reads beside them; `?machine=` names one flow to read whole.
+- `GET /api/snapshot`, `?view=full`, `GET /api/flows`: the one live payload the Board writer stored, to the page and the agent CLI alike.
 """
 
 from typing import TYPE_CHECKING
@@ -12,7 +11,7 @@ from typing import TYPE_CHECKING
 from starlette.requests import Request
 from starlette.responses import Response
 
-from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
+from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, StreamRoute
 from starpulse.views.adapters.inbound.api.streams import streaming
 from starpulse.views.model.encoding import encode
@@ -32,18 +31,12 @@ def body(request: Request) -> Response:
 
 @reading
 def snapshot(request: Request) -> Response:
-    view = "full" if query(request).get("view") == ["full"] else "slim"
-    return answer(request, seams(request).snapshots.stored(view)[1])
+    return answer(request, seams(request).snapshots.stored()[1])
 
 
 @reading
 def flows(request: Request) -> Response:
-    snapshots = seams(request).snapshots
-    if not (named := query(request).get("machine")):
-        return answer(request, snapshots.flows())
-    if (found := snapshots.flow(named[0])) is None:
-        return answer(request, encode("error", {"error": f"{named[0]} is not a machine here"}), 404)
-    return answer(request, found)
+    return answer(request, seams(request).snapshots.flows())
 
 
 def routes(api: Api) -> list[ApiRoute]:

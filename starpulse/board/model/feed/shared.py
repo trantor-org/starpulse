@@ -50,8 +50,8 @@ LEDGER_WINDOW = 86400.0
 
 
 def pull_links(references: Iterable[str]) -> list[str]:
-    """The pull request links among `references`."""
-    return [ref for ref in references if _PULL_REQUEST.fullmatch(ref)]
+    """The pull request links among `references`, each once."""
+    return list(dict.fromkeys(ref for ref in references if _PULL_REQUEST.fullmatch(ref)))
 
 
 def local_midnight(at: float) -> float:

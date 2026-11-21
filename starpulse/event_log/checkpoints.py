@@ -1,14 +1,15 @@
 """How far each reader of the log got, in one table: an integer position and, for a reader that rebuilds state, the
 snapshot it rebuilds from.
 
-A snapshot is read only when it was saved under the model's current `SCHEMA_VERSION` and still validates; otherwise the
-reader gets its position and no snapshot, and replays from the log.
+A snapshot is read only when it still validates against the model; otherwise the reader gets its position and no
+snapshot, and replays from the log. A name is one checkpoint: a projection that changes keeps no cursor here, because
+its family refolds under its own stamp.
 """
 
 import time
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import Connection, Engine, delete, func, select
+from sqlalchemy import Connection, Engine, select
 from sqlalchemy.dialects import sqlite
 
 from starpulse.event_log.tables import checkpoints
@@ -23,10 +24,10 @@ class Checkpoints:
         snapshot; (None, None) when nothing was saved. Raises when the database does."""
         c = checkpoints.c
         with self.engine.connect() as db:
-            row = db.execute(select(c.position, c.schema_version, c.state).where(c.name == name)).first()
+            row = db.execute(select(c.position, c.state).where(c.name == name)).first()
         if row is None:
             return None, None
-        if model is None or row.state is None or row.schema_version != model.SCHEMA_VERSION:  # type: ignore[attr-defined]
+        if model is None or row.state is None:
             return row.position, None
         try:
             return row.position, model.model_validate(row.state)
@@ -35,12 +36,7 @@ class Checkpoints:
 
     def save(self, name: str, position: int, model: BaseModel | None = None, *, conn: Connection | None = None) -> None:
         """Keep `position` (and `model`, the state a reader built up to it) as `name`'s checkpoint, in place of the last.
-
-        A name ending `@<hash>` also removes the checkpoints saved under the same base with another hash (not those of a
-        longer base such as `<base>@x@<hash>`): a projection
-        change saved under a new name, and the old row would otherwise stay forever. `conn` joins the caller's
-        transaction; without it the save commits on its own.
-        """
+        `conn` joins the caller's transaction; without it the save commits on its own."""
         if conn is None:
             with self.engine.begin() as db:
                 self.save(name, position, model, conn=db)
@@ -48,7 +44,7 @@ class Checkpoints:
         values = {
             "name": name,
             "position": position,
-            "schema_version": 0 if model is None else model.SCHEMA_VERSION,  # type: ignore[attr-defined]
+            "schema_version": 0,  # a durable column no reader reads; the baseline squash drops it
             "state": None if model is None else model.model_dump(mode="json"),
             "saved_at": time.time(),
         }
@@ -58,10 +54,3 @@ class Checkpoints:
                 index_elements=["name"], set_={key: insert.excluded[key] for key in values if key != "name"}
             )
         )
-        base, at, _ = name.rpartition("@")
-        if at:
-            prefix = base + at
-            same_base = checkpoints.c.name.startswith(prefix, autoescape=True)
-            bare_hash = func.instr(func.substr(checkpoints.c.name, len(prefix) + 1), at) == 0  # `a@b@h` is base `a@b`
-            superseded = same_base & bare_hash & (checkpoints.c.name != name)
-            conn.execute(delete(checkpoints).where(superseded))

@@ -28,6 +28,7 @@ from starpulse.board.model.feed.shared import CLAIM_EXPIRIES_STATE
 from starpulse.bridge.metrics import metrics_of as bridge_metrics_of
 from starpulse.bridge.subjects import CHECKPOINT, STREAMS
 from starpulse.event_log.caught_up import CaughtUp
+from starpulse.event_log.child_cpu import metrics_of as child_cpu_metrics_of
 from starpulse.event_log.follower_lag import metrics_of as follower_lag_metrics_of
 from starpulse.event_log.recorder_lag import metrics_of as history_lag_metrics_of
 from starpulse.event_log.wake import StopEvent
@@ -120,7 +121,7 @@ def serve_page(
     from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.snapshot_store import SnapshotStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.pulls.adapters.outbound.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.views.model.encoding import stored_bodies  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.views.model.encoding import encode_snapshot  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     refresh_token, starts, reruns, run_safe, producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()
@@ -223,9 +224,10 @@ def serve_page(
         bridge_metrics=bridge_metrics_of(log),
         history_lag_metrics=history_lag_metrics_of(log),
         follower_lag_metrics=follower_lag_metrics_of(log, CHECKPOINT, STREAMS),
+        child_cpu_metrics=child_cpu_metrics_of(log),
         autopilot_log=lambda: autopilot_log(log),
     )
-    snapshots = Snapshots(SnapshotStore(log.engine, stored_bodies), log, stop)
+    snapshots = Snapshots(SnapshotStore(log.engine, encode_snapshot), log, stop)
     gc.callbacks.append(PAUSES.callback)
     app = page_app(feed, snapshots, host.static, store, window, board, services, caught_up=caught_up)
     try:

@@ -19,6 +19,10 @@ task's red check rather than waiting on the task actor's Review move, which only
 
 An `incident.<type>.<key>` event, which `starpulse incident open` publishes straight to NATS, is one line naming its owner task
 and finder; one older than `INCIDENT_FRESH_S` is acked with no line.
+
+A pull request event judged at one head (`data.head`, the `ci` machine's CONFLICTED) is acked with no line once the
+store holds a different head for that pull request: a push already answered it, and the bridge's lag or a consumer's
+replay would otherwise wake the session to re-check a resolved conflict. A head the store does not know sends the line.
 """
 
 import json
@@ -32,6 +36,7 @@ from starpulse.contracts.signals import CLAUDE_CODE
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.claude_sessions import live_process, local_id, local_ids
 from starpulse.event_log.event_log import EventLog
+from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
 from starpulse.harness_telemetry.adapters.inbound.telemetry import ClaimUnreadable, telemetry_log
 from starpulse.harness_telemetry.adapters.outbound.session_exit import ExitWatch, watch_registered
 from starpulse.harness_telemetry.model.harness import ended_id
@@ -132,6 +137,19 @@ def _quieted(event: Event, quiet: Mapping[str, Collection[str]], own: str, sessi
     return SELF in writers and bool(own) and local_id(sessions, session) == own
 
 
+def _passed(event: Event, head: Callable[[str, int], str | None] | None) -> bool:
+    if head is None:
+        return False
+    try:
+        body = json.loads(event.body)
+        judged = body["fields"]["data"]["head"]
+    except (ValueError, KeyError, TypeError):
+        return False
+    url = PULL_URL.search(str(body.get("event_id", "")))
+    stored = head(url[1], int(url[2])) if url and judged else None
+    return bool(stored) and stored != judged
+
+
 def _holder_bridge(name: str) -> str:
     url = _URL_HOLDER.fullmatch(name)
     return url[1] if url else ""
@@ -150,10 +168,12 @@ def route(
     quiet: Mapping[str, Collection[str]] | None = None,
     end: Callable[[str], None] | None = None,
     end_lanes: Collection[str] = (),
+    head: Callable[[str, int], str | None] | None = None,
 ) -> Route:
     """A session with no registration has no route, so its events stay on its consumer. A consumer named for a
     claude.ai URL holder is the running session whose record in `sessions` carries that bridge id, which registered
-    under its local id. `end` takes the id of each task a batch moved to a lane `end_lanes` names."""
+    under its local id. `end` takes the id of each task a batch moved to a lane `end_lanes` names. `head` is the
+    store's head of a repository's pull request by number, empty or None when it holds none."""
 
     def registered(name: str) -> Registration | None:
         if found := registry.get(name):
@@ -168,7 +188,11 @@ def route(
 
         def deliver(events: list[Event]) -> bool:
             own = local_id(sessions, registration.session)
-            lines = [line_for(event) for event in events if not _stale(event) and not _quieted(event, quiet or {}, own, sessions)]
+            lines = [
+                line_for(event)
+                for event in events
+                if not _stale(event) and not _passed(event, head) and not _quieted(event, quiet or {}, own, sessions)
+            ]
             delivered = notifier.notify(registration, lines) if lines else True
             outcome = "quieted, nothing sent" if not lines else "delivered" if delivered else "not delivered"
             logger.info("session %s: %s %s", name, ", ".join(event.subject for event in events), outcome)

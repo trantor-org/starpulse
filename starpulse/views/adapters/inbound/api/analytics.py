@@ -2,7 +2,8 @@
 
 - `GET /api/analytics/health`, `liveness`, `sessions`, `steps`, `transitions`, `spend`, `cells`, `estimates`, `graph`, `stages`, `cost-to-go`, `diff`,
   `missed-loads` and `trace-clusters`: each filtered by the query.
-- `GET /api/task-spend/{id}`: one task's spend, read from the stored `spend` fold rows.
+- `GET /api/task-spend/{id}`, `/api/task-diff/{id}` and `/api/task-cost-to-go/{id}`: one task's spend, or its kind and size's diff and
+  cost-to-go rows, read from the stored fold rows.
 """
 
 from collections.abc import Callable
@@ -27,6 +28,8 @@ from starpulse.views.application.queries.responses import (
     spend_response,
     stages_response,
     steps_response,
+    task_cost_to_go_response,
+    task_diff_response,
     task_spend_response,
     transitions_response,
 )
@@ -112,20 +115,28 @@ def _titled(respond: _Respond, span: int = 1) -> Endpoint:
     return endpoint
 
 
-@reading
-def task_spend(request: Request) -> Response:
-    api = seams(request)
-    services = api.services
-    asked = query(request)
-    week = _kept(
-        request,
-        services,
-        asked,
-        lambda: spend_response(services.telemetry, asked, api.feed.keys, api.feed.titled, api.clock(), services.analytics),
-        api.clock,
-        path="/api/analytics/spend",  # the week answer every task and the board-wide read share
-    )
-    return answer(request, *task_spend_response(week, request.path_params["id"]))
+def _per_task(week_of: _Respond, week_path: str, respond: _Respond) -> Endpoint:
+    """A task's read of the window answer at `week_path` that `week_of` computes, the one every task and the
+    board-wide read share, so opening a task folds nothing of its own."""
+
+    @reading
+    def endpoint(request: Request) -> Response:
+        api = seams(request)
+        services = api.services
+        feed = api.feed
+        asked = query(request)
+        week = _kept(
+            request,
+            services,
+            asked,
+            lambda: week_of(services.telemetry, asked, feed.keys, feed.titled, api.clock(), services.analytics),
+            api.clock,
+            path=week_path,
+        )
+        task = request.path_params["id"]
+        return answer(request, *respond(week, task, feed.titled))
+
+    return endpoint
 
 
 def _ranked(respond: _Respond) -> Endpoint:
@@ -156,7 +167,21 @@ routes: list[ApiRoute] = [
     ReadRoute("/analytics/steps", _sessions(steps_response), params=frozenset({"after", "hours", "limit"})),
     ReadRoute("/analytics/transitions", _titled(transitions_response), params=frozenset({"hours"})),
     ReadRoute("/analytics/spend", _titled(spend_response), params=frozenset({"hours"})),
-    ReadRoute("/task-spend/{id:path}", task_spend, params=frozenset({"hours"})),
+    ReadRoute(
+        "/task-spend/{id:path}",
+        _per_task(spend_response, "/api/analytics/spend", lambda week, task, _: task_spend_response(week, task)),
+        params=frozenset({"hours"}),
+    ),
+    ReadRoute(
+        "/task-diff/{id:path}",
+        _per_task(diff_response, "/api/analytics/diff", task_diff_response),
+        params=frozenset({"hours"}),
+    ),
+    ReadRoute(
+        "/task-cost-to-go/{id:path}",
+        _per_task(cost_to_go_response, "/api/analytics/cost-to-go", task_cost_to_go_response),
+        params=frozenset({"hours"}),
+    ),
     ReadRoute("/analytics/cells", _titled(cells_response), params=frozenset({"hours"})),
     ReadRoute("/analytics/estimates", _titled(estimates_response), params=frozenset({"hours", "milestone"})),
     ReadRoute("/analytics/graph", _titled(graph_response), params=frozenset({"hours"})),

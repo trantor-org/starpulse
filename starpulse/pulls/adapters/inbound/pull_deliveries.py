@@ -22,7 +22,7 @@ from starpulse.github.adapters.outbound.inbox import Migrate
 from starpulse.github.adapters.outbound.rest import connect_client
 from starpulse.github.model.delivery import Delivery
 from starpulse.github.ports.events import OpenWatch, Queue, Stop
-from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail, opened
+from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail, opened, reopened
 from starpulse.pulls.adapters.outbound.pull_reads import READ_EVENTS, PullReads, refresh
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 
@@ -78,7 +78,8 @@ def _merge(record: Record, pull: Mapping[str, Any], at: float) -> Record:
     # A reduced reconcile body may name no merge time: the stored one stands.
     stamp, sha = (pull.get("merged_at", record["mergedAt"]), pull.get("merge_commit_sha", record["mergeSha"])) if merged else (None, None)
     detail = _detail(record, at)
-    ci = detail["ci"] | {"merged": merged, "mergedAt": stamp}
+    closed = {"closed": not merged, "closedAt": None if merged else pull["closed_at"]}
+    ci = detail["ci"] | {"merged": merged, "mergedAt": stamp} | closed
     return {"mergedAt": stamp, "mergeSha": sha, "detail": detail | {"mergedAt": stamp, "mergeSha": sha, "ci": ci}}
 
 
@@ -93,7 +94,7 @@ _OPENED: tuple[Delta, ...] = (_created, _state, _draft, _text, _base, _head_ref,
 #: The fields each action writes, by the Field Sources rows of its `pull_request` event.
 _ACTIONS: dict[str, tuple[Delta, ...]] = {
     "opened": _OPENED,
-    "reopened": (_state, _head),
+    "reopened": (reopened, _head),
     "edited": (_text, _base),
     "synchronize": (_head,),
     "ready_for_review": (_draft,),

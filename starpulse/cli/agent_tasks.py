@@ -88,7 +88,7 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
         column["tasks"] = [next(settled) for _ in column["tasks"]]
     finished = roles_of(snapshot).done
     # an unfiltered board skips the cold pages (147 requests); a milestone or the done state asks for them
-    if finished and args.state in (None, finished) and (args.state or (args.milestone and snapshot.get("cold_done"))):
+    if finished and args.state in (None, finished) and (args.state or args.milestone):
         done = done_ids(snapshot)
         column = next(column for column in board["columns"] if column["state"] == finished)
         bare = {"milestone": "", "labels": [], "dependencies": [], "prs": [], "moves": {}}
@@ -173,9 +173,6 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     if (agent := agents.get(wanted)) is None:
         if carrier := _carrier(agent_wire.server_url(args.server, environ), args.task):
             return show(argparse.Namespace(**{**vars(args), "task": carrier}), environ)
-        cold = next((task for task in snapshot.get("cold_done", ()) if task.casefold() == wanted), None)
-        if cold is not None:
-            return _show_cold(agent_wire.server_url(args.server, environ), cold, snapshot)
         settled_id, settled = next(
             ((key, value) for key, value in snapshot["settled"].items() if key.casefold() == wanted), (None, None)
         )
@@ -197,12 +194,18 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     base = agent_wire.server_url(args.server, environ)
     if agent["state"] == roles_of(snapshot).done and "description" not in agent:
         return _show_cold(base, agent["id"], snapshot)
-    (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
     path = f"/api/task/{urllib.parse.quote(agent['id'], safe='')}"
     status, reply = agent_wire.get(base, path)
     # a task only the snapshot holds has no record, so no plan; any other failure is the caller's to see
-    plan = [] if status == 404 else record_call(base, path, status, reply).get("record", {}).get("verifyPlan") or []
-    return _described({**_active(view, snapshot), "verify_plan": plan}, agent["description"], base)
+    record = {} if status == 404 else record_call(base, path, status, reply).get("record", {})
+    if "description" not in agent:  # a stored card leaves its detail to the record
+        agent = {
+            **agent,
+            "description": record.get("description", ""),
+            "criteria": [{"text": item["text"], "checked": item["checked"]} for item in record.get("acceptanceCriteria") or []],
+        }
+    (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
+    return _described({**_active(view, snapshot), "verify_plan": record.get("verifyPlan") or []}, agent["description"], base)
 
 
 def _without_done_dependencies(
@@ -640,8 +643,10 @@ def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
             base_record = None
         if not isinstance(base_record, dict):
             raise agent_wire.CliError("usage", '--base must be a JSON object of the values read, as {"title": "..."}')
-    if checklists or plan_flags:
-        record = _read_record(args, environ)  # the items are edited as read, so the same read is the edit's base
+    unbased = base_record is not None and not changes.keys() - {"appendNotes", "planReason"} <= base_record.keys()
+    if checklists or plan_flags or unbased:
+        # The items are edited as read, so the same read is the edit's base, as it is for a field `--base` leaves out.
+        record = _read_record(args, environ)
         for field in checklists:
             changes[field] = _checklist_after(args, field, record[field])
         if plan_flags:

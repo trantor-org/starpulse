@@ -2,13 +2,14 @@
 the API serves bytes it never builds."""
 
 import gzip
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 
 from starpulse.event_log.event_log import unpooled_engine
-from starpulse.event_log.readmodel.tables import snapshot_deltas, snapshots
+from starpulse.event_log.readmodel.tables import SNAPSHOT_TABLES, snapshot_deltas, snapshots
+from starpulse.event_log.table_registry import empty_unless_stamped
 
 #: The deltas kept behind the stored sequence, so a page that read the snapshot a moment ago still replays what followed;
 #: a cursor older than that reads a fresh snapshot.
@@ -27,16 +28,30 @@ def _gzipped(body: bytes) -> bytes | None:
     return gzip.compress(body, compresslevel=GZIP_LEVEL, mtime=0) if len(body) > GZIP_MIN_BYTES else None
 
 
-def _store(db: Connection, view: str, seq: int, body: bytes, at: float) -> None:
+def _store(db: Connection, view: str, seq: int, body: bytes, at: float) -> bool:
+    """Store `body` as `view`; True when that inserted the view's row."""
     values = {"seq": seq, "body": body, "gzipped": _gzipped(body), "stored_at": at}
-    if not db.execute(update(snapshots).where(snapshots.c.view == view).values(**values)).rowcount:
-        db.execute(insert(snapshots).values(view=view, **values))
+    if db.execute(update(snapshots).where(snapshots.c.view == view).values(**values)).rowcount:
+        return False
+    db.execute(insert(snapshots).values(view=view, **values))
+    return True
+
+
+#: The one stored snapshot body's row in `starpulse_snapshots`, which a store of the three bodies (`slim`, `full`,
+#: `flows`) left rows beside.
+LIVE = "live"
+
+
+def build(engine: Engine, read_model: str) -> None:
+    """Empty the stored snapshot and its deltas when they were not stored under this definition and read-model stamp: the
+    Board writer stores a snapshot again at its start. One stored under them is left as it is."""
+    empty_unless_stamped(engine, "snapshots", SNAPSHOT_TABLES, read_model)
 
 
 class SnapshotStore:
-    """`encode` draws the bodies of a snapshot, by view (`slim`, `full`, `flows`); each is stored with its gzip."""
+    """`encode` draws the one body the API serves of a snapshot, stored with its gzip."""
 
-    def __init__(self, engine: Engine, encode: Callable[[Any, dict], Mapping[str, bytes]], keep: int = KEEP) -> None:
+    def __init__(self, engine: Engine, encode: Callable[[Any, dict], bytes], keep: int = KEEP) -> None:
         self._engine, self._encode, self.keep = engine, encode, keep
         self._held: dict = {}
         self._writer = unpooled_engine(engine)
@@ -45,7 +60,7 @@ class SnapshotStore:
         """Append `changes` as deltas, store `snapshot` with the sequence of the last one, and prune the deltas behind the
         window; all in one transaction. Returns that sequence. With no `snapshot` the stored one keeps its body, and
         moves to that sequence only when `current` (it already reflects the changes)."""
-        bodies = None if snapshot is None else self._encode(snapshot, self._held)
+        body = None if snapshot is None else self._encode(snapshot, self._held)
         with self._writer.begin() as db:
             head = db.execute(select(func.max(snapshot_deltas.c.seq))).scalar() or 0
             if changes:
@@ -54,10 +69,11 @@ class SnapshotStore:
                     [{"seq": head + n, "kind": kind, "data": data} for n, (kind, data) in enumerate(changes, 1)],
                 )
                 head += len(changes)
-            if bodies is None and current:
+            if body is None and current:
                 db.execute(update(snapshots).where(snapshots.c.seq != STANDALONE).values(seq=head))
-            for view, body in (bodies or {}).items():
-                _store(db, view, head, body, at)
+            if body is not None:
+                if _store(db, LIVE, head, body, at):  # the first save: clear what the three-body store left
+                    db.execute(delete(snapshots).where(snapshots.c.view != LIVE, snapshots.c.seq != STANDALONE))
             db.execute(delete(snapshot_deltas).where(snapshot_deltas.c.seq <= head - self.keep))
         return head
 
@@ -66,7 +82,7 @@ class SnapshotStore:
         with self._engine.begin() as db:
             _store(db, view, STANDALONE, body, at)
 
-    def body(self, view: str) -> tuple[int, bytes, bytes | None] | None:
+    def body(self, view: str = LIVE) -> tuple[int, bytes, bytes | None] | None:
         """The stored body of `view`, its gzip, and the sequence it reflects; None before the first fold."""
         with self._engine.connect() as db:
             row = db.execute(
@@ -74,7 +90,7 @@ class SnapshotStore:
             ).first()
         return None if row is None else (row.seq, row.body, row.gzipped)
 
-    def stamp(self, view: str) -> tuple[int, float] | None:
+    def stamp(self, view: str = LIVE) -> tuple[int, float] | None:
         """The sequence and the time of the stored body of `view`, read without the body: it changes when the body does,
         a rebuild at an unmoved sequence included. None before the first fold."""
         with self._engine.connect() as db:
