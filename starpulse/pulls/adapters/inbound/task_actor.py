@@ -1870,17 +1870,11 @@ class TaskActor:
 
     def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The merge evidence when every pull request the task cites has ended and at least one merged, else None: a
-        delivery closed unmerged is no proof of the work. A closed one beside a merged one holds the task, since the board refuses a merge proof while a cited PR is not
-        merged: the hold comment names it for the holder to drop."""
+        delivery closed unmerged is no proof of the work. A closed one beside a merged one stays cited for the audit
+        trail and is named closed in the evidence, which the board's proof guard asks to name every cited one."""
         terminal = self._pr_terminal(agent)
         records = [self._record(url) for url in self._proof_prs(agent)]
         merged = any(record and record["state"] == "MERGED" for record in records)
-        closed = [record for record in records if record and record["state"] != "MERGED"]
-        if terminal and merged and closed:
-            cited = ", ".join(f"{record['repo']}#{record['number']}" for record in closed)
-            reason = f"{cited} closed unmerged; drop it with `backlog-task update --remove-ref` to close the task"
-            self._note_hold(agent, (reason,), DONE_HELD)
-            return None
         return terminal if terminal and merged else None
 
     def _pr_closed_unmerged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
