@@ -2813,6 +2813,21 @@
         "name": {
           "type": "string"
         },
+        "names": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The state and event names the flow's agents' trail points index, each once."
+        },
         "nested": {
           "anyOf": [
             {
@@ -4790,6 +4805,21 @@
         },
         "machine": {
           "type": "string"
+        },
+        "names": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The names the agent's trail points index, each once."
         }
       },
       "required": [
@@ -6029,7 +6059,43 @@
           "anyOf": [
             {
               "items": {
-                "$ref": "#/$defs/TrailStep"
+                "anyOf": [
+                  {
+                    "maxItems": 3,
+                    "minItems": 3,
+                    "prefixItems": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  {
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "prefixItems": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "type": "array"
+                  }
+                ]
               },
               "type": "array"
             },
@@ -6037,7 +6103,8 @@
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "description": "A machine task's steps, as points indexing the `names` of the flow or move delta."
         },
         "type": {
           "anyOf": [
@@ -10117,37 +10184,6 @@
         "clusters"
       ],
       "title": "TraceClusters",
-      "type": "object"
-    },
-    "TrailStep": {
-      "properties": {
-        "at": {
-          "type": "number"
-        },
-        "event": {
-          "type": "string"
-        },
-        "id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "state": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "state",
-        "event",
-        "at"
-      ],
-      "title": "TrailStep",
       "type": "object"
     },
     "Trajectories": {

@@ -327,6 +327,8 @@ class TaskActor:
         self._owner_source = owner_source
         self._read = read
         self._idle = idle
+        #: Each task's profile at its holder's last resume, so a changed one is switched (`_switch_raised`).
+        self._profiles: dict[str, Any] = {}
         self._advance = advance
         #: The phases a task of each type goes through, in order (`[sequences]`); `default` serves an unnamed type.
         self._sequences = sequences
@@ -1351,14 +1353,22 @@ class TaskActor:
             self._revive_held.discard(name)
             if agent is None or agent["state"] != self._feed.roles.working or self._idle is None:
                 return
-            if wait_ended and (placed := self._feed.machine_task(HARNESS_MACHINE, name)) and placed["state"] == "active":
+            if (
+                wait_ended
+                and (placed := self._feed.machine_task(HARNESS_MACHINE, name))
+                and placed["state"] == "active"
+            ):
                 return
             items = agent.get("criteria", ())
             opened = open_criteria(items)
             if not agent["prs"] and not opened:
                 return
             own = self._own_prs(agent)
-            if agent["prs"] and own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
+            if (
+                agent["prs"]
+                and own
+                and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own)
+            ):
                 return
             if self._awaits(agent):
                 self._awaited.add(name)
@@ -1370,7 +1380,10 @@ class TaskActor:
             if count >= _NUDGES:
                 self._resumes.pop(name, None)
                 self._attend(
-                    name, f"its session ended and was revived {_NUDGES} times with no progress", "keeps ending", "Which?"
+                    name,
+                    f"its session ended and was revived {_NUDGES} times with no progress",
+                    "keeps ending",
+                    "Which?",
                 )
                 return
         try:
@@ -1423,9 +1436,25 @@ class TaskActor:
             return False
         return True
 
+    def _switch_raised(self, name: str) -> None:
+        """At an idle holder's resume, a profile changed since its last one is typed into the holder by the `idle` hook's
+        `switch`, which records the outcome on the task. The first resume only notes the profile, as a session runs on the one it started on;
+        the note outlives a park, so a profile raised while the task waits on the operator reaches the holder once it is back."""
+        profile = (self._feed.task(name, lean=True) or {}).get("profile")
+        with self._lock:
+            before = self._profiles.setdefault(name, profile)
+            self._profiles[name] = profile
+        if before == profile:
+            return
+        try:
+            self._idle(name, "switch")
+        except Exception as error:
+            logger.info("task actor: %s profile switch to %s failed: %s", name, profile, error)
+
     def _resume_sent(self, name: str) -> bool:
         """Send the holder's resume. One that fails is sent again at once, no clock, until `_resume_failed` parks the
         task: a holder whose resume was lost settles no more, so no later settle comes to send it."""
+        self._switch_raised(name)
         failed = 0
         while True:
             try:
@@ -1444,7 +1473,7 @@ class TaskActor:
         if not self._confirmed(name):
             return
         with self._lock:
-            before, count =self._resumes.get(name, (ticks, 0))
+            before, count = self._resumes.get(name, (ticks, 0))
             if wait_ended:  # an awaited CI result is the wake, not a settle with no progress
                 count = 0
             if before == ticks and count >= _NUDGES:
@@ -1473,7 +1502,9 @@ class TaskActor:
             if not isinstance(error, HolderUnreachable):
                 if failed < _FAILED_RESUMES:
                     return True
-                self._attend(name, f"its holder's resume failed {failed} times in a row: {error}", "could not be resumed")
+                self._attend(
+                    name, f"its holder's resume failed {failed} times in a row: {error}", "could not be resumed"
+                )
                 return False
         self.holder_ended(name)
         return False
@@ -1508,7 +1539,7 @@ class TaskActor:
         if not self._confirmed(name):
             return
         with self._lock:
-            agent =self._feed.task(name, lean=True)
+            agent = self._feed.task(name, lean=True)
             if agent is None or agent["state"] != self._feed.roles.working or agent["prs"]:
                 return
             if self._awaits(agent):
@@ -1518,7 +1549,9 @@ class TaskActor:
             self._stalled.discard(name)
             criteria = agent.get("criteria", ())
             checked = bool(criteria) and not open_criteria(criteria)
-            answered = "kind-decide" in agent["labels"] and operator_answered((self._feed.task(name) or {}).get("description", ""))
+            answered = "kind-decide" in agent["labels"] and operator_answered(
+                (self._feed.task(name) or {}).get("description", "")
+            )
             done = checked and (self._in_deliver_phase(name) or answered)
             target = self._feed.roles.done if done else self._feed.roles.ready
             comment = (

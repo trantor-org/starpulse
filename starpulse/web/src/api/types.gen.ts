@@ -673,7 +673,10 @@ export interface RawTask {
    */
   tier?: string | null;
   title: string;
-  trail?: TrailStep[] | null;
+  /**
+   * A machine task's steps, as points indexing the `names` of the flow or move delta.
+   */
+  trail?: ([unknown, unknown, unknown] | [unknown, unknown, unknown, unknown])[] | null;
   /**
    * A Board task's type; empty or absent when it has none.
    */
@@ -827,13 +830,6 @@ export interface HeldNext {
   name: string;
   [k: string]: unknown;
 }
-export interface TrailStep {
-  at: number;
-  event: string;
-  id?: string | null;
-  state: string;
-  [k: string]: unknown;
-}
 /**
  * `GET /api/analytics/estimates`: each completed, labelled task's estimate beside its measured actuals.
  */
@@ -912,6 +908,10 @@ export interface MoveDelta {
   agent: RawTask;
   id: string;
   machine: string;
+  /**
+   * The names the agent's trail points index, each once.
+   */
+  names?: string[] | null;
   [k: string]: unknown;
 }
 /**
@@ -2829,6 +2829,10 @@ export interface FlowSnapshot {
   last?: number | null;
   machine: Machine;
   name: string;
+  /**
+   * The state and event names the flow's agents' trail points index, each once.
+   */
+  names?: string[] | null;
   nested?: string[] | null;
   parent?: string | null;
   stuck?: Stuck | null;

@@ -3,6 +3,8 @@
 import type { SchedulerStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
 import { browserCache, type SnapshotCache } from "./savedSnapshot";
 import { keep, same } from "./same";
+import { decodeMove, decodeSnapshot, intern } from "./trails";
+import type { Snapshot as WireSnapshot } from "./types.gen";
 
 /** The longest the page waits before it reopens a connection that has not opened since it dropped. */
 export const RETRY_CAP_MS = 3000;
@@ -55,7 +57,7 @@ export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
       if (flow.name !== delta.machine) return flow;
       const at = flow.agents.findIndex((a) => a.id === delta.id);
       const agents = at < 0 ? [...flow.agents, delta.agent] : flow.agents.map((a, i) => (i === at ? delta.agent : a));
-      return { ...flow, agents };
+      return { ...flow, agents, names: intern(flow.names, delta.names) };
     });
     return { ...snap, flows };
   }
@@ -158,9 +160,9 @@ export function openStream(
 
   /** While a snapshot's body is read, the events after it, run in order once it is the page's state. */
   let waiting: (() => void)[] | null = null;
-  const take = (snap: Snapshot) => {
+  const take = (snap: WireSnapshot) => {
     waiting = null;
-    state = snap;
+    state = decodeSnapshot(snap);
     held.clear(); // the snapshot is the page's truth again, so what the next event says is news
     hand();
     tell();
@@ -228,13 +230,13 @@ export function openStream(
     waiting = null;
     src.addEventListener("snapshot", (e) => {
       const data = (e as MessageEvent<string>).data;
-      if (!data.startsWith("ref ")) return take(JSON.parse(data) as Snapshot);
+      if (!data.startsWith("ref ")) return take(JSON.parse(data) as WireSnapshot);
       const path = data.slice(4);
       const mine: (() => void)[] = (waiting = []);
       const asked = adopt?.bodies?.[path] ?? fetch(path);
       if (adopt?.bodies) delete adopt.bodies[path];
       asked
-        .then((r) => (r.ok ? (r.json() as Promise<Snapshot>) : Promise.reject(new Error(`${path}: ${r.status}`))))
+        .then((r) => (r.ok ? (r.json() as Promise<WireSnapshot>) : Promise.reject(new Error(`${path}: ${r.status}`))))
         .then(
           (snap) => {
             if (waiting !== mine) return; // a newer snapshot or connection took its place
@@ -259,7 +261,7 @@ export function openStream(
       fold({ kind: "task", ...JSON.parse((e as MessageEvent<string>).data) }),
     ));
     src.addEventListener("move", later((e) =>
-      fold({ kind: "move", ...JSON.parse((e as MessageEvent<string>).data) }),
+      fold({ kind: "move", ...decodeMove(JSON.parse((e as MessageEvent<string>).data)) }),
     ));
     src.addEventListener("dags", later(replacing("dags")));
     src.addEventListener("pulls", later(replacing("pulls")));

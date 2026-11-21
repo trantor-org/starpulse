@@ -49,6 +49,9 @@ class FlowSnapshot(_Api):
     name: str
     machine: Machine
     agents: list[RawTask]
+    names: list[str] | None = Field(
+        default=None, description="The state and event names the flow's agents' trail points index, each once."
+    )
     ties: list[Tie] | None = None
     parent: str | None = None
     depth: int | None = None

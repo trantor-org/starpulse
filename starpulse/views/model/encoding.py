@@ -127,6 +127,30 @@ def _milestone_done(data: dict[str, Any]) -> dict[str, int]:
     return dict(settled + Counter(data.get("milestone_done", {})))
 
 
+def _interned(agents: Iterable[dict[str, Any]]) -> tuple[list[str], list[dict[str, Any]]]:
+    """The state and event names of the `agents`' trails, each once, and the agents with each trail as `[state, event, dt]`
+    points indexing them: `dt` is the milliseconds since the step before it, the epoch for the first, so a step's time
+    is the same whichever steps the trail's cap left before it. A step's `id` follows as a fourth member; its `data`
+    is not sent."""
+    names: dict[str, int] = {}
+    drawn = []
+    for agent in agents:
+        before = 0
+        points = []
+        for step in agent.get("trail") or ():
+            at = round(step["at"] * 1000)
+            point = [names.setdefault(step["state"], len(names)), names.setdefault(step["event"], len(names)), at - before]
+            points.append(point + [step["id"]] if step.get("id") is not None else point)
+            before = at
+        drawn.append({**agent, "trail": points} if points else agent)
+    return list(names), drawn
+
+
+def _drawn_flow(flow: dict[str, Any]) -> dict[str, Any]:
+    names, agents = _interned(flow["agents"])
+    return {**flow, "names": names, "agents": agents} if names else flow
+
+
 def _drawn_pulls(pulls: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
     """Each task's pull requests with only the fields `Pull` declares: a record also keeps what the feed reads itself,
     such as `files` and `applied_by`, which the page is not sent."""
@@ -149,7 +173,8 @@ def slim_snapshot(data: Any) -> Any:
         drawn["pulls"] = _drawn_pulls(data["pulls"])
     if board:
         drawn["move_sets"] = _move_sets(board["agents"])
-        drawn["flows"] = [{**board, "agents": [_slim_task(task) for task in board["agents"]]}, *flows[1:]]
+        flows = [{**board, "agents": [_slim_task(task) for task in board["agents"]]}, *flows[1:]]
+    drawn["flows"] = [flows[0], *map(_drawn_flow, flows[1:])] if board else list(map(_drawn_flow, flows))
     return drawn
 
 
@@ -190,4 +215,7 @@ def event(name: str, data: Any) -> str:
     model = EVENTS[name]
     if name in ("pulls", "snapshot") and data.get("pulls"):
         data = {**data, "pulls": _drawn_pulls(data["pulls"])}
+    if name == "move":
+        names, (agent,) = _interned([data["agent"]])
+        data = {**data, "agent": agent, **({"names": names} if names else {})}
     return model.model_validate(data).model_dump_json(by_alias=True, exclude_unset=True)

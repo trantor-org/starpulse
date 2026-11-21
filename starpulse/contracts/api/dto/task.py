@@ -7,11 +7,10 @@ from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.machine import HeldNext
 
 
-class TrailStep(_Api):
-    state: str
-    event: str
-    at: float
-    id: str | None = None  # a third-party machine's step: the entry's event_id, which names the subject it moved
+#: One trail step: `[state, event, dt]`, the first two indexes into the flow's `names`, `dt` the milliseconds since the
+#: step before it (the epoch for the first). A third-party machine's step adds its entry's event_id, which names the
+#: subject it moved.
+TrailPoint = tuple[int, int, int] | tuple[int, int, int, str]
 
 
 class TaskCriterion(_Api):
@@ -76,7 +75,9 @@ class RawTask(_Api):
     )
     task: str | None = Field(default=None, description="A machine's task: the id of the Backlog task its events name.")
     steps: int | None = None
-    trail: list[TrailStep] | None = None
+    trail: list[TrailPoint] | None = Field(
+        default=None, description="A machine task's steps, as points indexing the `names` of the flow or move delta."
+    )
     active: float | None = None
     description: str | None = Field(default=None, description="A task's Backlog description.")
     milestone: str | None = Field(
