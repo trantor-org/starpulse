@@ -1874,8 +1874,8 @@ class TaskActor:
             if record["mergeSha"]:
                 part += f" as {record['mergeSha']}"
             parts.append(f"{part} ({link})")
-        if not parts:
-            return None
+        if not parts or uncited(self._store, agent):
+            return None  # an open pull request naming the task is its delivery too: one cited merge never ends it
         merged_at = self._merged_at(agent)
         if (
             agent["state"] == self._feed.roles.working
@@ -1970,8 +1970,8 @@ class TaskActor:
                 continue
             if merged or (record["state"] == "OPEN" and not self._why_unready(record, held.get(url))):
                 parts.append(f"{record['repo']}#{record['number']} {'merged' if merged else 'ready'}")
-        if not parts:
-            return None
+        if not parts or uncited(self._store, agent):
+            return None  # an open pull request naming the task is its delivery too: Review waits until it is cited
         proof = "; ".join(parts)
         return proof, f"Pull request ready: {proof}"
 
