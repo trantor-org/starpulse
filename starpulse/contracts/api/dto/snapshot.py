@@ -85,21 +85,6 @@ class Rating(_Api):
     changes: int
 
 
-class Flows(_Api):
-    """`GET /api/flows`: the whole of every flow and what the agent CLI reads beside it, with none of the snapshot's pages."""
-
-    flows: list[FlowSnapshot]
-    roles: Roles | None = None
-    settled: dict[str, Settled]
-    cold_done: list[str] | None = Field(default=None, description="The ids of the done tasks the feed holds as a stub, left out of `flows`.")
-    pulls: dict[str, list[Pull]] | None = None
-    interactive: dict[str, bool] | None = None
-    ratings: dict[str, Rating] | None = None
-    cues: list[Cue] | None = None
-    dags: list[DagBody]
-    error: str | None
-
-
 class Snapshot(_Api):
     graphs: list[str] = Field(description="Every lifecycle machine the server draws, and `runs`.")
     domains: list[Domain] | None = Field(default=None, description="The DAG domains.")
@@ -136,7 +121,7 @@ class Snapshot(_Api):
     cold_done: list[str] | None = Field(
         default=None,
         description="The ids of the done tasks from before local midnight that the board feed holds as a stub, left out of `flows`: "
-        "the full view (`?view=full`) only, the page reads them from `/api/done` and `/api/task/<id>`.",
+        "the stored body never carries them (the page reads them from `/api/done` and `/api/task/<id>`), a feed's own snapshot does.",
     )
     archived_today: int | None = Field(
         default=None, description="How many tasks were archived since local midnight, the window of the Done count."

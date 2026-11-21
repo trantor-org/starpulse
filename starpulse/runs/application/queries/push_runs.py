@@ -13,7 +13,7 @@ import logging
 import threading
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
-from typing import Any, ClassVar, Protocol, get_args
+from typing import Any, Protocol, get_args
 
 from pydantic import BaseModel
 
@@ -39,7 +39,6 @@ class GraphStore(Protocol):
 class PushedRunsSnapshot(BaseModel):
     """The workflows `PushRuns` saves beside the position they reflect."""
 
-    SCHEMA_VERSION: ClassVar[int] = 2
     dags: dict[str, dict[str, Any]]
 
 
@@ -167,7 +166,7 @@ class PushRuns:
 
         None means the reader replays what the stream retains: nothing was saved, `retained(position)` says the stream
         no longer holds every entry after the saved position, or the saved state is not one this reader can read
-        (another `PushedRunsSnapshot.SCHEMA_VERSION`). The workflows are saved to `store` under `stream` from now on
+        (it no longer validates as a `PushedRunsSnapshot`). The workflows are saved to `store` under `stream` from now on
         (`save`, `keep_saved`).
         """
         self._store_at = (store, stream)

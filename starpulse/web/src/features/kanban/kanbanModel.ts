@@ -352,8 +352,8 @@ export type PrReadState =
   | { read: false; label: "not read yet"; reason: string };
 
 /** An unread citation (`cited` marks it `stale`) is not read yet, never a failed read or no checks: the PR store reads every repository a task cites, so none waits on a grant. */
-const CI_TONES: Record<string, string> = { merged: "merged", failing: "fail", conflicting: "fail", passing: "pass", queued: "pending" };
-/** The checks colour a `ci` state draws in: merged, failing, passing and queued keep theirs, and every other phase is blue. */
+const CI_TONES: Record<string, string> = { merged: "merged", closed: "closed", failing: "fail", conflicting: "fail", passing: "pass", queued: "pending" };
+/** The checks colour a `ci` state draws in: merged, closed, failing, passing and queued keep theirs, and every other phase is blue. */
 export const ciTone = (state: string) => CI_TONES[state] ?? "phase";
 
 export const prReadState = (p: Pull): PrReadState =>

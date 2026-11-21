@@ -59,7 +59,8 @@ gaps = Table(
 )
 
 #: How far each reader of the log got: an integer position and, for a reader that rebuilds state, the snapshot it
-#: rebuilds from. A snapshot of another `schema_version` is not read; the reader replays from the log.
+#: rebuilds from. A snapshot the model cannot validate is not read; the reader replays from the log. `schema_version` is
+#: written as 0 and read by nothing.
 checkpoints = Table(
     "starpulse_checkpoints",
     metadata,

@@ -8,13 +8,13 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
 from starpulse.event_log.wake import StopEvent
 from starpulse.views.adapters.inbound.snapshots import Snapshots
-from starpulse.views.model.encoding import stored_bodies
+from starpulse.views.model.encoding import encode_snapshot
 
 
 def stored_snapshots(feed: BoardFeed, log: EventLog, stop: StopEvent) -> Snapshots:
     """Keep `feed`'s snapshot stored in `log`'s database as the Board writer does, and the `Snapshots` the API serves it
     from; returns once the first snapshot is stored."""
-    store = SnapshotStore(log.engine, stored_bodies)
+    store = SnapshotStore(log.engine, encode_snapshot)
     held = HeldSnapshot(feed, store=store)
     writer = threading.Thread(target=held.run, args=(stop,), name="held-snapshot", daemon=True)
     writer.start()

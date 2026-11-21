@@ -30,11 +30,9 @@ import yaml
 from sqlalchemy import and_, delete, func, insert, or_, select
 from sqlalchemy.engine import Engine
 
-from starpulse.board.model import criteria
 from starpulse.board.adapters import native_docs, native_milestones
 from starpulse.board.adapters.holder_idle import UNREACHABLE_EXIT, HolderUnreachable
-from starpulse.board.adapters.native_lookup import _aliases, _find, _SETTLED_NS, _stamp
-from starpulse.board.adapters.task_history import TaskHistory, revises_plan
+from starpulse.board.adapters.native_lookup import _SETTLED_NS, _aliases, _find, _stamp
 from starpulse.board.adapters.native_scan import (
     _CRITERIA,
     _FOLDERS,
@@ -53,7 +51,8 @@ from starpulse.board.adapters.native_scan import (
 from starpulse.board.adapters.native_scan import (
     _profile as _profile_of,
 )
-from starpulse.board.model import entry, rules, write_steps
+from starpulse.board.adapters.task_history import TaskHistory, revises_plan
+from starpulse.board.model import criteria, entry, rules, write_steps
 from starpulse.board.model.claims import assignee_of, claimed, released
 from starpulse.board.model.guard import Guard, Validate
 from starpulse.board.model.policy import Policy, guards_of, profile_matrix
@@ -83,6 +82,7 @@ from starpulse.board.model.seam import (
 from starpulse.contracts.tiers import TIERS, implied_tier
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.event_log.tables import pull_requests, retired_tasks
+from starpulse.github.adapters.outbound.rest import connect, get
 from starpulse.machine_engine.model.state_roles import StateRoles
 
 if TYPE_CHECKING:
@@ -197,16 +197,16 @@ _RECORDS_KEPT = 256
 _RECORDS_LOCK = threading.Lock()
 
 
-_GITHUB_MERGEABLE = {"true": "MERGEABLE", "false": "CONFLICTING"}
+_GITHUB_MERGEABLE = {True: "MERGEABLE", False: "CONFLICTING"}
 
 
 def _github_mergeable(repo: str, number: int) -> str | None:
-    argv = ["gh", "api", f"repos/{repo}/pulls/{number}", "--jq", ".mergeable"]
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     try:
-        done = subprocess.run(argv, capture_output=True, text=True, timeout=HOOK_TIMEOUT, check=False)
-    except OSError, subprocess.SubprocessError:
+        pull = get(connect(token, HOOK_TIMEOUT), f"/repos/{repo}/pulls/{number}")
+    except OSError:
         return None
-    return _GITHUB_MERGEABLE.get(done.stdout.strip()) if done.returncode == 0 else None
+    return _GITHUB_MERGEABLE.get(pull.get("mergeable"))
 
 
 def _pull_of(retired: _Retired) -> Callable[[str, int, bool], dict[str, Any] | None]:

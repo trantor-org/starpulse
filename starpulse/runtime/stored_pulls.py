@@ -25,7 +25,7 @@ def keep_pulls(
 ) -> Callable[[], None]:
     """What asks for `store`'s unfiltered list to be stored, encoded and gzipped, in `log`'s database: a thread stores
     it `debounce_s` after the first call of a window, until `stop`. `serve` sends the one stored before until then."""
-    snapshots = SnapshotStore(log.engine, lambda data, held: {})
+    snapshots = SnapshotStore(log.engine, lambda data, held: b"")
     changed = threading.Event()
 
     def store_list() -> None:

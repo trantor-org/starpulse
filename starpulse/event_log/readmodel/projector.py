@@ -1,9 +1,11 @@
 """The projector: folds Task Events into the read model and remembers how far it got."""
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from sqlalchemy import Connection, Engine, delete, select
+from sqlalchemy import Connection, Engine, select
 from sqlalchemy.dialects import sqlite
 
 from starpulse.contracts.adapters import TaskKeys
@@ -11,11 +13,12 @@ from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.readmodel import rows
 from starpulse.event_log.readmodel.fold import Row, apply
 from starpulse.event_log.readmodel.machine_fold import Placer, event_of
-from starpulse.event_log.readmodel.tables import criteria, machine_tasks, tasks
+from starpulse.event_log.readmodel.tables import READ_MODEL_TABLES, machine_tasks
 from starpulse.event_log.store import EventStore, StoredEvent
+from starpulse.event_log.table_registry import definition, is_stamped, stamp_of, swap, write_stamp
 
 if TYPE_CHECKING:
-    from starpulse.event_log.event_log import EventLog
+    from starpulse.event_log.event_log import EventLog, Tail
 
 CHECKPOINT = "read-model:tasks"
 #: How far the projector has folded `machine:events` into `starpulse_machine_tasks`; it commits with each batch's rows.
@@ -26,6 +29,11 @@ SEARCH_CHECKPOINT = "read-model:search-comments"
 #: The states in which a task has finished, as the search index dates it.
 _FINISHED = frozenset({"done", "archived"})
 BATCH = 500
+FAMILY = "read_model"
+#: What folds an event into a row: an edit to any of these sources refolds the read model.
+CODE_HASH = hashlib.sha256(
+    b"".join((Path(__file__).parent / name).read_bytes() for name in ("fold.py", "machine_fold.py", "projector.py", "rows.py"))
+).hexdigest()
 
 
 class SearchIndex(Protocol):
@@ -83,83 +91,103 @@ class Projector:
         Each batch commits its rows and the checkpoint together, so a stop between batches resumes at the next Event
         and a stop inside one folds nothing.
         """
-        return self._fold_tasks(resident=False)
+        return self._fold_tasks()
 
     def index(self) -> None:
         """Make the search index hold every row folded since it last did; nothing without a search index."""
         if self._search is not None:
             self._index_changed()
 
-    def rebuild(self) -> int:
-        """Drop every row and the checkpoint and fold the whole History again; the number of Events folded.
+    def stamp(self) -> str:
+        """The stamp of the read model: its table definitions, the fold's code and what places a machine event."""
+        placed = self._placer.fingerprint() if self._placer else ""
+        return stamp_of(definition(READ_MODEL_TABLES), CODE_HASH, placed)
 
-        The tables are empty, so the rows stay in memory through the fold and are written once at its end: a stop inside
-        it leaves them empty and the checkpoints at 0, which the next `catch_up` folds from the start."""
+    def build(self) -> int:
+        """Rebuild the read model when it was not folded under this stamp, else fold what is new; the number of Events
+        folded. A store that predates the stamp, or one opened under edited machines or fold code, is rebuilt; a second
+        call under the same stamp changes nothing."""
+        with self._engine.connect() as db:
+            folded = is_stamped(db, FAMILY, self.stamp())
+        return self.catch_up() if folded else self.rebuild()
+
+    def rebuild(self) -> int:
+        """Replace the read model with one folded from the whole History; the number of Events folded.
+
+        The rows are folded in memory while writers carry on. The write lock is taken only to swap them in, with the
+        tables created again from their metadata, the fold cursors at the end of the fold and the stamp, so a reader sees
+        the old rows or the new, never an empty or missing table. A stop inside the fold changes nothing; the Events
+        recorded meanwhile are folded after the swap. Consumer cursors keep their place.
+        """
+        tasks_held, position, folded = self._replay_tasks()
+        machines_held, last = self._replay_machines()
+        stamp = self.stamp()
         with self._engine.begin() as db:
-            db.execute(delete(criteria))
-            db.execute(delete(tasks))
-            db.execute(delete(machine_tasks))
-            self._checkpoints.save(CHECKPOINT, 0, conn=db)
-            self._checkpoints.save(MACHINE_CHECKPOINT, 0, conn=db)
+            swap(db, FAMILY, READ_MODEL_TABLES)
+            rows.save_all(db, tasks_held.values())
+            self._save_machines(db, machines_held)
+            self._checkpoints.save(CHECKPOINT, position, conn=db)
+            self._checkpoints.save(MACHINE_CHECKPOINT, last, conn=db)
             self._checkpoints.save(SEARCH_CHECKPOINT, 0, conn=db)
-        folded = self._fold_tasks(resident=True)
-        self._fold_machines(resident=True)
-        self.index()
+            write_stamp(db, FAMILY, stamp)
+        self.catch_up()
         return folded
 
-    def _fold_tasks(self, *, resident: bool) -> int:
-        """Fold every Task Event past the checkpoint, a batch at a time; `resident` keeps every row in memory and writes
-        them with the checkpoint once the History is read, which only an empty table allows."""
+    def _replay_tasks(self) -> tuple[dict[str, tuple[Row | None, int]], int, int]:
+        """Every Task Event folded in memory: the rows, the position of the last Event and the number folded."""
+        held: dict[str, tuple[Row | None, int]] = {}
+        position = folded = 0
+        while batch := self._store.read_after("task", position, BATCH):
+            position = batch[-1].position
+            folded += len(batch)
+            self._fold(batch, held, lambda _: (None, 0))
+        return held, position, folded
+
+    def _replay_machines(self) -> tuple[dict[tuple[str, str], tuple[dict, int]], int]:
+        """Every `machine:events` entry placed in memory: the rows and the id of the last entry."""
+        held: dict[tuple[str, str], tuple[dict, int]] = {}
+        if self._log is None or self._placer is None:
+            return held, 0
+        tail = self._tail(0)
+        last = 0
+        while batch := tail.poll_json():
+            last = batch[-1][0]
+            self._place(batch, held, lambda *_: (None, 0))
+        return held, last
+
+    def _tail(self, after: int) -> Tail:
+        from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the log's stack loads when a log opens
+        from starpulse.event_log.events import STREAM  # noqa: PLC0415
+
+        return Tail(self._log, STREAM, after=after, batch=BATCH)
+
+    def _fold_tasks(self) -> int:
+        """Fold every Task Event past the checkpoint, a batch at a time; the number folded."""
         position, _ = self._checkpoints.load(CHECKPOINT)
         position = position or 0
-        held: dict[str, tuple[Row | None, int]] = {}
         folded = 0
         while batch := self._store.read_after("task", position, BATCH):
             position = batch[-1].position
             folded += len(batch)
-            if resident:
-                self._fold(batch, held, lambda _: (None, 0))
-                continue
             folded_rows: dict[str, tuple[Row | None, int]] = {}
             with self._engine.begin() as db:
                 self._fold(batch, folded_rows, lambda task: rows.load_at(db, task))
                 rows.save_all(db, folded_rows.values())
                 self._checkpoints.save(CHECKPOINT, position, conn=db)
-        if resident and held:
-            with self._engine.begin() as db:
-                rows.save_all(db, held.values())
-                self._checkpoints.save(CHECKPOINT, position, conn=db)
         return folded
 
     def fold_machines(self) -> None:
         """Fold every `machine:events` entry past the machine checkpoint into `starpulse_machine_tasks`, a batch at a time."""
-        self._fold_machines(resident=False)
-
-    def _fold_machines(self, *, resident: bool) -> None:
-        """The fold of `fold_machines`; `resident` as in `_fold_tasks`."""
         if self._log is None or self._placer is None:
             return
-        from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the log's stack loads when a log opens
-        from starpulse.event_log.events import STREAM  # noqa: PLC0415
-
         position, _ = self._checkpoints.load(MACHINE_CHECKPOINT)
-        tail = Tail(self._log, STREAM, after=position or 0, batch=BATCH)
-        held: dict[tuple[str, str], tuple[dict, int]] = {}
-        last = position or 0
+        tail = self._tail(position or 0)
         while batch := tail.poll_json():
-            last = batch[-1][0]
-            if resident:
-                self._place(batch, held, lambda *_: (None, 0))
-                continue
             placed: dict[tuple[str, str], tuple[dict, int]] = {}
             with self._engine.begin() as db:
                 self._place(batch, placed, lambda *key: self._load_machine(db, *key))
                 self._save_machines(db, placed)
-                self._checkpoints.save(MACHINE_CHECKPOINT, last, conn=db)
-        if resident and held:
-            with self._engine.begin() as db:
-                self._save_machines(db, held)
-                self._checkpoints.save(MACHINE_CHECKPOINT, last, conn=db)
+                self._checkpoints.save(MACHINE_CHECKPOINT, batch[-1][0], conn=db)
 
     def _place(
         self,

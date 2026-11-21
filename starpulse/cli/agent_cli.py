@@ -71,8 +71,8 @@ it is interrupted (exit 0) or the server ends the stream (an error line, exit 3)
 now path, so its LAN and `run_safe` guards apply to the agent as they do to the page.
 `task create`, `task edit` and `task profile` write a task through the server's create and edit routes, as the Kanban page
 does. `task edit` sends every field given in one write, which the server refuses whole (exit 1) when any field it
-changes is no longer the value the edit was based on: that value is read from the task at the call, or is `--base`, the
-JSON object of values the caller read earlier. A `--label`, `--dependency`, `--reference`, `--documentation` or
+changes is no longer the value the edit was based on: that value is `--base`, the JSON object of values the caller read
+earlier, or for a field it leaves out is read from the task at the call. A `--label`, `--dependency`, `--reference`, `--documentation` or
 `--modified-file` given at all replaces that whole list, and a blank value clears a field. `task profile` is an edit of
 the profile alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
 `task verdict` comments the verdict (`pass`, or `miss` with `--fix` naming the task filed for it) of a check the task's
@@ -214,7 +214,7 @@ def _machines(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     flows = agent_wire.flows(args, environ)["flows"]
     return {
         "machines": [
-            {"name": f["name"], "states": [s["id"] for s in f["machine"]["states"]], "tasks": f["count"]}
+            {"name": f["name"], "states": [s["id"] for s in f["machine"]["states"]], "tasks": len(f["agents"])}
             for f in flows
         ]
     }
@@ -222,8 +222,9 @@ def _machines(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
 def _machine(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """One machine's states with the live count and the tasks in each, and its transitions."""
-    if (flow := agent_wire.get_flow(agent_wire.server_url(args.server, environ), args.name)) is None:
-        drawn = ", ".join(f["name"] for f in agent_wire.flows(args, environ)["flows"])
+    drawn_flows = agent_wire.flows(args, environ)["flows"]
+    if (flow := next((f for f in drawn_flows if f["name"] == args.name), None)) is None:
+        drawn = ", ".join(f["name"] for f in drawn_flows)
         raise agent_wire.CliError("not_found", f"{args.name} is not a machine; the server draws {drawn}")
     machine = flow["machine"]
     tasks: dict[str, list[str]] = {state["id"]: [] for state in machine["states"]}
@@ -1115,7 +1116,7 @@ def _parser() -> argparse.ArgumentParser:
     edit.add_argument(
         "--base",
         help='a JSON object of the values the fields were read as (`{"priority": "high"}`); the edit is refused whole when '
-        "any field it changes is no longer that value, else the task is read now",
+        "any field it changes is no longer that value; a field it leaves out is read from the task now",
     )
     assign = leaf(
         task_verbs,

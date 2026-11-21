@@ -8,10 +8,10 @@ tables are created outside this chain and left out.
 
 import hashlib
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import NamedTuple
 
-from sqlalchemy import Connection, Table, delete, insert, select
+from sqlalchemy import Connection, Engine, Table, delete, insert, select
 from sqlalchemy.schema import CreateIndex, CreateTable
 
 from starpulse.event_log.tables import settings
@@ -33,7 +33,8 @@ def _t(*names: str) -> tuple[str, ...]:
 FAMILIES: dict[str, Family] = {
     "summaries": Family(_t("step_summaries", "cases", "lane_intervals", "lanes"), _t("machine_events", "lane_changes")),
     "read_model": Family(_t("tasks", "task_criteria", "machine_tasks"), _t("events", "machine_events")),
-    "snapshots": Family(_t("snapshots", "snapshot_deltas", "claim_expiries"), _t("tasks")),
+    "snapshots": Family(_t("snapshots", "snapshot_deltas"), _t("tasks")),
+    "claim_expiries": Family(_t("claim_expiries"), _t("tasks")),
     "signals": Family(_t("signal_folds", "answers"), _t("signals")),
 }
 _DURABLE = _t(
@@ -84,6 +85,27 @@ def clear_stamp(db: Connection, family: str) -> None:
     db.execute(delete(settings).where(settings.c.key == _key(family)))
 
 
+def swap(db: Connection, family: str, tables: Sequence[Table]) -> None:
+    """Drop `tables` and create them again from their metadata, empty, in the caller's transaction: the stamp goes
+    first, so the transaction is open before the DDL."""
+    clear_stamp(db, family)
+    metadata = tables[0].metadata
+    metadata.drop_all(db, tables=tables)
+    metadata.create_all(db, tables=tables)
+
+
 def write_stamp(db: Connection, family: str, stamp: str) -> None:
     """Record `stamp` as the one the family was folded under, in the transaction that swaps its tables in."""
     db.execute(insert(settings).values(key=_key(family), value=stamp, updated_at=time.time()))
+
+
+def empty_unless_stamped(engine: Engine, family: str, tables: Sequence[Table], *inputs: str) -> None:
+    """Create `tables` again, empty, unless the family holds the stamp of their definition and `inputs`: a family whose
+    owner fills it again as it runs. A family stamped so is left as it is."""
+    stamp = stamp_of(definition(tables), *inputs)
+    with engine.connect() as db:
+        if is_stamped(db, family, stamp):
+            return
+    with engine.begin() as db:
+        swap(db, family, tables)
+        write_stamp(db, family, stamp)

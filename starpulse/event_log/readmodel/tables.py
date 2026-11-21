@@ -73,7 +73,7 @@ criteria = Table(
     Column("evidence", Text, nullable=False),
 )
 
-#: The Board writer's encoded snapshot, one row per view (`slim`, `full`): `seq` is the last `starpulse_snapshot_deltas`
+#: The Board writer's encoded snapshot, one row (view `live`): `seq` is the last `starpulse_snapshot_deltas`
 #: row the body reflects.
 snapshots = Table(
     "starpulse_snapshots",
@@ -95,3 +95,6 @@ snapshot_deltas = Table(
     Column("kind", String, nullable=False),
     Column("data", JSON, nullable=False),
 )
+
+READ_MODEL_TABLES = (tasks, criteria, machine_tasks)
+SNAPSHOT_TABLES = (snapshots, snapshot_deltas)

@@ -4,7 +4,6 @@ import argparse
 import json
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 import uuid
 from collections.abc import Mapping
@@ -126,19 +125,8 @@ def _read_document(base: str, path: str, keys: set[str], noun: str) -> dict[str,
 
 
 def get_flows(base: str) -> dict[str, Any]:
-    """The flows the server at `base` answers: the board whole and each other flow's machine and working-task rows, with the roles, settled tasks, pull requests and runs a verb reads."""
+    """The flows the server at `base` answers: the one stored body, each flow whole with the roles, settled tasks and pull requests a verb reads."""
     return _read_document(base, "/api/flows", {"flows", "roles", "settled", "dags", "error"}, "flows")
-
-
-def get_flow(base: str, name: str) -> dict[str, Any] | None:
-    """Flow `name` whole, as the server at `base` answers `/api/flows?machine=`; None when the server draws no such flow."""
-    path = f"/api/flows?{urllib.parse.urlencode({'machine': name})}"
-    status, document = get(base, path)
-    if status == 404:
-        return None
-    if status != 200 or not isinstance(document, dict) or not document.get("flows"):
-        raise CliError("unavailable", f"{base} answered {status} for /api/flows: is it a StarPulse server?")
-    return document["flows"][0]
 
 
 def get_runs(base: str) -> dict[str, Any]:

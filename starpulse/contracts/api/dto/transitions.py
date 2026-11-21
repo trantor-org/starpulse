@@ -230,3 +230,19 @@ class CostToGo(_Api):
     now: float
     window_s: float
     cost_to_go: list[StateCost]
+
+
+class TaskDiff(RunDiffs):
+    """`GET /api/task-diff/{id}`: the task's kind and size, and the rows `RunDiffs` holds for them; no kind or size, no rows."""
+
+    task: str
+    kind: str | None
+    size: int | None
+
+
+class TaskCostToGo(CostToGo):
+    """`GET /api/task-cost-to-go/{id}`: the task's kind and size, and the rows `CostToGo` holds for them; no kind or size, no rows."""
+
+    task: str
+    kind: str | None
+    size: int | None

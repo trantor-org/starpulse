@@ -17,11 +17,10 @@ from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
+from starpulse.event_log.readmodel.snapshot_store import LIVE, SnapshotStore
 from starpulse.event_log.wake import StopEvent
 from starpulse.views.adapters.inbound.compression import Encoded
 from starpulse.views.adapters.outbound import request_durations
-from starpulse.views.model.encoding import encode
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +45,12 @@ class Snapshots:
         #: The bodies event streams sent by reference and pages have not fetched yet, by key.
         self._refs: dict[str, Encoded] = {}
         self._keys = itertools.count()
-        #: The full body `take` last decoded and what it decoded to, under `_taking`; a body stored again at an unmoved
+        #: The body `take` last decoded and what it decoded to, under `_taking`; a body stored again at an unmoved
         #: sequence is another `Encoded`.
         self._taken: tuple[Encoded, Served] | None = None
         self._taking = threading.Lock()
-        #: The body last read of each view, with the stamp and sequence it was stored at; a newer stamp replaces it.
+        #: The body last read of each view (`LIVE` is the snapshot's), with the stamp and sequence it was stored at; a
+        #: newer stamp replaces it.
         self._bodies: dict[str, tuple[tuple[int, float], int, Encoded]] = {}
         #: The newest delta put on the streams, and the queue of each stream open.
         self._head = store.head()
@@ -66,12 +66,13 @@ class Snapshots:
         ]
         self.readers[0].start()
 
-    def stored(self, view: str = "slim") -> tuple[int, Encoded]:
-        """The sequence and body, with its gzip, the writer stored for `view` (`slim` is the page's, `full` is `?view=full`'s,
-        `flows` is `/api/flows`'s); the body is read from the store only when it was stored again."""
+    def stored(self, view: str = LIVE) -> tuple[int, Encoded]:
+        """The sequence and body, with its gzip, the writer stored for `view`: `LIVE`, the one body the page, `?view=full`,
+        `/api/flows` and the agent CLI read, or a body made outside the folds (`pulls`); the body is read from the
+        store only when it was stored again."""
         stamp = self._store.stamp(view)
         if stamp is None:
-            raise NotStored(view)
+            raise NotStored
         with self._lock:
             held = self._bodies.get(view)
         if held is not None and held[0] == stamp:
@@ -84,24 +85,18 @@ class Snapshots:
         return row[0], encoded
 
     def flows(self) -> Encoded:
-        """The `/api/flows` body the writer stored, which the agent CLI reads about once a second: no read decodes or
-        encodes the snapshot. The seconds the read took are observed by whether it fetched a newly stored body."""
+        """The `/api/flows` body, the one the writer stored, which the agent CLI reads about once a second: no read decodes
+        or encodes the snapshot. The seconds the read took are observed by whether it fetched a newly stored body."""
         started = time.monotonic()
-        held = self._bodies.get("flows")
-        body = self.stored("flows")[1]
+        held = self._bodies.get(LIVE)
+        body = self.stored()[1]
         source = "cached" if held is not None and held[2] is body else "rebuild"
         request_durations.observe_flows(source, time.monotonic() - started)
         return body
 
-    def flow(self, name: str) -> bytes | None:
-        """The `/api/flows?machine=` body: flow `name` whole, none of the rest; None when no flow has that name. It is
-        read by the machine command alone, so it is encoded per request."""
-        flow = next((flow for flow in self.take().snapshot["flows"] if flow["name"] == name), None)
-        return None if flow is None else encode("flows", {"flows": [flow], "settled": {}, "dags": [], "error": None})
-
     def take(self) -> Served:
-        """The stored full snapshot as a dict, decoded once per stored body however many streams read it."""
-        seq, encoded = self.stored("full")
+        """The stored snapshot as a dict, decoded once per stored body however many streams and requests read it."""
+        seq, encoded = self.stored()
         with self._taking:
             if self._taken is None or self._taken[0] is not encoded:
                 self._taken = encoded, Served(seq, json.loads(encoded.body))

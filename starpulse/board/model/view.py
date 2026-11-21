@@ -13,13 +13,14 @@ def board_flow(snapshot: dict[str, Any]) -> dict[str, Any]:
     return next(flow for flow in snapshot["flows"] if flow["name"] == "board")
 
 
-def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """The verdict on each column as the agent meets it: a move the board machine leaves to others is refused."""
+def _agent_moves(agent: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The verdict on each column as the agent meets it: a move the board machine leaves to others is refused. A
+    stored card names its set of verdicts in `move_set`, which the snapshot's `move_sets` table holds."""
     from starpulse.contracts.adapters import Move  # pydantic models cost ~0.25 CPU-s, so only a move verdict pays them
 
     return {
         column: Move.read(raw).for_actor(AGENT).model_dump(include={"allowed", "reason", "skill"})
-        for column, raw in agent.get("moves", {}).items()
+        for column, raw in (agent.get("moves") or snapshot.get("move_sets", {}).get(agent.get("move_set"), {})).items()
     }
 
 
@@ -46,7 +47,7 @@ def roles_of(snapshot: dict[str, Any]) -> SimpleNamespace:
 
 def done_ids(snapshot: dict[str, Any]) -> set[str]:
     """The tasks a dependency no longer waits on: those in the done lane, those past their hot day (`cold_done`, held
-    by the full view alone) and those settled as completed."""
+    by a feed's own snapshot, never the stored one) and those settled as completed."""
     done = {task["id"] for task in board_flow(snapshot)["agents"] if task["state"] == roles_of(snapshot).done}
     done |= set(snapshot.get("cold_done", ()))
     return done | {task_id for task_id, entry in snapshot["settled"].items() if entry["state"] == "completed"}
@@ -173,7 +174,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "readable": agent.get("readable", ""),
         "source": agent.get("source", ""),
         "prs": [pulls.get(url, {"url": url}) for url in agent.get("prs", [])],
-        "moves": _review_held(_agent_moves(agent), pulls.values(), roles_of(snapshot).review),
+        "moves": _review_held(_agent_moves(agent, snapshot), pulls.values(), roles_of(snapshot).review),
         "rating": snapshot.get("ratings", {}).get(agent["id"]),
         "released": agent.get("released"),
     }

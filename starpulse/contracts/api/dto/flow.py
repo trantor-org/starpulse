@@ -56,6 +56,3 @@ class FlowSnapshot(_Api):
     nested: list[str] | None = None
     last: float | None = None
     stuck: Stuck | None = None
-    count: int | None = Field(
-        default=None, description="How many rows the flow holds; `/api/flows` carries only the rows of tasks In Progress on the board."
-    )

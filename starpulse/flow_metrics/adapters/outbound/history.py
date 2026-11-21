@@ -46,7 +46,7 @@ from starpulse.event_log.event_log import WAL_SIZE_LIMIT, EventLog, bound_wal, i
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.store import EventStore
-from starpulse.event_log.table_registry import clear_stamp, is_stamped, write_stamp
+from starpulse.event_log.table_registry import clear_stamp, empty_unless_stamped, is_stamped, write_stamp
 from starpulse.event_log.tables import breaking_change_detections as _detections
 from starpulse.event_log.tables import breaking_changes as _breaking_changes
 from starpulse.event_log.tables import gaps as _gaps
@@ -489,6 +489,11 @@ class HistoryStore:
             folded = is_stamped(db, "summaries", self._summariser.stamp())
         if not folded:
             self.rebuild_summaries()
+
+    def build_claim_expiries(self) -> None:
+        """Create the claim expiries again, empty, when they were not created under this definition: the claim-TTL sweep
+        fills them on its next pass. Expiries created under it are left as they are."""
+        empty_unless_stamped(self.engine, "claim_expiries", (_claim_expiries,))
 
     def rebuild_summaries(self) -> None:
         """Replace the summaries with ones folded from the raw rows under the machines this store holds: the machine

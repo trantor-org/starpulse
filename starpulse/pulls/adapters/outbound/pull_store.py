@@ -40,6 +40,7 @@ def _selection(number: int) -> str:
     return f"""
   p{number}: pullRequest(number: {number}) {{
     number state isDraft isInMergeQueue mergeable baseRefName headRefName headRefOid title body updatedAt createdAt mergedAt
+    closedAt
     mergeCommit {{ oid }}
     baseRef {{ target {{ oid }} }}
     potentialMergeCommit {{ parents(first: 2) {{ nodes {{ oid }} }} }}
@@ -145,6 +146,7 @@ def _record(repo: str, node: dict, now: float, wanted: Iterable[str] = ()) -> di
                 "mergeable": node["mergeable"],
                 "merged": node["state"] == "MERGED",
                 "closed": node["state"] == "CLOSED",
+                "closedAt": node["closedAt"],
                 "mergedAt": node["mergedAt"],
                 "commits": node["ciCommits"],
                 "timelineItems": node["timelineItems"],

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
+from starpulse.event_log import child_cpu
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
@@ -187,11 +188,11 @@ def default_starters(
         from starpulse.board.bin import board_worker
         from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
         from starpulse.runtime.writer_followers import feed_followers
-        from starpulse.views.model.encoding import stored_bodies
+        from starpulse.views.model.encoding import encode_snapshot
 
         return board_worker.start(
             config, path, base, log, own, load=load, assemble=assemble, history_store=history_store, follow=follow,
-            followers=feed_followers(adapters), ready=shared.publish, snapshots=SnapshotStore(log.engine, stored_bodies),
+            followers=feed_followers(adapters), ready=shared.publish, snapshots=SnapshotStore(log.engine, encode_snapshot),
         )  # fmt: skip
 
     def pulls(own: threading.Event) -> Callable[[], None]:
@@ -291,6 +292,7 @@ def default_starters(
 
     def bridge(own: threading.Event) -> Callable[[], None]:
         from starpulse.bridge import worker
+        from starpulse.pulls.adapters.outbound.pulls import stored_head
         from starpulse.runtime.session_delivery import exit_watcher, forget_ended, route
         from starpulse.sessions.adapters.outbound import claude_code_notify as claude
         from starpulse.event_log.claude_sessions import live_socket, sessions_dir
@@ -318,6 +320,7 @@ def default_starters(
                 config.bridge.quiet_moves,
                 end,
                 config.bridge.end_lanes,
+                lambda repo, number: stored_head(log.engine, repo, number),
             ),
             end,
             config.bridge.end_lanes,
@@ -447,6 +450,7 @@ def run_contexts(
     base = base or (path.parent if path else Path.cwd())
     if starters is None:
         log = EventLog(database_url(config.database_url, base))
+        child_cpu.keep_process(log)
         starters = default_starters(config, path, base, log, names, stop)
         boot = os.environ.get(BOOT_ENV)
         if started is None and boot:
