@@ -1,15 +1,13 @@
 """The `github_inbox` table and the SQLAlchemy `Inbox` that saves a delivery into it.
 
-The inbox is its own database (`[github] database_url`, SQLite by default), never the event store, so the process that
-faces the internet cannot write an event. Its schema is the Alembic chain in `migrations/`, run when an inbox opens.
+The inbox lives in the main store: its tables are durable tables of the main chain (`event_log/migrations`), and the
+engine an inbox is built on is the one that opens that store.
 """
 
-import sqlite3
 import time
 from collections.abc import Callable, Collection
-from pathlib import Path
 
-from sqlalchemy import Column, Float, Index, Integer, LargeBinary, MetaData, String, Table, create_engine, event, select
+from sqlalchemy import Column, Float, Index, Integer, LargeBinary, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,13 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starpulse.github.model.delivery import Delivery
 from starpulse.github.ports.inbox import InboxError
 
-__all__ = ["Migrate", "SqlInbox", "github_inbox"]
-
-VERSION_TABLE = "github_alembic_version"
-#: Brings an engine's database to the head of a migration chain: `(engine, migrations directory, version table)`. The
-#: composition root passes the event log's shared runner, which this context may not import.
-Migrate = Callable[[Engine, Path, str], None]
-_MIGRATIONS = Path(__file__).parent / "migrations"
+__all__ = ["INSERTS", "SqlInbox", "github_inbox", "metadata"]
 
 metadata = MetaData()
 github_inbox = Table(
@@ -39,33 +31,9 @@ github_inbox = Table(
     Column("received_at", Float, nullable=False),
     Index("github_inbox_fact", "repository", "event", "action", "received_at"),
 )
-_INSERTS = {"sqlite": sqlite.insert, "postgresql": postgresql.insert}
+INSERTS = {"sqlite": sqlite.insert, "postgresql": postgresql.insert}
 #: Ids in one `IN (...)`, under SQLite's bound-variable limit.
 _CHUNK = 500
-#: The switch to WAL fails at once, without the busy timeout, while another connection opens or closes the database.
-_WAL_ATTEMPTS = 20
-#: Milliseconds a connection waits on another's lock: the listener, the reconcile pass, the consumer and agents' readers
-#: share one file.
-_BUSY_TIMEOUT_MS = 30_000
-
-
-def _sqlite_pragmas(dbapi_connection: sqlite3.Connection, _record: object) -> None:
-    dbapi_connection.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
-    dbapi_connection.execute("PRAGMA synchronous=NORMAL")
-
-
-def _sqlite_wal(engine: Engine) -> None:
-    # WAL lets readers run beside the one writer; the mode is kept in the file, so it is set once per open
-    with engine.connect() as db:
-        for attempt in range(_WAL_ATTEMPTS):
-            try:
-                db.exec_driver_sql("PRAGMA journal_mode=WAL")
-                return
-            except SQLAlchemyError:
-                if attempt == _WAL_ATTEMPTS - 1:
-                    raise
-                # adr-exempt: handshake
-                time.sleep(0.05)
 
 
 def _reason(error: SQLAlchemyError) -> str:
@@ -77,22 +45,10 @@ def _reason(error: SQLAlchemyError) -> str:
 class SqlInbox:
     """Saves each delivery in one transaction: `INSERT ... ON CONFLICT (delivery_id) DO NOTHING`, then commit."""
 
-    def __init__(self, database_url: str, migrate: Migrate, clock: Callable[[], float] = time.time) -> None:
-        scheme = database_url.partition(":")[0].partition("+")[0]
-        insert = _INSERTS.get(scheme)
-        if insert is None:
-            raise ValueError(f"github: database_url must be a sqlite or postgresql URL, not a {scheme!r} one")
-        self._insert = insert
+    def __init__(self, engine: Engine, clock: Callable[[], float] = time.time) -> None:
+        self._insert = INSERTS[engine.dialect.name]
         self._clock = clock
-        self.engine = create_engine(database_url)
-        try:
-            if scheme == "sqlite":
-                event.listen(self.engine, "connect", _sqlite_pragmas)
-                _sqlite_wal(self.engine)
-            migrate(self.engine, _MIGRATIONS, VERSION_TABLE)
-        except BaseException:
-            self.engine.dispose()  # the `contexts` process retries `start`, which opens a new inbox
-            raise
+        self.engine = engine
 
     def save(self, delivery: Delivery, source: str = "webhook") -> bool:
         statement = (

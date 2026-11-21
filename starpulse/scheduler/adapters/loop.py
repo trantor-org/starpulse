@@ -66,6 +66,8 @@ PAUSES_KEY = "scheduler.harness_pauses"
 #: Seconds a task whose start failed waits before its first retry; each further failure doubles it, up to `START_BACKOFF_MAX`.
 START_BACKOFF = 30.0
 START_BACKOFF_MAX = 30 * 60.0
+#: Seconds the loop waits for an event when it cannot read its deadlines, before it ticks and reads them again.
+DEADLINE_RETRY = 30.0
 BACKOFF_EXPONENT_MAX = 30  # START_BACKOFF * 2**30 is past both caps; a larger exponent overflows a float at 1024
 #: Seconds a full session-start limit holds the whole queue back: it refuses every task alike, so no task is skipped alone.
 #: The first refusal waits `START_BACKOFF`; each further one doubles it, up to this cap, and a start that lands resets it.
@@ -358,7 +360,7 @@ class Loop:
             self._safely(self.tick)  # whatever waited before the loop began
             while not stop.is_set():
                 try:
-                    kind, data = events.get(timeout=self._next_due(self._clock()))
+                    kind, data = events.get(timeout=self._wait())
                 except queue.Empty:
                     self._safely(self.tick)
                     continue
@@ -376,18 +378,29 @@ class Loop:
             self._events = None
             self._feed.unsubscribe(events)
 
+    def _wait(self) -> float | None:
+        try:
+            return self._next_due(self._clock())
+        except Exception:  # a failed read of the deadlines is retried on the next wait; it must not end the loop
+            logger.exception("StarPulse scheduler: reading the next deadline failed")
+            return DEADLINE_RETRY
+
     def _next_due(self, now: float) -> float | None:
         """Seconds to the earliest deadline the loop must wake for with no event, or None: the end of a
         sessions-full wait, a failed start's backoff, a credit pause, or a started session's `STALE_S` without a move
         (`_gone` closes its run on that tick; a tool use is no wanted event, so a session that died unclaimed wakes none).
-        A move since the deadline was read only makes that tick find the run still at work, and the next call re-reads."""
+        A move since the deadline was read only makes that tick find the run still at work, and the next call re-reads.
+        A stale deadline that fell between two calls is due now when `_gone` would close its run, so the tick is not lost."""
         due = [at for at in (self._full[1], *(retry for _, retry in self._failed.values())) if at > now]
         due += [row["until"] for row in self._paused.values() if row["until"] > now]
         for task, run in list(self._running.items()):
             if not run.claimed:
                 seen = self._feed.machine_task(HARNESS.name, task)
-                if (stale := max(run.started_at, seen["active"] if seen else 0.0) + STALE_S + 1) > now:
+                stale = max(run.started_at, seen["active"] if seen else 0.0) + STALE_S + 1
+                if stale > now:
                     due.append(stale)
+                elif self._gone(task, run, self._open_agents(), now):
+                    due.append(now)
         return max(0.0, min(due) - now) if due else None
 
     def needs_operator(self) -> list[dict[str, str]]:

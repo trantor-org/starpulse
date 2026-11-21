@@ -190,7 +190,9 @@ class MemoryFile(_Table):
     model_config = ConfigDict(title="[worker_memory.<context>]")
 
     soft_mb: int | None = Field(
-        default=None, ge=1, description="Past this the child is replaced: the old one stops, then a new one starts (the Page API starts its replacement first)."
+        default=None,
+        ge=1,
+        description="Past this the child is replaced: the old one stops, then a new one starts (the Page API starts its replacement first).",
     )
     hard_mb: int | None = Field(
         default=None, ge=1, description="Past this the child is killed and restarted. Above `soft_mb`."
@@ -484,10 +486,9 @@ class ConfigFile(_Table):
     pull_requests: bool = Field(
         default=True,
         description=(
-            "With `gh` on the PATH, `serve` keeps a pull request store, current from the lifecycle events, that "
-            "`/api/pulls`, the `ci` trail and `[release]` read. false never updates it: no event is applied, `POST "
-            "/api/pulls/refresh` answers 404, tasks carry no PR state, and `/api/pulls` answers only from rows the "
-            "database already holds. Set it on a second instance beside one that reads the same repositories, so "
+            "`serve` keeps a pull request store, current from the lifecycle events and GitHub's webhook deliveries, "
+            "that `/api/pulls`, the `ci` trail and `[release]` read. false never updates it: no event is applied, "
+            "tasks carry no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so "
             "one store is kept."
         ),
     )
@@ -503,20 +504,6 @@ class ConfigFile(_Table):
     webhook_token_env: EnvName | None = Field(
         default=None,
         description="The environment variable holding the bearer token `POST /api/webhook` requires; the value is the name, never the token.",
-    )
-    refresh_token_env: EnvName | None = Field(
-        default=None,
-        description=(
-            "Lets a producer that just saw a pull request close have its record read now instead of at the next "
-            'minute\'s refresh: `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and '
-            "`Authorization: Bearer <token>`. The PR store's thread reads that pull request alone (one single-PR "
-            "GraphQL read, no listing) and publishes it as a refresh does; one asked for during a refresh is read "
-            "after the repository in hand, ahead of that refresh's projection. The minute's refresh stays the "
-            "fallback. 202 queued; 401 for a missing or wrong token; 403 for a repository this instance does not "
-            "track; 400 for any other body. The value is the name of an environment variable, never the token; "
-            "unset, or with no `gh` on the PATH, the route answers 404, and a named variable that is empty stops "
-            "`serve`."
-        ),
     )
     github_token_env: EnvName | None = Field(
         default=None,

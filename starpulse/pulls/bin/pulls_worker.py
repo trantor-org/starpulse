@@ -1,9 +1,8 @@
 """`starpulse worker pulls`: the Delivery context as its own process, beside `serve`.
 
-It is the pull request store's projection from the machine events and its manual refresh, the task actor and the
+It is the pull request store's projection from the machine events and the webhook deliveries, the task actor and the
 release of dependents. It reads the config and the history database `serve` does and meets `serve` only in the event log
-(`starpulse.pulls.adapters.inbound.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and relays the
-actor's metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a Delivery setting changed, rebuilds the
+(`starpulse.pulls.adapters.inbound.delivery`): it keeps the pull request projection there and relays the actor's metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a Delivery setting changed, rebuilds the
 loops in the same process.
 """
 
@@ -17,7 +16,6 @@ from typing import Any
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.migrate import migrate_chain
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
 from starpulse.event_log.watch import open_watch
@@ -26,7 +24,6 @@ from starpulse.pulls.adapters.inbound.delivery import (
     Publisher,
     announce_saves,
     follow_events,
-    follow_refreshes,
     keep_metrics,
 )
 from starpulse.pulls.adapters.inbound import pull_deliveries
@@ -49,7 +46,7 @@ class Delivery:
         log: EventLog,
         pulls: PullStore,
         pins: GitHub,
-        start_delivery: Callable[..., tuple[Any, Any]],
+        start_delivery: Callable[..., tuple[Any, Callable[[], None] | None]],
         *,
         resume: bool = False,
     ) -> None:
@@ -57,6 +54,8 @@ class Delivery:
         self._built = (board, feed, log, pulls, pins)
         self._start_delivery = start_delivery
         self._stop = StopEvent()
+        #: The task actor of the running loops, None while none runs.
+        self._actor: Any = None
         #: Whether the replay resumes after the cursor the replays before kept (`follow_events`).
         self._resume = resume
 
@@ -66,7 +65,7 @@ class Delivery:
         board, feed, log, pulls, pins = self._built
         self._stop = stop = StopEvent()
         try:
-            actor, sync = self._start_delivery(
+            actor, projected = self._start_delivery(
                 self._config,
                 board,
                 feed,
@@ -79,17 +78,24 @@ class Delivery:
         except ValueError:
             stop.set()
             raise
-        if sync:
-            follow_refreshes(log, lambda repo, number: sync.request(repo, number, urgent=True), sync.serving, stop)
-            projection = RecordProjection(pulls, feed, sync.project, sync.request)
+        if projected:
+            projection = RecordProjection(pulls, feed, projected)
             handlers = {MACHINE_STREAM: projection.handle, JOBS_STREAM: projection.handle_job}
             follow_events(log, feed, handlers, stop, resume=self._resume)
             self._resume = True  # a reload resumes after this replay's cursor
+        self._actor = actor
         if actor:
             keep_metrics(log, actor.exposition, stop, actor.turned, actor.views)
 
     def stop(self) -> None:
         self._stop.set()
+        self._actor = None
+
+    def merge_received(self, received_at: float) -> None:
+        """Hand a merge webhook's write to the running task actor (`TaskActor.merge_received`); none running drops it,
+        as the next actor's start derives every open task."""
+        if actor := self._actor:
+            actor.merge_received(received_at)
 
     def reload(self, path: Path, load: Callable[[Path | None], PullsConfig]) -> None:
         """Re-read `path`. An invalid config is logged and the running loops kept; a changed Delivery block takes them
@@ -127,7 +133,7 @@ def start(
     load: Callable[[Path | None], PullsConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
     history_store: Callable[[PullsConfig, Path, Mapping[str, dict]], Any],
-    start_delivery: Callable[..., tuple[Any, Any]],
+    start_delivery: Callable[..., tuple[Any, Callable[[], None] | None]],
     keep_pulls: Callable[[PullStore, EventLog, StopEvent], Callable[[], None]],
 ) -> Callable[[], None]:
     """Start the Delivery loops over `log`, each ending when `stop` is set, and return their reload. Raises
@@ -145,9 +151,9 @@ def start(
     store_pulls()
     store.subscribe_saves(lambda keys: store_pulls())
     announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
-    if config.github:  # a delivery writes its record whether or not a task cites the pull request
-        pull_deliveries.start(config, base, stop, store, migrate_chain, open_watch)
     delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=resume)
+    if config.github:  # a delivery writes its record whether or not a task cites the pull request
+        pull_deliveries.start(config, log.engine, stop, store, open_watch, delivery.merge_received)
     stop.listen(delivery.stop)
     delivery.start()
     if stop.is_set():  # `listen` does not call for a stop already set, and a stop during `start` met the old loops
@@ -163,7 +169,7 @@ def main(
     load: Callable[[Path | None], PullsConfig],
     worker_board: Callable[..., tuple[Board, BoardFeed]],
     history_store: Callable[[PullsConfig, Path, Mapping[str, dict]], Any],
-    start_delivery: Callable[..., tuple[Any, Any]],
+    start_delivery: Callable[..., tuple[Any, Callable[[], None] | None]],
     keep_pulls: Callable[[PullStore, EventLog, StopEvent], Callable[[], None]],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:

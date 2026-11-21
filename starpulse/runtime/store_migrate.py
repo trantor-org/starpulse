@@ -12,6 +12,7 @@ not allow, a config that cannot be read, or a board the config does not assemble
 """
 
 import argparse
+import glob
 import json
 import logging
 from collections.abc import Mapping, Sequence
@@ -31,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 #: What an imported file is renamed to, so the value it held can still be read by hand.
 RETIRED_SUFFIX = ".imported"
+#: The setting that records the old inbox file carried into the store, so a second run copies nothing.
+INBOX_CARRIED = "github_inbox_carried"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -77,6 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         state_dir=config.scheduler.state_dir,
         keys=board.keys,
         fold=True,
+        inbox_files=config.github.inbox_files if config.github else None,
     )
     from starpulse.board.adapters.comment_parity import reconcile_comments  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.board.adapters.files_win import bring_to_files  # noqa: PLC0415 - import cost, paid only by a run that migrates
@@ -111,13 +115,16 @@ def maintain(
     state_dir: str | None = None,
     keys: TaskKeys | None = None,
     fold: bool = False,
+    inbox_files: str | None = None,
 ) -> None:
     """The work `HistoryStore` used to do on every open: the schema, then the summaries it needs.
+
+    With `inbox_files` (a glob for the old GitHub inbox databases) it copies their rows into the store once and leaves the files.
 
     With a `base` (the config's directory) it also imports the operator files found there, and in `state_dir` under it.
     With `fold` (the `starpulse migrate` run, the only writer besides the Board child) it folds the Task History and the
     `machine:events` the store holds into the read model, placing machine tasks with `keys`; the read model and the
-    stored snapshot, and the claim expiries and summaries, are rebuilt first when their stamp differs.
+    stored snapshot, and the summaries, are rebuilt first when their stamp differs.
     """
     from starpulse.event_log.event_log import EventLog, store_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.migrate import migrate  # noqa: PLC0415 - import cost, paid only by a run that migrates
@@ -136,9 +143,10 @@ def maintain(
             build_snapshots(engine, projector.stamp())
         if base is not None:
             import_files(log, base, base / (state_dir or ""))
+        if inbox_files is not None:
+            _carry_inbox(log, inbox_files)
         history = HistoryStore(url, machines, engine, retention_days=retention_days)
         history.build_summaries()
-        history.build_claim_expiries()
     finally:
         engine.dispose()
 
@@ -155,6 +163,18 @@ def import_files(log: EventLog, base: Path, state_dir: Path) -> None:
     _import_setting(log, toggle.KEY, state_dir / toggle.TOGGLE_FILE, "enabled")
     _import_setting(log, history_window.KEY, base / history_window.SETTINGS_FILE, "history_hours")
     _import_runs(log.engine, state_dir / ledger.LEDGER_FILE)
+
+
+def _carry_inbox(log: EventLog, pattern: str) -> None:
+    from starpulse.github.adapters.outbound.carry_over import carry_over  # noqa: PLC0415 - import cost, paid only by a run that migrates
+
+    if log.setting(INBOX_CARRIED) is not None:
+        return
+    files = sorted(glob.glob(pattern))
+    for file in files:
+        logger.info("migrate: carried the GitHub inbox from %s: %s", file, carry_over(log.engine, Path(file)))
+    if files:
+        log.set_setting(INBOX_CARRIED, pattern)
 
 
 def _import_setting(log: EventLog, key: str, file: Path, field: str) -> None:

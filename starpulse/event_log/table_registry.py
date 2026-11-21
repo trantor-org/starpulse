@@ -2,8 +2,7 @@
 
 A durable table holds rows no event rebuilds; a derived one is dropped, created and refolded when its family's stamp
 changes; an ephemeral one is rewritten by its owner while it runs. A dead table is read by nothing and leaves with the
-baseline squash. The GitHub inbox tables (`github_inbox*`, `github_reconcile_state`) and the search, facets and vectors
-tables are created outside this chain and left out.
+baseline squash. The search, facets and vectors tables are created outside this chain and left out.
 """
 
 import hashlib
@@ -34,7 +33,6 @@ FAMILIES: dict[str, Family] = {
     "summaries": Family(_t("step_summaries", "cases", "lane_intervals", "lanes"), _t("machine_events", "lane_changes")),
     "read_model": Family(_t("tasks", "task_criteria", "machine_tasks"), _t("events", "machine_events")),
     "snapshots": Family(_t("snapshots", "snapshot_deltas"), _t("tasks")),
-    "claim_expiries": Family(_t("claim_expiries"), _t("tasks")),
     "signals": Family(_t("signal_folds", "answers"), _t("signals")),
 }
 _DURABLE = _t(
@@ -43,7 +41,7 @@ _DURABLE = _t(
     "retired_tasks", "pull_requests", "machine_versions", "machine_active", "reader_floor", "policy_exits",
     "policy_lanes", "policy_profiles", "policy_routes", "policy_rules", "policy_tools", "policy_vocabularies",
     "policy_watches",
-)
+) + ("github_inbox", "github_inbox_state", "github_reconcile_state")  # the inbox's names are the readers' own
 CLASSES: dict[str, str] = {
     **dict.fromkeys(_DURABLE, "durable"),
     **dict.fromkeys((t for family in FAMILIES.values() for t in family.tables), "derived"),

@@ -46,6 +46,7 @@ __all__ = [
     "MIN_N",
     "cell_of",
     "cell_report",
+    "clean_steps",
     "combine_cost",
     "estimate_report",
     "fold_cost",
@@ -67,6 +68,11 @@ def _median(values: Iterable[int | None]) -> float | None:
     return median(held) if held else None
 
 
+def _completed_cell(slice_: dict[str, Any], tasks: Mapping[str, Mapping[str, Any]]) -> tuple[str, int] | None:
+    cell = cell_of(tasks, slice_["task"])
+    return cell if cell and slice_["complete"] and set(slice_["harnesses"]) == {CLAUDE_CODE} else None
+
+
 def cell_report(slices: Iterable[dict[str, Any]], tasks: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
     """One row per kind x size cell of the slices `slices` with `MIN_N` clean completions, by kind then size.
 
@@ -74,10 +80,8 @@ def cell_report(slices: Iterable[dict[str, Any]], tasks: Mapping[str, Mapping[st
     no cell."""
     cells: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
     for s in slices:
-        labels = tasks.get(s["task"], {}).get("labels") or ()
-        kind, size = _label(labels, "kind-"), _label(labels, "size-")
-        if s["complete"] and kind and size and size.isdigit() and set(s["harnesses"]) == {CLAUDE_CODE}:
-            cells[kind, int(size)].append(s)
+        if cell := _completed_cell(s, tasks):
+            cells[cell].append(s)
     rows = []
     for (kind, size), completed in sorted(cells.items()):
         clean = sorted((s for s in completed if s["clean"]), key=lambda s: (s["last_at"], s["task"]))
@@ -99,6 +103,12 @@ def cell_report(slices: Iterable[dict[str, Any]], tasks: Mapping[str, Mapping[st
             }
         )
     return rows
+
+
+def clean_steps(slice_: dict[str, Any], tasks: Mapping[str, Mapping[str, Any]]) -> tuple[str, int, int] | None:
+    """`(kind, size, steps)` of a slice that completed clean inside a cell, main and subagent requests; else None."""
+    cell = _completed_cell(slice_, tasks)
+    return (*cell, slice_["steps"] + slice_["side_steps"]) if cell and slice_["clean"] else None
 
 
 def cell_of(tasks: Mapping[str, Mapping[str, Any]], task: str | None) -> tuple[str, int] | None:

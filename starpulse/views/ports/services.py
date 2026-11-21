@@ -10,7 +10,6 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.contracts.analytics import Analytics
     from starpulse.harness_telemetry.model.harnesses import Harnesses
-    from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
     from starpulse.scheduler.adapters.remote import Remote
@@ -51,7 +50,6 @@ class Services:
     analytics: Analytics | None = None
     #: Keeps the telemetry analytics' answers past a restart so a read never waits on a fold; None folds per request.
     answers: KeptAnswers | None = None
-    pull_refresh: PullRefresh | None = None
     #: Sends the take-over Update to a task's workflow: False when the task has none.
     take_over: Callable[[str], bool] | None = None
     #: Each lane's tools, typed exit tools and bound skill by lane name, from the board policy.
@@ -64,7 +62,9 @@ class Services:
     storage_metrics: Callable[[], str] | None = None
     sweeper_metrics: Callable[[], str] | None = None
     bridge_metrics: Callable[[], str] | None = None
+    completion_steps_metrics: Callable[[], str] | None = None
     history_lag_metrics: Callable[[], str] | None = None
     follower_lag_metrics: Callable[[], str] | None = None
     child_cpu_metrics: Callable[[], str] | None = None
+    github_metrics: Callable[[], str] | None = None
     autopilot_log: Callable[[], dict[str, Any]] | None = None

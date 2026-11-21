@@ -42,9 +42,6 @@ PUSHED_INSTANCE = "pushed"
 #: restart reads again what arrived since.
 SAVE_DEBOUNCE = 10.0
 
-#: The worker states the board worker writes when it saves the dates a serving process adopts.
-CLAIM_EXPIRIES_STATE = "board:claim-expiries"
-
 #: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
 LEDGER_WINDOW = 86400.0
 
@@ -167,37 +164,3 @@ class BoardStore(Protocol):
     def load(self, name: str, model: type[BaseModel] | None = None) -> tuple[int | None, BaseModel | None]: ...
 
     def save(self, name: str, position: int, model: BaseModel | None = None, *, conn: Any = None) -> None: ...
-
-
-class ExpiriesStore(Protocol):
-    """Where the claim-TTL sweep keeps each held working task's claim expiry from its latest pass (`HistoryStore`)."""
-
-    def claim_expiries(self) -> dict[str, float]: ...
-
-    def save_claim_expiries(self, expiries: dict[str, float]) -> None: ...
-
-
-class StateLog(Protocol):
-    """The event log's worker states: a write is what wakes the processes following the name."""
-
-    def put_state(self, name: str, state: Any) -> None: ...
-
-
-class DatesStore(ExpiriesStore, Protocol):
-    """The dates the board worker keeps (`HistoryStore`)."""
-
-
-class PushedDates:
-    """A history store whose date saves also write the worker state a serving process follows, so it adopts them at
-    once; every other call goes to the store."""
-
-    def __init__(self, store: DatesStore, log: StateLog) -> None:
-        self._store = store
-        self._log = log
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._store, name)
-
-    def save_claim_expiries(self, expiries: dict[str, float]) -> None:
-        self._store.save_claim_expiries(expiries)
-        self._log.put_state(CLAIM_EXPIRIES_STATE, sorted(expiries.items()))

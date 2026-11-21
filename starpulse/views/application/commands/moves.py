@@ -175,11 +175,14 @@ def _claimer(who: Who, agent: dict, working: str) -> Who:
 def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
     """Move the task `request` names to In Progress holding the session it names: the HTTP status and JSON body.
 
-    The holder is an opaque string. A task already In Progress under that holder answers 200 without a write; under
-    another, or when the holder already has another task In Progress, it is refused 409 naming the holder or the task.
+    The holder is an opaque string. A task already In Progress under that holder (its local id or its claude.ai URL)
+    answers 200 without a write; under another, or when the holder already has another task In Progress, it is refused
+    409 naming the holder or the task.
     A task In Progress held by no session, or under its own task name (a label, never a session), is adopted: the
     holder is recorded without a move.
     """
+    from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a claim names a session
+
     task = request.task
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
@@ -189,10 +192,12 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
     named_for_task = str(agent.get("assignee")).casefold() == task.casefold()
     adopt = agent["state"] == working and (_unheld(agent) or named_for_task)
     if agent["state"] == working and not adopt:
-        if agent.get("assignee") == who.session:
+        if same_holder(agent.get("assignee"), who.session):
             return 200, held
         return 409, {"error": f"{task} is already In Progress, held by {agent['assignee']}"}
-    others = [a["id"] for a in feed.open_tasks() if a["state"] == working and a.get("assignee") == who.session]
+    others = [
+        a["id"] for a in feed.open_tasks() if a["state"] == working and same_holder(a.get("assignee"), who.session)
+    ]
     if others:
         return 409, {
             "error": f"this session already holds {others[0]} In Progress: park it, defer it or finish it before "

@@ -12,13 +12,15 @@ import os
 import threading
 import time
 from collections.abc import Callable, Mapping
-from pathlib import Path
+from functools import partial
 from typing import Any
 
-from starpulse.github.adapters.inbound.consumer import follow, open_queue
+from sqlalchemy.engine import Engine
+
+from starpulse.github.adapters.inbound.consumer import follow
 from starpulse.github.adapters.outbound.app_jwt import app_jwt
 from starpulse.github.adapters.outbound.cursors import SqlCursors
-from starpulse.github.adapters.outbound.inbox import Migrate
+from starpulse.github.adapters.outbound.queue import SqlQueue
 from starpulse.github.adapters.outbound.rest import connect_client
 from starpulse.github.model.delivery import Delivery
 from starpulse.github.ports.events import OpenWatch, Queue, Stop
@@ -26,11 +28,13 @@ from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail, o
 from starpulse.pulls.adapters.outbound.pull_reads import READ_EVENTS, PullReads, refresh
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 
-__all__ = ["CONSUMER", "apply", "consume", "start"]
+__all__ = ["CONSUMER", "URGENT", "apply", "consume", "start"]
 
 logger = logging.getLogger(__name__)
 
 CONSUMER = "pulls"
+#: The `(event, action)` deliveries claimed ahead of every older one: a merge moves its task at once.
+URGENT = (("pull_request", "closed"),)
 
 Delta = Callable[[Record, Mapping[str, Any], float], Record]
 
@@ -105,8 +109,15 @@ _ACTIONS: dict[str, tuple[Delta, ...]] = {
 }
 
 
-def apply(store: PullStore, delivery: Delivery, now: float, reads: PullReads | None = None) -> bool:
-    """Write the fields `delivery`'s action names to its pull request's record, and say whether it wrote."""
+def apply(
+    store: PullStore,
+    delivery: Delivery,
+    now: float,
+    reads: PullReads | None = None,
+    amended: Callable[[], None] | None = None,
+) -> bool:
+    """Write the fields `delivery`'s action names to its pull request's record, and say whether it wrote. `amended` is
+    called once the record is written, ahead of the reads that refresh it."""
     if delivery.event in READ_EVENTS:
         if reads is None:
             return False
@@ -128,20 +139,30 @@ def apply(store: PullStore, delivery: Delivery, now: float, reads: PullReads | N
 
     if not store.amend(delivery.repository, pull["number"], change):
         return False
+    if amended is not None:
+        amended()
     if reads is not None:
         refresh(store, reads, delivery, now)
     return True
 
 
 def consume(
-    queue: Queue, store: PullStore, clock: Callable[[], float] = time.time, reads: PullReads | None = None
+    queue: Queue,
+    store: PullStore,
+    clock: Callable[[], float] = time.time,
+    reads: PullReads | None = None,
+    merged: Callable[[float], None] | None = None,
 ) -> None:
     """Apply each delivery due now once, then return: a delivery that applies or has no row is done, one that cannot be
-    read is retried and then dead."""
+    read is retried and then dead. An `URGENT` delivery's write is handed to `merged` with the time it was received,
+    before its refresh reads and the next delivery."""
     for entry in queue.claim():
-        delivery_id = entry.delivery.delivery_id
+        delivery = entry.delivery
+        delivery_id = delivery.delivery_id
+        urgent = (delivery.event, delivery.action) in URGENT
+        handover = partial(merged, entry.received_at) if merged is not None and urgent else None
         try:
-            wrote = apply(store, entry.delivery, clock(), reads)
+            wrote = apply(store, delivery, clock(), reads, handover)
         except Exception:
             logger.exception("github pulls: %s", delivery_id)
             queue.fail(delivery_id, "consumer error")
@@ -153,24 +174,24 @@ def consume(
 
 
 def start(
-    config: Any, base: Path, stop: Stop, store: PullStore, migrate: Migrate, open_watch: OpenWatch
+    config: Any, engine: Engine, stop: Stop, store: PullStore, open_watch: OpenWatch, merged: Callable[[float], None] | None = None
 ) -> None:
-    """Follow the inbox `[github]` names on a thread until `stop` is set, with a cursor of its own beside the `events` one."""
-    inbox, queue = open_queue(config, base, migrate, CONSUMER)
-    url = inbox.engine.url
+    """Follow the inbox in the main store `engine` opens on a thread until `stop` is set, with a cursor of its own beside the
+    `events` one, handing each `URGENT` delivery's write to `merged` (`consume`); the store's owner disposes `engine`."""
+    queue = SqlQueue(engine, CONSUMER, urgent=URGENT)
+    url = engine.url
     watch = open_watch(url.database) if url.get_backend_name() == "sqlite" and url.database else None
     token_env = config.github.reconcile_token_env
     reads = (
-        PullReads(connect_client(lambda: os.environ.get(token_env or ""), app_jwt), SqlCursors(inbox.engine))
+        PullReads(connect_client(lambda: os.environ.get(token_env or ""), app_jwt), SqlCursors(engine))
         if token_env
         else None
     )
 
     def work() -> None:
         try:
-            follow(queue, stop, watch, lambda: consume(queue, store, reads=reads), "github pulls")
+            follow(queue, stop, watch, lambda: consume(queue, store, reads=reads, merged=merged), "github pulls")
         finally:
-            inbox.engine.dispose()
             if watch is not None:
                 watch.close()
 

@@ -26,6 +26,8 @@ HELP = "Tasks whose file lane differs from the board's, still so a pass after be
 class _Feed(Protocol):
     recording: threading.RLock
 
+    def recording_of(self, task_id: str) -> threading.RLock: ...
+
     def open_tasks(self) -> list[dict]: ...
 
     def done_tasks(self) -> list[str]: ...
@@ -96,8 +98,9 @@ class BoardFiles:
         return corrected
 
     def _reconcile(self, task: str, lane: str) -> bool:
-        """Reconcile `task` holding the feed's `recording`, and record the file's lane as the sweep's lane change."""
-        with self._feed.recording:
+        """Reconcile `task` holding the feed's `recording` and the task's own, and record the file's lane as the sweep's
+        lane change."""
+        with self._feed.recording, self._feed.recording_of(task):
             if not self._board.reconcile(task):
                 return False
             logger.warning("StarPulse: the board-files pass reconciled %s, whose file lane is %s", task, lane)

@@ -1,13 +1,12 @@
 """The checks behind `starpulse doctor`, each reported as pass, warn or fail with why.
 
-The checks cover config loading, the server, each configured adapter, the GitHub CLI, and the contract between the
+The checks cover config loading, the server, each configured adapter, and the contract between the
 config and the machines' DAG cues: each cued DAG exists and takes the parameter its `[runs.commit]` key names, and each
 `[[repos]]` path is a submodule. A warning (a cued DAG paired with its merge only by time) never fails the run. One
 failure never stops the others, so a report names every fault at once.
 """
 
 import os
-import shutil
 import socket
 import subprocess
 from collections.abc import Callable
@@ -18,7 +17,7 @@ from urllib.parse import urlsplit
 from starpulse.runs.model.config import RunsInstance
 from starpulse.runtime.config import Config, runs_adapter
 
-#: Seconds a `gh` command may take.
+#: Seconds a command may take.
 _COMMAND_TIMEOUT = 10
 
 #: Seconds a QUIC socket may take to answer the probe.
@@ -55,7 +54,6 @@ def quic_answers(host: str, port: int, timeout: float = _QUIC_TIMEOUT) -> bool:
 class Probes:
     """What the checks touch outside the process: installed tools and commands."""
 
-    which: Callable[[str], str | None]
     run: Callable[..., subprocess.CompletedProcess[str]]
     dag_params: Callable[[RunsInstance, str], list[str] | None] = _declared_params
     """The parameter names a workflow of a runs instance declares, none when its adapter cannot say; raises `OSError`
@@ -65,7 +63,6 @@ class Probes:
 
 
 LIVE = Probes(
-    which=shutil.which,
     run=subprocess.run,
 )
 
@@ -120,15 +117,6 @@ def _ready(status: int, body: Any) -> dict[str, str]:
     components = body.get("components", {}) if isinstance(body, dict) else {}
     named = [f"{name}: {part['detail']}" for name, part in components.items() if not part["ready"]]
     return _result("ready", False, "; ".join(named) or f"/api/ready answered {status}")
-
-
-def _gh(probes: Probes) -> dict[str, str]:
-    if not probes.which("gh"):
-        return _result("gh", False, "gh is not installed, so a task's pull requests carry no state")
-    code, text = _command(probes, "gh", "auth", "status")
-    if code != 0:
-        return _result("gh", False, f"gh auth status failed: {text}; run `gh auth login`")
-    return _result("gh", True, "gh is logged in")
 
 
 def _cue(cue: dict[str, Any], listed: set[str], instances: dict[str, RunsInstance], probes: Probes) -> dict[str, str]:
@@ -220,7 +208,6 @@ def run_checks(
         *([] if isinstance(snapshot, str) else _h3(probes, server)),
         *([] if ready is None else [_ready(*ready)]),
         *_adapters(snapshot, config),
-        _gh(probes),
         *_contract(snapshot, config, probes),
     ]
     return _report(checks)

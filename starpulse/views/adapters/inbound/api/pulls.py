@@ -1,9 +1,7 @@
-"""Pull requests: the list the page reads and the push that refreshes it.
+"""Pull requests: the list the page reads.
 
 - `GET /api/pulls`: the pull requests, filtered by the query (`repo`, `number`, `state`, `body_contains`, and `task` for
   those a task cites); bodies only when `bodies=1` or one `repo` and `number` is named; a read that takes long is logged.
-- `POST /api/pulls/refresh`: the token-guarded push that refreshes the store; 404 where a deployment leaves it
-  unconfigured.
 """
 
 import threading
@@ -16,15 +14,12 @@ from urllib.parse import parse_qs
 from starlette.requests import Request
 from starlette.responses import Response
 
-from starpulse.pulls.adapters.inbound.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
 from starpulse.views.adapters.inbound.api.table import (
     ApiRoute,
     Arrival,
     ReadRoute,
-    WriteRoute,
 )
-from starpulse.views.adapters.inbound.api.writing import pushed, writing
 from starpulse.views.adapters.inbound.compression import Encoded
 from starpulse.views.adapters.inbound.snapshots import NotStored
 from starpulse.views.application.queries.responses import pulls_response
@@ -115,9 +110,8 @@ def timed(request: Request, arrival: Arrival) -> AbstractContextManager[Any]:
 
 
 def routes(api: Api) -> list[ApiRoute]:
-    refresh = api.services.pull_refresh
-
-    def push(request: Request) -> Response | None:
-        return None if refresh is None else pushed(request, "ingest", refresh, MAX_REFRESH_BODY)
-
-    return [ReadRoute("/pulls", pulls, timed, params=frozenset({"bodies", "body_contains", "number", "repo", "state", "task"})), WriteRoute("/pulls/refresh", ("POST",), writing(push))]
+    return [
+        ReadRoute(
+            "/pulls", pulls, timed, params=frozenset({"bodies", "body_contains", "number", "repo", "state", "task"})
+        )
+    ]

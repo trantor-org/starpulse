@@ -92,7 +92,7 @@ internal and can change in any release.
 to the server as `Board.waits`, and the task actor (`[board.actor]`, [Task actor](serving.md#task-actor)) fires the event
 when the fact holds; `Board.holds` withholds `deps_done` with reasons; `Board.unfinished` lists the work a merged task still has, which holds `pr_merged_unfinished`. The actor's series on `GET /metrics` are
 `starpulse_task_actor_refusals_total`, `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds`,
-`starpulse_task_actor_handoff_seconds`, `starpulse_task_merge_move_seconds`, `starpulse_task_actor_pin_held`,
+`starpulse_task_actor_handoff_seconds`, `starpulse_task_merge_move_seconds`, `starpulse_task_receipt_done_seconds`, `starpulse_task_actor_pin_held`,
 `starpulse_task_actor_recovery_finished` and `starpulse_task_actor_merged_review_waiting`.
 `starpulse_board_lane_unattributed_total` counts the `board:lanes` entries appended since `serve` started that name no actor.
 `starpulse_autopilot_enabled` (0/1), `starpulse_autopilot_switch_changed_timestamp_seconds` (when the `scheduler.enabled`
@@ -129,8 +129,8 @@ is public for the names listed here:
 - `starpulse.github.adapters.outbound.inbox`: the `github_inbox` table and `SqlInbox`.
 - `starpulse.github.ports.events`: `Entry`, the `delivery` and its `attempts`, and the `Queue` protocol.
 - `starpulse.github.model.events`: `CONSUMER`, the queue name the GitHub inbox consumer registers under, for a consumer outside the package.
-- `starpulse.pulls.adapters.outbound.pull_store`: `refresh_pull(repo, number, store, now, graphql)`, which reads one pull request from GitHub and saves it, for a test that checks a fixture survives the real pull reader.
-- `starpulse.pulls.adapters.outbound.pulls`: `PullStore`, the store `refresh_pull` saves to.
+- `starpulse.pulls.adapters.outbound.pulls`: `PullStore`, the store the webhook deliveries and lifecycle events save to.
+- `starpulse.views.adapters.outbound.signal_folds`: `changed(events, after, views, since=0.0)`, the stored per-session results folded past a rowid cursor, for a sink that copies only what changed.
 - `starpulse.pulls.adapters.inbound.task_actor`: `ACTOR`, the writer name the task actor's moves and refusals carry, for a test that publishes as it.
 - `starpulse.cli.agent_subscribe`: `subscribed(session, subject, config=None)`, whether a session is subscribed to a subject, for a command that must not subscribe it twice.
 - `starpulse.cli.lane_mcp`: `lane_argv(tool, task, arguments)`, the `starpulse` argv a lane tool runs, for a test that checks each names a command the project defines.

@@ -198,6 +198,12 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     status, reply = agent_wire.get(base, path)
     # a task only the snapshot holds has no record, so no plan; any other failure is the caller's to see
     record = {} if status == 404 else record_call(base, path, status, reply).get("record", {})
+    if record:  # the file holds an edit before the snapshot does, and a follow-up edit takes its base from this read
+        agent = {
+            **agent,
+            "state": lane_id(record["status"]),
+            **{field: record[field] for field in ("title", "milestone", "labels", "dependencies")},
+        }
     if "description" not in agent:  # a stored card leaves its detail to the record
         agent = {
             **agent,

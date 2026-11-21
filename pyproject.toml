@@ -60,7 +60,7 @@ include = ["starpulse*"]
 
 # The built page and the machine schema are read from beside the module through `__file__`.
 [tool.setuptools.package-data]
-starpulse = ["static/**/*", "schemas/*.json", "machines/*.yaml", "skills/**/*", "event_log/migrations/*.py", "event_log/migrations/versions/*.py", "github/adapters/outbound/migrations/*.py", "github/adapters/outbound/migrations/versions/*.py"]
+starpulse = ["static/**/*", "schemas/*.json", "machines/*.yaml", "skills/**/*", "event_log/migrations/*.py", "event_log/migrations/versions/*.py"]
 
 # A consumer installs this package from its directory, non-editable, at one version. uv rebuilds such an install only
 # when a cache key changes and defaults to pyproject.toml alone, so a bump to a newer source left an installed copy

@@ -261,21 +261,12 @@ function PhaseTrack({ at, hot }: { at: PhaseAt; hot: boolean }) {
   );
 }
 
-/** The footer chip of a working card whose claim is about to lapse or has: the held session's minutes left, or in red how long the claim has sat idle, its session struck once released. */
+/** The footer chip of a working card whose claim ended: in red how long it has sat idle, its session struck. */
 function ClaimWho({ chip }: { chip: ClaimChip }) {
   const session = chip.session && shortProfile(chip.session);
-  if (chip.kind === "near")
-    return (
-      <span className="who near" title={`Held by ${session}: the claim expires in ${chip.minutes}m unless the session acts.`}>
-        <i style={{ background: profileColor(chip.session) }} />{session}<span className="tl">· {chip.minutes}m left</span>
-      </span>
-    );
-  const title = chip.released
-    ? `Idle ${chip.age}: ${session ? `${session}'s` : "its"} claim ended. Any session may claim it.`
-    : `Idle ${chip.age}: ${session}'s claim expired; the sweep releases it next.`;
   return (
-    <span className="who idle" title={title}>
-      {session && (chip.released ? <><i className="o" style={{ borderColor: profileColor(chip.session) }} /><s>{session}</s></> : <><i style={{ background: profileColor(chip.session) }} />{session}</>)}
+    <span className="who idle" title={`Idle ${chip.age}: ${session ? `${session}'s` : "its"} claim ended. Any session may claim it.`}>
+      {session && <><i className="o" style={{ borderColor: profileColor(chip.session) }} /><s>{session}</s></>}
       <span className="tl">{session && "· "}idle {chip.age}</span>
     </span>
   );

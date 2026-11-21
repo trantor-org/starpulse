@@ -285,8 +285,7 @@ the writer has none). The native adapter's writer records the assignee as the ta
 
 `doctor` runs every check even when one fails, so one call names every fault. The checks: `config` (the config file
 loads), `server` (it answers `/api/snapshot`), `adapter:board` and one `adapter:<name>` per `[[runs]]` instance (it is
-producing: the Board is read, the instance lists workflows and reports no error), and `gh` (installed and logged in,
-which the pull request reader needs).
+producing: the Board is read, the instance lists workflows and reports no error).
 
 Two contract checks read the config against the machines' cues. `cue:<instance>/<workflow>` runs once per cued
 workflow: it fails when no instance lists the workflow or when a `[runs.commit]` key (`after`, `before`, `force`,
@@ -363,17 +362,11 @@ when they change. Each held task carries `skill` (`{name, states, current, next}
 
 ## The pull-request store
 
-With `gh` available and the config's `pull_requests` not false, the pulls context (a thread of the `contexts` child `serve` supervises, or `starpulse worker pulls`) keeps a store of pull requests (table
+With the config's `pull_requests` not false, the pulls context (a thread of the `contexts` child `serve` supervises, or `starpulse worker pulls`) keeps a store of pull requests (table
 `starpulse_pull_requests`) as a projection of the lifecycle events, and polls GitHub for nothing. A task's `machine:events` entry (`PR_OPENED`, `PR_READY`, `PUSHED`, `CHECKS_PASSED`, `CHECKS_FAILED`,
 `CONFLICTED`, `MERGEABLE`, `THREADS_CHANGED`, `PR_MERGED`, `PR_CLOSED`) lands on the pull requests the Board says the task cites, and a completed `ci:jobs` entry sets the head commit and its job's result on the
 record of the pull request it names. An entry applied twice leaves the record as once did, so the log may be replayed from any point: a start on a store that holds records replays only the entries appended after the cursor the replay keeps in the `pulls.cursor` worker state, a start on a new or wiped store replays every entry the log retains, and a second reader per stream, taken before the replay, hands over each entry appended meanwhile, so a `PR_MERGED` published during a restart is applied without waiting for the replay to end. A close names its pull request in the entry's `repository` and `pr` fields and applies to that one alone, none once the store holds it closed; a close that names none applies only when the task cites a single open pull request.
-`POST /api/pulls/refresh` reads one pull request alone from GitHub (one GraphQL query, its `rateLimit` cost logged as `pull requests: <repo> query cost N, remaining N, resets T`) and replaces its record:
-the way a pull request no task's events name enters the store, and the way a record gets its head branch, base, merge commit and changed files. The
-repositories a refresh may name are those of open tasks' pull request links, the `[[repos]]` entries under a linked owner, and those already stored.
-At each start the worker reads every record it holds OPEN the same way, one pull request at a time, so a record whose close no event
-reached (one an older listing poll wrote) closes once and the OPEN set matches GitHub's. It reads every MERGED record with no merge
-commit too (a lifecycle event wrote it bare), which the `pin-bump` release gate needs to release a task waiting on that pull request.
-A read that finds an OPEN pull request with `mergeable` still `UNKNOWN` (GitHub computes it lazily after a push) is asked again on the same bounded delays as a failed read, so the `pulls_clear` Review guard, which refuses anything but `MERGEABLE`, is not held by a value no event will replace. Every five minutes the sync also queues a read of each held OPEN record still `UNKNOWN`, so a lost read or spent retries does not hold the guard for good.
+A pull request no task's events name enters the store from a webhook delivery, which also sets its head branch, base, merge commit and changed files. No endpoint reads a pull request from GitHub on request: `POST /api/pulls/refresh` and the `refresh_token_env` setting are gone, and a config that sets the key is refused.
 
 `GET /api/pulls[?repo=owner/name][&number=N][&state=OPEN|MERGED|CLOSED][&body_contains=text]` serves the store,
 `{pulls: [...]}`, ordered by repository then number. Each record holds `repo`, `number`, `state`, `isDraft`,

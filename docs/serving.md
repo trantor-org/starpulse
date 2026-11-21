@@ -372,7 +372,7 @@ GET /api/ledger/<event>/events
                    ({rows}, those that are new or differ) as they change. /api/events carries no Ledger row
 GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_contains=TEXT][&task=TASK-N][&bodies=1]
                    {pulls}: the pull requests the PR store holds, kept current by the lifecycle events of the tasks that cite
-                   them (and by a read `POST /api/pulls/refresh` asks of GitHub), those matching every filter
+                   them and by GitHub's webhook deliveries, those matching every filter
                    given, by repository then number, each {repo, number, state (OPEN, MERGED, CLOSED), isDraft,
                    mergeable, baseRefName, headRefOid, body (left out unless `bodies=1`, or `repo` and `number` name one pull
                    request), checks (pass, failing, pending, none: the required
@@ -392,8 +392,8 @@ GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for th
                    `process_threads`, `process_open_fds` and `process_start_time_seconds`, which moves on every
                    restart. With `[board.actor]`, also `starpulse_task_actor_refusals_total` and the
                    `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds` and
-                   `starpulse_task_actor_handoff_seconds` and
-                   `starpulse_task_merge_move_seconds` histograms, and the gauges
+                   `starpulse_task_actor_handoff_seconds`, `starpulse_task_merge_move_seconds` and
+                   `starpulse_task_receipt_done_seconds` histograms, and the gauges
                    `starpulse_task_actor_recovery_finished` and `starpulse_task_actor_merged_review_waiting`
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
@@ -560,7 +560,7 @@ nothing and the running workers stay on the active version.
 
 `starpulse/event_log/readmodel` folds the `task` streams into tables that answer reads by index, so no read loads every
 Task. A `Projector(engine, store)` folds events past its checkpoint (`read-model:tasks`, in `Checkpoints`); each batch of 500
-commits its rows and the checkpoint together. The read model, the stored snapshot and the claim expiries are derived families on the table registry: each keeps a stamp
+commits its rows and the checkpoint together. The read model and the stored snapshot are derived families on the table registry: each keeps a stamp
 in `starpulse_settings` (`derived_stamp:<family>`), and writer start (`build()`, from `starpulse migrate`) folds the read model
 again only when it differs, from the table definitions, the fold and placement code and the machines that place a task.
 `rebuild()` folds the whole History in memory, then swaps the tables, rows, fold cursors and stamp in one transaction, so a
@@ -658,7 +658,6 @@ event_log_retention_days = 7   # the default
 event_log_archive_dir = "starpulse-archive"   # the default
 slow_read_seconds = 1   # the default
 # pull_requests = true
-# refresh_token_env = "STARPULSE_REFRESH_TOKEN"
 # take_over_command = ["/usr/local/bin/take-over"]
 # webhook_command = ["/usr/local/bin/webhook-intake"]
 # webhook_token_env = "STARPULSE_WEBHOOK_TOKEN"
@@ -863,7 +862,7 @@ applied_by = "pin-bump"
 # secret_env = "GITHUB_WEBHOOK_SECRET"   # the environment variable that holds the App's webhook secret
 # organisation = "acme"                  # accept every repository this owner has
 # repositories = ["solo/tool"]           # accept these owner/name repositories as well
-# database_url = "sqlite:///github.sqlite"  # the inbox database (default github.sqlite beside this file); sqlite or postgresql
+# inbox_files = "/old/inbox/*.sqlite"   # a glob for the old inbox database files `starpulse migrate` copies into the store once (unset: none)
 # max_body_bytes = 5242880               # a larger body is answered 413 (default 5 MiB)
 # host = "127.0.0.1"                     # the address to bind (default 127.0.0.1)
 # port = 8767                            # the port to bind (default 8767)
@@ -905,10 +904,9 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `tls_key` (text): The TLS private key, relative to this file's directory; set with `tls_cert`.
 - `session_start_url` (text): The session-start service a started task is sent to (`POST <url>/start/TASK-N?harness=&mode=`); unset: nothing can be started.
 - `harnesses_file` (text): A file, relative to this one, that declares the tiers and per-harness models.
-- `pull_requests` (true or false, default `true`): With `gh` on the PATH, `serve` keeps a pull request store, current from the lifecycle events, that `/api/pulls`, the `ci` trail and `[release]` read. false never updates it: no event is applied, `POST /api/pulls/refresh` answers 404, tasks carry no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so one store is kept.
+- `pull_requests` (true or false, default `true`): `serve` keeps a pull request store, current from the lifecycle events and GitHub's webhook deliveries, that `/api/pulls`, the `ci` trail and `[release]` read. false never updates it: no event is applied, tasks carry no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so one store is kept.
 - `webhook_command` (list of text): The command `POST /api/webhook` runs, as an argv, with the request body on stdin once the bearer token `webhook_token_env` names matches. Exit 0: accepted (202). Any other exit or a timeout: 502 with the command's stderr, so the sender retries. 404 when this is unset. Needs `webhook_token_env`.
 - `webhook_token_env` (text): The environment variable holding the bearer token `POST /api/webhook` requires; the value is the name, never the token.
-- `refresh_token_env` (text): Lets a producer that just saw a pull request close have its record read now instead of at the next minute's refresh: `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's thread reads that pull request alone (one single-PR GraphQL read, no listing) and publishes it as a refresh does; one asked for during a refresh is read after the repository in hand, ahead of that refresh's projection. The minute's refresh stays the fallback. 202 queued; 401 for a missing or wrong token; 403 for a repository this instance does not track; 400 for any other body. The value is the name of an environment variable, never the token; unset, or with no `gh` on the PATH, the route answers 404, and a named variable that is empty stops `serve`.
 - `github_token_env` (text): The name of an environment variable holding a GitHub token. `serve` exports its value as `GITHUB_TOKEN` and `GH_TOKEN` before it starts any worker, so the GitHub reads and the child processes sign in with it; unset, or naming an unset variable, leaves both as they were. The value is the name, never the token.
 - `take_over_command` (list of text): The command `POST /api/take-over` runs, as an argv: StarPulse appends the task id (`{"task": "TASK-7"}` in the body) and the command asks the task's workflow engine to flip that task's workflow to interactive, so it types nothing more into the task's session. Exit 0: sent (200). Exit 1: the task has no running workflow (409). Any other exit: an error, with the command's stderr. 404 when this is unset. The command is the only place a workflow engine appears.
 - `runs` (list of `[[runs]]` table): One instance of a runs adapter per `[[runs]]` table.
@@ -1228,8 +1226,8 @@ refused without one). A dependency task that cites a pull request in such a repo
 A pull request the store does not hold, or holds open, holds the dependent, the fail-closed direction. A closed, unmerged
 one never reaches the pin and is ignored. The bump is looked for among the store's merged pull requests, so one no task
 cites still settles the dependency, while one older than the store's records is not found and holds it. The pointer and
-containment reads are the memoized `gh` calls the pull request projection makes; a path a merge does not pin (GitHub's
-404) is a remembered answer too, so only a read `gh` could not make is asked again.
+containment reads are the memoized GitHub REST calls the pull request projection makes; a path a merge does not pin (GitHub's
+404) is a remembered answer too, so only a read GitHub could not answer is asked again.
 
 `settle = "release"` with `repo = "owner/name"` is the rule for a repository this process is itself released from, so a
 merge is live once the running build holds it, not once a parent pins it (it needs no `[[repos]]`, and `repo` is refused
@@ -1370,6 +1368,10 @@ labels or dependencies change. `GET /metrics` carries:
   that moved a task citing it. Start recovery yields to a pending store save, task change or move before it takes its
   next task, and a save derives the tasks citing a merged pull request first, so a merge during recovery lands in a
   bucket of 10 s or less.
+- `starpulse_task_receipt_done_seconds`: a histogram of the seconds from saving a merge webhook (`pull_request`
+  `closed`) to the actor's write that moved its task. The pulls consumer claims such a delivery ahead of every older
+  pending one, and hands it to the actor as soon as the pull store holds it, before the refresh read; the actor's
+  write holds only that task's recording lock, so no other task's board write delays it.
 - `starpulse_task_actor_pin_held`: a gauge of Waiting tasks whose dependencies are done but wait for a pin bump to
   merge (`PinGate.waiting_on`); one that stays above 0 is a pin that never merges. Each such hold comments the pull request
   and pin it waits on once. Only a cited pull request that can be the dependency's own delivery counts: one whose
@@ -1379,10 +1381,6 @@ labels or dependencies change. `GET /metrics` carries:
   actor has tried or been refused a move for them; compare with the moves landed, the `starpulse_task_actor_latency_seconds_count`
   rate. The actor reads its lock-held series (this one and `pin_held`) with a 2 s timed acquire and
   omits them when it cannot, so a stuck turn never blocks the scrape; the recovery gauge needs no lock.
-- `starpulse_task_actor_resume_stalled{task}`: 1 for each In Progress task whose settled session was resumed twice with no
-  progress between the resumes (a submachine placement, or a pull request head, unchanged), then escalated one profile
-  through the `idle` hook's `escalate` verdict before its next resume. It clears when the task next shows
-  progress at a settle, or leaves In Progress. The counts live in the actor's memory, so a restart starts them over.
 
 `GET /actor-view` serves the actor's view of each Review task, as the pulls worker last kept it (every 15 s), and
 `?task=TASK-N` the one task's, or 404. A view holds `feed_lane`, the lane the board feed reports; `seen_lane` and
@@ -1509,7 +1507,7 @@ step, and the step it is in.
   merged pull requests and lane entries. An older failure drops out of the Ledger and cannot be rerun here.
 - A `[[repos]]` entry names a repository whose merges apply through the parent's pin bump. Its `MERGED` rows take no run
   and carry `appliedBy`: the `key` of the first later merge in another repository whose submodule pointer at `path`
-  contains the merge's commit (read through `gh`), or `null` while no such merge exists. That merge's row lists what it
+  contains the merge's commit (read through GitHub), or `null` while no such merge exists. That merge's row lists what it
   applies in `applies`. A pin bump appears only when a task cites its pull request.
 
 ## Cold done tasks

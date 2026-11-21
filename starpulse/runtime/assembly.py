@@ -9,7 +9,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse.board.adapters import machines_only, native, policy_store
 from starpulse.board.model.board_feed import BoardFeed
@@ -17,16 +18,16 @@ from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.board.model.policy import Policy, profile_matrix
 from starpulse.board.model.seam import Board
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.migrate import migrate_chain
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.github.adapters.inbound import reconcile
-from starpulse.github.adapters.inbound.listener import INBOX_FILE
 from starpulse.github.adapters.outbound.cursors import SqlCursors
 from starpulse.github.adapters.outbound.inbox import SqlInbox
+from starpulse.github.adapters.outbound.queue import backlogs
+from starpulse.github.adapters.outbound.verdicts import Backlogs
 from starpulse.github.adapters.outbound.reconciled import Reconciled
 from starpulse.github.adapters.outbound.app_jwt import app_jwt
 from starpulse.github.adapters.outbound.rest import Client, connect_client
@@ -110,7 +111,11 @@ def declared(config: Config, base: Path) -> tuple[Board, dict[str, dict], Mappin
     `assemble` does."""
     native_board = config.board_type == "native"
     rows = policy_store.held(database_url(config.database_url, base)) if native_board else None
-    board = native.board({**config.board, "policy_rows": rows}, base) if native_board else machines_only.board(config.board, base)
+    board = (
+        native.board({**config.board, "policy_rows": rows}, base)
+        if native_board
+        else machines_only.board(config.board, base)
+    )
     domains = domains_of(config)
     qualify = qualifier(domains)
     # `[board.actor]` makes the task actor a writer the machine may name beside the adapters' workflows; the scheduler is always one.
@@ -286,13 +291,13 @@ class GithubKind:
         return self._counted.exposition().decode()
 
 
-def github_kinds(config: Any, base: Path) -> list[GithubKind]:
-    """The `github` kind over the inbox `[github]` names, as the list the sweeper's `contexts` joins; empty without the
+def github_kinds(config: Any, log: EventLog) -> list[GithubKind]:
+    """The `github` kind over the inbox in `log`'s store, as the list the sweeper's `contexts` joins; empty without the
     table or its `reconcile_token_env`."""
     settings = config.github
     if settings is None or not settings.reconcile_token_env:
         return []
-    inbox = SqlInbox(settings.database_url or f"sqlite:///{(base / INBOX_FILE).resolve()}", migrate_chain)
+    inbox = SqlInbox(log.engine)
     client = connect_client(lambda: os.environ.get(settings.reconcile_token_env or ""), app_jwt)
     return [GithubKind(client, inbox, SqlCursors(inbox.engine), settings, time.time)]
 
@@ -311,9 +316,9 @@ class _BoardKind:
 
 
 def board_kinds(shared: Callable[[], tuple[Board, BoardFeed]]) -> list[_BoardKind]:
-    """The `waiting`, `board-files` and `pulls` kinds over the board and feed `shared` hands out, read at the first pass
-    (the Board context may publish them after the sweeper starts). The task actor that releases a Waiting task and the
-    pull request reader register their pass on the feed; a kind whose owner is not running in this process samples
+    """The `waiting` and `board-files` kinds over the board and feed `shared` hands out, read at the first pass
+    (the Board context may publish them after the sweeper starts). The task actor that releases a Waiting task
+    registers its pass on the feed; a kind whose owner is not running in this process samples
     nothing."""
 
     def registered(name: str) -> Callable[[], tuple[int, int]]:
@@ -322,5 +327,22 @@ def board_kinds(shared: Callable[[], tuple[Board, BoardFeed]]) -> list[_BoardKin
     return [
         _BoardKind("waiting", registered("waiting")),
         _BoardKind("board-files", registered("board-files")),
-        _BoardKind("pulls", registered("pulls")),
     ]
+
+
+def github_metrics(config: Any, base: Path) -> Callable[[], str]:
+    """The reader of every inbox consumer's backlog gauges for the page's `/metrics`, which Prometheus scrapes: empty
+    without the `[github]` table, or while the inbox has no table yet."""
+    settings = config.github
+    if settings is None:
+        return lambda: ""
+    gauges = Backlogs(functools.partial(backlogs, create_engine(database_url(config.database_url, base))))
+
+    def read() -> str:
+        try:
+            return gauges.exposition()
+        except SQLAlchemyError:
+            logger.warning("github inbox backlog unreadable", exc_info=True)
+            return ""
+
+    return read

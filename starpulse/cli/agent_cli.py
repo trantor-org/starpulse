@@ -1764,7 +1764,7 @@ def _parser() -> argparse.ArgumentParser:
     check = leaf(
         verbs,
         "doctor",
-        "check the install: config, the server, each adapter producing and gh, each pass or fail",
+        "check the install: config, the server, each adapter producing, each pass or fail",
         _doctor,
         ("ok", "checks"),
         (0, 1, 2),

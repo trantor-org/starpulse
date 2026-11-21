@@ -74,21 +74,12 @@ describe("a working card's footer claim chip", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it("shows the time left only in the claim's last 10 minutes", () => {
-    shown(working("@agent-a", { claimExpiresAt: t0 + 11 * MIN }));
+  it("draws a held card with only its holder, however long it has been held", () => {
+    shown(working("@agent-a"));
     expect(chip().textContent).toBe("a");
 
-    shown(working("@agent-a", { claimExpiresAt: t0 + 9 * MIN }));
-    expect(chip().textContent).toBe("a· 9m left");
-  });
-
-  it("puts a red idle time in that spot once the claim expires, counting up live", () => {
-    shown(working("@agent-a", { claimExpiresAt: t0 - 2 * MIN }));
-    expect(chip().className).toBe("who idle");
-    expect(chip().textContent).toBe("a· idle 2m");
-
-    act(() => void vi.advanceTimersByTime(3 * MIN * 1000));
-    expect(chip().textContent).toBe("a· idle 5m");
+    act(() => void vi.advanceTimersByTime(30 * MIN * 1000));
+    expect(chip().textContent).toBe("a");
   });
 
   it("counts a swept claim's idle time from its expiry, the session struck", () => {
@@ -99,14 +90,11 @@ describe("a working card's footer claim chip", () => {
     expect(chip().textContent).toBe("deep· idle 35m");
   });
 
-  it("clears the idle time when a returning session renews the claim, until 10 minutes are left again", () => {
+  it("clears the idle time when a returning session claims the task", () => {
     shown(working("", { release: { at: t0 - 5 * MIN, last_renewal: t0 - 15 * MIN, session: "@agent-a", ttl: 10 * MIN } }));
     expect(chip().textContent).toBe("a· idle 5m");
 
-    shown(working("@agent-b", { claimExpiresAt: t0 + 30 * MIN, release: null }));
+    shown(working("@agent-b", { release: null }));
     expect(chip().textContent).toBe("b");
-
-    act(() => void vi.advanceTimersByTime(21 * MIN * 1000));
-    expect(chip().textContent).toBe("b· 9m left");
   });
 });
