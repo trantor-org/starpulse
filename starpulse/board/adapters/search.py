@@ -114,9 +114,12 @@ _EMBEDDED_SELECT = (
 _EMBEDDED = text(_EMBEDDED_SELECT)
 #: Only the named rows of `_EMBEDDED`, which is how the held vectors catch up with the writes made since.
 _EMBEDDED_ROWS = text(f"{_EMBEDDED_SELECT} WHERE {_TABLE}.rowid IN :rows").bindparams(bindparam("rows", expanding=True))
+#: Walks the facets, one small row per task, to the tasks with no vector, and reads the search table's text only for
+#: those (`CROSS JOIN` fixes that order): a scan of the table itself reads every task's text, on every wake of the embedding context.
 _PENDING = text(
-    f"SELECT rowid AS row, title, description, digest FROM {_TABLE} "
-    f"WHERE rowid NOT IN (SELECT task_row FROM {_VECTORS} WHERE model = :model) LIMIT :limit"
+    f"SELECT {_TABLE}.rowid AS row, title, description, digest FROM {_FACETS} CROSS JOIN {_TABLE} "
+    f"ON {_TABLE}.rowid = {_FACETS}.task_row "
+    f"WHERE {_FACETS}.task_row NOT IN (SELECT task_row FROM {_VECTORS} WHERE model = :model) LIMIT :limit"
 )
 #: Stores a vector only for the text it was made from: a task replaced since is left for the next pass.
 _STORE = text(
