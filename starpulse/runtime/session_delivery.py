@@ -14,6 +14,9 @@ A move to any other lane whose writer `[bridge] quiet_moves` names for that lane
 left with no line notifies nothing; `self` names the receiving session, matched through the same running-session records
 as a claude.ai URL holder.
 
+An event the session already received is acked with no line: the server redelivers one whose ack was lost, and a
+resume wake heard again would start a turn with nothing to do.
+
 A failing-checks line names the skill that answers it, `skill=starpulse:fix-checks`, so the woken session fixes its
 task's red check rather than waiting on the task actor's Review move, which only passing checks fire.
 
@@ -57,6 +60,7 @@ _URL_HOLDER = re.compile(r"https_claude_ai_code_((?:session|cse)_\w+)")
 INCIDENT_FRESH_S = 6 * 3600
 _FINISHED = frozenset({"done", COMPLETED, ARCHIVED})
 SELF = "self"
+_SEEN_MAX = 256
 #: The bundled skill each subject suffix wakes its session into.
 _SKILLS = {".checks.failing": "starpulse:fix-checks"}
 
@@ -150,6 +154,13 @@ def _passed(event: Event, head: Callable[[str, int], str | None] | None) -> bool
     return bool(stored) and stored != judged
 
 
+def _seen_key(event: Event) -> tuple[str, str] | None:
+    try:
+        return event.subject, str(json.loads(event.body)["event_id"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 def _holder_bridge(name: str) -> str:
     url = _URL_HOLDER.fullmatch(name)
     return url[1] if url else ""
@@ -173,7 +184,10 @@ def route(
     """A session with no registration has no route, so its events stay on its consumer. A consumer named for a
     claude.ai URL holder is the running session whose record in `sessions` carries that bridge id, which registered
     under its local id. `end` takes the id of each task a batch moved to a lane `end_lanes` names. `head` is the
-    store's head of a repository's pull request by number, empty or None when it holds none."""
+    store's head of a repository's pull request by number, empty or None when it holds none. A consumer's event the
+    session already received (the server redelivers one whose ack was lost) is acked with no line, the last
+    `_SEEN_MAX` of each consumer being remembered."""
+    seen: dict[str, dict[tuple[str, str], None]] = {}
 
     def registered(name: str) -> Registration | None:
         if found := registry.get(name):
@@ -188,12 +202,21 @@ def route(
 
         def deliver(events: list[Event]) -> bool:
             own = local_id(sessions, registration.session)
-            lines = [
-                line_for(event)
+            received = seen.setdefault(name, {})
+            sent = [
+                event
                 for event in events
-                if not _stale(event) and not _passed(event, head) and not _quieted(event, quiet or {}, own, sessions)
+                if _seen_key(event) not in received
+                and not _stale(event)
+                and not _passed(event, head)
+                and not _quieted(event, quiet or {}, own, sessions)
             ]
+            lines = [line_for(event) for event in sent]
             delivered = notifier.notify(registration, lines) if lines else True
+            if delivered:
+                received.update(dict.fromkeys(key for event in sent if (key := _seen_key(event))))
+                for key in list(received)[:-_SEEN_MAX]:
+                    del received[key]
             outcome = "quieted, nothing sent" if not lines else "delivered" if delivered else "not delivered"
             logger.info("session %s: %s %s", name, ", ".join(event.subject for event in events), outcome)
             if delivered and end:

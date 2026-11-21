@@ -358,7 +358,7 @@ class Loop:
         others = [agent for agent in open_tasks if agent["id"] not in working]
         readings = self.readings() if pending else []
         while pending:
-            decisions = decide([*others, *rows], self._lane, readings, self._policy, self._ledger, log=False, starting=pending)
+            decisions = decide([*others, *rows], self._lane, readings, self._policy, self._ledger, log=False, starting={task: asked[task]["at"] for task in pending})
             if (picked := next((d for d in decisions if d.admitted and d.task in pending), None)) is None:
                 break
             pending.discard(picked.task)

@@ -16,6 +16,7 @@ import logging
 import re
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Any
 
 from starpulse.contracts.tiers import DEFAULT_TIER, LEFTOVER_TIERS, TIERS
@@ -116,11 +117,16 @@ def _dependents(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
     return counts
 
 
-def _enforced_key(task: Mapping[str, Any], dependents: int, decision: Decision) -> tuple[Any, ...]:
-    """Where `task` goes in the enforced order: a leftover tier last, else its `tier` field's position in `TIERS` (a task
-    with none or an unknown one takes the default tier), then the heaviest weight, dependents, depth and id."""
+def _enforced_key(
+    task: Mapping[str, Any], dependents: int, decision: Decision, started: float | None
+) -> tuple[Any, ...]:
+    """Where `task` goes in the enforced order: a task with a start time first, oldest first; then a leftover tier last,
+    else its `tier` field's position in `TIERS` (a task with none or an unknown one takes the default tier), then the
+    heaviest weight, dependents, depth and id."""
     tier = task.get("tier")
     return (
+        started is None,
+        started or 0.0,
         _leftover(task),
         TIERS.index(tier if tier in TIERS else DEFAULT_TIER),
         -decision.weight,
@@ -162,7 +168,7 @@ def decide(
     ledger: Ledger,
     *,
     log: bool = True,
-    starting: Collection[str] = (),
+    starting: Mapping[str, float] = MappingProxyType({}),
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
@@ -173,8 +179,9 @@ def decide(
     `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. Each decision is
     logged unless `log` is off, as for a read that only looks.
 
-    A task of `starting` (a revive or a resume the task actor wants sent) is decided whatever its lane: it holds its session
-    slot already, so it draws no session, and the room it needs is the rest of its demand.
+    A task of `starting` (a revive or a resume the task actor wants sent, with the time it asked) is decided whatever its
+    lane: it holds its session slot already, so it draws no session, and the room it needs is the rest of its demand. It
+    ranks ahead of Ready work, first come first served by that time.
     """
     depths, dependents = _depths(tasks), _dependents(tasks)
     headroom = {reading.name: reading.limit - reading.use for reading in readings}
@@ -197,7 +204,7 @@ def decide(
             reserved = {name: reserved[name] + need[name] for name in DIMENSIONS}
         priority, weight = policy.priority_of(task)
         decision = Decision(task["id"], blocked_by is None, blocked_by, need, depths[task["id"]], priority, weight, overfit=overfit)
-        keys[decision.task] = _enforced_key(task, dependents.get(decision.task, 0), decision)
+        keys[decision.task] = _enforced_key(task, dependents.get(decision.task, 0), decision, starting.get(decision.task))
         decisions.append(decision)
     admitted = [d for d in decisions if d.admitted]
     enforced = sorted(admitted, key=lambda d: keys[d.task])
