@@ -1,6 +1,5 @@
 """Park a task for a typed reason and move it to Review with the evidence it ships."""
 
-import json
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -135,16 +134,22 @@ def _open_criterion(feed: BoardFeed, need: str) -> None:
         )
 
 
-def _start_entry(item: Any) -> dict[str, Any] | None:
-    """The Start Criteria entry for one `until` item: a criterion object (`{"id", "kind", ...}`, as a prom hold sends) or an event subject."""
-    if isinstance(item, str):
-        try:
-            criterion = json.loads(item)
-        except ValueError:
-            return {"id": item, "kind": "event", "query": item} if readable(item) else None
-        if isinstance(criterion, dict) and isinstance(criterion.get("id"), str) and isinstance(criterion.get("kind"), str):
-            return criterion
-    return None
+def _start_entries(item: Any) -> list[dict[str, Any]] | None:
+    """The Start Criteria entries for one `until` item, or None when it is unusable.
+
+    An item is an event subject, or a criterion object (`{"id", "kind", ...}`) or a list of them written as YAML or JSON.
+    """
+    if not isinstance(item, str):
+        return None
+    try:
+        parsed = yaml.safe_load(item) if item.lstrip()[:1] in "{[" or "\n" in item.strip() or ": " in item else item
+    except yaml.YAMLError:
+        return None
+    if isinstance(parsed, str):
+        return [{"id": item, "kind": "event", "query": item}] if readable(item) else None
+    found = parsed if isinstance(parsed, list) else [parsed]
+    ok = all(isinstance(c, dict) and isinstance(c.get("id"), str) and isinstance(c.get("kind"), str) for c in found)
+    return found if found and ok else None
 
 
 def _wait_on_events(feed: BoardFeed, task: str, current: dict[str, Any], found: Any) -> dict[str, Any]:
@@ -153,8 +158,9 @@ def _wait_on_events(feed: BoardFeed, task: str, current: dict[str, Any], found: 
     A subject is `starpulse.<board>.alert.<rule>.<event>` or `starpulse.<board>.deploy.<component>.<event>`: the two whose
     latest event the log answers, so a wait already met releases at once. A criterion object is written as given.
     """
-    entries = [_start_entry(item) for item in found] if isinstance(found, list) and found else []
-    if not entries or any(entry is None for entry in entries):
+    parsed = [_start_entries(item) for item in found] if isinstance(found, list) and found else []
+    entries = [entry for group in parsed if group for entry in group]
+    if not entries or any(group is None for group in parsed):
         raise _RefusalError(
             400,
             {

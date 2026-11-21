@@ -133,6 +133,8 @@ is public for the names listed here:
 - `starpulse.pulls.adapters.outbound.pulls`: `PullStore`, the store `refresh_pull` saves to.
 - `starpulse.pulls.adapters.inbound.task_actor`: `ACTOR`, the writer name the task actor's moves and refusals carry, for a test that publishes as it.
 - `starpulse.cli.agent_subscribe`: `subscribed(session, subject, config=None)`, whether a session is subscribed to a subject, for a command that must not subscribe it twice.
+- `starpulse.cli.lane_mcp`: `lane_argv(tool, task, arguments)`, the `starpulse` argv a lane tool runs, for a test that checks each names a command the project defines.
+- `starpulse.testing`: `until(condition, within=)`, the one bounded wait a test makes on a condition, returning as soon as it holds.
 
 ### Moved in 0.y
 

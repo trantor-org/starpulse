@@ -214,7 +214,7 @@ def _machines(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     flows = agent_wire.flows(args, environ)["flows"]
     return {
         "machines": [
-            {"name": f["name"], "states": [s["id"] for s in f["machine"]["states"]], "tasks": len(f["agents"])}
+            {"name": f["name"], "states": [s["id"] for s in f["machine"]["states"]], "tasks": f["count"]}
             for f in flows
         ]
     }
@@ -222,9 +222,9 @@ def _machines(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
 def _machine(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """One machine's states with the live count and the tasks in each, and its transitions."""
-    flows = {f["name"]: f for f in agent_wire.flows(args, environ)["flows"]}
-    if (flow := flows.get(args.name)) is None:
-        raise agent_wire.CliError("not_found", f"{args.name} is not a machine; the server draws {', '.join(flows)}")
+    if (flow := agent_wire.get_flow(agent_wire.server_url(args.server, environ), args.name)) is None:
+        drawn = ", ".join(f["name"] for f in agent_wire.flows(args, environ)["flows"])
+        raise agent_wire.CliError("not_found", f"{args.name} is not a machine; the server draws {drawn}")
     machine = flow["machine"]
     tasks: dict[str, list[str]] = {state["id"]: [] for state in machine["states"]}
     for agent in flow["agents"]:
@@ -967,7 +967,7 @@ def _parser() -> argparse.ArgumentParser:
         "--until",
         action="append",
         default=[],
-        help="an event subject an alert or a deploy emits, the first of which releases the task (repeatable)",
+        help="an event subject an alert or a deploy emits, or a criterion object (`'{id: soak, kind: prom, expr: up, at_least: 1}'`, YAML or JSON, one or a list); the first met releases the task (repeatable)",
     )
     park.add_argument("--operator", help="what only the operator can do or decide")
     park.add_argument("--comment", help="what is outstanding, recorded with the move")

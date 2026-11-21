@@ -10,7 +10,7 @@ status of a sample that leaves room for a task admission turned away. Each wake 
 2. while the switch is on and the clock is outside the quiet hours, `decide` ranks the Ready tasks and the loop starts the first admitted, then decides again over
    readings that carry that run's demand, until none is admitted.
 
-A run holds its capacity from its start until its task leaves In Progress. While the harness has not yet seen its session
+A run holds its capacity from its start until its task leaves In Progress, or, once the task was claimed, until it returns to a lane the loop admits from. While the harness has not yet seen its session
 active the loop adds its demand to the sampler's readings itself; once it is active the sampler counts it. The one wake
 a timer makes (`period`) only finishes runs.
 
@@ -109,6 +109,7 @@ def _run_from(fields: Mapping[str, Any]) -> _Run | None:
             dict(fields["baseline"]),
             dict(fields.get("peak") or {}),
             str(fields.get("harness") or DEFAULT_HARNESS),
+            bool(fields.get("claimed", False)),
         )
     except KeyError, TypeError, ValueError:
         return None
@@ -126,6 +127,7 @@ class _Run:
     baseline: Mapping[str, float]
     peak: dict[str, float] = field(default_factory=dict)
     harness: str = DEFAULT_HARNESS
+    claimed: bool = False  # the task was seen In Progress: a return to Ready means its session let go
 
 
 class Loop:
@@ -211,11 +213,13 @@ class Loop:
     def _at_work(self, task: str, run: _Run, agents: Mapping[str, Mapping[str, Any]], now: float) -> bool:
         """Whether a run's session holds a slot: its task is held In Progress, or still in the eligible lane with its start
         or last harness event inside `STALE_S`. A task in any other lane holds none: its session is reaped or about to be.
+        A run whose task was claimed then returned to the eligible lane holds none either: its session let the task go.
         A session at a prompt that never claimed its task is a resident process doing no work."""
         state = agents[task]["state"] if task in agents else None
         if state == self._feed.roles.working:
+            run.claimed = True
             return True
-        if state not in self._lanes():
+        if state not in self._lanes() or run.claimed:
             return False
         seen = self._feed.machine_task(HARNESS.name, task)
         return now - max(run.started_at, seen["active"] if seen else 0.0) <= STALE_S

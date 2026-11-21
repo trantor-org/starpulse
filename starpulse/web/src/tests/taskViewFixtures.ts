@@ -27,7 +27,7 @@ export const props = (over: Partial<Parameters<typeof TaskView>[0]> = {}): Param
   close: () => {}, hide: () => {}, constellation: () => {}, move: () => {}, start: () => {}, ...over,
 });
 
-/** Install `writer` as fetch, except that the dialog's Docs and spend reads are answered "not found" and never reach it, so it sees only the writes. The spend read is cached for a minute, so a loaded run lands it in whichever case runs when the cache expires. */
+/** Install `writer` as fetch, except that the dialog's Docs and spend reads (the board's and the task's) are answered "not found" and never reach it, so it sees only the writes. The spend read is cached for a minute, so a loaded run lands it in whichever case runs when the cache expires. */
 export const stubWrites = (writer: typeof fetch) => vi.stubGlobal("fetch", (url: string | URL | Request, init?: RequestInit) => (
-  /^\/api\/(milestones\/|docs$|analytics\/spend$)/.test(String(url)) ? Promise.resolve(new Response("{}", { status: 404 })) : writer(url, init)
+  /^\/api\/(milestones\/|docs$|analytics\/spend$|task-spend\/)/.test(String(url)) ? Promise.resolve(new Response("{}", { status: 404 })) : writer(url, init)
 ));

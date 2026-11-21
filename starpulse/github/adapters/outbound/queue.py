@@ -19,6 +19,9 @@ from starpulse.github.ports.events import Entry
 
 __all__ = ["SqlQueue", "github_inbox_state"]
 
+#: Inbox ids one seeding transaction covers.
+_SEED_WINDOW = 500
+
 github_inbox_state = Table(
     "github_inbox_state",
     metadata,
@@ -63,15 +66,22 @@ class SqlQueue:
             .order_by(inbox.c.id)
             .limit(limit)
         )
-        with self._engine.begin() as db:
+        with self._engine.connect() as db:
             seeded = db.execute(newest).scalar_one()
-            # SQLite has one writer, so ids commit in order; a Postgres sequence does not, and always looks from the start.
-            # An inbox that lost its newest rows reuses their ids.
-            after = self._seeded if self._engine.dialect.name == "sqlite" and self._seeded <= seeded else 0
+        # SQLite has one writer, so ids commit in order; a Postgres sequence does not, and always looks from the start.
+        # An inbox that lost its newest rows reuses their ids.
+        sqlite_db = self._engine.dialect.name == "sqlite"
+        after = self._seeded if sqlite_db and self._seeded <= seeded else 0
+        # A seed holds SQLite's one write lock while it scans: a first claim over a multi-GB inbox took over a minute and
+        # dropped the listener's saves, so a window of ids is one transaction and the listener writes between windows.
+        window = _SEED_WINDOW if sqlite_db else max(seeded - after, 1)
+        for start in range(after, seeded, window):
             unseen = select(
                 inbox.c.delivery_id, literal(self._consumer), literal("pending"), literal(0), literal(now), literal(now)
-            ).where(inbox.c.id > after, inbox.c.id <= seeded, ~seen)
-            db.execute(self._insert(github_inbox_state).from_select(_SEED, unseen).on_conflict_do_nothing())
+            ).where(inbox.c.id > start, inbox.c.id <= min(start + window, seeded), ~seen)
+            with self._engine.begin() as db:
+                db.execute(self._insert(github_inbox_state).from_select(_SEED, unseen).on_conflict_do_nothing())
+        with self._engine.connect() as db:
             rows = db.execute(due).all()
         self._seeded = seeded
         return [

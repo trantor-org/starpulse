@@ -4,7 +4,7 @@
 - `GET /api/events`, `/api/held`, `/api/lanes`: streams of the Board, a session's held tasks and its lanes.
 - `GET /api/events/body/{key}`: the snapshot body a `ref` event names.
 - `GET /api/snapshot`: the Board's snapshot, or the full one with `?view=full`.
-- `GET /api/flows`: every flow whole, with the roles, settled tasks, pulls and runs the agent CLI reads beside them.
+- `GET /api/flows`: the board whole and each other flow's machine and working-task rows, with the roles, settled tasks, pulls and runs the agent CLI reads beside them; `?machine=` names one flow to read whole.
 """
 
 from typing import TYPE_CHECKING
@@ -38,7 +38,12 @@ def snapshot(request: Request) -> Response:
 
 @reading
 def flows(request: Request) -> Response:
-    return answer(request, seams(request).snapshots.flows())
+    snapshots = seams(request).snapshots
+    if not (named := query(request).get("machine")):
+        return answer(request, snapshots.flows())
+    if (found := snapshots.flow(named[0])) is None:
+        return answer(request, encode("error", {"error": f"{named[0]} is not a machine here"}), 404)
+    return answer(request, found)
 
 
 def routes(api: Api) -> list[ApiRoute]:
