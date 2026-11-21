@@ -55,7 +55,7 @@ from starpulse.board.adapters.holder_idle import HARNESS_MACHINE, HolderUnreacha
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import attention_reason, operator_answered, section_set
+from starpulse.board.model.markdown import attention_reason, section_set
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
     COMMENT_CAP,
@@ -1262,8 +1262,7 @@ class TaskActor:
 
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
         """A session settled. A holder whose task has an open criterion (neither checked nor struck through) is nudged by
-        `_nudge`, pull request or not. A task citing no pull request and no open criterion closes when it is in deliver, else returns to Ready
-        (`_end_without_pr`). Any other In Progress task whose holder is not busy (`confirm`) and that no event is awaited on
+        `_nudge`, pull request or not. Any other In Progress task, a no-pull-request one included, whose holder is not busy (`confirm`) and that no event is awaited on
         has work left, so the `idle` hook resumes the same session with its phase machine's next step; the task stays In
         Progress and no clock runs. A settle an awaited event held runs again from the derivation that finds the wait
         ended, as the session that settled may never settle again, unless its holder is at work by then (a lens's end woke it): that
@@ -1292,7 +1291,6 @@ class TaskActor:
             if self._awaits(agent):
                 self._awaited.add(name)
                 return
-            ended = not agent["prs"]
             own = self._own_prs(agent)
             if not own and (found := uncited(self._store, agent)):
                 self._attend(
@@ -1309,7 +1307,7 @@ class TaskActor:
             if opened := open_criteria(items):
                 ticks = tuple(resolved(item) for item in items)
                 self._stalled.discard(name)
-            elif not ended:
+            else:
                 progress = self._progress(agent)
                 before, count = self._resumes.get(name, (progress, 0))
                 if before != progress or wait_ended:  # an awaited CI result is the wake, not a settle with no progress
@@ -1321,8 +1319,6 @@ class TaskActor:
                     return
         if opened:
             self._nudge(name, opened, ticks, wait_ended)
-        elif ended:
-            self._end_without_pr(name)
         else:
             self._resume(name, progress, count)
 
@@ -1529,51 +1525,6 @@ class TaskActor:
             {"status": attention, "description": section_set(agent["description"], "Needs attention", reason)},
             reason,
         )
-
-    def _end_without_pr(self, name: str) -> None:
-        """A task citing no pull request and no open criterion has nothing left to resume once its holder ended: every criterion resolved in the
-        deliver phase closes it, as does one of a `kind-decide` task whose `## Needs attention` carries the operator's answer; any other returns it to Ready for a new session. A holder still busy (`confirm` raises) settles again."""
-        if not self._confirmed(name):
-            return
-        with self._lock:
-            agent = self._feed.task(name, lean=True)
-            if agent is None or agent["state"] != self._feed.roles.working or agent["prs"]:
-                return
-            if self._session_active(name):
-                return  # a step after the settle: a blocking `Stop` hook resumed the turn, so the session is live
-            if self._awaits(agent):
-                self._awaited.add(name)
-                return
-            self._resumes.pop(name, None)
-            self._stalled.discard(name)
-            criteria = agent.get("criteria", ())
-            checked = bool(criteria) and not open_criteria(criteria)
-            answered = "kind-decide" in agent["labels"] and operator_answered(
-                (self._feed.task(name) or {}).get("description", "")
-            )
-            done = checked and (self._in_deliver_phase(name) or answered)
-            target = self._feed.roles.done if done else self._feed.roles.ready
-            comment = (
-                "Closed at its session's end: it cites no pull request and every criterion is checked."
-                if done
-                else "Returned to Ready at its session's end: it cites no pull request and "
-                + ("its session ended before the deliver phase." if checked else "it holds no criterion.")
-            )
-            self._write(name, target, comment, self._clock(), source=agent["state"])
-
-    def _in_deliver_phase(self, name: str) -> bool:
-        """Whether `name` is in its deliver phase as the board shows it: the In Progress machine stands in `deliver`, or
-        the In Progress link whose machine holds the task newest is the deliver link (the In Progress machine may never
-        have stepped onto it)."""
-        if (self._feed.machine_task(IN_PROGRESS, name) or {}).get("state") == "deliver":
-            return True
-        since = (self._phase(BOARD, name) or {}).get("since", 0.0)
-        held = [
-            (link, placed)
-            for link in self._links.get(IN_PROGRESS, ())
-            if (placed := self._feed.machine_task(link["machine"], name)) and placed["active"] >= since
-        ]
-        return bool(held) and max(held, key=lambda pair: pair[1]["active"])[0]["state"] == "deliver"
 
     def _settle_busy(self, data: dict[str, Any]) -> None:
         name = data["id"]
