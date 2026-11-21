@@ -196,11 +196,38 @@ def _encode_held(
 FLOW_KEYS = ("flows", "roles", "settled", "cold_done", "pulls", "interactive", "ratings", "cues", "dags", "error")
 
 
+def common_flows(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """The flows every `/api/flows` read gets: the board whole, and of each other flow its machine and the rows of the
+    tasks the board holds in its working state, without their steps and trail, beside a `count` of all its rows."""
+    working = {row["id"] for row in snapshot["flows"][0]["agents"] if row["state"] == snapshot["roles"]["working"]}
+    return [
+        {**snapshot["flows"][0], "count": len(snapshot["flows"][0]["agents"])},
+        *(
+            {
+                **{key: value for key, value in flow.items() if key not in ("agents", "ties")},
+                "agents": [
+                    {key: value for key, value in row.items() if key not in ("steps", "trail")}
+                    for row in flow["agents"]
+                    if row.get("task") in working
+                ],
+                "count": len(flow["agents"]),
+            }
+            for flow in snapshot["flows"][1:]
+        ),
+    ]
+
+
+def common_dags(dags: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The workflows every `/api/flows` read gets: each without the run lists (`active`, `failed`, `closed`) only the
+    page reads."""
+    return [{key: value for key, value in dag.items() if key not in ("active", "failed", "closed")} for dag in dags]
+
+
 def stored_bodies(data: Any, held: dict[str, _Held]) -> dict[str, bytes]:
     """The bodies the API serves, by view: `/api/snapshot`'s for the page (`slim`) and `?view=full`, each with its own
     task JSON in `held[view]`, and `/api/flows`'s (`flows`), so no read decodes or encodes the snapshot."""
     full = full_snapshot(data)
-    flows = {key: full[key] for key in FLOW_KEYS if key in full}
+    flows = {**{key: full[key] for key in FLOW_KEYS if key in full}, "flows": common_flows(full), "dags": common_dags(full.get("dags", []))}
     return {
         "slim": encode_snapshot(data, held.setdefault("slim", {})),
         "full": _encode_held(data, held.setdefault("full", {}), full_snapshot, lambda task: task, lambda _: {}),

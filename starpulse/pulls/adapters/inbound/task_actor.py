@@ -16,7 +16,7 @@ A lifecycle machine whose phase state links a skill machine with `exits` (`subma
 too: when the skill machine reaches an exit state the actor calls `advance(machine, task, event)` with the exit's event,
 once per visit to the phase, and only for the skill machine the task's current phase links. A link that lists `routes`
 (phase state to event) sends instead the event for the phase that follows it in the `sequences` entry of the task's
-type (`default` for a type it does not name), when one is listed; the exit's own event serves every other sequence.
+type (`decide` for a kind-decide task, `default` for a type it does not name), when one is listed; the exit's own event serves every other sequence.
 The Board's phase is a task's lane, and its links count only when the actor writes every event they exit on (the Verify
 machine's `passed` and `missed` close and send back a Verifying task); a skill placement from before the task entered
 the lane is the last visit's and advances nothing.
@@ -946,9 +946,11 @@ class TaskActor:
         return None
 
     def _route(self, link: Mapping[str, Any], task: str) -> str | None:
-        """The event of the link's route to the phase after it in the sequence of `task`'s type, when the link draws one."""
-        kind = (self._feed.task(task, lean=True) or {}).get("type", "").lower()
-        sequence = self._sequences.get(kind) or self._sequences.get("default", ())
+        """The event of the link's route to the phase after it in the sequence of `task` (its `decide` row when kind-decide, else its type), when the link draws one."""
+        agent = self._feed.task(task, lean=True) or {}
+        # the same lookup as `temporal_runner.sequences.phases`, which this package cannot import
+        decide = self._sequences.get("decide") if "kind-decide" in agent.get("labels", ()) else None
+        sequence = decide or self._sequences.get(agent.get("type", "").lower()) or self._sequences.get("default", ())
         following = sequence[sequence.index(link["state"]) + 1 :][:1] if link["state"] in sequence else ()
         return link.get("routes", {}).get(following[0]) if following else None
 

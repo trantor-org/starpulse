@@ -1657,6 +1657,10 @@ export interface Cue {
 export interface FlowSnapshot {
   agents: RawTask[];
   chain?: string[] | null;
+  /**
+   * How many rows the flow holds; `/api/flows` carries only the rows of tasks In Progress on the board.
+   */
+  count?: number | null;
   depth?: number | null;
   last?: number | null;
   machine: Machine;

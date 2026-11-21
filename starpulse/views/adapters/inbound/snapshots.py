@@ -21,6 +21,7 @@ from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
 from starpulse.event_log.wake import StopEvent
 from starpulse.views.adapters.inbound.compression import Encoded
 from starpulse.views.adapters.outbound import request_durations
+from starpulse.views.model.encoding import encode
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,12 @@ class Snapshots:
         source = "cached" if held is not None and held[2] is body else "rebuild"
         request_durations.observe_flows(source, time.monotonic() - started)
         return body
+
+    def flow(self, name: str) -> bytes | None:
+        """The `/api/flows?machine=` body: flow `name` whole, none of the rest; None when no flow has that name. It is
+        read by the machine command alone, so it is encoded per request."""
+        flow = next((flow for flow in self.take().snapshot["flows"] if flow["name"] == name), None)
+        return None if flow is None else encode("flows", {"flows": [flow], "settled": {}, "dags": [], "error": None})
 
     def take(self) -> Served:
         """The stored full snapshot as a dict, decoded once per stored body however many streams read it."""

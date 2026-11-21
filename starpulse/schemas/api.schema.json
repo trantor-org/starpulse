@@ -2785,6 +2785,18 @@
           ],
           "default": null
         },
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How many rows the flow holds; `/api/flows` carries only the rows of tasks In Progress on the board."
+        },
         "depth": {
           "anyOf": [
             {

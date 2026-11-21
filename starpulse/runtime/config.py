@@ -374,7 +374,7 @@ def _tls(file: ConfigFile, path: Path | None) -> tuple[Path, Path] | None:
     can name them before the host issues them."""
     if path is None or file.tls_cert is None or file.tls_key is None:
         return None
-    return path.parent / file.tls_cert, path.parent / file.tls_key
+    return path.resolve().parent / file.tls_cert, path.resolve().parent / file.tls_key
 
 
 def _dotted(loc: Sequence[int | str]) -> str:
@@ -399,7 +399,7 @@ def _refusal(exc: ValidationError) -> ConfigError:
 
 def _harnesses(file: ConfigFile, path: Path | None) -> Harnesses | None:
     if path and file.harnesses_file:
-        if not (found := path.parent / file.harnesses_file).is_file():
+        if not (found := path.resolve().parent / file.harnesses_file).is_file():
             raise ConfigError(f"harnesses_file {found} does not exist")
         return load_harnesses(found)
     return None

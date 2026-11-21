@@ -19,7 +19,7 @@ from typing import Any, TextIO
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 
-__all__ = ["LaneTools", "main", "serve", "task_of_branch"]
+__all__ = ["LaneTools", "lane_argv", "main", "serve", "task_of_branch"]
 
 _BRANCH = re.compile(r"^claude/task-(\d+)-")
 _TASK = re.compile(r"^TASK-\d+$")
@@ -98,7 +98,7 @@ class LaneTools:
         refusal = _refused(tool["schema"], arguments)
         if refusal:
             return _text(f"{name}: {refusal}", True), False
-        document = self._run(_argv(tool, self._task, arguments))
+        document = self._run(lane_argv(tool, self._task, arguments))
         if "error" in document or document.get("ok") is False:
             return _text(json.dumps(document), True), False
         lane = self._lane_of()
@@ -132,7 +132,7 @@ def _refused(schema: Mapping[str, Any], arguments: object) -> str | None:
             return error.message
 
 
-def _argv(tool: Mapping[str, Any], task: str, arguments: Mapping[str, Any]) -> list[str]:
+def lane_argv(tool: Mapping[str, Any], task: str, arguments: Mapping[str, Any]) -> list[str]:
     match tool["name"]:
         case "board_park":
             until = arguments.get("until", "")
