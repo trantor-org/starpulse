@@ -513,6 +513,7 @@ def _record_of(text: str) -> dict[str, Any]:
         "follows": str(frontmatter.get("follows") or ""),
         "dependencies": list(_strings(frontmatter.get("dependencies"))),
         "dependencyNeeds": list(_strings(frontmatter.get("dependency_needs"))),
+        "actorMemory": dict(frontmatter.get("actor_memory") or {}),
         "references": list(_strings(frontmatter.get("references"))),
         "documentation": list(_strings(frontmatter.get("documentation"))),
         "modifiedFiles": list(_strings(frontmatter.get("modified_files"))),
@@ -669,6 +670,12 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
         if lane_id(_text(field, value)) not in spelled:
             raise ValueError(f"{value!r} is not a status of this board: {', '.join(spelled.values())}")
         frontmatter["status"] = spelled[lane_id(_text(field, value))]
+    elif field == "actorMemory":
+        if not isinstance(value, dict):
+            raise ValueError(f"{field} must be a mapping")
+        frontmatter["actor_memory"] = value
+        if not value:
+            del frontmatter["actor_memory"]
     elif field in _LISTS:
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise ValueError(f"{field} must be a list of text")

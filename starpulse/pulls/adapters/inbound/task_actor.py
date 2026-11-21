@@ -69,6 +69,7 @@ from starpulse.board.model.seam import (
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.deadlines import Deadlines
 from starpulse.event_log.wake import StopEvent, save_on_change
+from starpulse.pulls.adapters.inbound.task_memory import TaskMemory
 from starpulse.pulls.adapters.inbound.unblock import PinGate
 from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record, uncited
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
@@ -127,9 +128,6 @@ _MERGE_FACTS = frozenset({"pr_terminal", "pr_merged", "pr_merged_unfinished"})
 #: Most seconds start recovery waits for the saves and changes pending before it takes its next task, so steady traffic
 #: slows recovery down but never stops it.
 _YIELD_S = 2.0
-#: The worker state holding each sent-back task's hold (task name to the head of each pull request it held on), so a
-#: restart of the actor reads the hold back.
-SENT_BACK = "pulls.sent_back"
 #: The worker state holding the digest of the facts each task was last derived on, and of the waits and moves it was
 #: derived under, so a start derives only the tasks that changed since.
 CHECKPOINT = "pulls.task_actor_checkpoint"
@@ -327,8 +325,7 @@ class TaskActor:
         self._owner_source = owner_source
         self._read = read
         self._idle = idle
-        #: Each task's profile at its holder's last resume, so a changed one is switched (`_switch_raised`).
-        self._profiles: dict[str, Any] = {}
+        self._memory = TaskMemory(read, lambda name, memory: self._edit_retrying(name, {"actorMemory": memory}, ""))
         self._advance = advance
         #: The phases a task of each type goes through, in order (`[sequences]`); `default` serves an unnamed type.
         self._sequences = sequences
@@ -337,11 +334,6 @@ class TaskActor:
         self._unfinished = unfinished
         #: Each non-Board machine's links that exit on a skill machine's state, when there is somewhere to send the exit.
         self._links = _exit_links(feed.machines) if advance else {}
-        #: The exit last sent for each `(machine, task)`, with the phase's step count, so one exit is sent once.
-        self._exited: dict[tuple[str, str], tuple[str, int, str]] = {}
-        #: When each task entered the Board lane it holds, read at the move: the feed's `entered` is its newest event of
-        #: any kind, which a comment after a verdict moves past the verdict's time.
-        self._lane_entered: dict[str, tuple[str, float]] = {}
         self._feed = feed
         self._store = store
         self._edit = edit
@@ -390,11 +382,7 @@ class TaskActor:
         self._by_pr: dict[str, set[str]] = {}
         #: What each pull request last read as, so a refresh that changed nothing derives nothing.
         self._pull_states: dict[str, tuple[str, str | None, bool, str, str, str]] = {}
-        #: Per task sent back from Review to the working lane, the head of each pull request it cites at that moment: a
-        #: ready pull request still on that head is the reviewed work, which `pr_ready` does not send to Review again.
-        #: Kept in the `SENT_BACK` worker state of `log`, so a restart of the actor reads it back.
         self._log = log
-        self._sent_back: dict[str, dict[str, str]] = self._restored_holds()
         #: Digest of the waits, moves and sequences the checkpoint is valid under.
         self._rules = _rules_digest(waits, moves, sequences)
         #: The digest of the facts each task was last derived on, read back from the checkpoint; a task whose facts
@@ -408,18 +396,6 @@ class TaskActor:
         self._hooked = False
         self._unsettled = False
         self._probing = False
-        #: Per In Progress task: what its progress read at its last resume, and the resumes since it last changed.
-        self._resumes: dict[str, tuple[tuple[Any, ...], int]] = {}
-        #: The tasks whose resume was escalated and has shown no progress since.
-        self._stalled: set[str] = set()
-        #: The In Progress tasks whose holder settled while an event was awaited: the derivation that finds the wait
-        #: ended settles them again, as no settle may follow.
-        self._awaited: set[str] = set()
-        #: The `_awaited` tasks whose held event was a session's end, not a settle: the wait's end revives them.
-        self._revive_held: set[str] = set()
-        #: The In Progress tasks whose holder settled but `confirm` found it busy: the next move of a machine other than
-        #: the session's own settles them again, as an idle session may never settle again; its own activity ends the hold.
-        self._busy: set[str] = set()
         #: The board hooks of moves already written, run one at a time in the order written by their own thread: a
         #: hook runs a command for seconds, and run under `_lock` it held back the move of every task behind it.
         self._notices: queue.SimpleQueue[Callable[[], None] | None] = queue.SimpleQueue()
@@ -433,14 +409,8 @@ class TaskActor:
         self._store_rev = store.rev
         #: The move last tried for each task, until the task changes lane: the same facts are not tried twice.
         self._tried: dict[str, tuple] = {}
-        #: The tasks a write moved to Ready, so a sweep counts the releases that landed, not the refusals it did not see.
-        self._moved_ready: set[str] = set()
-        #: The tasks this actor sent back from Review, whose move event holds no head: only an operator's send-back does.
-        self._own_send_backs: set[str] = set()
         #: The record each task's release was last refused on by the board, so a repaired record is tried again.
         self._lint_held: dict[str, tuple[Any, ...]] = {}
-        #: The notes of a working task's Review refusals its holder was told, so a standing refusal wakes it once.
-        self._review_refused: dict[str, set[str]] = {}
         self._metrics = threading.Lock()
         self._refusals = 0
         #: How many writes landed within each bound of `BUCKETS_S`, then how many in all, and their seconds summed.
@@ -524,10 +494,13 @@ class TaskActor:
         if not self._lock.acquire(timeout=_LOCK_WAIT_S):
             return None
         try:
-            pin_held, stalled = len(self._pin_held), sorted(self._stalled)
+            pin_held = len(self._pin_held)
         finally:
             self._lock.release()
-        return pin_held, self._merged_waiting(), stalled  # the feed read holds no lock
+        return pin_held, self._merged_waiting(), self._stalled_tasks()  # the feed reads hold no lock
+
+    def _stalled_tasks(self) -> list[str]:
+        return sorted(agent["id"] for agent in self._feed.open_tasks() if self._memory.has(agent["id"], "stalled"))
 
     def _merged_waiting(self) -> int:
         counted_at, waiting = self._waiting
@@ -675,9 +648,9 @@ class TaskActor:
             self._releasable = releasable
             for name in missed:
                 self._tried.pop(name, None)
-            self._moved_ready.clear()
             self._derive_all(missed, self._clock())
-            released = self._moved_ready.intersection(missed)
+            ready = self._feed.roles.ready
+            released = [name for name in missed if (moved := self._feed.task(name, lean=True)) and moved["state"] == ready]
         return len(tasks), len(released)
 
     def _run(self, stop: StopEvent) -> None:
@@ -688,12 +661,11 @@ class TaskActor:
             tasks = self._feed.open_tasks()
             for agent in tasks:
                 self._index(agent)
-            self._drop_holds_outside(tasks)
             self._read_pulls()
-            if (
-                self._idle is not None
-            ):  # a settle while down is replayed by `follow_holder_idle`; `confirm` spares a busy holder
-                self._awaited |= {a["id"] for a in tasks if a["state"] == self._feed.roles.working and self._awaits(a)}
+            if self._idle is not None:  # a settle while down is replayed by `follow_holder_idle`; `confirm` spares a busy holder
+                for agent in tasks:
+                    if agent["state"] == self._feed.roles.working and self._awaits(agent):
+                        self._memory.keep(agent["id"], awaited=True)
             open_ids = {agent["id"] for agent in tasks}
             self._derived = {name: digest for name, digest in self._derived.items() if name in open_ids}
             self._derived_moved.set()
@@ -848,8 +820,8 @@ class TaskActor:
         for url in self._seen.get(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._seen[name] = _view(agent)
-        if self._lane_entered.get(name, ("",))[0] != agent["state"]:
-            self._lane_entered[name] = (agent["state"], agent.get("entered") or 0.0)
+        if self._memory.of(name).get("lane_entered", [""])[0] != agent["state"]:
+            self._memory.keep(name, lane_entered=[agent["state"], agent.get("entered") or 0.0])
         self._watch(name, agent)
         for url in agent.get("prs", ()):
             self._by_pr.setdefault(url, set()).add(name)
@@ -885,19 +857,14 @@ class TaskActor:
                 touched |= self._held
             if before is None or before[0] != now[0]:
                 self._tried.pop(name, None)
-                self._review_refused.pop(name, None)
                 working = self._feed.roles.working
-                if now[0] != working:
-                    self._busy.discard(name)
-                    self._resumes.pop(name, None)
-                    self._stalled.discard(name)
+                kept: dict[str, Any] = {} if now[0] == working else {"busy": None, "resumes": None, "stalled": None}
                 if before and before[0] == self._review and now[0] == working:
-                    if name not in self._own_send_backs:
-                        self._sent_back[name] = self._heads(agent)
-                        self._keep_holds()
-                    self._own_send_backs.discard(name)
-                elif (before is not None or now[0] != working) and self._sent_back.pop(name, None) is not None:
-                    self._keep_holds()  # a task first seen outside the working lane keeps no hold from an earlier run
+                    own = self._memory.has(name, "own_send_back")
+                    kept |= {"sent_back": None if own else self._heads(agent), "own_send_back": None}
+                elif before is not None or now[0] != working:
+                    kept["sent_back"] = None  # a task first seen outside the working lane keeps no hold from an earlier run
+                self._memory.keep(name, **kept)
             if before is None or (before[0], before[3]) != (now[0], now[3]):
                 touched |= self._dependents(name)
             self._derive_all(touched, observed)
@@ -915,11 +882,13 @@ class TaskActor:
         """Send the exit event of the phase `task` is in when that phase's skill machine sits in the state its link exits
         on. A skill machine the current phase does not link never counts, so a late final event of an earlier phase's
         skill advances nothing."""
+        exited = self._memory.of(task).get("exited") or {}
         for parent, links in self._links.items():
             phase = self._phase(parent, task)
             event = self._exit_event(links, phase, task) if phase else None
-            if phase and event and self._exited.get((parent, task)) != (phase["state"], phase["steps"], event):
-                self._exited[parent, task] = (phase["state"], phase["steps"], event)
+            if phase and event and exited.get(parent) != (sent := [phase["state"], phase["steps"], event]):
+                exited[parent] = sent
+                self._memory.keep(task, exited=exited)
                 target = self._moves.get((phase["state"], event)) if parent == BOARD else None
                 if target:  # the Board's lane is the task's status: the exit is that write, not an event beside it
                     self._write(
@@ -934,11 +903,14 @@ class TaskActor:
         if parent != BOARD:
             return self._feed.machine_task(parent, task)
         agent = self._feed.task(task, lean=True)
-        entered = (agent or {}).get("entered") or 0.0
-        lane, indexed = self._lane_entered.get(task, ("", 0.0))
-        if agent and agent["state"] == lane:
-            entered = indexed
+        entered = self._entered(agent) if agent else 0.0
         return {"state": agent["state"], "steps": entered, "since": entered} if agent else None
+
+    def _entered(self, agent: dict[str, Any]) -> float:
+        """When `agent` entered the Board lane it holds, as read at the move: the feed's `entered` is its newest event of
+        any kind, which a comment after a verdict moves past the verdict's time."""
+        lane, at = self._memory.of(agent["id"]).get("lane_entered") or ("", 0.0)
+        return at if lane == agent["state"] else agent.get("entered") or 0.0
 
     def _exit_event(self, links: Sequence[Mapping[str, Any]], phase: Mapping[str, Any], task: str) -> str | None:
         for link in links:
@@ -955,36 +927,6 @@ class TaskActor:
         sequence = decide or self._sequences.get(agent.get("type", "").lower()) or self._sequences.get("default", ())
         following = sequence[sequence.index(link["state"]) + 1 :][:1] if link["state"] in sequence else ()
         return link.get("routes", {}).get(following[0]) if following else None
-
-    def _restored_holds(self) -> dict[str, dict[str, str]]:
-        """The holds the worker state kept, so a restart of the actor keeps each sent-back task's hold."""
-        if self._log is None:
-            return {}
-        try:
-            _, held = self._log.state(SENT_BACK)
-        except Exception:  # the actor runs without the holds a read cannot give: a notice, never a refused start
-            logger.exception("task actor: cannot read the sent-back holds")
-            return {}
-        return dict(held or {})
-
-    def _keep_holds(self) -> None:
-        """Keep the sent-back holds in the worker state, after each change to them."""
-        if self._log is None:
-            return
-        try:
-            self._log.put_state(SENT_BACK, self._sent_back)
-        except Exception:  # the hold stands in memory; a database error is a notice, not part of the derivation
-            logger.exception("task actor: cannot keep the sent-back holds")
-
-    def _drop_holds_outside(self, tasks: Sequence[dict[str, Any]]) -> None:
-        """Drop each restored hold whose task a restart found outside the working lane, as its hold ends there."""
-        working = self._feed.roles.working
-        lanes = {agent["id"]: agent["state"] for agent in tasks}
-        stale = [name for name in self._sent_back if lanes.get(name) != working]
-        for name in stale:
-            del self._sent_back[name]
-        if stale:
-            self._keep_holds()
 
     def _restored_checkpoint(self) -> dict[str, str]:
         """The digests the checkpoint kept, or none when it is missing, unreadable or taken under other waits and moves:
@@ -1059,17 +1001,10 @@ class TaskActor:
         for url in self._seen.pop(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
-        self._resumes.pop(name, None)
-        self._stalled.discard(name)
-        self._busy.discard(name)
-        if self._sent_back.pop(name, None) is not None:
-            self._keep_holds()
         self._lint_held.pop(name, None)
-        self._review_refused.pop(name, None)
         self._deadlines.cancel(name)
         self._dates.pop(name, None)
         self._unwatch(name)
-        self._lane_entered.pop(name, None)
 
     def _dependents(self, name: str) -> set[str]:
         return {
@@ -1275,21 +1210,17 @@ class TaskActor:
         revived as `holder_ended` revives one, and parks only when no session can start."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
-            self._awaited.discard(name)
-            self._revive_held.discard(name)
-            self._busy.discard(name)
+            self._memory.keep(name, awaited=None, revive_held=None, busy=None)
             if agent is None or agent["state"] != self._feed.roles.working:
-                self._resumes.pop(name, None)
-                self._stalled.discard(name)
+                self._memory.keep(name, resumes=None, stalled=None)
                 return
             if self._idle is None:
                 return
             if wait_ended and self._session_active(name):
-                self._resumes.pop(name, None)
-                self._stalled.discard(name)
+                self._memory.keep(name, resumes=None, stalled=None)
                 return
             if self._awaits(agent):
-                self._awaited.add(name)
+                self._memory.keep(name, awaited=True)
                 return
             own = self._own_prs(agent)
             if not own and (found := uncited(self._store, agent)):
@@ -1306,15 +1237,15 @@ class TaskActor:
             items = agent.get("criteria", ())
             if opened := open_criteria(items):
                 ticks = tuple(resolved(item) for item in items)
-                self._stalled.discard(name)
+                self._memory.keep(name, stalled=None)
             else:
                 progress = self._progress(agent)
-                before, count = self._resumes.get(name, (progress, 0))
-                if before != progress or wait_ended:  # an awaited CI result is the wake, not a settle with no progress
+                same, count = self._memory.resumes(name, progress)
+                if not same or wait_ended:  # an awaited CI result is the wake, not a settle with no progress
                     count = 0
-                    self._resumes[name] = (progress, 0)  # kept even when `confirm` finds the holder busy
-                    self._stalled.discard(name)
-                elif name in self._stalled:
+                    # kept even when `confirm` finds the holder busy
+                    self._memory.keep(name, resumes=self._memory.tally(progress, 0), stalled=None)
+                elif self._memory.has(name, "stalled"):
                     self._attend(name, "its escalated session settled again with no progress")
                     return
         if opened:
@@ -1342,7 +1273,7 @@ class TaskActor:
         wait ends is dropped."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
-            self._revive_held.discard(name)
+            self._memory.keep(name, revive_held=None)
             if agent is None or agent["state"] != self._feed.roles.working or self._idle is None:
                 return
             if wait_ended and self._session_active(name):
@@ -1359,14 +1290,12 @@ class TaskActor:
             ):
                 return
             if self._awaits(agent):
-                self._awaited.add(name)
-                self._revive_held.add(name)
+                self._memory.keep(name, awaited=True, revive_held=True)
                 return
             key = (tuple(resolved(item) for item in items), self._progress(agent)) if opened else self._progress(agent)
-            before, count = self._resumes.get(name, (key, 0))
-            count = count if before == key else 0
+            _, count = self._memory.resumes(name, key)
             if count >= _NUDGES:
-                self._resumes.pop(name, None)
+                self._memory.keep(name, resumes=None)
                 self._attend(
                     name,
                     f"its session ended and was revived {_NUDGES} times with no progress",
@@ -1390,7 +1319,7 @@ class TaskActor:
                     )
             return
         with self._lock:
-            self._resumes[name] = (key, count + 1)
+            self._memory.count(name, key, count + 1)
 
     def _resume(self, name: str, progress: tuple[Any, ...], count: int) -> None:
         escalate = count >= _STALLED_RESUMES
@@ -1404,15 +1333,15 @@ class TaskActor:
                 with self._lock:
                     now = self._feed.task(name, lean=True)
                     if now and now["state"] == self._feed.roles.working and self._progress(now) == progress:
-                        self._stalled.add(name)
+                        self._memory.keep(name, stalled=True)
                         self._attend(name, "the escalation to a higher profile failed or no higher profile exists")
                 return
         if not self._resume_sent(name):
             return
         with self._lock:
-            self._resumes[name] = (progress, 0 if escalate else count + 1)
-            if escalate:
-                self._stalled.add(name)
+            self._memory.keep(
+                name, resumes=self._memory.tally(progress, 0 if escalate else count + 1), **({"stalled": True} if escalate else {})
+            )
 
     def _session_active(self, name: str) -> bool:
         placed = self._feed.machine_task(HARNESS_MACHINE, name)
@@ -1424,7 +1353,7 @@ class TaskActor:
         except Exception as error:
             logger.info("task actor: %s settled but its holder was not confirm: %s", name, error)
             with self._lock:
-                self._busy.add(name)
+                self._memory.keep(name, busy=True)
             return False
         return True
 
@@ -1435,8 +1364,8 @@ class TaskActor:
         reaches the holder once it is back."""
         profile = (self._feed.task(name, lean=True) or {}).get("profile")
         with self._lock:
-            before = self._profiles.setdefault(name, profile)
-            self._profiles[name] = profile
+            before = (self._memory.of(name).get("profile") or [profile])[0]
+            self._memory.keep(name, profile=[profile])  # a list, which holds a task with no profile too
         if before == profile:
             return
         try:
@@ -1466,11 +1395,11 @@ class TaskActor:
         if not self._confirmed(name):
             return
         with self._lock:
-            before, count = self._resumes.get(name, (ticks, 0))
+            _, count = self._memory.resumes(name, ticks)
             if wait_ended:  # an awaited CI result is the wake, not a settle with no progress
                 count = 0
-            if before == ticks and count >= _NUDGES:
-                self._resumes.pop(name, None)
+            if count >= _NUDGES:
+                self._memory.keep(name, resumes=None)
                 listing = "; ".join(f"#{number} {text}" for number, text in opened)
                 self._attend(
                     name,
@@ -1482,7 +1411,7 @@ class TaskActor:
         if not self._resume_sent(name):
             return
         with self._lock:
-            self._resumes[name] = (ticks, (count if before == ticks else 0) + 1)
+            self._memory.count(name, ticks, count + 1)
 
     def _resume_failed(self, name: str, error: Exception, failed: int) -> bool:
         """Whether the resume is sent again: a holder no session can reach is revived as `holder_ended` revives one, which
@@ -1528,23 +1457,24 @@ class TaskActor:
 
     def _settle_busy(self, data: dict[str, Any]) -> None:
         name = data["id"]
-        if name not in self._busy:
+        if not self._memory.has(name, "busy"):
             return
         if data.get("machine") != HARNESS_MACHINE:
-            self._busy.discard(name)
+            self._memory.keep(name, busy=None)
             self._queue(lambda: self.holder_settled(name))
         elif (data.get("agent") or {}).get("state") == "active":  # the session works again, so a settle will follow
-            self._busy.discard(name)
+            self._memory.keep(name, busy=None)
 
     def _settle_awaited(self, name: str) -> None:
-        if name not in self._awaited:
+        memory = self._memory.of(name)
+        if "awaited" not in memory:
             return
         agent = self._feed.task(name, lean=True)
         if agent is None:
-            self._awaited.discard(name)
+            self._memory.keep(name, awaited=None)
         elif not self._awaits(agent):
-            self._awaited.discard(name)
-            if name in self._revive_held:
+            self._memory.keep(name, awaited=None)
+            if "revive_held" in memory:
                 self._queue(lambda: self.holder_ended(name, wait_ended=True))
             else:
                 self._queue(lambda: self.holder_settled(name, wait_ended=True))
@@ -1632,10 +1562,8 @@ class TaskActor:
                 "task actor: start recovery moved %s %s -> %s, a move its lane's events missed", name, source, target
             )
         if written.ok:
-            if target == self._feed.roles.ready:
-                self._moved_ready.add(name)
             if source == self._review and target == self._feed.roles.working:
-                self._own_send_backs.add(name)
+                self._memory.keep(name, own_send_back=True)
             self._landed(self._clock() - observed)
             if merged is not None:  # timed at the lane write, ahead of the hooks that tell the board and the holder
                 self._merge_move.observe(max(0.0, self._wall() - merged))
@@ -1658,7 +1586,9 @@ class TaskActor:
         if written.transient:  # not a refusal: the task stays in its lane and the next pass tries the move again
             self._unsettled = True
             self._tried.pop(name, None)
-            self._exited.pop((BOARD, name), None)  # a Board exit goes again on the next pass
+            exited = self._memory.of(name).get("exited") or {}  # a Board exit goes again on the next pass
+            exited.pop(BOARD, None)
+            self._memory.keep(name, exited=exited or None)
             return False
         if target == self._feed.roles.ready:
             self._hold_for_repair(name, written.output)
@@ -1693,14 +1623,11 @@ class TaskActor:
             f"do not retry it{f' (head {heads})' if heads else ''}"
         )
         self._lint_held[name] = _lint_record(agent)  # an edit that repairs it is a change
-        told = self._review_refused.setdefault(name, set())
-        if note in told or note in self._comment_texts(name):
-            told.add(note)
+        if note in self._comment_texts(name):
             return
         written = self._apply(name, {}, note)
         if not written.ok:
             logger.warning("task actor: the Review refusal of %s was not commented: %s", name, written.output)
-        told.add(note)
         self._wake_holder(name, "REVIEW_REFUSED", reason)
 
     def _comment_texts(self, name: str) -> set[str]:
@@ -1912,10 +1839,11 @@ class TaskActor:
         a push re-arms the gate, and a repository whose ruleset requires none rolls up passed as soon as the pull
         request is not a draft."""
         parts = []
-        held = self._sent_back.get(agent["id"], {})
+        sent_back = self._memory.of(agent["id"]).get("sent_back")
+        held = sent_back or {}
         # In the working lane a PR merged before the task's latest entry is shipped work (a post-merge send back).
         floor = (agent.get("entered") or 0.0) if agent["state"] == self._feed.roles.working else 0.0
-        if floor and agent["id"] not in self._sent_back and self._deploy_reopened(agent):
+        if floor and sent_back is None and self._deploy_reopened(agent):
             floor = 0.0  # a failed deploy sent shipped work back: the merge closes it through Review, never an operator's send-back from Review
         for url in self._own_prs(agent):
             record = self._record(url)
@@ -2013,7 +1941,7 @@ class TaskActor:
     def _phase_resumed(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The time and comment of the newest step of a phase in `[sequences]` the task's session took after the task
         entered its lane: the session going back to work is the event that sends the task back."""
-        entered = self._lane_entered.get(agent["id"], ("", 0.0))[1]
+        entered = self._entered(agent)
         steps = [
             (at, phase)
             for phase in sorted({phase for sequence in self._sequences.values() for phase in sequence})
