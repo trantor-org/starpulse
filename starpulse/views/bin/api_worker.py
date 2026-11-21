@@ -47,6 +47,7 @@ from starpulse.runs.model import opt_in
 from starpulse.scheduler.adapters.exposition import autopilot_exposition, autopilot_log
 from starpulse.scheduler.adapters.remote import Remote
 from starpulse.sessions.adapters.outbound.session_start import starter
+from starpulse.sessions.adapters.outbound.wake_metrics import metrics_of as wake_metrics_of
 from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
 from starpulse.views.adapters.inbound.asgi_app import page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
@@ -213,7 +214,7 @@ def serve_page(
             )
         ),
         sweeper_metrics=sweeper_metrics_of(log),
-        bridge_metrics=bridge_metrics_of(log),
+        bridge_metrics=lambda read=(bridge_metrics_of(log), wake_metrics_of(log)): "".join(part() for part in read),
         completion_steps_metrics=completion_steps_metrics_of(log),
         history_lag_metrics=history_lag_metrics_of(log),
         follower_lag_metrics=follower_lag_metrics_of(log, CHECKPOINT, STREAMS),

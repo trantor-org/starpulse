@@ -67,6 +67,7 @@ from starpulse.board.model.seam import (
     Written,
 )
 from starpulse.event_log import events as machine_events
+from starpulse.event_log import start_requests
 from starpulse.event_log.deadlines import Deadlines
 from starpulse.event_log.wake import StopEvent, save_on_change
 from starpulse.pulls.adapters.inbound.task_memory import TaskMemory
@@ -416,6 +417,7 @@ class TaskActor:
         self._store_rev = store.rev
         #: The move last tried for each task, until the task changes lane: the same facts are not tried twice.
         self._tried: dict[str, tuple] = {}
+        self._unready_logged: dict[str, str] = {}
         #: The record each task's release was last refused on by the board, so a repaired record is tried again.
         self._lint_held: dict[str, tuple[Any, ...]] = {}
         self._metrics = threading.Lock()
@@ -827,8 +829,17 @@ class TaskActor:
         for url in self._seen.get(name, ("", (), (), ()))[2]:
             self._by_pr.get(url, set()).discard(name)
         self._seen[name] = _view(agent)
-        if self._memory.of(name).get("lane_entered", [""])[0] != agent["state"]:
-            self._memory.keep(name, lane_entered=[agent["state"], agent.get("entered") or 0.0])
+        left = self._memory.of(name).get("lane_entered", [""])[0]
+        if left != agent["state"]:
+            entered = agent.get("entered") or 0.0
+            kept: dict[str, Any] = {"lane_entered": [agent["state"], entered]}
+            roles = self._feed.roles
+            # an answer out of Needs attention is no new delivery: work merged while parked stays shipped
+            if agent["state"] == roles.working and left != roles.attention:
+                kept["work_floor"] = entered
+            elif agent["state"] not in (roles.working, roles.attention):
+                kept["work_floor"] = None
+            self._memory.keep(name, **kept)
         self._watch(name, agent)
         for url in agent.get("prs", ()):
             self._by_pr.setdefault(url, set()).add(name)
@@ -1009,6 +1020,7 @@ class TaskActor:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
         self._lint_held.pop(name, None)
+        self._unready_logged.pop(name, None)
         self._deadlines.cancel(name)
         self._dates.pop(name, None)
         self._unwatch(name)
@@ -1111,16 +1123,17 @@ class TaskActor:
         for name in sorted(names, key=lambda name: (not merged(name), name)):
             self._derive(name, observed)
 
-    def _derive(self, name: str, observed: float) -> None:
-        """Derive the task's waits, time the derivation, and note the facts it settled on for the checkpoint."""
+    def _derive(self, name: str, observed: float) -> bool:
+        """Derive the task's waits, time the derivation, and note the facts it settled on for the checkpoint. Say whether
+        it moved the task to another lane."""
         agent = self._feed.task(name, lean=True)
         if agent is None or (name in self._seen and self._seen[name][0] != agent["state"]):
-            return  # a lane change not yet handled: its change event derives, after it sets any send-back hold
+            return False  # a lane change not yet handled: its change event derives, after it sets any send-back hold
         digest = self._digest(agent)
         self._hooked = self._unsettled = False
         started = self._clock()
         try:
-            self._derive_waits(name, agent, observed)
+            moved = self._derive_waits(name, agent, observed)
         finally:
             self._timed_derive(agent["state"], self._hooked, self._clock() - started)
         self._settle_awaited(name)
@@ -1129,6 +1142,7 @@ class TaskActor:
         else:
             self._derived[name] = digest
         self._derived_moved.set()
+        return moved
 
     def view(self, name: str) -> dict[str, Any] | None:
         """The actor's view of one task: the lane the feed and the actor each hold, the pull requests it saw, the move it
@@ -1167,9 +1181,10 @@ class TaskActor:
             histogram = self._derive_seconds.setdefault((lane, hooked), _Histogram(SLOW_BUCKETS_S))
         histogram.observe(seconds)
 
-    def _derive_waits(self, name: str, agent: dict[str, Any], observed: float) -> None:
-        """Write the first move the task's lane waits on whose fact holds. A move already tried on these facts, or one the
-        board refuses, leaves the next fact its turn: a Waiting task whose return to Review is refused still reaches Ready."""
+    def _derive_waits(self, name: str, agent: dict[str, Any], observed: float) -> bool:
+        """Write the first move the task's lane waits on whose fact holds, and say whether one was written. A move already
+        tried on these facts, or one the board refuses, leaves the next fact its turn: a Waiting task whose return to
+        Review is refused still reaches Ready."""
         self.derivations[name] += 1
         self._arm(name, agent)
         if agent["state"] in self._sweep_lanes and (reasons := self._stuck(agent)):
@@ -1198,10 +1213,52 @@ class TaskActor:
                     "was ready but its pull request was not enqueued",
                     on_failure=lambda: self._tried.pop(name, None),  # tried again on the next derivation
                 )
-                return
+                return False
             merged = self._merged_at(agent) if fact in _MERGE_FACTS else None
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes, merged=merged):
-                return
+                return True
+        if agent["state"] == self._feed.roles.working:
+            self._log_unready(agent)
+        return False
+
+    def _log_unready(self, agent: dict[str, Any]) -> None:
+        """Log once per change the condition that keeps a working task's open pull request from being ready."""
+        reasons = self._unready(agent)
+        if reasons is None:
+            self._unready_logged.pop(agent["id"], None)
+            return
+        if self._unready_logged.get(agent["id"]) == reasons:
+            return
+        self._unready_logged[agent["id"]] = reasons
+        logger.info("task actor: %s has a pull request that is not ready: %s", agent["id"], reasons)
+
+    @staticmethod
+    def _why_unready(record: dict[str, Any], held_head: str | None) -> list[str]:
+        """The conditions that keep a pull request record from being ready: draft, conflicting, checks that are not passed, or
+        held after a send-back on its current head."""
+        verdict = checks_verdict(
+            record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
+        )
+        return [
+            reason
+            for reason, holds in (
+                ("draft", record["isDraft"]),
+                ("conflicting", record["mergeable"] == "CONFLICTING"),
+                (f"checks {verdict}", verdict != "pass"),
+                ("held after a send-back on this head", held_head == record["headRefOid"]),
+            )
+            if holds
+        ]
+
+    def _unready(self, agent: dict[str, Any]) -> str | None:
+        """Why each open pull request of the task's own delivery is not ready, else None."""
+        held = self._memory.of(agent["id"]).get("sent_back") or {}
+        parts = []
+        for url in self._own_prs(agent):
+            record = self._record(url)
+            if record is not None and record["state"] == "OPEN" and (why := self._why_unready(record, held.get(url))):
+                parts.append(f"{record['repo']}#{record['number']} {', '.join(why)}")
+        return "; ".join(parts) or None
 
     def _merged_at(self, agent: dict[str, Any]) -> float | None:
         """When the latest of the pull requests that proved `agent`'s work merged."""
@@ -1235,6 +1292,7 @@ class TaskActor:
             self._memory.keep(name, awaited=None, revive_held=None, busy=None)
             if agent is None or agent["state"] != self._feed.roles.working:
                 self._memory.keep(name, resumes=None)
+                self._unwant(name)
                 return
             if self._idle is None:
                 return
@@ -1244,6 +1302,8 @@ class TaskActor:
             if self._awaits(agent):
                 self._memory.keep(name, awaited=True)
                 return
+            if self._derive(name, self._clock()):
+                return  # the lane facts moved the task (a ready pull request to Review): there is nothing to resume
             answered = "kind-decide" in agent["labels"] and operator_answered(
                 (self._feed.task(name) or {}).get("description", "")
             )
@@ -1290,6 +1350,7 @@ class TaskActor:
             agent = self._feed.task(name, lean=True)
             self._memory.keep(name, revive_held=None)
             if agent is None or agent["state"] != self._feed.roles.working or self._idle is None:
+                self._unwant(name)
                 return
             if wait_ended and self._session_active(name):
                 return
@@ -1318,9 +1379,12 @@ class TaskActor:
                     "Which?",
                 )
                 return
+        if not self._admitted(name, "revive"):
+            return
         try:
             self._idle(name, "revive")
         except Exception as error:
+            self._unwant(name)
             logger.warning("task actor: %s's session ended and could not be revived: %s", name, error)
             with self._lock:
                 now = self._feed.task(name, lean=True)
@@ -1333,8 +1397,39 @@ class TaskActor:
                         ("start a session on it by hand", "rescope the task"),
                     )
             return
+        self._unwant(name)
         with self._lock:
             self._memory.count(name, key, count + 1)
+
+    def _admitted(self, name: str, verb: str) -> bool:
+        """Whether the scheduler's admission gate lets `name`'s `verb` start now. A start it has not yet admitted is kept as
+        a want, and the gate's admit wakes `admitted`, so a refused start waits for room and no clock retries it."""
+        if self._log is None or start_requests.is_admitted(self._log, name, verb):
+            return True
+        start_requests.want(self._log, name, verb)
+        return False
+
+    def _unwant(self, name: str) -> None:
+        if self._log is not None:
+            start_requests.withdraw(self._log, name)
+
+    def admitted(self) -> None:
+        """The gate admitted a start: send each wanted one it has admitted, the revive from `holder_ended` and the resume
+        from `holder_settled`, which derive again whether it is still needed. An admission that sends nothing (the work
+        is gone) is spent, so its want goes."""
+        if self._log is None:
+            return
+        for name, row in start_requests.wanted(self._log).items():
+            if start_requests.is_admitted(self._log, name, row["verb"]):
+                self._queue(lambda name=name, row=row: self._start_admitted(name, row))
+
+    def _start_admitted(self, name: str, row: dict[str, Any]) -> None:
+        if row["verb"] == "revive":
+            self.holder_ended(name)
+        else:
+            self.holder_settled(name)
+        if self._log is not None and start_requests.wanted(self._log).get(name) == row:
+            self._unwant(name)
 
     def _resume(self, name: str, progress: tuple[Any, ...], count: int) -> None:
         if not self._confirmed(name):
@@ -1387,11 +1482,14 @@ class TaskActor:
     def _resume_sent(self, name: str) -> bool:
         """Send the holder's resume. One that fails is sent again at once, no clock, until `_resume_failed` parks the
         task: a holder whose resume was lost settles no more, so no later settle comes to send it."""
+        if not self._admitted(name, "resume"):
+            return False
         self._switch_raised(name)
         failed = 0
         while True:
             try:
                 self._idle(name, "resume")
+                self._unwant(name)
                 return True
             except Exception as error:
                 logger.info("task actor: %s settled but its holder was not resume: %s", name, error)
@@ -1752,7 +1850,7 @@ class TaskActor:
         """The merge evidence when the task cites pull requests and every one has ended, else None. A check task that
         cites only other tasks' pull requests has no delivery of its own to wait for: its checked criteria close it.
         Review proves its work on `_proof_prs`; every other lane still waits on its own pull requests only. In the
-        working lane the latest merge must follow the task's latest entry."""
+        working lane the latest merge must follow the task's work floor."""
         own = self._own_prs(agent)
         if not own and agent["prs"] and agent["type"] == "check":
             if not all(criterion["checked"] for criterion in agent.get("criteria", ())):
@@ -1782,15 +1880,19 @@ class TaskActor:
         if (
             agent["state"] == self._feed.roles.working
             and merged_at is not None
-            and merged_at < (agent.get("entered") or 0.0)
+            and merged_at < self._work_floor(agent)
             and not self._deploy_reopened(agent)
         ):
-            return None  # the merge predates the task's latest entry: a reopened task's earlier delivery proves nothing
+            return None  # the merge predates the work floor: a reopened task's earlier delivery proves nothing
         # the board's guard wants the evidence to name every cited pull request: a reference is named as one, not proof
         if references := [url for url in agent["prs"] if url not in proved]:
             parts.append(f"cites as a reference, not proof: {', '.join(references)}")
         proof = "; ".join(parts)
         return proof, f"{MERGE_EVIDENCE} {proof}"
+
+    def _work_floor(self, agent: dict[str, Any]) -> float:
+        """When the working lane's shipped work stops counting: the task's last entry other than an answer out of Needs attention."""
+        return self._memory.of(agent["id"]).get("work_floor") or agent.get("entered") or 0.0
 
     def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
         """The merge evidence when every pull request the task cites has ended and at least one merged, else None: a
@@ -1855,8 +1957,8 @@ class TaskActor:
         parts = []
         sent_back = self._memory.of(agent["id"]).get("sent_back")
         held = sent_back or {}
-        # In the working lane a PR merged before the task's latest entry is shipped work (a post-merge send back).
-        floor = (agent.get("entered") or 0.0) if agent["state"] == self._feed.roles.working else 0.0
+        # In the working lane a PR merged before the work floor is shipped work (a post-merge send back).
+        floor = self._work_floor(agent) if agent["state"] == self._feed.roles.working else 0.0
         if floor and sent_back is None and self._deploy_reopened(agent):
             floor = 0.0  # a failed deploy sent shipped work back: the merge closes it through Review, never an operator's send-back from Review
         for url in self._own_prs(agent):
@@ -1866,15 +1968,7 @@ class TaskActor:
             merged = record["state"] == "MERGED" and record["mergedAt"]
             if merged and (_epoch(record["mergedAt"]) or 0.0) < floor:
                 continue
-            reviewed = held.get(url) == record["headRefOid"]
-            green = (
-                checks_verdict(
-                    record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
-                )
-                == "pass"
-            )
-            open_ready = not record["isDraft"] and record["mergeable"] != "CONFLICTING" and green and not reviewed
-            if merged or (record["state"] == "OPEN" and open_ready):
+            if merged or (record["state"] == "OPEN" and not self._why_unready(record, held.get(url))):
                 parts.append(f"{record['repo']}#{record['number']} {'merged' if merged else 'ready'}")
         if not parts:
             return None

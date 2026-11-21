@@ -13,6 +13,7 @@ from starpulse.bridge.last_event import last_event_is
 from starpulse.bridge.subjects import subject_for
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
+from starpulse.event_log.start_requests import follow_admitted
 from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound.head_reader import GitHubReader
 from starpulse.github.adapters.outbound.rest import connect
@@ -110,6 +111,7 @@ def start_delivery(
         follow_holder_idle(
             actor.holder_settled, log, stop, actor.indexed, actor.working, actor.holder_ended, actor.holder_entered
         )
+        follow_admitted(actor.admitted, log, stop)
     lane_events.follow_entered(board.entered, log, stop)
     projected = None
     if config.pull_requests:

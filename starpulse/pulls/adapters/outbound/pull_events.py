@@ -182,6 +182,7 @@ class RecordProjection:
         self._store = store
         self._feed = feed
         self._changed = changed
+        self._readied: dict[str, tuple[tuple[str, str], str, Mapping[str, Any], float]] = {}
 
     def _cited(self, key: str) -> list[tuple[str, int]]:
         """The pull requests the task cites, as (repository, number)."""
@@ -196,21 +197,30 @@ class RecordProjection:
 
     def handle(self, entry: Entry) -> None:
         """Apply one `machine:events` entry; one that is no event of a task's pull request, or whose time is unreadable,
-        is dropped."""
+        is dropped. A `PR_READY` that found no cited pull request is applied once the task cites one, as an event of the
+        task finds it does."""
         fields = entry.fields
         if fields.get("machine") == JOB_MACHINE:
             self._job_event(fields)
             return
         name = (fields.get("machine"), fields.get("event"))
         key = fields.get("task")
+        if key in self._readied and self._cited(key):
+            self._project(*self._readied.pop(key))
         if name not in _DELTAS or not key or (name in ROLLUPS | {REPORTED} and not self._rolled(fields)):
             return
         try:
             at = float(fields["time"])
         except KeyError, TypeError, ValueError:
             return
+        if not self._project(name, key, fields, at) and name[1] == "PR_READY":
+            self._readied[key] = (name, key, fields, at)
+
+    def _project(self, name: tuple[str, str], key: str, fields: Mapping[str, Any], at: float) -> bool:
+        """Write `name`'s delta to the task's pull requests it applies to, and say whether it applied to any."""
         saved = []
-        for repo, number in self._targets(key, name, fields):
+        targets = self._targets(key, name, fields)
+        for repo, number in targets:
             found = self._store.find(repo=repo, number=number, detailed=True)
             if found and at < found[0]["fetchedAt"] and name != MERGING and name not in ROLLUPS:
                 continue  # the record already holds what a later event or delivery says; a merge or a rollup, which names its head, is never older than that
@@ -225,6 +235,7 @@ class RecordProjection:
             self._store.save(saved)
             if self._changed:
                 self._changed()
+        return bool(targets)
 
     @staticmethod
     def _rolled(fields: Mapping[str, Any]) -> bool:
