@@ -54,6 +54,7 @@ from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.flow_metrics.adapters.completion_steps import metrics_of as completion_steps_metrics_of
 from starpulse.views.adapters.outbound.gc_pauses import PAUSES
+from starpulse.views.adapters.outbound import skill_cost
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.adapters.outbound.storage_metrics import cached, storage_exposition
 from starpulse.views.adapters.outbound.take_over import command_take_over
@@ -218,6 +219,7 @@ def serve_page(
         completion_steps_metrics=completion_steps_metrics_of(log),
         history_lag_metrics=history_lag_metrics_of(log),
         follower_lag_metrics=follower_lag_metrics_of(log, CHECKPOINT, STREAMS),
+        skill_cost_metrics=skill_cost.metrics_of(log),
         child_cpu_metrics=child_cpu_metrics_of(log),
         github_metrics=host.github_metrics(config, base),
         autopilot_log=lambda: autopilot_log(log),

@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import bindparam, delete, func, insert, literal_column, select, text
+from sqlalchemy import Connection, bindparam, delete, func, insert, literal_column, select, text
 
 import starpulse.contracts.signals as signal_contract
 import starpulse.flow_metrics.model as model
@@ -31,6 +31,7 @@ from starpulse.event_log.tables import analytics_answers, settings, signal_folds
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.model import cells, flow, session_health, spend, steps, traces
 from starpulse.harness_telemetry.adapters.inbound.telemetry import stored_signal
+from starpulse.views.adapters.outbound import skill_cost
 
 __all__ = ["CURSOR", "FAMILY", "VIEWS", "SignalFolds", "changed", "stamp"]
 
@@ -128,8 +129,10 @@ class SignalFolds:
         keys: TaskKeys | None,
         analytics: Analytics | None,
         completed: Callable[[list[dict[str, Any]]], None] | None = None,
+        titled: Callable[[], Mapping[str, Mapping[str, Any]]] | None = None,
     ) -> None:
         self._completed = completed
+        self._titled = titled  # the board's tasks; with it each fold adds its cost to the `skill_cost` series
         self._events = events
         self._engine = events.engine
         self._keys = keys
@@ -145,6 +148,8 @@ class SignalFolds:
         session whose fold raised is logged and left, and the cursor stops before its first new row so the next pass
         tries it again. Raises when the database does."""
         rebuilt = self._drop_changed()
+        # a rebuild's folds have no row before them to add to; the board is read once for the pass
+        counting = None if rebuilt or self._titled is None else self._titled()
         folded = 0
         cursor = self._events.setting(CURSOR) or 0
         with self._engine.connect() as db:
@@ -167,7 +172,7 @@ class SignalFolds:
             if self._current(harness, session) >= last_row:
                 continue
             before = self._completed_tasks(harness, session)
-            if self._fold(harness, session):
+            if self._fold(harness, session, counting):
                 folded += 1
                 finished |= self._completed_tasks(harness, session) - before
             else:
@@ -180,6 +185,8 @@ class SignalFolds:
         elif finished and self._completed:
             held = session_health.combine_health(self.window(0.0, ("health",))["health"])
             self._completed([s for s in session_health.slice_health(held) if s["task"] in finished])
+        if folded and counting is not None:
+            self._events.put_state(skill_cost.STATE, skill_cost.exposition())
         return folded
 
     def _completed_tasks(self, harness: str, session: str) -> set[str]:
@@ -296,7 +303,12 @@ class SignalFolds:
         found = [stored_signal({k: v for k, v in row[1].items() if v is not None}) for row in rows]
         return max((row[0] for row in rows), default=0), found
 
-    def _fold(self, harness: str, session: str) -> bool:
+    def _fold(
+        self,
+        harness: str,
+        session: str,
+        tasks: Mapping[str, Mapping[str, Any]] | None = None,
+    ) -> bool:
         """Replace the session's fold rows with a fold of its stored signals; False when a fold raised, and the old
         rows stay. A session with no signal left loses its rows."""
         through, found = self._load(harness, session)
@@ -321,7 +333,19 @@ class SignalFolds:
             for view, result in stored.items()
         ]
         with self._engine.begin() as db:
+            before = self._stored_cost(db, harness, session) if tasks is not None else []
             db.execute(delete(signal_folds).where(signal_folds.c.harness == harness, signal_folds.c.session == session))
             if rows:
                 db.execute(insert(signal_folds), rows)
+        if tasks is not None and "cost" in stored:
+            skill_cost.add(cells.cost_increase(before, stored["cost"], tasks))
         return bool(rows)
+
+    @staticmethod
+    def _stored_cost(db: Connection, harness: str, session: str) -> list[dict[str, Any]]:
+        row = db.execute(
+            select(signal_folds.c.result).where(
+                signal_folds.c.harness == harness, signal_folds.c.session == session, signal_folds.c.view == "cost"
+            )
+        ).first()
+        return row[0] if row else []

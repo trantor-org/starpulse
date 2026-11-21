@@ -48,6 +48,7 @@ __all__ = [
     "cell_report",
     "clean_steps",
     "combine_cost",
+    "cost_increase",
     "estimate_report",
     "fold_cost",
     "profile_of",
@@ -234,6 +235,24 @@ def combine_cost(folds: Iterable[list[dict[str, Any]]], tasks: Mapping[str, Mapp
         {**row, "tasks": len(row["tasks"]), "wasted_rate": row["wasted_steps"] / row["steps"]}
         for _, row in sorted(cost.items())
     ]
+
+
+def cost_increase(
+    before: list[dict[str, Any]], after: list[dict[str, Any]], tasks: Mapping[str, Mapping[str, Any]]
+) -> dict[tuple[str, int, str], tuple[float, int]]:
+    """The agent seconds and the tasks newly entered per (kind, size, skill) that `after`, a session's `fold_cost` rows,
+    adds to `before`, its rows when last folded, never a negative sum; a task of no cell adds nothing."""
+    held = {(row["task"], row["skill"]): row["agent_s"] for row in before}
+    added: dict[tuple[str, int, str], tuple[float, int]] = {}
+    for row in after:
+        if (cell := cell_of(tasks, row["task"])) is None:
+            continue
+        key = (row["task"], row["skill"])
+        seconds, entered = max(0.0, row["agent_s"] - held.get(key, 0.0)), key not in held
+        if seconds or entered:
+            was = added.get((*cell, row["skill"]), (0.0, 0))
+            added[(*cell, row["skill"])] = (was[0] + seconds, was[1] + entered)
+    return added
 
 
 def transition_cost(
