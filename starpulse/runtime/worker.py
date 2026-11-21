@@ -181,6 +181,7 @@ def main(argv: list[str] | None = None) -> None:
         )  # fmt: skip
     from starpulse.pulls.bin import pulls_worker
     from starpulse.runtime.delivery_wiring import start_delivery
+    from starpulse.runtime.stored_pulls import keep_pulls
 
     return pulls_worker.main(
         argv,
@@ -189,5 +190,6 @@ def main(argv: list[str] | None = None) -> None:
         worker_board=worker_board,
         history_store=history_store,
         start_delivery=start_delivery,
+        keep_pulls=keep_pulls,
         hold=hold,
     )

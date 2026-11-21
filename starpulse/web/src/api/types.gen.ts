@@ -2434,6 +2434,7 @@ export interface CreateSpec {
   impact?: string | null;
   labels?: string[] | null;
   milestone?: string | null;
+  notes?: string | null;
   priority?: string | null;
   profile?: string | null;
   ref?: string | null;
@@ -2559,6 +2560,7 @@ export interface CreateRequest {
   impact?: string | null;
   labels?: string[] | null;
   milestone?: string | null;
+  notes?: string | null;
   priority?: string | null;
   profile?: string | null;
   ref?: string | null;

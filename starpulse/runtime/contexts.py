@@ -197,10 +197,11 @@ def default_starters(
     def pulls(own: threading.Event) -> Callable[[], None]:
         from starpulse.pulls.bin import pulls_worker
         from starpulse.runtime.delivery_wiring import start_delivery
+        from starpulse.runtime.stored_pulls import keep_pulls
 
         return pulls_worker.start(
             config, path, base, log, own, load=load, worker_board=shared, history_store=history_store,
-            start_delivery=start_delivery,
+            start_delivery=start_delivery, keep_pulls=keep_pulls,
         )  # fmt: skip
 
     def scheduler(own: threading.Event) -> Callable[[], None]:

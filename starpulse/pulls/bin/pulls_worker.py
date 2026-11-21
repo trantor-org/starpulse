@@ -128,6 +128,7 @@ def start(
     worker_board: Callable[..., tuple[Board, BoardFeed]],
     history_store: Callable[[PullsConfig, Path, Mapping[str, dict]], Any],
     start_delivery: Callable[..., tuple[Any, Any]],
+    keep_pulls: Callable[[PullStore, EventLog, StopEvent], Callable[[], None]],
 ) -> Callable[[], None]:
     """Start the Delivery loops over `log`, each ending when `stop` is set, and return their reload. Raises
     `ValueError` as `worker_board` and `start_delivery` do."""
@@ -137,6 +138,9 @@ def start(
     Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     store = PullStore(log.engine)
+    store_pulls = keep_pulls(store, log, stop)  # the answer `serve` reads: stored soon after the start and each save
+    store_pulls()
+    store.subscribe_saves(lambda keys: store_pulls())
     announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
     if config.github:  # a delivery writes its record whether or not a task cites the pull request
         pull_deliveries.start(config, base, stop, store, migrate_chain, open_watch)
@@ -159,6 +163,7 @@ def main(
     worker_board: Callable[..., tuple[Board, BoardFeed]],
     history_store: Callable[[PullsConfig, Path, Mapping[str, dict]], Any],
     start_delivery: Callable[..., tuple[Any, Any]],
+    keep_pulls: Callable[[PullStore, EventLog, StopEvent], Callable[[], None]],
     hold: Callable[[threading.Event, Callable[[], None]], None],
 ) -> None:
     """Run the Delivery worker; `runtime` passes the collaborators it builds, as no context imports it."""
@@ -182,6 +187,7 @@ def main(
             worker_board=worker_board,
             history_store=history_store,
             start_delivery=start_delivery,
+            keep_pulls=keep_pulls,
         )
     except ValueError as exc:
         stop.set()  # `worker_board` may have started its read model follower before the start refused

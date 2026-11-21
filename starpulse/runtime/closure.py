@@ -35,6 +35,7 @@ CONTEXT_ENTRIES = (
     "starpulse.runtime.contexts",
     "starpulse.runtime.wiring",
     "starpulse.runtime.delivery_wiring",
+    "starpulse.runtime.stored_pulls",
     "starpulse.pulls.bin.pulls_worker",
     "starpulse.scheduler.bin.scheduler_worker",
     "starpulse.runs.bin.runs_worker",

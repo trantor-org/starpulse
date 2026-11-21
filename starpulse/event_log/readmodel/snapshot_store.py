@@ -1,10 +1,11 @@
 """The Board writer's stored snapshot: the encoded bodies and the deltas published since, kept in the instance store so
 the API serves bytes it never builds."""
 
+import gzip
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from sqlalchemy import Engine, delete, func, insert, select, update
+from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 
 from starpulse.event_log.event_log import unpooled_engine
 from starpulse.event_log.readmodel.tables import snapshot_deltas, snapshots
@@ -12,10 +13,28 @@ from starpulse.event_log.readmodel.tables import snapshot_deltas, snapshots
 #: The deltas kept behind the stored sequence, so a page that read the snapshot a moment ago still replays what followed;
 #: a cursor older than that reads a fresh snapshot.
 KEEP = 500
+#: A body this size or smaller is stored as it is, and one over it with its gzip at level 1: the 4.9 MB snapshot takes
+#: ~60 ms there against ~190 ms at level 6, which is 22% larger.
+GZIP_MIN_BYTES = 64 * 1024
+GZIP_LEVEL = 1
+
+
+#: The sequence of a body stored outside the folds (`put`): a fold never moves it.
+STANDALONE = -1
+
+
+def _gzipped(body: bytes) -> bytes | None:
+    return gzip.compress(body, compresslevel=GZIP_LEVEL, mtime=0) if len(body) > GZIP_MIN_BYTES else None
+
+
+def _store(db: Connection, view: str, seq: int, body: bytes, at: float) -> None:
+    values = {"seq": seq, "body": body, "gzipped": _gzipped(body), "stored_at": at}
+    if not db.execute(update(snapshots).where(snapshots.c.view == view).values(**values)).rowcount:
+        db.execute(insert(snapshots).values(view=view, **values))
 
 
 class SnapshotStore:
-    """`encode` draws the bodies of a snapshot, by view (`slim`, `full`)."""
+    """`encode` draws the bodies of a snapshot, by view (`slim`, `full`, `flows`); each is stored with its gzip."""
 
     def __init__(self, engine: Engine, encode: Callable[[Any, dict], Mapping[str, bytes]], keep: int = KEEP) -> None:
         self._engine, self._encode, self.keep = engine, encode, keep
@@ -36,19 +55,24 @@ class SnapshotStore:
                 )
                 head += len(changes)
             if bodies is None and current:
-                db.execute(update(snapshots).values(seq=head))
+                db.execute(update(snapshots).where(snapshots.c.seq != STANDALONE).values(seq=head))
             for view, body in (bodies or {}).items():
-                values = {"seq": head, "body": body, "stored_at": at}
-                if not db.execute(update(snapshots).where(snapshots.c.view == view).values(**values)).rowcount:
-                    db.execute(insert(snapshots).values(view=view, **values))
+                _store(db, view, head, body, at)
             db.execute(delete(snapshot_deltas).where(snapshot_deltas.c.seq <= head - self.keep))
         return head
 
-    def body(self, view: str) -> tuple[int, bytes] | None:
-        """The stored body of `view` with the sequence it reflects; None before the first fold."""
+    def put(self, view: str, body: bytes, at: float) -> None:
+        """Store `body` and its gzip as `view`, a body made outside the snapshot's folds (`STANDALONE`)."""
+        with self._engine.begin() as db:
+            _store(db, view, STANDALONE, body, at)
+
+    def body(self, view: str) -> tuple[int, bytes, bytes | None] | None:
+        """The stored body of `view`, its gzip, and the sequence it reflects; None before the first fold."""
         with self._engine.connect() as db:
-            row = db.execute(select(snapshots.c.seq, snapshots.c.body).where(snapshots.c.view == view)).first()
-        return None if row is None else (row.seq, row.body)
+            row = db.execute(
+                select(snapshots.c.seq, snapshots.c.body, snapshots.c.gzipped).where(snapshots.c.view == view)
+            ).first()
+        return None if row is None else (row.seq, row.body, row.gzipped)
 
     def stamp(self, view: str) -> tuple[int, float] | None:
         """The sequence and the time of the stored body of `view`, read without the body: it changes when the body does,

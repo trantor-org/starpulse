@@ -55,7 +55,7 @@ class Api:
     slow_reads: SlowReads = field(init=False)
 
     def __post_init__(self) -> None:
-        self.pull_reads = PullReads(self.services.pulls, self.feed.cited)
+        self.pull_reads = PullReads(self.services.pulls, self.feed.cited, lambda: self.snapshots.stored("pulls")[1])
         self.slow_reads = SlowReads("/api/pulls", self.services.slow_read_s)
 
     @cached_property

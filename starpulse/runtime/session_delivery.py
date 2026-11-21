@@ -184,7 +184,7 @@ def route(
 
 def forget_ended(registry: Registry, alive: Callable[[str], str | None], sessions: Path) -> Callable[[Collection[str]], None]:
     """Remove the registration of every session that is neither running nor named by a consumer in `names`: nothing
-    is delivered to it, and a session that returns registers again at its next turn's end."""
+    is delivered to it, and a session that returns registers again at its next prompt, by the `session_register` hook."""
 
     def forget(names: Collection[str]) -> None:
         wanted = set(names)
