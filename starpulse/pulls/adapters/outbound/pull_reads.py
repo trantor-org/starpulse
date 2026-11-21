@@ -127,11 +127,17 @@ def _behind(store: PullStore, reads: PullReads, record: dict[str, Any], head: st
     )
 
 
-def _requiring(store: PullStore, record: dict[str, Any], contexts: frozenset[str]) -> None:
+def _requiring(store: PullStore, record: dict[str, Any], contexts: frozenset[str], now: float) -> None:
     def change(current: dict[str, Any]) -> dict[str, Any]:
         kept = [check for check in current["requiredChecks"] if check["name"] in contexts]
         added = with_missing(kept, (check["name"] for check in kept), sorted(contexts))
-        return {"requiredChecks": sorted(added, key=lambda check: check["name"])}
+        checks = sorted(added, key=lambda check: check["name"])
+        if {check["name"] for check in checks} == {check["name"] for check in current["requiredChecks"]}:
+            return {"requiredChecks": checks}
+        # the rollup counted the old contexts: a newer one of the new set outvotes it in `PullStore._guarded`
+        results = {check["result"] for check in checks}
+        state = "failing" if "failing" in results else "passed" if results == {"pass"} else "pending"
+        return {"requiredChecks": checks, "rollup": {"sha": current["headRefOid"], "state": state, "at": now}}
 
     _amend(store, record, change)
 
@@ -161,4 +167,4 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
             contexts = reads.required(repository, base, force=True)
             for open_pull in opened:
                 if open_pull["baseRefName"] == base:
-                    _requiring(store, open_pull, contexts)
+                    _requiring(store, open_pull, contexts, now)

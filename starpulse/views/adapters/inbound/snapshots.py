@@ -108,9 +108,12 @@ class Snapshots:
 
     def _put(self) -> None:
         """Put the deltas the writer stored since the last on every stream open; under `_lock`. A store whose deltas were
-        renumbered below this feed's head (a read model rebuilt under a running API) restarts the head at its own."""
+        renumbered below this feed's head (a read model rebuilt under a running API) restarts the head at its own, and
+        ends every stream open with a `None`: it holds a body the new numbering never reached, so its page reattaches."""
         if not (deltas := self._store.since(self._head)) and (head := self._store.head()) < self._head:
             self._head = head
+            for stream in self._streams:
+                stream.put(None)
         for seq, kind, data in deltas:
             self._head = seq
             for stream in self._streams:

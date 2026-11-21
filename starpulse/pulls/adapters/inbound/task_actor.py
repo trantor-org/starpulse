@@ -906,14 +906,15 @@ class TaskActor:
             event = self._exit_event(links, phase, task) if phase else None
             if phase and event and exited.get(parent) != (sent := [phase["state"], phase["steps"], event]):
                 exited[parent] = sent
-                self._memory.keep(task, exited=exited)
                 target = self._moves.get((phase["state"], event)) if parent == BOARD else None
                 if target:  # the Board's lane is the task's status: the exit is that write, not an event beside it
+                    self._memory.keep(task, exited=exited)  # a transient refusal clears it (`_write`), so the next pass goes again
                     self._write(
                         task, target, f"{phase['state']} phase exited on {event}", self._clock(), phase["state"]
                     )
                 else:
-                    self._advance(parent, task, event)
+                    self._advance(parent, task, event)  # a refused or lost send leaves no marker: the exit goes again
+                    self._memory.keep(task, exited=exited)
 
     def _phase(self, parent: str, task: str) -> dict[str, Any] | None:
         """The phase `task` is in under lifecycle machine `parent`: the machine's placement, or the Board's lane, whose
