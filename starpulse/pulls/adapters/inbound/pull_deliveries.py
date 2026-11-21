@@ -40,7 +40,11 @@ def _created(record: Record, pull: Mapping[str, Any], at: float) -> Record:
 
 
 def _state(_record: Record, pull: Mapping[str, Any], _at: float) -> Record:
-    return {"state": "MERGED" if pull.get("merged") else str(pull["state"]).upper()}
+    if pull.get("merged"):
+        return {"state": "MERGED"}
+    if "state" not in pull:  # a body without a state says nothing about it: the stored one stands
+        return {}
+    return {"state": str(pull["state"]).upper()}
 
 
 def _draft(_record: Record, pull: Mapping[str, Any], _at: float) -> Record:

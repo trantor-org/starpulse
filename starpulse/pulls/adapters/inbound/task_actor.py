@@ -1268,7 +1268,8 @@ class TaskActor:
         Needs attention at once; a flagged task whose session settles again with no progress moves there too, except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A task citing none of its own while an open pull request names it (`uncited`) moves to Needs attention at once, its record being the defect. A `confirm` that
         raises (the holder is busy) holds the task: the next move of a machine other than the harness settles it again, and the
         session's own activity ends the hold. A `resume` that fails is sent again at once until `_FAILED_RESUMES` fail, when the
-        task moves to Needs attention, as a holder whose resume was lost settles no more."""
+        task moves to Needs attention, as a holder whose resume was lost settles no more; a holder no session can reach is
+        revived as `holder_ended` revives one, and parks only when no session can start."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
             self._awaited.discard(name)
@@ -1292,19 +1293,18 @@ class TaskActor:
                 self._awaited.add(name)
                 return
             ended = not agent["prs"]
-            if not ended:
-                own = self._own_prs(agent)
-                if not own and (found := uncited(self._store, agent)):
-                    self._attend(
-                        name,
-                        f"it cites no pull request of its own, yet {found[0]} is open and names it",
-                        "has an uncited pull request",
-                        "Which?",
-                        ("cite the pull request on the task", "rescope the task"),
-                    )
-                    return
-                if own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
-                    return
+            own = self._own_prs(agent)
+            if not own and (found := uncited(self._store, agent)):
+                self._attend(
+                    name,
+                    f"it cites no pull request of its own, yet {found[0]} is open and names it",
+                    "has an uncited pull request",
+                    "Which?",
+                    ("cite the pull request on the task", "rescope the task"),
+                )
+                return
+            if own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
+                return
             items = agent.get("criteria", ())
             if opened := open_criteria(items):
                 ticks = tuple(resolved(item) for item in items)
@@ -1461,20 +1461,20 @@ class TaskActor:
             self._resumes[name] = (ticks, (count if before == ticks else 0) + 1)
 
     def _resume_failed(self, name: str, error: Exception, failed: int) -> bool:
-        """Whether the resume is sent again: a holder no session can reach moves to Needs attention at once, since no
-        later settle comes to count; any other failure does on the `_FAILED_RESUMES`th in a row; a task no longer In
-        Progress needs none."""
+        """Whether the resume is sent again: a holder no session can reach is revived as `holder_ended` revives one, which
+        parks the task only when no session can start; any other failure does on the `_FAILED_RESUMES`th in a row; a task
+        no longer In Progress needs none."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
             if agent is None or agent["state"] != self._feed.roles.working:
                 return False
-            if isinstance(error, HolderUnreachable):
-                self._attend(name, f"no session can reach it, so no later settle comes: {error}", "could not be resumed")
+            if not isinstance(error, HolderUnreachable):
+                if failed < _FAILED_RESUMES:
+                    return True
+                self._attend(name, f"its holder's resume failed {failed} times in a row: {error}", "could not be resumed")
                 return False
-            if failed < _FAILED_RESUMES:
-                return True
-            self._attend(name, f"its holder's resume failed {failed} times in a row: {error}", "could not be resumed")
-            return False
+        self.holder_ended(name)
+        return False
 
     def _attend(
         self,
