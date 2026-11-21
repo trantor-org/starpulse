@@ -101,15 +101,6 @@ def needs_attention_reason(text: str) -> str:
     return next((line.strip() for line in found.group(1).splitlines() if line.strip()), "") if found else ""
 
 
-_OPERATOR_ANSWER = re.compile(r"(?m)^Operator answer \(\w+:[\w-]+#[\w-]+\): ")
-
-
-def operator_answered(text: str) -> bool:
-    """Whether `text`'s `## Needs attention` section carries an `Operator answer` line."""
-    found = _NEEDS_ATTENTION.search(text)
-    return bool(found and _OPERATOR_ANSWER.search(found.group(1)))
-
-
 _BLOCKER = re.compile(r"Blocker:\s*\w")
 _OPTIONS = re.compile(r"Options:\s*\w")
 
