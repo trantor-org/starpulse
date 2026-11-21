@@ -138,15 +138,16 @@ def start(
     Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     store = PullStore(log.engine)
+    # a store that holds records was built by the replays before; a new or wiped one rebuilds from the whole retention.
+    # Read before any loop writes a record, `pull_deliveries.start` included.
+    resume = bool(store.repos())
     store_pulls = keep_pulls(store, log, stop)  # the answer `serve` reads: stored soon after the start and each save
     store_pulls()
     store.subscribe_saves(lambda keys: store_pulls())
     announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
     if config.github:  # a delivery writes its record whether or not a task cites the pull request
         pull_deliveries.start(config, base, stop, store, migrate_chain, open_watch)
-    # a store that holds records was built by the replays before; a new or wiped one rebuilds from the whole retention.
-    # Read before any loop writes a record.
-    delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=bool(store.repos()))
+    delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=resume)
     stop.listen(delivery.stop)
     delivery.start()
     if stop.is_set():  # `listen` does not call for a stop already set, and a stop during `start` met the old loops

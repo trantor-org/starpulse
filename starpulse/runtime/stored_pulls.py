@@ -37,6 +37,7 @@ def keep_pulls(
             snapshots.put(VIEW, encode("pulls", {"pulls": found}), time.time())
         except Exception:
             logger.warning("pulls: the unfiltered list was not stored", exc_info=True)
+            changed.set()  # the window's work is not done: the next window tries again, `debounce_s` later
 
     threading.Thread(
         target=save_on_change, args=(stop, changed, store_list, debounce_s), name="pulls-stored", daemon=True

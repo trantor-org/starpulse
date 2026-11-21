@@ -119,7 +119,7 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
     elif delivery.event == "push":
         base = str(body.get("ref", "")).removeprefix(_HEADS)
         for open_pull in store.find(repository, state="OPEN"):
-            if open_pull["baseRefName"] == base:
+            if open_pull["baseRefName"] == base and open_pull["headRefOid"]:
                 record = _detailed(store, repository, open_pull["number"], now)
                 held = record["detail"].get("behindMain")
                 head = record["headRefOid"]

@@ -59,7 +59,7 @@ class PullStore:
         #: Counts saves, so a reader holding an answer knows when it is stale.
         self.rev = 0
         self._lock = threading.Lock()
-        self._saving = threading.Lock()
+        self._saving = threading.RLock()
         #: Orders each read of rows with the taking of them into memory, so a read begun before a save never lands after
         #: the read of that save and puts the record from before it back.
         self._holding = threading.Lock()
@@ -128,6 +128,17 @@ class PullStore:
             self.refresh(keys)
             for announce in self._save_listeners:
                 announce(keys)
+
+    def amend(self, repo: str, number: int, change: Callable[[dict[str, Any] | None], dict[str, Any] | None]) -> bool:
+        """Save what `change` returns from the record held now (None when there is none), and say whether it saved.
+        The read and the save share `save`'s lock, so another writer's save between them is never written over by a
+        record read before it; `change` returning None saves nothing."""
+        with self._saving:
+            found = self.find(repo, number, detailed=True)
+            record = change(found[0] if found else None)
+            if record is not None:
+                self.save([record])
+            return record is not None
 
     @staticmethod
     def _guarded(db: Any, row: dict[str, Any]) -> dict[str, Any] | None:
