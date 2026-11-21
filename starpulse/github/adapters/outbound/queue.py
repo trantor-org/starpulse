@@ -42,6 +42,7 @@ class SqlQueue:
     def __init__(self, engine: Engine, consumer: str, clock: Callable[[], float] = time.time) -> None:
         self._engine, self._consumer, self._clock = engine, consumer, clock
         self._insert = _INSERTS[engine.dialect.name]
+        self._seeded = 0  # the newest inbox id this queue has seeded: a claim looks only past it
 
     def _mine(self, delivery_id: str):  # noqa: ANN202
         return and_(state.delivery_id == delivery_id, state.consumer == self._consumer)
@@ -54,10 +55,7 @@ class SqlQueue:
     def claim(self, limit: int = 100) -> list[Entry]:
         now = self._clock()
         seen = exists().where(state.delivery_id == inbox.c.delivery_id, state.consumer == self._consumer)
-        unseen = select(
-            inbox.c.delivery_id, literal(self._consumer), literal("pending"), literal(0), literal(now), literal(now)
-        ).where(~seen)
-        seed = self._insert(github_inbox_state).from_select(_SEED, unseen).on_conflict_do_nothing()
+        newest = select(func.coalesce(func.max(inbox.c.id), 0))
         due = (
             select(inbox, state.attempts)
             .join(github_inbox_state, state.delivery_id == inbox.c.delivery_id)
@@ -66,8 +64,16 @@ class SqlQueue:
             .limit(limit)
         )
         with self._engine.begin() as db:
-            db.execute(seed)
+            seeded = db.execute(newest).scalar_one()
+            # SQLite has one writer, so ids commit in order; a Postgres sequence does not, and always looks from the start.
+            # An inbox that lost its newest rows reuses their ids.
+            after = self._seeded if self._engine.dialect.name == "sqlite" and self._seeded <= seeded else 0
+            unseen = select(
+                inbox.c.delivery_id, literal(self._consumer), literal("pending"), literal(0), literal(now), literal(now)
+            ).where(inbox.c.id > after, inbox.c.id <= seeded, ~seen)
+            db.execute(self._insert(github_inbox_state).from_select(_SEED, unseen).on_conflict_do_nothing())
             rows = db.execute(due).all()
+        self._seeded = seeded
         return [
             Entry(Delivery(row.delivery_id, row.event, row.action, row.repository, bytes(row.body)), row.attempts)
             for row in rows
