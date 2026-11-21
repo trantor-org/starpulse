@@ -99,20 +99,26 @@ class ClaudeCodeNotifier:
         resume: Callable[[Registration, str], bool],
         alive: Callable[[str], str | None],
         now: Callable[[], float],
+        delivered: Callable[[str, Sequence[Line]], None] = lambda session, lines: None,
     ) -> None:
         self._post, self._resume, self._alive, self._now = post, resume, alive, now
+        self._delivered = delivered
         self._resumed: dict[str, float] = {}
 
     def notify(self, registration: Registration, lines: Sequence[Line]) -> bool:
         """Whether the events reached the session; an event that did not is delivered again."""
         live = self._alive(registration.session)
+        posted: list[Line] = []
         try:
             for line in lines:
                 self._post(live or registration.socket, registration.token, attested(line.text))
+                posted.append(line)
         except OSError:
+            self._delivered(registration.session, posted)
             if live:
                 return False
             return self._resume_once(registration, lines)
+        self._delivered(registration.session, posted)
         return True
 
     def _resume_once(self, registration: Registration, lines: Sequence[Line]) -> bool:
@@ -120,8 +126,9 @@ class ClaudeCodeNotifier:
         last = self._resumed.get(registration.session)
         if last is not None and now - last < RESUME_GRACE_S:
             return False
-        newest = {line.subject: line.text for line in lines}
-        if not self._resume(registration, "\n".join(newest.values())):
+        newest = list({line.subject: line for line in lines}.values())
+        if not self._resume(registration, "\n".join(line.text for line in newest)):
             return False
         self._resumed[registration.session] = now
+        self._delivered(registration.session, newest)
         return True

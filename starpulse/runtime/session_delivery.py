@@ -105,8 +105,8 @@ def line_for(event: Event) -> Line:
     given = [(key, value) for key, value in (data if isinstance(data, dict) else {}).items() if value is not None]
     pairs += given[:_DATA_PAIRS]
     pairs += [("skill", skill) for suffix, skill in _SKILLS.items() if event.subject.endswith(suffix)]
-    parts = [f"{_value(key)}={_value(value)}" for key, value in pairs] + [f"({_value(event_id)})"]
-    return Line(event.subject, f"{event.subject}: {' '.join(parts)}")
+    payload = f"{event.subject}: {' '.join(f'{_value(key)}={_value(value)}' for key, value in pairs)}"
+    return Line(event.subject, f"{payload} ({_value(event_id)})", payload)
 
 
 def _moved_fields(event: Event) -> dict | None:

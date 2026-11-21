@@ -29,6 +29,7 @@ from typing import Any
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Written
 from starpulse.contracts.adapters import StartFailedError
+from starpulse.event_log import start_requests
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.model.harness import HARNESS
@@ -174,6 +175,7 @@ class Loop:
         self._quiet_hours = quiet_hours
         self._harness = harness
         self._transcript = transcript
+        self._log = log
         self._state = SchedulerState(log) if log is not None else None
         self._running: dict[str, _Run] = {}
         self._starts: dict[str, float] = {}
@@ -332,6 +334,7 @@ class Loop:
         self._release(now, agents)
         if not admit:
             return []
+        self._grant()
         if (why := self._admission_off(now)) is not None:
             if why != self._skip_logged:
                 logger.info("StarPulse scheduler: admission skipped: %s", why)
@@ -339,6 +342,29 @@ class Loop:
             return []
         self._skip_logged = None
         return self._admit(now)
+
+    def _grant(self) -> None:
+        """Admit the revives and resumes the task actor wants, each while the room left fits what it draws. A start
+        admitted stays admitted until its want changes; a refused one waits for the next capacity event. The switch and
+        quiet hours gate dispatch, not a session the task already holds, so they do not apply."""
+        if self._log is None:
+            return
+        open_tasks = self._feed.open_tasks()
+        working = {agent["id"]: agent for agent in open_tasks if agent["state"] == self._feed.roles.working}
+        asked = {task: row for task, row in start_requests.wanted(self._log).items() if task in working}
+        grants = {task: at for task, at in start_requests.admitted(self._log).items() if asked.get(task, {}).get("at") == at}
+        pending = set(asked) - set(grants)
+        rows = [{**agent, "workable": True} if task in pending else agent for task, agent in working.items()]
+        others = [agent for agent in open_tasks if agent["id"] not in working]
+        readings = self.readings() if pending else []
+        while pending:
+            decisions = decide([*others, *rows], self._lane, readings, self._policy, self._ledger, log=False, starting=pending)
+            if (picked := next((d for d in decisions if d.admitted and d.task in pending), None)) is None:
+                break
+            pending.discard(picked.task)
+            grants[picked.task] = asked[picked.task]["at"]
+            readings = [replace(r, use=r.use + picked.demand[r.name]) for r in readings]
+        start_requests.admit(self._log, grants)
 
     def _admission_off(self, now: float) -> str | None:
         """Why this tick admits nothing, or None; a gated-off tick logs no per-task decision, so this names the gate."""

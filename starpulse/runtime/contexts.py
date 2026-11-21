@@ -110,6 +110,10 @@ class _SharedBoard:
         self._built = (board, feed)
         self._ready.set()
 
+    def peek(self) -> tuple[Any, Any] | None:
+        """The board and feed when the Board context has published them, else None; never waits."""
+        return self._built
+
     def get(self) -> tuple[Any, Any]:
         """The board and feed, waiting for the Board context to publish them; raises when the process stops first."""
         if not self._owned:
@@ -297,13 +301,23 @@ def default_starters(
         from starpulse.runtime.session_delivery import exit_watcher, forget_ended, route
         from starpulse.sessions.adapters.outbound import claude_code_notify as claude
         from starpulse.event_log.claude_sessions import live_socket, sessions_dir
+        from starpulse.machine_engine.model.transitions import lane_id
         from starpulse.sessions.adapters.outbound.registry import Registry, directory
+        from starpulse.sessions.adapters.outbound.wake_metrics import Wakes
+
+        def lane_of(task: str) -> str | None:
+            built = shared.peek()
+            if built is None:
+                return "unknown"
+            row = built[1].task(task, lean=True)
+            return lane_id(str(row.get("state") or "")) if row else None
 
         notifier = claude.ClaudeCodeNotifier(
             post=claude.post_inbox,
             resume=claude.resume_with(config.bridge.resume),
             alive=live_socket(sessions_dir(os.environ)),
             now=time.monotonic,
+            delivered=Wakes(log, lane_of),
         )
         end = claude.end_with(config.bridge.end)
         registry = Registry(directory(base, config.bridge.sessions_dir))

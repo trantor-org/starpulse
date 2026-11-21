@@ -18,6 +18,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from starpulse.board.model.board_feed import BoardFeed
+from starpulse.event_log import start_requests
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.wake import StopEvent
 from starpulse.scheduler.model.capacity_limits import CapacityLimitSetting
@@ -67,8 +68,9 @@ def follow_status(log: EventLog, feed: BoardFeed, stop: StopEvent) -> None:
 
 
 def follow_wakes(log: EventLog, wake: Callable[[], None], stop: StopEvent) -> None:
-    """Call `wake` for each setting `serve` writes from now on, on a thread until `stop`."""
+    """Call `wake` for each setting `serve` writes and each start the task actor wants from now on, on threads until `stop`."""
     log.follow_state(WAKE, wake, stop, thread_name="scheduler-wakes")
+    log.follow_state(start_requests.WANTED, wake, stop, thread_name="scheduler-start-wants")
 
 
 class Remote:

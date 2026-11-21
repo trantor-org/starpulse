@@ -162,6 +162,7 @@ def decide(
     ledger: Ledger,
     *,
     log: bool = True,
+    starting: Collection[str] = (),
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
@@ -171,15 +172,20 @@ def decide(
 
     `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. Each decision is
     logged unless `log` is off, as for a read that only looks.
+
+    A task of `starting` (a revive or a resume the task actor wants sent) is decided whatever its lane: it holds its session
+    slot already, so it draws no session, and the room it needs is the rest of its demand.
     """
     depths, dependents = _depths(tasks), _dependents(tasks)
     headroom = {reading.name: reading.limit - reading.use for reading in readings}
     decisions, keys = [], {}
     reserved = dict.fromkeys(DIMENSIONS, 0.0)
-    workable = [task for task in tasks if task["state"] == lane and task["workable"]]
+    workable = [task for task in tasks if task["workable"] and (task["state"] == lane or task["id"] in starting)]
 
     for task in sorted(workable, key=_leftover):  # the decisions last, after the room the others take is known
         need = demand(task, policy, ledger)
+        if task["id"] in starting:
+            need = {**need, "sessions": 0}
         room = {name: headroom[name] - (reserved[name] if _leftover(task) else 0) for name in DIMENSIONS}
         overfit = tuple(name for name in DIMENSIONS if need[name] > room[name])
         if tier_of(task) not in policy.tier_weights:

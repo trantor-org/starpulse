@@ -6,16 +6,17 @@ session; an event that did not is delivered again.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 
 @dataclass(frozen=True)
 class Line:
-    """One event as one line of text, on the subject it was published to."""
+    """One event as one line of text, on the subject it was published to; `payload` is the text without the event id."""
 
     subject: str
     text: str
+    payload: str = field(default="", compare=False)
 
 
 @dataclass(frozen=True)
