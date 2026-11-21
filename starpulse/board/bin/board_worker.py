@@ -4,7 +4,7 @@
 `board-release` is not here: the release of dependents runs in the Delivery worker (`starpulse worker pulls`).
 
 It reads the config and the database `serve` does and meets `serve` only in the history there: this worker writes each
-lane date (`PushedDates`), and `serve` rereads it at a request after a push (`CaughtUp`).
+lane date, and `serve` rereads it at a request after a push (`CaughtUp`).
 `SIGTERM` stops it; `SIGHUP` re-reads the config and, as
 the board and the writer are built once, only says whether a restart is needed.
 """
@@ -19,10 +19,9 @@ from typing import NamedTuple, Protocol
 from starpulse.board.adapters.history_window import MAX_HOURS
 from starpulse.board.adapters.search import SearchIndex
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
-from starpulse.board.model.board_feed import BoardFeed, ExpiriesStore, LaneRecorder
+from starpulse.board.model.board_feed import BoardFeed, LaneRecorder
 from starpulse.board.model.board_feed import follow as follow_stream
 from starpulse.board.model.feed.held import HeldSnapshot
-from starpulse.board.model.feed.shared import PushedDates
 from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM, ClaimRefusals
 from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.board.application.queries.verdicts import Verdicts
@@ -40,7 +39,7 @@ from starpulse.event_log.wake import StopEvent
 logger = logging.getLogger(__name__)
 
 
-class WriterStore(LaneRecorder, ExpiriesStore, Protocol):
+class WriterStore(LaneRecorder, Protocol):
     """What the writer keeps its dating in (`HistoryStore`)."""
 
     def lane_path(self, task: str) -> list[dict]: ...
@@ -91,7 +90,7 @@ def start(
     model = ReadModel(log.engine, declared_fields(config.board))
     board, feed = assemble(config, base, None, [], model)
     feed.cap_lanes(MAX_HOURS * 3600)  # the widest window a page can ask for; an older lane stays only for an open task, and decoding the rest is the worker's heap
-    store = PushedDates(history_store(config, base, feed.machines), log)  # a save also pushes the date to `serve`
+    store = history_store(config, base, feed.machines)
     feed.ready.set()
     feed.record_lanes(store, log)  # the lane each write makes is recorded by `serve`; the Board child places none
     board.attach(log)
@@ -102,7 +101,6 @@ def start(
         Projector(log.engine, EventStore(log.engine), search, log=log, drawn=feed.machines, keys=board.keys),
         feed, stop, log,
     )  # fmt: skip
-    feed.follow_dates(log, store, stop)  # the start criteria dates and claim expiries
     refusals = ClaimRefusals(feed)
     follow_stream(refusals, log, CLAIMS_STREAM, refusals.handle_entry, stop=stop)  # the claim refusals
     verdicts = Verdicts(feed)

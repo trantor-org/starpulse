@@ -1,10 +1,6 @@
 """The Delivery context's start, from the collaborators `starpulse worker pulls` and `contexts` hand it."""
 
-import logging
 import os
-import shutil
-import threading
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -23,8 +19,7 @@ from starpulse.github.adapters.outbound.rest import connect
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor, moves_of
 from starpulse.pulls.adapters.outbound.main_green import MainGreen
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
-from starpulse.pulls.adapters.outbound.pull_requests import PullRequests
-from starpulse.pulls.adapters.outbound.pull_store import PullSync
+from starpulse.pulls.adapters.outbound.pull_requests import PullRequests, coalesced
 from starpulse.pulls.model.pins import LiveBuild, running_commit
 from starpulse.runtime.config import Config
 
@@ -32,8 +27,6 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
     from starpulse.pulls.adapters.outbound.pulls import PullStore
-
-logger = logging.getLogger(__name__)
 
 
 def _then(first: Callable[[], None], second: Callable[[], None]) -> Callable[[], None]:
@@ -44,27 +37,6 @@ def _then(first: Callable[[], None], second: Callable[[], None]) -> Callable[[],
         second()
 
     return both
-
-
-POLL_RESTART_S = (1.0, 60.0)  # the pull reader's first restart delay after a crash and the longest it backs off to
-
-
-def keep_polling(sync: PullSync, stop: StopEvent, delay_s: tuple[float, float] = POLL_RESTART_S) -> None:
-    """Run the pull reader until `stop`, starting it again after a crash with a delay that doubles from `delay_s[0]` to
-    `delay_s[1]`, and logging each crash. A run that lasts the longest delay starts the backoff over."""
-    delay, longest = delay_s
-    while not stop.is_set():
-        started = time.monotonic()
-        try:
-            sync.serve_forever()
-            return
-        except Exception:
-            if time.monotonic() - started >= longest:
-                delay = delay_s[0]
-            logger.exception("pull requests: the poller crashed; restarting in %.0fs", delay)
-        # adr-exempt: retry
-        stop.wait(delay)
-        delay = min(delay * 2, longest)
 
 
 def _main_green(config: Config, pins: GitHub) -> MainGreen | None:
@@ -84,16 +56,17 @@ def start_delivery(
     stop: StopEvent,
     *,
     after_project: Callable[[], None] | None = None,
-) -> tuple[TaskActor | None, PullSync | None]:
-    """Start the Delivery context: the task actor, the pull store's sync with the projection it feeds, and the
-    unblock of dependents, as `config` asks. Returns the actor and the sync, each None when not started.
+) -> tuple[TaskActor | None, Callable[[], None] | None]:
+    """Start the Delivery context: the task actor, the projection of the pull store to the Board, and the unblock of
+    dependents, as `config` asks. Returns the actor and the projection's ask (call it when the store changed), each None
+    when not started.
 
     The actor records the lane of each write it makes on `feed` (`BoardFeed.record_written`); `after_project` runs
     after each set of pull request rows reaches the feed. Raises `ValueError` naming a table the board cannot serve.
     """
     from starpulse.pulls.application.commands.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
 
-    # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
+    # a config can turn the store off, and a task then carries no PR state
     release = config.release
     live = LiveBuild(release.repo, running_commit) if release and release.settle == "release" else None
     actor = None
@@ -138,8 +111,8 @@ def start_delivery(
             actor.holder_settled, log, stop, actor.indexed, actor.working, actor.holder_ended, actor.holder_entered
         )
     lane_events.follow_entered(board.entered, log, stop)
-    sync = None
-    if config.pull_requests and shutil.which("gh"):
+    projected = None
+    if config.pull_requests:
         pull_requests = PullRequests(
             feed,
             pulls,
@@ -153,10 +126,10 @@ def start_delivery(
         if actor:  # the actor reads each save at once and the pins after each projection
             pulls.subscribe(actor.store_changed)
             project = _then(actor.timed_projection(project), actor.pulls_changed)
-        sync = PullSync(pulls, feed, config.repos, project=project, stop=stop)
-        feed.reconcilers["pulls"] = sync.reconcile
-        threading.Thread(target=keep_polling, args=(sync, stop), name="pull-reader", daemon=True).start()
+        # one projection once the Board replay is done, so it sees every task, then one for each event that changed a
+        # record: the pin walk behind it can take minutes, so it runs on a thread of its own
+        projected = coalesced(stop, project, "pull-project", after=feed.wait_replayed)
     if config.release is not None:
         if config.board_type != "native" or not (feed.roles.waiting and feed.roles.ready):
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
-    return actor, sync
+    return actor, projected

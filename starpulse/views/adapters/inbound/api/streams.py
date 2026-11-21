@@ -29,6 +29,20 @@ logger = logging.getLogger(__name__)
 
 #: Seconds a stream refused for a full stream pool is asked to wait before it reconnects.
 _STREAM_RETRY_S = 5
+#: Reads of the snapshot a stream tries to attach to before it refuses (a 503) instead of spinning a thread.
+_ATTACH_READS = 8
+
+
+class Unattachable(Exception):
+    """No stored snapshot's deltas could be attached to: the caller answers 503 and the page retries."""
+
+
+def _attach(attempt: Callable[[], Any]) -> Any:
+    """`attempt`'s result once it attaches (not None), within `_ATTACH_READS` tries; `Unattachable` after that."""
+    for _ in range(_ATTACH_READS):
+        if (attached := attempt()) is not None:
+            return attached
+    raise Unattachable
 
 
 #: A comment frame, sent while a stream is idle: a closed page fails the write of it, which ends the stream.
@@ -144,17 +158,24 @@ class Streams:
     def _admitted(self, request: Request, open_stream: Callable[[], Stream | Response]) -> Response:
         if not request.scope[PLACE].take():
             return answer(request, _error("too many open streams; retry shortly"), 503, retry_after=_STREAM_RETRY_S)
-        stream = open_stream()
+        try:
+            stream = open_stream()
+        except Unattachable:
+            request.scope[PLACE].give()
+            return answer(request, _error("the Board is still settling; retry shortly"), 503, retry_after=_STREAM_RETRY_S)
         return Events(request, stream) if isinstance(stream, Stream) else stream
 
     def _events(self, by_ref: bool) -> Stream:
         """The Board's snapshot, then each change as it happens. `by_ref` sends the snapshot as `ref <path>`, the path its
         body is read from: a browser reads a long event on its main thread, a fetched body off it."""
-        while True:
+        encoded = None
+
+        def attempt() -> tuple | None:  # else the deltas past that body were pruned: read the newer one stored
+            nonlocal encoded
             seq, encoded = self._snapshots.stored()
-            if (attached := self._snapshots.watch_from(seq)) is not None:
-                break  # else the deltas past that body were pruned: read the newer one stored
-        missed, changes = attached
+            return self._snapshots.watch_from(seq)
+
+        missed, changes = _attach(attempt)
         key = self._snapshots.hold(encoded) if by_ref else None
         first = f"ref /api/events/body/{key}" if key is not None else encoded.body.decode()
 
@@ -213,9 +234,14 @@ class Streams:
         then again each time a change alters that view. A burst of changes settles before one reread, and the streams
         that reread for a change read one build of the columns."""
         served = self._column_views.take(self._snapshots)
-        while (attached := self._snapshots.watch_from(served.seq)) is None:
-            served = self._column_views.take(self._snapshots)
-        missed, changes = attached
+
+        def attempt() -> tuple | None:
+            nonlocal served
+            if (attached := self._snapshots.watch_from(served.seq)) is None:
+                served = self._column_views.take(self._snapshots)
+            return attached
+
+        missed, changes = _attach(attempt)
         if missed:  # the view must include what was published after the snapshot it started from
             served = self._column_views.take(self._snapshots)
         return Stream(

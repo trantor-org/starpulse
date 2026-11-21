@@ -24,7 +24,6 @@ from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.adapters.lane_metrics import metrics_of as lane_metrics_of
 from starpulse.board.adapters.lane_policy import lane_surfaces
 from starpulse.board.adapters.native import DEFAULT_PATH
-from starpulse.board.model.feed.shared import CLAIM_EXPIRIES_STATE
 from starpulse.bridge.metrics import metrics_of as bridge_metrics_of
 from starpulse.bridge.subjects import CHECKPOINT, STREAMS
 from starpulse.event_log.caught_up import CaughtUp
@@ -41,10 +40,7 @@ from starpulse.pulls.adapters.inbound.delivery import (
     actor_views_of,
     metrics_of,
     refresh_on_save,
-    request_refresh,
 )
-from starpulse.pulls.adapters.inbound.pull_refresh import PullRefresh
-from starpulse.pulls.adapters.outbound.pull_store import PullSync
 from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
 from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
@@ -55,6 +51,7 @@ from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
 from starpulse.views.adapters.inbound.asgi_app import page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.inbound.snapshots import Snapshots
+from starpulse.flow_metrics.adapters.completion_steps import metrics_of as completion_steps_metrics_of
 from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.adapters.outbound.storage_metrics import cached, storage_exposition
@@ -82,6 +79,7 @@ class Host:
     history_store: Callable[..., Any]
     contract: Callable[..., Any]
     readiness: Callable[..., Callable[[], dict[str, Any]]]
+    github_metrics: Callable[..., Callable[[], str]]
     probes: Any
     static: Path
     listen_fd_env: str
@@ -123,7 +121,7 @@ def serve_page(
     from starpulse.pulls.adapters.outbound.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.views.model.encoding import encode_snapshot  # noqa: PLC0415 - the database stack loads after the config is accepted
 
-    refresh_token, starts, reruns, run_safe, producer_tokens, opted_in = ready
+    starts, reruns, run_safe, producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()
     port = listening.getsockname()[1]
     # Every reader keeps its own cursor over the one event log, so a second copy on another port sees every entry too.
@@ -149,13 +147,10 @@ def serve_page(
     feed.ready.set()
     # no follower runs in this process: what the workers keep in the log is applied when a request reads it (`CaughtUp`)
     caught_up = CaughtUp(log)
-    # `starpulse worker board` dates when each task's Start Criteria were met and when each claim expires and pushes both
-    # to the log, and keeps the claim refusals and verdicts as the deltas a stream replays
-    caught_up.state(CLAIM_EXPIRIES_STATE, lambda: feed.serve_expiries(store.claim_expiries()))
+    # `starpulse worker board` keeps the claim refusals and verdicts as the deltas a stream replays
     saved_after = log.head() or 0  # before the store loads: a save between the two is announced past it
     pulls = PullStore(log.engine)
     caught_up.entries(SAVED_STREAM, refresh_on_save(pulls), saved_after)
-    pull_refresh = None
     actor_metrics = actor_view = None
     # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its
     # projection and asks it
@@ -174,8 +169,6 @@ def serve_page(
     if config.task_actor:
         actor_metrics = metrics_of(log)
         actor_view = actor_views_of(log)
-    if refresh_token:
-        pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
     host.announce(port)
     from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
 
@@ -201,7 +194,6 @@ def serve_page(
         search=search,
         analytics=config.analytics,
         answers=Answers(log.engine),
-        pull_refresh=pull_refresh,
         take_over=command_take_over(config.take_over_command) if config.take_over_command else None,
         webhook=command_webhook(config.webhook_command, os.environ[config.webhook_token_env or ""])
         if config.webhook_command
@@ -222,9 +214,11 @@ def serve_page(
         ),
         sweeper_metrics=sweeper_metrics_of(log),
         bridge_metrics=bridge_metrics_of(log),
+        completion_steps_metrics=completion_steps_metrics_of(log),
         history_lag_metrics=history_lag_metrics_of(log),
         follower_lag_metrics=follower_lag_metrics_of(log, CHECKPOINT, STREAMS),
         child_cpu_metrics=child_cpu_metrics_of(log),
+        github_metrics=host.github_metrics(config, base),
         autopilot_log=lambda: autopilot_log(log),
     )
     snapshots = Snapshots(SnapshotStore(log.engine, encode_snapshot), log, stop)

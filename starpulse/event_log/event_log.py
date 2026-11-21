@@ -136,9 +136,10 @@ def _watch_commits(
         try:
             if connection is None:
                 connection = sqlite3.connect(database, timeout=_SQLITE_BUSY_TIMEOUT, isolation_level=None)
-            elif woken:
+            if woken or not healthy:
                 # The watch fires on the write to the `-wal` file, before the writer publishes the commit in the shared
                 # index (a memory-mapped write the watch cannot see): taking the write lock waits for that commit to end.
+                # A baseline read after a failed check waits too, or it predates a commit the watch already announced.
                 connection.execute("BEGIN IMMEDIATE")
                 connection.execute("ROLLBACK")
             current = connection.execute("PRAGMA data_version").fetchone()[0]
@@ -240,6 +241,7 @@ class EventLog:
         self.url = url
         self._fallback_interval = fallback_interval
         self._engine = engine
+        self._unpooled: Engine | None = None
         self._ready = False
         self._listening = False  # the listeners go on once, however many opens a refused store takes
         self._lock = threading.Lock()
@@ -291,9 +293,13 @@ class EventLog:
         """Keep `value` under `key`, replacing what was there, stamped now or at `updated_at`. Raises on a database
         error."""
         engine = self.engine
+        with self._lock:
+            if self._unpooled is None:
+                self._unpooled = unpooled_engine(engine)  # a checkpoint is megabytes, so no pooled connection keeps one
+            writer = self._unpooled
         now = time.time() if updated_at is None else updated_at
         upsert = sqlite.insert(settings).values(key=key, value=value, updated_at=now)
-        with engine.begin() as db:
+        with writer.begin() as db:
             db.execute(
                 upsert.on_conflict_do_update(index_elements=[settings.c.key], set_={"value": value, "updated_at": now})
             )

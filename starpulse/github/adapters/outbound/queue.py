@@ -1,23 +1,26 @@
 """The `github_inbox_state` table and the SQLAlchemy `Queue` of one consumer over it.
 
 A row is one delivery's state for one consumer: `pending` until it is `done`, `skipped` (nothing to do) or `dead` (the
-operator requeues or dismisses it). A delivery the consumer has not seen has no row; `claim` makes it one.
+operator requeues or dismisses it). A delivery the consumer has not seen has no row; `claim` makes it one, for the
+deliveries above the consumer's oldest row. A consumer with no row starts at the newest delivery, which gets a `skipped`
+row as its anchor, or at the newest `backfill` deliveries when it declares a cap.
 """
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
+from typing import NamedTuple
 
-from sqlalchemy import Column, Float, Index, Integer, String, Table, and_, delete, exists, func, literal, select, update
-from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy import Column, Float, Index, Integer, String, Table, and_, delete, exists, func, literal, or_, select, update
 from sqlalchemy.engine import Engine
 
+from starpulse.github.adapters.outbound.inbox import INSERTS
 from starpulse.github.adapters.outbound.inbox import github_inbox as inbox
 from starpulse.github.adapters.outbound.inbox import metadata
 from starpulse.github.model.delivery import Delivery
 from starpulse.github.model.events import BUDGET, RETENTION, backoff
 from starpulse.github.ports.events import Entry
 
-__all__ = ["SqlQueue", "github_inbox_state"]
+__all__ = ["Backlog", "SqlQueue", "backlogs", "github_inbox_state"]
 
 #: Inbox ids one seeding transaction covers.
 _SEED_WINDOW = 500
@@ -35,17 +38,57 @@ github_inbox_state = Table(
     Index("ix_github_inbox_state_due", "consumer", "status", "next_attempt_at"),
 )
 state = github_inbox_state.c
-_INSERTS = {"sqlite": sqlite.insert, "postgresql": postgresql.insert}
 _SEED = ["delivery_id", "consumer", "status", "attempts", "next_attempt_at", "updated_at"]
 
 
-class SqlQueue:
-    """The deliveries of `consumer`: claim the due ones, then complete, skip or fail each."""
+class Backlog(NamedTuple):
+    """One consumer's rows: how many wait, how long the oldest due one has, and how many are dead."""
 
-    def __init__(self, engine: Engine, consumer: str, clock: Callable[[], float] = time.time) -> None:
-        self._engine, self._consumer, self._clock = engine, consumer, clock
-        self._insert = _INSERTS[engine.dialect.name]
+    pending: int
+    oldest_due_s: float
+    dead: int
+
+
+def backlogs(engine: Engine, clock: Callable[[], float] = time.time) -> dict[str, Backlog]:
+    """Every consumer's `Backlog`, read in one pass over the due index."""
+    with engine.connect() as db:
+        rows = db.execute(
+            select(state.consumer, state.status, func.count(), func.min(state.next_attempt_at)).group_by(
+                state.consumer, state.status
+            )
+        ).all()
+    now = clock()
+    found: dict[str, Backlog] = {}
+    for consumer, status, count, earliest in rows:
+        pending, oldest, dead = found.get(consumer, Backlog(0, 0.0, 0))
+        found[consumer] = (
+            Backlog(count, max(0.0, now - earliest), dead)
+            if status == "pending"
+            else Backlog(pending, oldest, count)
+            if status == "dead"
+            else Backlog(pending, oldest, dead)
+        )
+    return found
+
+
+class SqlQueue:
+    """The deliveries of `consumer`: claim the due ones, then complete, skip or fail each. `backfill` is the most
+    earlier deliveries its first claim takes; none by default. A due delivery whose `(event, action)` is in `urgent` is
+    claimed ahead of every older one."""
+
+    def __init__(
+        self,
+        engine: Engine,
+        consumer: str,
+        clock: Callable[[], float] = time.time,
+        backfill: int = 0,
+        urgent: Collection[tuple[str, str]] = (),
+    ) -> None:
+        self._engine, self._consumer, self._clock, self._backfill = engine, consumer, clock, backfill
+        self._insert = INSERTS[engine.dialect.name]
         self._seeded = 0  # the newest inbox id this queue has seeded: a claim looks only past it
+        self._floor: int | None = None  # the oldest inbox id the consumer holds a row for: a claim seeds only past it
+        self._urgent = or_(*(and_(inbox.c.event == event, inbox.c.action == action) for event, action in urgent)) if urgent else None
 
     def _mine(self, delivery_id: str):  # noqa: ANN202
         return and_(state.delivery_id == delivery_id, state.consumer == self._consumer)
@@ -54,6 +97,24 @@ class SqlQueue:
         where = self._mine(delivery_id) if only is None else and_(self._mine(delivery_id), state.status == only)
         with self._engine.begin() as db:
             return db.execute(update(github_inbox_state).where(where).values(updated_at=self._clock(), **values)).rowcount == 1
+
+    def _start(self, now: float) -> int:
+        """The inbox id the consumer's oldest row holds, which is the newest delivery (or the newest `backfill`) for a
+        consumer with no row: the empty inbox starts it at 0."""
+        own = select(func.min(inbox.c.id)).join(github_inbox_state, state.delivery_id == inbox.c.delivery_id)
+        with self._engine.connect() as db:
+            floor = db.execute(own.where(state.consumer == self._consumer)).scalar_one()
+        if floor is None and self._floor is None:
+            newest = select(inbox.c.id, inbox.c.delivery_id).order_by(inbox.c.id.desc()).limit(self._backfill or 1).subquery()
+            status = "pending" if self._backfill else "skipped"
+            head = select(newest.c.delivery_id, literal(self._consumer), literal(status), literal(0), literal(now), literal(now)).where(
+                newest.c.id > 0  # SQLite reads `ON CONFLICT` after a bare `FROM` as a join
+            )
+            with self._engine.begin() as db:
+                db.execute(self._insert(github_inbox_state).from_select(_SEED, head).on_conflict_do_nothing())
+                floor = db.execute(select(func.coalesce(func.min(newest.c.id), 0))).scalar_one()
+        self._floor = self._floor if floor is None else floor
+        return self._floor or 0
 
     def claim(self, limit: int = 100) -> list[Entry]:
         now = self._clock()
@@ -72,6 +133,7 @@ class SqlQueue:
         # An inbox that lost its newest rows reuses their ids.
         sqlite_db = self._engine.dialect.name == "sqlite"
         after = self._seeded if sqlite_db and self._seeded <= seeded else 0
+        after = max(after, self._start(now) if after == 0 else self._floor or 0)
         # A seed holds SQLite's one write lock while it scans: a first claim over a multi-GB inbox took over a minute and
         # dropped the listener's saves, so a window of ids is one transaction and the listener writes between windows.
         window = _SEED_WINDOW if sqlite_db else max(seeded - after, 1)
@@ -82,10 +144,14 @@ class SqlQueue:
             with self._engine.begin() as db:
                 db.execute(self._insert(github_inbox_state).from_select(_SEED, unseen).on_conflict_do_nothing())
         with self._engine.connect() as db:
-            rows = db.execute(due).all()
+            # an urgent delivery waits behind no backlog: the batch holds it alone, and the next claim the older ones
+            rows = db.execute(due.where(self._urgent)).all() if self._urgent is not None else []
+            rows = rows or db.execute(due).all()
         self._seeded = seeded
         return [
-            Entry(Delivery(row.delivery_id, row.event, row.action, row.repository, bytes(row.body)), row.attempts)
+            Entry(
+                Delivery(row.delivery_id, row.event, row.action, row.repository, bytes(row.body)), row.attempts, row.received_at
+            )
             for row in rows
         ]
 
@@ -128,12 +194,25 @@ class SqlQueue:
         """Skip a dead row for good, keeping its last error; `False` for a row that is not dead."""
         return self._set(delivery_id, only="dead", status="skipped")
 
-    def dead_counts(self) -> dict[str, int]:
-        with self._engine.connect() as db:
-            dead = db.execute(
-                select(func.count()).where(state.consumer == self._consumer, state.status == "dead")
-            ).scalar_one()
-        return {self._consumer: dead}
+    def retire(self, before: float, window: int = 5000) -> int:
+        """Skip this consumer's pending deliveries never tried and saved before `before`, `window` rows a transaction:
+        a backlog the consumer would only claim to refresh pull requests already read since. An urgent delivery stays
+        pending, so a merge the backlog holds still moves its task. The count skipped."""
+        untried = and_(state.consumer == self._consumer, state.status == "pending", state.attempts == 0)
+        old = select(inbox.c.delivery_id).where(inbox.c.received_at < before)
+        old = old if self._urgent is None else old.where(~self._urgent)
+        retired = 0
+        while True:  # one window a transaction, so the listener saves between them
+            ids = select(state.delivery_id).where(untried, state.delivery_id.in_(old)).limit(window).scalar_subquery()
+            with self._engine.begin() as db:
+                count = db.execute(
+                    update(github_inbox_state)
+                    .where(untried, state.delivery_id.in_(ids))
+                    .values(status="skipped", last_error="retired: backlog", updated_at=self._clock())
+                ).rowcount
+            retired += count
+            if count < window:
+                return retired
 
     def purge(self) -> None:
         """Delete the done and skipped rows older than `RETENTION`, and the inbox rows no other row still needs.

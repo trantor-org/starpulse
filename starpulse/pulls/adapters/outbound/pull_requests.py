@@ -1,7 +1,7 @@
 """Each open task's pull requests, projected from the PR store and carried in the snapshot.
 
 The Board's tasks cite their pull requests as links; nothing on the projection says whether a PR's checks pass,
-whether it merged or how many review threads are open. The PR store (`pull_store`) is the one reader of GitHub: it
+whether it merged or how many review threads are open. The PR store (`pulls`), a projection of GitHub's webhook deliveries,
 keeps, for each pull request, those facts and the detail the Board needs beside them (merge commit and time, commits
 behind main, changed files and the CI history). `PullRequests` reads the records of the PRs open tasks cite from the
 store, never from GitHub, and keeps them in the feed so a snapshot is served from memory. For the pin bumps of
@@ -9,10 +9,8 @@ store, never from GitHub, and keeps them in the feed so a snapshot is served fro
 event lands, so `stale` is always false; its `fetchedAt` is the time of the last event that touched it.
 """
 
-import json
 import logging
 import re
-import subprocess
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
@@ -29,7 +27,6 @@ if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
 
 logger = logging.getLogger(__name__)
 
-_GH_TIMEOUT_S = 30
 PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 _TASK_ID = re.compile(r"task-\d+")
 DEFAULT_BASE = "main"
@@ -89,40 +86,31 @@ def merged(store: PullStore, agent: dict[str, Any]) -> bool:
     return False
 
 
-class GhUnavailableError(Exception):
-    """GitHub could not be read: GitHub refused, timed out or answered something unreadable."""
+def coalesced(
+    stop: StopEvent, work: Callable[[], None], name: str, after: Callable[[], object] | None = None
+) -> Callable[[], None]:
+    """A callback that has a thread of its own run `work` until `stop`, asks made meanwhile coalescing into one run, and
+    a failure of `work` logged, never ending the thread. With `after`, the thread waits for it first and then runs
+    `work` once without an ask."""
+    wake = threading.Event()
+    stop.listen(wake.set)
 
+    def run() -> None:
+        if after:
+            after()
+        while not stop.is_set():
+            wake.wait()
+            wake.clear()
+            if not stop.is_set():
+                try:
+                    work()
+                except Exception:
+                    logger.exception("pull requests: %s failed", name)
 
-def query_github(repo: str, query: str) -> dict:
-    """The `repository` node `query` (one `gh api graphql` request about `repo`, which names `$owner` and `$name`) returns.
-
-    The request's `rateLimit` cost is logged. Raises `GhUnavailableError` when `gh` fails or answers nothing readable.
-    """
-    owner, name = repo.split("/")
-    # the query rides stdin: a many-PR query outgrows the 128 KB limit on one argument
-    body = json.dumps({"query": query, "variables": {"owner": owner, "name": name}})
-    try:
-        result = subprocess.run(
-            ["gh", "api", "graphql", "--input", "-"], input=body, capture_output=True, text=True, timeout=_GH_TIMEOUT_S
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise GhUnavailableError(str(exc)) from exc
-    try:  # gh exits non-zero for a PR GraphQL cannot find but still prints the others, so read before judging the exit
-        data = json.loads(result.stdout)["data"]
-        repository = data["repository"]
-    except (ValueError, KeyError, TypeError) as exc:
-        raise GhUnavailableError(result.stderr.strip() or f"gh exited {result.returncode}") from exc
-    if rate := data.get("rateLimit"):
-        logger.info(
-            "pull requests: %s query cost %s, remaining %s, resets %s",
-            repo,
-            rate.get("cost"),
-            rate.get("remaining"),
-            rate.get("resetAt"),
-        )
-    if repository is None:
-        raise GhUnavailableError(f"{repo} is not readable")
-    return repository
+    if after:
+        wake.set()
+    threading.Thread(target=run, name=name, daemon=True).start()
+    return wake.set
 
 
 class CiRecorder(Protocol):
@@ -180,18 +168,7 @@ class PullRequests:
         """A callback that has a thread of its own run `rebuild` until `stop`, asks made meanwhile coalescing into one
         run: the store's saving thread never waits behind the feed's lock, which a read of the Board can hold through
         a database read, so a save lands at once and the rows follow."""
-        wake = threading.Event()
-        stop.listen(wake.set)
-
-        def run() -> None:
-            while not stop.is_set():
-                wake.wait()
-                wake.clear()
-                if not stop.is_set():
-                    self.rebuild()
-
-        threading.Thread(target=run, name="pull-rebuild", daemon=True).start()
-        return wake.set
+        return coalesced(stop, self.rebuild, "pull-rebuild")
 
     def _rows(self) -> tuple[dict[str, list[str]], dict[str, dict]]:
         """Replace the rows by the store's records and publish them; the cited links and records they came from."""
@@ -254,7 +231,11 @@ class PullRequests:
         if self._trail:
             self._trail.record(
                 {
-                    task: [parse(url, stored[url]["detail"]["ci"], stored[url]["headRefOid"]) for url in prs if url in stored]
+                    task: [
+                        parse(url, stored[url]["detail"]["ci"], stored[url]["headRefOid"])
+                        for url in prs
+                        if url in stored
+                    ]
                     for task, prs in wanted.items()
                 }
             )

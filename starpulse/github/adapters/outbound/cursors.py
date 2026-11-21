@@ -3,10 +3,9 @@
 from dataclasses import dataclass
 
 from sqlalchemy import Column, String, Table, select
-from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import Engine
 
-from starpulse.github.adapters.outbound.inbox import metadata
+from starpulse.github.adapters.outbound.inbox import INSERTS, metadata
 
 __all__ = ["Cursor", "SqlCursors", "github_reconcile_state"]
 
@@ -17,7 +16,6 @@ github_reconcile_state = Table(
     Column("cursor", String, nullable=False),
     Column("etag", String, nullable=True),
 )
-_INSERTS = {"sqlite": sqlite.insert, "postgresql": postgresql.insert}
 
 
 @dataclass(frozen=True)
@@ -33,7 +31,7 @@ class SqlCursors:
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
-        self._insert = _INSERTS[engine.dialect.name]
+        self._insert = INSERTS[engine.dialect.name]
 
     def get(self, name: str) -> Cursor | None:
         with self._engine.connect() as db:

@@ -6,7 +6,8 @@ to the `github_inbox` table before it answers; without it no listener runs.
 - `secret_env`: the name of the environment variable that holds the App's webhook secret (required; the secret itself
   never goes in the config).
 - `organisation`, `repositories`: whose deliveries are saved, an owner and `owner/name` entries; at least one is required.
-- `database_url`: the inbox's database (default a SQLite file `github.sqlite` beside the config).
+- `inbox_files`: a glob for the old inbox database files that `starpulse migrate` copies into the store once (default none); the
+  inbox itself lives in the store the config's `database_url` names.
 - `max_body_bytes`: the largest body accepted (default 5 MiB).
 - `host`, `port`: where to bind (default `127.0.0.1:8767`; a container that publishes the port needs a wider host).
 - `reconcile_token_env`: the name of the environment variable that holds a GitHub token able to read the App's deliveries
@@ -18,7 +19,7 @@ from dataclasses import dataclass
 
 __all__ = ["GitHub", "GitHubConfigError", "parse_github"]
 
-_KEYS = {"secret_env", "organisation", "repositories", "database_url", "max_body_bytes", "host", "port", "reconcile_token_env"}
+_KEYS = {"secret_env", "organisation", "repositories", "inbox_files", "max_body_bytes", "host", "port", "reconcile_token_env"}
 
 
 class GitHubConfigError(ValueError):
@@ -30,7 +31,7 @@ class GitHub:
     secret_env: str
     organisation: str | None = None
     repositories: tuple[str, ...] = ()
-    database_url: str | None = None
+    inbox_files: str | None = None
     max_body_bytes: int = 5 * 1024 * 1024
     host: str = "127.0.0.1"
     port: int = 8767
@@ -79,7 +80,7 @@ def parse_github(raw: object) -> GitHub | None:
         secret_env=secret_env,
         organisation=organisation,
         repositories=tuple(listed),
-        database_url=_text(raw, "database_url"),
+        inbox_files=_text(raw, "inbox_files"),
         max_body_bytes=_whole(raw, "max_body_bytes", defaults.max_body_bytes),
         host=_text(raw, "host") or defaults.host,
         port=_whole(raw, "port", defaults.port, 65535),

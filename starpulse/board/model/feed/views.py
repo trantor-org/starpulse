@@ -62,7 +62,7 @@ class ViewMethods:
         return [self._hot_agent(summary, summary["id"] in ready) for summary in summaries]
 
     def _hot_agent(self, summary: dict, ready: bool) -> dict:
-        return self._expiring(
+        return (
             summary_agent(summary, ready, self._read_model_moves(summary), self._default_profiles)
             | read_model_detail(summary, self._roles.attention)
             | self._read_model_readable(summary)

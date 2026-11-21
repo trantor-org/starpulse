@@ -56,8 +56,6 @@ export interface KanbanTask {
   released: boolean;
   /** The claim the sweeper released from the task, which left it unheld; absent or null when none ended the claim. */
   release?: ClaimRelease | null;
-  /** When a held task's claim expires, epoch seconds; absent or null when the task is unheld, not working or before the first sweep pass. */
-  claimExpiresAt?: number | null;
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
   moves: Record<string, Move>;
   /** When the task entered its column, epoch seconds; 0 when the server gave no time. */
@@ -230,28 +228,18 @@ export const unheld = (t: KanbanTask, roles: Roles) => t.lane === roles.working 
 export const unheldShown = (tasks: KanbanTask[], roles: Roles, prefs: Prefs) =>
   tasks.filter((t) => unheld(t, roles) && !prefs.hiddenTasks.has(t.id) && !prefs.hiddenMilestones.has(t.milestone) && filtered(t, prefs));
 
-/** A held claim this close to its expiry draws its minutes left, in seconds. */
-const NEAR = 600;
-
-/** What the footer chip says of a working card's claim: a held session's minutes left, or how long the claim has sat idle since it expired, its session struck once released. */
-export type ClaimChip =
-  | { kind: "near"; session: string; minutes: number }
-  | { kind: "idle"; session: string; released: boolean; age: string };
+/** What the footer chip says of a working card whose claim ended: its struck session and how long the task has sat idle. */
+export type ClaimChip = { session: string; age: string };
 
 /** How long a claim has sat idle, counting up by the minute: "<1m", "1m", "2m". */
 export const idleAge = (seconds: number) => (seconds < 60 ? "<1m" : ago(seconds));
 
-/** The claim state a working card's footer chip adds to its assignee; null draws the chip as it is for any other card. */
+/** The idle claim a working card's footer chip adds to its assignee; null draws the chip as it is for any other card. */
 export function claimChip(t: KanbanTask, roles: Roles, now: number): ClaimChip | null {
-  if (t.lane !== roles.working) return null;
-  if (unheld(t, roles)) {
-    const r = t.release;
-    // a swept claim went idle when its TTL ran out, before the sweep that released it; an idle reap has no TTL to run out
-    return r ? { kind: "idle", session: r.session, released: true, age: idleAge(now - (r.ttl ? r.last_renewal + r.ttl : r.at)) } : null;
-  }
-  const left = t.claimExpiresAt == null ? Infinity : t.claimExpiresAt - now;
-  if (left <= 0) return { kind: "idle", session: t.assignee, released: false, age: idleAge(-left) };
-  return left < NEAR ? { kind: "near", session: t.assignee, minutes: Math.ceil(left / 60) } : null;
+  const r = t.release;
+  if (t.lane !== roles.working || !unheld(t, roles) || !r) return null;
+  // a swept claim went idle when its TTL ran out, before the sweep that released it; an idle reap has no TTL to run out
+  return { session: r.session, age: idleAge(now - (r.ttl ? r.last_renewal + r.ttl : r.at)) };
 }
 
 const byId = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
@@ -409,7 +397,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", profile: a.profile ?? "", dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs, runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.flow === "ci" ? ciState(latest.state, prs) : latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source, skill: skillOf(sky.flows, latest.flow) } : null,
-      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, claimExpiresAt: a.claim_expires_at ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
+      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       phase: climb(sky, a.id),
       rating: sky.ratings?.[a.id],

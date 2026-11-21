@@ -11,10 +11,11 @@ __all__ = ["Entry", "Head", "Ingest", "Links", "OpenWatch", "Queue", "Reader", "
 
 @dataclass(frozen=True)
 class Entry:
-    """A delivery due for an attempt, with the attempts already spent on it."""
+    """A delivery due for an attempt, with the attempts already spent on it and the time its row was saved."""
 
     delivery: Delivery
     attempts: int
+    received_at: float = 0.0
 
 
 class Stop(Protocol):

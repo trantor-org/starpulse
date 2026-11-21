@@ -393,7 +393,7 @@ Both answer 501 with no telemetry stream, 503 when it cannot be read, and 400 fo
 
 ## Save GitHub webhook deliveries
 
-A `[github]` table (`secret_env`, `organisation` or `repositories`, `database_url`, `max_body_bytes`, `host`, `port`, `reconcile_token_env`; see
+A `[github]` table (`secret_env`, `organisation` or `repositories`, `inbox_files`, `max_body_bytes`, `host`, `port`, `reconcile_token_env`; see
 [Serving](serving.md)) makes `serve` run a listener in the `contexts` child for a GitHub App's webhook. Without the
 table none runs. Point the App's webhook URL at the listener, set its secret in the environment variable `secret_env`
 names, and the listener answers each POST in this order:
@@ -407,8 +407,9 @@ names, and the listener answers each POST in this order:
    the answer is 202. A delivery already saved is 202 too, and adds no row.
 5. A commit that fails is 503, so GitHub keeps the delivery as failed.
 
-The inbox is its own database (`database_url`, SQLite `github.sqlite` beside the config by default), never the event
-store. If the variable `secret_env` names is unset or empty, or the address is taken, the `github` context fails to
+The inbox lives in the main store (the `github_inbox`, `github_inbox_state` and `github_reconcile_state` tables, created by
+its chain). With `inbox_files` (a glob for the old inbox database files) `starpulse migrate` copies their rows into the
+store once and leaves the files. If the variable `secret_env` names is unset or empty, or the address is taken, the `github` context fails to
 start, and the `contexts` process logs why and retries it with the usual backoff; no request is answered meanwhile.
 
 `GET /metrics` on the listener serves `starpulse_github_deliveries_total{event,verdict}` for Prometheus, with the
@@ -441,9 +442,19 @@ absent or fails to start, and the inbox keeps every delivery.
 5. Done and skipped rows are purged after 7 days, with the inbox rows no consumer still needs.
 6. `starpulse github requeue|dismiss <delivery_id> [--config]` settles a dead row: `requeue` makes it pending with its
    attempts spent anew, `dismiss` skips it and keeps its last error. A row that is not dead exits 1.
+7. `starpulse github retire --before <epoch seconds> [--consumer] [--config]` skips the consumer's pending rows never
+   tried and saved before then, but a `pulls` merge (`pull_request` `closed`), 5,000 rows a transaction, so the listener saves between them: a backlog the consumer
+   would only claim to re-read pull requests the reconcile reads anyway. A merge webhook does not wait on such a
+   backlog: the `pulls` consumer claims a `pull_request` `closed` delivery ahead of every older one.
 
-The listener's `/metrics` also serves `starpulse_github_dead_rows{consumer}`, the dead rows each consumer holds until
-`requeue` or `dismiss` clears them.
+The page's `/metrics` serves, per consumer, `starpulse_github_pending_rows{consumer}`,
+`starpulse_github_oldest_due_seconds{consumer}` (the age of its oldest pending row that is due) and
+`starpulse_github_dead_rows{consumer}`, the dead rows it holds until `requeue` or `dismiss` clears them; the listener's
+own `/metrics` serves the same.
+
+7. A consumer with no row starts at the newest delivery, not the whole inbox: its first claim anchors there with a
+   `skipped` row and every claim seeds only past its oldest own row. `SqlQueue(..., backfill=N)` makes the first claim
+   seed the newest `N` deliveries as `pending` instead; no consumer opts in today.
 
 ### Reconcile the inbox against GitHub
 

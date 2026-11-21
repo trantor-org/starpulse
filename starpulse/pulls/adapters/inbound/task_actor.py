@@ -55,7 +55,7 @@ from starpulse.board.adapters.holder_idle import HARNESS_MACHINE, HolderUnreacha
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import attention_reason, section_set
+from starpulse.board.model.markdown import attention_reason, operator_answered, section_set
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
     COMMENT_CAP,
@@ -101,11 +101,10 @@ PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
 RECOVERY_FINISHED_METRIC = "starpulse_task_actor_recovery_finished"
 MERGED_WAITING_METRIC = "starpulse_task_actor_merged_review_waiting"
 DERIVE_METRIC = "starpulse_task_actor_derive_seconds"
-RESUME_STALLED_METRIC = "starpulse_task_actor_resume_stalled"
 HOLDER_RESUME = "HOLDER_RESUME"
 DONE_HELD = "Held from Done:"
-#: Resumes with no progress between them before the next one escalates.
-_STALLED_RESUMES = 2
+#: Resumes or revives a fault with no progress between gets before the next one moves the task to Needs attention.
+_ONE_TRY = 1
 #: Nudges an idle holder with an open criterion gets before the next idle moves its task to Needs attention.
 _NUDGES = 3
 #: Settles in a row whose resume failed before the task moves to Needs attention.
@@ -123,6 +122,7 @@ BUCKETS_S = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 PROJECTION_METRIC = "starpulse_task_actor_projection_seconds"
 HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 MERGE_MOVE_METRIC = "starpulse_task_merge_move_seconds"
+RECEIPT_DONE_METRIC = "starpulse_task_receipt_done_seconds"
 #: The facts whose write moves a task because its pull requests ended; the merge-to-move histogram observes them.
 _MERGE_FACTS = frozenset({"pr_terminal", "pr_merged", "pr_merged_unfinished"})
 #: Most seconds start recovery waits for the saves and changes pending before it takes its next task, so steady traffic
@@ -277,6 +277,13 @@ class _Histogram:
         ]
 
 
+def _by_claim(
+    fact: Callable[[TaskActor, dict[str, Any]], Any], *, claimed: bool
+) -> Callable[[TaskActor, dict[str, Any]], Any]:
+    """`fact` for the tasks a session claimed or for the rest, so a claimed task never falls through to Ready."""
+    return lambda actor, agent: fact(actor, agent) if bool(agent["assignee"]) == claimed else None
+
+
 class TaskActor:
     """Moves each open task whose lane waits on a fact that holds, once per change of that fact.
 
@@ -421,6 +428,9 @@ class TaskActor:
         self._handoff = _Histogram(SLOW_BUCKETS_S)
         #: Seconds from a pull request's merge to the write that moved the task citing it.
         self._merge_move = _Histogram(SLOW_BUCKETS_S)
+        self._receipt_done = _Histogram(BUCKETS_S)
+        #: The wall time the merge webhook `merge_received` derives was received at; None outside it.
+        self._received: float | None = None
         #: How many store saves, task or move changes and projections wait for the lock or hold it; start recovery takes
         #: its next task only when none does. `_events` is notified each time one ends.
         self._pending = 0
@@ -476,6 +486,9 @@ class TaskActor:
                 *self._merge_move.lines(
                     MERGE_MOVE_METRIC, "Seconds from a pull request's merge to the write that moved its task."
                 ),
+                *self._receipt_done.lines(
+                    RECEIPT_DONE_METRIC, "Seconds from receiving a merge webhook to the write that moved its task."
+                ),
                 f"# HELP {DERIVE_METRIC} Seconds each derivation of a task's waits ran, by lane and whether a board hook ran.",
                 f"# TYPE {DERIVE_METRIC} histogram",
                 *derives,
@@ -487,7 +500,7 @@ class TaskActor:
             ]
         )
 
-    def _held_counts(self) -> tuple[int, int, list[str]] | None:
+    def _held_counts(self) -> tuple[int, int] | None:
         """The series that read the actor's state under its lock (the tasks held for a pin) and the merged Review tasks,
         read after it is released. None when another thread holds the lock past `_LOCK_WAIT_S`: a scrape must answer
         then, since a held lock is what the recovery gauge reports."""
@@ -497,10 +510,7 @@ class TaskActor:
             pin_held = len(self._pin_held)
         finally:
             self._lock.release()
-        return pin_held, self._merged_waiting(), self._stalled_tasks()  # the feed reads hold no lock
-
-    def _stalled_tasks(self) -> list[str]:
-        return sorted(agent["id"] for agent in self._feed.open_tasks() if self._memory.has(agent["id"], "stalled"))
+        return pin_held, self._merged_waiting()  # the feed reads hold no lock
 
     def _merged_waiting(self) -> int:
         counted_at, waiting = self._waiting
@@ -521,10 +531,10 @@ class TaskActor:
         return any(record and record["state"] == "MERGED" for record in records)
 
     @staticmethod
-    def _held_lines(held: tuple[int, int, list[str]] | None) -> list[str]:
+    def _held_lines(held: tuple[int, int] | None) -> list[str]:
         if held is None:
             return []
-        pin_held, waiting, stalled = held
+        pin_held, waiting = held
         return [
             f"# HELP {PIN_HELD_METRIC} Waiting tasks whose dependencies are done but wait for a pin bump to merge.",
             f"# TYPE {PIN_HELD_METRIC} gauge",
@@ -532,9 +542,6 @@ class TaskActor:
             f"# HELP {MERGED_WAITING_METRIC} Review tasks with a merged pull request that have not reached Done, including one whose move was refused.",
             f"# TYPE {MERGED_WAITING_METRIC} gauge",
             f"{MERGED_WAITING_METRIC} {waiting}",
-            f"# HELP {RESUME_STALLED_METRIC} In Progress tasks whose session was resumed twice with no progress, then escalated one profile.",
-            f"# TYPE {RESUME_STALLED_METRIC} gauge",
-            *(f'{RESUME_STALLED_METRIC}{{task="{name}"}} 1' for name in stalled),
         ]
 
     def start(self, stop: StopEvent) -> threading.Thread:
@@ -858,7 +865,7 @@ class TaskActor:
             if before is None or before[0] != now[0]:
                 self._tried.pop(name, None)
                 working = self._feed.roles.working
-                kept: dict[str, Any] = {} if now[0] == working else {"busy": None, "resumes": None, "stalled": None}
+                kept: dict[str, Any] = {} if now[0] == working else {"busy": None, "resumes": None}
                 if before and before[0] == self._review and now[0] == working:
                     own = self._memory.has(name, "own_send_back")
                     kept |= {"sent_back": None if own else self._heads(agent), "own_send_back": None}
@@ -1023,6 +1030,21 @@ class TaskActor:
                 self._store_rev = self._store.rev
                 touched |= self._pin_held
             self._derive_pulled(touched, observed)
+
+    def merge_received(self, received_at: float) -> None:
+        """Re-derive the tasks whose pull requests changed, on the caller's thread: the merge webhook received at
+        `received_at` (wall time) moves its task without waiting on the save follower, a projection or older deliveries.
+        Each merge's move it lands is timed from `received_at`. A failure is logged, never raised to the consumer."""
+        observed = self._clock()
+        try:
+            with self._pressing(), self._lock:
+                self._received = received_at
+                try:
+                    self._derive_pulled(self._read_pulls(), observed)
+                finally:
+                    self._received = None
+        except Exception:
+            logger.exception("task actor: cannot derive the tasks of a merge webhook")
 
     def _read_pulls(self) -> set[str]:
         """The tasks citing a pull request whose state changed since it was last read."""
@@ -1201,53 +1223,47 @@ class TaskActor:
         has work left, so the `idle` hook resumes the same session with its phase machine's next step; the task stays In
         Progress and no clock runs. A settle an awaited event held runs again from the derivation that finds the wait
         ended, as the session that settled may never settle again, unless its holder is at work by then (a lens's end woke it): that
-        holder settles anew. After `_STALLED_RESUMES` resumes with no progress (a phase or submachine event, a
-        new head), the next one is first `escalate`d one profile and flagged on `RESUME_STALLED_METRIC`. An escalate that raises sends no resume and moves the task to
-        Needs attention at once; a flagged task whose session settles again with no progress moves there too, except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A task citing none of its own while an open pull request names it (`uncited`) moves to Needs attention at once, its record being the defect. A `confirm` that
+        holder settles anew. The one resume is the only one: a settle after it with no progress (a phase or
+        submachine event, a new head) moves the task to Needs attention with its session kept and its profile unchanged,
+        except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A task citing none of its own while an open pull request names it (`uncited`) is left as it is, neither resumed nor sent to Needs attention: the merge reconcile cites the pull request. A `confirm` that
         raises (the holder is busy) holds the task: the next move of a machine other than the harness settles it again, and the
         session's own activity ends the hold. A `resume` that fails is sent again at once until `_FAILED_RESUMES` fail, when the
         task moves to Needs attention, as a holder whose resume was lost settles no more; a holder no session can reach is
-        revived as `holder_ended` revives one, and parks only when no session can start."""
+        revived as `holder_ended` revives one, and parks when no session can be reopened."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
             self._memory.keep(name, awaited=None, revive_held=None, busy=None)
             if agent is None or agent["state"] != self._feed.roles.working:
-                self._memory.keep(name, resumes=None, stalled=None)
+                self._memory.keep(name, resumes=None)
                 return
             if self._idle is None:
                 return
             if wait_ended and self._session_active(name):
-                self._memory.keep(name, resumes=None, stalled=None)
+                self._memory.keep(name, resumes=None)
                 return
             if self._awaits(agent):
                 self._memory.keep(name, awaited=True)
                 return
+            answered = "kind-decide" in agent["labels"] and operator_answered(
+                (self._feed.task(name) or {}).get("description", "")
+            )
             own = self._own_prs(agent)
-            if not own and (found := uncited(self._store, agent)):
-                self._attend(
-                    name,
-                    f"it cites no pull request of its own, yet {found[0]} is open and names it",
-                    "has an uncited pull request",
-                    "Which?",
-                    ("cite the pull request on the task", "rescope the task"),
-                )
-                return
+            if not own and uncited(self._store, agent):
+                return  # the delivery is open and the merge reconcile cites it: no input of the operator's is missing
             if own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
                 return
             items = agent.get("criteria", ())
             if opened := open_criteria(items):
                 ticks = tuple(resolved(item) for item in items)
-                self._memory.keep(name, stalled=None)
             else:
                 progress = self._progress(agent)
                 same, count = self._memory.resumes(name, progress)
                 if not same or wait_ended:  # an awaited CI result is the wake, not a settle with no progress
                     count = 0
                     # kept even when `confirm` finds the holder busy
-                    self._memory.keep(name, resumes=self._memory.tally(progress, 0), stalled=None)
-                elif self._memory.has(name, "stalled"):
-                    self._attend(name, "its escalated session settled again with no progress")
-                    return
+                    self._memory.keep(name, resumes=self._memory.tally(progress, 0))
+        if answered:
+            return
         if opened:
             self._nudge(name, opened, ticks, wait_ended)
         else:
@@ -1265,10 +1281,9 @@ class TaskActor:
 
     def holder_ended(self, name: str, wait_ended: bool = False) -> None:
         """A session's process ended. A holder whose task still has work (an open criterion, or a pull request of its own
-        not yet ended) is revived by the `idle` hook's `revive` verdict, which reopens the session in place, else starts one
-        on its profile from the task's checkpoint, and moves the claim to it; the task stays In Progress. A revival is a
-        nudge: the `_NUDGES + 1`th with no progress (a criterion checked, a phase or head change) moves the task to Needs
-        attention, as does a revival no session can serve, naming why. An awaited event holds the revival until it ends. A
+        not yet ended) is revived once by the `idle` hook's `revive` verdict, which reopens the session in place and moves the
+        claim to it; the task stays In Progress. The next loss with no progress (a criterion checked, a phase or head
+        change) moves the task to Needs attention with its session kept, as does a revive that fails, naming why. An awaited event holds the revival until it ends. A
         task with no work left is the settle's (`holder_settled`), and a held revival whose holder is at work again by the time the
         wait ends is dropped."""
         with self._lock:
@@ -1294,11 +1309,11 @@ class TaskActor:
                 return
             key = (tuple(resolved(item) for item in items), self._progress(agent)) if opened else self._progress(agent)
             _, count = self._memory.resumes(name, key)
-            if count >= _NUDGES:
+            if count >= _ONE_TRY:
                 self._memory.keep(name, resumes=None)
                 self._attend(
                     name,
-                    f"its session ended and was revived {_NUDGES} times with no progress",
+                    "its session ended again after its one revive with no progress",
                     "keeps ending",
                     "Which?",
                 )
@@ -1322,26 +1337,19 @@ class TaskActor:
             self._memory.count(name, key, count + 1)
 
     def _resume(self, name: str, progress: tuple[Any, ...], count: int) -> None:
-        escalate = count >= _STALLED_RESUMES
         if not self._confirmed(name):
             return
-        if escalate:
-            try:
-                self._idle(name, "escalate")
-            except Exception as error:
-                logger.warning("task actor: %s flagged stalled without escalation: %s", name, error)
-                with self._lock:
-                    now = self._feed.task(name, lean=True)
-                    if now and now["state"] == self._feed.roles.working and self._progress(now) == progress:
-                        self._memory.keep(name, stalled=True)
-                        self._attend(name, "the escalation to a higher profile failed or no higher profile exists")
-                return
+        if count >= _ONE_TRY:
+            with self._lock:
+                now = self._feed.task(name, lean=True)
+                if now and now["state"] == self._feed.roles.working:
+                    self._memory.keep(name, resumes=None)
+                    self._attend(name, "it settled idle again after its one resume with no progress")
+            return
         if not self._resume_sent(name):
             return
         with self._lock:
-            self._memory.keep(
-                name, resumes=self._memory.tally(progress, 0 if escalate else count + 1), **({"stalled": True} if escalate else {})
-            )
+            self._memory.keep(name, resumes=self._memory.tally(progress, _ONE_TRY))
 
     def _session_active(self, name: str) -> bool:
         placed = self._feed.machine_task(HARNESS_MACHINE, name)
@@ -1365,13 +1373,16 @@ class TaskActor:
         profile = (self._feed.task(name, lean=True) or {}).get("profile")
         with self._lock:
             before = (self._memory.of(name).get("profile") or [profile])[0]
-            self._memory.keep(name, profile=[profile])  # a list, which holds a task with no profile too
-        if before == profile:
-            return
+            if before == profile:
+                self._memory.keep(name, profile=[profile])  # a list, which holds a task with no profile too
+                return
         try:
             self._idle(name, "switch")
         except Exception as error:
             logger.info("task actor: %s profile switch to %s failed: %s", name, profile, error)
+            return  # the note keeps the profile it was last switched to, so the next resume tries again
+        with self._lock:
+            self._memory.keep(name, profile=[profile])
 
     def _resume_sent(self, name: str) -> bool:
         """Send the holder's resume. One that fails is sent again at once, no clock, until `_resume_failed` parks the
@@ -1437,7 +1448,7 @@ class TaskActor:
         why: str,
         what: str = "was resumed with no progress",
         ask: str = "Which?",
-        options: Sequence[str] = ("raise its profile and restart it", "rescope the task"),
+        options: Sequence[str] = ("resume it by hand", "rescope the task"),
     ) -> None:
         agent = self._feed.task(name, lean=True)
         attention = self._feed.roles.attention
@@ -1567,6 +1578,8 @@ class TaskActor:
             self._landed(self._clock() - observed)
             if merged is not None:  # timed at the lane write, ahead of the hooks that tell the board and the holder
                 self._merge_move.observe(max(0.0, self._wall() - merged))
+                if self._received is not None:
+                    self._receipt_done.observe(max(0.0, self._wall() - self._received))
             roles = self._feed.roles
             if source == roles.working and target == roles.waiting:
                 self._notice(self._tell, name, "was parked but its holder was not told")
@@ -1706,7 +1719,8 @@ class TaskActor:
             notifier.join(timeout=_NOTICE_JOIN_S)
 
     def _apply(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
-        with self._feed.recording:  # the board's poll finds the lane recorded under the actor, not as external
+        # the board-files pass finds the lane recorded under the actor; no other task's write holds this one up
+        with self._feed.recording_of(name):
             written = self._edit_retrying(name, changes, comment)
             if written.ok and written.lane:
                 self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, "", ""))
@@ -2192,10 +2206,12 @@ class TaskActor:
         "pr_unfinished_dead": _pr_unfinished_dead,
         "phase_resumed": _phase_resumed,
         "operator_pushback": _operator_pushback,
-        "deps_done": _deps_done,
+        "deps_done": _by_claim(_deps_done, claimed=False),
         "deps_done_with_pr": _deps_done_with_pr,
+        "deps_done_started": _by_claim(_deps_done, claimed=True),
+        "criteria_met_started": _by_claim(_criteria_met, claimed=True),
         "deps_unresolved": _deps_unresolved,
-        "criteria_met": _criteria_met,
+        "criteria_met": _by_claim(_criteria_met, claimed=False),
         "owner_stale": _owner_stale,
         "overdue": _overdue,
     }

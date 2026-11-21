@@ -5,34 +5,45 @@ from collections.abc import Callable, Iterator
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, generate_latest
 from prometheus_client.core import GaugeMetricFamily
 
-__all__ = ["CONTENT_TYPE", "Verdicts"]
+from starpulse.github.adapters.outbound.queue import Backlog
+
+__all__ = ["CONTENT_TYPE", "Backlogs", "Verdicts"]
 
 CONTENT_TYPE = CONTENT_TYPE_LATEST
 
 
-class _DeadRows:
-    """`starpulse_github_dead_rows{consumer}`, read from the queue at each scrape."""
+class Backlogs:
+    """`starpulse_github_{pending_rows,oldest_due_seconds,dead_rows}{consumer}`, read from the queue at each scrape."""
 
-    def __init__(self, counts: Callable[[], dict[str, int]]) -> None:
-        self._counts = counts
+    def __init__(self, backlogs: Callable[[], dict[str, Backlog]]) -> None:
+        self._backlogs = backlogs
 
     def collect(self) -> Iterator[GaugeMetricFamily]:
-        gauge = GaugeMetricFamily(
-            "starpulse_github_dead_rows", "Deliveries a consumer gave up on, until requeued or dismissed", labels=["consumer"]
-        )
-        for consumer, dead in self._counts().items():
-            gauge.add_metric([consumer], dead)
-        yield gauge
+        help_of = {
+            "pending_rows": "Deliveries a consumer has yet to finish",
+            "oldest_due_seconds": "Seconds the oldest due pending delivery has waited",
+            "dead_rows": "Deliveries a consumer gave up on, until requeued or dismissed",
+        }
+        gauges = [GaugeMetricFamily(f"starpulse_github_{name}", text, labels=["consumer"]) for name, text in help_of.items()]
+        for consumer, backlog in self._backlogs().items():
+            for gauge, value in zip(gauges, (backlog.pending, backlog.oldest_due_s, backlog.dead), strict=True):
+                gauge.add_metric([consumer], value)
+        yield from gauges
+
+    def exposition(self) -> str:
+        registry = CollectorRegistry()
+        registry.register(self)
+        return generate_latest(registry).decode()
 
 
 class Verdicts:
     """`starpulse_github_deliveries_total{event,verdict}`: how many POSTs each verdict closed, by event, and
-    `starpulse_github_dead_rows{consumer}` when given the queue's `dead_counts`."""
+    the `Backlogs` gauges when given the queue's `backlogs`."""
 
-    def __init__(self, dead_counts: Callable[[], dict[str, int]] | None = None) -> None:
+    def __init__(self, backlogs: Callable[[], dict[str, Backlog]] | None = None) -> None:
         self._registry = CollectorRegistry()
-        if dead_counts is not None:
-            self._registry.register(_DeadRows(dead_counts))
+        if backlogs is not None:
+            self._registry.register(Backlogs(backlogs))
         self._deliveries = Counter(
             "starpulse_github_deliveries",
             "GitHub webhook deliveries by event and intake verdict",

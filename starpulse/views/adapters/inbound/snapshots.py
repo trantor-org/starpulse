@@ -107,8 +107,11 @@ class Snapshots:
             self._put()
 
     def _put(self) -> None:
-        """Put the deltas the writer stored since the last on every stream open; under `_lock`."""
-        for seq, kind, data in self._store.since(self._head):
+        """Put the deltas the writer stored since the last on every stream open; under `_lock`. A store whose deltas were
+        renumbered below this feed's head (a read model rebuilt under a running API) restarts the head at its own."""
+        if not (deltas := self._store.since(self._head)) and (head := self._store.head()) < self._head:
+            self._head = head
+        for seq, kind, data in deltas:
             self._head = seq
             for stream in self._streams:
                 stream.put((kind, data))

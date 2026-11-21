@@ -35,7 +35,6 @@ from starpulse.board.model.feed.shared import (
     PUSHED_INSTANCE,
     SAVE_DEBOUNCE,
     BoardStore,
-    ExpiriesStore,
     LaneRecorder,
     entry_position,
     logger,
@@ -46,7 +45,6 @@ from starpulse.board.model.feed.views import ViewMethods
 __all__ = [
     "BoardFeed",
     "BoardStore",
-    "ExpiriesStore",
     "FEED_EVENT_RESEND",
     "Followed",
     "InstanceRuns",
@@ -147,11 +145,12 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._strip: dict | None = None
         self._pins: list[dict] = []
         self._lock = threading.RLock()
-        #: Held by `put` from placing a change to recording its lane, by `save` while it copies the Board, and by a
-        #: server write from the board's write to the record of its lane (`writes._record_written`), so a write's actor
-        #: is recorded before the placement of its change is and a saved Board never holds a placed but unrecorded
-        #: change. Taken before `_lock`.
+        #: Held by a server write from the board's write to the record of its lane (`record_write`) and by the
+        #: board-files pass reconciling a task, so the pass never records a write's lane under its own name. Taken before
+        #: `recording_of` and `_lock`.
         self.recording = threading.RLock()
+        #: Each task's `recording_of`, made on first use.
+        self._recording_of: dict[str, threading.RLock] = {}
         #: Set by every publish, for whoever rebuilds a held snapshot on change.
         self.revised = threading.Event()
         #: Held for a whole Ledger build, which runs outside `_lock`, so builds never overlap; taken before `_lock`, never under it.
@@ -173,8 +172,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._pull_answers: dict = {}
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
         self._claims: dict[str, dict] = {}
-        #: Each held working task's claim expiry from the claim-TTL sweep's latest pass, served as `claim_expires_at`.
-        self._expiries: dict[str, float] = {}
         self._subscribers: list[queue.Queue] = []
         #: The pages with a Ledger open: the event each watches and the queue of that event's changed rows.
         self._watchers: list[tuple[str, queue.Queue]] = []

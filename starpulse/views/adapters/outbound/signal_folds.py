@@ -122,7 +122,14 @@ def changed(events: EventLog, after: int, views: Iterable[str], since: float = 0
 class SignalFolds:
     """Folds the signal table's sessions under one `keys` and `analytics`, and reads the folds back by window."""
 
-    def __init__(self, events: EventLog, keys: TaskKeys | None, analytics: Analytics | None) -> None:
+    def __init__(
+        self,
+        events: EventLog,
+        keys: TaskKeys | None,
+        analytics: Analytics | None,
+        completed: Callable[[list[dict[str, Any]]], None] | None = None,
+    ) -> None:
+        self._completed = completed
         self._events = events
         self._engine = events.engine
         self._keys = keys
@@ -154,12 +161,15 @@ class SignalFolds:
             ).all()
         reached = cursor
         failed: list[int] = []
+        finished: set[str] = set()
         for harness, session, first_row, last_row in new:
             reached = max(reached, last_row)
             if self._current(harness, session) >= last_row:
                 continue
+            before = self._completed_tasks(harness, session)
             if self._fold(harness, session):
                 folded += 1
+                finished |= self._completed_tasks(harness, session) - before
             else:
                 failed.append(first_row)
         if new:
@@ -167,7 +177,20 @@ class SignalFolds:
         if rebuilt:
             with self._engine.begin() as db:
                 write_stamp(db, FAMILY, self.stamp)
+        elif finished and self._completed:
+            held = session_health.combine_health(self.window(0.0, ("health",))["health"])
+            self._completed([s for s in session_health.slice_health(held) if s["task"] in finished])
         return folded
+
+    def _completed_tasks(self, harness: str, session: str) -> set[str]:
+        """The tasks the session's stored `health` fold holds as completed; none before it is folded."""
+        with self._engine.connect() as db:
+            result = db.execute(
+                select(signal_folds.c.result).where(
+                    signal_folds.c.view == "health", signal_folds.c.harness == harness, signal_folds.c.session == session
+                )
+            ).scalar()
+        return {row["task"] for row in result or () if row["complete"]}
 
     def window(self, since: float, views: Iterable[str] = tuple(VIEWS)) -> dict[str, list[Any]]:
         """The per-session results of the `views` for the sessions that have a signal at or after `since`, oldest

@@ -63,6 +63,7 @@ CONTEXT_ENTRIES = (
     "starpulse.sessions.adapters.outbound.registry",
     "starpulse.sessions.adapters.outbound.session_start",
     "starpulse.views.model.encoding",
+    "starpulse.flow_metrics.adapters.completion_steps",
     "starpulse.views.adapters.outbound.signal_folds",  # `contexts` imports it late; its fold code sets every fold basis
     _ADAPTER_ENTRY,
 )
@@ -88,7 +89,6 @@ _SERVE_KEYS = (
     "tls_cert",
     "tls_key",
     "mode",
-    "refresh_token_env",
     "github_token_env",
     "take_over_command",
     "webhook_command",

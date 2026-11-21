@@ -1,7 +1,6 @@
 """The PR store as a projection of the lifecycle events our own writers publish on `machine:events`.
 
-Nothing here reads GitHub; an event after which the record may be stale (`_REREADS`: a push, an opening, a body edit) asks `PullSync` to read the pull
-request. A task's events name the task, never the pull request, so each one lands on the pull
+Nothing here reads GitHub. A task's events name the task, never the pull request, so each one lands on the pull
 requests the Board says the task cites (`BoardFeed.cited`); an event of a task that cites none is dropped, except a close
 that names its pull request, which applies to that one (a worker's feed may not yet hold the citation). An event
 patches the fields it causes on the stored record, or on a new one it opens, and dates the record by its own time
@@ -19,9 +18,9 @@ closed: it then applies to that one alone, and to none once the store holds it c
 (`ROLLUP_*` of the `pr-checks` machine) is applied the same way, to the pull request it names, and stored as `{sha, state}`
 whatever the record's age: the board reads a pull request as checks passed only when the rollup of its current head
 says so. A reopen
-(`PR_REOPENED`) is the reverse: it applies to a closed record, never a merged one, by the same naming. A record a manual refresh
-(`POST /api/pulls/refresh`) reads from GitHub carries what the events cannot: head branch, base, body, merge commit and
-changed files.
+(`PR_REOPENED`) is the reverse: it applies to a closed record, never a merged one, by the same naming. A record a webhook delivery
+(`starpulse.pulls.adapters.inbound.pull_deliveries`) writes carries what the events cannot: head branch, base, body,
+merge commit and changed files.
 """
 
 from collections.abc import Callable, Mapping
@@ -155,8 +154,8 @@ _DELTAS: dict[tuple[str, str], Callable[[Record, Mapping[str, Any], float], Reco
 
 _TASK_DELTAS = {
     "PR_READY": lambda *_: {"isDraft": False},
-    # no head: `checks` pending until the re-read; the rollup forgets the replaced head's verdict, so a read of that
-    # head begun before the push and saved after it never reads green again
+    # no head: `checks` pending until the delivery names the new one; the rollup forgets the replaced head's verdict, so a
+    # read of that head begun before the push and saved after it never reads green again
     "PUSHED": lambda _record, _fields, at: {
         "headRefOid": "",
         "requiredChecks": [],
@@ -169,29 +168,20 @@ _DELTAS[REPORTED] = _reported
 for _machine in TASK_MACHINES:
     _DELTAS |= {(_machine, event): delta for event, delta in _TASK_DELTAS.items()}
 
-#: The events after which the head may have moved (or, for `PR_EDITED`, the body changed), and with it the conflicts and the commits behind main: only a read
-#: of GitHub says what the push left, so the record is read once more. A delivery that rebases and force-pushes publishes
-#: `PR_OPENED` (it opens or updates), never `PUSHED`.
-_REREADS = {(machine, event) for machine in TASK_MACHINES for event in ("PUSHED", "PR_OPENED")}
-#: A body edit moves no head, but only a read of GitHub says what the body now holds, and the Review render guard reads it.
-_REREADS.add((GITHUB_MACHINE, "PR_EDITED"))
-
 
 class RecordProjection:
     """Keeps `store`'s records current from the machine events handed to `handle`, calling `changed` after each
-    event that changed one and `refresh` with (repository, number) for each pull request an event may have pushed."""
+    event that changed one."""
 
     def __init__(
         self,
         store: PullStore,
         feed: BoardFeed,
         changed: Callable[[], None] | None = None,
-        refresh: Callable[[str, int], object] | None = None,
     ) -> None:
         self._store = store
         self._feed = feed
         self._changed = changed
-        self._refresh = refresh
 
     def _cited(self, key: str) -> list[tuple[str, int]]:
         """The pull requests the task cites, as (repository, number)."""
@@ -213,34 +203,19 @@ class RecordProjection:
             return
         name = (fields.get("machine"), fields.get("event"))
         key = fields.get("task")
-        if (
-            (name not in _DELTAS and name not in _REREADS)
-            or not key
-            or (name in ROLLUPS | {REPORTED} and not self._rolled(fields))
-        ):
+        if name not in _DELTAS or not key or (name in ROLLUPS | {REPORTED} and not self._rolled(fields)):
             return
         try:
             at = float(fields["time"])
         except KeyError, TypeError, ValueError:
             return
-        saved, moved = [], []
-        targets = self._targets(key, name, fields)
-        named = self._named(fields)
-        if named and (name[0] == GITHUB_MACHINE or name in _REREADS) and name not in CLOSING and named not in targets:
-            # the task's citation may reach this worker after the event does: read the pull request the event names
-            # rather than drop it, which would leave the store without it until a later event of its own
-            if not self._store.find(repo=named[0], number=named[1]):
-                moved.append(named)
-        for repo, number in targets:
+        saved = []
+        for repo, number in self._targets(key, name, fields):
             found = self._store.find(repo=repo, number=number, detailed=True)
             if found and at < found[0]["fetchedAt"] and name != MERGING and name not in ROLLUPS:
-                continue  # the record already holds what a later event or read says; a merge or a rollup, which names its head, is never older than that
+                continue  # the record already holds what a later event or delivery says; a merge or a rollup, which names its head, is never older than that
             if name in ROLLUPS and found and at < ((found[0].get("rollup") or {}).get("at") or 0):
                 continue  # an older rollup, of a head the pull request has since left, must not replace the newer verdict
-            if not found and name in _DELTAS or found and name in _REREADS:
-                moved.append((repo, number))  # a record the events open holds no files until GitHub is read
-            if name not in _DELTAS:
-                continue
             record = found[0] if found else opened(repo, number, self._body(key), at)
             stamps = {"fetchedAt": max(at, record["fetchedAt"]), "updatedAt": iso_utc(at)}  # a late event never ages it
             patched = record | _DELTAS[name](record, fields, at) | stamps
@@ -250,14 +225,6 @@ class RecordProjection:
             self._store.save(saved)
             if self._changed:
                 self._changed()
-        if name == MERGING:  # a merge moves the repository's main, so each other open pull request may now conflict
-            moved += [
-                (r["repo"], r["number"])
-                for repo in {repo for repo, _ in targets} | ({named[0]} if named in self._cited(key) else set())
-                for r in self._store.find(repo=repo, state="OPEN")
-            ]
-        for repo, number in moved if self._refresh else ():
-            self._refresh(repo, number)
 
     @staticmethod
     def _rolled(fields: Mapping[str, Any]) -> bool:
@@ -328,7 +295,3 @@ class RecordProjection:
             self._store.save([patched])
             if self._changed:
                 self._changed()
-        # Only GitHub's rollup says whether every required check passed, so a passing job asks for a read when the
-        # record is not yet `pass` (a lost rollup event) or the job moved the head (the `pass` is the old head's).
-        if result == "pass" and (record["checks"] != "pass" or head != record["headRefOid"]) and self._refresh:
-            self._refresh(repo, number)

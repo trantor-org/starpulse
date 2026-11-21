@@ -1,9 +1,10 @@
 """The intake listener: a signed GitHub delivery is saved to the inbox before it is answered 202.
 
-`bind` builds the server; `start` is the `github` context `starpulse serve` supervises. Only the webhook secret and the
-inbox are reached from here: never the event store, the page or a producer token.
+`bind` builds the server; `start` is the `github` context `starpulse serve` supervises. It saves to the inbox tables of
+the main store and reaches nothing else of it.
 """
 
+import functools
 import logging
 import os
 import socket
@@ -11,21 +12,20 @@ import threading
 import time
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Any
 
+from sqlalchemy.engine import Engine
+
 from starpulse.github.adapters.outbound import verdicts as metrics
-from starpulse.github.adapters.outbound.inbox import Migrate, SqlInbox
-from starpulse.github.adapters.outbound.queue import SqlQueue
+from starpulse.github.adapters.outbound.inbox import SqlInbox
+from starpulse.github.adapters.outbound.queue import Backlog, backlogs
 from starpulse.github.model.delivery import UNVERIFIED, Delivery, Refusal, admit, declared_length
-from starpulse.github.model.events import CONSUMER
 from starpulse.github.model.github_config import GitHub
 from starpulse.github.ports.inbox import Inbox, InboxError
 
 __all__ = ["bind", "start"]
 
 log = logging.getLogger("starpulse.github")
-INBOX_FILE = "github.sqlite"
 #: Seconds a request may take to send its declared body, in all and between two reads, before it is dropped.
 READ_TIMEOUT = 15
 
@@ -112,22 +112,22 @@ def bind(
     settings: GitHub,
     secret: bytes,
     inbox: Inbox,
-    dead_counts: Callable[[], dict[str, int]] | None = None,
+    backlogs: Callable[[], dict[str, Backlog]] | None = None,
     listening: socket.socket | None = None,
 ) -> ThreadingHTTPServer:
     """The listener on `listening`, else on `settings`' address, signed with `secret` and saving to `inbox`, its
-    `/metrics` counting the dead deliveries `dead_counts` reads. Raises `OSError` for an address that cannot be bound."""
-    handler = _handler(settings, secret, inbox, metrics.Verdicts(dead_counts))
+    `/metrics` gauging the backlogs `backlogs` reads. Raises `OSError` for an address that cannot be bound."""
+    handler = _handler(settings, secret, inbox, metrics.Verdicts(backlogs))
     if listening is not None:
         return _Held(listening, handler)
     return ThreadingHTTPServer((settings.host, settings.port), handler)
 
 
 def start(
-    config: Any, base: Path, stop: threading.Event, migrate: Migrate, listening: socket.socket | None = None
+    config: Any, stop: threading.Event, engine: Engine, listening: socket.socket | None = None
 ) -> Callable[[], None]:
-    """The `github` context: serve `[github]` on threads until `stop` is set, which closes the listener. `migrate` builds the
-    inbox's schema. `listening` is the socket `serve` holds for it, which outlives this context's replacement.
+    """The `github` context: serve `[github]` on threads until `stop` is set, which closes the listener. `engine` opens
+    the main store, whose inbox tables it saves to; the store's owner disposes it. `listening` is the socket `serve` holds for it, which outlives this context's replacement.
 
     Raises `ValueError` without the table or without the secret in the environment, and `OSError` when the address is
     taken, which the `contexts` process retries with a backoff. Returns the context's reload, which has nothing to
@@ -138,18 +138,12 @@ def start(
     secret = os.environ.get(settings.secret_env)
     if not secret:
         raise ValueError(f"github: the environment variable {settings.secret_env} holds no webhook secret")
-    inbox = SqlInbox(settings.database_url or f"sqlite:///{(base / INBOX_FILE).resolve()}", migrate)
-    try:
-        server = bind(settings, secret.encode(), inbox, SqlQueue(inbox.engine, CONSUMER).dead_counts, listening)
-    except OSError:
-        inbox.engine.dispose()  # the `contexts` process retries `start`, which opens a new inbox
-        raise
+    server = bind(settings, secret.encode(), SqlInbox(engine), functools.partial(backlogs, engine), listening)
 
     def close() -> None:
         stop.wait()
         server.shutdown()
         server.server_close()
-        inbox.engine.dispose()
 
     threading.Thread(target=server.serve_forever, name="github-intake", daemon=True).start()
     threading.Thread(target=close, name="github-intake-close", daemon=True).start()

@@ -110,22 +110,26 @@ class PullStore:
         ]
         if not rows:
             return
-        with self._saving, self._engine.begin() as db:
-            rows = [self._guarded(db, row) for row in rows]
-            rows = [
-                row | {"checks": checks_verdict(row["state"], row["checks"], row["head"], row["rollup"], row["required"])}
-                for row in rows
-                if row
-            ]
-            for row in rows:
-                db.execute(
-                    delete(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
-                )
-            if rows:
-                db.execute(insert(pull_requests), rows)
-        keys = [(row["repo"], row["number"]) for row in rows]
+        with self._saving:
+            with self._engine.begin() as db:
+                rows = [self._guarded(db, row) for row in rows]
+                rows = [
+                    row
+                    | {"checks": checks_verdict(row["state"], row["checks"], row["head"], row["rollup"], row["required"])}
+                    for row in rows
+                    if row
+                ]
+                for row in rows:
+                    db.execute(
+                        delete(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
+                    )
+                if rows:
+                    db.execute(insert(pull_requests), rows)
+            keys = [(row["repo"], row["number"]) for row in rows]
+            if keys:
+                self._take(keys)  # inside the lock, so `amend` never reads the record from before this save
         if keys:
-            self.refresh(keys)
+            self._notify()
             for announce in self._save_listeners:
                 announce(keys)
 
@@ -183,7 +187,13 @@ class PullStore:
     def refresh(self, keys: Iterable[tuple[str, int]]) -> None:
         """Take the database's rows of `keys` (repository, number) into memory, as after a save: the way a process that
         does not write the store sees what another one saved."""
+        self._take(keys)
+        self._notify()
+
+    def _take(self, keys: Iterable[tuple[str, int]]) -> None:
         self._hold(select(pull_requests).where(tuple_(pull_requests.c.repo, pull_requests.c.number).in_(list(keys))))
+
+    def _notify(self) -> None:
         self.rev += 1
         for listener in self._listeners:
             listener()

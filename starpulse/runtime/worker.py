@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.context == "api":
         from starpulse.cli import doctor
         from starpulse.runtime import listen, sched, wiring
-        from starpulse.runtime.assembly import assemble, history_store
+        from starpulse.runtime.assembly import assemble, github_metrics, history_store
         from starpulse.runtime.hold import LISTEN_FD_ENV, announce_ready
         from starpulse.views.bin import api_worker
 
@@ -85,6 +85,7 @@ def main(argv: list[str] | None = None) -> None:
             history_store=history_store,
             contract=doctor.contract,
             readiness=_readiness,
+            github_metrics=github_metrics,
             probes=doctor.LIVE,
             static=wiring.STATIC,
             listen_fd_env=LISTEN_FD_ENV,
@@ -160,8 +161,7 @@ def main(argv: list[str] | None = None) -> None:
         from starpulse.sweeper.bin import sweeper_worker
 
         def contexts(log, parser, config):
-            base = args.config.parent if args.config else Path.cwd()
-            return [runs_kind(log, run_adapters(parser, config)), *github_kinds(config, base)]
+            return [runs_kind(log, run_adapters(parser, config)), *github_kinds(config, log)]
 
         return sweeper_worker.main(argv, parser, **loader, prune=prune_steps, contexts=contexts, hold=hold)
     if args.context == "search":

@@ -1,6 +1,6 @@
-"""The Delivery context's seam with `serve`: the projection out, the refresh requests and metrics across.
+"""The Delivery context's seam with `serve`: the projection out and metrics across.
 
-The Delivery worker (`starpulse worker pulls`) is the one writer of the pull store and the one reader of GitHub; `serve`
+The Delivery worker (`starpulse worker pulls`) is the one writer of the pull store; `serve`
 keeps the store read-only. What the worker projects, and what `serve` must say back to it, cross the event log:
 
 - the worker keeps its latest projection in the `PROJECTION` worker state; `serve` applies it to its feed (`Projected`)
@@ -8,7 +8,6 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
 - the worker announces the records of each save on `SAVED_STREAM` (`announce_saves`); `serve` holds records in memory
   and takes those from the database again (`refresh_on_save`, at a request), so `/api/pulls` never answers from before a save
   (the worker also stores the unfiltered answer with its gzip, which `serve` sends as it is);
-- a page's refresh request lands on `REFRESH_STREAM` (`request_refresh`) and the worker asks `PullSync` for it;
 - the actor's `/metrics` text is kept in the `METRICS` worker state for `serve` to relay.
 
 Nothing here beats: a stalled worker shows in the sweeper's `readers` kind, an exit in the supervisor.
@@ -33,18 +32,8 @@ PROJECTION = "pulls.projection"
 METRICS = "pulls.metrics"
 ACTOR_VIEW = "pulls.actor_view"
 SAVED_STREAM = "pulls:saved"
-REFRESH_STREAM = "pulls:refresh"
-#: The worker state holding, by stream, the id of the last entry a replay handed over: the `follow_events` streams, and
-#: `REFRESH_STREAM` once the pull sync serves.
+#: The worker state holding, by stream, the id of the last entry a replay handed over: the `follow_events` streams.
 CURSOR = "pulls.cursor"
-
-
-def _follow(name: str, log: EventLog, stream: str, after: int, handle: Callable[[Entry], None], stop: StopEvent):
-
-    tail = log.tail(stream, after=after)
-    thread = threading.Thread(target=tail.run, args=(handle, stop), name=name, daemon=True)
-    thread.start()
-    return thread
 
 
 class Publisher:
@@ -116,38 +105,6 @@ def refresh_on_save(store: PullStore) -> Callable[[Entry], None]:
         store.refresh([(repo, int(number)) for repo, number in json.loads(entry.fields["keys"])])
 
     return handle
-
-
-def request_refresh(log: EventLog, tracked: Callable[[], list[str]]) -> Callable[[str, int | None], bool]:
-    """A refresh request for `serve`'s page: queued for the worker when `repo` is tracked, refused (False) otherwise.
-    No `number` asks for every open pull request of `repo`."""
-
-    def request(repo: str, number: int | None) -> bool:
-        if repo not in tracked():
-            return False
-        log.publish(REFRESH_STREAM, {"repo": repo, "number": "" if number is None else number})
-        return True
-
-    return request
-
-
-def follow_refreshes(
-    log: EventLog, request: Callable[[str, int | None], Any], serving: threading.Event, stop: StopEvent
-) -> threading.Thread:
-    """Hand each refresh asked from now on to `request` (the pull sync's), on a thread until `stop`. Each one handed over
-    while `serving` is set (the sync is past its Board replay) moves the `REFRESH_STREAM` entry of the `CURSOR` state, and
-    the next worker replays those after it: a worker replaced before it served leaves the asks it was handed unserved,
-    and a restart must not drop the close of a pull request that landed in the gap."""
-    _, kept = log.state(CURSOR)
-    cursor = kept.get(REFRESH_STREAM) if isinstance(kept, dict) else None
-
-    def handle(entry: Entry) -> None:
-        number = entry.fields["number"]
-        request(entry.fields["repo"], int(number) if number != "" else None)
-        if serving.is_set():
-            log.put_state_entry(CURSOR, REFRESH_STREAM, entry.id)
-
-    return _follow("pull-refresh", log, REFRESH_STREAM, (log.head() or 0) if cursor is None else cursor, handle, stop)
 
 
 def follow_events(

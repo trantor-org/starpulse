@@ -247,10 +247,11 @@ def default_starters(
 
     def signal_folds(own: StopEvent) -> Callable[[], None]:
         # the api worker reads the fold rows; folding them here keeps the catch-up off the Page API's GIL
+        from starpulse.flow_metrics.adapters.completion_steps import CompletionSteps
         from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 
         _, feed = shared()
-        folds = SignalFolds(log, feed.keys, config.analytics)
+        folds = SignalFolds(log, feed.keys, config.analytics, CompletionSteps(log, feed.titled).observe)
         threading.Thread(target=folds.follow, args=(own,), name="signal-folds", daemon=True).start()
         return lambda: logger.info("signal-folds: the analytics config is read at start; restart to apply a change")
 
@@ -287,7 +288,7 @@ def default_starters(
             own,
             load=load,
             prune=prune_steps(log, config, base),
-            contexts=[runs_kind(log, adapters), *board_kinds(shared), *github_kinds(config, base)],
+            contexts=[runs_kind(log, adapters), *board_kinds(shared), *github_kinds(config, log)],
         )
 
     def bridge(own: threading.Event) -> Callable[[], None]:
@@ -347,13 +348,12 @@ def default_starters(
         os.environ.pop(LISTEN_FD_ENV, None)  # a process this one starts must not read a descriptor it does not hold
 
     def github(own: threading.Event) -> Callable[[], None]:
-        from starpulse.event_log.migrate import migrate_chain
+        from starpulse.event_log.event_log import unpooled_engine
         from starpulse.github.adapters.inbound import listener
 
-        return listener.start(config, base, own, migrate_chain, listening)
+        return listener.start(config, own, unpooled_engine(log.engine), listening)
 
     def github_events(own: threading.Event) -> Callable[[], None]:
-        from starpulse.event_log.migrate import migrate_chain
         from starpulse.event_log.readmodel.read_model import ReadModel
         from starpulse.event_log.watch import open_watch
         from starpulse.github.adapters.inbound import consumer
@@ -372,9 +372,8 @@ def default_starters(
         }
         return consumer.start(
             config,
-            base,
             own,
-            migrate_chain,
+            log.engine,
             HttpIngest(server, token),
             _PullLinks(ReadModel(log.engine)),
             open_watch,

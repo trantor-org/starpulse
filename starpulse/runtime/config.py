@@ -196,8 +196,6 @@ class Config:
     """The Board states the shipped `ci` machine is attached to as a submachine (`[ci] states`); none: it is not drawn."""
     scheduler: Scheduler = field(default_factory=Scheduler)
     """The policy the scheduler runs under (`[scheduler]`); every key is optional, so no block is the defaults."""
-    refresh_token_env: str | None = None
-    """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
     github_token_env: str | None = None
     """The environment variable whose value `serve` exports as `GITHUB_TOKEN` and `GH_TOKEN` before any worker starts; unset, both are left as they were."""
     take_over_command: tuple[str, ...] | None = None
@@ -207,7 +205,7 @@ class Config:
     webhook_token_env: str | None = None
     """The environment variable holding the bearer token `POST /api/webhook` requires."""
     pull_requests: bool = _DEFAULTS.pull_requests
-    """`serve` keeps the pull request store, current from the lifecycle events (GitHub is read only for a pull request a refresh asks for); false: no store is kept, so an instance beside another that reads the same repositories keeps no second copy."""
+    """`serve` keeps the pull request store, current from the lifecycle events and webhook deliveries; false: no store is kept, so an instance beside another that reads the same repositories keeps no second copy."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
     """The memory limits `serve` holds each worker child to: past `soft_mb` it replaces the child (starts a new one, then stops the old), past `hard_mb` it kills and restarts it. Keyed by context, `pulls`, `scheduler`, `runs`, `history` and `search`."""
     tls: tuple[Path, Path] | None = None
@@ -428,7 +426,6 @@ _OUTBOUND = (
     "tls_cert",
     "tls_key",
     "session_start_url",
-    "refresh_token_env",
     "github_token_env",
     "take_over_command",
     "webhook_command",
@@ -513,7 +510,6 @@ def load(path: Path | None) -> Config:
             frozenset(file.bridge.end_lanes),
         ),
         sweeper=_sweeper(file.sweeper),
-        refresh_token_env=file.refresh_token_env,
         github_token_env=file.github_token_env,
         take_over_command=tuple(file.take_over_command) if file.take_over_command is not None else None,
         webhook_command=tuple(file.webhook_command) if file.webhook_command is not None else None,

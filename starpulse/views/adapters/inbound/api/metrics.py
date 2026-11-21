@@ -28,9 +28,11 @@ def prometheus(request: Request) -> Response:
         services.storage_metrics,
         services.sweeper_metrics,
         services.bridge_metrics,
+        services.completion_steps_metrics,
         services.history_lag_metrics,
         services.follower_lag_metrics,
         services.child_cpu_metrics,
+        services.github_metrics,
         api.snapshots.metrics,
         api.page_gauge,
     )

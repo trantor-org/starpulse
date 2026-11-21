@@ -26,10 +26,10 @@ const ids = () => [...host.querySelectorAll<HTMLElement>("section[data-lane=in_p
 const chip = (id: string) => host.querySelector<HTMLElement>(`.card[data-id=${id}] .who`)?.textContent;
 
 const lane = [
-  card("TASK-1", "in_progress", "@agent-a", { claimExpiresAt: NOW + 4 * 60 - 5 }),
+  card("TASK-1", "in_progress", "@agent-a"),
   card("TASK-2", "in_progress", "", { release: expired }),
   card("TASK-3", "in_progress", ""),
-  card("TASK-4", "in_progress", "@agent-b", { claimExpiresAt: NOW + 3600 }),
+  card("TASK-4", "in_progress", "@agent-b"),
   card("TASK-5", "ready", "", { release: expired }),
 ];
 
@@ -92,20 +92,16 @@ describe("the In Progress card's footer chip", () => {
     expect(chip("TASK-2")).toBe("deep· idle 10m");
   });
 
-  it("appends the minutes left to a held card under ten minutes from expiry", () => {
+  it("draws a held card with only its holder", () => {
     mount(lane);
 
-    expect(chip("TASK-1")).toBe("a· 4m left");
+    expect(chip("TASK-1")).toBe("a");
     expect(chip("TASK-4")).toBe("b");
   });
 
-  it("draws a held card 20 minutes from expiry, and one outside the working lane, with neither expired nor left", () => {
-    mount([
-      card("TASK-6", "in_progress", "@agent-c", { claimExpiresAt: NOW + 20 * 60 }),
-      card("TASK-7", "ready", "@agent-a", { claimExpiresAt: NOW + 2 * 60, release: expired }),
-    ]);
+  it("draws a card outside the working lane with its holder only, whatever its release record", () => {
+    mount([card("TASK-7", "ready", "@agent-a", { release: expired })]);
 
-    expect(chip("TASK-6")).toBe("c");
     expect(chip("TASK-7")).toBe("a");
     expect(host.textContent).not.toMatch(/idle|left|released/);
   });

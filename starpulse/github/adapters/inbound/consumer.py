@@ -1,7 +1,7 @@
 """The `events` consumer: each saved delivery that reports a pull request fact becomes one machine event, and one that reports a workflow run
 becomes one run event.
 
-`consume` makes one pass over the deliveries due; `run` repeats it on each commit to the inbox until it is told to stop.
+`consume` makes one pass over the deliveries due; `run` repeats it on each commit to the store until it is told to stop.
 A delivery is done once the ingest accepts its event (a repeat of the fact is accepted and collapses on the event id),
 is retried with a growing wait while the ingest is out of reach or the pull request is not yet linked to a task, and is
 dead at once when the ingest refuses the event for good.
@@ -12,20 +12,19 @@ import os
 import selectors
 import threading
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
+
+from sqlalchemy.engine import Engine
 
 from starpulse.github.adapters.inbound.head_checks import MACHINE as CHECKS_MACHINE
 from starpulse.github.adapters.inbound.head_checks import HeadChecks
-from starpulse.github.adapters.inbound.listener import INBOX_FILE
 from starpulse.github.adapters.outbound.head_reader import GitHubReader
-from starpulse.github.adapters.outbound.inbox import Migrate, SqlInbox
 from starpulse.github.adapters.outbound.queue import SqlQueue
 from starpulse.github.adapters.outbound.rest import RateLimited, connect
 from starpulse.github.model.events import CONSUMER, REFUSED, cloudevent, facts_of, run_event_of
 from starpulse.github.ports.events import Entry, Ingest, Links, OpenWatch, Queue, Stop, Watch
 
-__all__ = ["consume", "follow", "open_queue", "run", "start"]
+__all__ = ["consume", "follow", "run", "start"]
 
 logger = logging.getLogger(__name__)
 
@@ -109,9 +108,9 @@ def follow(queue: Queue, stop: Stop, watch: Watch | None, step: Callable[[], Non
     """Call `step` once, then again whenever the inbox commits (`watch`) or a retry of `queue` falls due, until `stop`
     is set. `name` prefixes the log lines of the consumer.
 
-    The watch fires on any write to the inbox, this consumer's own included; the pass it causes finds nothing due and
+    The watch fires on any write to the store, this consumer's own included; the pass it causes finds nothing due and
     writes nothing. A pass reads under the write lock, so it waits for a commit the watch announced before it is
-    visible. Without a watch (a Postgres inbox, or a platform with neither inotify nor kqueue) a pass runs every
+    visible. Without a watch (a Postgres store, or a platform with neither inotify nor kqueue) a pass runs every
     `FALLBACK_S`, and says so once."""
     stopped, signal = os.pipe()
 
@@ -146,21 +145,12 @@ def follow(queue: Queue, stop: Stop, watch: Watch | None, step: Callable[[], Non
         os.close(signal)
 
 
-def open_queue(config: Any, base: Path, migrate: Migrate, consumer: str = CONSUMER) -> tuple[SqlInbox, SqlQueue]:
-    """The inbox `[github]` names, migrated, and `consumer`'s queue over it."""
-    settings = config.github
-    if settings is None:
-        raise ValueError("no [github] table in the config")
-    inbox = SqlInbox(settings.database_url or f"sqlite:///{(base / INBOX_FILE).resolve()}", migrate)
-    return inbox, SqlQueue(inbox.engine, consumer)
-
-
 def start(
-    config: Any, base: Path, stop: Stop, migrate: Migrate, ingest: Ingest, links: Links, open_watch: OpenWatch,
+    config: Any, stop: Stop, engine: Engine, ingest: Ingest, links: Links, open_watch: OpenWatch,
     resync: Callable[[str, bytes], None] | None = None,
 ) -> Callable[[], None]:
-    """The `github-events` context: consume the inbox `[github]` names on a thread until `stop` is set. The listener's
-    container holds no producer token, so this runs apart from it, over the same inbox, with the `ingest` that holds it.
+    """The `github-events` context: consume the inbox in the main store `engine` opens on a thread until `stop` is set; the store's owner disposes `engine`. The listener's
+    container holds no producer token, so this runs apart from it, over the same store, with the `ingest` that holds it.
 
     The reconcile against GitHub and the retention purge (`starpulse github purge`) are the sweeper's, not a thread here. When the `github` producer may write
     the `pr-checks` machine it also publishes each check delivery and its head's rollup (`HeadChecks`), reading GitHub
@@ -170,19 +160,20 @@ def start(
     context's `Resync`, which turns a Woodpecker `status` into a `runs:resync` (`github` sits below `runs` and `event_log`).
 
     Returns the context's reload, which has nothing to re-read."""
-    inbox, queue = open_queue(config, base, migrate)
+    if config.github is None:
+        raise ValueError("no [github] table in the config")
+    queue = SqlQueue(engine, CONSUMER)
     publishes_checks = any(CHECKS_MACHINE in p.machines for p in config.producers if p.name == "github")
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     checks = HeadChecks(GitHubReader(connect(token))) if publishes_checks else None
 
-    url = inbox.engine.url
+    url = engine.url
     watch = open_watch(url.database) if url.get_backend_name() == "sqlite" and url.database else None
 
     def work() -> None:
         try:
             run(queue, ingest, links, stop, watch, checks, resync)
         finally:
-            inbox.engine.dispose()
             if watch is not None:
                 watch.close()
 

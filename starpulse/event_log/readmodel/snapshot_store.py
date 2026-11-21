@@ -79,7 +79,7 @@ class SnapshotStore:
 
     def put(self, view: str, body: bytes, at: float) -> None:
         """Store `body` and its gzip as `view`, a body made outside the snapshot's folds (`STANDALONE`)."""
-        with self._engine.begin() as db:
+        with self._writer.begin() as db:
             _store(db, view, STANDALONE, body, at)
 
     def body(self, view: str = LIVE) -> tuple[int, bytes, bytes | None] | None:

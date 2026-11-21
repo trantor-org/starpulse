@@ -66,7 +66,7 @@ class ReadMethods:
         moves = self._read_model_moves(row)
         agent = summary_agent(row, ready, moves if lean else self._guarded(task_id, moves), self._default_profiles)
         agent = agent | read_model_detail(row, self._roles.attention)
-        return self._expiring(agent if lean else agent | self._read_model_readable(row))
+        return agent if lean else agent | self._read_model_readable(row)
 
     def follow_read_model(self, limit: int = 1000) -> int:
         """Publish a `task` delta for each Task the read model changed since the last call, an archived one as gone, each
