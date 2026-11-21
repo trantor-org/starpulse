@@ -199,6 +199,9 @@ class Streams:
                 except queue.Empty:
                     yield _PING
                     continue
+                if change is None:  # the log was renumbered: the page reconnects for the body of the new numbering
+                    changes.task_done()
+                    return
                 try:
                     yield from self._event(*change)
                 finally:
@@ -258,16 +261,20 @@ class Streams:
                 yield _frame(event, text)
                 sent = view
                 interest = Interest(view, assignee, states)
-            yield from self._wait_touched(changes, interest)
+            if (yield from self._wait_touched(changes, interest)):
+                return
             # adr-exempt: debounce
             time.sleep(_HELD_SETTLE_S)
             while not changes.empty():
-                changes.get_nowait()
+                renumbered = changes.get_nowait() is None
                 changes.task_done()
+                if renumbered:
+                    return
             served = self._column_views.take(self._snapshots)
 
-    def _wait_touched(self, changes: queue.Queue, interest: Interest) -> Generator[bytes]:
-        """Take changes off `changes` until one alters the view `interest` describes, pinging while none arrives."""
+    def _wait_touched(self, changes: queue.Queue, interest: Interest) -> Generator[bytes, None, bool]:
+        """Take changes off `changes` until one alters the view `interest` describes, pinging while none arrives; True
+        when the log was renumbered (a `None`), which ends the stream."""
         while True:
             try:
                 change = changes.get(timeout=_PING_S)
@@ -275,5 +282,5 @@ class Streams:
                 yield _PING
                 continue
             changes.task_done()  # `Snapshots.announce` waits for the marks of what it queued
-            if interest.touched_by(*change):
-                return
+            if change is None or interest.touched_by(*change):
+                return change is None
