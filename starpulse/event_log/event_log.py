@@ -351,20 +351,22 @@ class EventLog:
         self._wake()
 
     def follow_state(
-        self, name: str, apply: Callable[[], None], stop: StopEvent, *, thread_name: str
+        self, name: str, apply: Callable[[], None], stop: StopEvent, *, thread_name: str, catch_up: bool = False
     ) -> threading.Thread:
-        """Call `apply` each time the state under `name` is written after this call, on a thread until `stop`. The
-        thread rereads the version when the log is appended to, here or by another process, and sleeps otherwise."""
-        seen = self.version_or(name, 0)
+        """Call `apply` each time the state under `name` is written after this call, on a thread until `stop`; with
+        `catch_up`, once at the start as well. An `apply` that raises is logged and called again after `RETRY_DELAY`,
+        so one failure never ends the thread. The thread rereads the version when the log is appended to, here or by
+        another process, and sleeps otherwise."""
+        seen = -1 if catch_up else self.version_or(name, 0)
+
+        def step() -> None:
+            nonlocal seen
+            if (version := self.version_or(name, seen)) != seen:
+                apply()
+                seen = version  # only a success moves it, so a failed `apply` runs again
 
         def run() -> None:
-            nonlocal seen
-            while not stop.is_set():
-                appends = self.appends
-                if (version := self.version_or(name, seen)) != seen:
-                    seen = version
-                    apply()
-                self.wait_for_append(appends, stop)
+            self.run_on_wake(stop, step, f"event log: following {name} failed; retrying")
 
         thread = threading.Thread(target=run, name=thread_name, daemon=True)
         thread.start()

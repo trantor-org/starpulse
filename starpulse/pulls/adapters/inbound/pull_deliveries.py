@@ -134,6 +134,8 @@ def apply(
             return None
         record = found or opened(delivery.repository, pull["number"], pull["body"] or "", now)
         for delta in deltas if found else (*_OPENED, *deltas):
+            if delta is _state and delivery.action == "opened" and found and found["state"] != "OPEN":
+                continue  # an `opened` applied late: only `reopened` moves a closed or merged record back to open
             record = record | delta(record, pull, now)
         return record
 

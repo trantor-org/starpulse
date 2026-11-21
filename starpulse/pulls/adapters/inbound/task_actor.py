@@ -189,11 +189,11 @@ def _lint_record(agent: Mapping[str, Any]) -> tuple[Any, ...]:
     return (*(agent.get(field) for field in _LINTED), tuple(agent["labels"]), tuple(agent.get("dependencies", ())))
 
 
-def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...]]:
-    """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests and checked criteria.
-    A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
+def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], bool]:
+    """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests, checked criteria and
+    whether a session claimed it. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
-    return agent["state"], tuple(agent.get("dependencies", ())), tuple(agent.get("prs", ())), ticks
+    return agent["state"], tuple(agent.get("dependencies", ())), tuple(agent.get("prs", ())), ticks, bool(agent.get("assignee"))
 
 
 def _rules_digest(
@@ -370,7 +370,7 @@ class TaskActor:
         #: The lanes that wait on their tasks' dependencies, whose derivation flags a wait nothing ends.
         self._sweep_lanes = {lane for lane, facts in waits.items() if "deps_done" in facts}
         #: The lanes that wait on a task's Start Criteria.
-        self._gated_lanes = {lane for lane, facts in waits.items() if "criteria_met" in facts}
+        self._gated_lanes = {lane for lane, facts in waits.items() if {"criteria_met", "criteria_met_started"} & facts.keys()}
         #: The event subjects each gated task waits on, and for each subject the tasks waiting on it.
         self._gates: dict[str, tuple[str, ...]] = {}
         self._until: dict[str, set[str]] = {}
@@ -1425,11 +1425,13 @@ class TaskActor:
                 self._queue(lambda name=name, row=row: self._start_admitted(name, row))
 
     def _start_admitted(self, name: str, row: dict[str, Any]) -> None:
+        if self._log is None or start_requests.wanted(self._log).get(name) != row:
+            return  # withdrawn or replaced while the admission was queued: it no longer asks for this start
         if row["verb"] == "revive":
             self.holder_ended(name)
         else:
             self.holder_settled(name)
-        if self._log is not None and start_requests.wanted(self._log).get(name) == row:
+        if start_requests.wanted(self._log).get(name) == row:
             self._unwant(name)
 
     def _resume(self, name: str, progress: tuple[Any, ...], count: int) -> None:
