@@ -136,12 +136,17 @@ class SqlQueue:
         return {self._consumer: dead}
 
     def purge(self) -> None:
-        """Delete the done and skipped rows older than `RETENTION`, and the inbox rows no other row still needs."""
+        """Delete the done and skipped rows older than `RETENTION`, and the inbox rows no other row still needs.
+
+        The newest inbox row stays: SQLite hands the next save `max(id) + 1`, so a purge that emptied the table would
+        reuse ids below a claim's cursor, in any process, and that claim would never seed the new deliveries.
+        """
         old = and_(
             state.consumer == self._consumer, state.status.in_(("done", "skipped")), state.updated_at < self._clock() - RETENTION
         )
         gone = select(state.delivery_id).where(old)
         kept = select(state.delivery_id).where(~old)
         with self._engine.begin() as db:
-            db.execute(delete(inbox).where(inbox.c.delivery_id.in_(gone), inbox.c.delivery_id.not_in(kept)))
+            newest = select(func.max(inbox.c.id)).scalar_subquery()
+            db.execute(delete(inbox).where(inbox.c.delivery_id.in_(gone), inbox.c.delivery_id.not_in(kept), inbox.c.id < newest))
             db.execute(delete(github_inbox_state).where(old))

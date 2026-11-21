@@ -1285,11 +1285,7 @@ class TaskActor:
                 return
             if self._idle is None:
                 return
-            if (
-                wait_ended
-                and (placed := self._feed.machine_task(HARNESS_MACHINE, name))
-                and placed["state"] == "active"
-            ):
+            if wait_ended and self._session_active(name):
                 self._resumes.pop(name, None)
                 self._stalled.discard(name)
                 return
@@ -1353,11 +1349,7 @@ class TaskActor:
             self._revive_held.discard(name)
             if agent is None or agent["state"] != self._feed.roles.working or self._idle is None:
                 return
-            if (
-                wait_ended
-                and (placed := self._feed.machine_task(HARNESS_MACHINE, name))
-                and placed["state"] == "active"
-            ):
+            if wait_ended and self._session_active(name):
                 return
             items = agent.get("criteria", ())
             opened = open_criteria(items)
@@ -1426,6 +1418,10 @@ class TaskActor:
             if escalate:
                 self._stalled.add(name)
 
+    def _session_active(self, name: str) -> bool:
+        placed = self._feed.machine_task(HARNESS_MACHINE, name)
+        return bool(placed) and placed["state"] == "active"
+
     def _confirmed(self, name: str) -> bool:
         try:
             self._idle(name, "confirm")
@@ -1438,8 +1434,9 @@ class TaskActor:
 
     def _switch_raised(self, name: str) -> None:
         """At an idle holder's resume, a profile changed since its last one is typed into the holder by the `idle` hook's
-        `switch`, which records the outcome on the task. The first resume only notes the profile, as a session runs on the one it started on;
-        the note outlives a park, so a profile raised while the task waits on the operator reaches the holder once it is back."""
+        `switch`, which records the outcome on the task. The first resume only notes the profile, as a session runs on
+        the one it started on; the note outlives a park, so a profile raised while the task waits on the operator
+        reaches the holder once it is back."""
         profile = (self._feed.task(name, lean=True) or {}).get("profile")
         with self._lock:
             before = self._profiles.setdefault(name, profile)
@@ -1542,6 +1539,8 @@ class TaskActor:
             agent = self._feed.task(name, lean=True)
             if agent is None or agent["state"] != self._feed.roles.working or agent["prs"]:
                 return
+            if self._session_active(name):
+                return  # a step after the settle: a blocking `Stop` hook resumed the turn, so the session is live
             if self._awaits(agent):
                 self._awaited.add(name)
                 return

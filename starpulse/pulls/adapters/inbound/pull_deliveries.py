@@ -116,14 +116,18 @@ def apply(store: PullStore, delivery: Delivery, now: float, reads: PullReads | N
     if delivery.event != "pull_request" or deltas is None:
         return False
     pull = json.loads(delivery.body)["pull_request"]
-    found = store.find(delivery.repository, pull["number"], detailed=True)
-    if not found and "created_at" not in pull:  # a reduced reconcile body cannot open a record
-        logger.info("github pulls: %s: no record and a reduced body", delivery.delivery_id)
+
+    def change(found: Record | None) -> Record | None:
+        if not found and "created_at" not in pull:  # a reduced reconcile body cannot open a record
+            logger.info("github pulls: %s: no record and a reduced body", delivery.delivery_id)
+            return None
+        record = found or opened(delivery.repository, pull["number"], pull["body"] or "", now)
+        for delta in deltas if found else (*_OPENED, *deltas):
+            record = record | delta(record, pull, now)
+        return record
+
+    if not store.amend(delivery.repository, pull["number"], change):
         return False
-    record = found[0] if found else opened(delivery.repository, pull["number"], pull["body"] or "", now)
-    for delta in deltas if found else (*_OPENED, *deltas):
-        record = record | delta(record, pull, now)
-    store.save([record])
     if reads is not None:
         refresh(store, reads, delivery, now)
     return True
