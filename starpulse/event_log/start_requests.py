@@ -55,5 +55,4 @@ def admit(log: EventLog, grants: dict[str, float]) -> None:
 
 def follow_admitted(admitted: Callable[[], None], log: EventLog, stop: StopEvent) -> None:
     """Call `admitted` at each admission and once now, for a start admitted while the actor was down."""
-    log.follow_state(ADMITTED, admitted, stop, thread_name="task-actor-admitted")
-    admitted()
+    log.follow_state(ADMITTED, admitted, stop, thread_name="task-actor-admitted", catch_up=True)

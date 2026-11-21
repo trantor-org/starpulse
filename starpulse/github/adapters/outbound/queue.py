@@ -197,8 +197,11 @@ class SqlQueue:
     def retire(self, before: float, window: int = 5000) -> int:
         """Skip this consumer's pending deliveries never tried and saved before `before`, `window` rows a transaction:
         a backlog the consumer would only claim to refresh pull requests already read since. An urgent delivery stays
-        pending, so a merge the backlog holds still moves its task. The count skipped."""
-        untried = and_(state.consumer == self._consumer, state.status == "pending", state.attempts == 0)
+        pending, so a merge the backlog holds still moves its task, and so does one a failure or `defer` left an
+        error on: its retry is scheduled. The count skipped."""
+        untried = and_(
+            state.consumer == self._consumer, state.status == "pending", state.attempts == 0, state.last_error.is_(None)
+        )
         old = select(inbox.c.delivery_id).where(inbox.c.received_at < before)
         old = old if self._urgent is None else old.where(~self._urgent)
         retired = 0
