@@ -28,6 +28,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    cast,
     create_engine,
     func,
     or_,
@@ -78,8 +79,10 @@ logger = logging.getLogger(__name__)
 
 #: How many raw rows a rebuild of the summaries reads at a time.
 _CHUNK = 5000
-#: How many tasks one statement asks the lane intervals for, under every dialect's limit on bound parameters.
+#: How many tasks one statement asks the lane intervals for, under SQLite's limit on bound parameters.
 _TASKS_PER_QUERY = 500
+#: A time is read as whole seconds and a fraction of this many parts, both integers, so its text loses no digit.
+_FRACTION_SCALE = 2**52
 
 #: How long one read of the level's window serves requests, and how many windows (one per level and span asked, the
 #: latest minute's) are kept.
@@ -165,6 +168,14 @@ def _rechain(db: Connection, tasks: Iterable[str]) -> None:
         if old != before.get(key):
             db.execute(update(_lane_changes).where(c.id == id_).values(old_status=before.get(key)))
         before[key] = new
+
+
+def _joined(db: Connection, query: Select) -> list[str]:
+    """The one text column `query` selects, read as one value: each row stepped one at a time retakes the GIL, which a
+    busy thread holds for its whole 5 ms switch interval."""
+    column = query.selected_columns[0]
+    joined = db.execute(query.with_only_columns(func.group_concat(column, "\x1e"))).scalar()
+    return joined.split("\x1e") if joined else []
 
 
 def _in_id_order(db: Connection, query: Select, id_column: Column, after: int = 0) -> Iterator[Mapping[str, Any]]:
@@ -739,28 +750,37 @@ class HistoryStore:
         i, c, n = lane_intervals.c, cases.c, lanes.c
         with self.engine.connect() as db:
             # no DISTINCT: it would send SQLite down the whole task index instead of the range of recent entries
-            moved = (
-                db.execute(select(i.task).where(i.entered_at >= min(now - window_s, now - AGING_WINDOW_S)))
-                .scalars()
-                .all()
-            )
-            live = (
-                db.execute(select(c.case_id).where(c.machine == BOARD, c.state.in_([*waiting, *working])))
-                .scalars()
-                .all()
-            )
+            moved = _joined(db, select(i.task).where(i.entered_at >= min(now - window_s, now - AGING_WINDOW_S)))
+            live = _joined(db, select(c.case_id).where(c.machine == BOARD, c.state.in_([*waiting, *working])))
             tasks = sorted({*moved, *live})
             # by task, then time, then the order they were recorded in: the task index hands them over in that order
-            query = select(i.entered_at, i.source, i.task, i.lane).order_by(i.task, i.entered_at, i.id)
-            steps: dict[tuple[str, str], list[tuple[float, str]]] = {}
+            whole = cast(i.entered_at, Integer)
+            fraction = cast((i.entered_at - whole) * _FRACTION_SCALE, Integer)
+            packed = func.printf(
+                "%d\x1f%d\x1f%s\x1f%s\x1f%s",
+                whole,
+                fraction,
+                func.coalesce("s" + i.source, "n"),
+                i.task,
+                i.lane,
+            )
+            steps: dict[tuple[str | None, str], list[tuple[float, str]]] = {}
             for start in range(0, len(tasks), _TASKS_PER_QUERY):
-                # folded as each chunk arrives: a window's rows are never all held at once beside their paths
-                for at, who, task, lane in db.execute(query.where(i.task.in_(tasks[start : start + _TASKS_PER_QUERY]))):
+                stays = (
+                    select(packed.label("stay"))
+                    .where(i.task.in_(tasks[start : start + _TASKS_PER_QUERY]))
+                    .order_by(i.task, i.entered_at, i.id)
+                    .subquery()
+                )
+                # one value per chunk: every step a row costs retakes the GIL, which a busy thread holds for 5 ms
+                joined = db.execute(select(func.group_concat(stays.c.stay, "\x1e"))).scalar()
+                for stay in joined.split("\x1e") if joined else ():
+                    second, part, who, task, lane = stay.split("\x1f")
                     if (state := states.get(lane)) is not None:
-                        key = (who, task)
+                        key = (who[1:] if who[0] == "s" else None, task)
                         if (path := steps.get(key)) is None:
                             path = steps[key] = []
-                        path.append((at, state))
+                        path.append((int(second) + int(part) / _FRACTION_SCALE, state))
             seen = db.execute(
                 select(n.source, func.min(n.first_at)).where(n.lane.in_(list(states))).group_by(n.source)
             ).all()

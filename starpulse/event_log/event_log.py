@@ -36,7 +36,7 @@ from itertools import batched
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from sqlalchemy import Engine, bindparam, create_engine, delete, event, func, select
+from sqlalchemy import Engine, String, bindparam, create_engine, delete, event, func, select, type_coerce
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.pool import NullPool
@@ -623,6 +623,13 @@ class Tail:
         The read runs on a connection that is returned before this call does, so no transaction outlasts a poll.
         Raises when the database is unreachable; `run` retries.
         """
+        return [Entry(r.id, r.stream, r.event_id, r.fields, r.at) for r in self._rows(events)]
+
+    def poll_json(self) -> list[tuple[int, str]]:
+        """`poll`, as each row's `id` and its fields still the JSON text the log stores, for a reader that parses it itself."""
+        return [(r.id, r.fields) for r in self._rows(events.c.id, type_coerce(events.c.fields, String).label("fields"))]
+
+    def _rows(self, *columns: Any) -> Sequence[Any]:
         engine = self.log.engine
         with engine.connect() as db:
             head = db.scalar(_HEAD)
@@ -633,7 +640,7 @@ class Tail:
             gap = following is not None and following > cursor + 1
             start = following - 1 if gap else cursor or 0
             rows = db.execute(
-                select(events)
+                select(*columns)
                 .where(events.c.stream.in_(self.streams), events.c.id > start, events.c.id <= head)
                 .order_by(events.c.id)
                 .limit(self.batch)
@@ -641,7 +648,7 @@ class Tail:
         if gap:
             self.log.record_gap(self.stream, cursor, following, following - cursor - 1)
         self.cursor = rows[-1].id if len(rows) == self.batch else head
-        return [Entry(r.id, r.stream, r.event_id, r.fields, r.at) for r in rows]
+        return rows
 
     def catch_up(self, handle: Callable[[Entry], None]) -> None:
         """Pass `handle` every entry past the cursor now retained, then return: the boundary before `run` follows live.

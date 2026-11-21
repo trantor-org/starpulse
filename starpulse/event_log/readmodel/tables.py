@@ -81,6 +81,8 @@ snapshots = Table(
     Column("view", String, primary_key=True),
     Column("seq", Integer, nullable=False),
     Column("body", LargeBinary, nullable=False),
+    #: The body's gzip, None for a body too small to be worth compressing.
+    Column("gzipped", LargeBinary),
     Column("stored_at", Float, nullable=False),
 )
 

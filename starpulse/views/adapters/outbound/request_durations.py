@@ -5,20 +5,32 @@ the last byte sent. `route` is the path template; `params` is `none` for an empt
 `shape` is the sorted, comma-joined query names the route accepts, `none` with no query and `other` when any name is
 outside them; `caller` is the `X-StarPulse-Client` header when it names a first-party client in `CALLERS`, else
 `other`. No label ever carries a param's value or an unlisted name, so the set never grows with what clients send.
+
+`/api/flows` is also read apart: `starpulse_flows_read_seconds{source}` holds the seconds the body took to make, `source`
+being `rebuild` when the read fetched a body the writer stored anew and `cached` when it served the body an earlier read
+fetched. Its reads per caller are the `caller` label of the histogram above.
 """
 
 from urllib.parse import parse_qsl
 
 from prometheus_client import CollectorRegistry, Histogram, generate_latest
 
-#: Dense around the 50 ms budget, so a p95 over it shows as a bucket and not a guess between two far edges.
-BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+#: Dense around the 50 ms budget, so a p95 over it shows as a bucket and not a guess between two far edges, and long
+#: enough that a stalled read shows as its own tail and not as the top edge.
+BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120)
 
 _registry = CollectorRegistry()
 _durations = Histogram(
     "starpulse_request_duration_seconds",
     "Seconds an /api read took from arrival to the last byte sent, by route template, query shape and caller",
     ["route", "params", "shape", "caller"],
+    buckets=BUCKETS,
+    registry=_registry,
+)
+_flows = Histogram(
+    "starpulse_flows_read_seconds",
+    "Seconds an /api/flows read took to make its body, by whether it fetched a newly stored body or served a cached one",
+    ["source"],
     buckets=BUCKETS,
     registry=_registry,
 )
@@ -42,6 +54,10 @@ def observe(route: str, accepted: frozenset[str], query_string: bytes, client: s
     caller = client if client in CALLERS else "other"
     params = "present" if query_string else "none"
     _durations.labels(route, params, _shape(accepted, query_string), caller).observe(seconds)
+
+
+def observe_flows(source: str, seconds: float) -> None:
+    _flows.labels(source).observe(seconds)
 
 
 def exposition() -> str:

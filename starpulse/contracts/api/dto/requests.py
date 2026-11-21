@@ -21,6 +21,7 @@ from starpulse.contracts.api.dto.scheduler import QuietHours
 #: single write: a second write to finish a task is refused as not on the board until the next scan places the card.
 CREATE_TEXT = (
     "description",
+    "notes",
     "priority",
     "impact",
     "urgency",
@@ -204,6 +205,7 @@ class CreateSpec(_Request):
     ref: str | None = None
     title: str
     description: str | None = None
+    notes: str | None = None
     priority: str | None = None
     impact: str | None = None
     urgency: str | None = None

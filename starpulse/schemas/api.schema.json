@@ -1262,6 +1262,17 @@
           ],
           "default": null
         },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "priority": {
           "anyOf": [
             {
@@ -1604,6 +1615,17 @@
           "default": null
         },
         "milestone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "notes": {
           "anyOf": [
             {
               "type": "string"

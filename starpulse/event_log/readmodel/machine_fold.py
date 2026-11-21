@@ -2,7 +2,6 @@
 and the trail keeps the task's latest steps. Only the Board child's projector calls it."""
 
 from collections.abc import Mapping
-from typing import Any
 
 from pydantic import ValidationError
 
@@ -15,10 +14,11 @@ TRAIL = 12
 TRAIL_SOURCED = 120
 
 
-def event_of(fields: Mapping[str, Any]) -> MachineEvent | None:
-    """The machine event an entry's fields hold, or None for one that is not a machine event of the contract."""
+def event_of(fields: str) -> MachineEvent | None:
+    """The machine event an entry's fields (the JSON text the log stores) hold, or None for one that is not a machine
+    event of the contract."""
     try:
-        return MachineEvent.model_validate(dict(fields))
+        return MachineEvent.model_validate_json(fields)
     except ValidationError:
         return None
 

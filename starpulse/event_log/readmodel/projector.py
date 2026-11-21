@@ -15,7 +15,7 @@ from starpulse.event_log.readmodel.tables import criteria, machine_tasks, tasks
 from starpulse.event_log.store import EventStore, StoredEvent
 
 if TYPE_CHECKING:
-    from starpulse.event_log.event_log import Entry, EventLog
+    from starpulse.event_log.event_log import EventLog
 
 CHECKPOINT = "read-model:tasks"
 #: How far the projector has folded `machine:events` into `starpulse_machine_tasks`; it commits with each batch's rows.
@@ -146,8 +146,8 @@ class Projector:
         tail = Tail(self._log, STREAM, after=position or 0, batch=BATCH)
         held: dict[tuple[str, str], tuple[dict, int]] = {}
         last = position or 0
-        while batch := tail.poll():
-            last = batch[-1].id
+        while batch := tail.poll_json():
+            last = batch[-1][0]
             if resident:
                 self._place(batch, held, lambda *_: (None, 0))
                 continue
@@ -163,7 +163,7 @@ class Projector:
 
     def _place(
         self,
-        batch: Sequence[Entry],
+        batch: Sequence[tuple[int, str]],
         touched: dict[tuple[str, str], tuple[dict, int]],
         load: Callable[..., tuple[dict | None, int]],
     ) -> None:
@@ -173,18 +173,18 @@ class Projector:
         A row remembers the entry it last folded (`seq`): an entry at or before it was folded already, so a stream read
         again (a second reader, a checkpoint reset) leaves each trail step once.
         """
-        for entry in batch:
-            event = event_of(entry.fields)
+        for entry_id, fields in batch:
+            event = event_of(fields)
             if event is None:
                 continue
             key = (event.machine, event.task or event.run or "")
             before, seq = touched[key] if key in touched else load(*key)
-            if entry.id <= seq:
+            if entry_id <= seq:
                 continue
             placed = self._placer.place(before, event)
             if placed is not None:
                 flow, task, agent = placed
-                touched[flow, task] = (agent, entry.id)
+                touched[flow, task] = (agent, entry_id)
 
     @staticmethod
     def _save_machines(db: Connection, placed: Mapping[tuple[str, str], tuple[dict, int]]) -> None:

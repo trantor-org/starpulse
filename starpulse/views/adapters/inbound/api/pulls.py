@@ -26,6 +26,7 @@ from starpulse.views.adapters.inbound.api.table import (
 )
 from starpulse.views.adapters.inbound.api.writing import pushed, writing
 from starpulse.views.adapters.inbound.compression import Encoded
+from starpulse.views.adapters.inbound.snapshots import NotStored
 from starpulse.views.application.queries.responses import pulls_response
 
 if TYPE_CHECKING:  # annotation only
@@ -34,19 +35,26 @@ if TYPE_CHECKING:  # annotation only
 
 
 class PullReads:
-    """`/api/pulls`' answers, by query, held until the store saves: the unfiltered list is ~1 MB to read, encode and
-    gzip, and every page asks for it. A save builds the unfiltered answer itself, in the poller's thread, so a reader
-    finds it held, unless no reader asked for the last one built (a save every second would otherwise keep a core
-    encoding an answer nobody reads); readers asking together for any other answer share one computation, since each extra one only
+    """`/api/pulls`' answers, by query. The unfiltered list is ~1 MB to read, encode and gzip, and every page asks for
+    it: the Delivery worker stores it with its gzip at each save, and `stored` gives that answer, which a read sends
+    as it is. Until one is stored, and for any other query, an answer is held until the store saves; a save builds the
+    unfiltered one itself, in the poller's thread, so a reader finds it held, unless no reader asked for the last one
+    built (a save every second would otherwise keep a core encoding an answer nobody reads); readers asking together for any other answer share one computation, since each extra one only
     waits behind the rest for the GIL. A read of one pull request (`repo` and `number`), or of those a `task` cites, is a lookup of microseconds:
     it takes neither the computation lock, which a rebuild of the list holds for seconds, nor a held slot."""
 
     #: How many distinct queries are held; past it the oldest is dropped.
     KEEP = 16
 
-    def __init__(self, pulls: PullStore | None, cited: Callable[[str], list[str]] | None = None) -> None:
+    def __init__(
+        self,
+        pulls: PullStore | None,
+        cited: Callable[[str], list[str]] | None = None,
+        stored: Callable[[], Encoded] | None = None,
+    ) -> None:
         self._pulls = pulls
         self._cited = cited
+        self._stored = stored
         self._held: OrderedDict[str, tuple[int, Encoded, int]] = OrderedDict()
         self._lock = threading.Lock()
         self._computing: dict[str, threading.Lock] = {}  # one per query, so a slow query never holds another
@@ -66,6 +74,11 @@ class PullReads:
         return held if held and held[0] == rev else None
 
     def __call__(self, query: str) -> tuple[Encoded, int]:
+        if not query and self._stored:
+            try:
+                return self._stored(), 200
+            except NotStored:  # the worker has stored none yet
+                pass
         self._asked = self._asked or not query
         return self._answer(query)
 
