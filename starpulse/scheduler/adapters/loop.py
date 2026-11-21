@@ -378,9 +378,16 @@ class Loop:
 
     def _next_due(self, now: float) -> float | None:
         """Seconds to the earliest deadline the loop must wake for with no event, or None: the end of a
-        sessions-full wait, a failed start's backoff or a credit pause."""
+        sessions-full wait, a failed start's backoff, a credit pause, or a started session's `STALE_S` without a move
+        (`_gone` closes its run on that tick; a tool use is no wanted event, so a session that died unclaimed wakes none).
+        A move since the deadline was read only makes that tick find the run still at work, and the next call re-reads."""
         due = [at for at in (self._full[1], *(retry for _, retry in self._failed.values())) if at > now]
         due += [row["until"] for row in self._paused.values() if row["until"] > now]
+        for task, run in list(self._running.items()):
+            if not run.claimed:
+                seen = self._feed.machine_task(HARNESS.name, task)
+                if (stale := max(run.started_at, seen["active"] if seen else 0.0) + STALE_S + 1) > now:
+                    due.append(stale)
         return max(0.0, min(due) - now) if due else None
 
     def needs_operator(self) -> list[dict[str, str]]:
@@ -834,7 +841,14 @@ class Loop:
         resume = usage_until(text, now)
         if resume is None:
             return
-        record(self._ledger.log, "usage_limit", self._paused.get(harness, {}).get("until"), resume, harness=harness, selected=harness == self.selected_harness())
+        record(
+            self._ledger.log,
+            "usage_limit",
+            self._paused.get(harness, {}).get("until"),
+            resume,
+            harness=harness,
+            selected=harness == self.selected_harness(),
+        )
         self._paused[harness] = {"until": resume, "reason": "usage limit"}
         self._save_pauses()
 
