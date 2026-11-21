@@ -31,6 +31,7 @@ def prometheus(request: Request) -> Response:
         services.completion_steps_metrics,
         services.history_lag_metrics,
         services.follower_lag_metrics,
+        services.skill_cost_metrics,
         services.child_cpu_metrics,
         services.github_metrics,
         api.snapshots.metrics,

@@ -255,7 +255,7 @@ def default_starters(
         from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 
         _, feed = shared()
-        folds = SignalFolds(log, feed.keys, config.analytics, CompletionSteps(log, feed.titled).observe)
+        folds = SignalFolds(log, feed.keys, config.analytics, CompletionSteps(log, feed.titled).observe, feed.titled)
         threading.Thread(target=folds.follow, args=(own,), name="signal-folds", daemon=True).start()
         return lambda: logger.info("signal-folds: the analytics config is read at start; restart to apply a change")
 
