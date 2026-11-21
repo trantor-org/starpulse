@@ -162,6 +162,7 @@ class MoveDelta(_Api):
     machine: str
     id: str
     agent: RawTask
+    names: list[str] | None = Field(default=None, description="The names the agent's trail points index, each once.")
 
 
 class DagsDelta(_Api):

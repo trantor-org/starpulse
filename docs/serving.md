@@ -1523,6 +1523,10 @@ publishes nothing, so a page keeps a card until it reloads. The page's snapshot 
   `GET /api/task/<id>`) except an In Progress task, which keeps both live; each has its `moves` as `move_set`, a key into
   the snapshot's `move_sets`; a Done task is a slim dot (`id`, `title`, `state`, `model`, `labels`, `milestone`, `created`, `entered`), here and in
   the `task` delta that moves it, for the Star Map's black hole and the counts (`done_dot` in `board/model/feed/shared.py`);
+- every other flow names its states and events once in `names`, and each task's `trail` is points `[state, event, dt]`
+  indexing it (a sourced machine's step adds its `id` as a fourth member): `dt` is the whole milliseconds since the step
+  before, the epoch for the first. A `move` delta carries `names` for its own agent's trail, which the page interns into
+  the flow's. A step's `data` is not sent (`_interned` in `views/model/encoding.py`);
 - `archived_today` counts the tasks archived since local midnight (one range of the archive index, `archived_since`); an archived
   `task` delta carries the new number;
 - `settled` keeps the tasks created or settled since the start of the day before local midnight, and `milestone_done` (`{milestone: count}`)

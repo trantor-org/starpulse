@@ -342,6 +342,41 @@ describe("openStream", () => {
     expect(seen[2].error).toBe("ci: down");
   });
 
+  describe("trails on the wire", () => {
+    const compact = (names: string[], trail: unknown[]) => ({
+      ...board([agent("PROJ-1", "to_do")]),
+      flows: [
+        { name: "board", machine: { states: [], transitions: [] }, agents: [agent("PROJ-1", "to_do")] },
+        { name: "harness", machine: { states: [], transitions: [] }, names, agents: [{ ...agent("S-1", "active"), trail }] },
+      ],
+    });
+    const harness = (s: Snapshot) => s.flows[1];
+
+    it("reads a flow's points through its names as the steps the page has always read", () => {
+      openStream(handlers, open);
+
+      last().send("snapshot", compact(["claimed", "CLAIM", "active", "START"], [[0, 1, 1795240381471], [2, 3, 1029, "evt-2"]]));
+
+      expect(harness(seen[0]).agents[0].trail).toEqual([
+        { state: "claimed", event: "CLAIM", at: 1795240381.471 },
+        { state: "active", event: "START", at: 1795240382.5, id: "evt-2" },
+      ]);
+    });
+
+    it("interns a state a move delta names that the flow's table has not met, and reads its agent's trail through the delta's names", () => {
+      openStream(handlers, open);
+      last().send("snapshot", compact(["claimed", "CLAIM"], [[0, 1, 1000]]));
+
+      last().send("move", { machine: "harness", id: "S-1", names: ["claimed", "CLAIM", "stopped", "STOP"], agent: { ...agent("S-1", "stopped"), trail: [[0, 1, 1000], [2, 3, 500]] } });
+
+      expect(harness(seen[1]).names).toEqual(["claimed", "CLAIM", "stopped", "STOP"]);
+      expect(harness(seen[1]).agents[0].trail).toEqual([
+        { state: "claimed", event: "CLAIM", at: 1 },
+        { state: "stopped", event: "STOP", at: 1.5 },
+      ]);
+    });
+  });
+
   it("hands over a whole-section event once while its body repeats, and again once it changes or a snapshot resyncs", () => {
     openStream(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
