@@ -218,24 +218,26 @@ class RecordProjection:
 
     def _project(self, name: tuple[str, str], key: str, fields: Mapping[str, Any], at: float) -> bool:
         """Write `name`'s delta to the task's pull requests it applies to, and say whether it applied to any."""
-        saved = []
         targets = self._targets(key, name, fields)
-        for repo, number in targets:
-            found = self._store.find(repo=repo, number=number, detailed=True)
-            if found and at < found[0]["fetchedAt"] and name != MERGING and name not in ROLLUPS:
-                continue  # the record already holds what a later event or delivery says; a merge or a rollup, which names its head, is never older than that
-            if name in ROLLUPS and found and at < ((found[0].get("rollup") or {}).get("at") or 0):
-                continue  # an older rollup, of a head the pull request has since left, must not replace the newer verdict
-            record = found[0] if found else opened(repo, number, self._body(key), at)
+        saved = [self._amend(repo, number, name, key, fields, at) for repo, number in targets]
+        if any(saved) and self._changed:
+            self._changed()
+        return bool(targets)
+
+    def _amend(self, repo: str, number: int, name: tuple[str, str], key: str, fields: Mapping[str, Any], at: float) -> bool:
+        # read under the store's lock, so a delivery naming the head between a read and the save is never written over
+
+        def change(found: Record | None) -> Record | None:
+            if found and at < found["fetchedAt"] and name != MERGING and name not in ROLLUPS:
+                return None  # the record already holds what a later event or delivery says; a merge or a rollup, which names its head, is never older than that
+            if name in ROLLUPS and found and at < ((found.get("rollup") or {}).get("at") or 0):
+                return None  # an older rollup, of a head the pull request has since left, must not replace the newer verdict
+            record = found or opened(repo, number, self._body(key), at)
             stamps = {"fetchedAt": max(at, record["fetchedAt"]), "updatedAt": iso_utc(at)}  # a late event never ages it
             patched = record | _DELTAS[name](record, fields, at) | stamps
-            if not found or patched != record:
-                saved.append(patched)
-        if saved:
-            self._store.save(saved)
-            if self._changed:
-                self._changed()
-        return bool(targets)
+            return patched if not found or patched != record else None
+
+        return self._store.amend(repo, number, change)
 
     @staticmethod
     def _rolled(fields: Mapping[str, Any]) -> bool:
@@ -290,19 +292,21 @@ class RecordProjection:
             head, job = str(fields["head_sha"]), str(fields["job"])
         except KeyError, TypeError, ValueError:
             return
-        found = self._store.find(repo=repo, number=number, detailed=True)
-        if not result or not found:
+        if not result:
             return
-        record = found[0]
-        if head != record["headRefOid"]:
-            if at < record["fetchedAt"]:
-                return
-            checks = []
-        else:
-            checks = [check for check in record["requiredChecks"] if check["name"] != job]
-        checks = sorted([*checks, {"name": job, "result": result}], key=lambda check: check["name"])
-        patched = record | {"headRefOid": head, "requiredChecks": checks, "fetchedAt": max(at, record["fetchedAt"])}
-        if patched != record:
-            self._store.save([patched])
-            if self._changed:
-                self._changed()
+
+        def change(record: Record | None) -> Record | None:
+            if not record:
+                return None
+            if head != record["headRefOid"]:
+                if at < record["fetchedAt"]:
+                    return None
+                checks = []
+            else:
+                checks = [check for check in record["requiredChecks"] if check["name"] != job]
+            checks = sorted([*checks, {"name": job, "result": result}], key=lambda check: check["name"])
+            patched = record | {"headRefOid": head, "requiredChecks": checks, "fetchedAt": max(at, record["fetchedAt"])}
+            return patched if patched != record else None
+
+        if self._store.amend(repo, number, change) and self._changed:
+            self._changed()

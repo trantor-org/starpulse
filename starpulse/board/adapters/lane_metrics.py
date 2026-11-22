@@ -48,6 +48,7 @@ def start(
         sessions=sessions,
         done=feed.roles.done,
         types=types,
+        busy=lambda task: "busy" in ((board.read(task) or {}).get("actorMemory") or {}),
     )
     files = BoardFiles(feed, board, vectors=vectors)
     written: tuple[str, dict[str, Any]] | None = None

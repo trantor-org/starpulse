@@ -178,26 +178,26 @@ describe("the Kanban Start session dialog at phone width", () => {
 describe("the Kanban board's lane width", () => {
   const px = (value: string | undefined) => Number(value?.replace("px", ""));
   const sidePx = Number(/--nav: (\d+)px/.exec(css)?.[1]) + 20 + Number(/--rail: (\d+)px/.exec(css)?.[1]) + 20;
-  const min = px(/#kb #cols \{[^}]*--lane-min: calc\((\d+px) \* var\(--fs\)\)/.exec(css)?.[1]);
-  const gap = px(/#kb #cols \{[^}]*gap: (\d+px)/.exec(css)?.[1]);
+  const share = px(/#kb #cols \{[^}]*--lane-share: calc\((\d+px) \* var\(--fs\)\)/.exec(css)?.[1]);
+  const floor = px(/#kb #cols \{[^}]*--lane-floor: (\d+px);/.exec(css)?.[1]);
+  const gap = px(/#kb #cols \{[^}]*--lane-gap: (\d+px)/.exec(css)?.[1]);
   const board = (viewport: number) => viewport - sidePx;
-  const need = (lanes: number) => lanes * min + (lanes - 1) * gap;
+  const need = (lanes: number, width: number) => lanes * width + (lanes - 1) * gap;
+  const fourUp = (viewport: number) => (board(viewport) - 3 * gap) / 4;
 
-  it("stretches every lane from a minimum width, never wider than the board, to share it, so no strip is left and a narrow board scrolls whole lanes (TASK-15344)", () => {
-    expect(rule("#kb #cols")).toContain("grid-template-columns: repeat(var(--cols, 6), minmax(min(var(--lane-min), 100%), 1fr))");
-  });
-
-  it("never lets a lane shrink below 475px, the width TASK-11986 set", () => {
-    expect(min).toBe(475);
-  });
-
-  it("fits six lanes of the minimum width at 3440px, so they fill the board with no empty strip", () => {
-    expect(need(6)).toBeLessThanOrEqual(board(3440));
-  });
-
-  it.each([1366, 1920])("scrolls the board sideways at %ipx, where six lanes of the minimum width do not fit", (viewport) => {
-    expect(need(6)).toBeGreaterThan(board(viewport));
+  it("sizes lanes fluidly from the board's width, never a fixed track", () => {
+    expect(rule("#kb #cols")).toContain("grid-template-columns: repeat(var(--cols, 6), var(--lane))");
+    expect(rule("#kb #cols")).toContain("--lanes-in-view: min(var(--cols, 6), 4)");
     expect(rule("#kb #cols")).toContain("overflow-x: auto");
+  });
+
+  it.each([1, 1.25, 1.5])("shares a 3440px ultrawide board among all six lanes with no sideways scroll at font scale %f", (fs) => {
+    expect(need(6, share * fs)).toBeLessThanOrEqual(board(3440));
+  });
+
+  it("splits a 1920px board four lanes wide, so the fifth scrolls into view", () => {
+    expect(need(6, share)).toBeGreaterThan(board(1920));
+    expect(fourUp(1920)).toBeGreaterThanOrEqual(floor);
   });
 });
 

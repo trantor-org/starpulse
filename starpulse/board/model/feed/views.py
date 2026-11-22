@@ -65,6 +65,7 @@ class ViewMethods:
         return self._active(
             summary_agent(summary, ready, self._read_model_moves(summary), self._default_profiles)
             | read_model_detail(summary, self._roles.attention)
+            | {"final_summary": summary["final_summary"]}
             | self._read_model_readable(summary)
         )
 

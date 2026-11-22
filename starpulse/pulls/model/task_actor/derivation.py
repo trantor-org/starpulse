@@ -282,10 +282,14 @@ def deploy_reopened(facts: TaskFacts, agent: Agent) -> bool:
 
 
 def criteria_checked(facts: TaskFacts, agent: Agent) -> tuple[int, str] | None:
-    """The criteria count when the task has criteria, every one is checked and its phase sequence has no `deliver`:
-    a task that ships no pull request is finished by its criteria alone."""
+    """The criteria count when the task has criteria, every one is checked and it ships no pull request: its phase
+    sequence has no `deliver`, or it cites none, none names it and its final summary is recorded."""
     ticks = [criterion["checked"] for criterion in agent.get("criteria", ())]
-    if not ticks or not all(ticks) or "deliver" in facts.sequence(agent):
+    if not ticks or not all(ticks):
+        return None
+    if "deliver" in facts.sequence(agent) and (
+        facts.own_prs(agent) or facts.unlinked(agent) or not (agent.get("final_summary") or "").strip()
+    ):
         return None
     return len(ticks), f"Every criterion is checked ({len(ticks)}) and the task ships no pull request."
 
