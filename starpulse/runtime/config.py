@@ -434,7 +434,6 @@ _OUTBOUND = (
     "claude_code",
     "github",
     "search",
-    "bridge",
 )
 
 
@@ -450,6 +449,7 @@ def rehearsal(raw: dict[str, Any], spec: dict[str, str]) -> dict[str, Any]:
     kept = {key: value for key, value in raw.items() if key not in _OUTBOUND}
     return {
         **kept,
+        "bridge": {"enabled": False},
         "pull_requests": False,
         "database_url": spec["database_url"],
         "event_log_archive_dir": spec["archive_dir"],
