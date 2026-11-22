@@ -18,7 +18,7 @@ vi.mock("../render/renderer", async (original) => ({
 }));
 
 const dagData: DagData = {
-  now: 100, facts: {}, cpu: {},
+  now: 100, facts: {}, dashboards: {},
   dags: [
     { name: "runs/pr-watch", status: "succeeded", runId: "", startedAt: "", finishedAt: "1970-01-01T00:01:00Z", schedule: [], stats: null, rerun: null, steps: [{ name: "scan", depends: [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] }], pool: "runs/main" },
     { name: "runs/sweep", status: "not_started", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [{ name: "scan", depends: [], status: "not_started", kind: null, precondition: null, lock: null, last: [] }] },
@@ -80,9 +80,9 @@ describe("the navigator's DAGs entry", () => {
 describe("the DAGs view's navigator and legend", () => {
   beforeEach(() => act(() => dagsNode().click()));
 
-  it("shows the DAG filter and the Queues, Run-hours and Runner CPU cards, and not the Star Map's layers, DAG domains or search", () => {
+  it("shows the DAG filter and the Queues and Run-hours cards, and not the Star Map's layers, DAG domains or search", () => {
     expect(q("#queues")!.textContent).toContain("main");
-    expect([...host.querySelectorAll("#nav section.card h3")].map((h) => h.textContent)).toEqual(["Queues", "Run-hours", "Runner CPU"]);
+    expect([...host.querySelectorAll("#nav section.card h3")].map((h) => h.textContent)).toEqual(["Queues", "Run-hours"]);
     expect(q("#layers")).toBeNull();
     expect(q("#cons")).toBeNull();
     expect(q("#q")).toBeNull();

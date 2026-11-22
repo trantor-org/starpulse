@@ -920,6 +920,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `url` (text, required): What the adapter reads. A built-in adapter is an opt-in worker: `serve`'s `contexts` child runs it as a thread, or you run `starpulse worker <adapter> --config <this file>`, and, with it down or not yet started, the page shows this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its beat is older than 60s).
 - `run_safe` (list of text): The workflows the page's Run now may start.
 - `domains` (table of list of text or table of list of text): How the page groups this instance's workflows: each domain is a list of workflow names, or a table of process name to workflow list.
+- `dashboard` (text): The Grafana dashboard that shows this instance's runner; the jobs page links the instance to it.
 - `commit` (`[runs.commit]` table): The run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain. Each key names a parameter; a key left out is a parameter this instance has none of.
 
 #### [worker_memory.<context>]

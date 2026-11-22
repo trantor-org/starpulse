@@ -106,6 +106,10 @@ class RunsInstanceFile(_Table):
             "process name to workflow list."
         ),
     )
+    dashboard: str | None = Field(
+        default=None,
+        description="The Grafana dashboard that shows this instance's runner; the jobs page links the instance to it.",
+    )
     commit: CommitFile | None = Field(
         default=None,
         description=(

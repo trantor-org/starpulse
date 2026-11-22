@@ -172,6 +172,7 @@ def assemble(
         source=board.source,
         capabilities={"edit": native_board, "archive": native_board, "create": native_board},
         commit={instance.name: instance.commit for instance in config.runs if instance.commit},
+        dashboards={instance.name: instance.dashboard for instance in config.runs if instance.dashboard},
         standing=board.standing,
         readable=board.readable,
         activity=_holder_activity(config),

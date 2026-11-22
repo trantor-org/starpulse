@@ -2,15 +2,15 @@
 // the catalog, and where a step sits in its constellation. The page's snapshot reaches it as one DagData, read from the Sky.
 import { BOARD_COLOR } from "../../render/scene";
 import type { Sky } from "../../render/sky";
-import type { ActiveRun, Cpu, Cue, Dag, DagStep, Domain, Machine, Pool, RecentRun, Rerun, RunStatus } from "../../api";
+import type { ActiveRun, Cue, Dag, DagStep, Domain, Machine, Pool, RecentRun, Rerun, RunStatus } from "../../api";
 
 /** Everything the DAGs view reads from the snapshot: the DAGs, their domains, the pools, the cues, each machine and the server's clock. */
 export interface DagData {
   dags: Dag[];
   domains: Domain[];
   pools: Pool[];
-  /** The share of all the host's cores each runs instance's runner used, by instance. */
-  cpu: Record<string, Cpu>;
+  /** The Grafana dashboard of each runs instance that has one, by instance name. */
+  dashboards: Record<string, string>;
   cues: Cue[];
   flows: { name: string; machine: Machine }[];
   now: number;
@@ -75,7 +75,7 @@ export const dagData = (sky: Sky): DagData => ({
     return { name: g.name, dags: g.dags.map(member), ...(g.processes && { processes: g.processes.map((p) => ({ name: p.name, dags: p.dags.map(member) })) }) };
   }),
   pools: sky.pools,
-  cpu: sky.cpu,
+  dashboards: sky.dashboards,
   cues: sky.cues,
   flows: Object.values(sky.flows).map((f) => ({ name: f.name, machine: f.machine })),
   now: sky.now,
@@ -91,11 +91,6 @@ export const runHours = (facts: Record<string, DagFacts>) =>
     .flatMap(([name, f]) => (f.hours ? [{ name, hours: f.hours }] : []))
     .sort((a, b) => b.hours - a.hours || a.name.localeCompare(b.name));
 
-/** The Runner CPU as one percentage of all the host's cores: every instance's runner share summed. Null when the server served none, which is not zero. */
-export const cpuPercent = (cpu: Record<string, Cpu>) => {
-  const shares = Object.values(cpu).map((c) => c.share);
-  return shares.length ? Math.min(100, 100 * shares.reduce((a, b) => a + b, 0)) : null;
-};
 export const group = (p: Phase): Exclude<Phase, "queued"> => (p === "queued" ? "running" : p);
 
 export interface Row {

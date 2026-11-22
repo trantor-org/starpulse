@@ -845,26 +845,10 @@ export interface MoveDelta {
  * A runs instance's workflows.
  */
 export interface DagsDelta {
-  cpu?: {
-    [k: string]: Cpu;
-  } | null;
   dags: DagBody[];
   error: string | null;
   pools?: Pool[] | null;
   [k: string]: unknown;
-}
-/**
- * The share of the host's CPU an instance's scheduler and workers used since the last reading.
- */
-export interface Cpu {
-  /**
-   * How many cores the host has.
-   */
-  cores: number;
-  /**
-   * Their CPU time over all the host's cores, from 0 to 1.
-   */
-  share: number;
 }
 /**
  * A runs workflow as the page draws it: the latest run, the runs in flight and the pool it runs on.
@@ -2192,16 +2176,16 @@ export interface Snapshot {
    */
   cold_done?: string[] | null;
   /**
-   * The CPU share of each runs instance's scheduler and workers, by instance name.
-   */
-  cpu?: {
-    [k: string]: Cpu;
-  } | null;
-  /**
    * The DAGs cued by a Board event.
    */
   cues?: Cue[] | null;
   dags: DagBody[];
+  /**
+   * The Grafana dashboard of each runs instance that has one, by instance name.
+   */
+  dashboards?: {
+    [k: string]: string;
+  } | null;
   /**
    * The DAG domains.
    */

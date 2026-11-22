@@ -65,7 +65,7 @@ class TaskFacts(Protocol):
     def dependency_needs(self, name: str) -> Sequence[str]: ...
     def unfinished(self, name: str) -> tuple[str, ...]: ...
     def alive(self, name: str) -> bool | None: ...
-    def holds(self, name: str) -> tuple[str, ...]: ...
+    def holds(self, name: str) -> tuple[str, ...] | None: ...
     def owns_failure(self, name: str) -> bool: ...
     def main_green(self) -> str | None: ...
     def is_open(self, name: str) -> bool: ...
@@ -78,6 +78,7 @@ class TaskFacts(Protocol):
     def sequence(self, agent: Agent) -> Sequence[str]: ...
     def waiting_on(self, agent: Agent) -> str | None: ...
     def heard(self, name: str) -> Sequence[str]: ...
+    def unpublished(self, subject: str) -> str | None: ...
 
     def unsettled(self) -> None: ...
     def hooked(self) -> None: ...
@@ -118,6 +119,17 @@ def missing(facts: TaskFacts, agent: Agent) -> tuple[str, ...]:
         for dependency in agent["dependencies"]
         if not facts.is_open(dependency) and not cleared(facts, dependency)
     )
+
+
+def dead(facts: TaskFacts, agent: Agent) -> tuple[str, ...]:
+    """Why the task's wait can never end: a dependency the board holds in no store, one archived without leaving the
+    task's dependencies, or event subjects none of which is heard or published by a component."""
+    reasons = [f"{name} is not on the board" for name in missing(facts, agent)]
+    reasons += [f"{name} is archived and never reaches Done" for name in agent["dependencies"] if facts.is_archived(name)]
+    gate = criteria.subjects(agent["description"])
+    if gate and not facts.heard(agent["id"]) and all(unpublished := [facts.unpublished(each) for each in gate]):
+        reasons += unpublished
+    return tuple(reasons)
 
 
 def entered(facts: TaskFacts, agent: Agent) -> float:
@@ -486,7 +498,9 @@ def deps_done(facts: TaskFacts, agent: Agent) -> Held:
         facts.pin_held(agent["id"], True)
         facts.note_hold(agent, (waiting,))
         return None
-    if reasons := held_by(facts, agent["id"]):
+    if (reasons := held_by(facts, agent["id"])) is None:
+        return None  # the board's hook is still running: its result derives the task again
+    if reasons:
         facts.held(agent["id"], True)
         facts.note_hold(agent, reasons)
         return None
@@ -501,8 +515,9 @@ def deps_done_with_pr(facts: TaskFacts, agent: Agent) -> Held:
     return deps_done(facts, agent) if pr_ready(facts, agent) else None
 
 
-def held_by(facts: TaskFacts, name: str) -> tuple[str, ...]:
-    """Why the board withholds the task's `deps_done`; a hold that raises holds it with that error."""
+def held_by(facts: TaskFacts, name: str) -> tuple[str, ...] | None:
+    """Why the board withholds the task's `deps_done`, a hold that raises holds it with that error; None while the
+    board's hook still runs."""
     facts.hooked()
     return facts.holds(name)
 
@@ -513,8 +528,8 @@ def deadline(facts: TaskFacts, agent: Agent) -> tuple[float, str] | None:
     The SLE is the latest `expect_by` plus two days, else seven days from entering the lane."""
     if not (since := entered(facts, agent)):
         return None
-    if missing(facts, agent):
-        return since, "a dependency is not on the board"
+    if dead(facts, agent):
+        return since, "its wait can never end"
     if not criteria.authored(agent["description"]) and moving(facts, agent):
         return None
     dates = [stamp for stamp in map(epoch, criteria.expect_dates(agent["description"])) if stamp]
@@ -538,14 +553,13 @@ def overdue(facts: TaskFacts, agent: Agent) -> Held:
     now = facts.now()
     if not due or due[0] > now:
         return None
-    if lost := missing(facts, agent):
-        gone = "; ".join(f"{dependency} is not on the board" for dependency in lost)
-        listed = ", ".join(agent["dependencies"])
+    if lost := dead(facts, agent):
+        listed = ", ".join(agent["dependencies"]) or "none"
         return due[0], attention_reason(
-            f"{gone}, so nothing releases this task. Its dependencies ({listed}) are cleared with this move",
-            "its dependencies are not on the board, so none can release it",
-            ("re-park it on the right tasks", "close it"),
-            "Re-park it on the right tasks, or close it?",
+            f"{'; '.join(lost)}, so nothing releases this task. Its dependencies ({listed}) are cleared with this move",
+            "its wait can never end",
+            ("re-park it on the right tasks or events", "close it"),
+            "Re-park it on the right tasks or events, or close it?",
         )
     gate = [*unmet(facts, agent), *(each["id"] for each in criteria.authored(agent["description"]))]
     days = int((now - entered(facts, agent)) // DAY_S)

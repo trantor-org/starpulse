@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("starpulse.pulls.adapters.inbound.task_actor")
 
+#: Seconds a judged event subject keeps its answer: a dead wait leaves Waiting at once, so a fix is seen within it.
+PUBLISHER_TTL_S = 60.0
+
 
 class ActorFacts:
     """`TaskFacts` over one `TaskActor`'s feed, store, probes and bookkeeping."""
@@ -72,13 +75,8 @@ class ActorFacts:
             logger.warning("task actor: the holder of %s was not probed: %s", name, error)
             return None
 
-    def holds(self, name: str) -> tuple[str, ...]:
-        try:
-            return tuple(self._actor._holds(name))
-        except Exception as error:
-            self._actor._unsettled = True
-            logger.warning("task actor: cannot read the holds of %s: %s", name, error)
-            return (f"the board's holds cannot be read: {error}",)
+    def holds(self, name: str) -> tuple[str, ...] | None:
+        return self._actor._holds_of(name)
 
     def owns_failure(self, name: str) -> bool:
         return self._actor._owns_failure(name)
@@ -115,6 +113,21 @@ class ActorFacts:
 
     def heard(self, name: str) -> Sequence[str]:
         return self._actor._heard.get(name, ())
+
+    def unpublished(self, subject: str) -> str | None:
+        """Why no component publishes `subject`, else None. The board hook spawns a process, so an answer is kept for
+        `PUBLISHER_TTL_S`, a failure included (it reads as published, so a fault never strands a healthy wait)."""
+        actor = self._actor
+        kept = actor._publisher.get(subject)
+        if kept and actor._clock() < kept[1]:
+            return kept[0]
+        try:
+            reason = actor._unpublished(subject)
+        except Exception:
+            logger.exception("cannot judge the publisher of %s", subject)
+            reason = None
+        actor._publisher[subject] = (reason, actor._clock() + PUBLISHER_TTL_S)
+        return reason
 
     def unsettled(self) -> None:
         self._actor._unsettled = True

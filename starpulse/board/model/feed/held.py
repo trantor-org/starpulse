@@ -59,11 +59,11 @@ RULES: dict[str, tuple[str, ...]] = {
     "claims": ("claim", "snapshot"),
     "dags": ("dags", "snapshot"),
     "pools": ("dags", "snapshot"),
-    "cpu": ("dags", "snapshot"),
     "error": ("dags", "snapshot"),
     "mergeStrip": ("ledgers", "snapshot", "tick"),
     "mergePins": ("ledgers", "snapshot", "tick"),
     "domains": ("snapshot",),
+    "dashboards": ("snapshot",),
     "cues": ("snapshot",),
     "reading": ("snapshot",),
     "graphs": ("build",),
@@ -256,7 +256,7 @@ class HeldSnapshot:
             claims = fields.get("claims", self.snapshot["claims"])
             fields["claims"] = {**claims, data["task"]: {"reason": data["reason"], "at": data["at"]}}
         elif kind == "dags":
-            fields.update({key: data[key] for key in ("dags", "pools", "cpu", "error")})
+            fields.update({key: data[key] for key in ("dags", "pools", "error")})
         elif kind == "ledgers":
             fields.update({key: data[key] for key in ("mergeStrip", "mergePins")})
         else:

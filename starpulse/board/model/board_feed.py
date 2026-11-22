@@ -70,7 +70,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
     Backlog.md's default statuses alone), and `cues` the board adapter's workflow cues. `domains` and `run_safe`
     are the config's, each workflow as `<instance>/<workflow>`. `source` names what the Board is read from, for the
     page to show until the board adapter has read it. `commit` is each runs instance's `[runs.commit]` keys, by instance
-    name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain.
+    name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain. `dashboards` is each instance's Grafana dashboard URL, by instance name.
     """
 
     def __init__(
@@ -86,6 +86,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         source: str = "the board",
         capabilities: Mapping[str, bool] | None = None,
         commit: Mapping[str, CommitKeys] | None = None,
+        dashboards: Mapping[str, str] | None = None,
         processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
         clock: Callable[[], float] = time.time,
         roles: StateRoles | None = None,
@@ -137,6 +138,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._activity = activity
         self._board_url = board_url
         self._commit = commit or {}
+        self._dashboards = dashboards or {}
         self._ties = self._tied_to_events(cues)
         qualify = qualifier(self._domains)
         #: How a failure of each workflow a machine event cues resolves, by `(event, workflow)`; any other resolves on its next success.
@@ -165,8 +167,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._aliases: dict[str, str] = {}
         self._dags: dict[str, list] = {}
         self._pools: dict[str, list] = {}
-        #: Each instance's latest CPU reading (a `Cpu` as a dict); an instance that never reported one is absent.
-        self._cpu: dict[str, dict] = {}
         #: The workflows each instance's adapter reported it can start; an instance not here can start all it has.
         self._startable: dict[str, frozenset[str]] = {}
         self._runs_errors: dict[str, str] = {}

@@ -19,7 +19,7 @@ const board: Machine = {
   launches: { "runs/triage": { skill: "triaging", machine: "" } },
 };
 const data: DagData = {
-  now: 3600, facts: {}, cpu: {},
+  now: 3600, facts: {}, dashboards: {},
   dags: [dag("runs/pr-watch"), dag("runs/sweeper"), dag("runs/triage"), dag("runs/cued")],
   domains: [{ name: "Board", dags: ["runs/pr-watch", "runs/sweeper", "runs/triage", "runs/cued"].map((name) => ({ name, runSafe: false })) }],
   pools: [{ name: "runs/main", cap: 2, running: 0, queued: 0 }],
