@@ -41,12 +41,18 @@ state = github_inbox_state.c
 _SEED = ["delivery_id", "consumer", "status", "attempts", "next_attempt_at", "updated_at"]
 
 
+#: The deliveries that move a head's `pr-checks` rollup.
+CHECK_EVENTS = ("check_run", "check_suite", "status")
+
+
 class Backlog(NamedTuple):
-    """One consumer's rows: how many wait, how long the oldest due one has, and how many are dead."""
+    """One consumer's rows: how many wait, how long the oldest due one has, how many are dead, and how long the oldest
+    pending check delivery has been saved."""
 
     pending: int
     oldest_due_s: float
     dead: int
+    oldest_check_s: float = 0.0
 
 
 def backlogs(engine: Engine, clock: Callable[[], float] = time.time) -> dict[str, Backlog]:
@@ -57,10 +63,16 @@ def backlogs(engine: Engine, clock: Callable[[], float] = time.time) -> dict[str
                 state.consumer, state.status
             )
         ).all()
+        waiting = db.execute(
+            select(state.consumer, func.min(inbox.c.received_at))
+            .join(inbox, inbox.c.delivery_id == state.delivery_id)
+            .where(state.status == "pending", inbox.c.event.in_(CHECK_EVENTS))
+            .group_by(state.consumer)
+        ).all()
     now = clock()
     found: dict[str, Backlog] = {}
     for consumer, status, count, earliest in rows:
-        pending, oldest, dead = found.get(consumer, Backlog(0, 0.0, 0))
+        pending, oldest, dead, _ = found.get(consumer, Backlog(0, 0.0, 0))
         found[consumer] = (
             Backlog(count, max(0.0, now - earliest), dead)
             if status == "pending"
@@ -68,6 +80,8 @@ def backlogs(engine: Engine, clock: Callable[[], float] = time.time) -> dict[str
             if status == "dead"
             else Backlog(pending, oldest, dead)
         )
+    for consumer, received in waiting:
+        found[consumer] = found[consumer]._replace(oldest_check_s=max(0.0, now - received))
     return found
 
 
@@ -134,13 +148,17 @@ class SqlQueue:
         sqlite_db = self._engine.dialect.name == "sqlite"
         after = self._seeded if sqlite_db and self._seeded <= seeded else 0
         after = max(after, self._start(now) if after == 0 else self._floor or 0)
+        # A delivery older than `RETENTION` is never seeded: `purge` dropped its row once it was done, and a restart that
+        # seeded it again replayed a week of deliveries ahead of the fresh ones.
         # A seed holds SQLite's one write lock while it scans: a first claim over a multi-GB inbox took over a minute and
         # dropped the listener's saves, so a window of ids is one transaction and the listener writes between windows.
         window = _SEED_WINDOW if sqlite_db else max(seeded - after, 1)
         for start in range(after, seeded, window):
             unseen = select(
                 inbox.c.delivery_id, literal(self._consumer), literal("pending"), literal(0), literal(now), literal(now)
-            ).where(inbox.c.id > start, inbox.c.id <= min(start + window, seeded), ~seen)
+            ).where(
+                inbox.c.id > start, inbox.c.id <= min(start + window, seeded), inbox.c.received_at >= now - RETENTION, ~seen
+            )
             with self._engine.begin() as db:
                 db.execute(self._insert(github_inbox_state).from_select(_SEED, unseen).on_conflict_do_nothing())
         with self._engine.connect() as db:

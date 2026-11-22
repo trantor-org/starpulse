@@ -197,6 +197,8 @@ _RECORDS_KEPT = 256
 _RECORDS_LOCK = threading.Lock()
 
 
+#: GitHub lists a pull request's files `_FILES_PAGE` to a page and stops at 3000.
+_FILES_PAGE, _FILES_PAGES = 100, 30
 _GITHUB_MERGEABLE = {True: "MERGEABLE", False: "CONFLICTING"}
 
 
@@ -209,13 +211,32 @@ def _github_mergeable(repo: str, number: int) -> str | None:
     return _GITHUB_MERGEABLE.get(pull.get("mergeable"))
 
 
-def _pull_of(retired: _Retired) -> Callable[[str, int, bool], dict[str, Any] | None]:
+def _github_files(repo: str, number: int) -> list[str] | None:
+    """The paths pull request `number` changes, None when GitHub is unreadable or its listing is cut at its cap."""
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    transport = connect(token, HOOK_TIMEOUT)
+    paths: list[str] = []
+    try:
+        for page in range(1, _FILES_PAGES + 1):
+            items = get(transport, f"/repos/{repo}/pulls/{number}/files?per_page={_FILES_PAGE}&page={page}").get(
+                "items", []
+            )
+            paths += [item["filename"] for item in items]
+            if len(items) < _FILES_PAGE:
+                return paths
+    except OSError:
+        pass
+    return None
+
+
+def _pull_of(retired: _Retired) -> Callable[[str, int, str | None], dict[str, Any] | None]:
     """A lookup of the stored pull request `(repository, number)` as `{state, draft, checks, threads, mergeable, body, files, head_ref}`,
     None when the store holds none; `files` is None for a record saved before the store kept them. A board that has not started has no store.
-    With `settle`, an open pull request whose stored `mergeable` is not `MERGEABLE` reads GitHub's answer instead: GitHub sends no event
-    when a push clears a conflict, so the stored flag can outlive it. An unreadable GitHub leaves the stored flag."""
+    With `settle="mergeable"`, an open pull request whose stored `mergeable` is not `MERGEABLE` reads GitHub's answer instead: GitHub sends no
+    event when a push clears a conflict, so the stored flag can outlive it. With `settle="files"`, a pull request whose `files` is None
+    reads GitHub's listing instead: the pulls consumer can lag the pull request's first delivery. An unreadable GitHub leaves the stored value."""
 
-    def read(repo: str, number: int, settle: bool) -> dict[str, Any] | None:
+    def read(repo: str, number: int, settle: str | None) -> dict[str, Any] | None:
         if retired.engine is None:
             return None
         columns = (
@@ -237,8 +258,11 @@ def _pull_of(retired: _Retired) -> Callable[[str, int, bool], dict[str, Any] | N
         if row is None:
             return None
         mergeable = row.mergeable
-        if settle and row.state == "OPEN" and mergeable != "MERGEABLE":
+        if settle == "mergeable" and row.state == "OPEN" and mergeable != "MERGEABLE":
             mergeable = _github_mergeable(repo, number) or mergeable
+        files = (row.detail or {}).get("files")
+        if settle == "files" and files is None:
+            files = _github_files(repo, number)
         return {
             "number": number,
             "state": row.state,
@@ -247,7 +271,7 @@ def _pull_of(retired: _Retired) -> Callable[[str, int, bool], dict[str, Any] | N
             "threads": row.threads,
             "mergeable": mergeable,
             "body": row.body,
-            "files": (row.detail or {}).get("files"),
+            "files": files,
             "head_ref": row.head_ref,
         }
 

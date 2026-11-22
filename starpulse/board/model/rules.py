@@ -42,7 +42,7 @@ class Record:
     earlier: Record | None = None
     #: The stored pull request `(repository, number)` as `{draft, checks, body, files}`, or None when the store holds
     #: none (`files` is None for a record saved before the store kept them); the `pulls_*` primitives read it.
-    pull_of: Callable[[str, int, bool], Mapping[str, Any] | None] = lambda _repo, _number, _settle: None
+    pull_of: Callable[[str, int, str | None], Mapping[str, Any] | None] = lambda _repo, _number, _settle: None
     #: The ids of the open tasks whose front matter field (first argument) holds a value (second), none for a board with no tasks.
     holders: Callable[[str, str], list[str]] = lambda _field, _value: []
     #: Every task's `dependencies` by id, read when asked; the `no_implied_dependency` primitive walks it.
@@ -525,9 +525,9 @@ def _checklist(spec: Mapping[str, Any], where: str) -> Primitive:
     return holds
 
 
-def _pulls(record: Record, settle: bool = False) -> list[Mapping[str, Any] | None]:
+def _pulls(record: Record, settle: str | None = None) -> list[Mapping[str, Any] | None]:
     """The stored pull request of each URL in the task's `references`, None for one the store does not hold; `settle`
-    asks the lookup to correct a stored `mergeable` from GitHub."""
+    names the stored field (`mergeable` or `files`) the lookup corrects from GitHub."""
     links = [_PULL_URL.fullmatch(url) for url in _values(record.front.get("references"))]
     return [record.pull_of(link[1], int(link[2]), settle) for link in links if link]
 
@@ -567,7 +567,7 @@ def _pulls_clear(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, set(), where, "pulls_clear")
     return lambda record: all(
         pull is not None and (pull["state"] == "MERGED" or (not pull["threads"] and pull["mergeable"] == "MERGEABLE"))
-        for pull in _pulls(record, settle=True)
+        for pull in _pulls(record, settle="mergeable")
     )
 
 
@@ -599,7 +599,7 @@ class _PullsChanged:
         found = self._criteria.search(record.body)
         if found and any(self._wanted.search(line) for line in _CHECKED.findall(found.group(1))):
             return []  # a checked criterion is evidence whatever the delivery changed, so unknown files cannot fail it closed
-        pulls = _pulls(record)
+        pulls = _pulls(record, settle="files")
         if any(pull is None for pull in pulls):
             return None  # the store holds no such pull request: the rule cannot clear, so it fails closed
         pulls = [pull for pull in pulls if not _another_tasks(record, pull)]  # another task's delivery is its own to evidence
@@ -824,7 +824,7 @@ def standing_verdict(
     def unread(task: str) -> None:
         read.append(task)
 
-    def unread_pull(repo: str, number: int, _settle: bool) -> None:
+    def unread_pull(repo: str, number: int, _settle: str | None) -> None:
         read.append(f"{repo}#{number}")
 
     before = Record(front, body, unread, pull_of=unread_pull)

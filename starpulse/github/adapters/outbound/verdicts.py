@@ -13,7 +13,7 @@ CONTENT_TYPE = CONTENT_TYPE_LATEST
 
 
 class Backlogs:
-    """`starpulse_github_{pending_rows,oldest_due_seconds,dead_rows}{consumer}`, read from the queue at each scrape."""
+    """`starpulse_github_{pending_rows,oldest_due_seconds,dead_rows,oldest_check_seconds}{consumer}`, read from the queue at each scrape."""
 
     def __init__(self, backlogs: Callable[[], dict[str, Backlog]]) -> None:
         self._backlogs = backlogs
@@ -23,10 +23,11 @@ class Backlogs:
             "pending_rows": "Deliveries a consumer has yet to finish",
             "oldest_due_seconds": "Seconds the oldest due pending delivery has waited",
             "dead_rows": "Deliveries a consumer gave up on, until requeued or dismissed",
+            "oldest_check_seconds": "Seconds since the oldest unfinished check_run, check_suite or status delivery was saved",
         }
         gauges = [GaugeMetricFamily(f"starpulse_github_{name}", text, labels=["consumer"]) for name, text in help_of.items()]
         for consumer, backlog in self._backlogs().items():
-            for gauge, value in zip(gauges, (backlog.pending, backlog.oldest_due_s, backlog.dead), strict=True):
+            for gauge, value in zip(gauges, backlog, strict=True):
                 gauge.add_metric([consumer], value)
         yield from gauges
 

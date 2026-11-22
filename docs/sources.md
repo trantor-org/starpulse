@@ -326,12 +326,15 @@ absent or fails to start, and the inbox keeps every delivery.
 
 The page's `/metrics` serves, per consumer, `starpulse_github_pending_rows{consumer}`,
 `starpulse_github_oldest_due_seconds{consumer}` (the age of its oldest pending row that is due) and
-`starpulse_github_dead_rows{consumer}`, the dead rows it holds until `requeue` or `dismiss` clears them; the listener's
-own `/metrics` serves the same.
+`starpulse_github_dead_rows{consumer}`, the dead rows it holds until `requeue` or `dismiss` clears them, and
+`starpulse_github_oldest_check_seconds{consumer}`, the age of its oldest pending `check_run`, `check_suite` or `status`
+delivery (0 with none), which the `starpulse-pr-checks-stalled` alert reads; the listener's own `/metrics` serves the same.
 
 7. A consumer with no row starts at the newest delivery, not the whole inbox: its first claim anchors there with a
    `skipped` row and every claim seeds only past its oldest own row. `SqlQueue(..., backfill=N)` makes the first claim
-   seed the newest `N` deliveries as `pending` instead; no consumer opts in today.
+   seed the newest `N` deliveries as `pending` instead; no consumer opts in today. A claim never seeds a delivery saved
+   more than 7 days ago: the purge dropped that consumer's row once done, and a dead row pinning its floor would
+   otherwise bring a week of old deliveries back as `pending` ahead of the fresh ones after a restart.
 
 ### Reconcile the inbox against GitHub
 
