@@ -217,8 +217,9 @@ def pr_terminal(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
 
 
 def work_floor(facts: TaskFacts, agent: Agent) -> float:
-    """When the working lane's shipped work stops counting: the task's last entry other than an answer out of Needs attention."""
-    return facts.memory(agent["id"]).get("work_floor") or agent.get("entered") or 0.0
+    """When the working lane's shipped work stops counting: the task's last entry other than an answer out of Needs
+    attention, kept in memory on each entry. A task with none counts every merge: the feed's newest event time is no entry."""
+    return facts.memory(agent["id"]).get("work_floor") or 0.0
 
 
 def pr_merged(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
