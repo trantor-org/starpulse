@@ -17,8 +17,7 @@ too: when the skill machine reaches an exit state the actor calls `advance(machi
 once per visit to the phase, and only for the skill machine the task's current phase links. A link that lists `routes`
 (phase state to event) sends instead the event for the phase that follows it in the `sequences` entry of the task's
 type (`decide` for a kind-decide task, `default` for a type it does not name), when one is listed; the exit's own event serves every other sequence.
-The Board's phase is a task's lane, and its links count only when the actor writes every event they exit on (the Verify
-machine's `passed` and `missed` close and send back a Verifying task); a skill placement from before the task entered
+The Board's phase is a task's lane, and its links count only when the actor writes every event they exit on; a skill placement from before the task entered
 the lane is the last visit's and advances nothing.
 
 A Waiting task parked on event subjects (the `kind: event` entries of its Start Criteria) is released by the first
@@ -45,7 +44,7 @@ import re
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -291,6 +290,8 @@ class TaskActor:
         advance: Callable[[str, str, str], None] | None = None,
         read: TaskReader = lambda _task: None,
         idle: Callable[[str, str], None] | None = None,
+        end: Callable[[str], None] | None = None,
+        end_lanes: Collection[str] = frozenset(),
         sequences: Mapping[str, Sequence[str]] = MappingProxyType({}),
         awaits: Sequence[str] = (),
         unfinished: Callable[[str], Sequence[str]] = lambda _task: (),
@@ -302,6 +303,9 @@ class TaskActor:
         self._owner_source = owner_source
         self._read = read
         self._idle = idle
+        #: Ends a task's holder session once idle (`[bridge] end`), and the lanes where a task's session is ended.
+        self._end = end
+        self._end_lanes = end_lanes
         self._memory = TaskMemory(read, lambda name, memory: self._edit_retrying(name, {"actorMemory": memory}, ""))
         self._advance = advance
         #: The phases a task of each type goes through, in order (`[sequences]`); `default` serves an unnamed type.
@@ -416,8 +420,8 @@ class TaskActor:
         self.turned = threading.Event()
         #: The merged Review tasks, and the monotonic clock it was counted at.
         self._waiting: tuple[float, int] = (float("-inf"), 0)
-        #: Set once the start's derivation of every open task is done. A task or move change, a store save and the
-        #: Verifying rewake are handled from `indexed` on, while it runs.
+        #: Set once the start's derivation of every open task is done. A task or move change and a store
+        #: save are handled from `indexed` on, while it runs.
         self.ready = threading.Event()
         #: Set once the start sweep has indexed the open tasks and read their pull requests, before it derives them.
         self.indexed = threading.Event()
@@ -1226,9 +1230,11 @@ class TaskActor:
         logger.info("task actor: %s has a pull request that is not ready: %s", agent["id"], reasons)
 
     def working(self) -> list[str]:
-        """The open tasks in the working lane, whose holders `follow_holder_idle` checks for a settle while down."""
+        """The open tasks in the working or attention lane, whose holders `follow_holder_idle` checks for a settle or an end
+        while down."""
+        roles = self._feed.roles
         with self._lock:
-            return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == self._feed.roles.working]
+            return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] in (roles.working, roles.attention)]
 
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
         """A session settled. A holder whose task has an open criterion (neither checked nor struck through) is nudged by
@@ -1250,6 +1256,7 @@ class TaskActor:
             if agent is None or agent["state"] != self._feed.roles.working:
                 self._memory.keep(name, resumes=None)
                 self._unwant(name)
+                self._end_closed(name)
                 return
             if self._idle is None:
                 return
@@ -1296,6 +1303,30 @@ class TaskActor:
         else:
             self._resume(name, progress, count)
 
+    def lane_entered(self, name: str, lane: str) -> None:
+        """A task entered `lane`: its holder's session ends when the lane is one of `end_lanes`, which the reaper does once
+        the session is idle; a session busy now is ended by `holder_settled` when it settles."""
+        if lane in self._end_lanes:
+            self._end_session(name)
+
+    def _end_closed(self, name: str) -> None:
+        """A holder of `name` settled or ended while the task sits in a closed lane: end its session."""
+        if derivation.closed_lane(self._port, name, self._end_lanes):
+            self._end_session(name)
+
+    def _end_session(self, name: str) -> None:
+        end = self._end
+        if end is None:
+            return
+
+        def run() -> None:
+            try:
+                end(name)
+            except Exception:
+                logger.exception("task actor: %s's closed-lane end failed", name)
+
+        self._queue(run)
+
     def holder_entered(self, name: str) -> None:
         """A task moved from a parked lane to In Progress settles like an idle holder, except after the operator's answer:
         its claim told the holder through the task topic, and a resume on top costs the answering session a turn."""
@@ -1307,7 +1338,8 @@ class TaskActor:
         self.holder_settled(name)
 
     def holder_ended(self, name: str, wait_ended: bool = False) -> None:
-        """A session's process ended. A holder whose task still has work (an open criterion, or a pull request of its own
+        """A session's process ended. A task in Needs attention, whose session the operator's answer waits on, is revived
+        once whatever work is left, and stays there, a failed revive included. A holder whose task still has work (an open criterion, or a pull request of its own
         not yet ended) is revived once by the `idle` hook's `revive` verdict, which reopens the session in place and moves the
         claim to it; the task stays In Progress. The next loss with no progress (a criterion checked, a phase or head
         change) moves the task to Needs attention with its session kept, as does a revive that fails, naming why. An awaited event holds the revival until it ends. A
@@ -1316,28 +1348,38 @@ class TaskActor:
         with self._lock:
             agent = self._feed.task(name, lean=True)
             self._memory.keep(name, revive_held=None)
-            if agent is None or agent["state"] != self._feed.roles.working or self._idle is None:
+            roles = self._feed.roles
+            parked = agent is not None and agent["state"] == roles.attention
+            if agent is None or agent["state"] not in (roles.working, roles.attention):
+                self._end_closed(name)
+                self._unwant(name)
+                return
+            if self._idle is None:
                 self._unwant(name)
                 return
             if wait_ended and self._session_active(name):
                 return
             items = agent.get("criteria", ())
             opened = open_criteria(items)
-            if not agent["prs"] and not opened:
-                return
-            own = self._own_prs(agent)
-            if (
-                agent["prs"]
-                and own
-                and all((record := self._record(url)) and record["state"] in TERMINAL for url in own)
-            ):
-                return
-            if self._awaits(agent):
-                self._memory.keep(name, awaited=True, revive_held=True)
-                return
-            key = (tuple(resolved(item) for item in items), self._progress(agent)) if opened else self._progress(agent)
+            if not parked:
+                if not agent["prs"] and not opened:
+                    return
+                own = self._own_prs(agent)
+                if (
+                    agent["prs"]
+                    and own
+                    and all((record := self._record(url)) and record["state"] in TERMINAL for url in own)
+                ):
+                    return
+                if self._awaits(agent):
+                    self._memory.keep(name, awaited=True, revive_held=True)
+                    return
+            held = ("parked", self._progress(agent))  # the one revive a task gets in Needs attention, counted apart
+            key = held if parked else (tuple(resolved(item) for item in items), self._progress(agent)) if opened else self._progress(agent)
             _, count = self._memory.resumes(name, key)
             if count >= _ONE_TRY:
+                if parked:
+                    return
                 self._memory.keep(name, resumes=None)
                 self._attend(
                     name,
@@ -1355,7 +1397,7 @@ class TaskActor:
             logger.warning("task actor: %s's session ended and could not be revived: %s", name, error)
             with self._lock:
                 now = self._feed.task(name, lean=True)
-                if now and now["state"] == self._feed.roles.working:
+                if now and now["state"] == self._feed.roles.working:  # a parked task is already with the operator
                     self._attend(
                         name,
                         f"no session can start for it: {error}",
@@ -1679,7 +1721,7 @@ class TaskActor:
             self._hold_for_repair(name, written.output)
         elif target == self._feed.roles.done:
             self._hold_done(name, written.output)
-        elif target == self._review and source == self._feed.roles.working:
+        elif target == self._review and source in (self._feed.roles.working, self._feed.roles.attention):
             self._hold_review(name, written.output)
         with self._metrics:
             self._refusals += 1

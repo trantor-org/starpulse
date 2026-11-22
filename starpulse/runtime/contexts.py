@@ -319,7 +319,6 @@ def default_starters(
             now=time.monotonic,
             delivered=Wakes(log, lane_of),
         )
-        end = claude.end_with(config.bridge.end)
         registry = Registry(directory(base, config.bridge.sessions_dir))
         return worker.start(
             config.bridge.port,
@@ -333,12 +332,8 @@ def default_starters(
                 notifier,
                 sessions_dir(os.environ),
                 config.bridge.quiet_moves,
-                end,
-                config.bridge.end_lanes,
                 lambda repo, number: stored_head(log.engine, repo, number),
             ),
-            end,
-            config.bridge.end_lanes,
             forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ)),
             config.bridge.incidents,
             exit_watcher(log, registry, sessions_dir(os.environ)),

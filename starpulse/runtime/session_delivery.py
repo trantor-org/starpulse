@@ -5,10 +5,8 @@ and notifier. Each event becomes one line, with the angle brackets and line brea
 cannot close the envelope the notifier wraps it in or span lines.
 
 A move of the session's task to a finished lane never reaches the session: posting it would start a turn and keep an
-ending session busy, and resuming an exited one would revive it. A move to a lane `[bridge] end_lanes` names runs the
-`[bridge] end` command once per task in the batch, after any line is posted: the session reaper's pass scoped to that
-task, which ends its session once it is idle and keeps a busy one for the record write at its turn's end. The
-registration of a session that ended is removed by `forget_ended`, which the subscriber runs after each lane move.
+ending session busy, and resuming an exited one would revive it. The task actor ends the session (`[bridge] end`);
+this route runs no end. The registration of a session that ended is removed by `forget_ended`, which the subscriber runs after each lane move.
 
 A move to any other lane whose writer `[bridge] quiet_moves` names for that lane is acked with no line too, and a batch
 left with no line notifies nothing; `self` names the receiving session, matched through the same running-session records
@@ -123,11 +121,6 @@ def _moved_fields(event: Event) -> dict | None:
     return fields if isinstance(fields, dict) else None
 
 
-def _ended_tasks(events: list[Event], lanes: Collection[str]) -> list[str]:
-    moved = (_moved_fields(event) for event in events)
-    return list(dict.fromkeys(str(f["task"]) for f in moved if f and f.get("lane") in lanes and f.get("task")))
-
-
 def _quieted(event: Event, quiet: Mapping[str, Collection[str]], own: str, sessions: Path) -> bool:
     fields = _moved_fields(event)
     if fields is None:
@@ -177,13 +170,11 @@ def route(
     notifier: Notifier,
     sessions: Path,
     quiet: Mapping[str, Collection[str]] | None = None,
-    end: Callable[[str], None] | None = None,
-    end_lanes: Collection[str] = (),
     head: Callable[[str, int], str | None] | None = None,
 ) -> Route:
     """A session with no registration has no route, so its events stay on its consumer. A consumer named for a
     claude.ai URL holder is the running session whose record in `sessions` carries that bridge id, which registered
-    under its local id. `end` takes the id of each task a batch moved to a lane `end_lanes` names. `head` is the
+    under its local id. `head` is the
     store's head of a repository's pull request by number, empty or None when it holds none. A consumer's event the
     session already received (the server redelivers one whose ack was lost) is acked with no line, the last
     `_SEEN_MAX` of each consumer being remembered."""
@@ -219,9 +210,6 @@ def route(
                     del received[key]
             outcome = "quieted, nothing sent" if not lines else "delivered" if delivered else "not delivered"
             logger.info("session %s: %s %s", name, ", ".join(event.subject for event in events), outcome)
-            if delivered and end:
-                for task in _ended_tasks(events, end_lanes):
-                    end(task)
             return delivered
 
         return deliver
