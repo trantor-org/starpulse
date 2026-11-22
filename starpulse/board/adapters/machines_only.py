@@ -74,6 +74,7 @@ def refusing(**fields: Any) -> Board:
         "restore_doc": _refused,
         "holds": lambda *_: (),
         "unfinished": lambda *_: (),
+        "unpublished": lambda *_: None,
         "parked": _nothing,
         "released": _nothing,
         "idle": None,

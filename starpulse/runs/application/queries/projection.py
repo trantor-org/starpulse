@@ -51,18 +51,16 @@ class Publisher:
         error: str | None,
         pools: list | None,
         startable: list | None,
-        cpu: dict | None = None,
     ) -> None:
-        """Merge a report into the instance's kept one (None keeps the last dags, pools, startable and cpu) and write it
+        """Merge a report into the instance's kept one (None keeps the last dags, pools and startable) and write it
         when it changed. A log that cannot be written is tried again on the next report."""
         with self._lock:
-            last = self._kept.get(instance, {"dags": [], "pools": [], "startable": None, "cpu": None})
+            last = self._kept.get(instance, {"dags": [], "pools": [], "startable": None})
             kept = {
                 "dags": last["dags"] if dags is None else dags,
                 "error": error,
                 "pools": last["pools"] if pools is None else pools,
                 "startable": last["startable"] if startable is None else sorted(startable),
-                "cpu": last.get("cpu") if cpu is None else cpu,
             }
             if kept != last:
                 try:
@@ -99,9 +97,8 @@ class _Sink:
         error: str | None,
         pools: list | None = None,
         startable: list[str] | None = None,
-        cpu: dict | None = None,
     ) -> None:
-        self._publisher.report(self._instance, dags, error, pools, startable, cpu)
+        self._publisher.report(self._instance, dags, error, pools, startable)
 
 
 class Projected:
@@ -149,7 +146,6 @@ class Projected:
                     report.get("error") or down,
                     report.get("pools"),
                     report.get("startable"),
-                    report.get("cpu"),
                 )
         for instance in self._watched.keys() - reports.keys():
             self._feed.set_dags(instance, [], self._down(instance), None, None)

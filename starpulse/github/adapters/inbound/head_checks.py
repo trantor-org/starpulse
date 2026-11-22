@@ -79,6 +79,7 @@ class HeadChecks:
         self._limited_until = 0.0
         self._heads: dict[tuple[str, str], list[Head]] = {}
         self._results: dict[tuple[str, str], dict[str, str]] = {}
+        self._stamps: dict[tuple[str, str], dict[str, str]] = {}
         self._required: dict[tuple[str, str], frozenset[str]] = {}
         self._last: dict[tuple[str, int], tuple[str, str, str]] = {}
 
@@ -109,6 +110,7 @@ class HeadChecks:
         key = dict_of(payload.get("repository")).get("full_name"), dict_of(dict_of(payload.get("pull_request")).get("head")).get("sha")
         self._heads.pop(key, None)
         self._results.pop(key, None)
+        self._stamps.pop(key, None)
 
     def _heads_of(self, repository: str, sha: str, report: Report, links: Links) -> list[Head]:
         """The open pull requests of the head, read once per commit; none when the payload names only unlinked ones."""
@@ -118,19 +120,32 @@ class HeadChecks:
             _put(self._heads, (repository, sha), self._reader.pulls(repository, sha))
         return self._heads[repository, sha]
 
+    def _stale(self, repository: str, sha: str, report: Report) -> bool:
+        """Whether `report` is older than what is kept for its check: a replay after a stall, already overtaken."""
+        kept = self._stamps.get((repository, sha), {}).get(report.name)
+        if not (kept and report.at):
+            return False
+        held = self._results.get((repository, sha), {}).get(report.name)
+        return report.at < kept or (report.at == kept and held in _FINAL and report.state not in _FINAL)
+
     def _results_of(self, repository: str, sha: str, report: Report | None) -> dict[str, str]:
-        """What was posted on the head: read once, then kept current by each delivery, which arrive in order."""
-        if (repository, sha) not in self._results:
+        """What was posted on the head: read once, then kept current by each delivery, which `_plan` has checked is no older than what is kept."""
+        key = repository, sha
+        if key not in self._results:
             seen = self._reader.results(repository, sha)
             if report is not None and seen.get(report.name) not in _FINAL:
                 seen[report.name] = report.state
-            _put(self._results, (repository, sha), seen)
+            _put(self._results, key, seen)
+            _put(self._stamps, key, dict.fromkeys(seen, report.at) if report is not None else {})
         elif report is not None:
-            self._results[repository, sha][report.name] = report.state
-        return self._results[repository, sha]
+            self._results[key][report.name] = report.state
+            self._stamps[key][report.name] = report.at or self._stamps[key].get(report.name, "")
+        return self._results[key]
 
     def _plan(self, event: str, body: bytes, links: Links) -> Plan:
         report = report_of(event, body)
+        if report is not None and self._stale(report.repository, report.sha, report):
+            return Plan([], lambda: None)
         if report is not None:
             repository, sha, key = report.repository, report.sha, report.key
             heads, fresh = self._heads_of(repository, sha, report, links), False

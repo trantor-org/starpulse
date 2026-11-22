@@ -8,7 +8,7 @@ import type { Dag } from "../../api";
 
 const dag = (name: string): Dag => ({ name, status: "succeeded", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
 const data = (over: Partial<DagData> = {}): DagData => ({
-  now: 0, dags: [], domains: [], pools: [], cpu: {}, cues: [], flows: [], facts: {}, ...over,
+  now: 0, dags: [], domains: [], pools: [], cues: [], flows: [], facts: {}, dashboards: {}, ...over,
 });
 const facts = (hours: number | null) => ({ ...dagFacts(dag("x")), hours });
 
@@ -27,27 +27,11 @@ afterEach(() => {
 });
 
 describe("the navigator's run pressure cards", () => {
-  it("draws Run-hours and Runner CPU in that order, each with a body that scrolls on its own", async () => {
+  it("draws Run-hours as one card whose body scrolls on its own", async () => {
     await draw(data());
 
-    expect([...host.querySelectorAll("section.card h3")].map((h) => h.textContent)).toEqual(["Run-hours", "Runner CPU"]);
-    expect([...host.querySelectorAll("section.card")].map((s) => s.querySelectorAll(":scope > .body").length)).toEqual([1, 1]);
-  });
-
-  it("draws the Runner CPU as one bar whose fill and figure are the served share of all cores", async () => {
-    await draw(data({ cpu: { temporal: { cores: 8, share: 0.375 } } }));
-
-    const cpu = card("Runner CPU");
-    expect(cpu.querySelectorAll(".m i")).toHaveLength(1);
-    expect(parseFloat(cpu.querySelector<HTMLElement>(".m i")!.style.width)).toBeCloseTo(37.5, 0);
-    expect(cpu.querySelector(".r b")!.textContent).toBe("38%");
-  });
-
-  it("says no CPU was read when the server served none, with an empty bar", async () => {
-    await draw(data());
-
-    expect(card("Runner CPU").textContent).toContain("not read");
-    expect(card("Runner CPU").querySelector<HTMLElement>(".m i")!.style.width).toBe("0%");
+    expect([...host.querySelectorAll("section.card h3")].map((h) => h.textContent)).toEqual(["Run-hours"]);
+    expect([...host.querySelectorAll("section.card")].map((s) => s.querySelectorAll(":scope > .body").length)).toEqual([1]);
   });
 
   it("lists the DAGs by run-hours, most first, the longest filling its bar", async () => {
@@ -61,7 +45,7 @@ describe("the navigator's run pressure cards", () => {
   it("draws the cards with no hours and no data at all, so the view's navigator never changes shape", async () => {
     await draw(null);
 
-    expect(host.querySelectorAll("section.card")).toHaveLength(2);
+    expect(host.querySelectorAll("section.card")).toHaveLength(1);
     expect(card("Run-hours").textContent).toContain("no runs");
   });
 });

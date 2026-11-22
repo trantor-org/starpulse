@@ -170,6 +170,10 @@ def _written_here(name: str, drawn: Mapping[str, Any], link: Mapping[str, Any]) 
     return all(ACTOR in (writer["actor"] for writer in writers.get(event, ())) for event in link["exits"].values())
 
 
+def _no_holds(_task: str) -> Sequence[str]:
+    return ()
+
+
 _LINTED = ("description", "profile", "title", "type", "milestone", "impact", "urgency", "tier", "source")
 
 
@@ -283,7 +287,8 @@ class TaskActor:
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         latest: Callable[[str], bool] | None = None,
-        holds: Callable[[str], Sequence[str]] = lambda _task: (),
+        unpublished: Callable[[str], str | None] = lambda _subject: None,
+        holds: Callable[[str], Sequence[str]] = _no_holds,
         parked: Callable[[str], None] = _ignore,
         released: Callable[[str], None] = _ignore,
         closed: Callable[[str], None] = _ignore,
@@ -338,7 +343,16 @@ class TaskActor:
         self._releasable: set[str] = set()
         self._dates: dict[str, tuple[str, ...]] = {}
         self._latest = latest
+        self._unpublished = unpublished
+        self._publisher: dict[str, tuple[str | None, float]] = {}
         self._holds = holds
+        #: The reasons each task's board hook printed for the facts it names, read on `task-actor-holds` off the lock,
+        #: and the tasks whose read is queued or running: a hook runs a command for seconds, and run under `_lock` it
+        #: held back the move of every task behind it, a merge's above all.
+        self._hold_reads: dict[str, tuple[str, tuple[str, ...], bool]] = {}
+        self._reading: set[str] = set()
+        self._reads: queue.SimpleQueue[tuple[str, str] | None] = queue.SimpleQueue()
+        self._reader: threading.Thread | None = None
         self._tell = parked
         self._released = released
         self._closed = closed
@@ -1203,7 +1217,11 @@ class TaskActor:
         self._arm(name, agent)
         if agent["state"] in self._sweep_lanes and (reasons := self._stuck(agent)):
             self._note_hold(agent, reasons, FLAGGED)
-        for fact, event in self._waits.get(agent["state"], {}).items():
+        waits = self._waits.get(agent["state"], {})
+        if "overdue" in waits and derivation.entered(self._port, agent) and derivation.dead(self._port, agent):
+            # a dead wait with a known entry (so a deadline) pre-empts a release it would block
+            waits = {"overdue": waits["overdue"]}
+        for fact, event in waits.items():
             target = self._moves.get((agent["state"], event))
             try:
                 held = FACTS.get(fact, lambda *_: None)(self._port, agent)
@@ -1223,7 +1241,7 @@ class TaskActor:
             changes = derivation.stale(self._port, agent) if fact.startswith("deps_done") else {}
             if fact in _ASKS:
                 changes = {"description": section_set(agent["description"], "Needs attention", comment)}
-                if fact == "overdue" and self._missing(agent):
+                if fact == "overdue" and derivation.dead(self._port, agent):
                     changes["dependencies"] = []  # Needs attention carries none; the reason names them
             if target == agent["state"]:  # a stay: a ready pull request is enqueued, any other fact holds the lane
                 if fact == "pr_ready":
@@ -1925,6 +1943,49 @@ class TaskActor:
             self._notices.put(None)
         if notifier is not None:
             notifier.join(timeout=_NOTICE_JOIN_S)
+        self._reads.put(None)
+
+    def _holds_of(self, name: str) -> tuple[str, ...] | None:
+        """The reasons the board withholds the task's `deps_done`, as its hook printed them for the task's present facts;
+        None while that read runs off the lock, whose result derives the task again. Each derivation takes a read of its
+        own, as the hook reads more than the facts digest, and a read is probed in place."""
+        agent = self._feed.task(name, lean=True)
+        if self._holds is _no_holds or self._probing or agent is None:
+            return self._read_holds(name)[0]
+        digest = self._digest(agent)
+        found = self._hold_reads.pop(name, None)
+        if found and found[0] == digest:
+            self._unsettled |= found[2]
+            return found[1]
+        self._unsettled = True
+        if name not in self._reading:
+            self._reading.add(name)
+            self._reads.put((name, digest))
+            if self._reader is None:
+                self._reader = threading.Thread(target=self._read_holds_off_lock, name="task-actor-holds", daemon=True)
+                self._reader.start()
+        return None
+
+    def _read_holds(self, name: str) -> tuple[tuple[str, ...], bool]:
+        """The hook's reasons, and whether it failed: a failure holds the task with its error."""
+        try:
+            return tuple(self._holds(name)), False
+        except Exception as error:
+            logger.warning("task actor: cannot read the holds of %s: %s", name, error)
+            return (f"the board's holds cannot be read: {error}",), True
+
+    def _read_holds_off_lock(self) -> None:
+        while (read := self._reads.get()) is not None:
+            name, digest = read
+            reasons, failed = self._read_holds(name)
+            try:
+                with self._pressing(), self._lock:
+                    self._reading.discard(name)
+                    if not self._noticing_ended:  # a move made after the notices close would miss its hook
+                        self._hold_reads[name] = (digest, reasons, failed)
+                        self.touch([TaskTouched(name, Trigger.ON_ALERT, "holds read")])
+            except Exception:  # touch derives under the lock and may raise; a dead reader is never restarted
+                logger.exception("task actor: cannot derive %s on its holds", name)
 
     def _apply(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
         # the board-files pass finds the lane recorded under the actor; no other task's write holds this one up

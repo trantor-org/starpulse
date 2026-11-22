@@ -297,6 +297,9 @@ class Board:
     unfinished: Callable[[str], Sequence[str]]
     """The work a task whose pull requests merged still has, given its id; empty when none, and an exception reports
     the error as the work left."""
+    unpublished: Callable[[str], str | None]
+    """Why no component publishes an event subject, so a wait on it never ends, given the subject; None when one does
+    or the board cannot judge. An exception counts as None."""
     parked: Callable[[str], None]
     """Tells whoever works a task that the task actor moved it from the working lane to Waiting, given its id; a raise is
     logged and the move stands."""

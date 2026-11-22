@@ -114,6 +114,7 @@ _SETTINGS = {
     "holds",
     "holds_labels",
     "unfinished",
+    "unpublished",
     "parked",
     "released",
     "idle",
@@ -1758,6 +1759,12 @@ def _holds(command: object, base: Path, root: Path | None = None, labels: object
     return holds
 
 
+def _reason(holds: Callable[[str], list[str]]) -> Callable[[str], str | None]:
+    """The `unpublished` command, run with `{id}` replaced by an event subject: it prints a JSON array holding the one
+    reason no component publishes the subject, or none."""
+    return lambda subject: next(iter(holds(subject)), None)
+
+
 def _notice(command: object, base: Path, unreachable: bool = False) -> Callable[..., None]:
     """The `parked`, `released`, `idle`, `returned`, `enqueued`, `closed` or `entered` command
     (the last on any lane entry the board records, by whoever moves the task), run in `base` with `{id}` replaced by the
@@ -1856,6 +1863,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "read_archived": _archived_reader(root, retired, roles.done),
             "holds": _holds(settings.get("holds"), base, root, settings.get("holds_labels")),
             "unfinished": _holds(settings.get("unfinished"), base),
+            "unpublished": _reason(_holds(settings.get("unpublished"), base)),
             "parked": _notice(settings.get("parked"), base),
             "released": _notice(settings.get("released"), base),
             "idle": _notice(idle, base, unreachable=True) if (idle := settings.get("idle")) else None,

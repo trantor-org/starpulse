@@ -29,7 +29,7 @@ const board: Machine = {
   writers: { pr_opened: [{ actor: "runs/pr-watch", trigger: "schedule" }] },
 };
 const data: DagData = {
-  now: 3600, facts: {}, cpu: {},
+  now: 3600, facts: {}, dashboards: {},
   dags: [
     dag("runs/pr-watch", "succeeded"),
     dag("runs/triage", "failed", { steps: [step("scan"), step("fix", ["scan"], "failed")] }),

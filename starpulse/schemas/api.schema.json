@@ -812,29 +812,6 @@
       "title": "CostToGo",
       "type": "object"
     },
-    "Cpu": {
-      "additionalProperties": false,
-      "description": "The share of the host's CPU an instance's scheduler and workers used since the last reading.",
-      "properties": {
-        "cores": {
-          "description": "How many cores the host has.",
-          "minimum": 1,
-          "type": "integer"
-        },
-        "share": {
-          "description": "Their CPU time over all the host's cores, from 0 to 1.",
-          "maximum": 1,
-          "minimum": 0,
-          "type": "number"
-        }
-      },
-      "required": [
-        "share",
-        "cores"
-      ],
-      "title": "Cpu",
-      "type": "object"
-    },
     "CreateRequest": {
       "additionalProperties": false,
       "description": "`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped\n`created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.",
@@ -1771,20 +1748,6 @@
     "DagsDelta": {
       "description": "A runs instance's workflows.",
       "properties": {
-        "cpu": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "$ref": "#/$defs/Cpu"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "dags": {
           "items": {
             "$ref": "#/$defs/DagBody"
@@ -7264,21 +7227,6 @@
           "default": null,
           "description": "The ids of the done tasks from before local midnight that the board feed holds as a stub, left out of `flows`: the stored body never carries them (the page reads them from `/api/done` and `/api/task/<id>`), a feed's own snapshot does."
         },
-        "cpu": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "$ref": "#/$defs/Cpu"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The CPU share of each runs instance's scheduler and workers, by instance name."
-        },
         "cues": {
           "anyOf": [
             {
@@ -7299,6 +7247,21 @@
             "$ref": "#/$defs/DagBody"
           },
           "type": "array"
+        },
+        "dashboards": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The Grafana dashboard of each runs instance that has one, by instance name."
         },
         "domains": {
           "anyOf": [

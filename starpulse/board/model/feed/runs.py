@@ -40,12 +40,9 @@ class RunMethods:
         error: str | None,
         pools: list | None = None,
         startable: list[str] | None = None,
-        cpu: dict | None = None,
     ) -> None:
         """Take the latest workflows and concurrency pools of `instance` (None keeps the last of each) and publish
         them when they differ from before; an empty `pools` says the instance now reports none.
-
-        `cpu` is the instance's latest CPU reading (None keeps the last).
 
         `startable` names the workflows of `instance` its adapter can start now (None keeps the last report; an
         instance that never reports one can start every workflow it has a start for). Run now is declared only on a
@@ -54,13 +51,11 @@ class RunMethods:
         with self._lock:
             dags = self._dags.get(instance, []) if dags is None else dags
             pools = self._pools.get(instance, []) if pools is None else pools
-            cpu = self._cpu.get(instance) if cpu is None else cpu
             reported = self._startable.get(instance) if startable is None else frozenset(startable)
-            moved = (dags, error, pools, cpu) != (
+            moved = (dags, error, pools) != (
                 self._dags.get(instance),
                 self._runs_errors.get(instance),
                 self._pools.get(instance, []),
-                self._cpu.get(instance),
             )
             changed = reported != self._startable.get(instance)
             if not (moved or changed):
@@ -71,8 +66,6 @@ class RunMethods:
             )
             self._dags[instance] = dags
             self._pools[instance] = pools
-            if cpu is not None:
-                self._cpu[instance] = cpu
             if reported is not None:
                 self._startable[instance] = reported
             if error is None:
@@ -82,7 +75,7 @@ class RunMethods:
             if moved:
                 self._publish(
                     "dags",
-                    {"dags": self._workflows(), "pools": self._drawn_pools(), "cpu": dict(self._cpu), "error": self._error()},
+                    {"dags": self._workflows(), "pools": self._drawn_pools(), "error": self._error()},
                 )
             if changed:
                 self._publish("snapshot", self.snapshot())

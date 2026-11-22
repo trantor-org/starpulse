@@ -28,6 +28,8 @@ class Report:
     state: str
     key: str
     pulls: tuple[int, ...] = ()
+    at: str = ""
+    """GitHub's own timestamp of this state, ISO 8601 UTC, empty when the delivery carries none."""
 
 
 def dict_of(value: object) -> dict[str, Any]:
@@ -53,17 +55,18 @@ def report_of(event: str, body: bytes) -> Report | None:
     repository = _text(dict_of(payload.get("repository")).get("full_name"))
     if event == "status":
         sha, name, raw = _text(payload.get("sha")), _text(payload.get("context")), _text(payload.get("state"))
-        state, key, pulls = _STATUS.get(raw), f"{payload.get('id')}:{raw}", ()
+        state, key, pulls, at = _STATUS.get(raw), f"{payload.get('id')}:{raw}", (), _text(payload.get("updated_at"))
     elif event in ("check_run", "check_suite"):
         thing = dict_of(payload.get(event))
         sha, status, conclusion = _text(thing.get("head_sha")), thing.get("status"), thing.get("conclusion")
         name = _text(thing.get("name")) if event == "check_run" else _text(dict_of(thing.get("app")).get("slug"))
         state, key = _run_state(status, conclusion), f"{thing.get('id')}:{status}:{conclusion}"
+        at = _text(thing.get("completed_at" if status == "completed" else "started_at") or thing.get("updated_at"))
         listed = thing.get("pull_requests")
         pulls = tuple(n for item in listed if isinstance(n := dict_of(item).get("number"), int)) if isinstance(listed, list) else ()
     else:
         return None
-    return Report(repository, sha, name, state, key, pulls) if repository and sha and name and state else None
+    return Report(repository, sha, name, state, key, pulls, at) if repository and sha and name and state else None
 
 
 def required_of(rules: Iterable[Mapping[str, Any]]) -> frozenset[str]:

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, cpuPercent, dagData, dagFacts, filterRows, jobRuns, order, panes, place, places, refusal, rows, runHours, runNote, stepLabels, ties, type DagData } from "./dagsModel";
+import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, dagData, dagFacts, filterRows, jobRuns, order, panes, place, places, refusal, rows, runHours, runNote, stepLabels, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
@@ -19,7 +19,7 @@ const board: Machine = {
 };
 
 const data: DagData = {
-  now: 1000, facts: {}, cpu: {},
+  now: 1000, facts: {}, dashboards: {},
   dags: [
     dag("runs/pr-watch", "succeeded", { finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, rerun: null, startedAt: "1970-01-01T00:09:00Z" }),
     dag("runs/triage", "failed", { steps: [step("scan"), step("fix", ["scan"], "failed")], finishedAt: "1970-01-01T00:12:00Z" }),
@@ -325,7 +325,6 @@ describe("the page's snapshot as the DAGs view reads it", () => {
       "runs/ran": { schedule: "0 * * * *, 30 6 * * 1", ...stats, rerun },
       "runs/never": { schedule: "manual", runs: null, hours: null, medianSeconds: null, p95Seconds: null, failureShare: null, rerun: null },
     });
-    expect(dagData({ ...sky, cpu: { temporal: { share: 0.25, cores: 36 } } } as unknown as Parameters<typeof dagData>[0]).cpu).toEqual({ temporal: { share: 0.25, cores: 36 } });
     expect(dagFacts(dag("runs/quiet", "succeeded", { stats: { ...stats, runs: 0, hours: 0, medianSeconds: null, p95Seconds: null, failureShare: null } })).runs).toBe(0);
   });
 });
@@ -399,14 +398,6 @@ describe("the run pressure the navigator draws", () => {
     expect(ranked).toEqual([{ name: "runs/b", hours: 12 }, { name: "runs/a", hours: 1.5 }, { name: "runs/e", hours: 1.5 }]);
   });
 
-  it("reads the Runner CPU as one percentage of all the cores, summing the runner units of every instance", () => {
-    expect(cpuPercent({ temporal: { cores: 8, share: 0.375 } })).toBeCloseTo(37.5);
-    expect(cpuPercent({ a: { cores: 8, share: 0.25 }, b: { cores: 8, share: 0.125 } })).toBeCloseTo(37.5);
-  });
-
-  it("reads no CPU when the server served none, never zero", () => {
-    expect(cpuPercent({})).toBeNull();
-  });
 });
 
 describe("runNote", () => {

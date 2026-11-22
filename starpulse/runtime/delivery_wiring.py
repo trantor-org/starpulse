@@ -90,6 +90,7 @@ def start_delivery(
             holds=board.holds,
             read=board.read,
             unfinished=board.unfinished,
+            unpublished=board.unpublished,
             parked=board.parked,
             released=board.released,
             idle=board.idle,
