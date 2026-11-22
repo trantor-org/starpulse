@@ -21,6 +21,10 @@ ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
 #: What an uncited-pull-request ask says after the task's id: a cited pull request settles it.
 UNCITED_ASK = "has an uncited pull request."
 DONE_HELD = "Held from Done:"
+#: The opening of the reason the task actor gives a task it parks on a failed step, a refused write or an illegal move.
+FAULT = "Task actor fault:"
+#: The line under that reason: how the operator leaves Needs attention once the cause is fixed.
+FAULT_NEXT = "Fix the cause, then move the task back to In Progress; the actor does not retry it."
 #: The opening of the comment `backlog-task update --pushback` records.
 PUSHBACK = "Operator pushback:"
 #: The pull request states that end a pull request.
@@ -291,16 +295,18 @@ def deploy_reopened(facts: TaskFacts, agent: Agent) -> bool:
 
 
 def criteria_checked(facts: TaskFacts, agent: Agent) -> tuple[int, str] | None:
-    """The criteria count when the task has criteria, every one is checked and it ships no pull request: its phase
-    sequence has no `deliver`, or it cites none, none names it and its final summary is recorded."""
+    """The criteria count when every criterion is checked and the task ships no pull request: its phase sequence has
+    no `deliver`, or it cites none, none names it and its final summary is recorded. A task with no criteria (an
+    audit signal) always needs that final summary and no pull request."""
     ticks = [criterion["checked"] for criterion in agent.get("criteria", ())]
-    if not ticks or not all(ticks):
+    if not all(ticks):
         return None
-    if "deliver" in facts.sequence(agent) and (
+    if ("deliver" in facts.sequence(agent) or not ticks) and (
         facts.own_prs(agent) or facts.unlinked(agent) or not (agent.get("final_summary") or "").strip()
     ):
         return None
-    return len(ticks), f"Every criterion is checked ({len(ticks)}) and the task ships no pull request."
+    shown = f"Every criterion is checked ({len(ticks)})" if ticks else "The task has no criteria"
+    return len(ticks), f"{shown} and the task ships no pull request."
 
 
 def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:

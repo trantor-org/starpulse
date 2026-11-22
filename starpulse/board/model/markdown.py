@@ -95,10 +95,15 @@ _NEEDS_ATTENTION = re.compile(
 )
 
 
+def needs_attention_text(text: str) -> str:
+    """The body of `text`'s `## Needs attention` section, else empty."""
+    found = _NEEDS_ATTENTION.search(text)
+    return found.group(1).strip() if found else ""
+
+
 def needs_attention_reason(text: str) -> str:
     """The first line of `text`'s `## Needs attention` section, else empty."""
-    found = _NEEDS_ATTENTION.search(text)
-    return next((line.strip() for line in found.group(1).splitlines() if line.strip()), "") if found else ""
+    return needs_attention_text(text).partition("\n")[0].strip()
 
 
 _OPERATOR_ANSWER = re.compile(r"(?m)^Operator answer \(\w+:[\w-]+#[\w-]+\): ")

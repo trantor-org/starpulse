@@ -137,7 +137,8 @@ def _open_criterion(feed: BoardFeed, need: str) -> None:
 def _start_entries(item: Any) -> list[dict[str, Any]] | None:
     """The Start Criteria entries for one `until` item, or None when it is unusable.
 
-    An item is an event subject, or a criterion object (`{"id", "kind", ...}`) or a list of them written as YAML or JSON.
+    An item is an event subject, or an event criterion object (`{"id", "kind": "event", "query"}`) or a list of them
+    written as YAML or JSON: the task actor wakes a task on events only, so any other kind is unusable.
     """
     if not isinstance(item, str):
         return None
@@ -148,7 +149,14 @@ def _start_entries(item: Any) -> list[dict[str, Any]] | None:
     if isinstance(parsed, str):
         return [{"id": item, "kind": "event", "query": item}] if readable(item) else None
     found = parsed if isinstance(parsed, list) else [parsed]
-    ok = all(isinstance(c, dict) and isinstance(c.get("id"), str) and isinstance(c.get("kind"), str) for c in found)
+    ok = all(
+        isinstance(c, dict)
+        and isinstance(c.get("id"), str)
+        and c.get("kind") == "event"
+        and isinstance(c.get("query"), str)
+        and readable(c["query"])
+        for c in found
+    )
     return found if found and ok else None
 
 
@@ -164,8 +172,9 @@ def _wait_on_events(feed: BoardFeed, task: str, current: dict[str, Any], found: 
         raise _RefusalError(
             400,
             {
-                "error": "until needs a non-empty list of event subjects an alert or a deploy emits, or criterion objects "
-                "with an id and a kind, as in `--until starpulse.trantor.deploy.web.applied`; to wait on a task use "
+                "error": "until needs a non-empty list of event subjects an alert or a deploy emits, as in "
+                "`--until starpulse.trantor.deploy.web.applied`; a task wakes on events only, so a data condition "
+                "(a prom query, a date) needs an alert rule that emits one; to wait on a task use "
                 "`--until-task TASK-N`, and use `--operator` only for a question the operator must answer"
             },
         )

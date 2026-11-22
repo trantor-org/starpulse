@@ -798,7 +798,11 @@ def _editor(
                 started = str(frontmatter.get("status") or "")
                 if revises_plan(started, _section(_PLAN, body), str(changes["plan"] or "").strip(), unstarted):
                     raise ValueError("the plan needs a reason once work has started: pass --reason")
+            gated = {item["id"] for item in criteria.authored(_description(body))}
+            held = lane_id(str(frontmatter.get("status") or "")) == guard.waiting and lane_id(status) in {"", guard.waiting}
             body = _apply(task, frontmatter, body, link(changes), spelled)
+            if held and "description" in changes and (lost := gated - {i["id"] for i in criteria.authored(_description(body))}):
+                raise ValueError(f"a Waiting task keeps its Start Criteria; the edit drops {', '.join(sorted(lost))}")
             for text in texts:
                 recorded = _recorded(text, _comments(body))
                 body = _comment(body, text, actor) if text.strip() and not recorded else body

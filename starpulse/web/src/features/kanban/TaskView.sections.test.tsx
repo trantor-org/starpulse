@@ -87,6 +87,22 @@ describe("a board card's badge", () => {
   });
 });
 
+describe("a board card's actor-error chip", () => {
+  const faulted = "## Description\n\nWork.\n\n## Needs attention\n\nTask actor fault: fact pr_failing: the comments are unreadable\n\nFix it?";
+  const drawFault = (text: string) => renderToStaticMarkup(
+    <Card task={card("TASK-5", "needs_attention", { description: text })} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={false} />,
+  );
+
+  it("carries the fault as its title when the Needs attention reason opens with one", () => {
+    expect(drawFault(faulted)).toContain('<span class="fault" title="Task actor fault: fact pr_failing: the comments are unreadable">actor error</span>');
+  });
+
+  it("is absent for an ordinary reason or a fault named further down", () => {
+    expect(drawFault("## Needs attention\n\nFix it?\n\nTask actor fault: x")).not.toContain("actor error");
+    expect(drawFault("Task actor fault: x")).not.toContain("actor error");
+  });
+});
+
 describe("the plan heading", () => {
   it("shows revised N× linking the Activity section once the plan was rewritten", () => {
     const html = draw({ revisions: 2 });
