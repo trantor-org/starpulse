@@ -361,7 +361,10 @@ either unset the delivery half fails each pass, logged and naming the variable; 
    that would have reported them, and travel the consumer path above. A `pull_request` row carries the listed pull request
    whole, with `merged` and a top-level `number` added, so the relay reads its closed time and refs as from a webhook.
    A row for a fact a delivery already reported
-   collapses on the event id.
+   collapses on the event id. A pull request in the list the PR store lacks, or holds with an older `updatedAt`, also
+   gets a `pull_request` row with action `reconciled` and `delivery_id` `reconcile:<repository>:<number>:<updated_at>:updated`
+   that carries the listed pull request whole; it names no fact, so the `events` consumer skips it, and the `pulls`
+   consumer writes the record from it whether or not a task cites the pull request.
 3. Every list is read with the ETag it last returned (`If-None-Match`): a 304 spends no rate limit and leaves the
    cursor and the inbox as they were. No call is GraphQL. Pull requests are handled oldest first and the
    `pull-rows:<repository>` cursor is saved after each one a newer one follows (a tie is never split), so a pass that failed resumes after the last pull request it

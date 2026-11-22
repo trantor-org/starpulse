@@ -12,7 +12,7 @@ from typing import Any
 
 from starpulse.github.model.delivery import Delivery
 
-__all__ = ["EARLY_S", "LATE_S", "LOOKBACK_S", "SOURCE", "epoch", "pull_delivery", "redeliveries", "suite_delivery"]
+__all__ = ["EARLY_S", "LATE_S", "LOOKBACK_S", "SOURCE", "epoch", "pull_delivery", "redeliveries", "suite_delivery", "update_delivery"]
 
 SOURCE = "reconcile"
 #: How far back a read with no cursor reaches: the retention of the inbox's rows.
@@ -59,6 +59,16 @@ def pull_delivery(repository: str, pull: dict[str, Any]) -> Delivery | None:
         return None
     payload = {"action": "closed", "number": number, "pull_request": pull | {"merged": merged}}
     return _delivery(f"reconcile:{repository}:{number}:{key}:closed", "pull_request", repository, payload)
+
+
+def update_delivery(repository: str, pull: dict[str, Any]) -> Delivery | None:
+    """The `pull_request` delivery that reports a pull request as the listing shows it, whatever its state; the `reconciled`
+    action names no fact, so only the `pulls` consumer reads it. `None` for a listing with no number."""
+    number = pull.get("number")
+    if not number or not pull.get("updated_at"):
+        return None
+    payload = {"action": "reconciled", "number": number, "pull_request": pull | {"merged": pull.get("merged_at") is not None}}
+    return _delivery(f"reconcile:{repository}:{number}:{pull['updated_at']}:updated", "pull_request", repository, payload)
 
 
 def suite_delivery(repository: str, number: int, head: str, suite: dict[str, Any]) -> Delivery | None:

@@ -105,6 +105,7 @@ _ACTIONS: dict[str, tuple[Delta, ...]] = {
     "ready_for_review": (_draft,),
     "converted_to_draft": (_draft,),
     "closed": (_state, _merge),
+    "reconciled": (_state, _draft, _text, _base, _head_ref, _head, _merge),  # a reconcile row: the whole listing, not one action
     "enqueued": (_queued(True),),
     "dequeued": (_queued(False),),
 }
