@@ -54,7 +54,7 @@ from starpulse.board.adapters.holder_idle import HARNESS_MACHINE, HolderUnreacha
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import attention_reason, operator_answered, section_set
+from starpulse.board.model.markdown import attention_reason, needs_attention_text, operator_answered, section_set
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
     COMMENT_CAP,
@@ -74,7 +74,7 @@ from starpulse.pulls.adapters.inbound.unblock import PinGate
 from starpulse.pulls.adapters.outbound.pull_requests import own_prs, pull_record, uncited
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
 from starpulse.pulls.model.task_actor import TaskTouched, Trigger, derivation
-from starpulse.pulls.model.task_actor.derivation import ATTENTION_QUESTION, DONE_HELD, FACTS, TERMINAL
+from starpulse.pulls.model.task_actor.derivation import ATTENTION_QUESTION, DONE_HELD, FACTS, FAULT, FAULT_NEXT, TERMINAL
 
 if TYPE_CHECKING:  # annotation only: the pull store and the event log open the database stack
     from starpulse.event_log.event_log import EventLog
@@ -398,6 +398,8 @@ class TaskActor:
         self._store_rev = store.rev
         #: The move last tried for each task, until the task changes lane: the same facts are not tried twice.
         self._tried: dict[str, tuple] = {}
+        #: The fault each task last had written or refused, by (lane, reason): a fault is not written again on another trigger.
+        self._faults: dict[str, tuple[str, str]] = {}
         self._unready_logged: dict[str, str] = {}
         #: The record each task's release was last refused on by the board, so a repaired record is tried again.
         self._lint_held: dict[str, tuple[Any, ...]] = {}
@@ -1143,6 +1145,8 @@ class TaskActor:
         started = self._clock()
         try:
             moved = self._derive_waits(name, agent, observed, digest)
+        except Exception as error:
+            moved = self._fault(agent, "derive", error)
         finally:
             self._timed_derive(agent["state"], self._hooked, self._clock() - started)
         self._settle_awaited(name)
@@ -1201,12 +1205,17 @@ class TaskActor:
             self._note_hold(agent, reasons, FLAGGED)
         for fact, event in self._waits.get(agent["state"], {}).items():
             target = self._moves.get((agent["state"], event))
-            held = FACTS.get(fact, lambda *_: None)(self._port, agent) if target else None
+            try:
+                held = FACTS.get(fact, lambda *_: None)(self._port, agent)
+                if held is not None and fact in _ASKS and self._answered(agent, held[1]):
+                    continue
+            except Exception as error:
+                return self._fault(agent, f"fact {fact}", error)
             if held is None:
                 continue
             evidence, comment = held
-            if fact in _ASKS and self._answered(agent, comment):
-                continue
+            if target is None or self._is_closed(target):
+                return self._fault(agent, f"move {event}", self._no_move(agent["state"], event, target))
             sent = (agent["state"], event, evidence, digest)
             if self._tried.get(name) == sent:
                 continue
@@ -1673,18 +1682,20 @@ class TaskActor:
     def _comments(self, agent: dict[str, Any]) -> list[str] | None:
         """The texts of the task's comments, oldest first, None when the read fails."""
         try:
-            comments = (self._read(agent["id"]) or {}).get("comments") or []
+            return self._texts(agent)
         except Exception as error:
             logger.warning("task actor: cannot read the comments of %s: %s", agent["id"], error)
             return None
+
+    def _texts(self, agent: dict[str, Any]) -> list[str]:
+        comments = (self._read(agent["id"]) or {}).get("comments") or []
         return [str(comment.get("text") or "") for comment in comments]
 
     def _answered(self, agent: dict[str, Any], ask: str) -> bool:
         """Whether the operator already answered this very ask: an `Operator answer` comment follows the last time the
         task carried `ask`, so parking the task on it again would put the question to them twice. A new ask (another
         pull request, another reason) is a new question."""
-        if (texts := self._comments(agent)) is None:
-            return False
+        texts = self._texts(agent)
         asked = [index for index, text in enumerate(texts) if text.strip() == ask.strip()]
         return bool(asked) and any(_ANSWER_COMMENT.match(text) for text in texts[asked[-1] + 1 :])
 
@@ -1736,6 +1747,7 @@ class TaskActor:
                 self._notice(self._closed, name, "was closed but the board was not told")
             return True
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
+        moved = False
         if written.transient:  # not a refusal: the task stays in its lane and the next pass tries the move again
             self._unsettled = True
             self._tried.pop(name, None)
@@ -1749,9 +1761,51 @@ class TaskActor:
             self._hold_done(name, written.output)
         elif target == self._review and source in (self._feed.roles.working, self._feed.roles.attention):
             self._hold_review(name, written.output)
+        elif not written.lint and target != self._moves.get((source, "ACTOR_FAULT")):
+            faulted = self._feed.task(name, lean=True)
+            moved = faulted is not None and self._fault(faulted, f"move {source} to {target}", written.output)
         with self._metrics:
             self._refusals += 1
-        return False
+        return moved
+
+    def _is_closed(self, target: str) -> bool:
+        roles = self._feed.roles
+        return roles.roles.get(target) == "final" and target != roles.done
+
+    def _no_move(self, lane: str, event: str, target: str | None) -> str:
+        return (
+            f"{lane} has no move for {event}" if target is None else f"{event} moves {lane} to {target}, a closed lane"
+        )
+
+    def _fault(self, agent: dict[str, Any], step: str, error: object) -> bool:
+        """Park the task in Needs attention through `ACTOR_FAULT`, naming the failed `step` and `error` as its reason, and
+        say whether it moved. A task already there keeps its lane and gets the reason ahead of its earlier text. A fault
+        is written once: not again on another trigger, and a board write of it that fails is logged and counted only."""
+        name, lane = agent["id"], agent["state"]
+        reason = f"{FAULT} {step}: {error}"
+        if self._probing or self._faults.get(name) == (lane, reason):
+            return False
+        self._faults[name] = (lane, reason)
+        logger.error("task actor: fault on %s at %s: %s", name, step, error)
+        target = self._moves.get((lane, "ACTOR_FAULT"))
+        if target is None:
+            return False
+        kept = needs_attention_text(agent["description"])
+        if kept.startswith(FAULT):  # an earlier fault and its next step are replaced, the operator's ask under it stays
+            kept = kept.partition("\n")[2].partition("\n")[2].strip()
+        text = "\n\n".join(filter(None, (f"{reason}\n{FAULT_NEXT}", kept)))
+        changes: dict[str, Any] = {"description": section_set(agent["description"], "Needs attention", text)}
+        if target != lane:
+            changes["status"] = target
+        written = self._apply(name, changes, reason)
+        if not written.ok:
+            logger.warning("task actor: the fault of %s was not written: %s", name, written.output)
+            with self._metrics:
+                self._refusals += 1
+            return False
+        if target != lane:
+            self._faults.pop(name, None)
+        return target != lane
 
     def _hold_done(self, name: str, refusal: str) -> None:
         """Record a refused Done move on the task and wake its holder with the refusal: the move is not tried again

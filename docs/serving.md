@@ -1286,7 +1286,14 @@ for an unchecked item is tried again. A refused move to Done is also commented o
 so the holder is woken on the refusal instead of the task sitting in its lane unread. A release to Ready
 that a declared guard or the `validate` hook refuses is a defect in the task record: the task stays in its lane with a
 comment naming the refusal, no operator question is minted, and the actor retries once the task's description, profile,
-labels or dependencies change. `GET /metrics` carries:
+labels or dependencies change. A step that raises (a fact read, a comment read), a move with no route or into a closed
+lane, and a write the board refuses for any other reason (a guard's `lint` refusal and a locked database are not faults)
+park the task in Needs attention through the `ACTOR_FAULT` event, legal from every open lane and written only by
+`starpulse/task-actor`. The reason opens `Task actor fault: <step>: <error>` and the log line at ERROR names the task, step and error;
+the line under it tells the operator to fix the cause and move the task back to In Progress.
+A task already in Needs attention keeps its lane and gets both lines ahead of its earlier text. The board draws an `actor error`
+chip on the card of a task whose reason opens so. A fault is written once and never retried on a clock or health event; a
+failed board write of it is logged and counted in `starpulse_task_actor_refusals_total`. `GET /metrics` carries:
 
 - `starpulse_task_actor_refusals_total`: refused writes.
 - `starpulse_task_actor_latency_seconds`: a histogram of the seconds from the fact being observed to the write landing.
@@ -1337,7 +1344,7 @@ counters for each machine the feed draws:
 
 - `starpulse_machine_conformance_events_total{machine}`: the moves judged.
 - `starpulse_machine_conformance_violations_total{machine}`: the moves no transition declares.
-- `starpulse_machine_event_occurrences_total{machine,event}`: the recorded occurrences of each event the machine declares, 0 until one arrives. A task parks on one with a `prom` criterion such as `sum(starpulse_machine_event_occurrences_total{machine="qa",event="LENS_SKIPPED"})`.
+- `starpulse_machine_event_occurrences_total{machine,event}`: the recorded occurrences of each event the machine declares, 0 until one arrives.
 - `starpulse_conformance_replay_remaining_entries`: the entry ids of `board:lanes` and `machine:events` past the monitor's cursors, up to the heads it found at start; falls to 0 as a replay reads on and stays 0 after, absent while the heads are unreadable. The worker keeps the text every 10 seconds before it has caught up, so a value that does not fall means the replay is stuck.
 - `starpulse_board_lane_entered_total{lane}`: the moves into the Board's done lane and into `archived`, a task's first sight in one included, 0 until one arrives. A task entering a lane again counts again, so `increase(...[1d])` is the day's Done count. The counts are saved in the same checkpoint, so a restart neither recounts nor drops a move.
 

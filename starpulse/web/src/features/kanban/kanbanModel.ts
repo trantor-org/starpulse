@@ -22,6 +22,11 @@ export const boardCount = (tasks: KanbanTask[], roles: Roles): number => {
   return tasks.filter((t) => lanes.includes(t.lane)).length;
 };
 
+const ACTOR_FAULT = /^## Needs attention[ \t]*\n\s*(Task actor fault:[^\n]*)/m;
+
+/** The reason the task actor parked the task with, empty when its Needs attention section does not open with a fault: the card draws the actor-error chip for a non-empty one. */
+export const actorFault = (description: string): string => ACTOR_FAULT.exec(description)?.[1].trim() ?? "";
+
 export interface KanbanTask {
   id: string;
   title: string;

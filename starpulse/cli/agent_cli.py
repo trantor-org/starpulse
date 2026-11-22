@@ -780,7 +780,7 @@ def _parser() -> argparse.ArgumentParser:
         "--until",
         action="append",
         default=[],
-        help="an event subject an alert or a deploy emits, or a criterion object (`'{id: soak, kind: prom, expr: up, at_least: 1}'`, YAML or JSON, one or a list); the first met releases the task (repeatable)",
+        help="an event subject an alert or a deploy emits, or an event criterion object (`'{id: s, kind: event, query: <subject>}'`, YAML or JSON); the first event releases the task (repeatable)",
     )
     park.add_argument("--operator", help="what only the operator can do or decide")
     park.add_argument("--comment", help="what is outstanding, recorded with the move")
