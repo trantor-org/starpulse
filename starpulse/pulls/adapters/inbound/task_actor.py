@@ -1650,9 +1650,14 @@ class TaskActor:
             roles = self._feed.roles
             if source == roles.working and target == roles.waiting:
                 self._notice(self._tell, name, "was parked but its holder was not told")
-            if source == roles.waiting and target in (roles.ready, roles.review):
-                self._notice(self._released, name, "was released but its holder was not told")
-            if target == roles.working:
+            if source == roles.waiting and target in (roles.ready, roles.review, roles.working):
+                self._notice(
+                    self._released,
+                    name,
+                    "was released but its holder was not told",
+                    on_failure=(lambda: self._attend_unstarted(name)) if target == roles.working else None,
+                )
+            if target == roles.working and source != roles.waiting:  # a Waiting holder hibernated: it needs a start
                 self._notice(
                     self._returned,
                     name,
@@ -1735,6 +1740,19 @@ class TaskActor:
                 "Returned to Ready: it was sent back to its session but its holder could not be woken.",
                 self._clock(),
                 source=agent["state"],
+            )
+
+    def _attend_unstarted(self, name: str) -> None:
+        with self._lock:
+            agent = self._feed.task(name, lean=True)
+            if agent is None or agent["state"] != self._feed.roles.working:
+                return
+            self._attend(
+                name,
+                "no session could be started for it",
+                "left Waiting but no session started",
+                "Start a session on it?",
+                ("start it by hand", "rescope the task"),
             )
 
     def _hold_for_repair(self, name: str, refusal: str) -> None:
