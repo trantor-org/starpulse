@@ -180,7 +180,7 @@ class Loop:
         self._running: dict[str, _Run] = {}
         self._starts: dict[str, float] = {}
         self._parked: dict[str, _Run] = {}
-        self._granted: dict[str, Mapping[str, float]] = {}
+        self._granted: dict[str, tuple[float, Mapping[str, float]]] = {}
         self._held: set[str] = self._load_held()
         self._paused: dict[str, dict[str, Any]] = self._load_pauses()
         self._skip_logged: str | None = None  # the last reason a tick logged for skipping admission
@@ -357,7 +357,11 @@ class Loop:
         pending = set(asked) - set(grants)
         rows = [{**agent, "workable": True} if task in pending else agent for task, agent in working.items()]
         others = [agent for agent in open_tasks if agent["id"] not in working]
-        self._granted = {task: demand for task, demand in self._granted.items() if task in working}
+        self._granted = {
+            task: grant
+            for task, grant in self._granted.items()
+            if task in working and not self._counted(task) and asked.get(task, {}).get("at") in (None, grant[0])
+        }
         readings = self.readings() if pending else []
         while pending:
             decisions = decide([*others, *rows], self._lane, readings, self._policy, self._ledger, log=False, starting={task: asked[task]["at"] for task in pending})
@@ -365,7 +369,7 @@ class Loop:
                 break
             pending.discard(picked.task)
             grants[picked.task] = asked[picked.task]["at"]
-            self._granted[picked.task] = picked.demand
+            self._granted[picked.task] = (asked[picked.task]["at"], picked.demand)
             readings = [replace(r, use=r.use + picked.demand[r.name]) for r in readings]
         start_requests.admit(self._log, grants)
 
@@ -606,7 +610,7 @@ class Loop:
             readings, _ = self._sampler.readings()
         taken: dict[str, float] = {}
         # A grant stays reserved after the task actor dispatches it, until the sampler counts the session or the task leaves work.
-        held = {**self._granted, **{task: run.demand for task, run in list(self._running.items())}}  # the loop thread changes both
+        held = {**{task: demand for task, (_, demand) in self._granted.items()}, **{task: run.demand for task, run in list(self._running.items())}}  # the loop thread changes both
         for task, needs in held.items():
             if not self._counted(task):
                 for name, need in needs.items():

@@ -101,7 +101,7 @@ class Subscriber:
         whose task only another session held gets them too."""
         with self._lock:
             sessions = self._store.sessions()
-            unheld: dict[str, tuple[str, Rules, list[str]]] = {}
+            unheld: dict[str, tuple[str, list[str], list[str]]] = {}
             for session, subscription in sessions.items():
                 changed = False
                 for origin in [origin for origin in subscription.origins if origin != EXPLICIT]:
@@ -109,16 +109,16 @@ class Subscriber:
                         continue
                     holder, rules, incidents = self._holder(row)
                     if holder != session:
+                        if holder and origin not in unheld and origin not in sessions.get(holder, Subscription()).origins:
+                            unheld[origin] = (holder, self._held(origin, rules), incidents)
                         changed |= subscription.drop(origin)
-                        if holder and origin not in sessions.get(holder, Subscription()).origins:
-                            unheld[origin] = (holder, rules, incidents)
                     else:
                         changed |= subscription.add(origin, self._held(origin, rules))
                         changed |= subscription.replace_prefixed(origin, INCIDENT, incidents)
                 if changed:
                     self._store.put(session, subscription)
-            for origin, (holder, rules, incidents) in unheld.items():
-                self._grant(holder, origin, self._held(origin, rules), incidents)
+            for origin, (holder, subjects, incidents) in unheld.items():
+                self._grant(holder, origin, subjects, incidents)
             self._settled()
 
     def _settled(self) -> None:

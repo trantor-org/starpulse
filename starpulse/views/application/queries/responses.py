@@ -14,6 +14,7 @@ from starpulse.board.model.seam import (
 )
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
+from starpulse.contracts.api.registry import BODIES
 from starpulse.flow_metrics.model.cells import cell_of
 from starpulse.flow_metrics.model.flow import combine_cost_to_go, combine_diff
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
@@ -300,7 +301,8 @@ def _held_folds(
         logger.warning("%s: signal table unreadable: %s", label, exc)
         return _error("the telemetry log cannot be read"), 503
     if held is None:
-        return encode(kind, {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
+        body = {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}
+        return (encode(kind, body) if kind in BODIES else json.dumps(body).encode()), 400
     return held
 
 

@@ -403,6 +403,7 @@ class TaskActor:
         self._lint_held: dict[str, tuple[Any, ...]] = {}
         #: The note of each task's standing Review refusal, until a change repairs it: the holder's resume carries it.
         self._refused: dict[str, str] = {}
+        self._released_visit: set[str] = set()  # tasks released into the working lane and not yet out of it again
         self._metrics = threading.Lock()
         self._refusals = 0
         #: How many writes landed within each bound of `BUCKETS_S`, then how many in all, and their seconds summed.
@@ -850,6 +851,8 @@ class TaskActor:
                 return
             self._index(agent)
             lane = before is None or before[0] != now[0]
+            if now[0] != self._feed.roles.working:
+                self._released_visit.discard(name)
             events = [TaskTouched(name, Trigger.ON_ENTRY, now[0])] if lane else []
             if before is not None and lane:
                 events.append(TaskTouched(name, Trigger.ON_EXIT, before[0]))
@@ -900,6 +903,7 @@ class TaskActor:
                     self._write(
                         task, target, f"{phase['state']} phase exited on {event}", self._clock(), phase["state"]
                     )
+                    exited = self._memory.of(task).get("exited") or {}  # a transient refusal cleared the marker
                 else:
                     self._advance(parent, task, event)  # a refused or lost send leaves no marker: the exit goes again
                     self._memory.keep(task, exited=exited)
@@ -1007,6 +1011,7 @@ class TaskActor:
         self._tried.pop(name, None)
         self._lint_held.pop(name, None)
         self._refused.pop(name, None)
+        self._released_visit.discard(name)
         self._unready_logged.pop(name, None)
         self._deadlines.cancel(name)
         self._dates.pop(name, None)
@@ -1711,6 +1716,8 @@ class TaskActor:
             roles = self._feed.roles
             if source == roles.working and target == roles.waiting:
                 self._notice(self._tell, name, "was parked but its holder was not told")
+            if source == roles.waiting and target == roles.working:
+                self._released_visit.add(name)
             if source == roles.waiting and target in (roles.ready, roles.review, roles.working):
                 self._notice(
                     self._released,
@@ -1807,7 +1814,7 @@ class TaskActor:
     def _attend_unstarted(self, name: str) -> None:
         with self._lock:
             agent = self._feed.task(name, lean=True)
-            if agent is None or agent["state"] != self._feed.roles.working:
+            if agent is None or agent["state"] != self._feed.roles.working or name not in self._released_visit:
                 return
             self._attend(
                 name,

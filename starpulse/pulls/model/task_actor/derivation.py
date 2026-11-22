@@ -500,16 +500,16 @@ def deadline(facts: TaskFacts, agent: Agent) -> tuple[float, str] | None:
     """When the task's service level expectation ends, in epoch seconds, and what it is counted from; None while the
     task is exempt (gated only on dependencies, each still In Progress or Review) or has no entry time.
     The SLE is the latest `expect_by` plus two days, else seven days from entering the lane."""
-    if not agent.get("entered"):
+    if not (since := entered(facts, agent)):
         return None
     if missing(facts, agent):
-        return agent["entered"], "a dependency is not on the board"
+        return since, "a dependency is not on the board"
     if not criteria.authored(agent["description"]) and moving(facts, agent):
         return None
     dates = [stamp for stamp in map(epoch, criteria.expect_dates(agent["description"])) if stamp]
     if dates:
         return max(dates) + GRACE_DAYS * DAY_S, f"expect_by {stamp(max(dates))} plus {GRACE_DAYS} days"
-    return agent["entered"] + SLE_DAYS * DAY_S, f"{SLE_DAYS} days from entering Waiting"
+    return since + SLE_DAYS * DAY_S, f"{SLE_DAYS} days from entering Waiting"
 
 
 def moving(facts: TaskFacts, agent: Agent) -> bool:
@@ -537,7 +537,7 @@ def overdue(facts: TaskFacts, agent: Agent) -> Held:
             "Re-park it on the right tasks, or close it?",
         )
     gate = [*unmet(facts, agent), *(each["id"] for each in criteria.authored(agent["description"]))]
-    days = int((now - agent["entered"]) // DAY_S)
+    days = int((now - entered(facts, agent)) // DAY_S)
     return due[0], attention_reason(
         f"Waiting {days} days, past its service level expectation ({due[1]})",
         f"it is still gated on {', '.join(gate) or 'its wait'}",
@@ -555,9 +555,10 @@ def criteria_met(facts: TaskFacts, agent: Agent) -> Held:
 
 
 def deps_unresolved(facts: TaskFacts, agent: Agent) -> Held:
-    """The dependencies that are not done, when there are any."""
+    """The dependencies that are not done, when there are any. A task whose every pull request closed unmerged is
+    held by `pr_closed_unmerged` instead: waiting on a dependency would move it back out of Needs attention."""
     open_ = unmet(facts, agent)
-    return (open_, f"Not done: {', '.join(open_)}.") if open_ else None
+    return (open_, f"Not done: {', '.join(open_)}.") if open_ and not pr_closed_unmerged(facts, agent) else None
 
 
 def owner_stale(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
@@ -588,14 +589,14 @@ def owner_green(facts: TaskFacts, dependency: str) -> bool:
     return facts.owns_failure(dependency) and bool(facts.main_green())
 
 
-def early(facts: TaskFacts, agent: Agent) -> tuple[str, ...]:
+def early(facts: TaskFacts, agent: Agent, needs: Sequence[str] | None = None) -> tuple[str, ...]:
     """The open dependencies whose every criterion the task's record says it needs (`dependencyNeeds`, `TASK-N#K`)
     is checked: the fact the task waited on holds, whatever the dependency still has open. A dependency with no
-    need names the whole task; a record the board cannot read names none."""
+    need names the whole task; a record the board cannot read names none. `needs` is a read the caller already holds."""
     open_ = [dependency for dependency in agent["dependencies"] if not cleared(facts, dependency)]
     if not open_:
         return ()
-    needs = facts.dependency_needs(agent["id"])
+    needs = facts.dependency_needs(agent["id"]) if needs is None else needs
     wanted: dict[str, list[int]] = {}
     for task, number in map(need_of, needs):
         wanted.setdefault(task, []).append(number)
@@ -612,10 +613,9 @@ def checked(facts: TaskFacts, dependency: str, numbers: list[int]) -> bool:
 
 def stale(facts: TaskFacts, agent: Agent) -> dict[str, list[str]]:
     """The record changes that drop the early dependencies and their needs, none when there are none."""
-    ahead = early(facts, agent)
-    if not ahead:
-        return {}
     needs = facts.dependency_needs(agent["id"])
+    if not (ahead := early(facts, agent, needs)):
+        return {}
     return {
         "dependencies": [dependency for dependency in agent["dependencies"] if dependency not in ahead],
         "dependencyNeeds": [need for need in needs if need_of(need)[0] not in ahead],

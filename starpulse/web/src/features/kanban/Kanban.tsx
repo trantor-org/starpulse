@@ -783,7 +783,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     if (!c || (!c.holds.size && !c.waitsOn.size && hovered !== spot)) return null;
     return (id: string): Chain | undefined => (id === hovered ? "self" : c.holds.has(id) ? "holds" : c.waitsOn.has(id) ? "waits" : undefined);
   }, [cards, hovered, lift, roles, spot]);
-  const hiddenWhy = useMemo(() => (spot ? whyHidden(cards, hud.names, roles, prefs, spot) : null), [spot, cards, hud.names, roles, prefs]);
+  const hiddenWhy = useMemo(() => (spot ? whyHidden(cards, roles, prefs, spot) : null), [spot, cards, roles, prefs]);
   useEffect(() => void note?.(hiddenWhy), [hiddenWhy, note]);
   // a new spot, or its card first drawn, scrolls: a board event or clock tick must not yank the operator's scroll back to a card already shown
   const spotDrawn = !!spot && hiddenWhy === null;
@@ -803,7 +803,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     return () => clearTimeout(timer);
   }, [toast]);
   const marksOf = (id: string): Marks => ({ saving: moved.pending[id]?.saving, refusal: moved.refused[id], claim: started.claiming[id], failed: started.failed[id] });
-  const lanes = useMemo(() => columnsOf(hud.names, roles), [hud.names, roles]);
+  const lanes = useMemo(() => columnsOf(roles), [roles]);
   const drawn = drawBoard ? cards : NO_CARDS;
   const suggestions = useMemo(() => labelSuggestions(drawn, prefs.query, lanes), [drawn, prefs.query, lanes]);
   const at = Math.min(pick, suggestions.length - 1);

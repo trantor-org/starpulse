@@ -7,19 +7,18 @@ import type { ClaimRelease, MachineState, Move, Pull, Rating, Roles, TrailStep }
 import { ago } from "../../shared/clock";
 import { sessionNickname } from "./nickname";
 
-/** The States the machine gives a lifecycle role, keyed by role: what stacking, the unheld chip, the Done cutoff and a lane's tone read. Which lanes are drawn is `roles.lanes`, else these States in order. */
+/** The States the machine gives a lifecycle role, keyed by role: what stacking, the unheld chip, the Done cutoff and a lane's tone read. */
 const lifecycleStates = ({ ready, waiting, working, review, verifying, attention, done }: Roles) => ({ ready, waiting, working, review, verifying, attention, done });
 
 /** The role a State plays in the lifecycle columns, when it plays one. */
 export const roleOf = (roles: Roles, state: string): string | undefined => Object.entries(lifecycleStates(roles)).find(([, s]) => s === state)?.[0];
 
-/** The lanes drawn as columns: the snapshot's open lanes in the machine's order when it names a ready State (trantor's lifecycle), else its lifecycle States in order when an older server sent no `lanes`, else the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses); none before the lanes are known. The Done lane is never one: the header counts it. */
-export const columnsOf = (names: Record<string, string>, roles: Roles): string[] =>
-  (roles.ready ? roles.lanes ?? [...new Set(Object.values(lifecycleStates(roles)).filter((s): s is string => !!s))] : Object.keys(names)).filter((s) => s !== roles.done);
+/** The lanes drawn as columns: the snapshot's `roles.lanes` as the server sends them, which it derives from the machine file (a native board's statuses when it has none). None before the snapshot arrives. */
+export const columnsOf = (roles: Roles): string[] => roles.lanes ?? [];
 
 /** How many of `tasks` the Kanban draws: the cards in its columns, none in the Done or Proposed lane. */
-export const boardCount = (tasks: KanbanTask[], names: Record<string, string>, roles: Roles): number => {
-  const lanes = columnsOf(names, roles);
+export const boardCount = (tasks: KanbanTask[], roles: Roles): number => {
+  const lanes = columnsOf(roles);
   return tasks.filter((t) => lanes.includes(t.lane)).length;
 };
 
@@ -315,7 +314,7 @@ export const stackOf = (l: Layout, id: string): Stack | undefined =>
   l.columns.flatMap((c) => c.buckets).flatMap((b) => b.stacks).find((s) => s.members.length > 1 && s.members.some((t) => t.id === id));
 
 export function layout(tasks: KanbanTask[], names: Record<string, string>, roles: Roles, prefs: Prefs): Layout {
-  const lanes = columnsOf(names, roles);
+  const lanes = columnsOf(roles);
   const drawn = tasks.filter((t) => lanes.includes(t.lane));
   const visible = drawn.filter(
 (t) => !prefs.hiddenTasks.has(t.id) && !prefs.hiddenMilestones.has(t.milestone) && filtered(t, prefs));
@@ -335,10 +334,10 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, roles
 }
 
 /** Why task `id` has no card in view: Done, hidden, its milestone hidden, filtered out or folded away; null when its card is drawn. */
-export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, roles: Roles, prefs: Prefs, id: string): string | null {
+export function whyHidden(tasks: KanbanTask[], roles: Roles, prefs: Prefs, id: string): string | null {
   const t = tasks.find((x) => x.id === id);
   if (t && t.lane === roles.done) return "Done";
-  if (!t || !columnsOf(names, roles).includes(t.lane)) return "not on the board";
+  if (!t || !columnsOf(roles).includes(t.lane)) return "not on the board";
   if (prefs.hiddenTasks.has(id)) return "hidden";
   if (prefs.hiddenMilestones.has(t.milestone)) return "its milestone is hidden";
   if (!filtered(t, prefs)) return "filtered out";

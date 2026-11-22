@@ -30,7 +30,7 @@ const LAUNCH_ONLY = ["temporal/nightly-audit", "temporal/weekly-code-audit"], UN
 
 const dag = (name: string, status: Dag["status"] = "succeeded"): Dag => ({ name, status, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
 const machine: Machine = {
-  states: STATES.map((id, i) => ({ id, name: id, initial: i === 0, final: id === "completed" || id === "archived" })),
+  states: STATES.map((id, i) => ({ id, name: id, initial: i === 0, final: ["done", "completed", "archived"].includes(id) })),
   transitions: TRANSITIONS.map(([source, target, event]) => ({ source, target, event })),
   mainLine: ["new", "ready", "in_progress", "review", "done"],
   writers: Object.fromEntries(Object.entries(WRITES).flatMap(([d, evs]) => evs.map((e) => [e, [{ actor: d, trigger: "temporal" }]] as const))),

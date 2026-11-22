@@ -144,10 +144,10 @@ def apply(
         if not found and "created_at" not in pull:  # a reduced reconcile body cannot open a record
             logger.info("github pulls: %s: no record and a reduced body", delivery.delivery_id)
             return None
+        if found and delivery.action == "opened" and found["state"] != "OPEN":
+            return None  # an `opened` applied late: only `reopened` moves a closed or merged record back to open
         record = found or opened(delivery.repository, pull["number"], pull["body"] or "", now)
         for delta in deltas if found else (*_OPENED, *deltas):
-            if delta is _state and delivery.action == "opened" and found and found["state"] != "OPEN":
-                continue  # an `opened` applied late: only `reopened` moves a closed or merged record back to open
             record = record | delta(record, pull, now)
         return record
 

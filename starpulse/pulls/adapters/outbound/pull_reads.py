@@ -136,7 +136,7 @@ def _requiring(store: PullStore, record: dict[str, Any], contexts: frozenset[str
             return {"requiredChecks": checks}
         # the rollup counted the old contexts: a newer one of the new set outvotes it in `PullStore._guarded`
         results = {check["result"] for check in checks}
-        state = "failing" if "failing" in results else "passed" if results == {"pass"} else "pending"
+        state = "failing" if "failing" in results else "passed" if results <= {"pass"} else "pending"
         return {"requiredChecks": checks, "rollup": {"sha": current["headRefOid"], "state": state, "at": now}}
 
     _amend(store, record, change)

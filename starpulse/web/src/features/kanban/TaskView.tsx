@@ -477,7 +477,7 @@ export function TaskView(p: TaskViewProps) {
     </div>
   );
   const deps = dependencyRows(p.tasks, p.task, p.record?.follows ?? "");
-  const offered = [...columnsOf(names, roles), ...(roles.done ? [roles.done] : [])].filter((c) => c in p.task.moves).map((c) => {
+  const offered = [...columnsOf(roles), ...(roles.done ? [roles.done] : [])].filter((c) => c in p.task.moves).map((c) => {
     const verdict = asOperator(p.task.moves[c]);
     return { to: c, text: names[c] ?? c, allowed: verdict.allowed, reason: verdict.reason ?? "", breaks: warnsOf(p.task, c).length };
   });
