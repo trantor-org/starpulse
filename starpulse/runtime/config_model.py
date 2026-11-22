@@ -300,14 +300,15 @@ class BridgeFile(_Table):
     end: list[str] = Field(
         default_factory=list,
         description=(
-            "The command run when a task moves into a finished lane `end_lanes` names, whether or not a consumer "
-            "still holds the task, once per task in a delivered batch; `{task}` in an element is replaced by the task id. It ends the task's idle session, so "
-            "it should return at once rather than wait on the end. Empty runs none."
+            "The command the task actor runs when a task enters a lane `end_lanes` names, and again each time the "
+            "task's holder settles or ends while the task still sits in one; `{task}` in an element is replaced by the "
+            "task id. It ends the task's idle session, so it should return at once rather than wait on the end. "
+            "Empty runs none."
         ),
     )
     end_lanes: list[str] = Field(
         default_factory=list,
-        description="The lane ids a task's move into runs `end`, such as `done` or `archived`. Empty runs none.",
+        description="The lane ids a task's entry runs `end` for, such as `done` or `archived`. Empty runs none.",
     )
 
     @field_validator("incidents")

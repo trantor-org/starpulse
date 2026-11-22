@@ -57,10 +57,11 @@ def follow_holder_idle(
     working: Callable[[], list[str]],
     ended: Callable[[str], None] = lambda _task: None,
     entered: Callable[[str], None] | None = None,
+    moved: Callable[[str, str], None] = lambda _task, _lane: None,
 ) -> threading.Thread:
     """Call `settled` with the task of each session that settles, and `entered` (`settled` when none) with each task
     moved from a parked lane to In Progress, after this call, within the event's own latency; call `ended` with the task
-    of each session whose process ends. The mover may not be the holder, which settled when it
+    of each session whose process ends, and `moved` with each task and the lane it entered. The mover may not be the holder, which settled when it
     parked the task and settles no more, so the move is the only event that tells it. A task parked before this call
     and moved after a server restart is not seen, because the lane map starts empty.
 
@@ -81,6 +82,7 @@ def follow_holder_idle(
             if lane == WORKING and lanes.get(task) in PARKED:
                 (entered or settled)(task)
             lanes[task] = lane
+            moved(task, lane)
         elif task := _task_of(entry, SETTLED):
             settled(task)
         elif task := _task_of(entry, ENDED):

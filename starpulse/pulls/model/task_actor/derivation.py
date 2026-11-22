@@ -7,7 +7,7 @@ adapter alone touches the world (ADR Every Task State Re-Derives on One Trigger 
 """
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -18,6 +18,8 @@ from starpulse.board.model.seam import HELD, MERGE_EVIDENCE
 
 #: The question that ends the `## Needs attention` reason of a task the actor moves there on a pull request fact.
 ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
+#: What an uncited-pull-request ask says after the task's id: a cited pull request settles it.
+UNCITED_ASK = "has an uncited pull request."
 DONE_HELD = "Held from Done:"
 #: The opening of the comment `backlog-task update --pushback` records.
 PUSHBACK = "Operator pushback:"
@@ -171,6 +173,13 @@ def unready(facts: TaskFacts, agent: Agent) -> str | None:
     return "; ".join(parts) or None
 
 
+def closed_lane(facts: TaskFacts, name: str, end_lanes: Collection[str]) -> bool:
+    """Whether `name` sits in a lane where its holder's session ends once idle (`end_lanes`). An archived task has no
+    lean record, so the archive names its lane."""
+    agent = facts.task(name)
+    return (agent["state"] if agent else "archived" if facts.is_archived(name) else None) in end_lanes
+
+
 def pr_terminal(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     """The merge evidence when the task cites pull requests and every one has ended, else None. A check task that
     cites only other tasks' pull requests has no delivery of its own to wait for: its checked criteria close it.
@@ -301,12 +310,14 @@ def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     its current head says every required check passed (`checks_verdict`): a required check not posted is not green,
     a push re-arms the gate, and a repository whose ruleset requires none rolls up passed as soon as the pull
     request is not a draft. A task in Needs attention whose `## Needs attention` ask is unanswered stays there,
-    unless its ask ends in the actor's own failing-checks question (`ATTENTION_QUESTION`), which a green pull request settles."""
+    unless its ask ends in the actor's own failing-checks question (`ATTENTION_QUESTION`) or is the uncited-pull-request
+    ask (`UNCITED_ASK`): a ready cited pull request settles both, and `unlinked` still holds while one stays uncited."""
     reason = needs_attention_reason(agent["description"])
     if (
         agent["state"] == facts.roles.attention
         and reason
         and not reason.endswith(ATTENTION_QUESTION)
+        and f" {UNCITED_ASK}" not in reason
         and not operator_answered(agent["description"])
     ):
         return None

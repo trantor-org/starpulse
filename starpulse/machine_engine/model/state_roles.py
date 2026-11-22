@@ -13,6 +13,8 @@ __all__ = ["StateRoles"]
 
 #: The fact kind each point of the task lifecycle waits on: the first State to wait on dependencies, and Start Criteria met.
 _UNMET, _MET = "deps_unresolved", "criteria_met"
+#: The facts a lane watches only to leave or enter on its own Start Criteria, which no Review lane watches.
+_START = (_MET, "criteria_unmet")
 #: The facts a pull request's end can be: every cited one ended, or also at least one merged.
 _PULL_REQUEST = ("pr_terminal", "pr_merged")
 
@@ -133,11 +135,11 @@ class StateRoles:
         )
 
     def _waits_on_pull_request(self, state: str) -> bool:
-        """Whether `state` waits on a pull request's end; a person waiting on a merge is no review, nor is the State
-        that waits on its Start Criteria being met, which a merge only closes."""
+        """Whether `state` waits on a pull request's end; a person waiting on a merge is no review, nor is a State
+        that watches its own Start Criteria (Ready or Waiting), which a merge only closes."""
         waits = self.waits.get(state, {})
         return (
             self.roles.get(state) == "waiting_on_fact"
-            and _MET not in waits
+            and not any(fact in waits for fact in _START)
             and any(fact in waits for fact in _PULL_REQUEST)
         )

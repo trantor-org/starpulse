@@ -117,8 +117,6 @@ def start(
     feed: Callable[[], Any],
     stop: StopEvent,
     route: Route | None = None,
-    end: Callable[[str], None] | None = None,
-    end_lanes: Collection[str] = (),
     settle: Callable[[Collection[str]], None] | None = None,
     reach: Mapping[str, Reach] | None = None,
     registered: Callable[[], None] = lambda: None,
@@ -126,12 +124,12 @@ def start(
     """Start the bridge over `log` for `board`, ending when `stop` is set; `feed()` is the board's read side. Return its reload.
 
     `route` finds how to reach a session's consumer: with it, the events waiting on a consumer it knows are delivered
-    (`bridge.delivery`). `reach` is each incident type's reach (`bridge.reach`). `end` runs for a task moved into a finished lane `end_lanes` names (`bridge.subscriber`), and `settle` after each lane move and `reconcile`. `registered` runs when the delivery starts and each time a session registers.
+    (`bridge.delivery`). `reach` is each incident type's reach (`bridge.reach`). `settle` runs after each lane move and `reconcile`. `registered` runs when the delivery starts and each time a session registers.
     """
     stream = f"starpulse-{board}"
     url = f"nats://127.0.0.1:{port}"
     publisher = Publisher(url, stream, stream_subjects(board))
-    subscriber = Subscriber(board, rules, Consumers(publisher, stream), feed, end, end_lanes, settle, reach)
+    subscriber = Subscriber(board, rules, Consumers(publisher, stream), feed, settle, reach)
     delivery: Delivery | None = None
     if route:
         link = Publisher(url, stream, stream_subjects(board))

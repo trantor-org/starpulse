@@ -54,7 +54,6 @@ TASK_KEYS = (
     "pause_reason",
     "readable",
     "source",
-    "verify_plan",
     "prs",
     "moves",
     "rating",

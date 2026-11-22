@@ -8,11 +8,7 @@ Both are idempotent, so the bridge replaying an entry after a restart changes no
 holder though its file keeps the assignee, so its move to one drops the session's subjects; `reconcile` does the same for
 every task a session's subscription holds and the session no longer does, such as those an older release left (a task
 the read model does not return is skipped, never read as unheld), and grants
-each holder the `claim` subjects now named, so a claim list that grew reaches a session that claimed before. That drop
-deletes the session's consumer before the delivery route can read the move, so a move into a finished lane `end_lanes`
-names runs `end` here, before the drop so a retried entry runs it again, whether or not a consumer held the task: a
-session whose consumer was lost (a restart's `reconcile` read a holder the read model had not folded yet) is still
-bound to the task, and `end` is scoped to the task and idempotent. The entry's own lane says the task finished: the
+each holder the `claim` subjects now named, so a claim list that grew reaches a session that claimed before. The entry's own lane says the task finished: the
 read model the holder is read from is projected on another tail and may not have folded the move yet, so a move into
 an open lane the read model's row does not show yet drops no session: a lagging row would read the holder as gone. After each
 lane move and each `reconcile`, `settle` takes the names of the sessions that still have a consumer, so the
@@ -52,14 +48,12 @@ class Subscriber:
         rules: Mapping[str, Rules],
         store: Store,
         feed: Callable[[], Any],
-        end: Callable[[str], None] | None = None,
-        end_lanes: Collection[str] = (),
         settle: Callable[[Collection[str]], None] | None = None,
         reach: Mapping[str, Reach] | None = None,
     ) -> None:
         self._board, self._rules, self._store, self._feed = board, rules, store, feed
         self._reach = reach or {}
-        self._end, self._end_lanes, self._settle = end, end_lanes, settle
+        self._settle = settle
         self._lock = threading.Lock()
 
     def handle(self, entry: Entry) -> None:
@@ -70,7 +64,9 @@ class Subscriber:
             if entry.stream == CLAIMS and not entry.fields.get("session"):
                 return  # a refused claim moves no holder
             if entry.stream in (LANES, CLAIMS):
-                self._moved(task, str(entry.fields.get("lane") or ""), str(entry.fields.get("session") or ""))
+                # a lane move's session is its writer, often the holder's local id rather than the assignee's URL
+                claimant = str(entry.fields.get("session") or "") if entry.stream == CLAIMS else ""
+                self._moved(task, str(entry.fields.get("lane") or ""), claimant)
                 self._settled()
             elif entry.stream == MACHINE and entry.fields.get("event") == OPENED and (number := pull_number(entry)):
                 holder, rules, _ = self._holder(self._feed().task(task, lean=True))
@@ -101,9 +97,12 @@ class Subscriber:
 
     def reconcile(self) -> None:
         """Drop each task's subjects from every session that does not hold the task now, and give each holder the
-        `claim` subjects its kind names now, so a claim list that grew since the session claimed reaches it."""
+        `claim` subjects its kind names now, so a claim list that grew since the session claimed reaches it; a holder
+        whose task only another session held gets them too."""
         with self._lock:
-            for session, subscription in self._store.sessions().items():
+            sessions = self._store.sessions()
+            unheld: dict[str, tuple[str, Rules, list[str]]] = {}
+            for session, subscription in sessions.items():
                 changed = False
                 for origin in [origin for origin in subscription.origins if origin != EXPLICIT]:
                     if (row := self._feed().task(origin, lean=True)) is None:
@@ -111,11 +110,15 @@ class Subscriber:
                     holder, rules, incidents = self._holder(row)
                     if holder != session:
                         changed |= subscription.drop(origin)
+                        if holder and origin not in sessions.get(holder, Subscription()).origins:
+                            unheld[origin] = (holder, rules, incidents)
                     else:
                         changed |= subscription.add(origin, self._held(origin, rules))
                         changed |= subscription.replace_prefixed(origin, INCIDENT, incidents)
                 if changed:
                     self._store.put(session, subscription)
+            for origin, (holder, rules, incidents) in unheld.items():
+                self._grant(holder, origin, self._held(origin, rules), incidents)
             self._settled()
 
     def _settled(self) -> None:
@@ -133,8 +136,6 @@ class Subscriber:
         behind = bool(lane) and lane not in FINISHED and (row is None or bool(state) and state != lane_id(lane))
         held = [] if behind else self._store.holding(token(task))
         dropping = [session for session in held if session != holder]
-        if self._end and lane in FINISHED and lane in self._end_lanes:
-            self._end(task)
         for session in dropping:
             subscription = self._store.get(session)
             subscription.drop(token(task))

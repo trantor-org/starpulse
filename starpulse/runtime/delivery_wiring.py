@@ -23,6 +23,7 @@ from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.adapters.outbound.pull_requests import PullRequests, coalesced
 from starpulse.pulls.model.pins import LiveBuild, running_commit
 from starpulse.runtime.config import Config
+from starpulse.sessions.adapters.outbound.claude_code_notify import end_with
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.model.board_feed import BoardFeed
@@ -91,6 +92,8 @@ def start_delivery(
             parked=board.parked,
             released=board.released,
             idle=board.idle,
+            end=end_with(config.bridge.end),
+            end_lanes=frozenset(config.bridge.end_lanes),
             returned=board.returned,
             alive=board.alive,
             enqueued=board.enqueued,
@@ -109,7 +112,14 @@ def start_delivery(
         follow_until_events(actor.event_seen, lambda entry: subject_for(config.bridge.board, entry), log, stop)
         actor.start(stop)
         follow_holder_idle(
-            actor.holder_settled, log, stop, actor.indexed, actor.working, actor.holder_ended, actor.holder_entered
+            actor.holder_settled,
+            log,
+            stop,
+            actor.indexed,
+            actor.working,
+            actor.holder_ended,
+            actor.holder_entered,
+            actor.lane_entered,
         )
         follow_admitted(actor.admitted, log, stop)
     lane_events.follow_entered(board.entered, log, stop)

@@ -53,8 +53,6 @@ def render(record: Mapping[str, Any], *, done: bool) -> str:
             body += [f"{heading}:", _RULE, str(text), ""]
     if files := record.get("modifiedFiles"):
         body += [f"Modified files: {', '.join(files)}", ""]
-    if plan := record.get("verifyPlan"):
-        body += ["Verify plan:", *plan, ""]
     if comments := record.get("comments"):
         body += ["Comments:", _RULE]
         for index, comment in enumerate(comments, 1):

@@ -880,8 +880,8 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `incidents` (table of `IncidentReachFile` table): The sessions `starpulse incident open <type> <key>` makes wait on its owner task, by incident type, `[bridge.incidents.<type>]`. Each table declares at least one of `kinds` and `areas`, and a task must match every one declared; a type with no table reaches none.
 - `quiet_moves` (table of list of text): The lane moves a session's consumer acks without notifying the session, by destination lane: `review = ["starpulse/task-actor"]` quiets the task actor's moves into Review. Each value names writers as the move's `actor` records them, or `self` for a move the receiving session wrote itself. A lane with no entry notifies every move, and the published subjects are unchanged.
 - `resume` (list of text): The command that resumes a session that has ended when an event on its subjects arrives, ending in the flag that takes the session id; the id and the events follow it as arguments. `{session}` and `{cwd}` in an element are replaced by the session's id and working directory, and the command runs in that directory.
-- `end` (list of text): The command run when a task moves into a finished lane `end_lanes` names, whether or not a consumer still holds the task, once per task in a delivered batch; `{task}` in an element is replaced by the task id. It ends the task's idle session, so it should return at once rather than wait on the end. Empty runs none.
-- `end_lanes` (list of text): The lane ids a task's move into runs `end`, such as `done` or `archived`. Empty runs none.
+- `end` (list of text): The command the task actor runs when a task enters a lane `end_lanes` names, and again each time the task's holder settles or ends while the task still sits in one; `{task}` in an element is replaced by the task id. It ends the task's idle session, so it should return at once rather than wait on the end. Empty runs none.
+- `end_lanes` (list of text): The lane ids a task's entry runs `end` for, such as `done` or `archived`. Empty runs none.
 
 #### [ci]
 
@@ -1238,7 +1238,7 @@ the exit's event for that machine to `machine:events` as `starpulse/task-actor`,
 machine the current phase does not link advances nothing, so a late final event of an earlier phase's skill cannot move
 the task. The machine's `writers` name `starpulse/task-actor` for each such event.
 The Board is such a machine, its phase the task's lane: the actor sends only the Board links whose every exit event
-the Board's `writers` give to `starpulse/task-actor` (a Verifying task's `passed` and `missed` exits), and ignores a skill
+the Board's `writers` give to `starpulse/task-actor`, and ignores a skill
 placement from before the task entered the lane, so a task sent back and merged again starts its next round clean.
 
 A Waiting task waits on events, never on a polled check. `task park --until <subject>` stores each subject (an alert or a

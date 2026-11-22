@@ -175,11 +175,11 @@ def _claimer(who: Who, agent: dict, working: str) -> Who:
 def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
     """Move the task `request` names to In Progress holding the session it names: the HTTP status and JSON body.
 
-    The holder is an opaque string. A task already In Progress under that holder (its local id or its claude.ai URL)
-    answers 200 without a write; under another, or when the holder already has another task In Progress, it is refused
-    409 naming the holder or the task.
-    A task In Progress held by no session, or under its own task name (a label, never a session), is adopted: the
-    holder is recorded without a move.
+    The holder is an opaque string. A task In Progress under another holder, or when the holder already has another
+    task In Progress, is refused 409 naming the holder or the task. A task the feed shows In Progress held by no
+    session, by its own task name (a label, never a session) or by this holder (its local id or its claude.ai URL) is
+    adopted: the claim is written without a lane move, so a park the feed has not yet placed (a restart's replay) is
+    still undone rather than answered 200 with the task left parked.
     """
     from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a claim names a session
 
@@ -188,15 +188,15 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
         return not_held(feed, task)
     working = feed.roles.working
     who = _claimer(who_of(request), agent, working)
-    held = {"task": task, "to": working, "assignee": who.session}
     named_for_task = str(agent.get("assignee")).casefold() == task.casefold()
-    adopt = agent["state"] == working and (_unheld(agent) or named_for_task)
+    mine = same_holder(agent.get("assignee"), who.session)
+    adopt = agent["state"] == working and (_unheld(agent) or named_for_task or mine)
     if agent["state"] == working and not adopt:
-        if same_holder(agent.get("assignee"), who.session):
-            return 200, held
         return 409, {"error": f"{task} is already In Progress, held by {agent['assignee']}"}
     others = [
-        a["id"] for a in feed.open_tasks() if a["state"] == working and same_holder(a.get("assignee"), who.session)
+        a["id"]
+        for a in feed.open_tasks()
+        if a["state"] == working and same_holder(a.get("assignee"), who.session) and a["id"] != task
     ]
     if others:
         return 409, {
@@ -204,7 +204,7 @@ def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tupl
             f"claiming {task}"
         }
     if adopt:
-        status, body = _write_move(feed, task, working, who, writer, claiming=True)
+        status, body = _write_move(feed, task, working, who, writer, claiming=not mine)
     else:
         status, body = _move(feed, agent, task, working, who, writer, claiming=True)
     return (200, {**body, "assignee": who.session}) if status == 200 else (status, body)
@@ -238,6 +238,8 @@ def _start_refusal(feed: BoardFeed, task: str, agent: dict[str, Any]) -> str | N
         if (holder := agent.get("assignee")) and holder != RELEASED_ASSIGNEE:
             return f"{task} is held by {holder}: a session starts an In Progress task only once its claim is released"
         return None
+    if agent["state"] == feed.roles.review:
+        return None  # a closed Review session reopens through a Resume start, which leaves the task in Review
     if agent["state"] not in startable:
         listed = [state for state in feed.roles.roles if state in startable]
         names = " or ".join(filter(None, [", ".join(listed[:-1]), *listed[-1:]]))
@@ -272,7 +274,8 @@ def start_requested(
     claim made after it.
 
     A task In Progress starts only when no session holds it: its claim was never made, the claim TTL released it, or
-    its assignee is the released marker a release leaves.
+    its assignee is the released marker a release leaves. A Review task starts a Resume session: it reopens the
+    session the task's pull request waits on and leaves the task in Review.
     """
     task = request.task
     profile = request.profile if request.profile is not None else request.assignee
@@ -299,9 +302,10 @@ def start_requested(
     at = clock()
     if profile != agent["model"] and not (written := assign(task, profile, **named)).ok:
         return 409, {"error": written.output, "skill": written.skill}
+    reopen = {"verb": "Resume"} if agent["state"] == feed.roles.review else {}
     try:
         try:
-            session = start_session(task, harness=harness, mode=mode, profile=profile)
+            session = start_session(task, harness=harness, mode=mode, profile=profile, **reopen)
         except TypeError:
             session = start_session(task)  # a one-arg starter from before harness/mode
         return 200, {"task": task, "url": session, "at": at}

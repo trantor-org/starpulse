@@ -211,7 +211,7 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             "criteria": [{"text": item["text"], "checked": item["checked"]} for item in record.get("acceptanceCriteria") or []],
         }
     (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
-    return _described({**_active(view, snapshot), "verify_plan": record.get("verifyPlan") or []}, agent["description"], base)
+    return _described(_active(view, snapshot), agent["description"], base)
 
 
 def _without_done_dependencies(
@@ -252,7 +252,7 @@ def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, A
     state = lane if lane == done or not document.get("archived") else ARCHIVED
     agent = cold_agent(record["id"], record, state, document.get("entered"))
     (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
-    return _described({**view, "verify_plan": record.get("verifyPlan") or []}, agent["description"], base)
+    return _described(view, agent["description"], base)
 
 
 def moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -601,19 +601,6 @@ def _edit_in_editor(args: argparse.Namespace, environ: Mapping[str, str]) -> dic
     }
 
 
-def _verify_plan_after(args: argparse.Namespace, held: list[str]) -> list[str]:
-    """The Verify plan once `--remove-verify-plan N` drops criterion N's entries and `--verify-plan` adds."""
-
-    def number(entry: str) -> str:
-        return entry.split(":", 1)[0].strip()
-
-    removed = [item.strip() for item in args.remove_verify_plan or []]
-    if missing := [n for n in removed if not any(number(entry) == n for entry in held)]:
-        raise agent_wire.CliError("usage", f"the Verify plan has no entry for criterion {', '.join(missing)}")
-    kept = [entry for entry in held if number(entry) not in removed]
-    return [*kept, *(entry for entry in dict.fromkeys(args.verify_plan or []) if entry not in kept)]
-
-
 def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     if args.editor:
         return _edit_in_editor(args, environ)
@@ -627,11 +614,8 @@ def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
             raise agent_wire.CliError("usage", "--reason says why --plan rewrites the plan; give --plan too")
         changes["planReason"] = args.reason
     checklists = [field for field, (key, _) in _CHECKLISTS.items() if any(_checklist_flags(args, key))]
-    plan_flags = args.verify_plan or args.remove_verify_plan
-    if not changes and not checklists and not plan_flags:
+    if not changes and not checklists:
         flags = (
-            "--verify-plan",
-            "--remove-verify-plan",
             *(f"--{flag.replace('_', '-')}" for flag in _TASK_EDIT_FIELDS),
             "--append-notes",
             *(
@@ -650,13 +634,11 @@ def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
         if not isinstance(base_record, dict):
             raise agent_wire.CliError("usage", '--base must be a JSON object of the values read, as {"title": "..."}')
     unbased = base_record is not None and not changes.keys() - {"appendNotes", "planReason"} <= base_record.keys()
-    if checklists or plan_flags or unbased:
+    if checklists or unbased:
         # The items are edited as read, so the same read is the edit's base, as it is for a field `--base` leaves out.
         record = _read_record(args, environ)
         for field in checklists:
             changes[field] = _checklist_after(args, field, record[field])
-        if plan_flags:
-            changes["verifyPlan"] = _verify_plan_after(args, record.get("verifyPlan") or [])
         read = {field: record.get(field) for field in changes if field not in ("appendNotes", "planReason")}
         base_record = {**read, **(base_record or {})}
     return {"task": args.task, "changed": _task_edit_call(args, environ, changes, base_record, args.comment)}
