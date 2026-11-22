@@ -180,8 +180,9 @@ class SignalFolds:
         if new:
             self._events.set_setting(CURSOR, min([reached, *(row - 1 for row in failed)]))
         if rebuilt:
-            with self._engine.begin() as db:
-                write_stamp(db, FAMILY, self.stamp)
+            if not failed:  # a failed session keeps its old fold, so the next pass starts the rebuild again
+                with self._engine.begin() as db:
+                    write_stamp(db, FAMILY, self.stamp)
         elif finished and self._completed:
             held = session_health.combine_health(self.window(0.0, ("health",))["health"])
             self._completed([s for s in session_health.slice_health(held) if s["task"] in finished])

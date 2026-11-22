@@ -324,7 +324,7 @@ function NavigatorBody({ hud, view, phone, slot, dgSlot, outlineSlot, drillSlot,
         <button className={`node${view === "kanban" ? " on here" : ""}`} title="Kanban" onClick={() => choose("kanban")}>
           <svg className="g kb-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="2.5" height="10" rx=".6" /><rect x="4.75" y="1" width="2.5" height="7" rx=".6" /><rect x="8.5" y="1" width="2.5" height="4.5" rx=".6" /></svg>
           <span className="t">Kanban</span>
-          <span className="n">{boardCount(hud.cards, hud.names, hud.roles) || ""}</span>
+          <span className="n">{boardCount(hud.cards, hud.roles) || ""}</span>
         </button>
         <button className={`node${view === "jobs" ? " on here" : ""}`} title="Jobs" onClick={() => choose("jobs")}>
           <svg className="g dg-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>

@@ -30,6 +30,7 @@ class StateRoles:
     roles: Mapping[str, str | None]
     waits: Mapping[str, Mapping[str, str]]
     rests: Sequence[str] = ()
+    start_is_lane: bool = False
 
     @classmethod
     def of_machine(cls, compiled: Compiled) -> StateRoles:
@@ -41,7 +42,8 @@ class StateRoles:
         """The roles of a board that only lists statuses: the first is initial, the last final, the rest resting."""
         ids = [lane_id(status) for status in statuses]
         last = len(ids) - 1
-        return cls({s: "initial" if i == 0 else "final" if i == last else "resting" for i, s in enumerate(ids)}, {})
+        roles = {s: "initial" if i == 0 else "final" if i == last else "resting" for i, s in enumerate(ids)}
+        return cls(roles, {}, start_is_lane=True)
 
     @classmethod
     def of_drawn(cls, machine: Mapping[str, Any]) -> StateRoles:
@@ -65,9 +67,12 @@ class StateRoles:
 
     @property
     def lanes(self) -> tuple[str, ...]:
-        """The open lanes a view draws, in the order the machine lists them: every State but the initial and final."""
-        off = ("initial", "final")
-        return tuple(state for state, role in self.roles.items() if role not in off)
+        """The open lanes a view draws, in the order the machine lists them: every State but the final, the `rests` and, on a machine, the initial.
+
+        A board of statuses alone starts in its first status, which is a lane.
+        """
+        off = ("final",) if self.start_is_lane else ("initial", "final")
+        return tuple(state for state, role in self.roles.items() if role not in off and state not in self.rests)
 
     @property
     def initial(self) -> str | None:

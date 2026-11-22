@@ -361,7 +361,7 @@ class EventLog:
 
         def step() -> None:
             nonlocal seen
-            if (version := self.version_or(name, seen)) != seen:
+            if (version := self.version(name)) != seen:
                 apply()
                 seen = version  # only a success moves it, so a failed `apply` runs again
 

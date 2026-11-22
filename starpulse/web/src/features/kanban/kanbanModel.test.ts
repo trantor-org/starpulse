@@ -47,7 +47,7 @@ describe("the columns", () => {
 
   it("draw the verifying State the machine names between Review and Needs attention, so Review holds only review tasks", () => {
     const names = { ...NAMES, verifying: "Verifying" };
-    const roles = { ...LIFECYCLE_ROLES, verifying: "verifying", lanes: ["ready", "waiting", "in_progress", "review", "verifying", "needs_attention", "done"] };
+    const roles = { ...LIFECYCLE_ROLES, verifying: "verifying", lanes: ["ready", "waiting", "in_progress", "review", "verifying", "needs_attention"] };
     const v = layout([task("PROJ-1", "review"), task("PROJ-2", "verifying"), task("PROJ-3", "verifying")], names, roles, NO_PREFS);
 
     expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Verifying", "Needs attention"]);
@@ -56,29 +56,38 @@ describe("the columns", () => {
     expect(column(v, "verifying").role).toBe("verifying");
   });
 
-  it("are the board's own lanes in order when it has no ready lane, so a native board's first-lane task is drawn", () => {
+  it("are the lanes a native board's snapshot lists, so its first-lane task is drawn and its Done is not", () => {
     const native = { to_do: "To Do", in_progress: "In Progress", done: "Done" };
-    const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, {}, NO_PREFS);
+    const roles = { lanes: ["to_do", "in_progress"] };
+    const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, roles, NO_PREFS);
 
-    expect(columnsOf(native, {})).toEqual(["to_do", "in_progress", "done"]);
-    expect(v.columns.map((c) => [c.id, c.name, c.count])).toEqual([["to_do", "To Do", 1], ["in_progress", "In Progress", 0], ["done", "Done", 1]]);
-    expect(v.shown).toBe(2);
-    expect(assigneeOptions([task("TASK-1", "to_do")], columnsOf(native, {}))).toEqual([{ value: "", count: 1 }]);
+    expect(columnsOf(roles)).toEqual(["to_do", "in_progress"]);
+    expect(v.columns.map((c) => [c.id, c.name, c.count])).toEqual([["to_do", "To Do", 1], ["in_progress", "In Progress", 0]]);
+    expect(v.shown).toBe(1);
+    expect(assigneeOptions([task("TASK-1", "to_do")], columnsOf(roles))).toEqual([{ value: "", count: 1 }]);
   });
 
   it("are the lanes the snapshot lists in its order, so a State only the machine names, such as Verifying, is drawn", () => {
-    const lanes = ["ready", "waiting", "in_progress", "review", "verifying", "needs_attention", "done"];
+    const lanes = ["ready", "waiting", "in_progress", "review", "verifying", "needs_attention"];
     const names = Object.fromEntries(lanes.map((id) => [id, id]));
 
-    expect(columnsOf(names, { ...LIFECYCLE_ROLES, lanes })).toEqual(lanes.slice(0, -1));
+    expect(columnsOf({ ...LIFECYCLE_ROLES, lanes })).toEqual(lanes);
     expect(layout([task("TASK-1", "verifying")], names, { ...LIFECYCLE_ROLES, lanes }, NO_PREFS).columns.map((c) => [c.id, c.count])).toContainEqual(["verifying", 1]);
   });
 
-  it("fall back to the machine's lifecycle States when an older server's snapshot has no lanes, so the tasks are still drawn", () => {
-    const { lanes: _lanes, ...roles } = LIFECYCLE_ROLES;
-    const v = layout([task("TASK-1", "ready"), task("TASK-2", "done")], NAMES, roles, NO_PREFS);
+  it("are the snapshot's lanes unchanged, even when no ready State is named and a lane is New or Done", () => {
+    const lanes = ["new", "ready", "done", "completed"];
+    const { ready: _ready, ...roles } = { ...LIFECYCLE_ROLES, lanes };
 
-    expect(v.shown).toBe(1);
+    expect(columnsOf(roles)).toBe(lanes);
+    expect(columnsOf({ ...LIFECYCLE_ROLES, lanes })).toBe(lanes);
+  });
+
+  it("draw no column before the snapshot lists lanes, with no client-side guess", () => {
+    const { lanes: _lanes, ...roles } = LIFECYCLE_ROLES;
+
+    expect(columnsOf(roles)).toEqual([]);
+    expect(layout([task("TASK-1", "ready")], NAMES, roles, NO_PREFS).shown).toBe(0);
   });
 
   it("order a column's cards by when each entered the column, newest first, then by id, newest first", () => {
@@ -526,7 +535,7 @@ describe("what holds the Waiting lane", () => {
 
 describe("why a task the Recent rail points at has no card in view", () => {
   const tasks = [task("PROJ-1", "ready", "m-12"), task("PROJ-2", "ready", "m-9"), task("PROJ-3", "archived")];
-  const why = (id: string, prefs: Partial<typeof NO_PREFS> = {}) => whyHidden(tasks, NAMES, LIFECYCLE_ROLES, { ...NO_PREFS, ...prefs }, id);
+  const why = (id: string, prefs: Partial<typeof NO_PREFS> = {}) => whyHidden(tasks, LIFECYCLE_ROLES, { ...NO_PREFS, ...prefs }, id);
 
   it("is nothing for a card the board draws", () => {
     expect(why("PROJ-1")).toBeNull();
@@ -685,18 +694,18 @@ describe("the Done lane", () => {
   });
 
   it("names a Done task as Done when asked why it has no card", () => {
-    expect(whyHidden(done, NAMES, LIFECYCLE_ROLES, NO_PREFS, "T-1")).toBe("Done");
-    expect(whyHidden(done, NAMES, LIFECYCLE_ROLES, NO_PREFS, "T-9")).toBe("not on the board");
+    expect(whyHidden(done, LIFECYCLE_ROLES, NO_PREFS, "T-1")).toBe("Done");
+    expect(whyHidden(done, LIFECYCLE_ROLES, NO_PREFS, "T-9")).toBe("not on the board");
   });
 
   it("names a missing task as off the board even when the roles name no Done lane", () => {
-    expect(whyHidden(done, NAMES, { ...LIFECYCLE_ROLES, done: undefined }, NO_PREFS, "T-9")).toBe("not on the board");
+    expect(whyHidden(done, { ...LIFECYCLE_ROLES, done: undefined }, NO_PREFS, "T-9")).toBe("not on the board");
   });
 
   it("counts the cards in the drawn columns, not the Done or Proposed ones", () => {
     const roles = { ...LIFECYCLE_ROLES, proposed: "proposed" };
 
-    expect(boardCount([...done, task("T-7", "proposed")], { ...NAMES, proposed: "Proposed" }, roles)).toBe(1);
+    expect(boardCount([...done, task("T-7", "proposed")], roles)).toBe(1);
   });
 
   it("leaves a Done task in its milestone's done and total", () => {
