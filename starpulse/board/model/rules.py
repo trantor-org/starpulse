@@ -540,11 +540,20 @@ def _another_tasks(record: Record, pull: Mapping[str, Any]) -> bool:
 
 def _pulls_ready(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, set(), where, "pulls_ready")
-    return lambda record: all(
-        pull is not None
-        and (pull["state"] == "MERGED" or (pull["state"] == "OPEN" and not pull["draft"] and pull["checks"] == "pass"))
-        for pull in _pulls(record)
-    )
+
+    def holds(record: Record) -> bool:
+        pulls = _pulls(record)
+        counted = [pull for pull in pulls if pull is None or pull["state"] != "CLOSED"] or pulls
+        return all(
+            pull is not None
+            and (
+                pull["state"] == "MERGED"
+                or (pull["state"] == "OPEN" and not pull["draft"] and pull["checks"] == "pass")
+            )
+            for pull in counted
+        )
+
+    return holds
 
 
 def _pulls_failing(spec: Mapping[str, Any], where: str) -> Primitive:

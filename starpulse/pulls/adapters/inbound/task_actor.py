@@ -55,7 +55,7 @@ from starpulse.board.adapters.holder_idle import HARNESS_MACHINE, HolderUnreacha
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import attention_reason, operator_answered, section_set
+from starpulse.board.model.markdown import attention_reason, needs_attention_reason, operator_answered, section_set
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
     COMMENT_CAP,
@@ -1956,7 +1956,16 @@ class TaskActor:
         session's answer. An open pull request is ready only when it does not conflict with its base and the rollup of
         its current head says every required check passed (`checks_verdict`): a required check not posted is not green,
         a push re-arms the gate, and a repository whose ruleset requires none rolls up passed as soon as the pull
-        request is not a draft."""
+        request is not a draft. A task in Needs attention whose `## Needs attention` ask is unanswered stays there,
+        unless its ask ends in the actor's own failing-checks question (`ATTENTION_QUESTION`), which a green pull request settles."""
+        reason = needs_attention_reason(agent["description"])
+        if (
+            agent["state"] == self._feed.roles.attention
+            and reason
+            and not reason.endswith(ATTENTION_QUESTION)
+            and not operator_answered(agent["description"])
+        ):
+            return None
         parts = []
         sent_back = self._memory.of(agent["id"]).get("sent_back")
         held = sent_back or {}

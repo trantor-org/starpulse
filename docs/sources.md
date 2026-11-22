@@ -164,7 +164,7 @@ reader can charge tokens to the skill in force and the work done. The body is `{
   under [Find missed skill loads](#find-missed-skill-loads-and-recurring-work)) and its key, the shell command the
   `--redactor` left, else the tool's name. A command is therefore present only after the configured filter.
 - `skill` is the skill most recently loaded in the session, counting a load the step itself made, and `none` before
-  any load. A session that began before the window reads `none` until its first load inside it.
+  any load. A session that began before the window keeps the skill its earlier loads left.
 - `tokens` is `{input, output, cache_read, cache_write, reasoning}`; `captured` is false for every Codex step.
 
 The export's order cannot say which request issued a call, because Claude Code logs a request when its stream ends and
