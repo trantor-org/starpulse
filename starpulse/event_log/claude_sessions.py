@@ -24,6 +24,7 @@ __all__ = [
     "DEFAULT_SESSIONS",
     "DEFAULT_TRANSCRIPTS",
     "holder_activity",
+    "session_activity_of",
     "last_turn",
     "live_process",
     "live_session",
@@ -254,6 +255,11 @@ def holder_activity(transcripts: Path, sessions: Path, assignee: str, *, now: fl
     """`session_activity` of the session holding a task, whether its assignee is the local session id or the claude.ai
     URL of its bridge; None when the holder is not a running session with a transcript."""
     return session_activity(transcripts, local_id(sessions, assignee), now=now)
+
+
+def session_activity_of(transcripts: Path, sessions: Path, assignee: str, *, now: float) -> dict[str, Any]:
+    """`holder_activity`, or `{"state": "unknown"}` when the holder is no running session with a transcript."""
+    return holder_activity(transcripts, sessions, assignee, now=now) or {"state": "unknown"}
 
 
 def _head(path: Path) -> str:

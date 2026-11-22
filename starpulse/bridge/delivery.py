@@ -25,6 +25,8 @@ from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 logger = logging.getLogger(__name__)
 
 _BATCH = 100
+#: A holder's resume is a one-time wake: the consumer's `LAST_PER_SUBJECT` start replays the last one, however old.
+RESUME = ".holder_resume"
 _FETCH_TIMEOUT_S = 0.2
 
 
@@ -136,7 +138,14 @@ class JetStreamMailbox:
         async def read(js):  # noqa: ANN001, ANN202
             pull = await js.pull_subscribe_bind(name, self._stream)
             try:
-                held.extend(await pull.fetch(_BATCH, timeout=_FETCH_TIMEOUT_S))
+                batch = await pull.fetch(_BATCH, timeout=_FETCH_TIMEOUT_S)
+                resumed = any(message.subject.endswith(RESUME) for message in batch)
+                created = (await js.consumer_info(self._stream, name)).created if resumed else None
+                for message in batch:
+                    if created and message.subject.endswith(RESUME) and message.metadata.timestamp < created:
+                        await message.ack()
+                    else:
+                        held.append(message)
             except TimeoutError:  # nats-py raises the builtin, not its own, when the reply lands after the window
                 pass
             finally:

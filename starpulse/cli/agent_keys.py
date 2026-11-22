@@ -32,34 +32,6 @@ SNAPSHOT_KEYS = (
 SNAPSHOT_IDENTITY_KEYS = ("graphs", "flows", "machinePage", "now")
 
 
-HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
-
-
-LIVENESS_KEYS = ("now", "window_s", "stalled_after_s", "tasks", "review", "in_progress_s", "slot_s", "slots", "stages", "stalls")
-
-
-STEP_KEYS = ("now", "window_s", "steps")
-
-
-TRANSITION_KEYS = ("now", "window_s", "transitions")
-SPEND_KEYS = ("now", "window_s", "spend")
-
-
-CELL_KEYS = ("now", "window_s", "cells")
-ESTIMATE_KEYS = ("now", "window_s", "estimates")
-SCORE_KEYS = ("now", "window_s", "scores", "verdicts")
-VERDICT_KEYS = ("kind", "size", "baseline", "profile", "n", "baseline_n", "verdict", "p_non_inferior", "p_worse")
-
-
-GRAPH_KEYS = ("now", "window_s", "graph")
-
-
-STAGE_KEYS = ("now", "window_s", "stages")
-
-
-DIFF_KEYS = ("now", "window_s", "diff")
-
-
 TASK_KEYS = (
     "id",
     "title",

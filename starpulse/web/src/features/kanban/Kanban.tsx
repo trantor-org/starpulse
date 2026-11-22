@@ -11,7 +11,7 @@ import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 import { ago } from "../../shared/clock";
 import type { HudState } from "../../render/hud";
 import {
-  CLOSED, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainOf, claimChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll,
+  CLOSED, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainOf, claimChip, sessionChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll,
   offBoardTask, stacked as stacksState, withRecordPulls, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
   type ClaimChip, type KanbanTask, type Layout, type PhaseAt, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
@@ -132,7 +132,7 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
   const live = task.live, claim = marks.claim, queued = task.runs?.find((r) => r.status === "queued");
   const playing = onPlay && !claim && startLane(task, roles);
   const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
-  const chip = claimChip(task, roles, now);
+  const chip = claimChip(task, roles, now), session = sessionChip(task, now);
   const working = roles.working ? task.moves[roles.working] : undefined;
   const guard = working?.allowed === false ? working.reason : "";
   return (
@@ -183,6 +183,9 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
             </button>
           ))}
           {chip ? <ClaimWho chip={chip} /> : task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
+          {session && (session.kind === "idle"
+            ? <span className="who sess" title={`The holder session finished its last turn ${session.age} ago and has not started another.`}>session idle {session.age}</span>
+            : <span className="who sess unknown" title="No running session with a transcript holds this task.">session unknown</span>)}
         </div>
       )}
       {playing && (
@@ -285,7 +288,7 @@ const same = (a: unknown, b: unknown) => {
 };
 /** The clock only reaches a card through its machine line, its phase track and its claim chip: the line's heat and age text, the track's heat and the chip's. */
 const stamp = (t: KanbanTask, roles: Roles, now: number) =>
-  `${t.live ? `${now - t.live.at < HOT_S} ${ago(now - t.live.at)}` : ""} ${t.phase ? now - t.phase.at < HOT_S : ""} ${JSON.stringify(claimChip(t, roles, now))}`;
+  `${t.live ? `${now - t.live.at < HOT_S} ${ago(now - t.live.at)}` : ""} ${t.phase ? now - t.phase.at < HOT_S : ""} ${JSON.stringify(claimChip(t, roles, now))} ${JSON.stringify(sessionChip(t, now))}`;
 /**
  * A card redraws when something it shows changes. Its handlers are rebuilt on every board render yet act on the same task through stable stores,
  * so only whether one is set counts, and a tick of the clock redraws only the cards whose stamp text moved.

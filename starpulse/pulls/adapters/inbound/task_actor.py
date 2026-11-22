@@ -47,7 +47,6 @@ import time
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -55,13 +54,12 @@ from starpulse.board.adapters.holder_idle import HARNESS_MACHINE, HolderUnreacha
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import attention_reason, needs_attention_reason, operator_answered, section_set
+from starpulse.board.model.markdown import attention_reason, operator_answered, section_set
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
     COMMENT_CAP,
     FLAGGED,
     HELD,
-    MERGE_EVIDENCE,
     TaskEditor,
     TaskReader,
     Written,
@@ -70,10 +68,13 @@ from starpulse.event_log import events as machine_events
 from starpulse.event_log import start_requests
 from starpulse.event_log.deadlines import Deadlines
 from starpulse.event_log.wake import StopEvent, save_on_change
+from starpulse.pulls.adapters.inbound.task_facts import ActorFacts
 from starpulse.pulls.adapters.inbound.task_memory import TaskMemory
 from starpulse.pulls.adapters.inbound.unblock import PinGate
-from starpulse.pulls.adapters.outbound.pull_requests import landed, own_prs, pull_record, uncited
+from starpulse.pulls.adapters.outbound.pull_requests import own_prs, pull_record, uncited
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
+from starpulse.pulls.model.task_actor import TaskTouched, Trigger, derivation
+from starpulse.pulls.model.task_actor.derivation import ATTENTION_QUESTION, DONE_HELD, FACTS, TERMINAL
 
 if TYPE_CHECKING:  # annotation only: the pull store and the event log open the database stack
     from starpulse.event_log.event_log import EventLog
@@ -91,26 +92,20 @@ BOARD = "board"
 IN_PROGRESS = "in-progress"
 #: What the task actor comments when the board refuses a task's release to Ready, before the refusal.
 LINT_REFUSED = "Release to Ready refused, repair the record to release it:"
-#: The question that ends the `## Needs attention` reason of a task the actor moves there on a pull request fact.
-ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
 
 
-#: The pull request states that end a pull request.
-_TERMINAL = ("MERGED", "CLOSED")
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
 PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
 RECOVERY_FINISHED_METRIC = "starpulse_task_actor_recovery_finished"
 MERGED_WAITING_METRIC = "starpulse_task_actor_merged_review_waiting"
 DERIVE_METRIC = "starpulse_task_actor_derive_seconds"
 HOLDER_RESUME = "HOLDER_RESUME"
-DONE_HELD = "Held from Done:"
 #: Resumes or revives a fault with no progress between gets before the next one moves the task to Needs attention.
 _ONE_TRY = 1
 #: Nudges an idle holder with an open criterion gets before the next idle moves its task to Needs attention.
 _NUDGES = 3
 #: Settles in a row whose resume failed before the task moves to Needs attention.
 _FAILED_RESUMES = 3
-_DEPLOY_FAILED = re.compile(r"^Reopened from Done: Deploy of \S+ to .+? failed", re.M)
 #: Seconds between two progress lines of the start recovery.
 _PROGRESS_S = 30.0
 #: Seconds the exposition waits for the actor lock before it leaves out the series that need it.
@@ -140,18 +135,12 @@ _CHECKPOINT_DEBOUNCE_S = 10.0
 _NOTICE_JOIN_S = 10.0
 #: The bounds of the projection and handoff histograms: a pin walk takes seconds, and the 10 s bound is the measure.
 SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
-#: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
-_DAY_S = 86_400.0
 #: Seconds to wait before each retry of a write that found the board database locked.
 LOCK_BACKOFF_S = (0.1, 0.4, 1.6)
 
 #: The facts whose event parks a task in Needs attention: the comment is also its `## Needs attention` reason, a question.
-_ASKS = ("overdue", "pr_failing", "operator_pushback")
-#: The opening of the comment `backlog-task update --pushback` records.
-_PUSHBACK = "Operator pushback:"
+_ASKS = ("overdue", "pr_failing", "pr_closed_unmerged", "operator_pushback")
 
-#: The skill machine whose lens states are a wait on a verdict, and the machine of an alert whose end is `RESOLVED`.
-_SLE_DAYS, _GRACE_DAYS = 7, 2
 #: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
 _ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")
 
@@ -193,7 +182,13 @@ def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ..
     """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests, checked criteria and
     whether a session claimed it. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
-    return agent["state"], tuple(agent.get("dependencies", ())), tuple(agent.get("prs", ())), ticks, bool(agent.get("assignee"))
+    return (
+        agent["state"],
+        tuple(agent.get("dependencies", ())),
+        tuple(agent.get("prs", ())),
+        ticks,
+        bool(agent.get("assignee")),
+    )
 
 
 def _rules_digest(
@@ -204,26 +199,6 @@ def _rules_digest(
     return hashlib.sha1(json.dumps(drawn, sort_keys=True, default=dict).encode(), usedforsecurity=False).hexdigest()[
         :16
     ]
-
-
-def _epoch(text: str) -> float | None:
-    """Epoch seconds of an ISO date or timestamp (UTC when it names no zone); None when it is neither."""
-    try:
-        when = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    return (when if when.tzinfo else when.replace(tzinfo=UTC)).timestamp()
-
-
-def _stamp(epoch: float) -> str:
-    return datetime.fromtimestamp(epoch, UTC).strftime("%Y-%m-%d")
-
-
-def _need_of(need: str) -> tuple[str, int]:
-    """`(task, criterion number)` of a dependency need `TASK-N#K`; a need that names no number is number 0, which
-    no task has."""
-    task, _, number = need.partition("#")
-    return task, int(number) if number.isdigit() else 0
 
 
 def moves_of(machine: Mapping[str, Any]) -> dict[tuple[str, str], str]:
@@ -276,13 +251,6 @@ class _Histogram:
             f"{name}_sum{tail} {total:g}",
             f"{name}_count{tail} {counts[-1]}",
         ]
-
-
-def _by_claim(
-    fact: Callable[[TaskActor, dict[str, Any]], Any], *, claimed: bool
-) -> Callable[[TaskActor, dict[str, Any]], Any]:
-    """`fact` for the tasks a session claimed or for the rest, so a claimed task never falls through to Ready."""
-    return lambda actor, agent: fact(actor, agent) if bool(agent["assignee"]) == claimed else None
 
 
 class TaskActor:
@@ -370,7 +338,9 @@ class TaskActor:
         #: The lanes that wait on their tasks' dependencies, whose derivation flags a wait nothing ends.
         self._sweep_lanes = {lane for lane, facts in waits.items() if "deps_done" in facts}
         #: The lanes that wait on a task's Start Criteria.
-        self._gated_lanes = {lane for lane, facts in waits.items() if {"criteria_met", "criteria_met_started"} & facts.keys()}
+        self._gated_lanes = {
+            lane for lane, facts in waits.items() if {"criteria_met", "criteria_met_started"} & facts.keys()
+        }
         #: The event subjects each gated task waits on, and for each subject the tasks waiting on it.
         self._gates: dict[str, tuple[str, ...]] = {}
         self._until: dict[str, set[str]] = {}
@@ -384,12 +354,13 @@ class TaskActor:
         self._board_repo = (
             board_repo  # the repository whose pull requests read as a bare `PR #N`; another repo links its URL
         )
+        self._port = ActorFacts(self)
         self._lock = threading.RLock()
         #: Each open task's lane, dependencies and pull requests as the actor last saw them.
         self._seen: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...]]] = {}
         self._by_pr: dict[str, set[str]] = {}
         #: What each pull request last read as, so a refresh that changed nothing derives nothing.
-        self._pull_states: dict[str, tuple[str, str | None, bool, str, str, str]] = {}
+        self._pull_states: dict[str, tuple[str, str | None, bool, str, str, str, str, int]] = {}
         self._log = log
         #: Digest of the waits, moves and sequences the checkpoint is valid under.
         self._rules = _rules_digest(waits, moves, sequences)
@@ -529,7 +500,7 @@ class TaskActor:
         """Whether a Review task has a merged proof pull request, whatever move was tried or refused."""
         if agent["state"] != self._review:
             return False
-        records = [self._record(url) for url in self._proof_prs(agent)]
+        records = [self._record(url) for url in derivation.proof_prs(self._port, agent)]
         return any(record and record["state"] == "MERGED" for record in records)
 
     @staticmethod
@@ -619,7 +590,7 @@ class TaskActor:
         with self._lock:
             observed = self._clock()
             self._handoff.observe(observed - saved)
-            self._derive_pulled(self._read_pulls(), observed)
+            self.touch(self._webhooks(self._read_pulls(), "pull request store saved"), observed)
 
     def _stuck(self, agent: dict[str, Any]) -> tuple[str, ...]:
         """The dependencies that will not finish on their own: the Board holds no such task."""
@@ -629,21 +600,15 @@ class TaskActor:
         )
 
     def _missing(self, agent: dict[str, Any]) -> tuple[str, ...]:
-        """The dependencies the Board holds in no store: no open task, none done, none archived. Nothing finishes them."""
-        return tuple(
-            dependency
-            for dependency in agent["dependencies"]
-            if not self._feed.is_open(dependency) and not self._cleared(dependency)
-        )
+        return derivation.missing(self._port, agent)
 
     def _cleared(self, dependency: str) -> bool:
-        """Whether the dependency is done, or archived: its file left the lanes without reaching Done."""
-        return self._feed.is_done(dependency) or self._feed.is_archived(dependency)
+        return derivation.cleared(self._port, dependency)
 
     def _derive_overdue(self, name: str) -> None:
         """Derive a task again at its own deadline, so a Waiting task goes overdue with no event to wake it."""
         with self._lock:
-            self._derive_all([name], self._clock())
+            self.touch([TaskTouched(name, Trigger.ON_ALERT, "deadline")])
 
     def reconcile_waiting(self) -> tuple[int, int]:
         """The sweeper's `waiting` pass: (the tasks in the lanes that wait on `deps_done`, those it released). A task whose
@@ -651,15 +616,17 @@ class TaskActor:
         missed it, so it is derived again, and counted when that moved it on: a refused release does not count."""
         with self._lock:
             tasks = [agent for agent in self._feed.open_tasks() if agent["state"] in self._sweep_lanes]
-            releasable = {agent["id"] for agent in tasks if self._deps_done(agent) is not None}
+            releasable = {agent["id"] for agent in tasks if derivation.deps_done(self._port, agent) is not None}
             unrepaired = {agent["id"] for agent in tasks if self._lint_held.get(agent["id"]) == _lint_record(agent)}
             missed = sorted(releasable & self._releasable - unrepaired)  # a refused release waits for its repair
             self._releasable = releasable
             for name in missed:
                 self._tried.pop(name, None)
-            self._derive_all(missed, self._clock())
+            self.touch([TaskTouched(name, Trigger.ON_ALERT, "waiting sweep") for name in missed])
             ready = self._feed.roles.ready
-            released = [name for name in missed if (moved := self._feed.task(name, lean=True)) and moved["state"] == ready]
+            released = [
+                name for name in missed if (moved := self._feed.task(name, lean=True)) and moved["state"] == ready
+            ]
         return len(tasks), len(released)
 
     def _run(self, stop: StopEvent) -> None:
@@ -671,7 +638,9 @@ class TaskActor:
             for agent in tasks:
                 self._index(agent)
             self._read_pulls()
-            if self._idle is not None:  # a settle while down is replayed by `follow_holder_idle`; `confirm` spares a busy holder
+            if (
+                self._idle is not None
+            ):  # a settle while down is replayed by `follow_holder_idle`; `confirm` spares a busy holder
                 for agent in tasks:
                     if agent["state"] == self._feed.roles.working and self._awaits(agent):
                         self._memory.keep(agent["id"], awaited=True)
@@ -821,7 +790,7 @@ class TaskActor:
             names = sorted(self._until.get(subject, ()))
             for name in names:
                 self._heard.setdefault(name, set()).add(subject)
-            self._derive_all(names, self._clock())
+            self.touch([TaskTouched(name, Trigger.ON_ALERT, subject) for name in names])
 
     def _index(self, agent: dict[str, Any]) -> None:
         """Take `agent`'s lane, dependencies, pull requests and checked criteria into the indexes."""
@@ -854,7 +823,7 @@ class TaskActor:
             before = self._seen.get(name)
             if agent is None:  # merged or gone: the tasks that waited on it may now proceed
                 self._forget(name)
-                self._derive_all(self._dependents(name), observed)
+                self.touch(self._dependency_touched(self._dependents(name), name), observed)
                 return
             regated = self._watch(name, agent)
             repaired = name in self._lint_held and self._lint_held[name] != _lint_record(agent)
@@ -870,9 +839,14 @@ class TaskActor:
             self._index(agent)
             if now[0] == self._feed.roles.working:  # a refused move is tried again on the changed record
                 self._tried.pop(name, None)
-            touched = {name}
+            lane = before is None or before[0] != now[0]
+            events = [TaskTouched(name, Trigger.ON_ENTRY, now[0])] if lane else []
+            if before is not None and lane:
+                events.append(TaskTouched(name, Trigger.ON_EXIT, before[0]))
+            if not lane:
+                events.append(TaskTouched(name, Trigger.ON_SUBSTATE_CHANGE, "record"))
             if before is None:  # a task created: a hold may have waited on it
-                touched |= self._held
+                events += self._dependency_touched(self._held - {name}, name)
             if before is None or before[0] != now[0]:
                 self._tried.pop(name, None)
                 working = self._feed.roles.working
@@ -881,11 +855,13 @@ class TaskActor:
                     own = self._memory.has(name, "own_send_back")
                     kept |= {"sent_back": None if own else self._heads(agent), "own_send_back": None}
                 elif before is not None or now[0] != working:
-                    kept["sent_back"] = None  # a task first seen outside the working lane keeps no hold from an earlier run
+                    kept["sent_back"] = (
+                        None  # a task first seen outside the working lane keeps no hold from an earlier run
+                    )
                 self._memory.keep(name, **kept)
             if before is None or (before[0], before[3]) != (now[0], now[3]):
-                touched |= self._dependents(name)
-            self._derive_all(touched, observed)
+                events += self._dependency_touched(self._dependents(name), name)
+            self.touch(events, observed)
 
     def _moved(self, data: dict[str, Any]) -> None:
         with self._lock:
@@ -894,7 +870,7 @@ class TaskActor:
             self._settle_busy(data)
             agent = self._feed.task(data["id"], lean=True)
             if agent and "phase_resumed" in self._waits.get(agent["state"], {}):
-                self._derive(data["id"], self._clock())
+                self.touch([TaskTouched(data["id"], Trigger.ON_SUBSTATE_CHANGE, "phase_resumed")])
 
     def _exit_phase(self, task: str) -> None:
         """Send the exit event of the phase `task` is in when that phase's skill machine sits in the state its link exits
@@ -908,7 +884,9 @@ class TaskActor:
                 exited[parent] = sent
                 target = self._moves.get((phase["state"], event)) if parent == BOARD else None
                 if target:  # the Board's lane is the task's status: the exit is that write, not an event beside it
-                    self._memory.keep(task, exited=exited)  # a transient refusal clears it (`_write`), so the next pass goes again
+                    self._memory.keep(
+                        task, exited=exited
+                    )  # a transient refusal clears it (`_write`), so the next pass goes again
                     self._write(
                         task, target, f"{phase['state']} phase exited on {event}", self._clock(), phase["state"]
                     )
@@ -922,14 +900,8 @@ class TaskActor:
         if parent != BOARD:
             return self._feed.machine_task(parent, task)
         agent = self._feed.task(task, lean=True)
-        entered = self._entered(agent) if agent else 0.0
+        entered = derivation.entered(self._port, agent) if agent else 0.0
         return {"state": agent["state"], "steps": entered, "since": entered} if agent else None
-
-    def _entered(self, agent: dict[str, Any]) -> float:
-        """When `agent` entered the Board lane it holds, as read at the move: the feed's `entered` is its newest event of
-        any kind, which a comment after a verdict moves past the verdict's time."""
-        lane, at = self._memory.of(agent["id"]).get("lane_entered") or ("", 0.0)
-        return at if lane == agent["state"] else agent.get("entered") or 0.0
 
     def _exit_event(self, links: Sequence[Mapping[str, Any]], phase: Mapping[str, Any], task: str) -> str | None:
         for link in links:
@@ -938,12 +910,15 @@ class TaskActor:
                 return self._route(link, task) or link["exits"][placed["state"]]
         return None
 
+    def _sequence(self, agent: Mapping[str, Any]) -> Sequence[str]:
+        """The phases of `agent`: the row its `kind-<name>` label names (`decide`, `one-off`), else its type's row, else
+        `default`; the same lookup as `temporal_runner.sequences.phases`, which this package cannot import."""
+        kinds = (self._sequences.get(label.removeprefix("kind-")) for label in agent.get("labels", ()) if label.startswith("kind-"))
+        return next(filter(None, kinds), None) or self._sequences.get(agent.get("type", "").lower()) or self._sequences.get("default", ())
+
     def _route(self, link: Mapping[str, Any], task: str) -> str | None:
         """The event of the link's route to the phase after it in the sequence of `task` (its `decide` row when kind-decide, else its type), when the link draws one."""
-        agent = self._feed.task(task, lean=True) or {}
-        # the same lookup as `temporal_runner.sequences.phases`, which this package cannot import
-        decide = self._sequences.get("decide") if "kind-decide" in agent.get("labels", ()) else None
-        sequence = decide or self._sequences.get(agent.get("type", "").lower()) or self._sequences.get("default", ())
+        sequence = self._sequence(self._feed.task(task, lean=True) or {})
         following = sequence[sequence.index(link["state"]) + 1 :][:1] if link["state"] in sequence else ()
         return link.get("routes", {}).get(following[0]) if following else None
 
@@ -1000,7 +975,7 @@ class TaskActor:
             dependencies.append((dependency, self._cleared(dependency), other and _view(other)))
         pulls = [(url, self._pull_state(url)) for url in agent["prs"]]
         timed = agent["state"] in self._timed_lanes
-        deadline = self._deadline(agent) if timed else None
+        deadline = derivation.deadline(self._port, agent) if timed else None
         facts = (
             name,
             _view(agent),
@@ -1042,7 +1017,7 @@ class TaskActor:
             if self._store.rev != self._store_rev:  # a pin bump is no pull request any task cites
                 self._store_rev = self._store.rev
                 touched |= self._pin_held
-            self._derive_pulled(touched, observed)
+            self.touch(self._webhooks(touched, "pull requests projected"), observed)
 
     def merge_received(self, received_at: float) -> None:
         """Re-derive the tasks whose pull requests changed, on the caller's thread: the merge webhook received at
@@ -1053,11 +1028,28 @@ class TaskActor:
             with self._pressing(), self._lock:
                 self._received = received_at
                 try:
-                    self._derive_pulled(self._read_pulls(), observed)
+                    self.touch(self._webhooks(self._read_pulls(), "merge webhook"), observed)
                 finally:
                     self._received = None
         except Exception:
             logger.exception("task actor: cannot derive the tasks of a merge webhook")
+
+    def main_checked(self) -> None:
+        """Re-derive every open task whose checks read main's health (`_reads_main`), on the caller's thread: a finished
+        checks run on main. The main-green read is taken again first. A failure is logged, never raised to the consumer."""
+        observed = self._clock()
+        try:
+            with self._pressing(), self._lock:
+                if forget := getattr(self._main_green, "forget", None):  # a stub green has no cache to drop
+                    forget()
+                names = [name for name in self._seen if self._reads_main(name)]
+                self.touch(self._webhooks(names, "main checks run"), observed)
+        except Exception:
+            logger.exception("task actor: cannot derive the tasks that read main's health")
+
+    def _reads_main(self, name: str) -> bool:
+        """Whether the task owns a failure or waits on a task that does: the two checks that read main's health."""
+        return self._owns_failure(name) or any(map(self._owns_failure, self._seen[name][1]))
 
     def _read_pulls(self) -> set[str]:
         """The tasks citing a pull request whose state changed since it was last read."""
@@ -1077,21 +1069,15 @@ class TaskActor:
     def _own_prs(self, agent: dict[str, Any]) -> list[str]:
         return own_prs(self._store, agent)
 
-    def _proof_prs(self, agent: dict[str, Any]) -> list[str]:
-        """The pull requests whose ends prove a task's work. In Review, a task with no own pull request merged or open
-        takes every cited one: another task's delivery may have superseded its own, which closed unmerged or never
-        existed. An own pull request still open keeps a merged reference from standing for the task's delivery."""
-        own = self._own_prs(agent)
-        if agent["state"] != self._review:
-            return own
-        if any((record := self._record(url)) and record["state"] != "CLOSED" for url in own):
-            return own
-        return agent["prs"]
+    def _unlinked(self, agent: dict[str, Any]) -> list[str]:
+        """The unlinked substate: open pull requests naming the task that it does not cite yet. The task stays in its lane
+        while any exist, never parked; the write of its reference changes the task's record, which re-derives it."""
+        return uncited(self._store, agent)
 
-    def _pull_state(self, url: str) -> tuple[str, str | None, bool, str, str, str, str]:
+    def _pull_state(self, url: str) -> tuple[str, str | None, bool, str, str, str, str, int]:
         record = self._record(url)
         if record is None:
-            return "", None, False, "", "", "", ""
+            return "", None, False, "", "", "", "", 0
         return (
             record["state"],
             record["mergeSha"],
@@ -1102,6 +1088,7 @@ class TaskActor:
                 record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
             ),
             record.get("updatedAt") or "",
+            record["threads"],
         )
 
     def _heads(self, agent: dict[str, Any]) -> dict[str, str]:
@@ -1109,20 +1096,28 @@ class TaskActor:
         records = {url: self._record(url) for url in self._own_prs(agent)}
         return {url: record["headRefOid"] for url, record in records.items() if record}
 
-    def _derive_all(self, names: Any, observed: float) -> None:
-        for name in sorted(names):
-            self._derive(name, observed)
-
-    def _derive_pulled(self, names: Iterable[str], observed: float) -> None:
-        """Derive the tasks whose pull requests a store read found changed, in name order but those citing a merged one
-        first: their move is the one a merge waits for."""
+    def touch(self, events: Iterable[TaskTouched], observed: float | None = None) -> set[str]:
+        """The one entry every trigger source derives through, under the lock: derive each task touched once, in name
+        order but those a webhook touched citing a merged pull request first, as their move is the one a merge waits
+        for. Say which tasks moved to another lane."""
+        events = list(events)
+        observed = self._clock() if observed is None else observed
+        webhook = {each.task for each in events if each.trigger == Trigger.ON_WEBHOOK}
 
         def merged(name: str) -> bool:
-            urls = self._seen[name][2] if name in self._seen else ()
+            urls = self._seen[name][2] if name in webhook and name in self._seen else ()
             return any((record := self._record(url)) and record["state"] == "MERGED" for url in urls)
 
-        for name in sorted(names, key=lambda name: (not merged(name), name)):
-            self._derive(name, observed)
+        names = sorted({each.task for each in events}, key=lambda name: (not merged(name), name))
+        return {name for name in names if self._derive(name, observed)}
+
+    @staticmethod
+    def _webhooks(names: Iterable[str], cause: str) -> list[TaskTouched]:
+        return [TaskTouched(name, Trigger.ON_WEBHOOK, cause) for name in names]
+
+    @staticmethod
+    def _dependency_touched(names: Iterable[str], cause: str) -> list[TaskTouched]:
+        return [TaskTouched(name, Trigger.ON_SUBSTATE_CHANGE, cause) for name in names]
 
     def _derive(self, name: str, observed: float) -> bool:
         """Derive the task's waits, time the derivation, and note the facts it settled on for the checkpoint. Say whether
@@ -1158,7 +1153,7 @@ class TaskActor:
             self._probing = True
             try:
                 facts = {
-                    fact: (held[0] if (held := self._facts.get(fact, lambda *_: None)(self, agent)) else None)
+                    fact: (held[0] if (held := FACTS.get(fact, lambda *_: None)(self._port, agent)) else None)
                     for fact in self._waits.get(agent["state"], {})
                 }
             finally:
@@ -1170,6 +1165,7 @@ class TaskActor:
                 "seen_prs": list(seen[2]) if seen else [],
                 "tried": dict(zip(("lane", "event", "evidence"), tried, strict=False)) if tried else None,
                 "facts": facts,
+                "unlinked": self._unlinked(agent),
             }
 
     def views(self) -> dict[str, Any]:
@@ -1192,7 +1188,7 @@ class TaskActor:
             self._note_hold(agent, reasons, FLAGGED)
         for fact, event in self._waits.get(agent["state"], {}).items():
             target = self._moves.get((agent["state"], event))
-            held = self._facts.get(fact, lambda *_: None)(self, agent) if target else None
+            held = FACTS.get(fact, lambda *_: None)(self._port, agent) if target else None
             if held is None:
                 continue
             evidence, comment = held
@@ -1202,7 +1198,7 @@ class TaskActor:
             if self._tried.get(name) == sent:
                 continue
             self._tried[name] = sent
-            changes = self._stale(agent) if fact.startswith("deps_done") else {}
+            changes = derivation.stale(self._port, agent) if fact.startswith("deps_done") else {}
             if fact in _ASKS:
                 changes = {"description": section_set(agent["description"], "Needs attention", comment)}
                 if fact == "overdue" and self._missing(agent):
@@ -1215,7 +1211,7 @@ class TaskActor:
                     on_failure=lambda: self._tried.pop(name, None),  # tried again on the next derivation
                 )
                 return False
-            merged = self._merged_at(agent) if fact in _MERGE_FACTS else None
+            merged = derivation.merged_at(self._port, agent) if fact in _MERGE_FACTS else None
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes, merged=merged):
                 return True
         if agent["state"] == self._feed.roles.working:
@@ -1224,7 +1220,7 @@ class TaskActor:
 
     def _log_unready(self, agent: dict[str, Any]) -> None:
         """Log once per change the condition that keeps a working task's open pull request from being ready."""
-        reasons = self._unready(agent)
+        reasons = derivation.unready(self._port, agent)
         if reasons is None:
             self._unready_logged.pop(agent["id"], None)
             return
@@ -1232,43 +1228,6 @@ class TaskActor:
             return
         self._unready_logged[agent["id"]] = reasons
         logger.info("task actor: %s has a pull request that is not ready: %s", agent["id"], reasons)
-
-    @staticmethod
-    def _why_unready(record: dict[str, Any], held_head: str | None) -> list[str]:
-        """The conditions that keep a pull request record from being ready: draft, conflicting, checks that are not passed, or
-        held after a send-back on its current head."""
-        verdict = checks_verdict(
-            record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
-        )
-        return [
-            reason
-            for reason, holds in (
-                ("draft", record["isDraft"]),
-                ("conflicting", record["mergeable"] == "CONFLICTING"),
-                (f"checks {verdict}", verdict != "pass"),
-                ("held after a send-back on this head", held_head == record["headRefOid"]),
-            )
-            if holds
-        ]
-
-    def _unready(self, agent: dict[str, Any]) -> str | None:
-        """Why each open pull request of the task's own delivery is not ready, else None."""
-        held = self._memory.of(agent["id"]).get("sent_back") or {}
-        parts = []
-        for url in self._own_prs(agent):
-            record = self._record(url)
-            if record is not None and record["state"] == "OPEN" and (why := self._why_unready(record, held.get(url))):
-                parts.append(f"{record['repo']}#{record['number']} {', '.join(why)}")
-        return "; ".join(parts) or None
-
-    def _merged_at(self, agent: dict[str, Any]) -> float | None:
-        """When the latest of the pull requests that proved `agent`'s work merged."""
-        merges = (
-            _epoch(record["mergedAt"])
-            for url in self._proof_prs(agent)
-            if (record := self._record(url)) and record["state"] == "MERGED" and record["mergedAt"]
-        )
-        return max((at for at in merges if at is not None), default=None)
 
     def working(self) -> list[str]:
         """The open tasks in the working lane, whose holders `follow_holder_idle` checks for a settle while down."""
@@ -1283,7 +1242,8 @@ class TaskActor:
         ended, as the session that settled may never settle again, unless its holder is at work by then (a lens's end woke it): that
         holder settles anew. The one resume is the only one: a settle after it with no progress (a phase or
         submachine event, a new head) moves the task to Needs attention with its session kept and its profile unchanged,
-        except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed. A task citing none of its own while an open pull request names it (`uncited`) is left as it is, neither resumed nor sent to Needs attention: the merge reconcile cites the pull request. A `confirm` that
+        except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed: it moves to Needs attention at once when no lifecycle rule
+        takes it (a reopened task's earlier merge), freeing its session slot. A task citing none of its own while an open pull request names it (the `_unlinked` substate) is left as it is, neither resumed nor sent to Needs attention: deliver cites the pull request, and that write re-derives the task. A `confirm` that
         raises (the holder is busy) holds the task: the next move of a machine other than the harness settles it again, and the
         session's own activity ends the hold. A `resume` that fails is sent again at once until `_FAILED_RESUMES` fail, when the
         task moves to Needs attention, as a holder whose resume was lost settles no more; a holder no session can reach is
@@ -1303,15 +1263,25 @@ class TaskActor:
             if self._awaits(agent):
                 self._memory.keep(name, awaited=True)
                 return
-            if self._derive(name, self._clock()):
+            if self.touch([TaskTouched(name, Trigger.ON_IDLE, "session settled")]):
                 return  # the lane facts moved the task (a ready pull request to Review): there is nothing to resume
             answered = "kind-decide" in agent["labels"] and operator_answered(
                 (self._feed.task(name) or {}).get("description", "")
             )
             own = self._own_prs(agent)
-            if not own and uncited(self._store, agent):
+            if not own and self._unlinked(agent):
                 return  # the delivery is open and the merge reconcile cites it: no input of the operator's is missing
-            if own and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own):
+            records = [self._record(url) for url in own]
+            if own and all(record and record["state"] in TERMINAL for record in records):
+                # a merge GitHub has not timed yet settles on its next read; else no lifecycle rule takes the task
+                if derivation.pr_terminal(self._port, agent) is None and all(record["mergedAt"] or record["state"] != "MERGED" for record in records):
+                    self._attend(
+                        name,
+                        "every pull request it cites has ended, yet none proves the work since it entered In Progress",
+                        "settled with no pull request left to deliver",
+                        "Which?",
+                        ("deliver the reopened work on a new pull request", "close the task as done"),
+                    )
                 return
             items = agent.get("criteria", ())
             if opened := open_criteria(items):
@@ -1363,7 +1333,7 @@ class TaskActor:
             if (
                 agent["prs"]
                 and own
-                and all((record := self._record(url)) and record["state"] in _TERMINAL for url in own)
+                and all((record := self._record(url)) and record["state"] in TERMINAL for url in own)
             ):
                 return
             if self._awaits(agent):
@@ -1614,7 +1584,7 @@ class TaskActor:
         no link names, until a final state."""
         name = agent["id"]
         for url in self._own_prs(agent):
-            state, *_, checks, _ = self._pull_state(url)
+            state, *_, checks, _, _ = self._pull_state(url)
             if state == "OPEN" and checks == "pending":
                 return True
         for machine in self._awaiting:
@@ -1849,297 +1819,6 @@ class TaskActor:
                 self._buckets[i] += 1
             self._sum += seconds
 
-    def _pr_terminal(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The merge evidence when the task cites pull requests and every one has ended, else None. A check task that
-        cites only other tasks' pull requests has no delivery of its own to wait for: its checked criteria close it.
-        Review proves its work on `_proof_prs`; every other lane still waits on its own pull requests only. In the
-        working lane the latest merge must follow the task's work floor."""
-        own = self._own_prs(agent)
-        if not own and agent["prs"] and agent["type"] == "check":
-            if not all(criterion["checked"] for criterion in agent.get("criteria", ())):
-                return None
-            proof = f"no pull request of its own; cites {', '.join(agent['prs'])}"
-            return proof, f"{MERGE_EVIDENCE} {proof}"
-        parts = []
-        proved = self._proof_prs(agent)
-        for url in proved:
-            record = self._record(url)
-            if record is None or record["state"] not in _TERMINAL:
-                return None
-            if record["state"] == "MERGED" and not record["mergedAt"]:
-                return None  # merged on an event's word alone: the next read of GitHub settles it
-            link = f"PR #{record['number']}" if record["repo"] == self._board_repo else url
-            if record["state"] == "MERGED" and not landed(self._store, record):
-                # merged into an integration branch not yet on main: the work is not delivered
-                self._note_hold(agent, (f"{link} merged into {record['baseRefName']}, not main",), DONE_HELD)
-                return None
-            part = f"{record['repo']}#{record['number']} {record['state'].lower()}"
-            if record["mergeSha"]:
-                part += f" as {record['mergeSha']}"
-            parts.append(f"{part} ({link})")
-        if not parts or uncited(self._store, agent):
-            return None  # an open pull request naming the task is its delivery too: one cited merge never ends it
-        merged_at = self._merged_at(agent)
-        if (
-            agent["state"] == self._feed.roles.working
-            and merged_at is not None
-            and merged_at < self._work_floor(agent)
-            and not self._deploy_reopened(agent)
-        ):
-            return None  # the merge predates the work floor: a reopened task's earlier delivery proves nothing
-        # the board's guard wants the evidence to name every cited pull request: a reference is named as one, not proof
-        if references := [url for url in agent["prs"] if url not in proved]:
-            parts.append(f"cites as a reference, not proof: {', '.join(references)}")
-        proof = "; ".join(parts)
-        return proof, f"{MERGE_EVIDENCE} {proof}"
-
-    def _work_floor(self, agent: dict[str, Any]) -> float:
-        """When the working lane's shipped work stops counting: the task's last entry other than an answer out of Needs attention."""
-        return self._memory.of(agent["id"]).get("work_floor") or agent.get("entered") or 0.0
-
-    def _pr_merged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The merge evidence when every pull request the task cites has ended and at least one merged, else None: a
-        delivery closed unmerged is no proof of the work. A closed one beside a merged one stays cited for the audit
-        trail and is named closed in the evidence, which the board's proof guard asks to name every cited one."""
-        terminal = self._pr_terminal(agent)
-        records = [self._record(url) for url in self._proof_prs(agent)]
-        merged = any(record and record["state"] == "MERGED" for record in records)
-        return terminal if terminal and merged else None
-
-    def _pr_closed_unmerged(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The closed pull requests and the archive reason when every pull request the task cites has ended and none
-        merged: its delivery is gone and the close is the answer: the task archives as superseded, and a redelivery is a new task."""
-        terminal = self._pr_terminal(agent)
-        records = [self._record(url) for url in self._proof_prs(agent)]
-        if not terminal or any(not record or record["state"] != "CLOSED" for record in records):
-            return None
-        return terminal[0], f"superseded: {', '.join(self._proof_prs(agent))} closed unmerged"
-
-    def _pr_closed_unmerged_complete(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The closed pull requests when `_pr_closed_unmerged` holds and every criterion is checked: the work was done
-        without a merge (a no-op), so nothing is left to ask the operator."""
-        closed = self._pr_closed_unmerged(agent)
-        ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
-        if not closed or not ticks or not all(ticks):
-            return None
-        return closed[0], f"Every pull request it cites closed unmerged and every criterion is checked: {closed[0]}."
-
-    def _pr_merged_unfinished(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The merge evidence and what is left when the task's pull requests merged and the board reports work
-        unfinished, else None. A command that fails reports its error: the task returns to its
-        holder, never closes."""
-        merged = self._pr_merged(agent)
-        if merged is None:
-            return None
-        try:
-            left = tuple(self._unfinished(agent["id"]))
-        except Exception as error:
-            logger.warning("task actor: cannot read the unfinished work of %s: %s", agent["id"], error)
-            left = (f"the board's unfinished work cannot be read: {error}",)
-        if not left:
-            return None
-        proof, comment = merged
-        return (proof, left), f"{comment} Unfinished: {'; '.join(left)}."
-
-    def _deploy_reopened(self, agent: dict[str, Any]) -> bool:
-        """Whether the task's latest reopen from Done was a failed deploy of its merge. A read that fails leaves the pass
-        unsettled, so the next one asks again."""
-        if (texts := self._comments(agent)) is None:
-            self._unsettled = True
-            return False
-        reopens = [text for text in texts if text.startswith("Reopened from Done: ")]
-        return bool(reopens) and _DEPLOY_FAILED.search(reopens[-1]) is not None
-
-    def _pr_ready(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The ready or merged pull requests when the task cites one that is, else None. A task sent back from Review
-        stays put while its ready pull request keeps the head it was sent back on: a new head or a run of `review` is the
-        session's answer. An open pull request is ready only when it does not conflict with its base and the rollup of
-        its current head says every required check passed (`checks_verdict`): a required check not posted is not green,
-        a push re-arms the gate, and a repository whose ruleset requires none rolls up passed as soon as the pull
-        request is not a draft. A task in Needs attention whose `## Needs attention` ask is unanswered stays there,
-        unless its ask ends in the actor's own failing-checks question (`ATTENTION_QUESTION`), which a green pull request settles."""
-        reason = needs_attention_reason(agent["description"])
-        if (
-            agent["state"] == self._feed.roles.attention
-            and reason
-            and not reason.endswith(ATTENTION_QUESTION)
-            and not operator_answered(agent["description"])
-        ):
-            return None
-        parts = []
-        sent_back = self._memory.of(agent["id"]).get("sent_back")
-        held = sent_back or {}
-        # In the working lane a PR merged before the work floor is shipped work (a post-merge send back).
-        floor = self._work_floor(agent) if agent["state"] == self._feed.roles.working else 0.0
-        if floor and sent_back is None and self._deploy_reopened(agent):
-            floor = 0.0  # a failed deploy sent shipped work back: the merge closes it through Review, never an operator's send-back from Review
-        for url in self._own_prs(agent):
-            record = self._record(url)
-            if record is None:
-                continue
-            merged = record["state"] == "MERGED" and record["mergedAt"]
-            if merged and (_epoch(record["mergedAt"]) or 0.0) < floor:
-                continue
-            if merged or (record["state"] == "OPEN" and not self._why_unready(record, held.get(url))):
-                parts.append(f"{record['repo']}#{record['number']} {'merged' if merged else 'ready'}")
-        if not parts or uncited(self._store, agent):
-            return None  # an open pull request naming the task is its delivery too: Review waits until it is cited
-        proof = "; ".join(parts)
-        return proof, f"Pull request ready: {proof}"
-
-    def _open_pulls(
-        self, agent: dict[str, Any], said: str, problem: Callable[[dict[str, Any]], bool]
-    ) -> tuple[str, str] | None:
-        """The open pull requests of the task's own delivery that `problem` holds of, with the comment `said` names them
-        in, else None. The head commit is in the evidence, so a push that fails or conflicts again is a new fact."""
-        parts = []
-        for url in self._own_prs(agent):
-            record = self._record(url)
-            if record is not None and record["state"] == "OPEN" and problem(record):
-                parts.append(f"{record['repo']}#{record['number']} at {record['headRefOid'][:12]}")
-        if not parts:
-            return None
-        proof = "; ".join(parts)
-        return proof, f"{said}: {proof}."
-
-    def _pr_failing(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The open pull requests whose required checks failed, with the question the task's reason ends in, else None."""
-        failing = self._open_pulls(
-            agent,
-            "Pull request checks failed",
-            lambda record: (
-                checks_verdict(
-                    record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
-                )
-                == "failing"
-            ),
-        )
-        return failing and (
-            failing[0],
-            attention_reason(
-                failing[1],
-                "its required checks fail on the pull request head",
-                ("fix it on the task branch and redeliver", "rescope the task"),
-                ATTENTION_QUESTION,
-            ),
-        )
-
-    def _pr_draft(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The open pull requests that are drafts, else None."""
-        return self._open_pulls(agent, "Pull request is a draft", lambda record: record["isDraft"])
-
-    def _pr_conflicting(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The open pull requests that conflict with their base, else None."""
-        return self._open_pulls(
-            agent, "Pull request conflicts with its base", lambda record: record["mergeable"] == "CONFLICTING"
-        )
-
-    def _pr_unfinished(self, agent: dict[str, Any], alive: bool) -> tuple[str, str] | None:
-        """The first of the failing, draft and conflicting facts that holds, once the task's holder is running (`alive`) or
-        is not. A holder the probe cannot reach leaves the task where it is for the next pass."""
-        held = self._pr_failing(agent) or self._pr_draft(agent) or self._pr_conflicting(agent)
-        if held is None:
-            return None
-        try:
-            running = self._alive(agent["id"])
-        except Exception as error:
-            self._unsettled = True
-            logger.warning("task actor: the holder of %s was not probed: %s", agent["id"], error)
-            return None
-        if running != alive:
-            return None
-        return held[0], f"{held[1]} {'Sent back to its session' if alive else 'Returned to Ready for a new session'}."
-
-    def _pr_unfinished_alive(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The not-green pull request of a task whose holding session is running."""
-        return self._pr_unfinished(agent, True)
-
-    def _pr_unfinished_dead(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The not-green pull request of a task no running session holds."""
-        return self._pr_unfinished(agent, False)
-
-    def _phase_resumed(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
-        """The time and comment of the newest step of a phase in `[sequences]` the task's session took after the task
-        entered its lane: the session going back to work is the event that sends the task back."""
-        entered = self._entered(agent)
-        steps = [
-            (at, phase)
-            for phase in sorted({phase for sequence in self._sequences.values() for phase in sequence})
-            if (placed := self._feed.machine_task(phase, agent["id"]))
-            and (at := self._resumed_at(phase, placed, entered)) is not None
-        ]
-        if not steps:
-            return None
-        at, phase = max(steps)
-        return at, f"Its session resumed the {phase} phase. Sent back to In Progress."
-
-    @staticmethod
-    def _resumed_at(phase: str, placed: dict[str, Any], entered: float) -> float | None:
-        # A delivery run that began before the task entered its lane is the holder finishing the run that put it there,
-        # so its steps never count: a run ends with its `DELIVER_FINISHED`, and only one that begins after `entered` is
-        # work resuming.
-        if phase != "deliver":
-            return placed["active"] if placed["active"] > entered else None
-        began: float | None = None
-        newest = None
-        for step in placed["trail"]:
-            began = step["at"] if began is None else began
-            if began > entered:
-                newest = step["at"]
-            if step["event"] == "DELIVER_FINISHED":
-                began = None
-        return newest
-
-    def _operator_pushback(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The words of the operator's pushback when it is the task's newest comment: the move it causes, or the
-        answer to it, is a newer comment, so a task that returns to its lane carries no old pushback. Words that
-        ask nothing get the question Needs attention requires."""
-        if (texts := self._comments(agent)) is None:
-            self._unsettled = True
-            return None
-        newest = texts[-1].strip() if texts else ""
-        if not newest.startswith(_PUSHBACK):
-            return None
-        words = newest.removeprefix(_PUSHBACK).strip()
-        return newest, words if "?" in words else f"{words}\n\nWhat change does it call for?"
-
-    def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
-        """The dependencies once every one is done and merged, an empty tuple when the task has none, and no Start
-        Criteria gate it."""
-        dependencies = tuple(agent["dependencies"])
-        self._pin_held.discard(agent["id"])
-        self._held.discard(agent["id"])
-        if self._unmet(agent) or criteria.authored(agent["description"]):
-            return None
-        if waiting := self._gate.waiting_on(agent):
-            self._pin_held.add(agent["id"])
-            self._note_hold(agent, (waiting,))
-            return None
-        if reasons := self._held_by(agent["id"]):
-            self._held.add(agent["id"])
-            self._note_hold(agent, reasons)
-            return None
-        comment = "Every dependency has merged."
-        if stale := self._early(agent):
-            comment = (
-                f"Stale dependency {', '.join(stale)}: it stays open for criteria this task does not need. {comment}"
-            )
-        return dependencies, comment
-
-    def _deps_done_with_pr(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
-        """`deps_done` for a task that cites a ready or merged pull request, which a state returns to Review rather than Ready."""
-        return self._deps_done(agent) if self._pr_ready(agent) else None
-
-    def _held_by(self, name: str) -> tuple[str, ...]:
-        """Why the board withholds the task's `deps_done`; a hold that raises holds it with that error."""
-        self._hooked = True
-        try:
-            return tuple(self._holds(name))
-        except Exception as error:
-            self._unsettled = True
-            logger.warning("task actor: cannot read the holds of %s: %s", name, error)
-            return (f"the board's holds cannot be read: {error}",)
-
     def _note_hold(self, agent: dict[str, Any], reasons: tuple[str, ...], prefix: str = HELD) -> None:
         """Comment the hold's reasons on the task under `prefix`, once until they or its lane change."""
         name, sent = agent["id"], (agent["state"], "hold", reasons)
@@ -2165,159 +1844,11 @@ class TaskActor:
             self._dates.pop(name, None)
             return
         self._dates[name] = tuple(criteria.expect_dates(agent["description"]))
-        deadline = self._deadline(agent)
+        deadline = derivation.deadline(self._port, agent)
         if deadline and deadline[0] > self._wall():
             self._deadlines.arm(name, deadline[0])
-
-    def _deadline(self, agent: dict[str, Any]) -> tuple[float, str] | None:
-        """When the task's service level expectation ends, in epoch seconds, and what it is counted from; None while the
-        task is exempt (gated only on dependencies, each still In Progress or Review) or has no entry time.
-        The SLE is the latest `expect_by` plus two days, else seven days from entering the lane."""
-        if not agent.get("entered"):
-            return None
-        if self._missing(agent):
-            return agent["entered"], "a dependency is not on the board"
-        if not criteria.authored(agent["description"]) and self._moving(agent):
-            return None
-        dates = [stamp for stamp in map(_epoch, criteria.expect_dates(agent["description"])) if stamp]
-        if dates:
-            return max(dates) + _GRACE_DAYS * _DAY_S, f"expect_by {_stamp(max(dates))} plus {_GRACE_DAYS} days"
-        return agent["entered"] + _SLE_DAYS * _DAY_S, f"{_SLE_DAYS} days from entering Waiting"
-
-    def _moving(self, agent: dict[str, Any]) -> bool:
-        """Whether the task has open dependencies and each is In Progress or Review: work is under way on its gate."""
-        roles = self._feed.roles
-        open_ = [dependency for dependency in agent["dependencies"] if not self._cleared(dependency)]
-        return bool(open_) and all(
-            (self._feed.task(dependency, lean=True) or {}).get("state") in (roles.working, roles.review)
-            for dependency in open_
-        )
-
-    def _overdue(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
-        """The deadline and the Needs attention question when the task is past its service level expectation."""
-        deadline = self._deadline(agent)
-        now = self._wall()
-        if not deadline or deadline[0] > now:
-            return None
-        if missing := self._missing(agent):
-            gone = "; ".join(f"{dependency} is not on the board" for dependency in missing)
-            listed = ", ".join(agent["dependencies"])
-            return deadline[0], attention_reason(
-                f"{gone}, so nothing releases this task. Its dependencies ({listed}) are cleared with this move",
-                "its dependencies are not on the board, so none can release it",
-                ("re-park it on the right tasks", "close it"),
-                "Re-park it on the right tasks, or close it?",
-            )
-        gate = [*self._unmet(agent), *(each["id"] for each in criteria.authored(agent["description"]))]
-        days = int((now - agent["entered"]) // _DAY_S)
-        return deadline[0], attention_reason(
-            f"Waiting {days} days, past its service level expectation ({deadline[1]})",
-            f"it is still gated on {', '.join(gate) or 'its wait'}",
-            ("release it", "re-park it on a new wait", "close it"),
-            "Release it, re-park it on a new wait, or close it?",
-        )
-
-    def _criteria_met(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
-        """The subjects heard when an event the task is parked on arrived and no dependency is open, which would hold it back."""
-        heard = sorted(self._heard.get(agent["id"], ()))
-        if not heard or self._unmet(agent):
-            return None
-        return tuple(heard), f"Event {', '.join(heard)} arrived."
-
-    def _deps_unresolved(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
-        """The dependencies that are not done, when there are any."""
-        open_ = self._unmet(agent)
-        return (open_, f"Not done: {', '.join(open_)}.") if open_ else None
-
-    def _owner_stale(self, agent: dict[str, Any]) -> tuple[str, str] | None:
-        """The green main SHA and the closing note when the task owns a failure (`owner_source`), main's Validate passed,
-        and no open task lists it as a dependency; a red main names no signature, so it closes nothing."""
-        if not self._owns_failure(agent["id"]):
-            return None
-        waited_on = any(
-            agent["id"] in (name.split("#")[0] for name in each["dependencies"]) for each in self._feed.open_tasks()
-        )
-        sha = None if waited_on else self._main_green()
-        if not sha:
-            return None
-        return sha, f"Closed: main's Validate passed at {sha} and no open task waits on this failure."
-
-    def _unmet(self, agent: dict[str, Any]) -> tuple[str, ...]:
-        """The dependencies that are neither done nor early: still open for what the task waits on."""
-        early = self._early(agent)
-        return tuple(
-            dependency
-            for dependency in agent["dependencies"]
-            if not self._cleared(dependency) and dependency not in early and not self._owner_green(dependency)
-        )
-
-    def _owner_green(self, dependency: str) -> bool:
-        """Whether the dependency owns a failure (`owner_source`) and main's Validate passed: the failure no longer holds
-        a task waiting on it, whatever lane the owner is in."""
-        return self._owns_failure(dependency) and bool(self._main_green())
 
     def _owns_failure(self, task_id: str) -> bool:
         if not (self._owner_source and self._main_green):
             return False
         return str((self._read(task_id) or {}).get("source") or "").startswith(self._owner_source)
-
-    def _early(self, agent: dict[str, Any]) -> tuple[str, ...]:
-        """The open dependencies whose every criterion the task's record says it needs (`dependencyNeeds`, `TASK-N#K`)
-        is checked: the fact the task waited on holds, whatever the dependency still has open. A dependency with no
-        need names the whole task; a record the board cannot read names none."""
-        open_ = [dependency for dependency in agent["dependencies"] if not self._cleared(dependency)]
-        if not open_:
-            return ()
-        try:
-            needs = (self._read(agent["id"]) or {}).get("dependencyNeeds") or ()
-        except Exception as error:
-            logger.warning("task actor: cannot read the dependency needs of %s: %s", agent["id"], error)
-            return ()
-        wanted: dict[str, list[int]] = {}
-        for task, number in map(_need_of, needs):
-            wanted.setdefault(task, []).append(number)
-        return tuple(
-            dependency for dependency in open_ if dependency in wanted and self._checked(dependency, wanted[dependency])
-        )
-
-    def _checked(self, dependency: str, numbers: list[int]) -> bool:
-        """Whether every criterion `numbers` names (1-based) of `dependency` is checked."""
-        ticks = tuple(
-            criterion["checked"] for criterion in (self._feed.task(dependency, lean=True) or {}).get("criteria", ())
-        )
-        return all(0 < number <= len(ticks) and ticks[number - 1] for number in numbers)
-
-    def _stale(self, agent: dict[str, Any]) -> dict[str, list[str]]:
-        """The record changes that drop the early dependencies and their needs, none when there are none."""
-        early = self._early(agent)
-        if not early:
-            return {}
-        needs = (self._read(agent["id"]) or {}).get("dependencyNeeds") or ()
-        return {
-            "dependencies": [dependency for dependency in agent["dependencies"] if dependency not in early],
-            "dependencyNeeds": [need for need in needs if _need_of(need)[0] not in early],
-        }
-
-    _facts: dict[str, Callable[[TaskActor, dict[str, Any]], tuple[Any, str] | None]] = {
-        "pr_terminal": _pr_terminal,
-        "pr_merged": _pr_merged,
-        "pr_closed_unmerged": _pr_closed_unmerged,
-        "pr_closed_unmerged_complete": _pr_closed_unmerged_complete,
-        "pr_merged_unfinished": _pr_merged_unfinished,
-        "pr_ready": _pr_ready,
-        "pr_failing": _pr_failing,
-        "pr_draft": _pr_draft,
-        "pr_conflicting": _pr_conflicting,
-        "pr_unfinished_alive": _pr_unfinished_alive,
-        "pr_unfinished_dead": _pr_unfinished_dead,
-        "phase_resumed": _phase_resumed,
-        "operator_pushback": _operator_pushback,
-        "deps_done": _by_claim(_deps_done, claimed=False),
-        "deps_done_with_pr": _deps_done_with_pr,
-        "deps_done_started": _by_claim(_deps_done, claimed=True),
-        "criteria_met_started": _by_claim(_criteria_met, claimed=True),
-        "deps_unresolved": _deps_unresolved,
-        "criteria_met": _by_claim(_criteria_met, claimed=False),
-        "owner_stale": _owner_stale,
-        "overdue": _overdue,
-    }

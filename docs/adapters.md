@@ -42,9 +42,8 @@ The `starpulse.board.Board` the server holds says:
   hashing the summary table definitions, the initial and final states, moves and Board lanes of the machines, and the
   fold's source, so an edit to a label or a position rebuilds nothing. `rebuild_summaries` folds the raw rows in memory through the steps a write takes, then drops, creates from metadata and fills
   the tables in one transaction, so a reader sees the old or the new, never empty ones. The summaries follow the order events were recorded, and cover only the machines the page draws when the
-  store opens. `/api/analytics/health` reads these summaries and never scan the two
-  raw tables: health reads the stays that ended in its window or are still going and takes the tasks in each lane from
-  the lane counts; the Board's level reads the trajectories of the tasks that changed lane in its window or the trailing
+  store opens. The level and trajectory reads use these summaries and never scan the two
+  raw tables: the Board's level reads the trajectories of the tasks that changed lane in its window or the trailing
   12 weeks (which set the aging threshold) and of the tasks still waiting or working, and takes where the history begins
   and which sources reported from the lane counts. Their cost follows that activity, not the history's length (see
   [Flow read scaling](development.md#flow-read-scaling)). A history that supplies only `lane_rows` and `level_runs` is read whole, and a level on a machine other than the Board reads that machine's events whole.

@@ -8,7 +8,7 @@ from starpulse.contracts.api.dto.dag import Runs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.breaking_changes import BreakingChanges
-from starpulse.contracts.api.dto.health import Health, Liveness, MachineHistory, Sessions, SessionSteps, TaskEventHistory
+from starpulse.contracts.api.dto.health import MachineHistory, TaskEventHistory
 from starpulse.contracts.api.dto.milestones import (
     Docs,
     DocShown,
@@ -19,7 +19,6 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecord,
     TaskRecords,
 )
-from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
@@ -99,17 +98,12 @@ from starpulse.contracts.api.dto.snapshot import (
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import (
-    Cells,
     CostToGo,
-    Estimates,
-    FlowGraph,
     RunDiffs,
     Spend,
-    SubStages,
     TaskCostToGo,
     TaskDiff,
     TaskSpend,
-    Transitions,
 )
 
 #: Each `/api/events` event name and the model of its `data`.
@@ -132,20 +126,6 @@ RESPONSES: dict[str, Any] = {
     "/api/snapshot": Snapshot,
     "/api/ledger/": LedgerPage,
     "/api/machines": Machines,
-    "/api/analytics/health": Health,
-    "/api/analytics/liveness": Liveness,
-    "/api/analytics/sessions": Sessions,
-    "/api/analytics/steps": SessionSteps,
-    "/api/analytics/transitions": Transitions,
-    "/api/analytics/spend": Spend,
-    "/api/analytics/cells": Cells,
-    "/api/analytics/estimates": Estimates,
-    "/api/analytics/graph": FlowGraph,
-    "/api/analytics/stages": SubStages,
-    "/api/analytics/diff": RunDiffs,
-    "/api/analytics/cost-to-go": CostToGo,
-    "/api/analytics/missed-loads": MissedLoads,
-    "/api/analytics/trace-clusters": TraceClusters,
     "/api/harnesses": Harnesses,
     "/api/history-window": WindowState,
     "/api/doctor": ContractReport,
@@ -214,23 +194,12 @@ BODIES: dict[str, Any] = {
     "breaking_changes": BreakingChanges | ApiError,
     "pulls": Pulls | ApiError,
     "search": SearchResults | ApiError,
-    "health": Health | ApiError,
-    "liveness": Liveness | ApiError,
-    "sessions": Sessions | ApiError | WindowTooLong,
-    "session_steps": SessionSteps | ApiError | WindowTooLong,
-    "transitions": Transitions | ApiError | WindowTooLong,
     "spend": Spend | ApiError | WindowTooLong,
     "taskSpend": TaskSpend | ApiError | WindowTooLong,
     "taskDiff": TaskDiff | ApiError | WindowTooLong,
     "taskCostToGo": TaskCostToGo | ApiError | WindowTooLong,
-    "cells": Cells | ApiError | WindowTooLong,
-    "estimates": Estimates | ApiError | WindowTooLong,
-    "graph": FlowGraph | ApiError | WindowTooLong,
-    "stages": SubStages | ApiError | WindowTooLong,
     "diff": RunDiffs | ApiError | WindowTooLong,
     "cost_to_go": CostToGo | ApiError | WindowTooLong,
-    "missed_loads": MissedLoads | ApiError | WindowTooLong,
-    "trace_clusters": TraceClusters | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
     "harnesses": Harnesses,
     "window": WindowState | ApiError,

@@ -16,7 +16,7 @@ not a setup guide for GitHub or any other tool StarPulse does not ship.
 | [Scheduled workflows take fixed sequences off agents](#5-scheduled-workflows-take-fixed-sequences-off-agents) | Draws runs from Temporal, GitHub Actions or systemd; [CloudEvents ingest](sources.md#post-machine-events-as-cloudevents) | The workflows and their schedules |
 | [Documentation is code and is linted](#6-documentation-is-code-and-is-linted) | Nothing | The repository, the lint, the scheduled commit |
 | [Lifecycle guards refuse an out-of-order move](#7-lifecycle-guards-refuse-an-out-of-order-move) | State machines with `writers`, and [`[[board.guards]]`](public-surface.md#board-guards) | The machines and rules I declared, and the skills they name |
-| [Telemetry is read back](#8-telemetry-and-projections-are-read-back-to-size-and-steer-the-next-task) | [Session health, flow health, missed skill loads, trace clusters](sources.md#measure-session-and-slice-health), [scheduler](serving.md#scheduler) | Size bands, agent profiles, what I change after reading a report |
+| [Telemetry is read back](#8-telemetry-and-projections-are-read-back-to-size-and-steer-the-next-task) | [Session health, missed skill loads, trace clusters](sources.md#measure-session-and-slice-health), [scheduler](serving.md#scheduler) | Size bands, agent profiles, what I change after reading a report |
 
 ## Scale
 
@@ -29,7 +29,6 @@ directory of workflow files.
 | 2,800 pull requests merged in my main repository and 263 in StarPulse, from 2026-09-10 to 2026-10-09 | `gh api -X GET search/issues -f q='repo:OWNER/REPO is:pr is:merged merged:2026-09-10..2026-10-09' --jq .total_count` |
 | 838 of the last 1,000 merged pull requests in my main repository were merged by my account and 162 by a GitHub App; all 162 were bot-opened pin or digest bumps | `gh pr list -R OWNER/REPO --state merged --limit 1000 --json mergedBy,headRefName --jq '[.[] \| select(.mergedBy.login\|startswith("app/"))] \| group_by(.headRefName\|split("/")[0]) \| map({branch: (.[0].headRefName\|split("/")[0]), n: length})'` |
 | A median of 11 minutes and a 90th percentile of 89 minutes from opening to merge, over the 836 of those 1,000 opened under my account | `gh pr list -R OWNER/REPO --state merged --limit 1000 --json createdAt,mergedAt,author --jq '[.[] \| select(.author.login=="MY-LOGIN") \| ((.mergedAt\|fromdate) - (.createdAt\|fromdate))] \| sort \| {n: length, median_min: (.[length/2\|floor]/60\|floor), p90_min: (.[(length*0.9)\|floor]/60\|floor)}'` |
-| A peak of 23 agent sessions open at the same time over the previous 168 hours | `curl -s 'http://localhost:8766/api/analytics/sessions?hours=168' \| jq '[.sessions \| group_by(.harness+.session)[] \| {a: (map(.first_at)\|min), b: (map(.last_at)\|max)}] \| ([.[]\|[.a,1]] + [.[]\|[.b,-1]]) \| sort_by(.[0]) \| reduce .[] as $e ({c:0,p:0}; .c += $e[1] \| .p = ([.p,.c]\|max)) \| .p'` |
 | 57 workflow files, 45 of them scheduled, 6 of them containing an agent step | `ls DAGS/*.yaml \| wc -l`; `rg -l '^schedule:' DAGS \| wc -l`; `rg -l 'kind: agent' DAGS \| wc -l` |
 
 A session counts as open from its first to its last exported event, so the peak is an upper bound on sessions
@@ -134,10 +133,8 @@ observation, not a benchmark.
 
 **What.** Sessions export their telemetry to StarPulse's receiver. From it I read, per task: model steps, operator
 prompts, interrupts, compactions, whether the model or effort changed mid-task, and whether the task finished in
-one session with no intervention (a clean completion). Beside it sit flow health (work in progress, stuck tasks,
-throughput), the skills a session should have loaded and did not, and the recurring work that clusters across
-sessions. Task sizes are bands of observed steps and minutes, and a report scores how far the newest work has drifted
-from them. The model and effort for a kind and size is chosen from cost per clean completion. The scheduler admits the
+one session with no intervention (a clean completion). Beside it sit the skills a session should have loaded and did not, and the recurring work that clusters across
+sessions. Task sizes are bands of observed steps and minutes. The model and effort for a kind and size is chosen from cost per clean completion. The scheduler admits the
 next task only if its estimated demand fits the host's CPU, memory, session and review-queue limits.
 
 **Why.** Sizing and routing guessed from memory drift; measured sessions keep them honest. Reading is still mostly

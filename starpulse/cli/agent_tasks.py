@@ -19,7 +19,7 @@ from typing import Any
 from starpulse.event_log.claude_sessions import (
     DEFAULT_SESSIONS,
     DEFAULT_TRANSCRIPTS,
-    holder_activity,
+    session_activity_of,
     same_holder,
 )
 from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
@@ -707,7 +707,8 @@ _RETIRED_PAGE = 500
 
 def task_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base = agent_wire.server_url(args.server, environ)
-    filters = {key: value for key, value in (("task", args.task), ("milestone", args.milestone)) if value}
+    asked = (("task", args.task), ("milestone", args.milestone), ("fields", "dependencies" if args.ids else ""))
+    filters = {key: value for key, value in asked if value}
     tasks: list[Any] = []
     params = filters or {"limit": _RETIRED_PAGE}  # every retired task is read a page at a time, newest retired first
     while True:
@@ -896,8 +897,7 @@ def with_activity(view: dict[str, Any], working: str, transcripts: Path, session
     session with a transcript."""
     if view["lane"] != working or not view["assignee"]:
         return view
-    found = holder_activity(transcripts, sessions, view["assignee"], now=now)
-    return {**view, "session_activity": found or {"state": "unknown"}}
+    return {**view, "session_activity": session_activity_of(transcripts, sessions, view["assignee"], now=now)}
 
 
 def _active(view: dict[str, Any], snapshot: Mapping[str, Any]) -> dict[str, Any]:

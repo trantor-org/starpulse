@@ -95,7 +95,7 @@ requests it took and closes.
 
 ### Worker processes
 
-`serve` is a supervisor over two children, each a `starpulse worker <name>` process: `api` (the Page API) and `contexts`, the one process that runs every background context as a thread: `pulls` (Delivery), `scheduler`, `runs` with each run adapter a `[[runs]]` instance names (`github-actions`, `systemd`, `temporal`), `flow-metrics`, `signal-folds` (the per-session folds of the harness signals the analytics routes read), `lane-metrics` (the unattributed-lane count, the conformance monitor and the lane sweep, whose metrics text the Page API relays), `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` starts each as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in the event log. No unit file is needed to run StarPulse, and no setting turns a child off: `starpulse reload` picks the children whose code or config moved. The set of children does not depend on the config: a config naming every run adapter still has two.
+`serve` is a supervisor over two children, each a `starpulse worker <name>` process: `api` (the Page API) and `contexts`, the one process that runs every background context as a thread: `pulls` (Delivery), `scheduler`, `runs` with each run adapter a `[[runs]]` instance names (`github-actions`, `systemd`, `temporal`), `flow-metrics`, `signal-folds` (the per-session folds of the harness signals the per-task spend, diff and cost-to-go routes read), `lane-metrics` (the unattributed-lane count, the conformance monitor and the lane sweep, whose metrics text the Page API relays), `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` starts each as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in the event log. No unit file is needed to run StarPulse, and no setting turns a child off: `starpulse reload` picks the children whose code or config moved. The set of children does not depend on the config: a config naming every run adapter still has two.
 
 The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; the child serves the page build of the release it runs from (`STARPULSE_STATIC` names another directory, as a test's stub page), so a reload after a merge that rebuilds the page serves the new build. The child reads the Board from the read model the `contexts` child folds and starts no adapter watcher. A reload of the child starts the new one on the same socket, waits until it reports (`STARPULSE_READY_FD`) it is about to serve, or 30 s (`warm`) at most, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused. The child serves the snapshot the Board writer stored and builds none, so a connection that queued across a restart or a reload is answered from the store, never by a build in its request (a 503 with `Retry-After: 1` before the writer has stored one); an agent client (`starpulse` verbs) sends a GET once more when the server answered it with an empty reply.
 
@@ -421,87 +421,20 @@ GET /api/history?task=TASK-N[&machine=NAME]
                    and an unknown `machine` 404. The machine events are copied from their stream as they
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
                    the config), so the path outlives the stream's trim. A trim past entries the copy never read is recorded as a gap
-GET /api/analytics/health[?hours=N][&stuck_hours=N]
-                   the Board's flow health from the history's lane changes (`analytics.stay_health`): `states`
-                   (each with `wip` now and, for a state that is not final, the `visits`, `mean_s` and `max_s` of
-                   its stays over the last `hours`, default 168, `open` of them still going and counted to now),
-                   `throughput` {count, per_day} into a final state, `stuck` (tasks in a middle state for
-                   `stuck_hours` or longer, default 24, each `counted_to_now`) and `warnings` (the history's
-                   recorded gaps). A `hours` or `stuck_hours` that is no positive number is 400
-GET /api/analytics/liveness[?hours=N][&stalled_minutes=N]
-                   each working task's liveness and the Board's pace into Review (`liveness.liveness`): `tasks`
-                   (every task in the working State with `state_idle_s` since its last lane change or work-machine
-                   event, `command_idle_s` since its session's last tool call, `stalled` when both pass
-                   `stalled_minutes`, default 5, and a stalled task's `cause`: `idle`, `waiting_checks` or `slow_process`
-                   (each of the two with `waits_in`), or `unattributed`), `review` {count, per_hour, per_slot_hour, hours} for the moves from the working
-                   State into Review over the last `hours`, default 24, `slot_s` and `slots`, the working-lane
-                   seconds inside the window by the cause that held them (`working` inside the threshold), and
-                   `stages` and `stalls`, the time those stays spent after each work-machine event and past the
-                   threshold by cause. An `hours` or
-                   `stalled_minutes` that is no positive number, or `hours` past 8784, is 400; a board with no working state is 501
-GET /api/analytics/sessions[?hours=N]
-                   session and slice health from the harness OTLP exports the Claude Code receiver recorded
-                   (`sessions.session_health`, `sessions.slice_health`) over the last `hours`, default 168:
-                   `sessions` (one row per harness session and task, with its prompts, requests, tools,
-                   rejections and gates, tokens, cost and agent, operator-wait and idle seconds) and `slices` (per task, the
-                   sessions that worked it with its interventions, `escalated` and `clean`). A `hours` that is no
-                   positive number is 400, as is one longer than the telemetry history (the oldest signal held),
-                   with `history_s` its length; a server with no telemetry log is 501 and one that cannot read it 503
-GET /api/analytics/steps[?hours=N][&limit=N][&after=CURSOR]
-                   the model requests of those exports over the last `hours`, default 168, oldest first, one page of
-                   `limit` (default 1000, at most 5000) after the cursor `after`, as `{now, window_s, next, steps}`
-                   (`next` the cursor for the following page, null on the last; a malformed `limit` or `after` is 400) (`steps.session_steps`): each step is `{harness, session, task, at,
-                   model, origin, skill, activities, keys, tokens, captured}`, `skill` the skill most recently
-                   loaded in its session counting the step's own (`none` before any), `activities` and `keys` one
-                   entry per call it made (a key is the redacted shell command, else the tool's name) and
-                   `captured` false for Codex. A `hours` that is no positive number is 400, as is one longer than the
-                   telemetry history, with `history_s` its length; a server with no telemetry log is 501 and one
-                   that cannot read it 503
-GET /api/analytics/transitions[?hours=N]
-                   the cost of each skill in force within each kind and size, from the steps of those exports over
-                   the last `hours`, default 168, as `{now, window_s, transitions}` (`cells.transition_cost`): each is
-                   `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`,
-                   a subagent's steps counted to the task that spawned it. The kind and size are the task's
-                   `kind-*` and `size-*` labels; a step of a task without both is in no row. Refusals as
-                   `/api/analytics/steps`
-GET /api/analytics/cells[?hours=N]
-                   the median steps per clean completion of each kind and size over the last `hours`, default 168,
-                   as `{now, window_s, cells}` (`cells.cell_report`): each is `{kind, size, n, completions,
-                   clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, medians
-                   over the latest fifth of the cell's `n` clean completions by end time, except
-                   `median_operator_prompts`, over the latest fifth of its `completions`, clean or not. A cell under
-                   5 clean completions is not listed. Refusals as `/api/analytics/steps`
-GET /api/analytics/estimates[?hours=N][&milestone=m-N]
-                   each completed task with a `kind-` and `size-` label, over the last `hours`, default 168, as
-                   `{now, window_s, estimates}` (`estimates.estimate_report`): each is `{task, milestone, kind, size,
-                   profile, steps, active_minutes, effort_size, effort_size_step}`, the label and profile beside the
-                   measured steps (a subagent's included) and active minutes (agent seconds plus operator wait).
-                   `effort_size` is the smallest `[analytics]` `size_bands` size whose p90 steps and minutes hold
-                   them (None past the largest), `effort_size_step` the sizes it lies above (positive) or below the
-                   label. `milestone` lists only that milestone's tasks. Refusals as `/api/analytics/steps`
-GET /api/analytics/graph[?hours=N]
-                   the branching directly-follows graph of each skill's transition within each kind and size, from
-                   the steps of those exports over the last `hours`, default 168, as `{now, window_s, graph}`
-                   (`flow.directly_follows`): each is `{kind, size, skill, source, target, runs, count, share, cut}`,
-                   an edge between two activities (`[start]` and `[end]` bound a run) that is `cut` when its source is
-                   a judgement cut. Refusals as `/api/analytics/steps`
-GET /api/analytics/stages[?hours=N]
-                   the sub-stages mined at the judgement cuts of the stretches no skill governs, over the last `hours`
-                   and the `hours` before them, as `{now, window_s, stages}` (`flow.sub_stages`): each is `{kind,
-                   size, stage, runs, median_activities, previous_runs, previous_median_activities, stability}`.
-                   The history must hold twice `hours`, else 400 as for steps. Refusals as `/api/analytics/steps`
-GET /api/analytics/diff[?hours=N]
-                   each transition's reference run against its slowest clean run over the last `hours`, default 168,
-                   as `{now, window_s, diff}` (`flow.fast_slow_diff`): each is `{kind, size, skill, runs, conformant,
-                   reference, slow, slow_only, reference_only}`. A transition with under 5 clean runs is not listed;
-                   one with none that conforms to its skill's machine is, with `conformant` 0, `reference` null and
-                   `reference_only` empty. Refusals as `/api/analytics/steps`
-GET /api/analytics/cost-to-go[?hours=N]
-                   the expected agent steps to a run's end from each state of each skill machine over the last `hours`,
-                   default 168, as `{now, window_s, cost_to_go}` (`flow.cost_to_go`): each is `{kind, size, skill,
-                   state, n, cost_to_go}` for a state of the machine or `[start]`, `n` the times the state was seen
-                   left in the clean completed runs; every state is listed whatever its `n`. Refusals as
-                   `/api/analytics/steps`
+GET /api/task-spend/{id}[?hours=N]
+                   one task's spend by phase over the last `hours`, default 168, as `{task, now, window_s, spend}`:
+                   each is a phase row of the report in docs/sources.md, `spend` empty for a task with no spend in
+                   the window. It filters the week answer the server keeps under `spend`. An `hours` that is no positive
+                   number, or a window longer than the folded history, is 400 with `history_s`
+GET /api/task-diff/{id}[?hours=N]
+                   the cohort of the task's `kind-` and `size-` labels: each transition's reference run against its slowest
+                   clean run, as `{task, kind, size, now, window_s, diff}`; a task missing either label has no cohort.
+                   Refusals as `/api/task-spend/{id}`
+GET /api/task-cost-to-go/{id}[?hours=N]
+                   the expected agent steps to a run's end from each state of each skill machine in that cohort, as
+                   `{task, kind, size, now, window_s, cost_to_go}`: each is `{kind, size, skill, state, n, cost_to_go}` for a
+                   state of the machine or `[start]`, `n` the times the state was seen left in the clean completed runs;
+                   every state is listed whatever its `n`. Refusals as `/api/task-spend/{id}`
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
 POST /api/machine-events (also Connect `starpulse.v1.CloudEventsIngest` Publish and PublishBatch on this port, docs/sources.md)
                    post machine events and runs as CloudEvents 1.0 JSON (`application/cloudevents+json`, or a JSON array
@@ -788,14 +721,14 @@ applied_by = "pin-bump"
 # verify_lane = "verifying"       # optional verify lane: its tasks take a `Verify TASK-N` session once the eligible lane has none to admit; set with verify_profile
 # verify_profile = "@agent-standard-medium"  # the agent profile every verify session starts on; the built-in starter passes it as `--agent`
 
-# Optional: what harness telemetry is read against for missed skill loads and trace clusters (see Find missed skill
-# loads and recurring work in docs/sources.md). Every key is optional; with no table nothing is declared, and no
+# Optional: what harness telemetry is read against for skill loads, skill machines and trace clusters (see Group recurring
+# work in docs/sources.md). Every key is optional; with no table nothing is declared, and no
 # path is an area.
 # [analytics]
 # roots = ["/srv/repo", "/srv/repo/.claude/worktrees/*"]  # absolute checkouts a path is cut to an area under; `*` is one component
 # stop_activities = ["Bash", "exec_command"]               # activities that say how a session ran, never a cluster's descriptors
 # lifecycle_skills = ["starting-tasks", "completing-tasks"] # skills every task loads, left out of a cluster's skills
-# size_bands = { 1 = [50, 14], 5 = [170, 47] }          # each size -> [p90 steps, p90 active minutes]; `analytics estimates` reads the effort size from them
+# size_bands = { 1 = [50, 14], 5 = [170, 47] }          # each size -> [p90 steps, p90 active minutes]; no verb reads it now; a config that sets it still loads
 # [[analytics.skill_loads]]                                # what should load a skill: any of these
 # skill = "operating-nas"
 # activities = ["ssh root@nas-host"]                       # globs over an activity's name
@@ -820,10 +753,8 @@ applied_by = "pin-bump"
 # eval_attribute = "my.eval"                               # the OTLP attribute that stamps an eval run's purpose; none: no run is an eval
 # phases = ["starting-tasks", "completing-tasks"]            # lifecycle skills in order; a session's `role` is the furthest it loaded
 # ladder = ["haiku-low", "haiku-high", "sonnet-high"]      # `<family>-<effort>` profiles, cheapest first; a move up is a raise
-# default_repo = "owner/name"                              # the repository `analytics scores` reads without --repo
+# default_repo = "owner/name"                              # no verb reads it now; a config that sets it still loads
 # completion_call = '\.venv/bin/deliver\b'                 # a shell command run after that skill loaded
-# [analytics.weights]                                      # task score part weights over the built-in ones
-# clean = 40
 # [[analytics.skill_machines]]                             # what a run under a skill reaches, in order, to conform (see Diff a fast run against a slow one in docs/sources.md)
 # skill = "developing-test-first"
 # stages = [
@@ -917,7 +848,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `board` (table): The board: `type` is `native` or `machines` (no outside module), and the rest of the table is that board's settings, shown in the Board examples above. With no `[board]` table the view draws its own Markdown board, `type = "native"`.
 - `level` (table): The flow graph drawn above the Board (`starpulse.flow_metrics.model.level`).
 - `scheduler` (table): The scheduler's policy; every key is optional (see Scheduler).
-- `analytics` (table): What harness telemetry is read against for missed skill loads and trace clusters (see docs/sources.md).
+- `analytics` (table): What harness telemetry is read against (see docs/sources.md).
 - `search` (table): Ranks search by meaning as well as by words (see `search` in docs/cli.md).
 - `project` (table): The project's own command line for each step a shipped skill names.
 - `sequences` (table of list of text): The phases a task goes through, in order, keyed by task type (`story`, `bug`), with `default` for a type it does not name. A lifecycle machine link that lists `routes` sends a task to the route its sequence names next.
@@ -1259,10 +1190,9 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   closed unmerged stays. A state that parks work for a person may declare `waits: {pr_merged: MERGED}` to close a task
   whose delivery merged while it waited there.
 - `pr_closed_unmerged`: `pr_terminal` holds and no cited pull request merged. A state that waits on it moves the task
-  with the comment `superseded: <pr-urls> closed unmerged` and asks nothing: whoever closed the pull requests has
-  already answered.
+  to Needs attention, asking whether to redeliver or archive it.
   A task whose comments show an `Operator answer` after the last comment carrying an ask's question is not parked on it
-  again (`overdue`, `pr_failing`); a different question parks it.
+  again (`overdue`, `pr_failing`, `pr_closed_unmerged`); a different question parks it.
 - `pr_closed_unmerged_complete`: `pr_closed_unmerged` holds and every acceptance criterion and Definition of Done item is
   checked, so a no-op task has nothing to ask. A state that waits on it may declare an event that closes the task.
 - `pr_merged_unfinished`: `pr_merged` holds and the board's `unfinished` command prints a non-empty JSON array of the

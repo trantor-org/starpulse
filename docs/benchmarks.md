@@ -7,7 +7,7 @@ latency budget, a fourth holds that page open idle to see it degrade, and a fift
 | Script | Measures | Needs |
 | --- | --- | --- |
 | `ic_event_log.py` | concurrent fail-open appends to an instance's SQLite WAL log while a reader polls by cursor, at 10 thousand and 1 million rows | a scratch file path |
-| `flow_reads.py` | the p95 of flow health and the level's trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
+| `flow_reads.py` | the p95 of the level's trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
 | `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
 | `soak.py` | one tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files; against a running StarPulse, or a seeded one it starts and feeds events | Google Chrome, a built page for the seeded server, or a running StarPulse |
 | `load.py` | a Locust crowd of viewers, each holding the event stream open and reading the `/api` routes: per-route p50, p95 and p99 and the stream's first snapshot, against 50 ms | a running StarPulse |
@@ -35,27 +35,26 @@ uv run python bench/flow_reads.py .tmp/bench-flow --reuse          # read the st
 **When to run.** After any change to a summarised read, rerun `flow_reads.py` at 10 thousand and 1 million events.
 
 The script records synthetic Board lane changes at a fixed rate (about 125 a day) into a SQLite store, summarises
-them as the store does at start-up, and asks `/api/analytics/health` and the level's trajectories
+them as the store does at start-up, and asks the level's trajectories
 for the default week 60 times each. It prints the p95 in wall and CPU time with the statements each read sends, and
 exits 1 when the CPU p95 at any size is over 2x the first size's.
 
 Result (build host, SQLite, 60 reads each; CPU time judges the 2x gate):
 
-| Events | Health p95 (wall / CPU) | Level p95 (wall / CPU) | Trajectories p95 (wall / CPU) | Store |
-| ---: | --- | --- | --- | ---: |
-| 10 thousand | 3.9 / 3.9 ms | 18.0 / 18.0 ms | 112.5 / 112.5 ms | 3 MB |
-| 1 million | 12.8 / 4.8 ms (x1.22) | 70.1 / 26.7 ms (x1.48) | 114.3 / 113.8 ms (x1.01) | 289 MB |
-| 10 million | 3.9 / 3.9 ms (x1.01) | 19.3 / 19.3 ms (x1.07) | 84.0 / 83.9 ms (x0.75) | 3.0 GB |
+| Events | Level p95 (wall / CPU) | Trajectories p95 (wall / CPU) | Store |
+| ---: | --- | --- | ---: |
+| 10 thousand | 18.0 / 18.0 ms | 112.5 / 112.5 ms | 3 MB |
+| 1 million | 70.1 / 26.7 ms (x1.48) | 114.3 / 113.8 ms (x1.01) | 289 MB |
+| 10 million | 19.3 / 19.3 ms (x1.07) | 84.0 / 83.9 ms (x0.75) | 3.0 GB |
 
-The ratios are the CPU p95 against the 10 thousand row, all under 2x. Health sends six statements at every size and
-fetches 29, 37 and 45 rows: rows for the lanes and tasks in flight, not every lane interval. None of the reads touches
+The ratios are the CPU p95 against the 10 thousand row, all under 2x. None of the reads touches
 `starpulse_machine_events` or `starpulse_lane_changes`. The level and trajectories send no statements: the 60
 reads share the one window `HistoryStore.level_window` read for the first, which it keeps until a lane or machine
 event is recorded or the summaries are rebuilt (and re-reads each minute), so the level's p95 is its metrics and the
 trajectories' its analytics, which `HistoryStore.level_answer` keeps as the response body for 5 seconds per route and
 query until the same writes, so a repeat request inside them runs neither. Before the window cache, at 10 thousand, the level took 131-176 ms CPU and the trajectories
 137-176 ms CPU in four runs on the same host, which was loaded (load average 94) while these rows ran. Before the
-summaries the same reads folded every lane change: at 1 million, health took 9.2 s and the level 11.6 s (p95 of 3
+summaries the same reads folded every lane change: at 1 million, the level took 11.6 s (p95 of 3
 reads, wall). At 10 thousand the first level read reads the
 whole history, because the trailing 12 weeks that set the aging threshold reach back past its start; that is the most it
 ever reads, and why the level's cost stays where it is as the history grows. Loading 10 million lane changes took

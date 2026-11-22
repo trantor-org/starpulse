@@ -8,9 +8,8 @@ call (a tool in `SHELLS`) is its leading command, such as `bin/<script>`, `make 
 `gh <group> <verb>` or `ssh <host>`, with `SHELL_READ` and `SHELL_SEARCH` for a file read or a search and `SHELL_OTHER`
 for a command that is not a name.
 
-`session_health` and `slice_health` are the folds `GET /api/analytics/sessions` serves
-(`starpulse.flow_metrics.model.session_health` documents every number), returned as the DTOs that route encodes, so a reader that
-imports them and one that reads the route get the same rows from the same exports.
+`session_health` and `slice_health` are the folds of the session exports
+(`starpulse.flow_metrics.model.session_health` documents every number), returned as DTOs.
 """
 
 from collections.abc import Callable, Iterable, Mapping

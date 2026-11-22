@@ -1,5 +1,7 @@
 """A Board task as the page reads it: criteria, runs and the raw record."""
 
+from typing import Literal
+
 from pydantic import Field
 
 from starpulse.contracts.adapters import Move
@@ -11,6 +13,16 @@ from starpulse.contracts.api.dto.machine import HeldNext
 #: step before it (the epoch for the first). A third-party machine's step adds its entry's event_id, which names the
 #: subject it moved.
 TrailPoint = tuple[int, int, int] | tuple[int, int, int, str]
+
+
+class SessionActivity(_Api):
+    """What a held working task's holder session is doing, read from its transcript when the snapshot is drawn."""
+
+    state: Literal["working", "idle", "unknown"] = Field(
+        description="`working` mid-turn, `idle` after a finished turn, `unknown` when no running session with a transcript holds the task."
+    )
+    last_turn_at: str | None = Field(default=None, description="When the session's last turn was written, ISO 8601; absent when unknown.")
+    idle_s: int | None = Field(default=None, description="Seconds idle when the snapshot was drawn; present only when idle.")
 
 
 class TaskCriterion(_Api):
@@ -61,6 +73,9 @@ class RawTask(_Api):
     )
     released: ClaimRelease | None = Field(
         default=None, description="The claim-TTL release a Board task's claim ended in; null when none ended it."
+    )
+    session_activity: SessionActivity | None = Field(
+        default=None, description="What a held In Progress task's holder session is doing; absent off that lane or when unheld."
     )
     labels: list[str] | None = None
     dependencies: list[str] | None = Field(default=None, description="A task's dependencies, as task ids.")

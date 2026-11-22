@@ -110,6 +110,17 @@ _ACTIONS: dict[str, tuple[Delta, ...]] = {
 }
 
 
+def _main_checked(delivery: Delivery) -> bool:
+    """Whether the delivery reports a finished workflow run or check suite on the repository's default branch."""
+    if delivery.event not in ("workflow_run", "check_suite") or delivery.action != "completed":
+        return False
+    try:
+        body = json.loads(delivery.body)
+        return body[delivery.event]["head_branch"] == body["repository"]["default_branch"]
+    except KeyError, TypeError, ValueError:
+        return False
+
+
 def apply(
     store: PullStore,
     delivery: Delivery,
@@ -155,16 +166,21 @@ def consume(
     clock: Callable[[], float] = time.time,
     reads: PullReads | None = None,
     merged: Callable[[float], None] | None = None,
+    checked: Callable[[], None] | None = None,
 ) -> None:
     """Apply each delivery due now once, then return: a delivery that applies or has no row is done, one that cannot be
     read is retried and then dead. An `URGENT` delivery's write is handed to `merged` with the time it was received,
-    before its refresh reads and the next delivery."""
+    before its refresh reads and the next delivery. A finished checks run on the default branch calls `checked`."""
     for entry in queue.claim():
         delivery = entry.delivery
         delivery_id = delivery.delivery_id
         urgent = (delivery.event, delivery.action) in URGENT
         handover = partial(merged, entry.received_at) if merged is not None and urgent else None
         try:
+            if checked is not None and _main_checked(delivery):
+                checked()
+                queue.complete(delivery_id)
+                continue
             wrote = apply(store, delivery, clock(), reads, handover)
         except Exception:
             logger.exception("github pulls: %s", delivery_id)
@@ -177,10 +193,16 @@ def consume(
 
 
 def start(
-    config: Any, engine: Engine, stop: Stop, store: PullStore, open_watch: OpenWatch, merged: Callable[[float], None] | None = None
+    config: Any,
+    engine: Engine,
+    stop: Stop,
+    store: PullStore,
+    open_watch: OpenWatch,
+    merged: Callable[[float], None] | None = None,
+    checked: Callable[[], None] | None = None,
 ) -> None:
     """Follow the inbox in the main store `engine` opens on a thread until `stop` is set, with a cursor of its own beside the
-    `events` one, handing each `URGENT` delivery's write to `merged` (`consume`); the store's owner disposes `engine`."""
+    `events` one, handing each `URGENT` delivery's write to `merged` and each finished main checks run to `checked` (`consume`); the store's owner disposes `engine`."""
     queue = SqlQueue(engine, CONSUMER, urgent=URGENT)
     url = engine.url
     watch = open_watch(url.database) if url.get_backend_name() == "sqlite" and url.database else None
@@ -193,7 +215,7 @@ def start(
 
     def work() -> None:
         try:
-            follow(queue, stop, watch, lambda: consume(queue, store, reads=reads, merged=merged), "github pulls")
+            follow(queue, stop, watch, lambda: consume(queue, store, reads=reads, merged=merged, checked=checked), "github pulls")
         finally:
             if watch is not None:
                 watch.close()

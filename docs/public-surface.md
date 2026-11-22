@@ -29,36 +29,13 @@ internal and can change in any release.
 - The documented entry point `python -m starpulse.runtime.claude_code`, which receives Claude Code's and Codex's OTLP log
   exports, `python -m starpulse.runtime.cursor`, which reads Cursor's agent transcripts, and `python -m starpulse.runtime.cursor_context`,
   which restarts a Cursor task session past its context limit.
-- `GET /api/analytics/sessions` and its body in `api.schema.json`: session and slice health from those exports (see
-  [Connect sources](sources.md#measure-session-and-slice-health)).
-- `GET /api/analytics/steps` and its body in `api.schema.json`: one record per model request, with the skill in
-  force, the activities and keys of its tool calls and its tokens (see
-  [Connect sources](sources.md#read-each-step-of-a-session)), a page at a time (`limit`, `after`, and `next` in the body),
-  and `starpulse analytics steps [--hours]` that reads every page.
-- `GET /api/analytics/transitions` and `GET /api/analytics/cells` and their bodies in `api.schema.json`: the cost of each
-  skill within a kind and size of task, and the median steps per clean completion of each kind and size (see
-  [Connect sources](sources.md#price-each-transition-and-report-each-cell)), and `starpulse analytics transitions|cells
-  [--hours]` that read them.
-- `GET /api/analytics/spend` and its body in `api.schema.json`: each task's tokens by phase, weighted total and norm flag
-  (see [Connect sources](sources.md#report-each-tasks-spend-by-phase)), and `starpulse analytics spend [--hours]` that
-  reads it.
-- `GET /api/analytics/estimates` and its body in `api.schema.json`: each completed task's size, kind and profile beside
-  its measured steps, active minutes and effort size step, and `starpulse analytics estimates [--hours] [--milestone]`
-  that reads it.
-- `GET /api/analytics/graph`, `GET /api/analytics/stages` and `GET /api/analytics/diff` and their bodies in
-  `api.schema.json`: the branching directly-follows graph of each transition with its judgement cuts, the sub-stages
-  mined at those cuts for the stretches no skill governs with their stability from one window to the one before, and
-  each transition's reference run against its slowest clean run (see
-  [Connect sources](sources.md#graph-a-transitions-activities-and-diff-a-fast-run-against-a-slow-one)), and `starpulse
-  analytics graph|stages|diff [--hours]` that read them.
-- `GET /api/analytics/cost-to-go` and its body in `api.schema.json`: the expected agent steps to a run's end from each
-  state of each skill machine, with the times the state was left (see
+- `GET /api/task-spend/{id}`, `GET /api/task-diff/{id}` and `GET /api/task-cost-to-go/{id}` and their bodies in
+  `api.schema.json`: one task's tokens by phase with the weighted total and norm flag (see
+  [Connect sources](sources.md#report-each-tasks-spend-by-phase)), its cohort's reference run against its slowest clean
+  run (see [Connect sources](sources.md#diff-a-fast-run-against-a-slow-one)), and the expected agent steps to a run's end
+  from each state of each skill machine, with the times the state was left (see
   [Connect sources](sources.md#read-the-steps-still-to-come-from-each-state-of-a-skill-machine)).
 - `starpulse search QUERY` and its routes `GET /api/search?q=` and `GET /api/search/similar?q=` (`--similar`, which waits to embed a new query): the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
-- `GET /api/analytics/missed-loads` and `GET /api/analytics/trace-clusters` and their bodies in `api.schema.json`:
-  the skills a session did not load for work that should have loaded them, and the work that recurs across sessions
-  with the sessions an eval run stamped (the `[analytics]` `eval_attribute`) left out (see
-  [Connect sources](sources.md#find-missed-skill-loads-and-recurring-work)).
 - The board machine's `mainLine` and `tiers` in the `Machine` record of `api.schema.json`: `tiers` is a list of
   tiers, each a list of state ids, that the Star Map draws left to right, one grid cell per tier with a tier's states
   stacked in its cell. A tier of one state beside another such tier sits high or low by its state id, so the state
@@ -110,7 +87,7 @@ is public for the names listed here:
 - `starpulse.harness_telemetry`: loading the harness file and the tiers and efforts an agent profile names, and decoding Claude Code's OpenTelemetry log export.
 - `starpulse.machine_engine`: loading and validating a machine and the `Registry` of guards and actions, replaying recorded moves (`check_lanes`, `check_events`) and event traces (`conform`, `replay`, `runs`) against it, the paths and gate `bypasses` it generates, how it is described to the page and its workflows are named, and drafting one from a Mermaid state diagram (`draft_machine`).
 - `starpulse.runs`: the runs instance a config file declares (`RunsInstance`).
-- `starpulse.sessions`: what an agent session did: the Activity each tool call performed (`activities`, labels with no arguments), and session and slice Health folded from Claude Code's and Codex's log exports (`session_health`, `slice_health`) as the DTOs `GET /api/analytics/sessions` serves.
+- `starpulse.sessions`: what an agent session did: the Activity each tool call performed (`activities`, labels with no arguments), and session and slice Health folded from Claude Code's and Codex's log exports (`session_health`, `slice_health`) as the DTOs the session sink writes.
 - `starpulse.runtime.adapter_kit`: the test kit an adapter author runs against their work, and the helpers that serve it.
 - `starpulse.runtime.ephemeral_board`: `ephemeral_board(seeds)`, which opens a task per `TaskSeed` on a scratch board and returns their records (the `starpulse task show` reply) with the `WriteInstance` that wrote them, so a project tests against a board without a harness of its own; a record is read after the Board writer has folded every verb run through the instance.
 - `starpulse.runtime.write_instance`: `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).

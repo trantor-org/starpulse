@@ -1,7 +1,7 @@
 """The `[analytics]` config table: what the instance's agents' telemetry is read against.
 
-StarPulse reads missed skill loads and trace clusters from the harness exports (`GET /api/analytics/missed-loads`,
-`GET /api/analytics/trace-clusters`), and the vocabulary those reads need belongs to the instance, not the package:
+StarPulse reads session and per-task analytics from the harness exports, and the vocabulary those reads need belongs
+to the instance, not the package:
 
 - `roots`: absolute checkout paths. A path a tool call read or wrote is cut to an area (its first two components) below
   the root it is under; a `*` matches one path component, so `/repo/.claude/worktrees/*` is every worktree of `/repo`.
@@ -13,12 +13,12 @@ StarPulse reads missed skill loads and trace clusters from the harness exports (
   ran a trigger without activating the skill is a missed load; a skill with no declaration is never reported.
 
 What a session's own events say about its work is read against more keys, so the package names no instance's
-tasks or skills (`GET /api/analytics/sessions`):
+tasks or skills:
 
 - `injected_openings`: prefixes of a prompt's text. A prompt that opens with one is labelled `injected` (a harness
   or scheduler wrote it), any other `human`; the label is stored and the text never is.
 - `[analytics.session_origins]`: per origin name, the prompt prefixes that open a session it names (a start service's
-  start prompt, a phase or wake `/clear`'s skill line). `GET /api/analytics/sessions` labels a session `origin` with the
+  start prompt, a phase or wake `/clear`'s skill line). A session's `origin` is labelled with the
   first prompt's match, `operator` for any other `human` prompt and `injected` for an injected one (an injected
   prompt stays `injected` even when it matches an origin).
 - `[analytics.labeller]`: the typed-decision endpoint (`url`, the checkpoint `model`, optional `instructions` and a
@@ -37,18 +37,17 @@ More keys name the instance's vocabulary for reading its sessions and scoring it
 
 - `eval_attribute`: the OTLP attribute (on a resource or a record) that stamps an eval run's purpose; none: no run is
   an eval.
-- `ladder`: the profiles a task is tried on, cheapest first, each `<model family>-<effort>` (`haiku-low`). A mid-session
+- `ladder`: the profiles a task is tried on, cheapest first, each `<model family>-<effort>` (`sonnet-low`). A mid-session
   move up it is a raise, down it a lowering; a profile off it moves nothing, and with none declared no move counts.
 - `phases`: the lifecycle skills a task session loads, in order; a session's `role` is the furthest of them it loaded
   (`other` when none, and for every session when none is declared).
-- `weights`: a table of each task score part (`clean`, `prompts`, `commits_after_ready`, `rating`, `time_to_merge`) to
-  its weight; a part left out keeps the built-in weight.
+- `weights`: a table of each task score part to its weight; no verb reads it now, and
+  the key stays so a config that sets it loads.
 - `size_bands`: a table of each task size (`"5"`) to the `[steps, active minutes]` a task of that size lands within (its
-  p90); `analytics estimates` reads a completed task's effort size, and how many sizes it lies from its label, off
-  them. With none declared a task's effort size and step are not measured.
-- `default_repo`: the `owner/name` that `analytics scores` reads when `--repo` is not given.
+  p90); no verb reads it now that `analytics estimates` is gone, and the key stays so a config that sets it loads.
+- `default_repo`: an `owner/name` no verb reads now; the key stays so a config that sets it loads.
 
-A run under a skill conforms to its machine (`GET /api/analytics/diff`) when it reaches the stages of its
+A run under a skill conforms to its machine (`GET /api/task-diff/{id}`) when it reaches the stages of its
 `[[analytics.skill_machines]]` entry in order: each stage is a tool call whose activity matches a glob of `activities`
 and, when `ok` is set, that succeeded or failed. A skill with no entry has every run conform.
 """
@@ -168,7 +167,7 @@ class Analytics:
     """Each size's p90 steps and active minutes, as `(size, steps, minutes)` smallest size first; none: effort is
     not measured against a size."""
     default_repo: str = ""
-    """The `owner/name` `analytics scores` reads without `--repo`; none: `--repo` is required."""
+    """The `owner/name` no verb reads now; none: the key stays so a config that sets it loads."""
 
 
 def _texts(raw: Mapping[str, object], key: str) -> tuple[str, ...]:

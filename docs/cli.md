@@ -34,17 +34,6 @@ starpulse doc create "Plan" --type specification --folder specs --body "# Plan"
 starpulse runs list                              # each workflow as <instance>/<workflow> with its latest status
 starpulse runs start prod/nightly                # start a run-safe workflow through Run now; its run id
 starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
-starpulse analytics health --hours 72            # dwell and WIP per state, throughput and stuck tasks, with gap warnings
-starpulse analytics liveness                     # each working task's idle times, the stalled ones and why, Review moves per hour
-starpulse analytics steps --hours 24             # one row per model request: skill in force, activities, keys, tokens
-starpulse analytics transitions --hours 168      # per kind x size x skill: steps, wasted-step rate, agent seconds, peak context
-starpulse analytics cells --hours 720            # per kind x size: median steps per clean completion on a latest-fifth holdout
-starpulse analytics estimates --milestone m-305  # per completed task: size, kind, profile beside steps, active minutes, effort size step
-starpulse analytics scores --repo o/r --hours 166  # per kind x size x profile: mean task score, with GitHub commits-after-ready and time-to-merge
-starpulse analytics verdict --kind execute --size 3 --profile sonnet-low  # win, lose or continue for that trial cell against its busiest profile
-starpulse analytics graph --hours 168            # per transition: each activity edge with its run count, judgement cuts marked
-starpulse analytics stages --hours 168           # sub-stages of the stretches no skill governs, and their stability from the week before
-starpulse analytics diff --hours 168             # per transition: the reference run against the slowest clean run
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse rehearse --config starpulse.toml --database-url copy.sqlite  # start serve on a COPY of the store and wait for /api/ready
@@ -119,17 +108,6 @@ lists exactly the verbs there are.
 | `runs list` | | `runs`: each workflow as `{workflow, status, raw, run_id, started_at, finished_at}` with `workflow` `<instance>/<workflow>`, and `error`, the runs adapters' error or null |
 | `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network, as JSON with no foreign `Origin` (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
-| `analytics health` | `--hours`, `--stuck-hours` | `now`, `window_s`, `stuck_after_s`, `states`, `throughput`, `stuck` and `warnings`, below |
-| `analytics liveness` | `--hours`, `--stalled-minutes` | `now`, `window_s`, `stalled_after_s`, `tasks`, `review`, `in_progress_s`, `slot_s`, `slots`, `stages` and `stalls`, below; a window or threshold that is no positive number exits 1 as `refused` |
-| `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, effort, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number or is longer than the telemetry history exits 1 and a server that receives no telemetry exits 3 |
-| `analytics transitions` | `--hours` | `now`, `window_s` and `transitions`, each `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`, below; refusals as `analytics steps` |
-| `analytics cells` | `--hours` | `now`, `window_s` and `cells`, each `{kind, size, n, completions, clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, below; refusals as `analytics steps` |
-| `analytics estimates` | `--hours`, `--milestone` | `now`, `window_s` and `estimates`, each `{task, milestone, kind, size, profile, steps, active_minutes, effort_size, effort_size_step}`, below; refusals as `analytics steps` |
-| `analytics scores` | `--hours`, `--repo` (required) | `now`, `window_s`, `scores`, each `{kind, size, profile, n, score, off_arm}`, and `verdicts`, each `{kind, size, baseline, profile, n, baseline_n, verdict, p_non_inferior, p_worse}`; exit 3 when GitHub is unreachable, refusals as `analytics steps` |
-| `analytics verdict` | `--kind`, `--size`, `--profile` (all required), `--hours`, `--repo` (required unless the config sets `default_repo`) | the `analytics scores` `verdicts` row of that trial cell, `{kind, size, baseline, profile, n, baseline_n, verdict, p_non_inferior, p_worse}`, with `verdict` `win`, `lose` or `continue`; exit 4 when the cell has no trial profile in the window, otherwise as `analytics scores` |
-| `analytics graph` | `--hours` | `now`, `window_s` and `graph`, each edge `{kind, size, skill, source, target, runs, count, share, cut}`, below; refusals as `analytics steps` |
-| `analytics stages` | `--hours` | `now`, `window_s` and `stages`, each `{kind, size, stage, runs, median_activities, previous_runs, previous_median_activities, stability}`, below; the history must hold twice the window, else refusals as `analytics steps` |
-| `analytics diff` | `--hours` | `now`, `window_s` and `diff`, each `{kind, size, skill, runs, conformant, reference, slow, slow_only, reference_only}`, below; refusals as `analytics steps` |
 | `command run` | `NAME`, `--task`, `--arg NAME=VALUE`, `--config`, `-- ARGS` | `name`, `argv`, `exit`, `seconds`, `ok` and `pending` (the child exited its declared pending code): runs the argv `[project.commands]` maps `NAME` to, offline, in this directory, with no shell, its output on stderr. Exit 0 when the child succeeds, 1 when it fails (its code is in `exit`), 5 when it exits the code `[project.pending]` declares for `NAME` (`deliver` declares 4), so a pending delivery is never read as a failure, 2 when a placeholder has no value or an element has a brace that is not a placeholder (write a literal brace as `{{` or `}}`), 3 when `argv[0]` cannot run, 4 when `NAME` has no entry, with `"fallback": "AGENTS.md"` |
 | `command show` | `NAME`, `--config` | `name`, `argv`, `args`, `invocation` and `pr_body_template`: what `command run NAME` needs, offline: the `--arg` names its argv holds, the call to make, and for an argv with `{body}` the project's pull request template (`path`, `text`), else `null`; an unmapped `NAME` exits 4 with the `fallback` |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load (a malformed `[project.commands]` entry included), or when a built-in board's machine names a writer workflow no `[[runs]]` domain lists, which `serve` refuses to start on |
@@ -173,80 +151,6 @@ A search never waits for the endpoint: a query whose vector is not held is answe
 embedded in the background (at most 4 at a time), so its repeat is blended. `starpulse search --similar QUERY` and
 `GET /api/search/similar` take the same query and answer the same body but wait to embed a new query, for a caller
 that needs the meaning ranking on its first ask.
-
-`analytics health` reads `GET /api/analytics/health[?hours=N][&stuck_hours=N]` (a window of 168 hours and a stuck
-threshold of 24 by default), the Board's flow health from the history's lane changes. `states` lists each Board state
-with `wip`, the tasks in it now, and for a state that is not final the `visits`, `mean_s` and `max_s` of the stays that
-ended inside the window or are still going, `open` of them: a task still in its state counts to now, so its stay is
-flagged rather than left out. `throughput` is `{count, per_day}`, the entries into a final state in the window.
-`stuck` lists each task whose current stay in a state that is neither the first nor a final one has lasted
-`stuck_hours` or longer, longest first, each `{task, state, since, dwell_s, counted_to_now}`. `warnings` carry each
-gap the history recorded (`kind` `gap`: entries trimmed before it read them, so counts may miss them) and each lane
-the Board machine has no state for. History starts at a task's first recorded lane change, so a stay before it is not
-counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive number.
-
-`analytics liveness` reads `GET /api/analytics/liveness[?hours=N][&stalled_minutes=N]` (a window of 24 hours and a
-stalled threshold of 5 minutes by default). `tasks` lists every task in the working State, longest without a state
-change first, each `{task, since, state_idle_s, command_idle_s, stalled, cause, waits_in}`. A task's state changes when
-it changes lane or a work machine takes an event for it: the machine the Board's working State links with `exits`, and
-every machine linked beneath it. It issues a command when the `harness` machine takes `TOOL_USED` for it;
-`command_idle_s` is null when no such event names the task. A task is `stalled` once both are older than the
-threshold, and its `cause` is read from its events: `slow_process` when a machine outside the work (a pipeline, a
-check) moved it inside the threshold, `waits_in` that machine's `machine:state`, or when the session's turn is still
-open, `waits_in` the stage the task works in; `waiting_checks` when the turn ended (`SESSION_STOPPED` or
-`SESSION_SETTLED`) and the last `pr-checks` rollup of the task's stay, whatever its age, is pending (`waits_in` is
-`pr-checks:pending`; a rollup from before the stay is not read); `idle` when the turn ended and nothing outside moves
-it; `unattributed` when no `harness` event names the task. `review` is `{count, per_hour, per_slot_hour, hours}`:
-the moves from the working State into Review in the window, a change recorded twice counted once, with one
-`{at, count}` bucket per hour from the window's start; `per_slot_hour` divides the count by `slot_s` in hours (null
-when it is 0). `slot_s` is every working stay's seconds inside the window, an open stay to `now`, and `slots` splits it
-into `{cause, slot_s, share}`, largest first: a silence (no state change, no command) inside the threshold, a quiet
-after a turn end included, is `working`; a longer one is wholly the cause it stalled on. `stages` and `stalls` read the stays those moves ended. `stages`
-lists the time spent after each work-machine event, `{stage, visits, task_s, mean_s, share}` with `stage` a
-`machine:state` (the lane before the first event), summing to `in_progress_s`. `stalls` lists each
-`{cause, waits_in, count, stalled_s}`, the seconds each silence ran past the threshold. Both are largest first. The
-read replays the events of every task it lists, so it takes seconds on a busy Board and no page asks for it. The
-endpoint is 400 for an `hours` or `stalled_minutes` that is no positive number or an `hours` past 8784 (a year of hourly buckets), and 501 when the board has no working state.
-
-`analytics steps` reads `GET /api/analytics/steps[?hours=N]` (168 hours by default, 400 with `history_s` for a window
-longer than the telemetry history): one row per model request of the
-window, oldest first, that [Connect sources](sources.md#read-each-step-of-a-session) defines. `skill` is the skill
-most recently loaded in the session, `none` before any load; `activities` and `keys` hold one entry per tool call
-the step made, a key being the command the server's redactor left, else the tool's name; `tokens` is
-`{input, output, cache_read, cache_write, reasoning}`. The server answers a page at a time and a page reads only the sessions it holds, so a
-week-wide read costs about one pass over the window, not one per page.
-
-`analytics transitions` reads `GET /api/analytics/transitions[?hours=N]` and `analytics cells` reads
-`GET /api/analytics/cells[?hours=N]`, each with the window and refusals of `analytics steps`. They place a task by its
-board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither report, and neither ranks a Codex or Cursor step.
-
-`analytics spend` reads `GET /api/analytics/spend[?hours=N]` with the window and refusals of `analytics steps`: each task's
-tokens by phase (`claim`, `implement`, `qa`, `deliver`, `review_fix`), their weighted total `wte`, peak context,
-compactions, models and `profile` (`<model>-<effort>` of its first main-thread step), with each phase against its kind, size and profile `phase_norm_wte` (`norm_profile` names the cell, `mixed`, every profile pooled, when the profile had too few tasks) and `phase_above_norm`, and the task's total against `norm_wte` (the phase norms summed) and `above_norm`. A task with no
-labels is listed with no norm; [Connect sources](sources.md#report-each-tasks-spend-by-phase) defines the phases.
-
-`analytics estimates` reads `GET /api/analytics/estimates[?hours=N][&milestone=m-N]`: one row per completed task with a
-`kind-<kind>` and `size-<n>` label, its label, kind and profile beside its measured `steps` (a subagent's included) and
-`active_minutes` (agent seconds plus the operator's wait). `effort_size` is the smallest size whose p90 steps and
-minutes (`[analytics]` `size_bands` in `starpulse.toml`, smallest first) hold both; `effort_size_step` is how many
-sizes it lies above (positive) or below the label, and both are null with no `size_bands` (`effort_size` is also null
-past the largest band, whose step is one past the top).
-
-`analytics scores` reads `GET /api/analytics/sessions[?hours=N]` and joins each completed Claude Code task to its merged pull request on `--repo`
-(found by `TASK-N` in the title among the 500 most recently updated closed pulls; token from `GITHUB_TOKEN` or `GH_TOKEN`). A task scores
-40 clean completion, 20 mid-task operator prompts, 20 commits after the PR was ready, 15 operator rating and 5 time-to-merge; a part that
-is missing (no merged PR) drops out and the rest renormalize. Until an operator rating exists, a task that raised its model or effort mid-task
-rates 0 and one that lowered it rates 50; an operator rating overrides both. `profile` is the first model and effort of the slice. `off_arm` counts
-the row's tasks whose session changed model or effort mid-task.
-`verdicts` takes each cell's busiest profile as the baseline and judges every other profile against it: `win` at >=90% posterior probability that its
-mean score is within 10 points of the baseline's, `lose` at >=90% that it is lower, else `continue` (also under two tasks on either side, with null
-probabilities). The posterior is a normal on the difference of means (Welch standard error); a win outranks a loss.
-[Connect sources](sources.md#price-each-transition-and-report-each-cell) defines their columns and what they cannot see.
-
-`analytics graph`, `analytics stages` and `analytics diff` read `GET /api/analytics/graph`, `/stages` and `/diff`, each
-with the window and refusals of `analytics steps`, and place a task as `transitions` does.
-[Connect sources](sources.md#graph-a-transitions-activities-and-diff-a-fast-run-against-a-slow-one) defines their
-columns and what they cannot see.
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}`; the page sends

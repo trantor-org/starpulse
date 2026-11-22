@@ -179,44 +179,6 @@
       "title": "ActivityCount",
       "type": "object"
     },
-    "AgentSpend": {
-      "properties": {
-        "cache_read": {
-          "type": "integer"
-        },
-        "cache_write": {
-          "type": "integer"
-        },
-        "first_request_cache_write": {
-          "default": 0,
-          "description": "The cache_write of each such subagent's first request, summed.",
-          "type": "integer"
-        },
-        "input": {
-          "type": "integer"
-        },
-        "output": {
-          "type": "integer"
-        },
-        "reasoning": {
-          "type": "integer"
-        },
-        "subagents": {
-          "default": 0,
-          "description": "The subagents of this type whose requests named their instance id.",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "input",
-        "output",
-        "cache_read",
-        "cache_write",
-        "reasoning"
-      ],
-      "title": "AgentSpend",
-      "type": "object"
-    },
     "ApiError": {
       "description": "Every refusal: what went wrong.",
       "properties": {
@@ -564,120 +526,6 @@
       "title": "Capabilities",
       "type": "object"
     },
-    "CaseRef": {
-      "description": "One session's work on one task (`task` None: a branch that names none).",
-      "properties": {
-        "harness": {
-          "type": "string"
-        },
-        "last_at": {
-          "type": "number"
-        },
-        "session": {
-          "type": "string"
-        },
-        "task": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "harness",
-        "session",
-        "task",
-        "last_at"
-      ],
-      "title": "CaseRef",
-      "type": "object"
-    },
-    "Cell": {
-      "description": "Median steps per clean completion of one kind and size, over its latest-fifth holdout.",
-      "properties": {
-        "clean_rate": {
-          "type": "number"
-        },
-        "completions": {
-          "description": "Completions in the cell, clean or not.",
-          "type": "integer"
-        },
-        "holdout": {
-          "description": "The latest fifth of the clean completions by end time, rounded up.",
-          "type": "integer"
-        },
-        "kind": {
-          "type": "string"
-        },
-        "median_operator_prompts": {
-          "description": "Human prompts after the task's claim.",
-          "type": "number"
-        },
-        "median_steps": {
-          "description": "Of the holdout's steps, a subagent's included.",
-          "type": "number"
-        },
-        "median_steps_before_edit": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "None when no holdout task made an edit."
-        },
-        "n": {
-          "description": "Clean completions in the cell.",
-          "type": "integer"
-        },
-        "size": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "kind",
-        "size",
-        "n",
-        "completions",
-        "clean_rate",
-        "holdout",
-        "median_steps",
-        "median_operator_prompts",
-        "median_steps_before_edit"
-      ],
-      "title": "Cell",
-      "type": "object"
-    },
-    "Cells": {
-      "description": "`GET /api/analytics/cells`: cells with at least 5 clean completions; a smaller cell reports nothing.",
-      "properties": {
-        "cells": {
-          "items": {
-            "$ref": "#/$defs/Cell"
-          },
-          "type": "array"
-        },
-        "now": {
-          "type": "number"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "cells"
-      ],
-      "title": "Cells",
-      "type": "object"
-    },
     "ChainState": {
       "properties": {
         "expected_days": {
@@ -867,97 +715,6 @@
       "title": "Claimed",
       "type": "object"
     },
-    "ClusterMedoid": {
-      "description": "The case nearest every other by normalized LCS distance between traces, and the cluster's usual spread.",
-      "properties": {
-        "case": {
-          "$ref": "#/$defs/CaseRef"
-        },
-        "median_distance": {
-          "type": "number"
-        },
-        "trace": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "case",
-        "median_distance",
-        "trace"
-      ],
-      "title": "ClusterMedoid",
-      "type": "object"
-    },
-    "ClusterMissed": {
-      "properties": {
-        "missed": {
-          "type": "integer"
-        },
-        "performed": {
-          "type": "integer"
-        },
-        "skill": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "skill",
-        "performed",
-        "missed"
-      ],
-      "title": "ClusterMissed",
-      "type": "object"
-    },
-    "ClusterOutlier": {
-      "description": "A case far from the medoid: `deletions` are the medoid's activities it lacks, `insertions` its own extra.",
-      "properties": {
-        "case": {
-          "$ref": "#/$defs/CaseRef"
-        },
-        "deletions": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "distance": {
-          "type": "number"
-        },
-        "insertions": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "case",
-        "distance",
-        "deletions",
-        "insertions"
-      ],
-      "title": "ClusterOutlier",
-      "type": "object"
-    },
-    "ClusterSkill": {
-      "properties": {
-        "cases": {
-          "type": "integer"
-        },
-        "skill": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "skill",
-        "cases"
-      ],
-      "title": "ClusterSkill",
-      "type": "object"
-    },
     "CompleteRequest": {
       "additionalProperties": false,
       "description": "`POST /api/complete`: move the Done task `task` into the board's completed tasks.",
@@ -1032,7 +789,7 @@
       "type": "object"
     },
     "CostToGo": {
-      "description": "`GET /api/analytics/cost-to-go`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one.",
+      "description": "`GET /api/task-cost-to-go/{id}`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one.",
       "properties": {
         "cost_to_go": {
           "items": {
@@ -2559,108 +2316,6 @@
       "title": "Edited",
       "type": "object"
     },
-    "Estimate": {
-      "description": "One completed task: its size estimate beside what it measured.",
-      "properties": {
-        "active_minutes": {
-          "description": "Agent seconds plus the operator's wait, in minutes.",
-          "type": "number"
-        },
-        "effort_size": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "The smallest configured size whose p90 steps and active minutes hold the actuals; None past the largest, or with no `size_bands`."
-        },
-        "effort_size_step": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Sizes the effort lies above (positive) or below (negative) the label; one past the top when the effort has no size; None when the label is no configured size."
-        },
-        "kind": {
-          "type": "string"
-        },
-        "milestone": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "profile": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "size": {
-          "description": "The task's `size-<n>` label.",
-          "type": "integer"
-        },
-        "steps": {
-          "description": "Model requests, a subagent's included.",
-          "type": "integer"
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "milestone",
-        "kind",
-        "size",
-        "profile",
-        "steps",
-        "active_minutes",
-        "effort_size",
-        "effort_size_step"
-      ],
-      "title": "Estimate",
-      "type": "object"
-    },
-    "Estimates": {
-      "description": "`GET /api/analytics/estimates`: each completed, labelled task's estimate beside its measured actuals.",
-      "properties": {
-        "estimates": {
-          "items": {
-            "$ref": "#/$defs/Estimate"
-          },
-          "type": "array"
-        },
-        "now": {
-          "type": "number"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "estimates"
-      ],
-      "title": "Estimates",
-      "type": "object"
-    },
     "ExitTool": {
       "description": "A typed exit tool of a lane: the event it fires and the JSON schema of its arguments.",
       "properties": {
@@ -2685,82 +2340,6 @@
         "schema"
       ],
       "title": "ExitTool",
-      "type": "object"
-    },
-    "FlowEdge": {
-      "description": "One directly-follows edge of a transition's graph.",
-      "properties": {
-        "count": {
-          "description": "Occurrences of the edge.",
-          "type": "integer"
-        },
-        "cut": {
-          "description": "`source` is a judgement cut: the agent chose there.",
-          "type": "boolean"
-        },
-        "kind": {
-          "type": "string"
-        },
-        "runs": {
-          "description": "Runs (tasks) the edge occurred in.",
-          "type": "integer"
-        },
-        "share": {
-          "description": "Of the occurrences that leave `source`.",
-          "type": "number"
-        },
-        "size": {
-          "type": "integer"
-        },
-        "skill": {
-          "description": "The skill in force: the transition.",
-          "type": "string"
-        },
-        "source": {
-          "description": "An activity, or `[start]`.",
-          "type": "string"
-        },
-        "target": {
-          "description": "The activity that directly follows it, or `[end]`.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "size",
-        "skill",
-        "source",
-        "target",
-        "runs",
-        "count",
-        "share",
-        "cut"
-      ],
-      "title": "FlowEdge",
-      "type": "object"
-    },
-    "FlowGraph": {
-      "description": "`GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.",
-      "properties": {
-        "graph": {
-          "items": {
-            "$ref": "#/$defs/FlowEdge"
-          },
-          "type": "array"
-        },
-        "now": {
-          "type": "number"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "graph"
-      ],
-      "title": "FlowGraph",
       "type": "object"
     },
     "FlowSnapshot": {
@@ -2960,40 +2539,6 @@
       "title": "Forecast",
       "type": "object"
     },
-    "GapWarning": {
-      "description": "The history lost entries between two ids, so any number here may miss some.",
-      "properties": {
-        "after_id": {
-          "type": "string"
-        },
-        "before_id": {
-          "type": "string"
-        },
-        "kind": {
-          "const": "gap",
-          "type": "string"
-        },
-        "lost": {
-          "type": "integer"
-        },
-        "message": {
-          "type": "string"
-        },
-        "stream": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "stream",
-        "after_id",
-        "before_id",
-        "lost",
-        "message"
-      ],
-      "title": "GapWarning",
-      "type": "object"
-    },
     "GateSummary": {
       "properties": {
         "bypassable": {
@@ -3162,178 +2707,6 @@
         "harnesses"
       ],
       "title": "Harnesses",
-      "type": "object"
-    },
-    "Health": {
-      "description": "`GET /api/analytics/health`: the Board's flow health over a window.",
-      "properties": {
-        "now": {
-          "type": "number"
-        },
-        "states": {
-          "items": {
-            "$ref": "#/$defs/HealthState"
-          },
-          "type": "array"
-        },
-        "stuck": {
-          "items": {
-            "$ref": "#/$defs/HealthStuck"
-          },
-          "type": "array"
-        },
-        "stuck_after_s": {
-          "type": "number"
-        },
-        "throughput": {
-          "$ref": "#/$defs/HealthThroughput"
-        },
-        "warnings": {
-          "items": {
-            "discriminator": {
-              "mapping": {
-                "gap": "#/$defs/GapWarning",
-                "unknown_lane": "#/$defs/UnknownLaneWarning"
-              },
-              "propertyName": "kind"
-            },
-            "oneOf": [
-              {
-                "$ref": "#/$defs/GapWarning"
-              },
-              {
-                "$ref": "#/$defs/UnknownLaneWarning"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "stuck_after_s",
-        "states",
-        "throughput",
-        "stuck",
-        "warnings"
-      ],
-      "title": "Health",
-      "type": "object"
-    },
-    "HealthState": {
-      "properties": {
-        "final": {
-          "type": "boolean"
-        },
-        "id": {
-          "type": "string"
-        },
-        "max_s": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "mean_s": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "name": {
-          "type": "string"
-        },
-        "open": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "visits": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "wip": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "final",
-        "wip"
-      ],
-      "title": "HealthState",
-      "type": "object"
-    },
-    "HealthStuck": {
-      "properties": {
-        "counted_to_now": {
-          "type": "boolean"
-        },
-        "dwell_s": {
-          "type": "number"
-        },
-        "since": {
-          "type": "number"
-        },
-        "state": {
-          "type": "string"
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "state",
-        "since",
-        "dwell_s",
-        "counted_to_now"
-      ],
-      "title": "HealthStuck",
-      "type": "object"
-    },
-    "HealthThroughput": {
-      "properties": {
-        "count": {
-          "type": "integer"
-        },
-        "per_day": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "count",
-        "per_day"
-      ],
-      "title": "HealthThroughput",
       "type": "object"
     },
     "HeldNext": {
@@ -3896,68 +3269,6 @@
         "days"
       ],
       "title": "LevelLoop",
-      "type": "object"
-    },
-    "Liveness": {
-      "description": "`GET /api/analytics/liveness`: each working task's liveness and the Board's pace into Review over a window.",
-      "properties": {
-        "in_progress_s": {
-          "type": "number"
-        },
-        "now": {
-          "type": "number"
-        },
-        "review": {
-          "$ref": "#/$defs/ReviewPace"
-        },
-        "slot_s": {
-          "description": "Seconds every working stay spent inside the window.",
-          "type": "number"
-        },
-        "slots": {
-          "items": {
-            "$ref": "#/$defs/SlotCause"
-          },
-          "type": "array"
-        },
-        "stages": {
-          "items": {
-            "$ref": "#/$defs/WorkStage"
-          },
-          "type": "array"
-        },
-        "stalled_after_s": {
-          "type": "number"
-        },
-        "stalls": {
-          "items": {
-            "$ref": "#/$defs/StallCause"
-          },
-          "type": "array"
-        },
-        "tasks": {
-          "items": {
-            "$ref": "#/$defs/TaskLiveness"
-          },
-          "type": "array"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "stalled_after_s",
-        "tasks",
-        "review",
-        "in_progress_s",
-        "slot_s",
-        "slots",
-        "stages",
-        "stalls"
-      ],
-      "title": "Liveness",
       "type": "object"
     },
     "Machine": {
@@ -4691,59 +4002,6 @@
         "fix"
       ],
       "title": "MissRequest",
-      "type": "object"
-    },
-    "MissedLoads": {
-      "description": "`GET /api/analytics/missed-loads`: per declared skill, the cases that ran its trigger without loading it.",
-      "properties": {
-        "now": {
-          "type": "number"
-        },
-        "skills": {
-          "items": {
-            "$ref": "#/$defs/MissedSkill"
-          },
-          "type": "array"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "skills"
-      ],
-      "title": "MissedLoads",
-      "type": "object"
-    },
-    "MissedSkill": {
-      "description": "A declared skill: the cases that performed what should load it, and those that did not load it.",
-      "properties": {
-        "listed": {
-          "description": "The `list` most recent missed cases, newest first.",
-          "items": {
-            "$ref": "#/$defs/CaseRef"
-          },
-          "type": "array"
-        },
-        "missed": {
-          "type": "integer"
-        },
-        "performed": {
-          "type": "integer"
-        },
-        "skill": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "skill",
-        "performed",
-        "missed",
-        "listed"
-      ],
-      "title": "MissedSkill",
       "type": "object"
     },
     "Move": {
@@ -5978,6 +5236,18 @@
           "default": null,
           "description": "A task's scheduler runs: those whose run id names it (`dag-run-task-<N>-<ts>`)."
         },
+        "session_activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionActivity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What a held In Progress task's holder session is doing; absent off that lane or when unheld."
+        },
         "skill": {
           "anyOf": [
             {
@@ -6717,57 +5987,6 @@
       "title": "RetiredTasks",
       "type": "object"
     },
-    "ReviewHour": {
-      "properties": {
-        "at": {
-          "type": "number"
-        },
-        "count": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "at",
-        "count"
-      ],
-      "title": "ReviewHour",
-      "type": "object"
-    },
-    "ReviewPace": {
-      "properties": {
-        "count": {
-          "type": "integer"
-        },
-        "hours": {
-          "items": {
-            "$ref": "#/$defs/ReviewHour"
-          },
-          "type": "array"
-        },
-        "per_hour": {
-          "type": "number"
-        },
-        "per_slot_hour": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Moves per hour of the window's slot time; null with none."
-        }
-      },
-      "required": [
-        "count",
-        "per_hour",
-        "per_slot_hour",
-        "hours"
-      ],
-      "title": "ReviewPace",
-      "type": "object"
-    },
     "ReviewRequest": {
       "additionalProperties": false,
       "description": "`POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge\nthe record the move would leave.",
@@ -7081,7 +6300,7 @@
       "type": "object"
     },
     "RunDiffs": {
-      "description": "`GET /api/analytics/diff`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.",
+      "description": "`GET /api/task-diff/{id}`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.",
       "properties": {
         "diff": {
           "items": {
@@ -7862,173 +7081,10 @@
       "title": "SearchResults",
       "type": "object"
     },
-    "SessionHealth": {
-      "description": "One harness session's work on one task (`task` None: a branch that names none), from its OTLP signals.",
+    "SessionActivity": {
+      "description": "What a held working task's holder session is doing, read from its transcript when the snapshot is drawn.",
       "properties": {
-        "agent_s": {
-          "type": "number"
-        },
-        "agents": {
-          "additionalProperties": {
-            "$ref": "#/$defs/AgentSpend"
-          },
-          "description": "Each subagent type's token totals among `tokens` (`qa-<lens>` for a qa lens); only a subagent that names its type.",
-          "type": "object"
-        },
-        "compactions": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "complete": {
-          "type": "boolean"
-        },
-        "cost_usd": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "effort_changes": {
-          "type": "integer"
-        },
-        "efforts": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "entrypoint": {
-          "description": "The launch's `claude_code.entrypoint` resource attribute (`cli`, `sdk-cli`); empty when it set none.",
-          "type": "string"
-        },
-        "eval": {
-          "type": "string"
-        },
-        "first_at": {
-          "type": "number"
-        },
-        "first_request_tokens": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "The prompt tokens (input, cache read and cache write) of the session's first main-thread request that sent any; None when it made none."
-        },
-        "gates": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "harness": {
-          "type": "string"
-        },
         "idle_s": {
-          "type": "number"
-        },
-        "interrupts": {
-          "type": "integer"
-        },
-        "kind": {
-          "enum": [
-            "headless",
-            "interactive",
-            "unknown"
-          ],
-          "type": "string"
-        },
-        "last_at": {
-          "type": "number"
-        },
-        "lowers": {
-          "type": "integer"
-        },
-        "main_effort": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "main_model": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "model_changes": {
-          "type": "integer"
-        },
-        "models": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "operator_prompts": {
-          "type": "integer"
-        },
-        "operator_wait_s": {
-          "type": "number"
-        },
-        "origin": {
-          "type": "string"
-        },
-        "prompt_labels": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "prompts": {
-          "type": "integer"
-        },
-        "raises": {
-          "type": "integer"
-        },
-        "rejections": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "requests": {
-          "type": "integer"
-        },
-        "role": {
-          "description": "The furthest phase skill (`starting-task`, `tdd`, `qa`, `deliver`, `fix-checks`, `review-fix`, `verify`) the session loaded on this task; `other` when it loaded none.",
-          "type": "string"
-        },
-        "session": {
-          "type": "string"
-        },
-        "side_requests": {
-          "type": "integer"
-        },
-        "skills": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "steps_before_edit": {
           "anyOf": [
             {
               "type": "integer"
@@ -8036,173 +7092,11 @@
             {
               "type": "null"
             }
-          ]
-        },
-        "task": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "tokens": {
-          "$ref": "#/$defs/TokenCounts"
-        },
-        "tool_calls": {
-          "type": "integer"
-        },
-        "tool_failures": {
-          "type": "integer"
-        },
-        "tools": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "user_rejects": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "harness",
-        "session",
-        "task",
-        "kind",
-        "eval",
-        "origin",
-        "entrypoint",
-        "first_request_tokens",
-        "first_at",
-        "last_at",
-        "prompts",
-        "operator_prompts",
-        "prompt_labels",
-        "requests",
-        "side_requests",
-        "tool_calls",
-        "tool_failures",
-        "tools",
-        "rejections",
-        "user_rejects",
-        "gates",
-        "skills",
-        "compactions",
-        "interrupts",
-        "models",
-        "efforts",
-        "main_model",
-        "main_effort",
-        "model_changes",
-        "effort_changes",
-        "raises",
-        "lowers",
-        "tokens",
-        "agents",
-        "role",
-        "cost_usd",
-        "agent_s",
-        "operator_wait_s",
-        "idle_s",
-        "steps_before_edit",
-        "complete"
-      ],
-      "title": "SessionHealth",
-      "type": "object"
-    },
-    "SessionStep": {
-      "description": "One model request of a harness session, with the skill in force when it ran and the calls it made.",
-      "properties": {
-        "activities": {
-          "description": "What each call it made performed, in order, with no arguments.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "at": {
-          "description": "When the request was logged, in epoch seconds.",
-          "type": "number"
-        },
-        "captured": {
-          "description": "False for a harness the steps-per-completion ledger does not cover (Codex).",
-          "type": "boolean"
-        },
-        "effort": {
-          "default": "",
-          "description": "The reasoning effort the request ran at; empty when the harness gives none.",
-          "type": "string"
-        },
-        "eval": {
-          "description": "The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.",
-          "type": "string"
-        },
-        "harness": {
-          "type": "string"
-        },
-        "keys": {
-          "description": "One per call: the shell command the instance's redactor left, else the tool's name.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "model": {
-          "type": "string"
-        },
-        "origin": {
-          "enum": [
-            "main",
-            "side",
-            "auxiliary"
           ],
-          "type": "string"
+          "default": null,
+          "description": "Seconds idle when the snapshot was drawn; present only when idle."
         },
-        "session": {
-          "type": "string"
-        },
-        "skill": {
-          "description": "The skill most recently loaded in the session, counting this step's own; `none` before any.",
-          "type": "string"
-        },
-        "task": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "tokens": {
-          "$ref": "#/$defs/TokenCounts"
-        }
-      },
-      "required": [
-        "harness",
-        "session",
-        "task",
-        "at",
-        "model",
-        "origin",
-        "skill",
-        "activities",
-        "keys",
-        "tokens",
-        "captured",
-        "eval"
-      ],
-      "title": "SessionStep",
-      "type": "object"
-    },
-    "SessionSteps": {
-      "description": "`GET /api/analytics/steps`: the model requests of a window, oldest first, a page at a time.",
-      "properties": {
-        "next": {
+        "last_turn_at": {
           "anyOf": [
             {
               "type": "string"
@@ -8212,58 +7106,22 @@
             }
           ],
           "default": null,
-          "description": "The `after` cursor of the next page; null on the last page."
+          "description": "When the session's last turn was written, ISO 8601; absent when unknown."
         },
-        "now": {
-          "type": "number"
-        },
-        "steps": {
-          "items": {
-            "$ref": "#/$defs/SessionStep"
-          },
-          "type": "array"
-        },
-        "window_s": {
-          "type": "number"
+        "state": {
+          "description": "`working` mid-turn, `idle` after a finished turn, `unknown` when no running session with a transcript holds the task.",
+          "enum": [
+            "working",
+            "idle",
+            "unknown"
+          ],
+          "type": "string"
         }
       },
       "required": [
-        "now",
-        "window_s",
-        "steps"
+        "state"
       ],
-      "title": "SessionSteps",
-      "type": "object"
-    },
-    "Sessions": {
-      "description": "`GET /api/analytics/sessions`: session and slice health over a window.",
-      "properties": {
-        "now": {
-          "type": "number"
-        },
-        "sessions": {
-          "items": {
-            "$ref": "#/$defs/SessionHealth"
-          },
-          "type": "array"
-        },
-        "slices": {
-          "items": {
-            "$ref": "#/$defs/SliceHealth"
-          },
-          "type": "array"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "sessions",
-        "slices"
-      ],
-      "title": "Sessions",
+      "title": "SessionActivity",
       "type": "object"
     },
     "Settled": {
@@ -8336,188 +7194,6 @@
         "skill"
       ],
       "title": "SkillRefusal",
-      "type": "object"
-    },
-    "SliceHealth": {
-      "description": "What the sessions that worked one task did together.",
-      "properties": {
-        "active_s": {
-          "type": "number"
-        },
-        "clean": {
-          "type": "boolean"
-        },
-        "compactions": {
-          "type": "integer"
-        },
-        "complete": {
-          "type": "boolean"
-        },
-        "cost_usd": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "efforts": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "escalated": {
-          "type": "boolean"
-        },
-        "first_at": {
-          "type": "number"
-        },
-        "harnesses": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "idle_s": {
-          "type": "number"
-        },
-        "interrupts": {
-          "type": "integer"
-        },
-        "interventions": {
-          "type": "integer"
-        },
-        "last_at": {
-          "type": "number"
-        },
-        "lowers": {
-          "type": "integer"
-        },
-        "models": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "operator_prompts": {
-          "type": "integer"
-        },
-        "operator_wait_s": {
-          "type": "number"
-        },
-        "prompt_labels": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "raises": {
-          "type": "integer"
-        },
-        "rejections": {
-          "type": "integer"
-        },
-        "sessions": {
-          "type": "integer"
-        },
-        "side_steps": {
-          "type": "integer"
-        },
-        "skills": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "steps": {
-          "type": "integer"
-        },
-        "steps_before_edit": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "task": {
-          "type": "string"
-        },
-        "tokens": {
-          "$ref": "#/$defs/TokenCounts"
-        },
-        "tool_calls": {
-          "type": "integer"
-        },
-        "user_rejects": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "task",
-        "sessions",
-        "harnesses",
-        "first_at",
-        "last_at",
-        "models",
-        "efforts",
-        "steps",
-        "side_steps",
-        "tool_calls",
-        "operator_prompts",
-        "prompt_labels",
-        "interrupts",
-        "rejections",
-        "user_rejects",
-        "interventions",
-        "compactions",
-        "skills",
-        "raises",
-        "lowers",
-        "escalated",
-        "clean",
-        "tokens",
-        "cost_usd",
-        "active_s",
-        "operator_wait_s",
-        "idle_s",
-        "steps_before_edit",
-        "complete"
-      ],
-      "title": "SliceHealth",
-      "type": "object"
-    },
-    "SlotCause": {
-      "properties": {
-        "cause": {
-          "enum": [
-            "working",
-            "idle",
-            "slow_process",
-            "unattributed",
-            "waiting_checks"
-          ],
-          "type": "string"
-        },
-        "share": {
-          "type": "number"
-        },
-        "slot_s": {
-          "description": "Working-lane seconds inside the window the cause held.",
-          "type": "number"
-        }
-      },
-      "required": [
-        "cause",
-        "slot_s",
-        "share"
-      ],
-      "title": "SlotCause",
       "type": "object"
     },
     "Snapshot": {
@@ -9054,44 +7730,6 @@
       "title": "StaleEdit",
       "type": "object"
     },
-    "StallCause": {
-      "properties": {
-        "cause": {
-          "enum": [
-            "idle",
-            "slow_process",
-            "unattributed",
-            "waiting_checks"
-          ],
-          "type": "string"
-        },
-        "count": {
-          "type": "integer"
-        },
-        "stalled_s": {
-          "description": "Seconds past the threshold, summed over the silences.",
-          "type": "number"
-        },
-        "waits_in": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "cause",
-        "waits_in",
-        "count",
-        "stalled_s"
-      ],
-      "title": "StallCause",
-      "type": "object"
-    },
     "StartRequest": {
       "additionalProperties": false,
       "description": "`POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.\n\n`assignee` is the legacy name of `profile` and is read when `profile` is absent.",
@@ -9373,96 +8011,6 @@
       "title": "Stuck",
       "type": "object"
     },
-    "SubStage": {
-      "description": "One stage mined at the judgement cuts of the stretches no skill governs, this week and the week before.",
-      "properties": {
-        "kind": {
-          "type": "string"
-        },
-        "median_activities": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "previous_median_activities": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "previous_runs": {
-          "description": "Runs it occurred in over the window before.",
-          "type": "integer"
-        },
-        "runs": {
-          "description": "Runs the stage occurred in over the window; 0 when it did not occur.",
-          "type": "integer"
-        },
-        "size": {
-          "type": "integer"
-        },
-        "stability": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Of the cell: stages in both windows over stages in either; None when a window mined none."
-        },
-        "stage": {
-          "description": "The cut that opens the stage, `[start]` for the first.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "size",
-        "stage",
-        "runs",
-        "median_activities",
-        "previous_runs",
-        "previous_median_activities",
-        "stability"
-      ],
-      "title": "SubStage",
-      "type": "object"
-    },
-    "SubStages": {
-      "description": "`GET /api/analytics/stages`: sub-stages and their stability from one window to the one before.",
-      "properties": {
-        "now": {
-          "type": "number"
-        },
-        "stages": {
-          "items": {
-            "$ref": "#/$defs/SubStage"
-          },
-          "type": "array"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "stages"
-      ],
-      "title": "SubStages",
-      "type": "object"
-    },
     "Submachine": {
       "description": "Where a Board state opens into another machine, and which Board event each inner final state fires.",
       "properties": {
@@ -9723,75 +8271,6 @@
       "title": "TaskEventHistory",
       "type": "object"
     },
-    "TaskLiveness": {
-      "description": "One working task: how long since its state last changed and since its session's last command.",
-      "properties": {
-        "cause": {
-          "anyOf": [
-            {
-              "enum": [
-                "idle",
-                "slow_process",
-                "unattributed",
-                "waiting_checks"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "command_idle_s": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Seconds since its session's last tool call; null when none names it."
-        },
-        "since": {
-          "description": "When the task entered the working State.",
-          "type": "number"
-        },
-        "stalled": {
-          "description": "Both idle times are past the threshold.",
-          "type": "boolean"
-        },
-        "state_idle_s": {
-          "description": "Seconds since its last lane change or work-machine event.",
-          "type": "number"
-        },
-        "task": {
-          "type": "string"
-        },
-        "waits_in": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "The `machine:state` a slow process or a pending check rollup holds the task in."
-        }
-      },
-      "required": [
-        "task",
-        "since",
-        "state_idle_s",
-        "command_idle_s",
-        "stalled",
-        "cause",
-        "waits_in"
-      ],
-      "title": "TaskLiveness",
-      "type": "object"
-    },
     "TaskMoves": {
       "description": "`GET /api/moves/<id>`: the verdict on each column one open task may move to, judged by the board's guards now.",
       "properties": {
@@ -9992,188 +8471,6 @@
       "title": "Tie",
       "type": "object"
     },
-    "TokenCounts": {
-      "properties": {
-        "cache_read": {
-          "type": "integer"
-        },
-        "cache_write": {
-          "type": "integer"
-        },
-        "input": {
-          "type": "integer"
-        },
-        "output": {
-          "type": "integer"
-        },
-        "reasoning": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "input",
-        "output",
-        "cache_read",
-        "cache_write",
-        "reasoning"
-      ],
-      "title": "TokenCounts",
-      "type": "object"
-    },
-    "TraceCluster": {
-      "description": "Cases that did the same distinctive work, and the skills that covered it.",
-      "properties": {
-        "cases": {
-          "type": "integer"
-        },
-        "descriptors": {
-          "description": "The features with the most weight across the cases: `a:` activity, `r:` area read, `w:` area written.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "first_at": {
-          "type": "number"
-        },
-        "key": {
-          "description": "A stable id: the digest of the sorted descriptors.",
-          "type": "string"
-        },
-        "kinds": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "type": "object"
-        },
-        "last_at": {
-          "type": "number"
-        },
-        "medoid": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ClusterMedoid"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Null unless `outliers` was asked for."
-        },
-        "missed_loads": {
-          "items": {
-            "$ref": "#/$defs/ClusterMissed"
-          },
-          "type": "array"
-        },
-        "outliers": {
-          "items": {
-            "$ref": "#/$defs/ClusterOutlier"
-          },
-          "type": "array"
-        },
-        "sample_sessions": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "sample_tasks": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "sessions": {
-          "type": "integer"
-        },
-        "skills": {
-          "description": "The three most loaded skills, less the lifecycle skills.",
-          "items": {
-            "$ref": "#/$defs/ClusterSkill"
-          },
-          "type": "array"
-        },
-        "tasks": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "titles": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "uncovered": {
-          "description": "Cases that loaded no skill beyond the lifecycle skills.",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "key",
-        "sessions",
-        "cases",
-        "tasks",
-        "first_at",
-        "last_at",
-        "kinds",
-        "descriptors",
-        "skills",
-        "uncovered",
-        "sample_sessions",
-        "sample_tasks",
-        "titles",
-        "missed_loads",
-        "medoid",
-        "outliers"
-      ],
-      "title": "TraceCluster",
-      "type": "object"
-    },
-    "TraceClusters": {
-      "description": "`GET /api/analytics/trace-clusters`: recurring work, ranked by distinct sessions.",
-      "properties": {
-        "cases": {
-          "description": "Cases with a trace in the window.",
-          "type": "integer"
-        },
-        "clustered": {
-          "description": "Cases that joined a cluster, whatever its size.",
-          "type": "integer"
-        },
-        "clusters": {
-          "items": {
-            "$ref": "#/$defs/TraceCluster"
-          },
-          "type": "array"
-        },
-        "min_sessions": {
-          "type": "integer"
-        },
-        "now": {
-          "type": "number"
-        },
-        "threshold": {
-          "type": "number"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "threshold",
-        "min_sessions",
-        "cases",
-        "clustered",
-        "clusters"
-      ],
-      "title": "TraceClusters",
-      "type": "object"
-    },
     "Trajectories": {
       "description": "The trajectory analytics: the paths of the runs that ended in a terminal over a window.",
       "properties": {
@@ -10368,109 +8665,6 @@
         "event"
       ],
       "title": "Transition",
-      "type": "object"
-    },
-    "TransitionCost": {
-      "description": "The cost of one skill in force, within one kind and size of task.",
-      "properties": {
-        "agent_s": {
-          "description": "The seconds of the steps' requests and tool calls.",
-          "type": "number"
-        },
-        "kind": {
-          "description": "The `kind-*` label of the tasks, without the prefix.",
-          "type": "string"
-        },
-        "peak_context": {
-          "description": "The most input, cache-read and cache-write tokens one request held.",
-          "type": "integer"
-        },
-        "side_steps": {
-          "description": "The subagents' share of `steps`.",
-          "type": "integer"
-        },
-        "size": {
-          "description": "The `size-*` label of the tasks.",
-          "type": "integer"
-        },
-        "skill": {
-          "description": "The skill in force on the steps; `none` before any load.",
-          "type": "string"
-        },
-        "steps": {
-          "description": "Model requests, a subagent's included.",
-          "type": "integer"
-        },
-        "tasks": {
-          "type": "integer"
-        },
-        "wasted_rate": {
-          "type": "number"
-        },
-        "wasted_steps": {
-          "description": "Steps with a call that failed, was refused by a guard or hook, or repeats the command before it.",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "kind",
-        "size",
-        "skill",
-        "tasks",
-        "steps",
-        "side_steps",
-        "wasted_steps",
-        "wasted_rate",
-        "agent_s",
-        "peak_context"
-      ],
-      "title": "TransitionCost",
-      "type": "object"
-    },
-    "Transitions": {
-      "description": "`GET /api/analytics/transitions`: what each skill cost within each kind and size, Codex left out.",
-      "properties": {
-        "now": {
-          "type": "number"
-        },
-        "transitions": {
-          "items": {
-            "$ref": "#/$defs/TransitionCost"
-          },
-          "type": "array"
-        },
-        "window_s": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "now",
-        "window_s",
-        "transitions"
-      ],
-      "title": "Transitions",
-      "type": "object"
-    },
-    "UnknownLaneWarning": {
-      "description": "A lane that is no Board state.",
-      "properties": {
-        "kind": {
-          "const": "unknown_lane",
-          "type": "string"
-        },
-        "lane": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "lane",
-        "message"
-      ],
-      "title": "UnknownLaneWarning",
       "type": "object"
     },
     "Variant": {
@@ -10695,42 +8889,6 @@
       "title": "WindowTooLong",
       "type": "object"
     },
-    "WorkStage": {
-      "properties": {
-        "mean_s": {
-          "type": "number"
-        },
-        "share": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "stage": {
-          "description": "The `machine:state` a work-machine event left the task in; the lane before the first.",
-          "type": "string"
-        },
-        "task_s": {
-          "type": "number"
-        },
-        "visits": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "stage",
-        "visits",
-        "task_s",
-        "mean_s",
-        "share"
-      ],
-      "title": "WorkStage",
-      "type": "object"
-    },
     "Writer": {
       "description": "Who fires a Board event: a runs workflow (by `<instance>/<workflow>` name), `operator` or `agent`.",
       "properties": {
@@ -10863,9 +9021,6 @@
     "build": {
       "$ref": "#/$defs/BuildEvent"
     },
-    "cells": {
-      "$ref": "#/$defs/Cells"
-    },
     "contractReport": {
       "$ref": "#/$defs/ContractReport"
     },
@@ -10883,9 +9038,6 @@
     },
     "donePage": {
       "$ref": "#/$defs/DonePage"
-    },
-    "estimates": {
-      "$ref": "#/$defs/Estimates"
     },
     "events": {
       "items": {
@@ -10918,14 +9070,8 @@
       },
       "type": "array"
     },
-    "graph": {
-      "$ref": "#/$defs/FlowGraph"
-    },
     "harnesses": {
       "$ref": "#/$defs/Harnesses"
-    },
-    "health": {
-      "$ref": "#/$defs/Health"
     },
     "laneHistory": {
       "$ref": "#/$defs/LaneHistory"
@@ -10935,9 +9081,6 @@
     },
     "ledgerChange": {
       "$ref": "#/$defs/LedgerChange"
-    },
-    "liveness": {
-      "$ref": "#/$defs/Liveness"
     },
     "machineHistory": {
       "$ref": "#/$defs/MachineHistory"
@@ -10950,9 +9093,6 @@
     },
     "milestones": {
       "$ref": "#/$defs/Milestones"
-    },
-    "missedLoads": {
-      "$ref": "#/$defs/MissedLoads"
     },
     "pulls": {
       "$ref": "#/$defs/Pulls"
@@ -11063,20 +9203,11 @@
     "searchResults": {
       "$ref": "#/$defs/SearchResults"
     },
-    "sessionSteps": {
-      "$ref": "#/$defs/SessionSteps"
-    },
-    "sessions": {
-      "$ref": "#/$defs/Sessions"
-    },
     "snapshot": {
       "$ref": "#/$defs/Snapshot"
     },
     "spend": {
       "$ref": "#/$defs/Spend"
-    },
-    "stages": {
-      "$ref": "#/$defs/SubStages"
     },
     "taskCostToGo": {
       "$ref": "#/$defs/TaskCostToGo"
@@ -11099,14 +9230,8 @@
     "taskSpend": {
       "$ref": "#/$defs/TaskSpend"
     },
-    "traceClusters": {
-      "$ref": "#/$defs/TraceClusters"
-    },
     "trajectories": {
       "$ref": "#/$defs/Trajectories"
-    },
-    "transitions": {
-      "$ref": "#/$defs/Transitions"
     },
     "windowState": {
       "$ref": "#/$defs/WindowState"
@@ -11127,23 +9252,12 @@
     "breakingChanges",
     "pulls",
     "searchResults",
-    "health",
-    "liveness",
-    "sessions",
-    "sessionSteps",
-    "transitions",
     "spend",
     "taskSpend",
     "taskDiff",
     "taskCostToGo",
-    "cells",
-    "estimates",
-    "graph",
-    "stages",
     "diff",
     "costToGo",
-    "missedLoads",
-    "traceClusters",
     "trajectories",
     "harnesses",
     "windowState",

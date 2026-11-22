@@ -10,7 +10,7 @@ from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.breaking_changes import BreakingChanges
-from starpulse.contracts.api.dto.health import Health, Liveness, MachineHistory, Sessions, SessionSteps, TaskEventHistory
+from starpulse.contracts.api.dto.health import MachineHistory, TaskEventHistory
 from starpulse.contracts.api.dto.milestones import (
     Docs,
     DocShown,
@@ -21,7 +21,6 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecord,
     TaskRecords,
 )
-from starpulse.contracts.api.dto.missed import MissedLoads, TraceClusters
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.dag import Runs
@@ -102,17 +101,12 @@ from starpulse.contracts.api.dto.snapshot import (
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import (
-    Cells,
     CostToGo,
-    Estimates,
-    FlowGraph,
     RunDiffs,
     Spend,
-    SubStages,
     TaskCostToGo,
     TaskDiff,
     TaskSpend,
-    Transitions,
 )
 
 
@@ -135,23 +129,12 @@ class ApiContract(_Api):
     breakingChanges: BreakingChanges
     pulls: Pulls
     searchResults: SearchResults
-    health: Health
-    liveness: Liveness
-    sessions: Sessions
-    sessionSteps: SessionSteps
-    transitions: Transitions
     spend: Spend
     taskSpend: TaskSpend
     taskDiff: TaskDiff
     taskCostToGo: TaskCostToGo
-    cells: Cells
-    estimates: Estimates
-    graph: FlowGraph
-    stages: SubStages
     diff: RunDiffs
     costToGo: CostToGo
-    missedLoads: MissedLoads
-    traceClusters: TraceClusters
     trajectories: Trajectories
     harnesses: Harnesses
     windowState: WindowState

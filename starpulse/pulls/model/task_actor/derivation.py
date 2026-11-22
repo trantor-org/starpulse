@@ -1,0 +1,638 @@
+"""The task actor's fact functions: a pure derivation over the lane checks, reading and writing through `TaskFacts`.
+
+A fact function answers `(proof, comment)` when the fact holds for a task, else None. It imports nothing that does I/O:
+every read of the board, the pull request store, the holder probe or the actor's own memory is a `TaskFacts` read,
+and every effect (a hold comment, the unsettled flag, the pin and held sets) a `TaskFacts` command, so the actor's
+adapter alone touches the world (ADR Every Task State Re-Derives on One Trigger Set Through the Task Actor).
+"""
+
+import re
+from collections.abc import Callable, Mapping, Sequence
+from datetime import UTC, datetime
+from typing import Any, Protocol
+
+from starpulse.board.model import criteria
+from starpulse.board.model.markdown import attention_reason, needs_attention_reason, operator_answered
+from starpulse.board.model.rollup import checks_verdict
+from starpulse.board.model.seam import HELD, MERGE_EVIDENCE
+
+#: The question that ends the `## Needs attention` reason of a task the actor moves there on a pull request fact.
+ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
+DONE_HELD = "Held from Done:"
+#: The opening of the comment `backlog-task update --pushback` records.
+PUSHBACK = "Operator pushback:"
+#: The pull request states that end a pull request.
+TERMINAL = ("MERGED", "CLOSED")
+DEPLOY_FAILED = re.compile(r"^Reopened from Done: Deploy of \S+ to .+? failed", re.M)
+#: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
+DAY_S = 86_400.0
+SLE_DAYS, GRACE_DAYS = 7, 2
+
+Agent = dict[str, Any]
+Held = tuple[Any, str] | None
+
+
+class Roles(Protocol):
+    """The lanes of the board's machine a fact names by role."""
+
+    working: str
+    review: str
+    attention: str
+
+
+class TaskFacts(Protocol):
+    """What a fact function reads and commands: the actor's adapter implements it over the live feed, store and probes."""
+
+    @property
+    def roles(self) -> Roles: ...
+    @property
+    def board_repo(self) -> str: ...
+
+    def now(self) -> float: ...
+    def record(self, url: str) -> dict[str, Any] | None: ...
+    def own_prs(self, agent: Agent) -> list[str]: ...
+    def unlinked(self, agent: Agent) -> list[str]: ...
+    def landed(self, record: dict[str, Any]) -> bool: ...
+    def memory(self, name: str) -> Mapping[str, Any]: ...
+    def comments(self, agent: Agent) -> list[str] | None: ...
+    def dependency_needs(self, name: str) -> Sequence[str]: ...
+    def unfinished(self, name: str) -> tuple[str, ...]: ...
+    def alive(self, name: str) -> bool | None: ...
+    def holds(self, name: str) -> tuple[str, ...]: ...
+    def owns_failure(self, name: str) -> bool: ...
+    def main_green(self) -> str | None: ...
+    def is_open(self, name: str) -> bool: ...
+    def is_done(self, name: str) -> bool: ...
+    def is_archived(self, name: str) -> bool: ...
+    def task(self, name: str) -> dict[str, Any] | None: ...
+    def open_tasks(self) -> list[dict[str, Any]]: ...
+    def machine_task(self, phase: str, name: str) -> dict[str, Any] | None: ...
+    def phases(self) -> list[str]: ...
+    def sequence(self, agent: Agent) -> Sequence[str]: ...
+    def waiting_on(self, agent: Agent) -> str | None: ...
+    def heard(self, name: str) -> Sequence[str]: ...
+
+    def unsettled(self) -> None: ...
+    def hooked(self) -> None: ...
+    def note_hold(self, agent: Agent, reasons: tuple[str, ...], prefix: str = HELD) -> None: ...
+    def pin_held(self, name: str, on: bool) -> None: ...
+    def held(self, name: str, on: bool) -> None: ...
+
+
+def epoch(text: str) -> float | None:
+    """Epoch seconds of an ISO date or timestamp (UTC when it names no zone); None when it is neither."""
+    try:
+        when = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return (when if when.tzinfo else when.replace(tzinfo=UTC)).timestamp()
+
+
+def stamp(at: float) -> str:
+    return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%d")
+
+
+def need_of(need: str) -> tuple[str, int]:
+    """`(task, criterion number)` of a dependency need `TASK-N#K`; a need that names no number is number 0, which
+    no task has."""
+    task, _, number = need.partition("#")
+    return task, int(number) if number.isdigit() else 0
+
+
+def cleared(facts: TaskFacts, dependency: str) -> bool:
+    """Whether the dependency is done, or archived: its file left the lanes without reaching Done."""
+    return facts.is_done(dependency) or facts.is_archived(dependency)
+
+
+def missing(facts: TaskFacts, agent: Agent) -> tuple[str, ...]:
+    """The dependencies the Board holds in no store: no open task, none done, none archived. Nothing finishes them."""
+    return tuple(
+        dependency
+        for dependency in agent["dependencies"]
+        if not facts.is_open(dependency) and not cleared(facts, dependency)
+    )
+
+
+def entered(facts: TaskFacts, agent: Agent) -> float:
+    """When `agent` entered the Board lane it holds, as read at the move: the feed's `entered` is its newest event of
+    any kind, which a comment after a verdict moves past the verdict's time."""
+    lane, at = facts.memory(agent["id"]).get("lane_entered") or ("", 0.0)
+    return at if lane == agent["state"] else agent.get("entered") or 0.0
+
+
+def proof_prs(facts: TaskFacts, agent: Agent) -> list[str]:
+    """The pull requests whose ends prove a task's work. In Review, a task with no own pull request merged or open
+    takes every cited one: another task's delivery may have superseded its own, which closed unmerged or never
+    existed. An own pull request still open keeps a merged reference from standing for the task's delivery."""
+    own = facts.own_prs(agent)
+    if agent["state"] != facts.roles.review:
+        return own
+    if any((record := facts.record(url)) and record["state"] != "CLOSED" for url in own):
+        return own
+    return agent["prs"]
+
+
+def merged_at(facts: TaskFacts, agent: Agent) -> float | None:
+    """When the latest of the pull requests that proved `agent`'s work merged."""
+    merges = (
+        epoch(record["mergedAt"])
+        for url in proof_prs(facts, agent)
+        if (record := facts.record(url)) and record["state"] == "MERGED" and record["mergedAt"]
+    )
+    return max((at for at in merges if at is not None), default=None)
+
+
+def why_unready(record: dict[str, Any], held_head: str | None) -> list[str]:
+    """The conditions that keep a pull request record from being ready: draft, conflicting, checks that are not passed, or
+    held after a send-back on its current head."""
+    verdict = checks_verdict(
+        record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
+    )
+    return [
+        reason
+        for reason, holds in (
+            ("draft", record["isDraft"]),
+            ("conflicting", record["mergeable"] == "CONFLICTING"),
+            (f"checks {verdict}", verdict != "pass"),
+            ("held after a send-back on this head", held_head == record["headRefOid"]),
+        )
+        if holds
+    ]
+
+
+def unready(facts: TaskFacts, agent: Agent) -> str | None:
+    """Why each open pull request of the task's own delivery is not ready, else None."""
+    held = facts.memory(agent["id"]).get("sent_back") or {}
+    parts = []
+    for url in facts.own_prs(agent):
+        record = facts.record(url)
+        if record is not None and record["state"] == "OPEN" and (why := why_unready(record, held.get(url))):
+            parts.append(f"{record['repo']}#{record['number']} {', '.join(why)}")
+    return "; ".join(parts) or None
+
+
+def pr_terminal(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The merge evidence when the task cites pull requests and every one has ended, else None. A check task that
+    cites only other tasks' pull requests has no delivery of its own to wait for: its checked criteria close it.
+    Review proves its work on `proof_prs`; every other lane still waits on its own pull requests only. In the
+    working lane the latest merge must follow the task's work floor."""
+    own = facts.own_prs(agent)
+    if not own and agent["prs"] and agent["type"] == "check":
+        if not all(criterion["checked"] for criterion in agent.get("criteria", ())):
+            return None
+        proof = f"no pull request of its own; cites {', '.join(agent['prs'])}"
+        return proof, f"{MERGE_EVIDENCE} {proof}"
+    parts = []
+    proved = proof_prs(facts, agent)
+    for url in proved:
+        record = facts.record(url)
+        if record is None or record["state"] not in TERMINAL:
+            return None
+        if record["state"] == "MERGED" and not record["mergedAt"]:
+            return None  # merged on an event's word alone: the next read of GitHub settles it
+        link = f"PR #{record['number']}" if record["repo"] == facts.board_repo else url
+        if record["state"] == "MERGED" and not facts.landed(record):
+            # merged into an integration branch not yet on main: the work is not delivered
+            facts.note_hold(agent, (f"{link} merged into {record['baseRefName']}, not main",), DONE_HELD)
+            return None
+        part = f"{record['repo']}#{record['number']} {record['state'].lower()}"
+        if record["mergeSha"]:
+            part += f" as {record['mergeSha']}"
+        parts.append(f"{part} ({link})")
+    if not parts or facts.unlinked(agent):
+        return None  # an open pull request naming the task is its delivery too: one cited merge never ends it
+    merged = merged_at(facts, agent)
+    if (
+        agent["state"] == facts.roles.working
+        and merged is not None
+        and merged < work_floor(facts, agent)
+        and not deploy_reopened(facts, agent)
+    ):
+        return None  # the merge predates the work floor: a reopened task's earlier delivery proves nothing
+    # the board's guard wants the evidence to name every cited pull request: a reference is named as one, not proof
+    if references := [url for url in agent["prs"] if url not in proved]:
+        parts.append(f"cites as a reference, not proof: {', '.join(references)}")
+    proof = "; ".join(parts)
+    return proof, f"{MERGE_EVIDENCE} {proof}"
+
+
+def work_floor(facts: TaskFacts, agent: Agent) -> float:
+    """When the working lane's shipped work stops counting: the task's last entry other than an answer out of Needs attention."""
+    return facts.memory(agent["id"]).get("work_floor") or agent.get("entered") or 0.0
+
+
+def pr_merged(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The merge evidence when every pull request the task cites has ended and at least one merged, else None: a
+    delivery closed unmerged is no proof of the work. A closed one beside a merged one stays cited for the audit
+    trail and is named closed in the evidence, which the board's proof guard asks to name every cited one."""
+    terminal = pr_terminal(facts, agent)
+    records = [facts.record(url) for url in proof_prs(facts, agent)]
+    merged = any(record and record["state"] == "MERGED" for record in records)
+    return terminal if terminal and merged else None
+
+
+def pr_closed_unmerged(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The closed pull requests and the question when every pull request the task cites has ended and none merged:
+    its delivery is gone, and the operator picks a redelivery or the archive."""
+    terminal = pr_terminal(facts, agent)
+    records = [facts.record(url) for url in proof_prs(facts, agent)]
+    if not terminal or any(not record or record["state"] != "CLOSED" for record in records):
+        return None
+    return terminal[0], attention_reason(
+        f"Every pull request the task cites closed unmerged: {', '.join(proof_prs(facts, agent))}",
+        "its delivery is gone",
+        ("redeliver it on a new pull request", "archive the task"),
+        "Redeliver or archive?",
+    )
+
+
+def pr_closed_unmerged_complete(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The closed pull requests when `pr_closed_unmerged` holds and every criterion is checked: the work was done
+    without a merge (a no-op), so nothing is left to ask the operator."""
+    closed = pr_closed_unmerged(facts, agent)
+    ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
+    if not closed or not ticks or not all(ticks):
+        return None
+    return closed[0], f"Every pull request it cites closed unmerged and every criterion is checked: {closed[0]}."
+
+
+def pr_merged_unfinished(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The merge evidence and what is left when the task's pull requests merged and the board reports work
+    unfinished, else None. A command that fails reports its error: the task returns to its
+    holder, never closes."""
+    merged = pr_merged(facts, agent)
+    if merged is None:
+        return None
+    left = facts.unfinished(agent["id"])
+    if not left:
+        return None
+    proof, comment = merged
+    return (proof, left), f"{comment} Unfinished: {'; '.join(left)}."
+
+
+def deploy_reopened(facts: TaskFacts, agent: Agent) -> bool:
+    """Whether the task's latest reopen from Done was a failed deploy of its merge. A read that fails leaves the pass
+    unsettled, so the next one asks again."""
+    if (texts := facts.comments(agent)) is None:
+        facts.unsettled()
+        return False
+    reopens = [text for text in texts if text.startswith("Reopened from Done: ")]
+    return bool(reopens) and DEPLOY_FAILED.search(reopens[-1]) is not None
+
+
+def criteria_checked(facts: TaskFacts, agent: Agent) -> tuple[int, str] | None:
+    """The criteria count when the task has criteria, every one is checked and its phase sequence has no `deliver`:
+    a task that ships no pull request is finished by its criteria alone."""
+    ticks = [criterion["checked"] for criterion in agent.get("criteria", ())]
+    if not ticks or not all(ticks) or "deliver" in facts.sequence(agent):
+        return None
+    return len(ticks), f"Every criterion is checked ({len(ticks)}) and the task ships no pull request."
+
+
+def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The ready or merged pull requests when the task cites one that is, else None. A task sent back from Review
+    stays put while its ready pull request keeps the head it was sent back on: a new head or a run of `review` is the
+    session's answer. An open pull request is ready only when it does not conflict with its base and the rollup of
+    its current head says every required check passed (`checks_verdict`): a required check not posted is not green,
+    a push re-arms the gate, and a repository whose ruleset requires none rolls up passed as soon as the pull
+    request is not a draft. A task in Needs attention whose `## Needs attention` ask is unanswered stays there,
+    unless its ask ends in the actor's own failing-checks question (`ATTENTION_QUESTION`), which a green pull request settles."""
+    reason = needs_attention_reason(agent["description"])
+    if (
+        agent["state"] == facts.roles.attention
+        and reason
+        and not reason.endswith(ATTENTION_QUESTION)
+        and not operator_answered(agent["description"])
+    ):
+        return None
+    parts = []
+    sent_back = facts.memory(agent["id"]).get("sent_back")
+    held = sent_back or {}
+    # In the working lane a PR merged before the work floor is shipped work (a post-merge send back).
+    floor = work_floor(facts, agent) if agent["state"] == facts.roles.working else 0.0
+    if floor and sent_back is None and deploy_reopened(facts, agent):
+        floor = 0.0  # a failed deploy sent shipped work back: the merge closes it through Review, never an operator's send-back from Review
+    for url in facts.own_prs(agent):
+        record = facts.record(url)
+        if record is None:
+            continue
+        merged = record["state"] == "MERGED" and record["mergedAt"]
+        if merged and (epoch(record["mergedAt"]) or 0.0) < floor:
+            continue
+        if merged or (record["state"] == "OPEN" and not why_unready(record, held.get(url))):
+            parts.append(f"{record['repo']}#{record['number']} {'merged' if merged else 'ready'}")
+    if not parts or facts.unlinked(agent):
+        return None  # an open pull request naming the task is its delivery too: Review waits until it is cited
+    proof = "; ".join(parts)
+    return proof, f"Pull request ready: {proof}"
+
+
+def open_pulls(
+    facts: TaskFacts, agent: Agent, said: str, problem: Callable[[dict[str, Any]], bool]
+) -> tuple[str, str] | None:
+    """The open pull requests of the task's own delivery that `problem` holds of, with the comment `said` names them
+    in, else None. The head commit is in the evidence, so a push that fails or conflicts again is a new fact."""
+    parts = []
+    for url in facts.own_prs(agent):
+        record = facts.record(url)
+        if record is not None and record["state"] == "OPEN" and problem(record):
+            parts.append(f"{record['repo']}#{record['number']} at {record['headRefOid'][:12]}")
+    if not parts:
+        return None
+    proof = "; ".join(parts)
+    return proof, f"{said}: {proof}."
+
+
+def pr_failing(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The open pull requests whose required checks failed, with the question the task's reason ends in, else None."""
+    failing = open_pulls(
+        facts,
+        agent,
+        "Pull request checks failed",
+        lambda record: (
+            checks_verdict(
+                record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
+            )
+            == "failing"
+        ),
+    )
+    return failing and (
+        failing[0],
+        attention_reason(
+            failing[1],
+            "its required checks fail on the pull request head",
+            ("fix it on the task branch and redeliver", "rescope the task"),
+            ATTENTION_QUESTION,
+        ),
+    )
+
+
+def pr_draft(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The open pull requests that are drafts, else None."""
+    return open_pulls(facts, agent, "Pull request is a draft", lambda record: record["isDraft"])
+
+
+def pr_conflicting(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The open pull requests that conflict with their base, else None."""
+    return open_pulls(
+        facts, agent, "Pull request conflicts with its base", lambda record: record["mergeable"] == "CONFLICTING"
+    )
+
+
+def pr_unfinished(facts: TaskFacts, agent: Agent, alive: bool) -> tuple[str, str] | None:
+    """The first of the failing, draft and conflicting facts that holds, once the task's holder is running (`alive`) or
+    is not. A holder the probe cannot reach leaves the task where it is for the next pass."""
+    held = pr_failing(facts, agent) or pr_draft(facts, agent) or pr_conflicting(facts, agent)
+    if held is None:
+        return None
+    running = facts.alive(agent["id"])
+    if running is None or running != alive:
+        return None
+    return held[0], f"{held[1]} {'Sent back to its session' if alive else 'Returned to Ready for a new session'}."
+
+
+def pr_unfinished_alive(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The not-green pull request of a task whose holding session is running."""
+    return pr_unfinished(facts, agent, True)
+
+
+def pr_unfinished_dead(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The not-green pull request of a task no running session holds."""
+    return pr_unfinished(facts, agent, False)
+
+
+def phase_resumed(facts: TaskFacts, agent: Agent) -> Held:
+    """The time and comment of the newest step of a phase in `[sequences]` the task's session took after the task
+    entered its lane: the session going back to work is the event that sends the task back."""
+    since = entered(facts, agent)
+    steps = [
+        (at, phase)
+        for phase in facts.phases()
+        if (placed := facts.machine_task(phase, agent["id"])) and (at := resumed_at(phase, placed, since)) is not None
+    ]
+    if not steps:
+        return None
+    at, phase = max(steps)
+    return at, f"Its session resumed the {phase} phase. Sent back to In Progress."
+
+
+def resumed_at(phase: str, placed: dict[str, Any], entered: float) -> float | None:
+    # A delivery run that began before the task entered its lane is the holder finishing the run that put it there,
+    # so its steps never count: a run ends with its `DELIVER_FINISHED`, and only one that begins after `entered` is
+    # work resuming.
+    if phase != "deliver":
+        return placed["active"] if placed["active"] > entered else None
+    began: float | None = None
+    newest = None
+    for step in placed["trail"]:
+        began = step["at"] if began is None else began
+        if began > entered:
+            newest = step["at"]
+        if step["event"] == "DELIVER_FINISHED":
+            began = None
+    return newest
+
+
+def operator_pushback(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The words of the operator's pushback when it is the task's newest comment: the move it causes, or the
+    answer to it, is a newer comment, so a task that returns to its lane carries no old pushback. Words that
+    ask nothing get the question Needs attention requires."""
+    if (texts := facts.comments(agent)) is None:
+        facts.unsettled()
+        return None
+    newest = texts[-1].strip() if texts else ""
+    if not newest.startswith(PUSHBACK):
+        return None
+    words = newest.removeprefix(PUSHBACK).strip()
+    return newest, words if "?" in words else f"{words}\n\nWhat change does it call for?"
+
+
+def deps_done(facts: TaskFacts, agent: Agent) -> Held:
+    """The dependencies once every one is done and merged, an empty tuple when the task has none, and no Start
+    Criteria gate it."""
+    dependencies = tuple(agent["dependencies"])
+    facts.pin_held(agent["id"], False)
+    facts.held(agent["id"], False)
+    if unmet(facts, agent) or criteria.authored(agent["description"]):
+        return None
+    if waiting := facts.waiting_on(agent):
+        facts.pin_held(agent["id"], True)
+        facts.note_hold(agent, (waiting,))
+        return None
+    if reasons := held_by(facts, agent["id"]):
+        facts.held(agent["id"], True)
+        facts.note_hold(agent, reasons)
+        return None
+    comment = "Every dependency has merged."
+    if ahead := early(facts, agent):
+        comment = f"Stale dependency {', '.join(ahead)}: it stays open for criteria this task does not need. {comment}"
+    return dependencies, comment
+
+
+def deps_done_with_pr(facts: TaskFacts, agent: Agent) -> Held:
+    """`deps_done` for a task that cites a ready or merged pull request, which a state returns to Review rather than Ready."""
+    return deps_done(facts, agent) if pr_ready(facts, agent) else None
+
+
+def held_by(facts: TaskFacts, name: str) -> tuple[str, ...]:
+    """Why the board withholds the task's `deps_done`; a hold that raises holds it with that error."""
+    facts.hooked()
+    return facts.holds(name)
+
+
+def deadline(facts: TaskFacts, agent: Agent) -> tuple[float, str] | None:
+    """When the task's service level expectation ends, in epoch seconds, and what it is counted from; None while the
+    task is exempt (gated only on dependencies, each still In Progress or Review) or has no entry time.
+    The SLE is the latest `expect_by` plus two days, else seven days from entering the lane."""
+    if not agent.get("entered"):
+        return None
+    if missing(facts, agent):
+        return agent["entered"], "a dependency is not on the board"
+    if not criteria.authored(agent["description"]) and moving(facts, agent):
+        return None
+    dates = [stamp for stamp in map(epoch, criteria.expect_dates(agent["description"])) if stamp]
+    if dates:
+        return max(dates) + GRACE_DAYS * DAY_S, f"expect_by {stamp(max(dates))} plus {GRACE_DAYS} days"
+    return agent["entered"] + SLE_DAYS * DAY_S, f"{SLE_DAYS} days from entering Waiting"
+
+
+def moving(facts: TaskFacts, agent: Agent) -> bool:
+    """Whether the task has open dependencies and each is In Progress or Review: work is under way on its gate."""
+    roles = facts.roles
+    open_ = [dependency for dependency in agent["dependencies"] if not cleared(facts, dependency)]
+    return bool(open_) and all(
+        (facts.task(dependency) or {}).get("state") in (roles.working, roles.review) for dependency in open_
+    )
+
+
+def overdue(facts: TaskFacts, agent: Agent) -> Held:
+    """The deadline and the Needs attention question when the task is past its service level expectation."""
+    due = deadline(facts, agent)
+    now = facts.now()
+    if not due or due[0] > now:
+        return None
+    if lost := missing(facts, agent):
+        gone = "; ".join(f"{dependency} is not on the board" for dependency in lost)
+        listed = ", ".join(agent["dependencies"])
+        return due[0], attention_reason(
+            f"{gone}, so nothing releases this task. Its dependencies ({listed}) are cleared with this move",
+            "its dependencies are not on the board, so none can release it",
+            ("re-park it on the right tasks", "close it"),
+            "Re-park it on the right tasks, or close it?",
+        )
+    gate = [*unmet(facts, agent), *(each["id"] for each in criteria.authored(agent["description"]))]
+    days = int((now - agent["entered"]) // DAY_S)
+    return due[0], attention_reason(
+        f"Waiting {days} days, past its service level expectation ({due[1]})",
+        f"it is still gated on {', '.join(gate) or 'its wait'}",
+        ("release it", "re-park it on a new wait", "close it"),
+        "Release it, re-park it on a new wait, or close it?",
+    )
+
+
+def criteria_met(facts: TaskFacts, agent: Agent) -> Held:
+    """The subjects heard when an event the task is parked on arrived and no dependency is open, which would hold it back."""
+    heard = sorted(facts.heard(agent["id"]))
+    if not heard or unmet(facts, agent):
+        return None
+    return tuple(heard), f"Event {', '.join(heard)} arrived."
+
+
+def deps_unresolved(facts: TaskFacts, agent: Agent) -> Held:
+    """The dependencies that are not done, when there are any."""
+    open_ = unmet(facts, agent)
+    return (open_, f"Not done: {', '.join(open_)}.") if open_ else None
+
+
+def owner_stale(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The green main SHA and the closing note when the task owns a failure (`owner_source`), main's Validate passed,
+    and no open task lists it as a dependency; a red main names no signature, so it closes nothing."""
+    if not facts.owns_failure(agent["id"]):
+        return None
+    waited_on = any(agent["id"] in (name.split("#")[0] for name in each["dependencies"]) for each in facts.open_tasks())
+    sha = None if waited_on else facts.main_green()
+    if not sha:
+        return None
+    return sha, f"Closed: main's Validate passed at {sha} and no open task waits on this failure."
+
+
+def unmet(facts: TaskFacts, agent: Agent) -> tuple[str, ...]:
+    """The dependencies that are neither done nor early: still open for what the task waits on."""
+    ahead = early(facts, agent)
+    return tuple(
+        dependency
+        for dependency in agent["dependencies"]
+        if not cleared(facts, dependency) and dependency not in ahead and not owner_green(facts, dependency)
+    )
+
+
+def owner_green(facts: TaskFacts, dependency: str) -> bool:
+    """Whether the dependency owns a failure (`owner_source`) and main's Validate passed: the failure no longer holds
+    a task waiting on it, whatever lane the owner is in."""
+    return facts.owns_failure(dependency) and bool(facts.main_green())
+
+
+def early(facts: TaskFacts, agent: Agent) -> tuple[str, ...]:
+    """The open dependencies whose every criterion the task's record says it needs (`dependencyNeeds`, `TASK-N#K`)
+    is checked: the fact the task waited on holds, whatever the dependency still has open. A dependency with no
+    need names the whole task; a record the board cannot read names none."""
+    open_ = [dependency for dependency in agent["dependencies"] if not cleared(facts, dependency)]
+    if not open_:
+        return ()
+    needs = facts.dependency_needs(agent["id"])
+    wanted: dict[str, list[int]] = {}
+    for task, number in map(need_of, needs):
+        wanted.setdefault(task, []).append(number)
+    return tuple(
+        dependency for dependency in open_ if dependency in wanted and checked(facts, dependency, wanted[dependency])
+    )
+
+
+def checked(facts: TaskFacts, dependency: str, numbers: list[int]) -> bool:
+    """Whether every criterion `numbers` names (1-based) of `dependency` is checked."""
+    ticks = tuple(criterion["checked"] for criterion in (facts.task(dependency) or {}).get("criteria", ()))
+    return all(0 < number <= len(ticks) and ticks[number - 1] for number in numbers)
+
+
+def stale(facts: TaskFacts, agent: Agent) -> dict[str, list[str]]:
+    """The record changes that drop the early dependencies and their needs, none when there are none."""
+    ahead = early(facts, agent)
+    if not ahead:
+        return {}
+    needs = facts.dependency_needs(agent["id"])
+    return {
+        "dependencies": [dependency for dependency in agent["dependencies"] if dependency not in ahead],
+        "dependencyNeeds": [need for need in needs if need_of(need)[0] not in ahead],
+    }
+
+
+def by_claim(fact: Callable[[TaskFacts, Agent], Any], *, claimed: bool) -> Callable[[TaskFacts, Agent], Any]:
+    """`fact` for the tasks a session claimed or for the rest, so a claimed task never falls through to Ready."""
+    return lambda facts, agent: fact(facts, agent) if bool(agent["assignee"]) == claimed else None
+
+
+#: Each fact kind a lane's `waits` name, and the function that answers it.
+FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
+    "pr_terminal": pr_terminal,
+    "pr_merged": pr_merged,
+    "pr_closed_unmerged": pr_closed_unmerged,
+    "pr_closed_unmerged_complete": pr_closed_unmerged_complete,
+    "pr_merged_unfinished": pr_merged_unfinished,
+    "pr_ready": pr_ready,
+    "criteria_checked": criteria_checked,
+    "pr_failing": pr_failing,
+    "pr_draft": pr_draft,
+    "pr_conflicting": pr_conflicting,
+    "pr_unfinished_alive": pr_unfinished_alive,
+    "pr_unfinished_dead": pr_unfinished_dead,
+    "phase_resumed": phase_resumed,
+    "operator_pushback": operator_pushback,
+    "deps_done": by_claim(deps_done, claimed=False),
+    "deps_done_with_pr": deps_done_with_pr,
+    "deps_done_started": by_claim(deps_done, claimed=True),
+    "criteria_met_started": by_claim(criteria_met, claimed=True),
+    "deps_unresolved": deps_unresolved,
+    "criteria_met": by_claim(criteria_met, claimed=False),
+    "owner_stale": owner_stale,
+    "overdue": overdue,
+}

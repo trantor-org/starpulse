@@ -15,10 +15,10 @@ export function Linked({ text, open }: { text: string; open: (id: string) => voi
 /** The repository page the dialog's file paths link into (its task's first pull request's), or null for none. */
 export const RepoBase = createContext<string | null>(null);
 
-/** Text with the inline Markdown a task row, section or doc body draws: `code`, **bold**, [links](url) and TASK-N ids. */
+/** Text with the inline Markdown a task row, section or doc body draws: `code`, **bold**, ~~struck~~, [links](url) and TASK-N ids. */
 export function Inline({ text, open }: { text: string; open: (id: string) => void }) {
   const base = useContext(RepoBase);
-  return <>{text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:[^)]+\))/).map((part, i) => {
+  return <>{text.split(/(`[^`]+`|~~.+?~~|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:[^)]+\))/).map((part, i) => {
     if (i % 2 === 0) return <Linked key={i} text={part} open={open} />;
     if (part.startsWith("`")) {
       const code = part.slice(1, -1);
@@ -26,6 +26,7 @@ export function Inline({ text, open }: { text: string; open: (id: string) => voi
       if (!path) return <code key={i}>{code}</code>;
       return <code key={i}>{base ? <a className="rp" href={base + "/blob/main/" + path} target="_blank" rel="noopener">{path}</a> : path}</code>;
     }
+    if (part.startsWith("~~")) return <del key={i}><Inline text={part.slice(2, -2)} open={open} /></del>;
     if (part.startsWith("**")) return <strong key={i}><Linked text={part.slice(2, -2)} open={open} /></strong>;
     const [, label, href] = /^\[(.+)\]\((.+)\)$/.exec(part)!;
     return <a key={i} href={href} target="_blank" rel="noopener"><Inline text={label} open={open} /> ↗</a>;

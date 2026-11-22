@@ -41,29 +41,23 @@ export interface ApiContract {
   )[];
   breakingChanges: BreakingChanges;
   build: BuildEvent;
-  cells: Cells;
   contractReport: ContractReport;
   costToGo: CostToGo;
   diff: RunDiffs;
   docShown: DocShown;
   docs: Docs;
   donePage: DonePage;
-  estimates: Estimates;
   events: (
     TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | VerdictDelta | LedgersDelta | SchedulerStatus
   )[];
-  graph: FlowGraph;
   harnesses: Harnesses;
-  health: Health;
   laneHistory: LaneHistory;
   ledger: LedgerPage;
   ledgerChange: LedgerChange;
-  liveness: Liveness;
   machineHistory: MachineHistory;
   machines: Machines;
   milestoneShown: MilestoneShown;
   milestones: Milestones;
-  missedLoads: MissedLoads;
   pulls: Pulls;
   readyReport: ReadyReport;
   requests: (
@@ -100,11 +94,8 @@ export interface ApiContract {
   runs: Runs;
   schedulerStatus: SchedulerStatus;
   searchResults: SearchResults;
-  sessionSteps: SessionSteps;
-  sessions: Sessions;
   snapshot: Snapshot;
   spend: Spend;
-  stages: SubStages;
   taskCostToGo: TaskCostToGo;
   taskDiff: TaskDiff;
   taskEventHistory: TaskEventHistory;
@@ -112,9 +103,7 @@ export interface ApiContract {
   taskRecord: TaskRecord;
   taskRecords: TaskRecords;
   taskSpend: TaskSpend;
-  traceClusters: TraceClusters;
   trajectories: Trajectories;
-  transitions: Transitions;
   windowState: WindowState;
   [k: string]: unknown;
 }
@@ -347,48 +336,6 @@ export interface BuildEvent {
   [k: string]: unknown;
 }
 /**
- * `GET /api/analytics/cells`: cells with at least 5 clean completions; a smaller cell reports nothing.
- */
-export interface Cells {
-  cells: Cell[];
-  now: number;
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * Median steps per clean completion of one kind and size, over its latest-fifth holdout.
- */
-export interface Cell {
-  clean_rate: number;
-  /**
-   * Completions in the cell, clean or not.
-   */
-  completions: number;
-  /**
-   * The latest fifth of the clean completions by end time, rounded up.
-   */
-  holdout: number;
-  kind: string;
-  /**
-   * Human prompts after the task's claim.
-   */
-  median_operator_prompts: number;
-  /**
-   * Of the holdout's steps, a subagent's included.
-   */
-  median_steps: number;
-  /**
-   * None when no holdout task made an edit.
-   */
-  median_steps_before_edit: number | null;
-  /**
-   * Clean completions in the cell.
-   */
-  n: number;
-  size: number;
-  [k: string]: unknown;
-}
-/**
  * The contract checks `starpulse doctor` runs; `ok` is false when any fails.
  */
 export interface ContractReport {
@@ -409,7 +356,7 @@ export interface ContractCheck {
   [k: string]: unknown;
 }
 /**
- * `GET /api/analytics/cost-to-go`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one.
+ * `GET /api/task-cost-to-go/{id}`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one.
  */
 export interface CostToGo {
   cost_to_go: StateCost[];
@@ -439,7 +386,7 @@ export interface StateCost {
   [k: string]: unknown;
 }
 /**
- * `GET /api/analytics/diff`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.
+ * `GET /api/task-diff/{id}`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.
  */
 export interface RunDiffs {
   diff: RunDiff[];
@@ -651,6 +598,10 @@ export interface RawTask {
    */
   runs?: TaskRun[] | null;
   /**
+   * What a held In Progress task's holder session is doing; absent off that lane or when unheld.
+   */
+  session_activity?: SessionActivity | null;
+  /**
    * The skill machine an In Progress task is held in; absent off the held view.
    */
   skill?: HeldSkill | null;
@@ -796,6 +747,24 @@ export interface TaskRun {
   url: string;
   [k: string]: unknown;
 }
+/**
+ * What a held working task's holder session is doing, read from its transcript when the snapshot is drawn.
+ */
+export interface SessionActivity {
+  /**
+   * Seconds idle when the snapshot was drawn; present only when idle.
+   */
+  idle_s?: number | null;
+  /**
+   * When the session's last turn was written, ISO 8601; absent when unknown.
+   */
+  last_turn_at?: string | null;
+  /**
+   * `working` mid-turn, `idle` after a finished turn, `unknown` when no running session with a transcript holds the task.
+   */
+  state: "working" | "idle" | "unknown";
+  [k: string]: unknown;
+}
 export interface HeldSkill {
   /**
    * The state the task holds in the skill machine.
@@ -824,45 +793,6 @@ export interface HeldNext {
    * The skill or operation the edge hands to.
    */
   name: string;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/analytics/estimates`: each completed, labelled task's estimate beside its measured actuals.
- */
-export interface Estimates {
-  estimates: Estimate[];
-  now: number;
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * One completed task: its size estimate beside what it measured.
- */
-export interface Estimate {
-  /**
-   * Agent seconds plus the operator's wait, in minutes.
-   */
-  active_minutes: number;
-  /**
-   * The smallest configured size whose p90 steps and active minutes hold the actuals; None past the largest, or with no `size_bands`.
-   */
-  effort_size: number | null;
-  /**
-   * Sizes the effort lies above (positive) or below (negative) the label; one past the top when the effort has no size; None when the label is no configured size.
-   */
-  effort_size_step: number | null;
-  kind: string;
-  milestone: string | null;
-  profile: string | null;
-  /**
-   * The task's `size-<n>` label.
-   */
-  size: number;
-  /**
-   * Model requests, a subagent's included.
-   */
-  steps: number;
-  task: string;
   [k: string]: unknown;
 }
 /**
@@ -1607,51 +1537,6 @@ export interface SchedulerHarnessSessions {
   [k: string]: unknown;
 }
 /**
- * `GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.
- */
-export interface FlowGraph {
-  graph: FlowEdge[];
-  now: number;
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * One directly-follows edge of a transition's graph.
- */
-export interface FlowEdge {
-  /**
-   * Occurrences of the edge.
-   */
-  count: number;
-  /**
-   * `source` is a judgement cut: the agent chose there.
-   */
-  cut: boolean;
-  kind: string;
-  /**
-   * Runs (tasks) the edge occurred in.
-   */
-  runs: number;
-  /**
-   * Of the occurrences that leave `source`.
-   */
-  share: number;
-  size: number;
-  /**
-   * The skill in force: the transition.
-   */
-  skill: string;
-  /**
-   * An activity, or `[start]`.
-   */
-  source: string;
-  /**
-   * The activity that directly follows it, or `[end]`.
-   */
-  target: string;
-  [k: string]: unknown;
-}
-/**
  * `GET /api/harnesses`: the tiers in order and each harness with its models and efforts.
  */
 export interface Harnesses {
@@ -1678,64 +1563,6 @@ export interface HarnessTier {
   run_efforts?: {
     [k: string]: string;
   } | null;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/analytics/health`: the Board's flow health over a window.
- */
-export interface Health {
-  now: number;
-  states: HealthState[];
-  stuck: HealthStuck[];
-  stuck_after_s: number;
-  throughput: HealthThroughput;
-  warnings: (GapWarning | UnknownLaneWarning)[];
-  window_s: number;
-  [k: string]: unknown;
-}
-export interface HealthState {
-  final: boolean;
-  id: string;
-  max_s?: number | null;
-  mean_s?: number | null;
-  name: string;
-  open?: number | null;
-  visits?: number | null;
-  wip: number;
-  [k: string]: unknown;
-}
-export interface HealthStuck {
-  counted_to_now: boolean;
-  dwell_s: number;
-  since: number;
-  state: string;
-  task: string;
-  [k: string]: unknown;
-}
-export interface HealthThroughput {
-  count: number;
-  per_day: number;
-  [k: string]: unknown;
-}
-/**
- * The history lost entries between two ids, so any number here may miss some.
- */
-export interface GapWarning {
-  after_id: string;
-  before_id: string;
-  kind: "gap";
-  lost: number;
-  message: string;
-  stream: string;
-  [k: string]: unknown;
-}
-/**
- * A lane that is no Board state.
- */
-export interface UnknownLaneWarning {
-  kind: "unknown_lane";
-  lane: string;
-  message: string;
   [k: string]: unknown;
 }
 /**
@@ -1768,98 +1595,6 @@ export interface LedgerPage {
  */
 export interface LedgerChange {
   rows: LedgerRow[];
-  [k: string]: unknown;
-}
-/**
- * `GET /api/analytics/liveness`: each working task's liveness and the Board's pace into Review over a window.
- */
-export interface Liveness {
-  in_progress_s: number;
-  now: number;
-  review: ReviewPace;
-  /**
-   * Seconds every working stay spent inside the window.
-   */
-  slot_s: number;
-  slots: SlotCause[];
-  stages: WorkStage[];
-  stalled_after_s: number;
-  stalls: StallCause[];
-  tasks: TaskLiveness[];
-  window_s: number;
-  [k: string]: unknown;
-}
-export interface ReviewPace {
-  count: number;
-  hours: ReviewHour[];
-  per_hour: number;
-  /**
-   * Moves per hour of the window's slot time; null with none.
-   */
-  per_slot_hour: number | null;
-  [k: string]: unknown;
-}
-export interface ReviewHour {
-  at: number;
-  count: number;
-  [k: string]: unknown;
-}
-export interface SlotCause {
-  cause: "working" | "idle" | "slow_process" | "unattributed" | "waiting_checks";
-  share: number;
-  /**
-   * Working-lane seconds inside the window the cause held.
-   */
-  slot_s: number;
-  [k: string]: unknown;
-}
-export interface WorkStage {
-  mean_s: number;
-  share: number | null;
-  /**
-   * The `machine:state` a work-machine event left the task in; the lane before the first.
-   */
-  stage: string;
-  task_s: number;
-  visits: number;
-  [k: string]: unknown;
-}
-export interface StallCause {
-  cause: "idle" | "slow_process" | "unattributed" | "waiting_checks";
-  count: number;
-  /**
-   * Seconds past the threshold, summed over the silences.
-   */
-  stalled_s: number;
-  waits_in: string | null;
-  [k: string]: unknown;
-}
-/**
- * One working task: how long since its state last changed and since its session's last command.
- */
-export interface TaskLiveness {
-  cause: ("idle" | "slow_process" | "unattributed" | "waiting_checks") | null;
-  /**
-   * Seconds since its session's last tool call; null when none names it.
-   */
-  command_idle_s: number | null;
-  /**
-   * When the task entered the working State.
-   */
-  since: number;
-  /**
-   * Both idle times are past the threshold.
-   */
-  stalled: boolean;
-  /**
-   * Seconds since its last lane change or work-machine event.
-   */
-  state_idle_s: number;
-  task: string;
-  /**
-   * The `machine:state` a slow process or a pending check rollup holds the task in.
-   */
-  waits_in: string | null;
   [k: string]: unknown;
 }
 /**
@@ -1944,38 +1679,6 @@ export interface MilestoneRecord {
  */
 export interface Milestones {
   milestones: MilestoneRecord[];
-  [k: string]: unknown;
-}
-/**
- * `GET /api/analytics/missed-loads`: per declared skill, the cases that ran its trigger without loading it.
- */
-export interface MissedLoads {
-  now: number;
-  skills: MissedSkill[];
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * A declared skill: the cases that performed what should load it, and those that did not load it.
- */
-export interface MissedSkill {
-  /**
-   * The `list` most recent missed cases, newest first.
-   */
-  listed: CaseRef[];
-  missed: number;
-  performed: number;
-  skill: string;
-  [k: string]: unknown;
-}
-/**
- * One session's work on one task (`task` None: a branch that names none).
- */
-export interface CaseRef {
-  harness: string;
-  last_at: number;
-  session: string;
-  task: string | null;
   [k: string]: unknown;
 }
 /**
@@ -2462,205 +2165,6 @@ export interface SearchHit {
   snippet: string;
   task: string;
   title: string;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/analytics/steps`: the model requests of a window, oldest first, a page at a time.
- */
-export interface SessionSteps {
-  /**
-   * The `after` cursor of the next page; null on the last page.
-   */
-  next?: string | null;
-  now: number;
-  steps: SessionStep[];
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * One model request of a harness session, with the skill in force when it ran and the calls it made.
- */
-export interface SessionStep {
-  /**
-   * What each call it made performed, in order, with no arguments.
-   */
-  activities: string[];
-  /**
-   * When the request was logged, in epoch seconds.
-   */
-  at: number;
-  /**
-   * False for a harness the steps-per-completion ledger does not cover (Codex).
-   */
-  captured: boolean;
-  /**
-   * The reasoning effort the request ran at; empty when the harness gives none.
-   */
-  effort?: string;
-  /**
-   * The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request.
-   */
-  eval: string;
-  harness: string;
-  /**
-   * One per call: the shell command the instance's redactor left, else the tool's name.
-   */
-  keys: string[];
-  model: string;
-  origin: "main" | "side" | "auxiliary";
-  session: string;
-  /**
-   * The skill most recently loaded in the session, counting this step's own; `none` before any.
-   */
-  skill: string;
-  task: string | null;
-  tokens: TokenCounts;
-  [k: string]: unknown;
-}
-export interface TokenCounts {
-  cache_read: number;
-  cache_write: number;
-  input: number;
-  output: number;
-  reasoning: number;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/analytics/sessions`: session and slice health over a window.
- */
-export interface Sessions {
-  now: number;
-  sessions: SessionHealth[];
-  slices: SliceHealth[];
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * One harness session's work on one task (`task` None: a branch that names none), from its OTLP signals.
- */
-export interface SessionHealth {
-  agent_s: number;
-  /**
-   * Each subagent type's token totals among `tokens` (`qa-<lens>` for a qa lens); only a subagent that names its type.
-   */
-  agents: {
-    [k: string]: AgentSpend;
-  };
-  compactions: {
-    [k: string]: number;
-  };
-  complete: boolean;
-  cost_usd: number | null;
-  effort_changes: number;
-  efforts: string[];
-  /**
-   * The launch's `claude_code.entrypoint` resource attribute (`cli`, `sdk-cli`); empty when it set none.
-   */
-  entrypoint: string;
-  eval: string;
-  first_at: number;
-  /**
-   * The prompt tokens (input, cache read and cache write) of the session's first main-thread request that sent any; None when it made none.
-   */
-  first_request_tokens: number | null;
-  gates: {
-    [k: string]: number;
-  };
-  harness: string;
-  idle_s: number;
-  interrupts: number;
-  kind: "headless" | "interactive" | "unknown";
-  last_at: number;
-  lowers: number;
-  main_effort: string | null;
-  main_model: string | null;
-  model_changes: number;
-  models: string[];
-  operator_prompts: number;
-  operator_wait_s: number;
-  origin: string;
-  prompt_labels: {
-    [k: string]: number;
-  };
-  prompts: number;
-  raises: number;
-  rejections: {
-    [k: string]: number;
-  };
-  requests: number;
-  /**
-   * The furthest phase skill (`starting-task`, `tdd`, `qa`, `deliver`, `fix-checks`, `review-fix`, `verify`) the session loaded on this task; `other` when it loaded none.
-   */
-  role: string;
-  session: string;
-  side_requests: number;
-  skills: {
-    [k: string]: number;
-  };
-  steps_before_edit: number | null;
-  task: string | null;
-  tokens: TokenCounts;
-  tool_calls: number;
-  tool_failures: number;
-  tools: {
-    [k: string]: number;
-  };
-  user_rejects: number;
-  [k: string]: unknown;
-}
-export interface AgentSpend {
-  cache_read: number;
-  cache_write: number;
-  /**
-   * The cache_write of each such subagent's first request, summed.
-   */
-  first_request_cache_write?: number;
-  input: number;
-  output: number;
-  reasoning: number;
-  /**
-   * The subagents of this type whose requests named their instance id.
-   */
-  subagents?: number;
-  [k: string]: unknown;
-}
-/**
- * What the sessions that worked one task did together.
- */
-export interface SliceHealth {
-  active_s: number;
-  clean: boolean;
-  compactions: number;
-  complete: boolean;
-  cost_usd: number | null;
-  efforts: string[];
-  escalated: boolean;
-  first_at: number;
-  harnesses: string[];
-  idle_s: number;
-  interrupts: number;
-  interventions: number;
-  last_at: number;
-  lowers: number;
-  models: string[];
-  operator_prompts: number;
-  operator_wait_s: number;
-  prompt_labels: {
-    [k: string]: number;
-  };
-  raises: number;
-  rejections: number;
-  sessions: number;
-  side_steps: number;
-  skills: {
-    [k: string]: number;
-  };
-  steps: number;
-  steps_before_edit: number | null;
-  task: string;
-  tokens: TokenCounts;
-  tool_calls: number;
-  user_rejects: number;
   [k: string]: unknown;
 }
 export interface Snapshot {
@@ -3157,41 +2661,6 @@ export interface SpendPhase {
   [k: string]: unknown;
 }
 /**
- * `GET /api/analytics/stages`: sub-stages and their stability from one window to the one before.
- */
-export interface SubStages {
-  now: number;
-  stages: SubStage[];
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * One stage mined at the judgement cuts of the stretches no skill governs, this week and the week before.
- */
-export interface SubStage {
-  kind: string;
-  median_activities: number | null;
-  previous_median_activities: number | null;
-  /**
-   * Runs it occurred in over the window before.
-   */
-  previous_runs: number;
-  /**
-   * Runs the stage occurred in over the window; 0 when it did not occur.
-   */
-  runs: number;
-  size: number;
-  /**
-   * Of the cell: stages in both windows over stages in either; None when a window mined none.
-   */
-  stability: number | null;
-  /**
-   * The cut that opens the stage, `[start]` for the first.
-   */
-  stage: string;
-  [k: string]: unknown;
-}
-/**
  * `GET /api/task-cost-to-go/{id}`: the task's kind and size, and the rows `CostToGo` holds for them; no kind or size, no rows.
  */
 export interface TaskCostToGo {
@@ -3282,94 +2751,6 @@ export interface TaskSpend {
   spend: SpendPhase[];
   task: string;
   window_s: number;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/analytics/trace-clusters`: recurring work, ranked by distinct sessions.
- */
-export interface TraceClusters {
-  /**
-   * Cases with a trace in the window.
-   */
-  cases: number;
-  /**
-   * Cases that joined a cluster, whatever its size.
-   */
-  clustered: number;
-  clusters: TraceCluster[];
-  min_sessions: number;
-  now: number;
-  threshold: number;
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * Cases that did the same distinctive work, and the skills that covered it.
- */
-export interface TraceCluster {
-  cases: number;
-  /**
-   * The features with the most weight across the cases: `a:` activity, `r:` area read, `w:` area written.
-   */
-  descriptors: string[];
-  first_at: number;
-  /**
-   * A stable id: the digest of the sorted descriptors.
-   */
-  key: string;
-  kinds: {
-    [k: string]: number;
-  };
-  last_at: number;
-  /**
-   * Null unless `outliers` was asked for.
-   */
-  medoid: ClusterMedoid | null;
-  missed_loads: ClusterMissed[];
-  outliers: ClusterOutlier[];
-  sample_sessions: string[];
-  sample_tasks: string[];
-  sessions: number;
-  /**
-   * The three most loaded skills, less the lifecycle skills.
-   */
-  skills: ClusterSkill[];
-  tasks: string[];
-  titles: string[];
-  /**
-   * Cases that loaded no skill beyond the lifecycle skills.
-   */
-  uncovered: number;
-  [k: string]: unknown;
-}
-/**
- * The case nearest every other by normalized LCS distance between traces, and the cluster's usual spread.
- */
-export interface ClusterMedoid {
-  case: CaseRef;
-  median_distance: number;
-  trace: string[];
-  [k: string]: unknown;
-}
-export interface ClusterMissed {
-  missed: number;
-  performed: number;
-  skill: string;
-  [k: string]: unknown;
-}
-/**
- * A case far from the medoid: `deletions` are the medoid's activities it lacks, `insertions` its own extra.
- */
-export interface ClusterOutlier {
-  case: CaseRef;
-  deletions: string[];
-  distance: number;
-  insertions: string[];
-  [k: string]: unknown;
-}
-export interface ClusterSkill {
-  cases: number;
-  skill: string;
   [k: string]: unknown;
 }
 /**
@@ -3525,55 +2906,6 @@ export interface Variant {
   count: number;
   path: string[];
   share: number;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/analytics/transitions`: what each skill cost within each kind and size, Codex left out.
- */
-export interface Transitions {
-  now: number;
-  transitions: TransitionCost[];
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * The cost of one skill in force, within one kind and size of task.
- */
-export interface TransitionCost {
-  /**
-   * The seconds of the steps' requests and tool calls.
-   */
-  agent_s: number;
-  /**
-   * The `kind-*` label of the tasks, without the prefix.
-   */
-  kind: string;
-  /**
-   * The most input, cache-read and cache-write tokens one request held.
-   */
-  peak_context: number;
-  /**
-   * The subagents' share of `steps`.
-   */
-  side_steps: number;
-  /**
-   * The `size-*` label of the tasks.
-   */
-  size: number;
-  /**
-   * The skill in force on the steps; `none` before any load.
-   */
-  skill: string;
-  /**
-   * Model requests, a subagent's included.
-   */
-  steps: number;
-  tasks: number;
-  wasted_rate: number;
-  /**
-   * Steps with a call that failed, was refused by a guard or hook, or repeats the command before it.
-   */
-  wasted_steps: number;
   [k: string]: unknown;
 }
 /**

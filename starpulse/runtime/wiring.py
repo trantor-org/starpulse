@@ -38,10 +38,10 @@ def trajectories_response(
 ) -> tuple[bytes, int]:
     """The body and status of the trajectory analytics of the runs that ended in the last `hours` as of `now`, which
     the scheduler ranks tasks by; refused when `hours` is no positive number."""
-    from starpulse.views.application.queries.responses import _HEALTH_HOURS, _error, _hours  # noqa: PLC0415 - the scheduler's answer is the page's, and `serve` and the contexts child import no page module
+    from starpulse.views.application.queries.responses import _WINDOW_HOURS, _error, _hours  # noqa: PLC0415 - the scheduler's answer is the page's, and `serve` and the contexts child import no page module
     from starpulse.views.model.encoding import encode  # noqa: PLC0415
 
-    window = _hours(query, "hours", _HEALTH_HOURS)
+    window = _hours(query, "hours", _WINDOW_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
 

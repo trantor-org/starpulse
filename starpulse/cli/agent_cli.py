@@ -1,4 +1,4 @@
-"""`starpulse snapshot|board|task|machine|runs|watch|analytics|doctor|skills|help --agent`: the verbs an agent drives a running server with.
+"""`starpulse snapshot|board|task|machine|runs|watch|doctor|skills|help --agent`: the verbs an agent drives a running server with.
 
     starpulse board --milestone launch --label api
     starpulse task show PROJ-45
@@ -34,15 +34,6 @@
     starpulse runs list
     starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
-    starpulse analytics health --hours 72
-    starpulse analytics liveness --stalled-minutes 5
-    starpulse analytics transitions --hours 168
-    starpulse analytics cells --hours 720
-    starpulse analytics estimates --hours 720 --milestone <milestone>
-    starpulse analytics graph --hours 168
-    starpulse analytics stages --hours 168
-    starpulse analytics diff --hours 168
-    starpulse analytics verdict --kind execute --size 3 --profile sonnet-low
     starpulse doctor
     starpulse skills install --claude --codex
     starpulse help --agent
@@ -122,27 +113,15 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 from starpulse.cli import agent_flags, agent_wire
 from starpulse.cli.agent_keys import (
-    CELL_KEYS,
     CLAIM_KEYS,
-    DIFF_KEYS,
     DOC_KEYS,
-    ESTIMATE_KEYS,
-    GRAPH_KEYS,
-    HEALTH_KEYS,
     LIFECYCLE_KEYS,
-    LIVENESS_KEYS,
     MILESTONE_KEYS,
     MOVE_KEYS,
     PULL_KEYS,
     RELEASE_KEYS,
-    SCORE_KEYS,
     SNAPSHOT_KEYS,
-    SPEND_KEYS,
-    STAGE_KEYS,
-    STEP_KEYS,
     TASK_KEYS,
-    TRANSITION_KEYS,
-    VERDICT_KEYS,
 )
 
 if TYPE_CHECKING:
@@ -157,9 +136,6 @@ EXIT_CODES = {
     4: "not found",
     5: "a command's child ended pending",
 }
-#: Seconds an analytics read may take: the sessions route computes over the telemetry window and answers in ~15.
-_ANALYTICS_TIMEOUT_S = 60.0
-_STEPS_PAGE = 5000
 #: The exit code of each error `code`.
 _ERROR_EXIT = {"refused": 1, "usage": 2, "unavailable": 3, "not_found": 4}
 
@@ -365,170 +341,6 @@ def _watch(args: argparse.Namespace, environ: Mapping[str, str]) -> Iterator[dic
     for name, data in frames:
         if (delta := _delta(name, data, args.machine, args.task)) is not None:
             yield {"event": name, "data": delta}
-
-
-def _health(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The Board's flow health as `/api/analytics/health` answers it; a window the server refuses is `refused`."""
-    base = agent_wire.server_url(args.server, environ)
-    asked = {"hours": args.hours, "stuck_hours": args.stuck_hours}
-    query = urllib.parse.urlencode({key: value for key, value in asked.items() if value is not None})
-    path = f"/api/analytics/health?{query}"
-    status, document = agent_wire.get(base, path)
-    if status in {400, 501} and isinstance(document, dict) and "error" in document:
-        raise agent_wire.CliError("refused" if status == 400 else "unavailable", document["error"])
-    if status != 200 or not isinstance(document, dict) or not document.keys() >= set(HEALTH_KEYS):
-        raise agent_wire.CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
-    return {key: document[key] for key in HEALTH_KEYS}
-
-
-def _window_read(
-    args: argparse.Namespace,
-    environ: Mapping[str, str],
-    route: str,
-    keys: Sequence[str],
-    params: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    """`keys` of what the analytics route `route` answers over `--hours`, with `params` added to the query.
-
-    A window the server refuses, including one longer than its history, is `refused`; a server with no telemetry is
-    `unavailable`.
-    """
-    base = agent_wire.server_url(args.server, environ)
-    query = urllib.parse.urlencode({**({} if args.hours is None else {"hours": args.hours}), **(params or {})})
-    path = f"{route}?{query}"
-    status, document = agent_wire.get(base, path, timeout=_ANALYTICS_TIMEOUT_S)
-    if status in {400, 404, 501} and isinstance(document, dict) and "error" in document:
-        raise agent_wire.CliError("refused" if status == 400 else "unavailable", document["error"])
-    if status != 200 or not isinstance(document, dict) or not document.keys() >= set(keys):
-        raise agent_wire.CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
-    return {key: document[key] for key in keys}
-
-
-def _liveness(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Each working task's liveness and the Board's moves into Review per hour over `--hours`, as
-    `/api/analytics/liveness` answers. A window or threshold the server refuses is `refused`."""
-    stalled = {} if args.stalled_minutes is None else {"stalled_minutes": args.stalled_minutes}
-    return _window_read(args, environ, "/api/analytics/liveness", LIVENESS_KEYS, stalled)
-
-
-def _steps(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """One row per model request over `--hours`, as `/api/analytics/steps` answers: the skill in force, the activities
-    and keys of the calls it made, and its tokens. A window longer than the telemetry history is `refused`; a server
-    that receives no telemetry is `unavailable`. The server answers a page at a time; this reads them all."""
-    first = page = _window_read(args, environ, "/api/analytics/steps", (*STEP_KEYS, "next"), {"limit": _STEPS_PAGE})
-    steps = list(page["steps"])
-    while page["next"]:
-        page = _window_read(
-            args, environ, "/api/analytics/steps", (*STEP_KEYS, "next"), {"limit": _STEPS_PAGE, "after": page["next"]}
-        )
-        steps += page["steps"]
-    return {**{key: first[key] for key in STEP_KEYS}, "steps": steps}
-
-
-def _transitions(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The cost of each skill in force within each kind and size over `--hours`, as `/api/analytics/transitions`
-    answers. A window longer than the telemetry history is `refused`; a server that receives no telemetry is
-    `unavailable`."""
-    return _window_read(args, environ, "/api/analytics/transitions", TRANSITION_KEYS)
-
-
-def _spend(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Each task's tokens by phase over `--hours`, as `/api/analytics/spend` answers, with the task's weighted total
-    against its kind and size norm. Refusals as `analytics transitions`."""
-    return _window_read(args, environ, "/api/analytics/spend", SPEND_KEYS)
-
-
-def _cells(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The median steps per clean completion of each kind and size over `--hours`, as `/api/analytics/cells`
-    answers; refusals as `analytics transitions`."""
-    return _window_read(args, environ, "/api/analytics/cells", CELL_KEYS)
-
-
-def _estimates(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Each completed task's size label, kind and profile beside its measured steps, active minutes and effort size
-    step over `--hours`, as `/api/analytics/estimates` answers, only `--milestone`'s tasks when given; refusals as
-    `analytics transitions`."""
-    params = {"milestone": args.milestone} if args.milestone else None
-    return _window_read(args, environ, "/api/analytics/estimates", ESTIMATE_KEYS, params)
-
-
-def _scores(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The score of each kind x size cell and profile over `--hours` (`level.scores`): the completed slices of
-    `/api/analytics/sessions`, the kind and size `/api/analytics/estimates` reads for each and, for each task's merged pull request in
-    `--repo`, the commits after it was ready and its time to merge from GitHub; refusals as `analytics transitions`. `verdicts` judges each cell's other profiles against its busiest
-    (`level.verdicts`)."""
-    from starpulse.contracts.analytics import Analytics  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.flow_metrics.model.cells import cell_of  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.flow_metrics.model.scores import (  # noqa: PLC0415 - import cost, paid on first use
-        WEIGHTS,
-        PullFacts,
-        cell_task_scores,
-        merged_pulls,
-        pull_facts,
-        score_cells,
-    )
-    from starpulse.flow_metrics.model.verdicts import cell_verdicts  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.github.adapters.outbound.rest import GitHubError, connect, repo_of  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.runtime.config import discover, load  # noqa: PLC0415 - import cost, paid on first use
-
-    window = _window_read(args, environ, "/api/analytics/sessions", ("now", "window_s", "slices"))
-    # The snapshot holds no settled task once a read model serves it; the server's estimates join every task's labels.
-    estimates = _window_read(args, environ, "/api/analytics/estimates", ESTIMATE_KEYS)["estimates"]
-    tasks = {row["task"]: {"labels": [f"kind-{row['kind']}", f"size-{row['size']}"]} for row in estimates}
-    path = discover(args.config)
-    try:
-        analytics = load(path).analytics if path else Analytics()
-    except (OSError, ValueError) as exc:
-        raise agent_wire.CliError("usage", f"{path}: {exc}") from exc
-    weights = {**WEIGHTS, **dict(analytics.weights)}
-    if not (args.repo or analytics.default_repo):
-        raise agent_wire.CliError("usage", "--repo is required: the config sets no [analytics] default_repo")
-    repo = repo_of(args.repo or analytics.default_repo)
-    transport = connect(environ.get("GITHUB_TOKEN") or environ.get("GH_TOKEN"))
-    facts: dict[str, PullFacts] = {}
-    try:
-        scored = [f["task"] for f in window["slices"] if f["complete"] and cell_of(tasks, f["task"]) is not None]
-        numbers = merged_pulls(transport, repo) if scored else {}
-        for task in scored:
-            pull = pull_facts(transport, repo, numbers[task]) if task in numbers else None
-            if pull is not None:
-                facts[task] = pull
-    except GitHubError as exc:
-        raise agent_wire.CliError("unavailable", str(exc)) from exc
-    return {
-        "now": window["now"],
-        "window_s": window["window_s"],
-        "scores": score_cells(window["slices"], tasks, facts, weights=weights),
-        "verdicts": cell_verdicts(cell_task_scores(window["slices"], tasks, facts, weights=weights)),
-    }
-
-
-def _verdict(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The `analytics scores` verdict row of the trial cell `--kind`, `--size`, `--profile`: `win`, `lose` or `continue`;
-    a cell with no trial is `not_found`."""
-    cell = (args.kind, args.size, args.profile)
-    for row in _scores(args, environ)["verdicts"]:
-        if (row["kind"], row["size"], row["profile"]) == cell:
-            return row
-    raise agent_wire.CliError("not_found", f"no trial cell {args.kind} size {args.size} profile {args.profile}")
-
-
-def _graph(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The branching directly-follows graph of each skill's transition within each kind and size over `--hours`, as
-    `/api/analytics/graph` answers; refusals as `analytics transitions`."""
-    return _window_read(args, environ, "/api/analytics/graph", GRAPH_KEYS)
-
-
-def _stages(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The sub-stages mined from the stretches no skill governs over `--hours` against the `--hours` before, as
-    `/api/analytics/stages` answers; refusals as `analytics transitions`."""
-    return _window_read(args, environ, "/api/analytics/stages", STAGE_KEYS)
-
-
-def _diff(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Each transition's reference run against its slowest clean run over `--hours`, as `/api/analytics/diff`
-    answers; refusals as `analytics transitions`."""
-    return _window_read(args, environ, "/api/analytics/diff", DIFF_KEYS)
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1211,6 +1023,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     retired.add_argument("task", nargs="?", default="", help="one retired task's key (`PROJ-45`); default: every one")
     retired.add_argument("--milestone", default="", help="only the retired tasks of this milestone (`m-9`)")
+    retired.add_argument("--ids", action="store_true", help="answer each as {task, dependencies}, no text, unpaged")
     leaf(
         task_verbs,
         "cold-done",
@@ -1494,143 +1307,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     watch.add_argument("--machine", help="only changes on this machine (`board`, `in-progress`)")
     watch.add_argument("--task", help="only changes to this task (`PROJ-45`)")
-    analytics = verbs.add_parser(
-        "analytics", description="flow health and session aggregates", help="flow health and session aggregates"
-    )
-    analytics_verbs = analytics.add_subparsers(dest="verb", required=True, metavar="verb")
-    health = leaf(
-        analytics_verbs,
-        "health",
-        "the Board's dwell and WIP per state, throughput and stuck tasks over a window, with history gap warnings",
-        _health,
-        HEALTH_KEYS,
-        (0, 1, 2, 3),
-    )
-    health.add_argument("--hours", type=float, help="the window to count over, in hours (default: the server's, 168)")
-    health.add_argument("--stuck-hours", type=float, help="how long in one state makes a task stuck (default 24)")
-    liveness = leaf(
-        analytics_verbs,
-        "liveness",
-        "each working task's time since its last state change and last command, the stalled ones with their cause, "
-        "and the Board's moves into Review per hour with the time each working stage takes",
-        _liveness,
-        LIVENESS_KEYS,
-        (0, 1, 2, 3),
-    )
-    liveness.add_argument(
-        "--hours", type=float, help="the window to count moves into Review over, in hours (default 24)"
-    )
-    liveness.add_argument(
-        "--stalled-minutes",
-        type=float,
-        help="how long without a state change or a command stalls a task, in minutes (default 5)",
-    )
-    steps = leaf(
-        analytics_verbs,
-        "steps",
-        "one row per model request: harness, session, task, time, model, the skill in force (`none` before any load), "
-        "the activities and keys of the tool calls it made, and its tokens",
-        _steps,
-        STEP_KEYS,
-        (0, 1, 2, 3),
-    )
-    steps.add_argument(
-        "--hours",
-        type=float,
-        help="the window to read, in hours; past the telemetry history it is refused (default 168)",
-    )
-    for verb, summary, run, answer in (
-        (
-            "transitions",
-            "the cost of each skill in force within each kind and size: steps (a subagent's counted to its task), "
-            "wasted-step rate, agent seconds and peak context",
-            _transitions,
-            TRANSITION_KEYS,
-        ),
-        (
-            "spend",
-            "each task's tokens by phase (claim, implement, qa, deliver, review fix): weighted tokens, cache reads, peak "
-            "context, compactions and models, with the task's total against its kind, size and profile norm "
-            "(`norm_profile` names the cell, `mixed` when the profile had too few tasks)",
-            _spend,
-            SPEND_KEYS,
-        ),
-        (
-            "cells",
-            "the median steps per clean completion of each kind and size over the latest fifth of its clean "
-            "completions, with n, clean rate, median human prompts mid-task and median steps before the first edit",
-            _cells,
-            CELL_KEYS,
-        ),
-        (
-            "graph",
-            "the branching directly-follows graph of each skill's transition within each kind and size: each activity "
-            "edge with its run count, the edges leaving a judgement cut marked",
-            _graph,
-            GRAPH_KEYS,
-        ),
-        (
-            "stages",
-            "the sub-stages mined at the judgement cuts of the stretches no skill governs, with their runs and median "
-            "length this window and the one before and how stable the stages are from one to the other",
-            _stages,
-            STAGE_KEYS,
-        ),
-        (
-            "diff",
-            "each transition's reference run (the fewest-step clean completion that conforms to its machine, from at "
-            "least 5) against its slowest clean run: the activities the slow run made that the reference did not",
-            _diff,
-            DIFF_KEYS,
-        ),
-    ):
-        leaf(analytics_verbs, verb, summary, run, answer, (0, 1, 2, 3)).add_argument(
-            "--hours",
-            type=float,
-            help="the window to read, in hours; past the telemetry history it is refused (default 168)",
-        )
-    estimates = leaf(
-        analytics_verbs,
-        "estimates",
-        "each completed task's size, kind and profile beside its measured steps, active minutes and effort size step "
-        "(the sizes its effort lies above or below its label)",
-        _estimates,
-        ESTIMATE_KEYS,
-        (0, 1, 2, 3),
-    )
-    estimates.add_argument("--hours", type=float, help="the window to read, in hours (default 168)")
-    estimates.add_argument("--milestone", help="only this milestone's tasks (`m-305`)")
-    scores = leaf(
-        analytics_verbs,
-        "scores",
-        "the score of each kind and size cell per profile (model and effort) over completed tasks, weighting clean "
-        "completion, mid-task prompts, commits after the PR was ready and time to merge, the last two from GitHub",
-        _scores,
-        SCORE_KEYS,
-        (0, 1, 2, 3),
-    )
-    scores.add_argument("--hours", type=float, help="the window to read, in hours (default 168)")
-    scores.add_argument(
-        "--repo", help="the repository whose pull requests to read, `owner/name` (default the config's default_repo)"
-    )
-    scores.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
-    verdict = leaf(
-        analytics_verbs,
-        "verdict",
-        "win, lose or continue for one trial cell: its profile's score against the cell's busiest profile, at 90 percent "
-        "posterior confidence within 10 points",
-        _verdict,
-        VERDICT_KEYS,
-        (0, 1, 2, 3, 4),
-    )
-    verdict.add_argument("--kind", required=True, help="the cell's kind (`execute`)")
-    verdict.add_argument("--size", required=True, type=int, help="the cell's size (`3`)")
-    verdict.add_argument("--profile", required=True, help="the trial profile, `model-effort` (`sonnet-low`)")
-    verdict.add_argument("--hours", type=float, help="the window to read, in hours (default 168)")
-    verdict.add_argument(
-        "--repo", help="the repository whose pull requests to read, `owner/name` (default the config's default_repo)"
-    )
-    verdict.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     command = verbs.add_parser("command", description="the project's commands", help="the project's commands")
     command_verbs = command.add_subparsers(dest="verb", required=True, metavar="verb")
     command_run = leaf(

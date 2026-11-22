@@ -239,7 +239,7 @@ function Checks({ name, field, items, editing, canToggle, bad, evidenceFor, evid
       <div className="rlist">
         {items.length ? items.map((item) => (
           <Fragment key={item.n}>
-            <label className={`ritem${item.checked ? " done" : ""}`} id={field === "acceptanceCriteria" ? `ac${item.n}` : undefined}>
+            <label className={`ritem${item.checked || /^~~.+?~~/.test(item.text) ? " done" : ""}`} id={field === "acceptanceCriteria" ? `ac${item.n}` : undefined}>
               <input type="checkbox" checked={item.checked} disabled={!canToggle} aria-label={`${name} #${item.n} done`}
                 onChange={(e) => toggle(item.n, e.currentTarget.checked)} />
               <span className="nn">#{item.n}</span><span className="tx"><Inline text={item.text} open={open} /></span>

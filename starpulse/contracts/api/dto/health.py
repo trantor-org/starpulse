@@ -1,6 +1,6 @@
-"""`/api/analytics/health` and the sessions it draws."""
+"""The history a task carries, and the session and slice health `starpulse.sessions` returns."""
 
-from typing import Annotated, Literal, TypedDict
+from typing import Literal
 
 from pydantic import Field
 
@@ -34,121 +34,8 @@ class TaskEventHistory(_Api):
     events: list[MachineEvent]
 
 
-class HealthState(_Api):
-    id: str
-    name: str
-    final: bool
-    wip: int
-    visits: int | None = None
-    mean_s: float | None = None
-    max_s: float | None = None
-    open: int | None = None
-
-
-class HealthThroughput(_Api):
-    count: int
-    per_day: float
-
-
 # A typed dict, not a model: a window lists thousands of stuck tasks and a model instance each costs more than the
 # rest of the read. Its schema is the model's (a comment, not a docstring, so the generated types do not change).
-class HealthStuck(TypedDict):
-    task: str
-    state: str
-    since: float
-    dwell_s: float
-    counted_to_now: bool
-
-
-class GapWarning(_Api):
-    """The history lost entries between two ids, so any number here may miss some."""
-
-    kind: Literal["gap"]
-    stream: str
-    after_id: str
-    before_id: str
-    lost: int
-    message: str
-
-
-class UnknownLaneWarning(_Api):
-    """A lane that is no Board state."""
-
-    kind: Literal["unknown_lane"]
-    lane: str
-    message: str
-
-
-class Health(_Api):
-    """`GET /api/analytics/health`: the Board's flow health over a window."""
-
-    now: float
-    window_s: float
-    stuck_after_s: float
-    states: list[HealthState]
-    throughput: HealthThroughput
-    stuck: list[HealthStuck]
-    warnings: list[Annotated[GapWarning | UnknownLaneWarning, Field(discriminator="kind")]]
-
-
-class TaskLiveness(_Api):
-    """One working task: how long since its state last changed and since its session's last command."""
-
-    task: str
-    since: float = Field(description="When the task entered the working State.")
-    state_idle_s: float = Field(description="Seconds since its last lane change or work-machine event.")
-    command_idle_s: float | None = Field(description="Seconds since its session's last tool call; null when none names it.")
-    stalled: bool = Field(description="Both idle times are past the threshold.")
-    cause: Literal["idle", "slow_process", "unattributed", "waiting_checks"] | None
-    waits_in: str | None = Field(description="The `machine:state` a slow process or a pending check rollup holds the task in.")
-
-
-class ReviewHour(_Api):
-    at: float
-    count: int
-
-
-class ReviewPace(_Api):
-    count: int
-    per_hour: float
-    per_slot_hour: float | None = Field(description="Moves per hour of the window's slot time; null with none.")
-    hours: list[ReviewHour]
-
-
-class WorkStage(_Api):
-    stage: str = Field(description="The `machine:state` a work-machine event left the task in; the lane before the first.")
-    visits: int
-    task_s: float
-    mean_s: float
-    share: float | None
-
-
-class StallCause(_Api):
-    cause: Literal["idle", "slow_process", "unattributed", "waiting_checks"]
-    waits_in: str | None
-    count: int
-    stalled_s: float = Field(description="Seconds past the threshold, summed over the silences.")
-
-
-class SlotCause(_Api):
-    cause: Literal["working", "idle", "slow_process", "unattributed", "waiting_checks"]
-    slot_s: float = Field(description="Working-lane seconds inside the window the cause held.")
-    share: float
-
-
-class Liveness(_Api):
-    """`GET /api/analytics/liveness`: each working task's liveness and the Board's pace into Review over a window."""
-
-    now: float
-    window_s: float
-    stalled_after_s: float
-    tasks: list[TaskLiveness]
-    review: ReviewPace
-    in_progress_s: float
-    slot_s: float = Field(description="Seconds every working stay spent inside the window.")
-    slots: list[SlotCause]
-    stages: list[WorkStage]
-    stalls: list[StallCause]
 
 
 class TokenCounts(_Api):
@@ -252,43 +139,3 @@ class SliceHealth(_Api):
     complete: bool
 
 
-class Sessions(_Api):
-    """`GET /api/analytics/sessions`: session and slice health over a window."""
-
-    now: float
-    window_s: float
-    sessions: list[SessionHealth]
-    slices: list[SliceHealth]
-
-
-class SessionStep(_Api):
-    """One model request of a harness session, with the skill in force when it ran and the calls it made."""
-
-    harness: str
-    session: str
-    task: str | None
-    at: float = Field(description="When the request was logged, in epoch seconds.")
-    model: str
-    effort: str = Field("", description="The reasoning effort the request ran at; empty when the harness gives none.")
-    origin: Literal["main", "side", "auxiliary"]
-    skill: str = Field(
-        description="The skill most recently loaded in the session, counting this step's own; `none` before any."
-    )
-    activities: list[str] = Field(description="What each call it made performed, in order, with no arguments.")
-    keys: list[str] = Field(
-        description="One per call: the shell command the instance's redactor left, else the tool's name."
-    )
-    tokens: TokenCounts
-    captured: bool = Field(description="False for a harness the steps-per-completion ledger does not cover (Codex).")
-    eval: str = Field(
-        description="The purpose an eval run stamped with the configured `eval_attribute`; empty for any other request."
-    )
-
-
-class SessionSteps(_Api):
-    """`GET /api/analytics/steps`: the model requests of a window, oldest first, a page at a time."""
-
-    now: float
-    window_s: float
-    next: str | None = Field(None, description="The `after` cursor of the next page; null on the last page.")
-    steps: list[SessionStep]

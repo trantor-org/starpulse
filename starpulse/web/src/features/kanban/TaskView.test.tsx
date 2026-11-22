@@ -150,6 +150,18 @@ describe("the task view's header", () => {
 });
 
 describe("the task view's body", () => {
+  it("draws a struck criterion with its trailing note as struck text in a resolved row, and an unclosed ~~ as plain", () => {
+    const text = "~~**Moved**: the check~~ moved to TASK-9";
+    const html = draw({ record: { ...record, acceptanceCriteria: [{ n: 1, text, checked: false }, { n: 2, text: "plain", checked: false }] } });
+    const [struck, plain] = html.split('<label class="ritem').slice(1);
+
+    expect(struck).toMatch(/^ done"/);
+    expect(struck).toContain("<del><strong>Moved</strong>: the check</del> moved to <a");
+    expect(struck).not.toContain("~~");
+    expect(plain).not.toMatch(/^ done"/);
+    expect(draw({ record: { ...record, acceptanceCriteria: [{ n: 1, text: "~~abc", checked: false }] } })).not.toContain("<del>");
+  });
+
   it("draws two columns: the read view on the left, the fields and live state in the rail", () => {
     const html = draw();
     const left = html.slice(html.indexOf('class="tvcol tvleft"'), html.indexOf('class="tvcol tvrail"'));
