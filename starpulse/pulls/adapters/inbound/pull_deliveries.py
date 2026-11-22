@@ -56,8 +56,9 @@ def _state(_record: Record, pull: Mapping[str, Any], _at: float) -> Record:
     return {"state": str(pull["state"]).upper()}
 
 
-def _draft(_record: Record, pull: Mapping[str, Any], _at: float) -> Record:
-    return {"isDraft": bool(pull["draft"])}
+def _draft(record: Record, pull: Mapping[str, Any], at: float) -> Record:
+    # stamped so the store refuses a read begun before this delivery, saved after it, that still says draft
+    return {"isDraft": bool(pull["draft"]), "fetchedAt": max(at, record["fetchedAt"])}
 
 
 def _text(_record: Record, pull: Mapping[str, Any], _at: float) -> Record:
