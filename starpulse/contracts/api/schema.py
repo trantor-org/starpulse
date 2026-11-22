@@ -96,6 +96,7 @@ from starpulse.contracts.api.dto.snapshot import (
     PullsDelta,
     RestartingEvent,
     Snapshot,
+    StaleEvent,
     TaskDelta,
     VerdictDelta,
 )
@@ -119,6 +120,7 @@ class ApiContract(_Api):
     ]
     build: BuildEvent
     restarting: RestartingEvent
+    stale: StaleEvent
     ledger: LedgerPage
     ledgerChange: LedgerChange
     donePage: DonePage

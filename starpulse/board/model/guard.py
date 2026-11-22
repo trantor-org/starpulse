@@ -89,16 +89,19 @@ class Guard:
         body: str,
         text: str,
         actor: str,
+        *,
+        audit: bool = False,
     ) -> Written:
         """The verdict on the write of `text` over `before` (None for a create; `earlier` is it parsed) by `actor`: a
         refusal with its reason and skill, else a landing that carries the reasons of the lane rules an operator's move
-        broke. Every writer is judged here, after the entry effects of the lane it enters have run."""
+        broke. Every writer is judged here, after the entry effects of the lane it enters have run, except that the
+        task actor meets no rule: it reads them as facts first (`audit` judges its write by them, to be read, never landed)."""
         kind = str(frontmatter.get("type") or "")
         was = str(earlier.front.get("type") or "") if earlier else ""  # a write that leaves the type alone is not refused for it
         if self.types and kind and kind != was and kind not in self.types:
             return Written(False, f"type {kind!r} is not one of this board's types: {', '.join(self.types)}")
         warnings: tuple[str, ...] = ()
-        if self.rules:
+        if self.rules and (audit or actor != TASK_ACTOR):
             after = rules.Record(
                 frontmatter,
                 body,

@@ -99,8 +99,9 @@ function takeEarly(): EarlyStream | null {
 
 /**
  * What the connection is doing: up, down after the server announced a restart, down with no announcement, or down for LOST_MS. `stale`
- * is the page showing a Board the server has not confirmed: the one kept from the last load before the server answers, or the one it
- * held while the server it reconnected to is still reading its own.
+ * is the page showing a Board the server has not confirmed: the one kept from the last load before the server answers, the one it
+ * held while the server it reconnected to is still reading its own, or the one no Board writer is folding (the server's `stale` event,
+ * cleared by the next change).
  */
 export type Link = "live" | "restarting" | "retrying" | "offline" | "stale";
 
@@ -271,6 +272,10 @@ export function openStream(
     ));
     src.addEventListener("scheduler", later((e) => {
       handlers.scheduler?.(JSON.parse((e as MessageEvent<string>).data) as SchedulerStatus);
+    }));
+    src.addEventListener("stale", later(() => {
+      old = true; // no Board writer folds: the page's Board stays as drawn, marked, until the next change hands over a fresh one
+      show("stale");
     }));
     src.addEventListener("restarting", () => {
       announced = true;

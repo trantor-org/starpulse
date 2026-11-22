@@ -93,6 +93,7 @@ from starpulse.contracts.api.dto.snapshot import (
     PullsDelta,
     RestartingEvent,
     Snapshot,
+    StaleEvent,
     TaskDelta,
     VerdictDelta,
 )
@@ -111,6 +112,7 @@ EVENTS: dict[str, type[BaseModel]] = {
     "snapshot": Snapshot,
     "build": BuildEvent,
     "restarting": RestartingEvent,
+    "stale": StaleEvent,
     "task": TaskDelta,
     "move": MoveDelta,
     "dags": DagsDelta,

@@ -177,27 +177,26 @@ describe("the Kanban Start session dialog at phone width", () => {
 
 describe("the Kanban board's lane width", () => {
   const px = (value: string | undefined) => Number(value?.replace("px", ""));
-  const sidePx = Number(/--nav: (\d+)px/.exec(css)?.[1]) + 20 + Number(/--rail: (\d+)px/.exec(css)?.[1]) + 20;
-  const share = px(/#kb #cols \{[^}]*--lane-share: calc\((\d+px) \* var\(--fs\)\)/.exec(css)?.[1]);
-  const floor = px(/#kb #cols \{[^}]*--lane-floor: (\d+px);/.exec(css)?.[1]);
+  const min = px(/#kb #cols \{[^}]*--lane-min: calc\((\d+px) \* var\(--fs\)\)/.exec(css)?.[1]);
   const gap = px(/#kb #cols \{[^}]*--lane-gap: (\d+px)/.exec(css)?.[1]);
-  const board = (viewport: number) => viewport - sidePx;
-  const need = (lanes: number, width: number) => lanes * width + (lanes - 1) * gap;
-  const fourUp = (viewport: number) => (board(viewport) - 3 * gap) / 4;
+  const need = (lanes: number) => lanes * min + (lanes - 1) * gap;
 
-  it("sizes lanes fluidly from the board's width, never a fixed track", () => {
-    expect(rule("#kb #cols")).toContain("grid-template-columns: repeat(var(--cols, 6), var(--lane))");
-    expect(rule("#kb #cols")).toContain("--lanes-in-view: min(var(--cols, 6), 4)");
-    expect(rule("#kb #cols")).toContain("overflow-x: auto");
+  it("sizes each lane as a minmax of its minimum and an even share, scrolling sideways, with no four-up clamp", () => {
+    const cols = rule("#kb #cols");
+    expect(cols).toContain("grid-template-columns: repeat(var(--cols, 6), minmax(var(--lane-min), 1fr))");
+    expect(cols).toContain("overflow-x: auto");
+    expect(cols).not.toMatch(/lane-four|lanes-in-view|clamp\(/);
+    expect(cols).not.toContain("scrollbar-gutter");
   });
 
-  it.each([1, 1.25, 1.5])("shares a 3440px ultrawide board among all six lanes with no sideways scroll at font scale %f", (fs) => {
-    expect(need(6, share * fs)).toBeLessThanOrEqual(board(3440));
+  it("fits all seven lanes (six open lanes and Archived) in a 2900px board with slack for a scrollbar and gap rounding", () => {
+    expect(need(7)).toBeLessThanOrEqual(2900 - 100);
   });
 
-  it("splits a 1920px board four lanes wide, so the fifth scrolls into view", () => {
-    expect(need(6, share)).toBeGreaterThan(board(1920));
-    expect(fourUp(1920)).toBeGreaterThanOrEqual(floor);
+  it("scrolls a 1700px board: four lanes fit at the minimum, seven do not", () => {
+    expect(need(4)).toBeLessThanOrEqual(1700);
+    expect(need(5)).toBeGreaterThan(1700);
+    expect(need(6)).toBeGreaterThan(1700);
   });
 });
 

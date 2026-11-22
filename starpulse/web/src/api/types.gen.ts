@@ -96,6 +96,7 @@ export interface ApiContract {
   searchResults: SearchResults;
   snapshot: Snapshot;
   spend: Spend;
+  stale: StaleEvent;
   taskCostToGo: TaskCostToGo;
   taskDiff: TaskDiff;
   taskEventHistory: TaskEventHistory;
@@ -2658,6 +2659,14 @@ export interface SpendPhase {
    * Uncached input + 1.25 x cache write + 0.1 x cache read + 5 x output.
    */
   wte: number;
+  [k: string]: unknown;
+}
+/**
+ * No Board writer is folding: the one that was stopped, and no other has stored since. A page shows its Board as stale
+ * until the next change arrives; a page that connects while none is folding is sent this after its snapshot.
+ */
+export interface StaleEvent {
+  at: number;
   [k: string]: unknown;
 }
 /**

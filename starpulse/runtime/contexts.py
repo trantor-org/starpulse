@@ -48,6 +48,10 @@ _JOIN_S = 5.0
 SWITCH_INTERVAL_S = 0.0005
 
 
+#: The context that starts first: the others wait for its first start, so a replaced process folds the Board before
+#: anything else competes for it (the Board Writer Folds Through a Deploy: a writer down is a page stale).
+LEADER = "board"
+
 #: The contexts that always run here, in start order; the run Adapters follow them (`adapter_contexts`).
 BACKGROUND_CONTEXTS = (
     "pulls",
@@ -408,10 +412,18 @@ def _keep(
     stops: dict[str, threading.Event],
     backoff: tuple[float, float],
     started: Callable[[str], None] | None = None,
+    *,
+    gate: threading.Event | None = None,
 ) -> None:
     """Start the context on its own stop event, again after a growing wait each time `starter` raises, then hold the
     thread until the process stops. A failed start's stop event is set, so what it began before raising ends. `started`
-    is told the name once `starter` returns; a failure of its own is logged, never a failed start."""
+    is told the name once `starter` returns; a failure of its own is logged, never a failed start.
+
+    The `LEADER` sets `gate` once its first start attempt has returned or raised; every other context waits for `gate`
+    before its first start, so the leader's start is never one of several competing for the process."""
+    leads = name == LEADER
+    if gate is not None and not leads:
+        gate.wait()
     wait = backoff[0]
     while not stop.is_set():
         own = StopEvent()
@@ -421,12 +433,16 @@ def _keep(
         except Exception:
             logger.exception("%s: start failed; starting again in %.1f s", name, wait)
             own.set()
+            if gate is not None and leads:
+                gate.set()
             # adr-exempt: retry
             if stop.wait(wait):
                 return
             wait = min(wait * 2, backoff[1])
             continue
         logger.info("%s: started", name)
+        if leads and gate is not None:
+            gate.set()
         if started:
             try:
                 started(name)
@@ -470,10 +486,12 @@ def run_contexts(
         from starpulse.runtime.hold import hold
     reloads: dict[str, Callable[[], None]] = {}
     stops: dict[str, threading.Event] = {}
+    first = threading.Event() if LEADER in names else None  # the Board writer folds before any other context competes
     threads = [
         threading.Thread(
             target=_keep,
             args=(name, starters[name], stop, reloads, stops, backoff, started),
+            kwargs={"gate": first},
             name=f"ctx-{name}",
             daemon=True,
         )
@@ -493,6 +511,8 @@ def run_contexts(
         hold(stop, reload_all)
     finally:
         stop.set()
+        if first is not None:
+            first.set()
         for own in list(stops.values()):
             own.set()
         for thread in threads:

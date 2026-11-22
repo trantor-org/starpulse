@@ -94,7 +94,9 @@ def start(
     feed.ready.set()
     feed.record_lanes(store, log)  # the lane each write makes is recorded by `serve`; the Board child places none
     board.attach(log)
-    threading.Thread(target=HeldSnapshot(feed, store=snapshots).run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
+    held = HeldSnapshot(feed, store=snapshots)
+    stop.listen(held.retire)  # a stream open tells its page the Board is stale from here until a writer stores again
+    threading.Thread(target=held.run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
     MachineDeltas(feed, model).follow(stop, log)  # a context sharing this feed hears each machine row as a `move`
     search = SearchIndex.open(log.engine, config.search)  # the one fold indexes search, as the API's second fold once did
     follow(

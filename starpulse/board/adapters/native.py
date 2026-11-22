@@ -339,16 +339,19 @@ _STALE = Written(False, "the task file changed while it was being written")
 _ATTEMPTS = 5
 
 
-def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: Guard, actor: str) -> Written:
+def _land(
+    path: Path, before: str | None, frontmatter: dict, body: str, guard: Guard, actor: str, *, audit: bool = False
+) -> Written:
     """Write the task file at `path` in one rename, unless `guard` refuses `actor`'s write or the file no longer holds
     `before`: the refusal (`_STALE` for a changed file), or once it landed an ok `Written` naming the lane rules it
-    broke. The lane the write enters runs its entry effects first, whoever writes."""
+    broke. The lane the write enters runs its entry effects first, whoever writes. An `audit` writes nothing: it is
+    the verdict of the rules on the write."""
     earlier = None if before is None else rules.Record(*_split_record(before))
     frontmatter = dict(guard.entered(frontmatter, None if earlier is None else earlier.front))
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}"
-    judged = guard.verdict(path, before, earlier, frontmatter, body, text, actor)
+    judged = guard.verdict(path, before, earlier, frontmatter, body, text, actor, audit=audit)
     write_steps.step("guard")
-    if not judged.ok:
+    if audit or not judged.ok:
         return judged
     if before is not None and path.read_text() != before:
         return _STALE
@@ -361,10 +364,16 @@ def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: G
 
 
 def _update(
-    root: Path, task: str, edit: Callable[[dict, str], str], guard: Guard = Guard(), actor: str = OPERATOR
+    root: Path,
+    task: str,
+    edit: Callable[[dict, str], str],
+    guard: Guard = Guard(),
+    actor: str = OPERATOR,
+    *,
+    audit: bool = False,
 ) -> Written:
     """Rewrite the file of `task` with its front matter edited in place, its body as `edit` returns it and a new
-    `updated_date`, as `actor`.
+    `updated_date`, as `actor`; an `audit` only judges that rewrite (`_land`).
 
     A file that changed between the read and the write is read and edited again, so another writer's change is kept;
     after `_ATTEMPTS` such races the edit is refused."""
@@ -375,7 +384,7 @@ def _update(
             before = path.read_text()
             frontmatter, body = _split(before)
             body = edit(frontmatter, body)
-            landed = _land(path, before, _stamped(frontmatter), body, guard, actor)
+            landed = _land(path, before, _stamped(frontmatter), body, guard, actor, audit=audit)
             if landed.ok:
                 return Written(True, f"Updated task {task}", warnings=landed.warnings)
             if landed is not _STALE:
@@ -758,8 +767,10 @@ def _editor(
     attention: str | None = None,
     unstarted: frozenset[str] = frozenset(),
     done: str | None = None,
+    audit: bool = False,
 ) -> TaskEditor:
-    """A board writer that applies every change to a task's file in one write, or refuses the whole edit.
+    """A board writer that applies every change to a task's file in one write, or refuses the whole edit. With `audit` it
+    writes nothing and answers, for the task actor, what the board's rules say of the edit (`Board.judge`).
 
     `changes` holds the new value of each field `read` names except `comments`, which `comment` appends to: one text, or a
     list appended in order, each blank one skipped; `appendNotes` is one more, text added to the end of the notes. An
@@ -795,10 +806,14 @@ def _editor(
 
         # A comment changes no field a rule or the validate hook judges, and the comment that names a refusal must land.
         judged = guard if changes else replace(guard, rules=(), validate=None)
+        if audit:
+            judged, actor = replace(judged, validate=None, types=()), TASK_ACTOR
         try:
-            written = _update(root, task, apply, judged, actor)
+            written = _update(root, task, apply, judged, actor, audit=audit)
         except ValueError as refusal:  # raised before the file is written, so a refusal writes nothing
             return Written(False, f"{task}: {refusal}")
+        if audit:
+            return written
         if status and lane_id(status) not in {done, COMPLETED}:
             written = _reactivated(root, task, written)  # a completed task edited out of Done leaves `completed/`
         return _moved(written, spelled.get(lane_id(status), status)) if status else written
@@ -1822,6 +1837,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "closed": _notice(settings.get("closed"), base),
             "entered": _entered(settings.get("entered"), base, root, settings.get("entered_labels")),
             "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles), roles.done),
+            "judge": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles), roles.done, True),
             "archive": _archiver(root, config.statuses, roles, gate),
             "restore": _restorer(root, retired, config.statuses, migrations, gate, roles.done),
             "complete": _completer(root, config.statuses, roles, settings.get("complete_keep_labels")),

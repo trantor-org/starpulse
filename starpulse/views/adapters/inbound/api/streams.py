@@ -187,31 +187,34 @@ class Streams:
         return Stream(self._event_frames(first, missed, changes), release)
 
     def _event_frames(self, first: str, missed: Sequence, changes: queue.Queue) -> Generator[bytes]:
-        try:
-            yield _frame("snapshot", first)
-            if (build := self._build()) is not None:
-                yield _frame("build", build)  # a page holding another build than this one is out of date
-            for change in missed:
+        yield _frame("snapshot", first)
+        if (build := self._build()) is not None:
+            yield _frame("build", build)  # a page holding another build than this one is out of date
+        for change in missed:
+            yield from self._event(*change)
+        while True:
+            try:
+                change = changes.get(timeout=_PING_S)
+            except queue.Empty:
+                yield _PING
+                continue
+            if change is None:  # the log was renumbered: the page reconnects for the body of the new numbering
+                changes.task_done()
+                return
+            try:
                 yield from self._event(*change)
-            while True:
-                try:
-                    change = changes.get(timeout=_PING_S)
-                except queue.Empty:
-                    yield _PING
-                    continue
-                if change is None:  # the log was renumbered: the page reconnects for the body of the new numbering
-                    changes.task_done()
-                    return
-                try:
-                    yield from self._event(*change)
-                finally:
-                    changes.task_done()  # `Snapshots.announce` waits for the marks of what it queued
-        except ValidationError:
-            logger.exception("StarPulse: /api/events sent a body its model refuses; the stream ends")
+            finally:
+                changes.task_done()  # `Snapshots.announce` waits for the marks of what it queued
 
     def _event(self, name: str, data: dict) -> Iterator[bytes]:
         if name in EVENTS:
-            yield _frame(name, self._event_text(name, data))
+            try:
+                text = self._event_text(name, data)
+            except ValidationError:  # the page reads the stored snapshot in place of the delta it cannot be sent
+                logger.exception("StarPulse: /api/events cannot encode a `%s` delta; the page is sent the stored snapshot", name)
+                yield _frame("snapshot", self._snapshots.stored()[1].body.decode())
+            else:
+                yield _frame(name, text)
         elif name not in self._unmodelled:
             self._unmodelled.add(name)
             logger.error("StarPulse: /api/events has no event `%s`; its deltas are skipped", name)

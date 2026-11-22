@@ -210,6 +210,13 @@ class BuildEvent(_Api):
     id: str
 
 
+class StaleEvent(_Api):
+    """No Board writer is folding: the one that was stopped, and no other has stored since. A page shows its Board as stale
+    until the next change arrives; a page that connects while none is folding is sent this after its snapshot."""
+
+    at: float  #: when the writer stopped, in epoch seconds
+
+
 class RestartingEvent(_Api):
     """The server was told to stop and will not answer after this: sent to every open stream before it exits."""
 
