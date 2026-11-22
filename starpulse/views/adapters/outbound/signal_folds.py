@@ -140,15 +140,15 @@ class SignalFolds:
         self.stamp = stamp(keys, analytics)
 
     def catch_up(self) -> int:
-        """Fold what is new, or everything when the family's stamp changed, and return how many sessions were folded.
+        """Fold what is new, or every session when the family's stamp changed, and return how many were folded.
 
         A session with a row above the cursor is folded from all its stored signals and replaces its fold rows. A
-        stamp that differs from the stored one first drops the folds and answers and rewinds the cursor, and the new
-        stamp is kept once the pass has folded past every session. The cursor moves past every session that folded; a
-        session whose fold raised is logged and left, and the cursor stops before its first new row so the next pass
-        tries it again. Raises when the database does."""
+        stamp that differs from the stored one first drops the answers and rewinds the cursor, the old folds stay until
+        each session is folded again, and the new stamp is kept once the pass has folded past every session. The
+        cursor moves past every session that folded; a session whose fold raised is logged and left, and the cursor
+        stops before its first new row so the next pass tries it again. Raises when the database does."""
         rebuilt = self._drop_changed()
-        # a rebuild's folds have no row before them to add to; the board is read once for the pass
+        # a rebuild refolds history, which adds nothing to the skill series; the board is read once for the pass
         counting = None if rebuilt or self._titled is None else self._titled()
         folded = 0
         cursor = self._events.setting(CURSOR) or 0
@@ -169,7 +169,7 @@ class SignalFolds:
         finished: set[str] = set()
         for harness, session, first_row, last_row in new:
             reached = max(reached, last_row)
-            if self._current(harness, session) >= last_row:
+            if not rebuilt and self._current(harness, session) >= last_row:
                 continue
             before = self._completed_tasks(harness, session)
             if self._fold(harness, session, counting):
@@ -224,7 +224,7 @@ class SignalFolds:
         """The `steps` results of the sessions that can hold the `wanted` oldest steps after the time `after` (none: from
         `since`), sessions read by when they began and the read stopped once a step before the next session's start
         is past `wanted` of them, so a page costs its own sessions and not the window's. A session that ended before
-        `after` is skipped; one that began before `since` is folded again from its signals inside the window."""
+        `after` is skipped; one that began before `since` keeps the steps of its stored fold from `since` on."""
         floor = since if after is None else max(since, after)
         times: list[float] = []  # the times, sorted, of the steps read after `after`, to tell when a page is complete
         folds: list[Any] = []
@@ -235,8 +235,8 @@ class SignalFolds:
                 if ahead > wanted and times[wanted] > times[wanted - 1]:
                     break  # every later session's steps come after these, so the page is among them
                 result = row.result
-                if row.first_at < since and (in_window := self._load(row.harness, row.session, since)[1]):
-                    result = VIEWS["steps"](in_window, self._keys, self._analytics)
+                if row.first_at < since:
+                    result = [step for step in result if step["at"] >= since]
                 folds.append(result)
                 for step in result:
                     if after is None or step["at"] > after:
@@ -279,14 +279,14 @@ class SignalFolds:
         return through[0] if through[1] == len(VIEWS) else 0
 
     def _drop_changed(self) -> bool:
-        """Drop the folds and answers and rewind the cursor when they were not folded under this stamp; whether it did.
+        """Drop the answers and rewind the cursor when the folds were not folded under this stamp; whether it did. The
+        folds stay, each replaced as its session is refolded, so a read during the pass still answers every session.
         The stamp goes first, so a pass that stops partway is not taken for a finished one."""
         with self._engine.connect() as db:
             if is_stamped(db, FAMILY, self.stamp):
                 return False
         with self._engine.begin() as db:
             clear_stamp(db, FAMILY)
-            db.execute(delete(signal_folds))
             db.execute(delete(analytics_answers))
             db.execute(delete(settings).where(settings.c.key == CURSOR))
         return True

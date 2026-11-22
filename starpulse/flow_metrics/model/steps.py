@@ -12,8 +12,7 @@ other's calls.
 
 The skill in force is the one the most recent `skill` signal named, counting the loads the step itself issued: a
 skill is in force from the step that loads it until the next load, the same charge `bin/skill_step_census.py`
-makes from transcripts, and `none` before any load. A session that began before the window reads `none` until its
-first load inside it.
+makes from transcripts, and `none` before any load.
 """
 
 from bisect import bisect_right
