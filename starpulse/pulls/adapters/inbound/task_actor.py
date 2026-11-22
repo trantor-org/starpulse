@@ -829,7 +829,6 @@ class TaskActor:
             repaired = name in self._lint_held and self._lint_held[name] != _lint_record(agent)
             if repaired:
                 del self._lint_held[name]
-                self._tried.pop(name, None)
             rearmed = agent["state"] in self._timed_lanes and tuple(
                 criteria.expect_dates(agent["description"])
             ) != self._dates.get(name, ())
@@ -837,8 +836,6 @@ class TaskActor:
             if before == (now := _view(agent)) and not (repaired or rearmed or regated or pushable):
                 return
             self._index(agent)
-            if now[0] == self._feed.roles.working:  # a refused move is tried again on the changed record
-                self._tried.pop(name, None)
             lane = before is None or before[0] != now[0]
             events = [TaskTouched(name, Trigger.ON_ENTRY, now[0])] if lane else []
             if before is not None and lane:
@@ -1058,9 +1055,6 @@ class TaskActor:
             if self._pull_states.get(url) != (state := self._pull_state(url)):
                 self._pull_states[url] = state
                 touched |= names
-                for name in names:
-                    if self._seen[name][0] == self._feed.roles.working:  # a refused move is tried on the new state
-                        self._tried.pop(name, None)
         return touched
 
     def _record(self, url: str) -> dict[str, Any] | None:
@@ -1129,7 +1123,7 @@ class TaskActor:
         self._hooked = self._unsettled = False
         started = self._clock()
         try:
-            moved = self._derive_waits(name, agent, observed)
+            moved = self._derive_waits(name, agent, observed, digest)
         finally:
             self._timed_derive(agent["state"], self._hooked, self._clock() - started)
         self._settle_awaited(name)
@@ -1163,7 +1157,7 @@ class TaskActor:
                 "feed_lane": agent["state"],
                 "seen_lane": seen[0] if seen else None,
                 "seen_prs": list(seen[2]) if seen else [],
-                "tried": dict(zip(("lane", "event", "evidence"), tried, strict=False)) if tried else None,
+                "tried": dict(zip(("lane", "event", "evidence", "facts"), tried, strict=False)) if tried else None,
                 "facts": facts,
                 "unlinked": self._unlinked(agent),
             }
@@ -1178,10 +1172,10 @@ class TaskActor:
             histogram = self._derive_seconds.setdefault((lane, hooked), _Histogram(SLOW_BUCKETS_S))
         histogram.observe(seconds)
 
-    def _derive_waits(self, name: str, agent: dict[str, Any], observed: float) -> bool:
+    def _derive_waits(self, name: str, agent: dict[str, Any], observed: float, digest: str) -> bool:
         """Write the first move the task's lane waits on whose fact holds, and say whether one was written. A move already
-        tried on these facts, or one the board refuses, leaves the next fact its turn: a Waiting task whose return to
-        Review is refused still reaches Ready."""
+        tried on these facts (`digest`), or one the board refuses, leaves the next fact its turn: a Waiting task whose
+        return to Review is refused still reaches Ready, and a move skipped is tried again once the facts digest changes."""
         self.derivations[name] += 1
         self._arm(name, agent)
         if agent["state"] in self._sweep_lanes and (reasons := self._stuck(agent)):
@@ -1194,7 +1188,7 @@ class TaskActor:
             evidence, comment = held
             if fact in _ASKS and self._answered(agent, comment):
                 continue
-            sent = (agent["state"], event, evidence)
+            sent = (agent["state"], event, evidence, digest)
             if self._tried.get(name) == sent:
                 continue
             self._tried[name] = sent
@@ -1203,13 +1197,14 @@ class TaskActor:
                 changes = {"description": section_set(agent["description"], "Needs attention", comment)}
                 if fact == "overdue" and self._missing(agent):
                     changes["dependencies"] = []  # Needs attention carries none; the reason names them
-            if target == agent["state"]:
-                self._notice(
-                    self._enqueued,
-                    name,
-                    "was ready but its pull request was not enqueued",
-                    on_failure=lambda: self._tried.pop(name, None),  # tried again on the next derivation
-                )
+            if target == agent["state"]:  # a stay: a ready pull request is enqueued, any other fact holds the lane
+                if fact == "pr_ready":
+                    self._notice(
+                        self._enqueued,
+                        name,
+                        "was ready but its pull request was not enqueued",
+                        on_failure=lambda: self._tried.pop(name, None),  # tried again on the next derivation
+                    )
                 return False
             merged = derivation.merged_at(self._port, agent) if fact in _MERGE_FACTS else None
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes, merged=merged):
