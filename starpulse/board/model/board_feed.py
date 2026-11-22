@@ -92,6 +92,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         standing: Callable[[str, str], Mapping[str, Any] | None] = lambda *_: None,
         readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
         default_profiles: Mapping[str, Mapping[str, str]] | None = None,
+        activity: Callable[[str], dict[str, Any]] = lambda _: {"state": "unknown"},
     ) -> None:
         #: Set by `stop`: every thread an adapter runs for this feed (`spawn`) waits on it.
         self.stopped = StopEvent()
@@ -132,6 +133,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._standing = standing
         #: What the board's `readable` rules find broken in a task's description, which a read-model agent carries.
         self._readable = readable
+        #: The session activity of a held working task's holder, which its agent carries; `unknown` when no running session holds it.
+        self._activity = activity
         self._board_url = board_url
         self._commit = commit or {}
         self._ties = self._tied_to_events(cues)

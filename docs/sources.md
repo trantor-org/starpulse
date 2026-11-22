@@ -40,8 +40,9 @@ reply and tool text is never stored.
 
 ## Measure session and slice health
 
-The same receiver also reads each export of Claude Code and of Codex for what a session did, and the server serves it as
-`GET /api/analytics/sessions[?hours=N]` (168 hours by default). Point Codex's log export at it in its `config.toml`:
+The same receiver also reads each export of Claude Code and of Codex for what a session did, and stores it as signals
+that the server folds into per-session rows (the sessions sink reads those rows; no route serves them). Point Codex's
+log export at it in its `config.toml`:
 
 ```toml
 [otel]
@@ -82,30 +83,14 @@ A session is one harness session id; it has one row per task it worked, found fr
 (`vcs.ref.head.name`, which Codex's export does not carry, so its sessions have no task until a shell `git switch` or
 `git checkout` in them names one), or a command or `Skill` call that matches an `[analytics]` `claims` pattern claims
 one. Every step after a claim belongs to the claimed task, until the next claim or switch, and the steps before a
-session's first claim or task-naming switch, when its launch branch names no task, belong to that first task. The body is
-`{now, window_s, sessions, slices}`:
+session's first claim or task-naming switch, when its launch branch names no task, belong to that first task.
+A session row also holds its prompts (`operator_prompts` are the human prompts after the task's claim), `requests`
+(the main thread's model calls) and `side_requests` (a subagent's), `steps_before_edit` (the model requests before
+the task's first successful file write), `complete` (the session loaded the `completion_skill` and then ran a shell
+command matching `completion_call`), its rejected tool decisions, compactions, interrupts, models and efforts, `tokens`
+as `{input, output, cache_read, cache_write, reasoning}` (Codex's cached tokens taken out of its input), `cost_usd`
+(null for a harness that exports no cost) and the time sums below.
 
-- A `sessions` row is `{harness, session, task, kind, first_at, last_at, prompts, operator_prompts, prompt_labels, requests,
-  side_requests, tool_calls, tool_failures, tools, rejections, user_rejects, gates, skills, compactions, interrupts, models, efforts,
-  main_model, main_effort, model_changes, effort_changes, tokens, cost_usd, agent_s, operator_wait_s, idle_s, steps_before_edit, complete}`.
-  `models` and `efforts` list every value seen, side requests included; `main_model` and `main_effort` are the first
-  ones the main thread reported (null until it reports one), the session's profile.
-  `kind` is `headless`, `interactive` or `unknown`. `operator_prompts` are the human prompts after the task's claim
-  (after the session's first prompt for the task it launched on or first claimed), and `prompt_labels` counts those the
-  instance's labeller named by intent (none when no labeller is configured; it changes no other count); `requests` are the main thread's model calls and
-  `side_requests` a subagent's. `steps_before_edit` is the model requests before the task's first successful `Edit`,
-  `Write`, `MultiEdit` or `NotebookEdit` or shell command that writes a file (an output redirect to a path, a pipe to `tee`,
-  `sed -i`, `patch`, `git apply`, or an interpreter fed a heredoc, whose body is elided, so a read-only script counts), null until it has one. `complete` is true for a session that loaded the
-  `completion_skill` and then ran a shell command matching `completion_call`. `rejections` counts rejected tool decisions by their source and `user_rejects` those whose source is `user_reject` or
-  `user_abort`,
-  `gates` the same rejections by `<source>:<tool>` (`hook:Bash`, `user:Edit`; the export names no hook script, so a
-  hook's gate is the tool it refused), and `compactions` by trigger. `tokens` is `{input, output, cache_read, cache_write, reasoning}`, with Codex's cached
-  tokens taken out of its input; `cost_usd` is null for a session whose harness exports no cost.
-- A `slices` entry adds up the sessions that worked one task: `sessions`, `steps`, `operator_prompts`, `prompt_labels`, `interrupts`,
-  `rejections`, `user_rejects`, `interventions` (operator prompts plus interrupts), `raises` and `lowers` (sessions that moved up or down the
-  step-down ladder mid-task), `escalated` (a model or effort changed between main-thread requests) and `clean` (one session, no intervention, not escalated), with the same tokens, cost and time sums, and
-  `complete` and `steps_before_edit` of its sessions (the earliest that has one).
-  Whether the task then settled in Review or Done is the board's fact, which the reader joins.
 - A turn is the signals that share a Claude Code `prompt.id`; its end is its last signal. A prompt is labelled
   `injected` when its opening matches an `injected_openings` prefix and `human` otherwise; the label is kept and the
   prompt's text never is. With an `[analytics.labeller]` configured, a `human` Claude Code prompt's text is also sent
@@ -131,9 +116,8 @@ What an export cannot say is absent rather than guessed: Claude Code exports no 
 a turn that never replied, Codex exports an interrupted turn only in `codex.turn_cost`, which it sends only with an API
 key, and Codex has no compaction event.
 Signals are kept once per key in the `starpulse_signals` table of the history database, which `SignalFolds` folds per
-session; the hourly prune deletes rows older than 8 days, so a window longer than that reads only what remains. A server
-with no such table is 501, a window that is no
-positive number 400.
+session; the hourly prune deletes rows older than 8 days. A window longer than that reads only the fold rows already
+stored.
 
 One signal is one step of the record the steps-per-clean-completion ledger counts: a `request` is one model call, with
 its model, effort, duration and the four token counts, and a `compaction` names its trigger. Two fields say whose step
@@ -149,97 +133,23 @@ it was and whether to count it, and a third holds a command:
   `[heredoc length=<bytes> sha256=<hex>]` before the function sees it, and a function that raises keeps no command. No
   exit status is stored, because the export carries none; `ok` is the result's `success` and `seconds` its duration.
 
-## Read each step of a session
-
-`GET /api/analytics/steps[?hours=N]` (168 hours by default) lists every model request of the window, oldest first, so a
-reader can charge tokens to the skill in force and the work done. The body is `{now, window_s, steps}`; a step is
-`{harness, session, task, at, model, effort, origin, skill, activities, keys, tokens, captured}`, counts and names only:
-
-- `effort` is the reasoning effort the request ran at, empty when the harness gives none.
-- `task` is the one the session's rows name for that request; `origin` is `main`, `side` (a subagent) or `auxiliary`.
-  For Claude Code a request's `query_source` of `""`, `sdk`, `repl_main_thread` or `repl_main_thread:` plus any suffix
-  (`repl_main_thread:outputStyle:custom`, which the main thread carries under a custom output style) is `main`;
-  `compact` is `auxiliary`; every other source stays `side`.
-- `activities` and `keys` hold one entry per tool call the step made, in order: the activities the call performed (as
-  under [Find missed skill loads](#find-missed-skill-loads-and-recurring-work)) and its key, the shell command the
-  `--redactor` left, else the tool's name. A command is therefore present only after the configured filter.
-- `skill` is the skill most recently loaded in the session, counting a load the step itself made, and `none` before
-  any load. A session that began before the window keeps the skill its earlier loads left.
-- `tokens` is `{input, output, cache_read, cache_write, reasoning}`; `captured` is false for every Codex step.
-
-The export's order cannot say which request issued a call, because Claude Code logs a request when its stream ends and
-starts a tool before then. A call belongs to the latest request that started (its time less its duration) at or before
-the call started, and one that started before every request of the window belongs to the first, so steps of
-subagents that overlap can take each other's calls. A server with no telemetry stream is 501 and a window that is no
-positive number 400. `starpulse analytics steps [--hours]` reads it.
-
 ## Kept answers
 
-Folding a 168-hour window takes minutes on a process that has not read the telemetry log yet and tens of seconds on one
-that has, longer than the CLI waits. Every `/api/analytics` route but `health` therefore answers from the last good
-body of the same path and query, kept in the `starpulse_answers` table (one row per path and query, at most 32 rows, the
-least recently folded dropped first). A kept body older than five minutes is returned at once and refolded in the
+The three per-task routes (`/api/task-spend/{id}`, `/api/task-diff/{id}`, `/api/task-cost-to-go/{id}`) filter one
+week answer each, the server's own fold over the stored session rows, kept in the `starpulse_answers` table under the
+keys `spend`, `diff` and `cost_to_go`. A kept body older than five minutes is returned at once and refolded in the
 background, so an answer is at most one refold and five minutes behind the board and the log, and a restarted `serve`
-answers from the saved rows before it has read a signal. Only the first read of a query the instance has never answered waits for
-a fold, and readers of it share one. Folds run one at a time, since each holds a window's rows as Python data, and the
-steps body is encoded row by row. A query that only refuses (an `hours` that is no positive number, no telemetry, or a window longer than the history) runs at once, never queued behind a fold. A refusal (400, 501, 503) is returned and never kept; a failed refold keeps the
-older body and is tried again after five minutes.
-
-## Price each transition and report each cell
-
-`GET /api/analytics/transitions[?hours=N]` and `GET /api/analytics/cells[?hours=N]` (168 hours by default) fold the same
-steps by the kind and size of the task they worked, which the board's `kind-<kind>` and `size-<n>` labels give. A
-task missing either label is in neither report, a Codex step (`captured` false) is in neither, and a window that is no
-positive number is 400, one longer than the telemetry history 400 with `history_s`, a server with no telemetry log 501
-and one that cannot read it 503, as for steps. `starpulse analytics transitions|cells [--hours]` read them.
-
-`transitions` is `{now, window_s, transitions}`, one row per kind, size and skill in force (the transition), by that
-order. Its columns:
-
-- `kind`, `size`, `skill`: the cell and the skill in force on the steps, `none` before any load.
-- `tasks`, `steps`: the tasks the row's steps worked and the model requests among them. A subagent's requests carry
-  its parent's session, so they count toward the task that spawned it; `side_steps` is their share. A compaction's own
-  call is no step.
-- `wasted_steps`, `wasted_rate`: steps with a call that failed, was refused by a guard or hook, or repeats the shell
-  command of the call before it in the session, and their share of `steps`. A refusal names only its source (hook
-  gate names are not exported), and a call with no stored command (the adapter ran with no `--redactor`) cannot repeat.
-- `agent_s`: the seconds of the steps' requests and tool calls, hooks not included.
-- `peak_context`: the most input, cache-read and cache-write tokens one request held.
-
-Blind spot: a skill is in force from its load to the next, so a stretch no skill governs is charged to the skill
-before it, and the transition is the skill, not a machine edge.
-
-`cells` is `{now, window_s, cells}`: the median agent steps per clean completion of each kind and size, by kind then
-size. A completion is a task slice that loaded the completion skill and ran the completion call (`complete` under
-session health), and it is *clean* when one session did it with no operator prompt, interrupt or model or effort
-change. A cell with fewer than 5 clean completions is not listed. The medians are over its `holdout`, the latest fifth
-of the clean completions by the end of their last session, rounded up, so a median is never read from the tasks a
-change was tuned on. Its columns:
-
-- `kind`, `size`; `n` clean completions and `completions` of any kind; `clean_rate`, their ratio.
-- `median_steps`: main and subagent requests of the holdout's tasks.
-- `median_operator_prompts`: human prompts after the task's claim, the steering count. A clean completion has none, so it
-  is the median over the latest fifth (rounded up) of all the cell's completions, clean or not.
-- `median_steps_before_edit`: model requests before the task's first successful file write, by an edit tool or a shell
-  command that writes a file; null when no holdout task made one.
-
-Blind spot: a cell can improve because its tasks got easier, so read `n`, `clean_rate` and the two medians beside
-`median_steps`. A cell with a few tasks has a median of one or two.
-
-`GET /api/analytics/estimates[?hours=N][&milestone=m-N]` is `{now, window_s, estimates}`: one row per completed task
-with a `kind-<kind>` and `size-<n>` label, its estimate beside what it measured. The estimate is `kind`, `size`,
-`profile` and `milestone`; the actuals are `steps` (main and subagent requests) and `active_minutes` (agent seconds
-plus the operator's wait). `[analytics]` `size_bands` lists each size with the p90 steps and active minutes a task of
-that size lands within, smallest first; `effort_size` is the smallest size whose band holds both actuals (null past the
-largest, or with no bands) and `effort_size_step` is its distance from `size` in bands, positive when the task
-overran (null with no bands, or a `size` that is no band's). The rows are read from the telemetry and the board on
-each request, so a relabelled task shows its current label.
+answers from the saved rows before it has read a signal. Only the first read of a key the instance has never answered
+waits for a fold, and readers of it share one. A query that only refuses (an `hours` that is no positive number, or a
+window longer than the folded history) runs at once. A refusal (400, 501, 503) is returned and never kept; a failed
+refold keeps the older body and is tried again after five minutes.
 
 ## Report each task's spend by phase
 
-`GET /api/analytics/spend[?hours=N]` (168 hours by default) is `{now, window_s, spend}`: one row per task and phase over
-the steps of [Read each step of a session](#read-each-step-of-a-session), a subagent's counted to its task, Codex and
-Cursor left out, by task then the phase's first step. Its columns:
+`GET /api/task-spend/{id}[?hours=N]` (168 hours by default) is `{task, now, window_s, spend}`: one row per phase of
+that task over its model requests, a subagent's counted to its task, Codex and Cursor left out, by the phase's first
+step; `spend` is empty for a task with no spend in the window. A window that is no positive number, or longer than the
+folded history, is 400 with `history_s`. Its columns:
 
 - `task`, `kind`, `size`: the task and its board labels `kind-<kind>` and `size-<n>`, null when it has none.
 - `phase`: `claim`, `implement`, `qa`, `deliver` or `review_fix`. The skills `qa`, `deliver`, `review-fix` and
@@ -266,47 +176,17 @@ the first edit does, and a task worked by hand with no skill loaded is still pla
 no norm, and neither has a `batch-umbrella` task: its size counts the members it folds in, so it takes no norm and
 leaves its size's norm to the tasks that do one job (90 of 116 size 8 execute tasks in 192 hours, median 1.29 M WTE
 against 3.81 M for the other 26, above size 5's 2.72 M).
+## Diff a fast run against a slow one
 
-## Graph a transition's activities and diff a fast run against a slow one
-
-`GET /api/analytics/graph`, `/stages` and `/diff` (`?hours=N`, 168 by default) read the same steps by the kind and size
-of the task they worked, with the refusals and exclusions of the transition and cell reports: a task missing its
-`kind-<kind>` or `size-<n>` label and a Codex step are in none. A *run* is one task's steps under one skill in force,
-and its activities are those the main thread's steps made in order, less the `[analytics]` `stop_activities`; a
-subagent's steps run beside the main thread, so they add edges that never happened and are left out of the activities
-(they count in a run's steps). `starpulse analytics graph|stages|diff [--hours]` read them.
-
-`graph` is `{now, window_s, graph}`, one row per edge, by kind, size, skill, source, then target:
-
-- `kind`, `size`, `skill`: the transition.
-- `source`, `target`: two activities, the second directly after the first in a run; `[start]` and `[end]` bound a run.
-- `runs`, `count`, `share`: the tasks the edge occurred in, its occurrences and their share of those that leave `source`.
-- `cut`: `source` is a *judgement cut*. An activity is one when at least 5 runs went through it and its commonest
-  successor takes no more than 80% of the occurrences that leave it: the agent chose there. Every edge leaving a cut
-  is marked; an activity with one way on is a deterministic stretch.
-
-Blind spot: a cut is a place where runs differ, not proof that the difference needed judgement; a branch on a failed
-test and one on a taste are both cuts. An activity is the closed vocabulary of a tool call, with no arguments, so two
-runs of `make test` on different targets are one edge.
-
-`stages` is `{now, window_s, stages}`. A stretch no machine models is a run under no skill (`none`), and one of at
-least 20 activities is *long*. A kind x size cell with at least 5 long runs is split at its judgement cuts (the graph's,
-over the long runs only): a stage ends with the cut that closes it and the next stage opens with that cut, the first
-with `[start]`. One row per kind, size and stage, by that order:
-
-- `stage`: the activity that opens the stage, `[start]` for the first.
-- `runs`, `median_activities`: the tasks the stage occurred in over the window and the median activities it held; 0
-  and null when it did not occur.
-- `previous_runs`, `previous_median_activities`: the same over the `hours` before the window.
-- `stability`: of the cell, the stages in both windows over the stages in either, 1 when the cuts did not move; null
-  when a window mined none. A stage with `runs` 0 or `previous_runs` 0 is one that appeared or went.
-
-The history must hold twice `hours`, else the read is 400 with `history_s`. No machine edge is added from a stage: it
-is a name for a stretch of one window's runs and can move with the mining, which `stability` is there to show.
-
-`diff` is `{now, window_s, diff}`, one row per transition of a kind and size, by that order, with the skill `none`
-left out. Its group is the transition's runs of tasks that completed clean (`cells`). A group under 5 reports
-nothing. Its columns:
+`GET /api/task-diff/{id}[?hours=N]` (168 hours by default) is `{task, kind, size, now, window_s, diff}`: the rows of
+the cohort of the task's `kind-<kind>` and `size-<n>` labels, one per transition (a task's steps under one skill in
+force, `none` before any load) of that kind and size, by skill, with the skill `none` left out. A task missing either
+label has no cohort, and a Codex step is in none. A *run* is one task's steps under one skill in force, and its
+activities are those the main thread's steps made in order, less the `[analytics]` `stop_activities`; a subagent's
+steps run beside the main thread, so they add edges that never happened and are left out of the activities (they count
+in a run's steps). The group of a transition is its runs of tasks that completed clean: one session loaded the
+completion skill and ran the completion call, with no operator prompt, interrupt or model or effort change. A group
+under 5 reports nothing. Its columns:
 
 - `runs`, `conformant`: the group's size and how many of its runs conform to the skill's machine.
 - `reference`: `{task, steps}` of the conformant run with the fewest steps (a subagent's included).
@@ -325,9 +205,10 @@ the best way. The stages an instance declares are its reading of the skill's ste
 
 ## Read the steps still to come from each state of a skill machine
 
-`GET /api/analytics/cost-to-go` (`?hours=N`, 168 by default) is `{now, window_s, cost_to_go}`, one row per state of
-each `[[analytics.skill_machines]]` machine within a kind and size, by kind, size, skill, then the machine's order with
-`[start]` first. A step is in the stage its run had reached when the step began, and `[start]` before the first stage.
+`GET /api/task-cost-to-go/{id}[?hours=N]` (168 hours by default) is `{task, kind, size, now, window_s, cost_to_go}`,
+the cohort's rows, one per state of each `[[analytics.skill_machines]]` machine within the task's kind and size, by
+skill, then the machine's order with `[start]` first. A step is in the stage its run had reached when the step began,
+and `[start]` before the first stage.
 The rows come from the trajectories' absorbing chain over the clean completed runs of the skill (the `diff` report's
 runs), with the run's last step absorbing into its end; a state's `cost_to_go` is the expected agent steps from a run's
 first step in it until the run ends, and the unit is steps, not days. A skill with no machine has no rows.
@@ -340,7 +221,7 @@ first step in it until the run ends, and the unit is steps, not days. A skill wi
 Blind spot: a state reached once reads as certain. The chain is the observed transitions only, with no smoothing, so
 `n` is the confidence a reader must apply.
 
-## Find missed skill loads and recurring work
+## Group recurring work
 
 The same signals say what each session did, not only how long it took. A tool call is lifted to *activities* with no
 argument, so work recurs across sessions: a non-shell tool is its bare name; a shell call is each statement's leading
@@ -349,23 +230,20 @@ its binary name or `shell_other`. An export that carries no command (`OTEL_LOG_T
 as its tool name. Claude Code caps each `tool_input` string over 512 characters, so a shell call reads its command from
 `tool_parameters.full_command`, which is whole, and falls back to `tool_input`. `uv run` is unwrapped through its flags,
 including the directory after `--project` or `--directory`. The path a file tool read or wrote is kept raw and cut at read time to an *area*, its first two
-components below an `[analytics]` root. A *case* is one session's work on one task, as under session health; a session
+components below an `[analytics]` root. A *case* is one session's work on one task, as under Measure session and slice health; a session
 that no branch or claim ever ties to a task is a case with no task.
 
-`GET /api/analytics/missed-loads[?hours=N&skill=NAME&list=N]` reports, per skill declared in `[analytics]`, the cases
-of the window (168 hours by default; a window longer than the telemetry history is 400 with `history_s`, as on every telemetry route) that ran its trigger and those of them that did so without activating it. The body
-is `{now, window_s, skills}`; a `skills` entry is `{skill, performed, missed, listed}`, `listed` the `list` (5 by
-default, 0 or more) most recent missed cases as `{harness, session, task, last_at}`. A case performs a trigger by an
-activity matching one of its globs, or, with tool calls, a task title matching its `title` or carrying its `label`
-(from the board's open and settled tasks).
+A case performs a skill's trigger by an activity matching one of its `[[analytics.skill_loads]]` globs, or, with tool
+calls, a task title matching its `title` or carrying its `label`.
 
-`GET /api/analytics/trace-clusters[?hours=N&threshold=D&min_sessions=N&outliers=N&new_hours=N]` groups the window's
-cases that made a tool call by what they did. Each case is a set of its activities (not a `stop_activities` one) and
-areas, weighted TF-IDF (a feature in under `5` cases or in over a tenth of them says nothing) and normalized; cases
-merge by average-linkage on cosine distance while the nearest pair is under `threshold` (0.8 by default, up to 2). A
-cluster keeps only if it has `min_sessions` (5 by default, 1 or more) distinct sessions. `new_hours` keeps only the
-clusters whose oldest case is that recent; clustering still runs over the whole window. The body is `{now, window_s,
-threshold, min_sessions, cases, clustered, clusters}`, and a cluster is:
+No route serves trace clusters. The nightly `trace_cluster_report` calls `trace_clusters_response` in process over the
+stored `trace_cases` fold rows, with the query `hours`, `threshold`, `min_sessions`, `outliers` and `new_hours`, and
+the body groups the window's cases that made a tool call by what they did. Each case is a set of its activities (not
+a `stop_activities` one) and areas, weighted TF-IDF (a feature in under `5` cases or in over a tenth of them says
+nothing) and normalized; cases merge by average-linkage on cosine distance while the nearest pair is under `threshold`
+(0.8 by default, up to 2). A cluster keeps only if it has `min_sessions` (5 by default, 1 or more) distinct sessions.
+`new_hours` keeps only the clusters whose oldest case is that recent; clustering still runs over the whole window. The
+body is `{now, window_s, threshold, min_sessions, cases, clustered, clusters}`, and a cluster is:
 
 - `key`: the first 12 hex digits of the SHA-1 of its sorted `descriptors`, so it holds while those hold.
 - `descriptors`: its six heaviest features, as `a:<activity>`, `r:<area>` or `w:<area>`.
@@ -389,7 +267,6 @@ What a cluster *is for*, and what to do about one, is the reader's: the server c
 A cluster's `key` is not continuous with one a different implementation computed from the same sessions, because the
 order that breaks a tie between equal weights may differ.
 
-Both answer 501 with no telemetry stream, 503 when it cannot be read, and 400 for a number out of range.
 
 ## Save GitHub webhook deliveries
 

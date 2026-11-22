@@ -5,7 +5,6 @@ import logging
 import math
 import re
 import time
-from bisect import bisect_right
 from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -15,17 +14,12 @@ from starpulse.board.model.seam import (
 )
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
-from starpulse.contracts.api.dto.health import SessionStep
-from starpulse.flow_metrics.model import analytics
-from starpulse.flow_metrics.model.cells import cell_of, cell_report, combine_cost, estimate_report
-from starpulse.flow_metrics.model.flow import combine_cost_to_go, combine_diff, combine_edges, combine_stages
+from starpulse.flow_metrics.model.cells import cell_of
+from starpulse.flow_metrics.model.flow import combine_cost_to_go, combine_diff
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
-from starpulse.flow_metrics.model.liveness import liveness, work_machines, working_stays
-from starpulse.flow_metrics.model.session_health import combine_health, slice_health
+from starpulse.flow_metrics.model.session_health import combine_health
 from starpulse.flow_metrics.model.spend import combine_spend
-from starpulse.flow_metrics.model.steps import combine_steps
-from starpulse.machine_engine.model.state_roles import StateRoles
-from starpulse.views.model.encoding import encode, encode_rows
+from starpulse.views.model.encoding import encode
 
 logger = logging.getLogger(__name__)
 
@@ -246,17 +240,8 @@ def search_response(
     return encode("search", {"query": words, "hits": hits}), 200
 
 
-#: `/api/analytics/health`'s defaults: the window it counts over, and how long a stay in one state makes a task stuck.
-_HEALTH_HOURS = 168.0
-
-
-_STUCK_HOURS = 24.0
-#: The window `/api/analytics/liveness` counts moves into Review over, and how long without a state change or a
-#: command stalls a task, when the query names none.
-_LIVENESS_HOURS = 24.0
-_STALLED_MINUTES = 5.0
-#: The longest window it answers: the body carries one bucket per hour.
-_LIVENESS_MAX_HOURS = 24.0 * 366
+#: The window the per-task reads default to, in hours.
+_WINDOW_HOURS = 168.0
 
 
 def _hours(query: dict[str, list[str]], key: str, default: float) -> float | None:
@@ -268,66 +253,17 @@ def _hours(query: dict[str, list[str]], key: str, default: float) -> float | Non
     return hours if 0 < hours < float("inf") else None
 
 
-def health_response(
-    history: HistoryStore, query: dict[str, list[str]], machines: Mapping[str, dict], now: float
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/health`: the Board's flow health over the last `hours` as of `now`."""
-    window = _hours(query, "hours", _HEALTH_HOURS)
-    stuck = _hours(query, "stuck_hours", _STUCK_HOURS)
-    if window is None or stuck is None:
-        return _error("hours and stuck_hours must each be a positive number"), 400
-    held = history.health_stays(machines["board"], start=now - window * 3600, now=now, stuck_s=stuck * 3600)
-    health = analytics.stay_health(
-        machines["board"], held, history.gaps(), now=now, window_s=window * 3600, stuck_s=stuck * 3600
-    )
-    return encode("health", health), 200
-
-
-
-def liveness_response(
-    history: HistoryStore, query: dict[str, list[str]], roles: StateRoles, machines: Mapping[str, dict], now: float
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/liveness`: each working task's liveness as of `now` and the Board's
-    moves into Review over the last `hours`, a task stalled past `stalled_minutes` without a state change or command."""
-    window = _hours(query, "hours", _LIVENESS_HOURS)
-    stalled = _hours(query, "stalled_minutes", _STALLED_MINUTES)
-    if window is None or stalled is None or window > _LIVENESS_MAX_HOURS:
-        return _error(f"hours and stalled_minutes must each be a positive number, hours at most {_LIVENESS_MAX_HOURS:g}"), 400
-    if roles.working is None:
-        return _error("this board has no working state, so it cannot report liveness"), 501
-    start = now - window * 3600
-    stays = [
-        stay
-        for stay in working_stays((row for row in history.lane_rows() if row[1] <= now), {roles.working}, start=start)
-        if stay.ended is None or stay.to == roles.review
-    ]
-    began: dict[str, float] = {}
-    for stay in stays:
-        began[stay.task] = min(stay.began, began.get(stay.task, stay.began))
-    events = {task: history.task_events(task, since, now) for task, since in began.items()}
-    body = liveness(
-        stays,
-        events,
-        work=work_machines(machines, "board", roles.working),
-        review={roles.review},
-        now=now,
-        window_s=window * 3600,
-        stalled_s=stalled * 60,
-    )
-    return encode("liveness", body), 200
-
-
-def refuses_at_once(telemetry: SignalFoldReader | None, query: dict[str, list[str]], now: float, span: int = 1) -> bool:
-    """Whether a telemetry report of the last `span` x `hours` answers with a refusal that needs no fold: an `hours`
+def refuses_at_once(telemetry: SignalFoldReader | None, query: dict[str, list[str]], now: float) -> bool:
+    """Whether a telemetry report of the last `hours` answers with a refusal that needs no fold: an `hours`
     that is no positive number, no telemetry, or a window longer than the history (`_held_folds`)."""
-    window = _hours(query, "hours", _HEALTH_HOURS)
+    window = _hours(query, "hours", _WINDOW_HOURS)
     if window is None or telemetry is None:
         return True
     try:
         oldest = telemetry.oldest()
     except Exception:  # the event log's database is unreachable: the fold answers 503
         return False
-    return window * span * 3600 > _history_s(oldest, now)
+    return window * 3600 > _history_s(oldest, now)
 
 
 def _history_s(oldest: float | None, now: float) -> float:
@@ -335,13 +271,8 @@ def _history_s(oldest: float | None, now: float) -> float:
     return now - (now if oldest is None else oldest)
 
 
-#: The views each kind-and-size route combines; a route reads no other view's rows.
+#: The views each kind-and-size read combines; a read uses no other view's rows.
 _ROUTE_VIEWS = {
-    "transitions": ("cost",),
-    "cells": ("health",),
-    "estimates": ("health",),
-    "graph": ("runs",),
-    "stages": ("runs",),
     "diff": ("runs", "health"),
     "cost_to_go": ("runs", "health"),
 }
@@ -354,8 +285,6 @@ def _held_folds(
     now: float,
     label: str,
     views: tuple[str, ...] = (),
-    span: int = 1,
-    read: Callable[[float], dict[str, list[Any]]] | None = None,
 ) -> dict[str, list[Any]] | tuple[bytes, int]:
     """The per-session fold results of the `views` for the last `window` hours as of `now`, or the 503 response for a
     database that cannot be read.
@@ -365,101 +294,14 @@ def _held_folds(
     try:
         oldest = telemetry.oldest()
         history = _history_s(oldest, now)
-        since = now - window * span * 3600
-        held = None if window * span * 3600 > history else (read or (lambda at: telemetry.window(at, views)))(since)
+        since = now - window * 3600
+        held = None if window * 3600 > history else telemetry.window(since, views)
     except Exception as exc:  # the event log's database is unreachable
         logger.warning("%s: signal table unreadable: %s", label, exc)
         return _error("the telemetry log cannot be read"), 503
     if held is None:
-        reach = history / span  # the longest `hours` the span-scaled window fits in the history
-        return encode(kind, {"error": str(WindowPastHistory(window * 3600, reach)), "history_s": history}), 400
+        return encode(kind, {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
     return held
-
-
-def sessions_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    keys: TaskKeys | None,
-    now: float,
-    analytics: Analytics | None = None,
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/sessions`: session and slice health of the signals from the last
-    `hours` (default 168) as of `now`. An instance that receives no harness telemetry is 501, a log that cannot be
-    read 503, and a window longer than the telemetry history 400 with `history_s` its length."""
-    window = _hours(query, "hours", _HEALTH_HOURS)
-    if window is None:
-        return _error("hours must be a positive number"), 400
-    if telemetry is None:
-        return _error("this instance receives no harness telemetry, so it cannot report session health"), 501
-    held = _held_folds(telemetry, window, "sessions", now, "sessions", ("health",))
-    if isinstance(held, tuple):
-        return held
-    rows = combine_health(held["health"])
-    body = {"now": now, "window_s": window * 3600, "sessions": rows, "slices": slice_health(rows)}
-    return encode("sessions", body), 200
-
-
-#: How many steps `/api/analytics/steps` answers when `?limit=` is absent, and the most it answers at once.
-_STEPS_PAGE = 1000
-_STEPS_PAGE_LIMIT = 5000
-
-
-def _step_key(row: dict[str, Any]) -> tuple[float, str, str]:
-    return row["at"], row["harness"], row["session"]
-
-
-def _steps_page_query(query: dict[str, list[str]]) -> tuple[tuple[float, str, str] | None, int] | bytes:
-    """The `after` cursor and `limit` of the steps route, or the 400 body for one that is malformed."""
-    try:
-        limit = int(query["limit"][0]) if "limit" in query else _STEPS_PAGE
-        at, harness, session = query["after"][0].split("|", 2) if "after" in query else (None, "", "")
-        after = (float(at), harness, session) if at is not None else None
-    except ValueError:
-        return _error("steps takes an integer ?limit= and an ?after= cursor from a previous page's next")
-    if not 0 < limit <= _STEPS_PAGE_LIMIT or after is not None and not math.isfinite(after[0]):
-        return _error(f"steps takes a ?limit= from 1 to {_STEPS_PAGE_LIMIT} and a finite cursor")
-    return after, limit
-
-
-def steps_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    keys: TaskKeys | None,
-    now: float,
-    analytics: Analytics | None = None,
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/steps`: the model requests of the signals from the last `hours`
-    (default 168) as of `now`, oldest first, one page of at most `limit` (default 1000) after the cursor `after`, and
-    `next`, the cursor for the page that follows, when there is one. An instance that receives no harness telemetry is
-    501, a log that cannot be read 503, and a window longer than the telemetry history 400 with `history_s` its length."""
-    window = _hours(query, "hours", _HEALTH_HOURS)
-    if window is None:
-        return _error("hours must be a positive number"), 400
-    paged = _steps_page_query(query)
-    if isinstance(paged, bytes):
-        return paged, 400
-    if telemetry is None:
-        return _error("this instance receives no harness telemetry, so it cannot report session steps"), 501
-    after, limit = paged
-    held = _held_folds(
-        telemetry,
-        window,
-        "session_steps",
-        now,
-        "steps",
-        read=lambda since: telemetry.step_window(since, after and after[0], limit),
-    )
-    if isinstance(held, tuple):
-        return held
-    every = combine_steps(held["steps"])
-    start = bisect_right(every, after, key=_step_key) if after is not None else 0
-    end = start + limit
-    while end < len(every) and _step_key(every[end]) == _step_key(every[end - 1]):  # a page ends between keys
-        end += 1
-    page = every[start:end]
-    last = _step_key(page[-1]) if end < len(every) else None
-    head = {"now": now, "window_s": window * 3600, "next": "|".join(map(str, last)) if last else None}
-    return encode_rows("session_steps", head, "steps", SessionStep, ((_step_key(row), row) for row in page)), 200
 
 
 def _kind_size_response(
@@ -468,36 +310,20 @@ def _kind_size_response(
     now: float,
     label: str,
     report: Callable[[dict[str, list[Any]], float], list[dict[str, Any]]],
-    span: int = 1,
 ) -> tuple[bytes, int]:
-    """The body and status for a report by kind and size of the signals from the last `span` x `hours` (default 168
+    """The body and status for a report by kind and size of the signals from the last `hours` (default 168
     each) as of `now`, keyed `label`: `{now, window_s, <label>: report(folds, since)}`, `since` the start of the
     last `hours`. An instance that receives no harness telemetry is 501, a log that cannot be read 503, and a window
     longer than the telemetry history 400 with `history_s`."""
-    window = _hours(query, "hours", _HEALTH_HOURS)
+    window = _hours(query, "hours", _WINDOW_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error(f"this instance receives no harness telemetry, so it cannot report {label}"), 501
-    held = _held_folds(telemetry, window, label, now, label, _ROUTE_VIEWS[label], span)
+    held = _held_folds(telemetry, window, label, now, label, _ROUTE_VIEWS[label])
     if isinstance(held, tuple):
         return held
     return encode(label, {"now": now, "window_s": window * 3600, label: report(held, now - window * 3600)}), 200
-
-
-def transitions_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    keys: TaskKeys | None,
-    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
-    now: float,
-    analytics: Analytics | None = None,
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/transitions`: the cost of each skill within each kind and size
-    (`cells.transition_cost`) over the last `hours`; refusals as `steps_response`."""
-    return _kind_size_response(
-        telemetry, query, now, "transitions", lambda held, _: combine_cost(held["cost"], titled())
-    )
 
 
 def spend_response(
@@ -508,9 +334,9 @@ def spend_response(
     now: float,
     analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/spend`: each task's tokens by phase (`spend.spend_report`) over the
-    last `hours`, combined from the window's `spend` fold rows; refusals as `steps_response`."""
-    window = _hours(query, "hours", _HEALTH_HOURS)
+    """The body and status for `spend_response`: each task's tokens by phase (`spend.spend_report`) over the
+    last `hours`, combined from the window's `spend` fold rows; a window longer than the history is 400, no telemetry 501."""
+    window = _hours(query, "hours", _WINDOW_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
     if telemetry is None:
@@ -559,84 +385,6 @@ def task_cost_to_go_response(week: tuple[bytes, int], task: str, titled: Callabl
     return _cohort_response(week, task, titled, "cost_to_go", "taskCostToGo")
 
 
-def cells_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    keys: TaskKeys | None,
-    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
-    now: float,
-    analytics: Analytics | None = None,
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/cells`: the median steps per clean completion of each kind and size
-    (`cells.cell_report`) over the last `hours`; refusals as `steps_response`."""
-    return _kind_size_response(
-        telemetry,
-        query,
-        now,
-        "cells",
-        lambda held, _: cell_report(slice_health(combine_health(held["health"])), titled()),
-    )
-
-
-def estimates_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    keys: TaskKeys | None,
-    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
-    now: float,
-    analytics: Analytics | None = None,
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/estimates`: each completed task's size estimate beside its measured
-    steps, active minutes and effort size step (`estimates.estimate_report`) over the last `hours`, only the tasks of
-    `milestone` when given; refusals as `steps_response`."""
-    milestone = next(iter(query.get("milestone", [])), None)
-    bands = analytics.size_bands if analytics is not None else ()
-    return _kind_size_response(
-        telemetry,
-        query,
-        now,
-        "estimates",
-        lambda held, _: estimate_report(
-            slice_health(combine_health(held["health"])), titled(), bands, milestone
-        ),
-    )
-
-
-def graph_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    keys: TaskKeys | None,
-    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
-    now: float,
-    analytics: Analytics | None = None,
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/graph`: the branching directly-follows graph of each transition
-    (`flow.directly_follows`) over the last `hours`; refusals as `steps_response`."""
-    return _kind_size_response(
-        telemetry, query, now, "graph", lambda held, _: combine_edges(held["runs"], titled(), analytics)
-    )
-
-
-def stages_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    keys: TaskKeys | None,
-    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
-    now: float,
-    analytics: Analytics | None = None,
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/stages`: the sub-stages mined from the last `hours` against the
-    `hours` before them (`flow.sub_stages`), so the history must hold twice the window; refusals as `steps_response`."""
-    return _kind_size_response(
-        telemetry,
-        query,
-        now,
-        "stages",
-        lambda held, since: combine_stages(held["runs"], titled(), analytics, since=since),
-        span=2,
-    )
-
-
 def diff_response(
     telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
@@ -645,8 +393,8 @@ def diff_response(
     now: float,
     analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/diff`: each transition's reference run against its slowest clean run
-    (`flow.fast_slow_diff`) over the last `hours`; refusals as `steps_response`."""
+    """The body and status for `diff_response`: each transition's reference run against its slowest clean run
+    (`flow.fast_slow_diff`) over the last `hours`; a window longer than the history is 400, no telemetry 501."""
     return _kind_size_response(
         telemetry, query, now, "diff", lambda held, _: combine_diff(held["runs"], combine_health(held["health"]), titled(), analytics)
     )
@@ -660,8 +408,8 @@ def cost_to_go_response(
     now: float,
     analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/cost-to-go`: the expected agent steps to a run's end from each
-    skill-machine state (`flow.cost_to_go`) over the last `hours`; refusals as `steps_response`."""
+    """The body and status for `cost_to_go_response`: the expected agent steps to a run's end from each
+    skill-machine state (`flow.cost_to_go`) over the last `hours`; a window longer than the history is 400, no telemetry 501."""
     return _kind_size_response(
         telemetry, query, now, "cost_to_go", lambda held, _: combine_cost_to_go(held["runs"], combine_health(held["health"]), titled(), analytics)
     )

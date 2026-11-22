@@ -56,6 +56,8 @@ export interface KanbanTask {
   released: boolean;
   /** The claim the sweeper released from the task, which left it unheld; absent or null when none ended the claim. */
   release?: ClaimRelease | null;
+  /** What the holder session is doing, from the snapshot; absent unless the task is held and working. */
+  sessionActivity?: { state: "working" | "idle" | "unknown"; last_turn_at?: string | null } | null;
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
   moves: Record<string, Move>;
   /** When the task entered its column, epoch seconds; 0 when the server gave no time. */
@@ -231,6 +233,15 @@ export const unheldShown = (tasks: KanbanTask[], roles: Roles, prefs: Prefs) =>
 /** What the footer chip says of a working card whose claim ended: its struck session and how long the task has sat idle. */
 export type ClaimChip = { session: string; age: string };
 
+/** What a held working card says of its session: how long it has sat idle since its last turn, `unknown` when no running session holds the task, nothing while it works. */
+export type SessionChip = { kind: "idle"; age: string } | { kind: "unknown" };
+
+export const sessionChip = (t: KanbanTask, now: number): SessionChip | null => {
+  const a = t.sessionActivity;
+  if (a?.state === "unknown") return { kind: "unknown" };
+  return a?.state === "idle" && a.last_turn_at ? { kind: "idle", age: idleAge(now - Date.parse(a.last_turn_at) / 1000) } : null;
+};
+
 /** How long a claim has sat idle, counting up by the minute: "<1m", "1m", "2m". */
 export const idleAge = (seconds: number) => (seconds < 60 ? "<1m" : ago(seconds));
 
@@ -397,7 +408,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", profile: a.profile ?? "", dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs, runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.flow === "ci" ? ciState(latest.state, prs) : latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source, skill: skillOf(sky.flows, latest.flow) } : null,
-      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
+      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, sessionActivity: a.session_activity ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       phase: climb(sky, a.id),
       rating: sky.ratings?.[a.id],

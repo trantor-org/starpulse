@@ -97,6 +97,12 @@ class Delivery:
         if actor := self._actor:
             actor.merge_received(received_at)
 
+    def main_checked(self) -> None:
+        """Hand a finished checks run on main to the running task actor (`TaskActor.main_checked`); none running drops it,
+        as the next actor's start derives every open task."""
+        if actor := self._actor:
+            actor.main_checked()
+
     def reload(self, path: Path, load: Callable[[Path | None], PullsConfig]) -> None:
         """Re-read `path`. An invalid config is logged and the running loops kept; a changed Delivery block takes them
         down and builds them again from the new config, and one the new config cannot build leaves the old config's
@@ -153,7 +159,7 @@ def start(
     announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
     delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=resume)
     if config.github:  # a delivery writes its record whether or not a task cites the pull request
-        pull_deliveries.start(config, log.engine, stop, store, open_watch, delivery.merge_received)
+        pull_deliveries.start(config, log.engine, stop, store, open_watch, delivery.merge_received, delivery.main_checked)
     stop.listen(delivery.stop)
     delivery.start()
     if stop.is_set():  # `listen` does not call for a stop already set, and a stop during `start` met the old loops

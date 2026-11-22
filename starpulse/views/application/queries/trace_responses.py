@@ -1,5 +1,6 @@
-"""The trace analytics routes' bodies and statuses: missed skill loads and trace clusters."""
+"""The trace-cluster export `session_traces.research.trace_cluster_report` reads in process: body and status."""
 
+import json
 import math
 from collections import Counter
 from collections.abc import Callable, Mapping
@@ -8,21 +9,20 @@ from typing import TYPE_CHECKING, Any
 from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics.model.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
 from starpulse.flow_metrics.model.traces import Case, combine_cases, missed_loads
-from starpulse.views.application.queries.responses import _HEALTH_HOURS, _error, _held_folds, _hours
-from starpulse.views.model.encoding import encode
+from starpulse.views.application.queries.responses import _WINDOW_HOURS, _error, _held_folds, _hours
 
 if TYPE_CHECKING:
     from starpulse.views.ports.signal_folds import SignalFoldReader
 
-#: What `/api/analytics/missed-loads` lists per skill, and `/api/analytics/trace-clusters` samples per cluster.
+#: What a trace cluster samples of its sessions and tasks.
 _LISTED = 5
 
 
-#: `/api/analytics/trace-clusters`'s defaults: the cosine distance an average-linkage merge stops at, and the distinct
+#: The export's defaults: the cosine distance an average-linkage merge stops at, and the distinct
 #: sessions a cluster needs to be reported.
 _CLUSTER_THRESHOLD, _CLUSTER_MIN_SESSIONS = 0.8, 5
 
-#: The CPU seconds the fold of a cold 168 hour `/api/analytics/trace-clusters` read with outliers may take: its readers
+#: The CPU seconds the fold of a cold 168 hour trace-cluster read with outliers may take: its readers
 #: wait 120 s, and a host under load runs the fold several times slower than an idle one.
 COLD_READ_BUDGET_S = 8.0
 
@@ -57,35 +57,6 @@ def _folded_cases(
     if isinstance(held, tuple):
         return held
     return combine_cases(held[view], titled())
-
-
-def missed_loads_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
-    analytics: Analytics,
-    now: float,
-) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/missed-loads`: per declared skill (or the one named by `skill`), the
-    cases of the last `hours` (default 168) that ran its trigger and those that did so without loading it, the `list`
-    (default 5) newest of the latter listed. A window longer than the telemetry history is 400 with `history_s`."""
-    window, listed = _hours(query, "hours", _HEALTH_HOURS), _whole(query, "list", _LISTED)
-    if window is None or listed is None:
-        return _error("hours must be a positive number and list a whole number"), 400
-    found = _folded_cases(telemetry, window, titled, now, "missed_loads")
-    if isinstance(found, tuple):
-        return found
-    wanted = query.get("skill", [""])[0]
-    skills = [
-        {
-            "skill": result.skill,
-            "performed": len(result.performed),
-            "missed": len(result.missed),
-            "listed": [_case_ref(c) for c in sorted(result.missed, key=lambda c: -c.last_seen)[:listed]],
-        }
-        for result in missed_loads(found, [t for t in analytics.skill_loads if not wanted or t.skill == wanted])
-    ]
-    return encode("missed_loads", {"now": now, "window_s": window * 3600, "skills": skills}), 200
 
 
 def _natural(task: str) -> tuple[str, int]:
@@ -146,12 +117,12 @@ def trace_clusters_response(
     analytics: Analytics,
     now: float,
 ) -> tuple[bytes, int]:
-    """The body and status for `/api/analytics/trace-clusters`: the trace clusters of the cases of the last `hours`
+    """The body and status for the trace-cluster export: the trace clusters of the cases of the last `hours`
     (default 168) with `min_sessions` (default 5) or more distinct sessions, cut at cosine distance `threshold`
     (default 0.8, up to 2). `outliers` N adds each cluster's medoid and its N furthest cases; `new_hours` keeps only the
     clusters whose oldest case is that recent, clustering still running over every case in the window. A window longer than the telemetry history is 400 with
     `history_s`."""
-    window = _hours(query, "hours", _HEALTH_HOURS)
+    window = _hours(query, "hours", _WINDOW_HOURS)
     new = _hours(query, "new_hours", 1) if "new_hours" in query else math.inf
     threshold = _hours(query, "threshold", _CLUSTER_THRESHOLD)
     sessions, outliers = _whole(query, "min_sessions", _CLUSTER_MIN_SESSIONS), _whole(query, "outliers", 0)
@@ -181,4 +152,4 @@ def trace_clusters_response(
         "clustered": sum(len(c.cases) for c in clusters),
         "clusters": [_cluster_view(c, analytics, outliers) for c in shown],
     }
-    return encode("trace_clusters", body), 200
+    return json.dumps(body).encode(), 200

@@ -564,7 +564,7 @@ class ConfigFile(_Table):
     )
     analytics: dict[str, Any] | None = Field(
         default=None,
-        description="What harness telemetry is read against for missed skill loads and trace clusters (see docs/sources.md).",
+        description="What harness telemetry is read against (see docs/sources.md).",
     )
     search: dict[str, Any] | None = Field(
         default=None, description="Ranks search by meaning as well as by words (see `search` in docs/cli.md)."

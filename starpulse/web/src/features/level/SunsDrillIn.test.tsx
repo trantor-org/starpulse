@@ -32,12 +32,13 @@ describe("SunsDrillIn", () => {
   it("repaints the scene in a new theme's colours when the theme changes, with no remount", () => {
     mount();
     const dots = () => [...host.querySelectorAll<HTMLElement>("span")].map((e) => e.getAttribute("style") ?? "").join(" ");
-    expect(dots()).toContain(packTokens("starpulse").waits);
+    const serialized = (hex: string) => Object.assign(document.createElement("i").style, { color: hex }).color;
+    expect(dots()).toContain(serialized(packTokens("starpulse").waits));
 
     act(() => void applyPack("nord"));
 
-    expect(dots()).toContain(packTokens("nord").waits);
-    expect(dots()).not.toContain(packTokens("starpulse").waits);
+    expect(dots()).toContain(serialized(packTokens("nord").waits));
+    expect(dots()).not.toContain(serialized(packTokens("starpulse").waits));
   });
 
   it("reads each task's moves again every 5 seconds while it is open, so a phase a task enters is drawn without a reload", async () => {

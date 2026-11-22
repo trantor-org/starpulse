@@ -62,11 +62,17 @@ class ViewMethods:
         return [self._hot_agent(summary, summary["id"] in ready) for summary in summaries]
 
     def _hot_agent(self, summary: dict, ready: bool) -> dict:
-        return (
+        return self._active(
             summary_agent(summary, ready, self._read_model_moves(summary), self._default_profiles)
             | read_model_detail(summary, self._roles.attention)
             | self._read_model_readable(summary)
         )
+
+    def _active(self, agent: dict) -> dict:
+        """A copy of a held working task's agent with its holder's `session_activity`."""
+        if agent["state"] != self._roles.working or not agent.get("assignee"):
+            return agent
+        return {**agent, "session_activity": self._activity(agent["assignee"])}
 
     def drawn_task(self, task_id: str) -> tuple[dict | None, str | None]:
         """The agent a whole build draws on the board flow for the Task (a Done one as its dot), None when the Task is

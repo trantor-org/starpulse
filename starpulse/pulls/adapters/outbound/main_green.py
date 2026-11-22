@@ -30,6 +30,10 @@ class MainGreen:
         except OSError:
             return None
 
+    def forget(self) -> None:
+        """Drop the kept verdict: a finished checks run on main changed what the next call reads."""
+        self._read = None
+
     def _green(self) -> str | None:
         sha = self._head(self._repository)
         if sha is None:
