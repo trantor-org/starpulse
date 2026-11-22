@@ -26,7 +26,7 @@ class Guard:
     #: The state of another task (a dependency a rule reads), or None when the board has none.
     state_of: Callable[[str], str | None] = lambda _: None
     #: The stored pull request of `(repository, number)` (`rules.Record.pull_of`), or None when the board has none.
-    pull_of: Callable[[str, int, bool], Mapping[str, Any] | None] = lambda _repo, _number, _settle: None
+    pull_of: Callable[[str, int, str | None], Mapping[str, Any] | None] = lambda _repo, _number, _settle: None
     #: The names a task's `type` may take; empty accepts any.
     types: tuple[str, ...] = ()
     #: The Waiting lane id and the Ready status, which a write leaving a task in Waiting must be able to move on to.
