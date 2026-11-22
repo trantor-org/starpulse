@@ -9,6 +9,8 @@ other:
 - For each repository it pages the pull requests updated since a cursor and inserts a `source = 'reconcile'` row for each
   closed pull request and each finished check suite on its head that no row received around the fact reported, which
   the `events` consumer reads like a delivery. Only an inserted row counts as a correction, as only it is a missed push.
+- It also inserts a `reconciled` row, the pull request as the listing shows it, for each one the PR store lacks or holds
+  with an older `updatedAt`, which only the `pulls` consumer reads, whether or not a task cites the pull request.
 
 Every list is read with its last ETag: a 304 spends no rate limit and changes nothing. The pull requests are walked
 oldest first and their cursor is saved after each one a newer one follows, so a failed pass resumes after the last pull request it handled; a
@@ -26,7 +28,7 @@ from starpulse.github.model.delivery import Delivery
 from starpulse.github.model.events import event_id, facts_of
 from starpulse.github.model.github_config import GitHub
 from starpulse.github.model.reconcile import (
-    EARLY_S, LATE_S, LOOKBACK_S, SOURCE, epoch, pull_delivery, redeliveries, suite_delivery,
+    EARLY_S, LATE_S, LOOKBACK_S, SOURCE, epoch, pull_delivery, redeliveries, suite_delivery, update_delivery,
 )  # fmt: skip
 from starpulse.github.ports.inbox import Inbox
 
@@ -100,7 +102,9 @@ def _reported(inbox: Inbox, delivery: Delivery, at: str | None) -> bool:
     return wanted <= held
 
 
-def _pulls(client: Client, inbox: Inbox, cursors: SqlCursors, counted: Reconciled, repository: str, now: float) -> None:
+def _pulls(
+    client: Client, inbox: Inbox, cursors: SqlCursors, counted: Reconciled, repository: str, now: float, stored: Callable[[str, int], str | None]
+) -> None:
     name = f"pull-rows:{repository}"
     cursor = cursors.get(name)
     floor = epoch(cursor.value) if cursor else now - LOOKBACK_S
@@ -110,6 +114,10 @@ def _pulls(client: Client, inbox: Inbox, cursors: SqlCursors, counted: Reconcile
     for pull, later in zip(oldest, [*oldest[1:], None]):
         head = (pull.get("head") or {}).get("sha", "")
         found = [(pull_delivery(repository, pull), pull.get("closed_at"))]
+        held = stored(repository, pull["number"])
+        refresh = update_delivery(repository, pull) if not held or epoch(pull["updated_at"]) > epoch(held) else None
+        if refresh is not None and inbox.save(refresh, SOURCE) and not held:  # a stale `updatedAt` alone is no missed push
+            counted.inserted(refresh.event)
         if head:
             suites = _read(client, f"/repos/{repository}/commits/{head}/check-suites").body.get("check_suites", [])
             closed = pull.get("closed_at")
@@ -142,9 +150,16 @@ def _repositories(client: Client, settings: GitHub) -> list[str]:
 
 
 def reconcile(
-    client: Client, inbox: Inbox, cursors: SqlCursors, settings: GitHub, counted: Reconciled, clock: Callable[[], float]
+    client: Client,
+    inbox: Inbox,
+    cursors: SqlCursors,
+    settings: GitHub,
+    counted: Reconciled,
+    clock: Callable[[], float],
+    stored: Callable[[str, int], str | None],
 ) -> None:
-    """One pass over the App's deliveries and the pull requests of each repository `settings` accepts."""
+    """One pass over the App's deliveries and the pull requests of each repository `settings` accepts; `stored` reads the
+    `updatedAt` the PR store holds for one, `None` when it holds none."""
     now = clock()
     try:
         _deliveries(client, inbox, cursors, counted, now)
@@ -157,7 +172,7 @@ def reconcile(
         return
     for repository in repositories:
         try:
-            _pulls(client, inbox, cursors, counted, repository, now)
+            _pulls(client, inbox, cursors, counted, repository, now, stored)
         except Exception:
             logger.exception("github reconcile: %s", repository)
 

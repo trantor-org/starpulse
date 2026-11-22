@@ -276,6 +276,21 @@ def runs_kind(log: EventLog, adapters: Sequence[tuple[RunsInstance, ModuleType]]
     return _RunsKind(Reconcile(log, sources))
 
 
+def stored_updates(store: PullStore) -> Callable[[str, int], str | None]:
+    """The `updatedAt` the store holds for a pull request, `None` for one it lacks."""
+
+    def stored(repository: str, number: int) -> str | None:
+        found = store.find(repository, number, bodies=False)
+        return found[0]["updatedAt"] if found else None
+
+    return stored
+
+
+def pull_updates(log: EventLog) -> Callable[[str, int], str | None]:
+    """`stored_updates` over the scheduler's store of `log`, built on first use: a sweeper with no `[github]` never reads it."""
+    return lambda repository, number: stored_updates(_pull_store(log.engine))(repository, number)
+
+
 class GithubKind:
     """The sweeper's `github` kind: one reconcile pass of the inbox against GitHub. A list read is a sample, an
     inbox row inserted a correction; a redelivery asked is the webhook pushed again, so it is none."""
@@ -283,14 +298,21 @@ class GithubKind:
     name = "github"
 
     def __init__(
-        self, client: Client, inbox: SqlInbox, cursors: SqlCursors, settings: GitHub, clock: Callable[[], float]
+        self,
+        client: Client,
+        inbox: SqlInbox,
+        cursors: SqlCursors,
+        settings: GitHub,
+        clock: Callable[[], float],
+        stored: Callable[[str, int], str | None],
     ) -> None:
         self._arguments = (client, inbox, cursors, settings)
         self._clock = clock
+        self._stored = stored
         self._counted = Reconciled()
 
     def run(self) -> Outcome:
-        reconcile.reconcile(*self._arguments, self._counted, self._clock)
+        reconcile.reconcile(*self._arguments, self._counted, self._clock, self._stored)
         sampled, corrected = self._counted.take()
         return Outcome(corrected=corrected, sampled=sampled)
 
@@ -306,7 +328,7 @@ def github_kinds(config: Any, log: EventLog) -> list[GithubKind]:
         return []
     inbox = SqlInbox(log.engine)
     client = connect_client(lambda: os.environ.get(settings.reconcile_token_env or ""), app_jwt)
-    return [GithubKind(client, inbox, SqlCursors(inbox.engine), settings, time.time)]
+    return [GithubKind(client, inbox, SqlCursors(inbox.engine), settings, time.time, pull_updates(log))]
 
 
 class _BoardKind:

@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from starpulse.board.model import criteria
+from starpulse.board.model.acceptance import resolved
 from starpulse.board.model.markdown import attention_reason, needs_attention_reason, operator_answered
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import HELD, MERGE_EVIDENCE
@@ -295,15 +296,19 @@ def deploy_reopened(facts: TaskFacts, agent: Agent) -> bool:
 
 
 def criteria_checked(facts: TaskFacts, agent: Agent) -> tuple[int, str] | None:
-    """The criteria count when every criterion is checked and the task ships no pull request: its phase sequence has
-    no `deliver`, or it cites none, none names it and its final summary is recorded. A task with no criteria (an
-    audit signal) always needs that final summary and no pull request."""
-    ticks = [criterion["checked"] for criterion in agent.get("criteria", ())]
+    """The criteria count when every criterion is checked or struck and the task ships no pull request: its phase
+    sequence has no `deliver`, or it cites none, none names it and its final summary is recorded. A task with no criteria (an
+    audit signal) always needs that final summary and no pull request. A task citing none whose board reports work
+    unfinished (`unfinished`: a built branch not on main) is held from Done under `DONE_HELD`."""
+    ticks = [resolved(criterion) for criterion in agent.get("criteria", ())]
     if not all(ticks):
         return None
     if ("deliver" in facts.sequence(agent) or not ticks) and (
         facts.own_prs(agent) or facts.unlinked(agent) or not (agent.get("final_summary") or "").strip()
     ):
+        return None
+    if not facts.own_prs(agent) and (left := facts.unfinished(agent["id"])):
+        facts.note_hold(agent, tuple(left), DONE_HELD)  # a built branch not on main is delivered first, never closed
         return None
     shown = f"Every criterion is checked ({len(ticks)})" if ticks else "The task has no criteria"
     return len(ticks), f"{shown} and the task ships no pull request."
