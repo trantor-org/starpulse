@@ -235,6 +235,9 @@ class Board:
     """Reads an archived task's full record, which `read` never finds."""
     edit: TaskEditor
     """Saves the page's edits to a task in one write."""
+    judge: TaskEditor
+    """What the board's rules say of an edit by the task actor, which they never refuse: the refusal, or ok, and nothing
+    is written. The actor reads it as a fact before it writes a move."""
     archive: TaskArchiver
     """Archives a task from any column."""
     restore: TaskRestorer

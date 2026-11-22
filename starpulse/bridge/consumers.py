@@ -6,21 +6,40 @@ given the latest state, except a holder's resume published before the consumer e
 acks it unsent). An empty subscription deletes the consumer: an empty filter would mean every subject.
 """
 
-from nats.js.api import AckPolicy, ConsumerConfig, DeliverPolicy
+import json
+import logging
+
+from nats.js.api import AckPolicy, ConsumerConfig, ConsumerInfo, DeliverPolicy
 from nats.js.errors import NotFoundError
 
 from starpulse.bridge.publisher import Publisher
 from starpulse.bridge.subscriptions import Subscription
 
+logger = logging.getLogger(__name__)
 _KEY = "starpulse.subscription"
 
 
 async def all_consumers(js, stream: str) -> list:  # noqa: ANN001
-    """Every consumer of `stream`: the server lists a page of at most 256, so page on `offset` until one comes back empty."""
+    """Every consumer of `stream`: the server lists a page of at most 256, so page on `offset` until one comes back empty.
+
+    Each entry is parsed alone: nats-py cannot read a non-UTC offset in a timestamp, and one such consumer would fail the page.
+    """
     found: list = []
-    while page := await js.consumers_info(stream, offset=len(found)):
-        found += page
-    return found
+    seen = 0
+    while True:
+        resp = await js._api_request(  # noqa: SLF001
+            f"{js._prefix}.CONSUMER.LIST.{stream}",  # noqa: SLF001
+            json.dumps({"offset": seen}).encode(),
+            timeout=js._timeout,  # noqa: SLF001
+        )
+        if not (page := resp["consumers"]):
+            return found
+        seen += len(page)
+        for raw in page:
+            try:
+                found.append(ConsumerInfo.from_response(raw))
+            except ValueError:
+                logger.exception("skipped consumer %s: unreadable timestamp", raw.get("name"))
 
 
 class Consumers:

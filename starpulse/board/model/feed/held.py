@@ -90,6 +90,8 @@ class HeldSnapshot:
         self._day = 0.0
         self._stale = False
         self._folding = False  # whether `run` takes the queue
+        self._storing = threading.Lock()  # the one store at a time: `retire` runs on the thread that stops the writer
+        self._retired = False
         self.snapshot: dict[str, Any] = {}
         #: Set once the first build is stored (or failed): `run` then folds changes.
         self.started = threading.Event()
@@ -178,7 +180,26 @@ class HeldSnapshot:
             logger.exception("StarPulse: the held snapshot could not fold %d changes; it is built again", len(changes))
             self._rebuilt(changes)
 
+    def retire(self) -> None:
+        """Store that no writer folds from here on, as the last delta this writer stores, so a stream open tells its page
+        the Board is stale until a writer stores again (`snapshot` is the first delta a started writer stores). The stored
+        body keeps its sequence: it reflects what was folded. Runs on the thread that stops the writer, which the held
+        snapshot's own thread may not outlive; a crash stores none."""
+        with self._storing:
+            if self._store is None or self._retired:
+                return
+            self._retired = True
+            try:
+                self._store.save([("stale", {"at": self._clock()})], None, self._clock(), current=False)
+            except Exception:
+                logger.exception("StarPulse: the held snapshot could not store that its writer stopped")
+
     def _save(self, changes: list[tuple[str, dict]], force: bool = False) -> None:
+        with self._storing:
+            if not self._retired:
+                self._store_changes(changes, force)
+
+    def _store_changes(self, changes: list[tuple[str, dict]], force: bool) -> None:
         """Store every change taken since the last save, and the snapshot when it is not the one stored and `force`, a
         change outside `HELD_BACK`, the interval or the store's window says so. A save that fails is logged and its changes
         go with the next."""

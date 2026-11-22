@@ -4,8 +4,9 @@ A machine state's `waits` name a fact kind and the event that leaves the state w
 (`machine_definition.WAIT_FACTS`). The actor keeps a `PR -> tasks` and a `task -> dependents` index, so one change
 touches only the tasks naming it, and when a task's pull request state, its own lane or a dependency's changes it
 re-derives that task's waits and writes the first that holds through the board's task editor as `starpulse/task-actor`.
-The board's rules and the machine's guards judge the write like any other. A write the board refuses is logged and
-counted, and not tried again until the task's facts change. A move to Done the board refuses (a Definition of Done item
+The actor reads the board's rules and the machine's guards as facts first (`Board.judge`) and skips a move one does not
+hold; the board writer accepts every move it makes. A move so refused is logged and counted, and not tried again until the
+task's facts change. A move to Done the board refuses (a Definition of Done item
 left open) is commented on the task as `Held from Done: <reason>`; the last item checked tries the move again. A release to Ready the board refuses (a
 declared guard, the validate hook or any other refusal) leaves the task in its lane with the refusal as a comment and no
 operator question, because no operator move clears a task record alone, and the release is tried again when the task's
@@ -259,6 +260,8 @@ class TaskActor:
     `waits` is `{lane: {fact kind: event}}` (`Compiled.waits`) and `moves` is `{(lane, event): target lane}`, from the
     Board machine's transitions. `edit` is the board's task editor. `repos`, `pin_rule` and `pins` are the `[release]`
     pin-bump rule (`unblock.PinGate`): a dependency in a pinned repository is merged on the parent's pin bump.
+    `judge` is what the board's rules say of a move (`Board.judge`): the board writer lets every move of the actor
+    land, so the actor reads a refusal there first and skips a move the rules hold back.
     `latest` says whether an event subject's last event already happened (None: none has), and `holds` the reasons the board withholds a task's `deps_done` (`Board.holds`). `read` is the
     board's task reader (`Board.read`).
     `unfinished` is the work a task whose pull requests merged still has (`Board.unfinished`). `main_green` is the SHA of main's latest passed Validate (None: none passed, or no source),
@@ -272,6 +275,7 @@ class TaskActor:
         edit: TaskEditor,
         waits: Mapping[str, Mapping[str, str]],
         moves: Mapping[tuple[str, str], str],
+        judge: TaskEditor,
         repos: Sequence[Repo] = (),
         pin_rule: str | None = None,
         pins: Pins | None = None,
@@ -318,6 +322,7 @@ class TaskActor:
         self._feed = feed
         self._store = store
         self._edit = edit
+        self._judge = judge
         self._waits = waits
         #: The lane that waits on a pull request's end, whatever the board names it.
         self._review = feed.roles.review
@@ -396,6 +401,8 @@ class TaskActor:
         self._unready_logged: dict[str, str] = {}
         #: The record each task's release was last refused on by the board, so a repaired record is tried again.
         self._lint_held: dict[str, tuple[Any, ...]] = {}
+        #: The note of each task's standing Review refusal, until a change repairs it: the holder's resume carries it.
+        self._refused: dict[str, str] = {}
         self._metrics = threading.Lock()
         self._refusals = 0
         #: How many writes landed within each bound of `BUCKETS_S`, then how many in all, and their seconds summed.
@@ -834,6 +841,7 @@ class TaskActor:
             repaired = name in self._lint_held and self._lint_held[name] != _lint_record(agent)
             if repaired:
                 del self._lint_held[name]
+                self._refused.pop(name, None)
             rearmed = agent["state"] in self._timed_lanes and tuple(
                 criteria.expect_dates(agent["description"])
             ) != self._dates.get(name, ())
@@ -998,6 +1006,7 @@ class TaskActor:
             self._by_pr.get(url, set()).discard(name)
         self._tried.pop(name, None)
         self._lint_held.pop(name, None)
+        self._refused.pop(name, None)
         self._unready_logged.pop(name, None)
         self._deadlines.cancel(name)
         self._dates.pop(name, None)
@@ -1337,14 +1346,15 @@ class TaskActor:
             return
         self.holder_settled(name)
 
-    def holder_ended(self, name: str, wait_ended: bool = False) -> None:
+    def holder_ended(self, name: str, wait_ended: bool = False, unreachable: bool = False) -> None:
         """A session's process ended. A task in Needs attention, whose session the operator's answer waits on, is revived
         once whatever work is left, and stays there, a failed revive included. A holder whose task still has work (an open criterion, or a pull request of its own
         not yet ended) is revived once by the `idle` hook's `revive` verdict, which reopens the session in place and moves the
         claim to it; the task stays In Progress. The next loss with no progress (a criterion checked, a phase or head
         change) moves the task to Needs attention with its session kept, as does a revive that fails, naming why. An awaited event holds the revival until it ends. A
         task with no work left is the settle's (`holder_settled`), and a held revival whose holder is at work again by the time the
-        wait ends is dropped."""
+        wait ends is dropped. A settle's resume that reached no session (`unreachable`) revives a task with no work left
+        too: the settle has no one to resume, and no later event comes."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
             self._memory.keep(name, revive_held=None)
@@ -1362,7 +1372,7 @@ class TaskActor:
             items = agent.get("criteria", ())
             opened = open_criteria(items)
             if not parked:
-                if not agent["prs"] and not opened:
+                if not agent["prs"] and not opened and not unreachable:
                     return
                 own = self._own_prs(agent)
                 if (
@@ -1445,6 +1455,9 @@ class TaskActor:
     def _resume(self, name: str, progress: tuple[Any, ...], count: int) -> None:
         if not self._confirmed(name):
             return
+        refusal = self._refused.get(name)
+        if refusal and count >= _ONE_TRY:
+            return  # the holder was told the refusal; the task stays In Progress until a change repairs it
         if count >= _ONE_TRY:
             with self._lock:
                 now = self._feed.task(name, lean=True)
@@ -1452,6 +1465,10 @@ class TaskActor:
                     self._memory.keep(name, resumes=None)
                     self._attend(name, "it settled idle again after its one resume with no progress")
             return
+        if refusal:
+            latest = (self._comments({"id": name}) or [""])[-1].strip()
+            if latest != refusal:
+                self._apply(name, {}, refusal)  # the resume reads the latest comment: make the refusal the latest
         if not self._resume_sent(name):
             return
         with self._lock:
@@ -1548,7 +1565,7 @@ class TaskActor:
                     name, f"its holder's resume failed {failed} times in a row: {error}", "could not be resumed"
                 )
                 return False
-        self.holder_ended(name)
+        self.holder_ended(name, unreachable=True)
         return False
 
     def _attend(
@@ -1676,7 +1693,9 @@ class TaskActor:
         stale: Mapping[str, Any] = {},
         merged: float | None = None,
     ) -> bool:
-        written = self._apply(name, {"status": target, **stale}, comment)
+        changes = {"status": target, **stale}
+        refusal = self._judged(name, changes, comment)
+        written = refusal if not refusal.ok else self._apply(name, changes, comment)
         if written.ok and self._recovering:
             logger.error(
                 "task actor: start recovery moved %s %s -> %s, a move its lane's events missed", name, source, target
@@ -1750,6 +1769,7 @@ class TaskActor:
             f"do not retry it{f' (head {heads})' if heads else ''}"
         )
         self._lint_held[name] = _lint_record(agent)  # an edit that repairs it is a change
+        self._refused[name] = note
         if note in self._comment_texts(name):
             return
         written = self._apply(name, {}, note)
@@ -1852,6 +1872,12 @@ class TaskActor:
             if written.ok and written.lane:
                 self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, "", ""))
         return written
+
+    def _judged(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
+        try:
+            return self._judge(name, changes, comment)
+        except Exception as error:  # a board that raises refuses like one that answers no
+            return Written(False, str(error))
 
     def _edit_retrying(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
         """The board's edit, retried with backoff while SQLite reports the database locked; a lock that outlasts the

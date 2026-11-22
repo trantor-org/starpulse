@@ -153,7 +153,8 @@ def slim_snapshot(data: Any) -> Any:
     """`data` as the page is sent it: each Board task without its description, criteria and moves (it reads them
     from `/api/task/<id>` on open, and the moves through the `move_sets` table; an active task keeps its
     description and criteria), only the recent settled tasks, and
-    each milestone's completed count. A verb or a held stream reads the whole of `data`, never this."""
+    each milestone's completed count; `/api/events` draws its `snapshot` frames with it too. A verb or the held-tasks
+    stream reads the whole of `data`, never this."""
     flows = data["flows"]
     board = flows[0] if flows and flows[0]["name"] == "board" else None
     drawn = {**data, "milestone_done": _milestone_done(data), "settled": _recent_settled(data)}
@@ -202,7 +203,9 @@ def _splice(body: bytes, marker: bytes, drawn: bytes, after: bytes = b"") -> byt
 def event(name: str, data: Any) -> str:
     """The JSON text of the `data` of `/api/events`' event `name`, raising `ValidationError` for one its model refuses."""
     model = EVENTS[name]
-    if name in ("pulls", "snapshot") and data.get("pulls"):
+    if name == "snapshot":  # a rebuilt snapshot the writer stores as a delta is drawn as the served body is
+        data = slim_snapshot(data)
+    elif name == "pulls" and data.get("pulls"):
         data = {**data, "pulls": _drawn_pulls(data["pulls"])}
     if name == "move":
         names, (agent,) = _interned([data["agent"]])

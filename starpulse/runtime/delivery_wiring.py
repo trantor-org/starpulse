@@ -81,6 +81,7 @@ def start_delivery(
             board.edit,
             board.waits,
             moves_of(feed.machines["board"]),
+            board.judge,
             config.repos,
             config.release.settle if config.release else None,
             pins,

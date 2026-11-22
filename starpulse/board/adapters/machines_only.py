@@ -45,6 +45,7 @@ def refusing(**fields: Any) -> Board:
         "read": _absent,
         "read_archived": _absent,
         "edit": _refused,
+        "judge": _refused,
         "archive": _refused,
         "restore": _refused,
         "standing": _absent,

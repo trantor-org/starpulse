@@ -280,7 +280,7 @@ clock time of the last data the page drew.
 | --- | --- | --- | --- |
 | Live | green | `live · HH:MM MST` | The stream is open. |
 | Restarting | amber, pulsing | `restarting · HH:MM MST` | The server sent `restarting` before it exited. |
-| Stale | amber, pulsing | `stale · HH:MM MST` | The page drew the Board it kept from an earlier load and the server has not yet sent its own. |
+| Stale | amber, pulsing | `stale · HH:MM MST` | The page drew the Board it kept from an earlier load and the server has not yet sent its own, or the server sent `stale`: no Board writer is folding. |
 | Retrying | amber, pulsing | `retrying · HH:MM MST` | The stream dropped with no announcement. |
 | Offline | red | `offline · HH:MM MST` | The stream has been down for 20 s, from the drop or the announcement. It keeps retrying. |
 | New build | green | `updating when idle` | The server runs a page build other than the one loaded. |
@@ -295,7 +295,7 @@ partial Board from a server still `reading`. A load reads it back and draws it a
 the server is down or restarting shows the cards it last had instead of an empty page; `<time>` is the snapshot's own time.
 It stays stale, turning to `retrying` or `offline` as the stream fails, until the server's snapshot arrives and replaces
 it; a server that is still `reading` does not clear the mark. A Board the page held through a drop is marked stale from the
-reconnect until the server's whole Board arrives. A snapshot is read back only by the page build that wrote it. Where the
+reconnect until the server's whole Board arrives. A Board writer that stops (a deploy replacing the `contexts` worker) stores a `stale` delta as its last, which every open stream sends and a stream that attaches before the next writer stores replays after its snapshot; the next change a writer folds clears the mark. A crash stores none. The `contexts` worker starts `board` first and the other contexts after its first start, so a replacement leaves the writer down for one Board build, not for the slowest context. A snapshot is read back only by the page build that wrote it. Where the
 browser has no IndexedDB or refuses a write (a full quota), the page works as before with nothing kept.
 
 While the Board is replaying after a start, `/api/events` resends only `snapshot`, once the replay has ended, because a

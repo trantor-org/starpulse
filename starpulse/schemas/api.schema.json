@@ -7730,6 +7730,19 @@
       "title": "StaleEdit",
       "type": "object"
     },
+    "StaleEvent": {
+      "description": "No Board writer is folding: the one that was stopped, and no other has stored since. A page shows its Board as stale\nuntil the next change arrives; a page that connects while none is folding is sent this after its snapshot.",
+      "properties": {
+        "at": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "at"
+      ],
+      "title": "StaleEvent",
+      "type": "object"
+    },
     "StartRequest": {
       "additionalProperties": false,
       "description": "`POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.\n\n`assignee` is the legacy name of `profile` and is read when `profile` is absent.",
@@ -9209,6 +9222,9 @@
     "spend": {
       "$ref": "#/$defs/Spend"
     },
+    "stale": {
+      "$ref": "#/$defs/StaleEvent"
+    },
     "taskCostToGo": {
       "$ref": "#/$defs/TaskCostToGo"
     },
@@ -9242,6 +9258,7 @@
     "events",
     "build",
     "restarting",
+    "stale",
     "ledger",
     "ledgerChange",
     "donePage",

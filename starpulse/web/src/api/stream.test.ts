@@ -738,6 +738,19 @@ describe("openStream", () => {
       expect(lives).toEqual([true, false]);
     });
 
+    it("says stale from the server's stale event over an open connection, and live again once the next change hands over a Board", () => {
+      openStream(watching, open);
+      last().onopen?.();
+      last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+      last().send("stale", { at: 5 });
+      expect(links).toEqual(["live", "stale"]);
+      expect(lives).toEqual([true]);
+
+      last().send("move", { machine: "board", id: "PROJ-1", agent: agent("PROJ-1", "doing") });
+      expect(links).toEqual(["live", "stale", "live"]);
+    });
+
     it("says retrying for a drop the server did not announce", () => {
       openStream(watching, open);
       last().onopen?.();
