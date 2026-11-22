@@ -72,7 +72,7 @@ JOB_BOUNDS_S = (1.0, 5.0, 15.0, 60.0, 300.0, 900.0, 3600.0, 14400.0)
 #: The `type` label of a done task whose type the board does not declare.
 OTHER_TYPE = "other"
 NO_EVENT_METRIC = "starpulse_harness_active_no_event_seconds"
-NO_EVENT_HELP = "Seconds since the last lane move, work event or tool call of the quietest working task whose harness reads active; 0 when none."
+NO_EVENT_HELP = "Seconds since the last lane move, work event or tool call of the quietest working task whose harness reads active or whose settled holder a running shell keeps busy; 0 when none."
 
 #: The setting the counts and states are saved under, with the last entry of each stream they cover.
 CHECKPOINT = "conformance:checkpoint"
@@ -153,7 +153,9 @@ class Conformance:
         sessions: Mapping[str, dict] = {},
         done: str | None = None,
         types: Collection[str] = (),
+        busy: Callable[[str], bool] = lambda _task: False,
     ) -> None:
+        self._busy = busy
         self._names = list(machines)
         self._done, self._types = done, set(types)
         self._entered: dict[str, int] = dict.fromkeys(entered, 0)
@@ -357,7 +359,7 @@ class Conformance:
         return {
             "stalled": sum(task in self._stalled for task in live),
             "due": sorted(last + STALL_S for task, last in live.items() if task not in self._stalled),
-            "active_since": min((last for task, last in live.items() if self._harness_active(task)), default=None),
+            "active_since": min((last for task, last in live.items() if self._harness_active(task) or self._busy(task)), default=None),
         }
 
     def _harness_active(self, task: str) -> bool:

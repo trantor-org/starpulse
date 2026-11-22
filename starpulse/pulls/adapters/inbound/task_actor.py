@@ -128,7 +128,7 @@ _YIELD_S = 2.0
 #: derived under, so a start derives only the tasks that changed since.
 CHECKPOINT = "pulls.task_actor_checkpoint"
 #: Bumped when a fact function reads something new or reads it differently: a checkpoint of another revision is unread.
-_FACTS_REVISION = 3
+_FACTS_REVISION = 4
 #: Seconds between two saves of the checkpoint while the actor runs.
 #: Seconds after a task's derived facts change before the checkpoint is saved.
 _CHECKPOINT_DEBOUNCE_S = 10.0
@@ -178,9 +178,9 @@ def _lint_record(agent: Mapping[str, Any]) -> tuple[Any, ...]:
     return (*(agent.get(field) for field in _LINTED), tuple(agent["labels"]), tuple(agent.get("dependencies", ())))
 
 
-def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], bool]:
-    """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests, checked criteria and
-    whether a session claimed it. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
+def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], bool, bool]:
+    """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests, checked criteria,
+    whether a session claimed it and whether its final summary is recorded. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
     return (
         agent["state"],
@@ -188,6 +188,7 @@ def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ..
         tuple(agent.get("prs", ())),
         ticks,
         bool(agent.get("assignee")),
+        bool((agent.get("final_summary") or "").strip()),
     )
 
 

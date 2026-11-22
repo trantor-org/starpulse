@@ -65,7 +65,7 @@ class ReadMethods:
         ready = bool(self._read_model.ready(row["state"], self._roles.done, task_id))
         moves = self._read_model_moves(row)
         agent = summary_agent(row, ready, moves if lean else self._guarded(task_id, moves), self._default_profiles)
-        agent = agent | read_model_detail(row, self._roles.attention)
+        agent = agent | read_model_detail(row, self._roles.attention) | {"final_summary": row["final_summary"]}
         return agent if lean else agent | self._read_model_readable(row)
 
     def follow_read_model(self, limit: int = 1000) -> int:
