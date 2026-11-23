@@ -151,8 +151,11 @@ export function App() {
   // declared after the renderer's effect, so the first run already reaches it
   useEffect(() => {
     reveal(view, true);
-    renderer.current?.show(view === "constellation");
   }, [view, reveal]);
+  // the drill-in is opaque over the canvas, so the Star Map draws no frame behind it
+  useEffect(() => {
+    renderer.current?.show(view === "constellation" && !drill);
+  }, [view, drill]);
 
   // a level from the navigator's search, the breadcrumb or the Star Map view opens on the Star Map, out of the drill-in, refitted when it is already the one shown
   const open = (p: Path) => {

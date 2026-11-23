@@ -88,6 +88,19 @@ describe("the In Progress sun", () => {
     expect(host.querySelector(drillIn)).not.toBeNull();
   });
 
+  it("stops the Star Map's frames while the drill-in covers it, and draws them again on close", async () => {
+    board([card("TASK-2", "In Progress")]);
+    const shown = () => held.calls.filter(([k]) => k === "show").at(-1)?.[1][0];
+    expect(shown()).toBe(true);
+
+    drills("TASK-2");
+    await act(async () => void (await import("./features/level/SunsDrillIn")));
+    expect(shown()).toBe(false);
+
+    act(() => host.querySelector<HTMLButtonElement>('#sd header button[aria-label="Back to the Board"]')!.click());
+    expect(shown()).toBe(true);
+  });
+
   it("the Star Map in the side panel closes the drill-in and starts the Star Map at the Board's top level, from any view and depth", async () => {
     board([card("TASK-2", "In Progress")]);
     act(() => held.store!.set({ path: lane("Review") }));

@@ -101,7 +101,9 @@ def line_for(event: Event) -> Line:
     if not isinstance(fields, dict):
         return Line(event.subject, event.subject)
     data = fields.get("data")
-    pairs = [(key, fields[key]) for key in _FIELDS if fields.get(key)]
+    # a move's time tells two send-backs to one lane apart
+    keys = (*_FIELDS, "time") if event.subject.endswith(".moved") else _FIELDS
+    pairs = [(key, fields[key]) for key in keys if fields.get(key)]
     given = [(key, value) for key, value in (data if isinstance(data, dict) else {}).items() if value is not None]
     pairs += given[:_DATA_PAIRS]
     pairs += [("skill", skill) for suffix, skill in _SKILLS.items() if event.subject.endswith(suffix)]

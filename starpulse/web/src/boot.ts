@@ -54,7 +54,8 @@ export function boot(mount: () => void, preload?: (view: ViewName) => void): Boo
   // a bare address opens the view the Admin chose; one that names a view opens that, and a view that covers the map leaves it undrawn;
   // a phone width has no Star Map, so it opens the Kanban whatever the address or the Admin chose
   const wanted = viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view);
-  const shown = shownView(wanted, onPhone()), star = shown === "constellation";
+  // the drill-in is opaque over the Star Map, so an address that opens it draws no Star Map frame beneath
+  const shown = shownView(wanted, onPhone()), star = shown === "constellation" && !new URLSearchParams(location.search).get("drill");
   let mounted = false;
   const open = () => {
     if (mounted) return;

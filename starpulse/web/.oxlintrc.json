@@ -116,6 +116,14 @@
   "overrides": [
     {
       "files": [
+        "src/api/types.gen.ts"
+      ],
+      "rules": {
+        "typescript/no-empty-object-type": "off"
+      }
+    },
+    {
+      "files": [
         "**/*.ts",
         "**/*.tsx",
         "**/*.mts",

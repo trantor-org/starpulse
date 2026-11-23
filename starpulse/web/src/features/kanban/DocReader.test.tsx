@@ -14,7 +14,7 @@ const bodies: Record<string, string> = {
 };
 const served: Record<string, unknown> = {
   "/api/milestones/m-89": { milestone: { id: "m-89", title: "Task dialog", description: "## Goal\n\nOne dialog.", specs: ["doc-993 — Task dialog redesign"] } },
-  "/api/docs?ids=doc-993,doc-12": { docs: [{ id: "doc-993", title: "Task dialog redesign", type: "specification" }, { id: "doc-12", title: "Working notes", type: "other" }] },
+  "POST /api/docs": { docs: [{ id: "doc-993", title: "Task dialog redesign", type: "specification" }, { id: "doc-12", title: "Working notes", type: "other" }] },
   "/api/docs/doc-993": { doc: { id: "doc-993", title: "Task dialog redesign", type: "specification", body: bodies["doc-993"] } },
   "/api/docs/doc-12": { doc: { id: "doc-12", title: "Working notes", type: "other", body: bodies["doc-12"] } },
 };
@@ -22,9 +22,10 @@ const served: Record<string, unknown> = {
 describe("the task view's Docs", () => {
   const mounted: { root: ReturnType<typeof createRoot>; host: HTMLElement }[] = [];
   const mount = async (over: Partial<Parameters<typeof TaskView>[0]> = {}) => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => (
-      url in served ? new Response(JSON.stringify(served[url]), { status: 200 }) : new Response("{}", { status: 404 })
-    )));
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const key = init?.method === "POST" ? `POST ${url}` : url;
+      return key in served ? new Response(JSON.stringify(served[key]), { status: 200 }) : new Response("{}", { status: 404 });
+    }));
     const host = document.body.appendChild(document.createElement("div"));
     const root = createRoot(host);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -49,9 +50,8 @@ describe("the task view's Docs", () => {
 
   it("lists the milestone, its spec and the linked doc in the rail, asking only for those docs", async () => {
     const host = await mount();
-    const urls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url));
-    expect(urls.filter((u) => u.startsWith("/api/docs?"))).toEqual(["/api/docs?ids=doc-993,doc-12"]);
-    expect(urls).not.toContain("/api/docs");
+    const posts = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts.map(([url, init]) => [String(url), JSON.parse(init.body)])).toEqual([["/api/docs", { ids: ["doc-993", "doc-12"] }]]);
     expect(rows(host).map((r) => [r.querySelector(".kd")?.textContent, r.querySelector(".tt")?.textContent])).toEqual([
       ["Milestone", "m-89Task dialog"],
       ["Spec", "doc-993Task dialog redesign"],

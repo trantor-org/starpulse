@@ -75,7 +75,8 @@ def suite_delivery(repository: str, number: int, head: str, suite: dict[str, Any
     """The `check_suite` delivery that reports a finished suite on pull request `number`'s head; `None` for one unfinished."""
     if suite.get("status") != "completed" or not suite.get("conclusion") or not suite.get("id"):
         return None
-    summary = {"id": suite["id"], "conclusion": suite["conclusion"], "pull_requests": [{"number": number}]}
+    kept = {key: suite[key] for key in ("id", "status", "conclusion", "created_at", "updated_at") if key in suite}
+    summary = kept | {"head_sha": head, "pull_requests": [{"number": number}]}
     return _delivery(
         f"reconcile:{repository}:{number}:{head}:{suite['id']}", "check_suite", repository, {"action": "completed", "check_suite": summary}
     )

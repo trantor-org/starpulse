@@ -131,10 +131,6 @@ class DocArchived(_Api):
     doc: str
 
 
-class DocRestored(_Api):
-    doc: str
-
-
 class Started(_Api):
     task: str
     url: str

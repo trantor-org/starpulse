@@ -1699,20 +1699,6 @@
       "title": "Dispatched",
       "type": "object"
     },
-    "DocArchiveRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/docs/archive`: archive `doc`.",
-      "properties": {
-        "doc": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "doc"
-      ],
-      "title": "DocArchiveRequest",
-      "type": "object"
-    },
     "DocArchived": {
       "properties": {
         "doc": {
@@ -1727,7 +1713,7 @@
     },
     "DocCreateRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`.",
+      "description": "`PUT /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`.",
       "properties": {
         "body": {
           "anyOf": [
@@ -1784,25 +1770,6 @@
       "title": "DocCreated",
       "type": "object"
     },
-    "DocEditRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/docs/edit`: replace the `title`, `type` or `body` `changes` names.",
-      "properties": {
-        "changes": {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        "doc": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "doc",
-        "changes"
-      ],
-      "title": "DocEditRequest",
-      "type": "object"
-    },
     "DocEdited": {
       "properties": {
         "changed": {
@@ -1822,9 +1789,101 @@
       "title": "DocEdited",
       "type": "object"
     },
+    "DocListRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/docs`: list the docs `ids` names, bodies left out.",
+      "properties": {
+        "ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "title": "DocListRequest",
+      "type": "object"
+    },
+    "DocPutRequest": {
+      "additionalProperties": false,
+      "description": "`PUT /api/docs/{id}`: replace the `title`, `type` or `body` named, if the doc still reads `base`, the `revision`\nof the record the caller read. `archived: false` first returns an archived doc to `folder` under the board's docs\n(the docs folder itself when absent), unchanged.",
+      "properties": {
+        "archived": {
+          "anyOf": [
+            {
+              "const": false,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "base": {
+          "type": "string"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "folder": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "base"
+      ],
+      "title": "DocPutRequest",
+      "type": "object"
+    },
     "DocRecord": {
       "description": "A doc as the board's reader gives it: the summary and the text after its front matter.",
       "properties": {
+        "archived": {
+          "default": false,
+          "description": "The doc was archived: read from the archive, off the open ones.",
+          "type": "boolean"
+        },
         "body": {
           "type": "string"
         },
@@ -1835,6 +1894,10 @@
           "type": "string"
         },
         "path": {
+          "type": "string"
+        },
+        "revision": {
+          "description": "What a `PUT /api/docs/{id}` names as its `base` to write only over this record.",
           "type": "string"
         },
         "title": {
@@ -1854,50 +1917,14 @@
         "created_date",
         "updated_date",
         "path",
-        "body"
+        "body",
+        "revision"
       ],
       "title": "DocRecord",
       "type": "object"
     },
-    "DocRestoreRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/docs/restore`: return the archived doc `doc` to `folder` under the board's docs (the docs folder\nitself when absent), unchanged.",
-      "properties": {
-        "doc": {
-          "type": "string"
-        },
-        "folder": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "required": [
-        "doc"
-      ],
-      "title": "DocRestoreRequest",
-      "type": "object"
-    },
-    "DocRestored": {
-      "properties": {
-        "doc": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "doc"
-      ],
-      "title": "DocRestored",
-      "type": "object"
-    },
     "DocShown": {
-      "description": "`GET /api/docs/<id>`: one open doc.",
+      "description": "`GET /api/docs/<id>`: one doc, archived or open.",
       "properties": {
         "doc": {
           "$ref": "#/$defs/DocRecord"
@@ -1912,6 +1939,11 @@
     "DocSummary": {
       "description": "A doc as the board's lister gives it: its front matter and where it is filed, without its body.",
       "properties": {
+        "archived": {
+          "default": false,
+          "description": "The doc was archived: read from the archive, off the open ones.",
+          "type": "boolean"
+        },
         "created_date": {
           "type": "string"
         },
@@ -1943,7 +1975,7 @@
       "type": "object"
     },
     "Docs": {
-      "description": "`GET /api/docs?ids=`: the named open docs, without bodies, in the order asked.",
+      "description": "`POST /api/docs`: the named docs, without bodies, in the order asked.",
       "properties": {
         "docs": {
           "items": {
@@ -3544,20 +3576,6 @@
       "title": "MergeStrip",
       "type": "object"
     },
-    "MilestoneArchiveRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/milestones/archive`: archive `milestone`.",
-      "properties": {
-        "milestone": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "milestone"
-      ],
-      "title": "MilestoneArchiveRequest",
-      "type": "object"
-    },
     "MilestoneArchived": {
       "properties": {
         "milestone": {
@@ -3572,7 +3590,7 @@
     },
     "MilestoneCreateRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/milestones`: open a milestone; only the title is required.",
+      "description": "`PUT /api/milestones`: open a milestone; only the title is required.",
       "properties": {
         "adrs": {
           "anyOf": [
@@ -3646,25 +3664,6 @@
       "title": "MilestoneCreated",
       "type": "object"
     },
-    "MilestoneEditRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/milestones/edit`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` `changes` names.",
-      "properties": {
-        "changes": {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        "milestone": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "milestone",
-        "changes"
-      ],
-      "title": "MilestoneEditRequest",
-      "type": "object"
-    },
     "MilestoneEdited": {
       "properties": {
         "changed": {
@@ -3684,6 +3683,88 @@
       "title": "MilestoneEdited",
       "type": "object"
     },
+    "MilestoneListRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/milestones`: list the open milestones. It takes no field.",
+      "properties": {},
+      "title": "MilestoneListRequest",
+      "type": "object"
+    },
+    "MilestonePutRequest": {
+      "additionalProperties": false,
+      "description": "`PUT /api/milestones/{id}`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` named, if the milestone\nstill reads `base`, the `revision` of the record the caller read.",
+      "properties": {
+        "adrs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "base": {
+          "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retro": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "specs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "base"
+      ],
+      "title": "MilestonePutRequest",
+      "type": "object"
+    },
     "MilestoneRecord": {
       "description": "A milestone as the board's reader gives it: its sections as text and bullet lists, and its whole description.",
       "properties": {
@@ -3692,6 +3773,11 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "archived": {
+          "default": false,
+          "description": "The milestone was archived: read from the archive, off the open ones.",
+          "type": "boolean"
         },
         "description": {
           "type": "string"
@@ -3703,6 +3789,10 @@
           "type": "string"
         },
         "retro": {
+          "type": "string"
+        },
+        "revision": {
+          "description": "What a `PUT /api/milestones/{id}` names as its `base` to write only over this record.",
           "type": "string"
         },
         "specs": {
@@ -3722,13 +3812,14 @@
         "specs",
         "adrs",
         "retro",
-        "description"
+        "description",
+        "revision"
       ],
       "title": "MilestoneRecord",
       "type": "object"
     },
     "MilestoneShown": {
-      "description": "`GET /api/milestones/<id>`: one open milestone.",
+      "description": "`GET /api/milestones/<id>`: one milestone, archived or open.",
       "properties": {
         "milestone": {
           "$ref": "#/$defs/MilestoneRecord"
@@ -3741,7 +3832,7 @@
       "type": "object"
     },
     "Milestones": {
-      "description": "`GET /api/milestones`: every open milestone, by ascending number.",
+      "description": "`POST /api/milestones`: every open milestone, by ascending number.",
       "properties": {
         "milestones": {
           "items": {
@@ -8780,9 +8871,6 @@
             "$ref": "#/$defs/DocArchived"
           },
           {
-            "$ref": "#/$defs/DocRestored"
-          },
-          {
             "$ref": "#/$defs/Started"
           },
           {
@@ -8947,22 +9035,19 @@
             "$ref": "#/$defs/MilestoneCreateRequest"
           },
           {
-            "$ref": "#/$defs/MilestoneEditRequest"
+            "$ref": "#/$defs/MilestoneListRequest"
           },
           {
-            "$ref": "#/$defs/MilestoneArchiveRequest"
+            "$ref": "#/$defs/MilestonePutRequest"
           },
           {
             "$ref": "#/$defs/DocCreateRequest"
           },
           {
-            "$ref": "#/$defs/DocEditRequest"
+            "$ref": "#/$defs/DocListRequest"
           },
           {
-            "$ref": "#/$defs/DocArchiveRequest"
-          },
-          {
-            "$ref": "#/$defs/DocRestoreRequest"
+            "$ref": "#/$defs/DocPutRequest"
           },
           {
             "$ref": "#/$defs/WindowRequest"
