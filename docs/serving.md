@@ -57,7 +57,7 @@ and a crowd of pages queues for a worker rather than starting a thread each, unt
 middleware then answers any request, whatever its route, `503` with `Retry-After: 1` before a route sees it (the Connect
 ingest path, which has its own token, is outside it). The pooled workers keep the default thread
 stack size, where the previous server gave them 256 KiB: the free-threaded build's RSS check (`test_crowd_rss.py`) runs
-only on 3.14t. On that build mimalloc keeps freed pages resident until its purge delay lapses (3.6 GB resident
+only on 3.15t. On that build mimalloc keeps freed pages resident until its purge delay lapses (3.6 GB resident
 against about 1 GB live in one deployment, 1.5-1.7 GB with no delay), so `serve` sets `MIMALLOC_PURGE_DELAY=0` in every
 child it supervises unless its own environment already names a value, which the child keeps.
 

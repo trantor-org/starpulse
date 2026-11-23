@@ -11,7 +11,7 @@ uv run starpulse serve
 `tests/e2e/` holds the tests that run an operator's entry point end to end;
 `addopts` deselects them, so no default, pull-request or nightly run pays their seconds, and
 `uv run pytest -m e2e` runs them. Each piece such a test composes keeps a fast integration test of its own.
-`uv sync --python 3.14t` is the free-threaded build, which CI runs the same selected tests on (`python-ft`, on a pull request and the nightly run, not a required check). `test_memray_flagged.py` skips there, since memray reports no allocation for a small test's list on that build.
+`uv sync --python 3.15t` is the free-threaded build, which CI runs the same selected tests on (`python-ft`, on a pull request and the nightly run, not a required check). `test_memray_flagged.py` skips there, since memray reports no allocation for a small test's list on that build.
 `uv run pytest -n 4 --dist worksteal` spreads it over four pytest-xdist workers (CI starts two per runner); `worksteal`
 lets an idle worker take tests queued behind a busy one, so one slow file spreads across workers. Tests are safe to run
 on any worker: tests that stub the checkout's `static` directory share it through
@@ -58,7 +58,7 @@ SQLite allocation per process) lands in one window and never fails the gate, whi
 budget, edit the context's `Budget(iterations, retained_bytes)` in `BUDGETS` there: measure the new baseline with the gate
 (the failure message prints the retained bytes) and set the budget about twice the baseline, never to the leak's size.
 Baselines on CPython 3.14.6 and memray 1.20.0: pull-events 12 880 B over 200 iterations, scheduler 11 680 B over 100 (the
-scheduler tick rereads its growing ledger, so its cost grows with the square of the iterations); budgets 32 KiB each. The gate skips on 3.14t, where memray reports no allocation, and under `pytest --memray`, which cannot nest a
+scheduler tick rereads its growing ledger, so its cost grows with the square of the iterations); budgets 32 KiB each. The gate skips on 3.15t, where memray reports no allocation, and under `pytest --memray`, which cannot nest a
 tracker. A context joins by adding a driver to `test_context_budgets.py` and an entry to `BUDGETS`.
 `tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`.
 The required checks run only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`), as the
