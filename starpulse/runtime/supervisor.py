@@ -1,7 +1,8 @@
 """`serve` as a supervisor of two `starpulse worker` children: `api` (the page) and `contexts` (every background context as a thread).
 
 A child is started by `spawn` (`spawn_child`: a `subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
-`serve`. Past its soft memory limit a child is replaced (the old one stops, then the new one starts; only the Page API starts its replacement beside it); past its hard
+`serve`. Past its soft memory limit a child is replaced (the Page API starts its replacement beside it; `contexts` starts its replacement on standby, which prepares read-only and
+takes the writer role and leases only once the old one has ended); past its hard
 limit it is killed and restarted. The run adapters a `[[runs]]` instance configures are threads of `contexts`
 (`starpulse.runtime.contexts`), named by `adapter_contexts`.
 
@@ -21,7 +22,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,7 +36,15 @@ from starpulse.runtime import launch
 from starpulse.runtime.closure import SELF, Reading, ReloadError
 from starpulse.runtime.config import Config, MemoryLimit, runs_adapter
 from starpulse.runtime.control import Control
-from starpulse.runtime.hold import ADOPT_ENV, GITHUB_FD_ENV, LISTEN_FD_ENV, READY_FD_ENV, Adopted, supervised_env
+from starpulse.runtime.hold import (
+    ADOPT_ENV,
+    GITHUB_FD_ENV,
+    GO_FD_ENV,
+    LISTEN_FD_ENV,
+    READY_FD_ENV,
+    Adopted,
+    supervised_env,
+)
 from starpulse.runtime.memory import memory_reader
 
 logger = logging.getLogger(__name__)
@@ -65,23 +74,26 @@ def worker_commands(config_path: Path | None) -> dict[str, list[str]]:
 
 
 def spawn_child(
-    command: Sequence[str], listening: socket.socket | None = None, ready: int | None = None
+    command: Sequence[str], listening: socket.socket | None = None, ready: int | None = None, go: int | None = None
 ) -> subprocess.Popen:
     """Start a child that dies with `serve` (its stdin pipe closes) and sits outside the terminal's process group.
 
     A `listening` socket is handed to it on the same descriptor number, named by `LISTEN_FD_ENV`; a `ready` descriptor
-    (the write end of a pipe), likewise by `READY_FD_ENV`."""
+    (the write end of a pipe), likewise by `READY_FD_ENV`, and a `go` descriptor (the read end of a pipe `serve` closes the
+    other end of when the child may take over from its predecessor), by `GO_FD_ENV`."""
     env = supervised_env()
     if listening is not None:
         env[LISTEN_FD_ENV] = str(listening.fileno())
     if ready is not None:
         env[READY_FD_ENV] = str(ready)
+    if go is not None:
+        env[GO_FD_ENV] = str(go)
     return subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
         env=env,
         start_new_session=True,
-        pass_fds=tuple(fd for fd in (listening and listening.fileno(), ready) if fd is not None),
+        pass_fds=tuple(fd for fd in (listening and listening.fileno(), ready, go) if fd is not None),
     )
 
 
@@ -129,7 +141,9 @@ class Supervisor:
         admit: Callable[[], None] | None = None,
         adopted: Mapping[str, Adopted] | None = None,
         refuse: Callable[[str], None] | None = None,
+        standby: Collection[str] = (),
     ) -> None:
+        self._standby = frozenset(standby)
         self._admit = admit
         self._refuse = refuse
         self._refused = False
@@ -190,14 +204,10 @@ class Supervisor:
                     child.sampled = now
                     self._check_memory(name, child, now)
 
-    def _launch(self, name: str, child: _Child, now: float, ready: int | None = None) -> None:
+    def _launch(self, name: str, child: _Child, now: float, ready: int | None = None, go: int | None = None) -> None:
         listening = self._sockets.get(name) or self._held.get(name)
-        if listening is None:
-            child.proc = self._spawn(child.command)
-        elif ready is None:
-            child.proc = self._spawn(child.command, listening)
-        else:
-            child.proc = self._spawn(child.command, listening, ready)
+        handshake = {key: fd for key, fd in (("ready", ready), ("go", go)) if fd is not None}
+        child.proc = self._spawn(child.command, *([] if listening is None else [listening]), **handshake)
         child.started = child.sampled = now
         child.launches += 1
         logger.info("worker %s started as pid %s", name, child.proc.pid)
@@ -230,7 +240,7 @@ class Supervisor:
                 used // _MB,
                 limit.soft_mb,
             )
-            if name in self._sockets:  # the Page API: the old one answers until the new one is about to serve
+            if self._beside(name):  # the old one runs until the new one is about to serve or take over
                 self._launch_beside(name, child, old)
             else:  # a worker holds ports and leases the next one needs: it starts once the old one has freed them
                 self._end([old])
@@ -382,7 +392,7 @@ class Supervisor:
     def _replace(self, name: str, child: _Child) -> str:
         old = child.proc
         child.failures = 0
-        if old is not None and old.poll() is None and name in self._sockets:
+        if old is not None and old.poll() is None and self._beside(name):
             self._launch_beside(name, child, old)
         else:
             if old is not None:
@@ -390,14 +400,24 @@ class Supervisor:
             self._launch(name, child, time.monotonic())
         return "replaced"
 
+    def _beside(self, name: str) -> bool:
+        return name in self._sockets or name in self._standby
+
     def _launch_beside(self, name: str, child: _Child, old: Any) -> None:
-        """Start the new child on the shared socket, wait until it is about to serve (or `warm` seconds, or its exit),
-        then end `old`, so the old one keeps answering while the new one starts."""
+        """Start the new child beside `old`, wait until it is about to serve (or `warm` seconds, or its exit), then end
+        `old`, so the old one keeps answering while the new one starts.
+
+        A standby child (`standby`) is handed a go pipe too and prepares read-only until `serve` closes it, which it does
+        once `old` has ended: its writer and leases are never held beside the old one's."""
         read_end, write_end = os.pipe()
+        go_read, go_write = os.pipe() if name in self._standby else (None, None)
         try:
-            self._launch(name, child, time.monotonic(), write_end)
+            self._launch(name, child, time.monotonic(), write_end, go_read)
             os.close(write_end)
             write_end = -1
+            if go_read is not None:
+                os.close(go_read)
+                go_read = None
             deadline = time.monotonic() + self._warm
             serving = select.poll()
             serving.register(read_end, select.POLLIN)
@@ -412,9 +432,14 @@ class Supervisor:
                     break
         finally:
             os.close(read_end)
-            if write_end >= 0:
-                os.close(write_end)
-        self._end([old])
+            for fd in (write_end, go_read):
+                if fd is not None and fd >= 0:
+                    os.close(fd)
+        try:
+            self._end([old])
+        finally:
+            if go_write is not None:
+                os.close(go_write)
 
     def reexec(self) -> None:
         """Replace this process with a new one running the same command, after `reload` reported "re-executed".

@@ -1222,9 +1222,11 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   return a task that has a delivery to another lane than the one a task without one returns to.
 - `deps_unresolved`: a dependency is not Done.
 - `owner_stale`: the task's `source` starts with `[board.actor] owner_source`, no open task lists it in `dependencies`, and `repo`'s `main` passes every required check (`MainGreen`: the head commit's required checks roll up to passed; a pass is cached per commit, any other read is retried after 60 seconds, and a failed read reads as not green). A red or pending `main` closes nothing, because the check logs do not say which failure signature `main` still hits. A Ready state maps it to `CLOSE`, and the closing note names the green commit.
+- `started_work`: the task ever entered the working lane, as the history's lane changes record (`TaskActor(started=)`). A
+  Ready state maps it to a move to Needs attention, after its merge facts, since Ready holds only new work.
 - `pr_unfinished_alive` and `pr_unfinished_dead`: a cited pull request is open and a draft, conflicting or failing a
   required check (a check still running is neither), and the board's `alive` command exits 0 (alive) or not (dead). A
-  state maps them to different moves, so a Review task goes to its live holder and otherwise to Ready.
+  state maps them to different moves, so a Review task goes to its live holder and otherwise to Needs attention.
 - `criteria_met`: an event the task is parked on arrived (below) and no dependency is open.
 - `overdue`: a Waiting task is past its service level expectation: seven days from the lane's `entered` time, or
   two days past the latest `expect_by` its Start Criteria declare (an ISO date or timestamp; one with no zone is UTC).

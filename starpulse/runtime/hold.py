@@ -43,6 +43,10 @@ GITHUB_FD_ENV = "STARPULSE_GITHUB_FD"
 #: to it when it is about to serve, and `serve` ends the old child on that byte (`announce_ready`).
 READY_FD_ENV = "STARPULSE_READY_FD"
 
+#: Set to a descriptor number in a standby child (`Supervisor`'s `standby`): the read end of a pipe `serve` closes once the
+#: child's predecessor has ended, which is the child's go to take over its writer and leases (`await_go`).
+GO_FD_ENV = "STARPULSE_GO_FD"
+
 #: Set by `serve` to one token per start before it starts a worker: each context stamps it once started (`readiness`).
 BOOT_ENV = "STARPULSE_BOOT"
 
@@ -150,6 +154,28 @@ def announce_ready(environ: MutableMapping[str, str]) -> None:
         os.close(int(fd))
     except OSError, ValueError:
         pass
+
+
+def go_event(environ: MutableMapping[str, str]) -> threading.Event | None:
+    """The event a standby child waits on before it takes over its writer and leases: set once the supervisor closes the
+    go pipe (`GO_FD_ENV`), which it does when the child's predecessor has ended or its own end closes. None outside a
+    standby start."""
+    fd = environ.pop(GO_FD_ENV, None)
+    if fd is None:
+        return None
+    go = threading.Event()
+
+    def wait() -> None:
+        try:
+            while os.read(int(fd), 4096):
+                pass
+            os.close(int(fd))
+        except OSError, ValueError:
+            pass
+        go.set()
+
+    threading.Thread(target=wait, name="standby-go", daemon=True).start()
+    return go
 
 
 def watch_supervisor() -> None:

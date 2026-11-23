@@ -217,7 +217,7 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
 def _without_done_dependencies(
     base: str, views: list[dict[str, Any]], snapshot: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """`views` with each dependency the board holds as Done struck from `waiting_on`: the snapshot holds no Done task
+    """`views` with each dependency the board holds as Done or archived struck from `waiting_on`: the snapshot holds no Done task
     past its hot day or retired, so their records answer, `_RECORDS_PAGE` dependencies to a read."""
     done = roles_of(snapshot).done
     unmet = sorted({dependency for view in views for dependency in view["waiting_on"]})
@@ -227,7 +227,7 @@ def _without_done_dependencies(
         status, document = agent_wire.get(base, f"/api/task-records?{ids}")
         if status == 200:
             records = [item.get("record", {}) for item in document.get("records", ())]
-            finished |= {record["id"].casefold() for record in records if lane_id(record["status"]) == done}
+            finished |= {record["id"].casefold() for record in records if lane_id(record["status"]) in {done, "archived"}}
     return [
         {
             **view,

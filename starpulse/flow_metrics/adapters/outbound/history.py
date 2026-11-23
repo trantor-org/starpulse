@@ -119,13 +119,6 @@ _learned_steps = Table(
     Column("depends", Text, nullable=False),
     Index("ux_starpulse_learned_steps", "workflow", "step", unique=True),
 )
-#: The table the retired instance-side sender kept its instance id in; declared so the migrations and the metadata agree.
-_instances = Table(
-    "starpulse_forward_instances",
-    metadata,
-    Column("name", String, primary_key=True),
-    Column("instance", String, nullable=False),
-)
 #: A path's order: by time, and the earlier insert first when two rows share one.
 _LANE_ORDER = (_lane_changes.c.observed_at, _lane_changes.c.id)
 _STEP_ORDER = (_machine_events.c.occurred_at, _machine_events.c.id)
@@ -139,6 +132,13 @@ def _last_lane(db: Connection, task: str, source_name: str | None) -> str | None
     if source_name is not None:
         query = query.where(c.event_id.startswith(f"{source_name}/", autoescape=True))
     return db.execute(query).scalar()
+
+
+def entered(engine: Engine, task: str, status: str) -> bool:
+    """Whether the history holds any move of the task into `status`."""
+    c = _lane_changes.c
+    with engine.connect() as db:
+        return db.execute(select(c.id).where(c.task == task, c.new_status == status).limit(1)).first() is not None
 
 
 def _holds_move(db: Connection, task: str, source_name: str | None, status: str, at: float) -> bool:
@@ -257,6 +257,10 @@ class HistoryStore:
     def checkpoints(self) -> Checkpoints:
         """How far each reader of the log got, so a restart resumes after the last entry it recorded."""
         return Checkpoints(self.engine)
+
+    def entered(self, task: str, status: str) -> bool:
+        """Whether the task ever entered `status`, which the history of its lane changes answers."""
+        return entered(self.engine, task, status)
 
     def record_machine(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
         """Write one machine event and fold it into the summaries; one the store already holds is a no-op.

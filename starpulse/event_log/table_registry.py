@@ -1,8 +1,7 @@
 """Every StarPulse table's class, and the tables each derived family folds from.
 
 A durable table holds rows no event rebuilds; a derived one is dropped, created and refolded when its family's stamp
-changes; an ephemeral one is rewritten by its owner while it runs. A dead table is read by nothing and leaves with the
-baseline squash. The search, facets and vectors tables are created outside this chain and left out.
+changes; an ephemeral one is rewritten by its owner while it runs. The search, facets and vectors tables are created outside this chain and left out.
 """
 
 import hashlib
@@ -15,7 +14,7 @@ from sqlalchemy.schema import CreateIndex, CreateTable
 
 from starpulse.event_log.tables import settings
 
-KINDS = ("durable", "derived", "ephemeral", "dead")
+KINDS = ("durable", "derived", "ephemeral")
 
 
 class Family(NamedTuple):
@@ -46,7 +45,6 @@ CLASSES: dict[str, str] = {
     **dict.fromkeys(_DURABLE, "durable"),
     **dict.fromkeys((t for family in FAMILIES.values() for t in family.tables), "derived"),
     **dict.fromkeys(_t("worker_state", "leases"), "ephemeral"),
-    **dict.fromkeys(_t("source_instances", "forward_instances"), "dead"),
 }
 
 

@@ -62,7 +62,7 @@ internal and can change in any release.
   `api.schema.json` (`null` when none), and the Kanban draws it on each column header. A state the machine's `rests`
   names ends the lifecycle though an event leaves it, so it is served as `final`.
 - A machine state's optional `waits` key: a map from a fact kind (`pr_terminal`, `pr_merged`, `pr_closed_unmerged`, `pr_closed_unmerged_complete`, `pr_merged_unfinished`, `pr_ready`, `pr_failing`, `pr_draft`, `pr_conflicting`, `deps_done`,
-  `deps_done_with_pr`, `deps_unresolved`, `owner_stale`, `criteria_met` or `overdue`) to the event that leaves the state when that fact holds. The loader refuses an
+  `deps_done_with_pr`, `deps_unresolved`, `owner_stale`, `criteria_met`, `overdue` or `started_work`) to the event that leaves the state when that fact holds. The loader refuses an
   unknown fact kind and an event that is not a transition out of the declaring state, naming the state and event, and
   exposes the declared map as `Compiled.waits` (`{state id: {fact kind: event}}`; a child flow's states carry their
   `<state>_<child state>` id). Declaring `waits` fires nothing by itself: the board hands the Board machine's map

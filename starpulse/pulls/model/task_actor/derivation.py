@@ -19,6 +19,8 @@ from starpulse.board.model.seam import HELD, MERGE_EVIDENCE
 
 #: The question that ends the `## Needs attention` reason of a task the actor moves there on a pull request fact.
 ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
+#: The options a Needs attention ask offers for a task whose session ended with work left.
+RESTART_OR_RESCOPE = ("restart it in a new session", "rescope the task")
 #: What an uncited-pull-request ask says after the task's id: a cited pull request settles it.
 UNCITED_ASK = "has an uncited pull request."
 DONE_HELD = "Held from Done:"
@@ -64,6 +66,7 @@ class TaskFacts(Protocol):
     def comments(self, agent: Agent) -> list[str] | None: ...
     def dependency_needs(self, name: str) -> Sequence[str]: ...
     def unfinished(self, name: str) -> tuple[str, ...]: ...
+    def started(self, name: str) -> bool: ...
     def alive(self, name: str) -> bool | None: ...
     def holds(self, name: str) -> tuple[str, ...] | None: ...
     def owns_failure(self, name: str) -> bool: ...
@@ -251,11 +254,14 @@ def work_floor(facts: TaskFacts, agent: Agent) -> float:
 def pr_merged(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     """The merge evidence when every pull request the task cites has ended and at least one merged, else None: a
     delivery closed unmerged is no proof of the work. A closed one beside a merged one stays cited for the audit
-    trail and is named closed in the evidence, which the board's proof guard asks to name every cited one."""
+    trail and is named closed in the evidence, which the board's proof guard asks to name every cited one. A Needs
+    attention task with work unfinished stays asked: its merge closes it only once nothing is left."""
     terminal = pr_terminal(facts, agent)
     records = [facts.record(url) for url in proof_prs(facts, agent)]
     merged = any(record and record["state"] == "MERGED" for record in records)
-    return terminal if terminal and merged else None
+    if not (terminal and merged) or (agent["state"] == facts.roles.attention and facts.unfinished(agent["id"])):
+        return None
+    return terminal
 
 
 def pr_closed_unmerged(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
@@ -285,16 +291,18 @@ def pr_closed_unmerged_complete(facts: TaskFacts, agent: Agent) -> tuple[str, st
 
 def pr_merged_unfinished(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     """The merge evidence and what is left when the task's pull requests merged and the board reports work
-    unfinished, else None. A command that fails reports its error: the task returns to its
-    holder, never closes."""
+    unfinished, else None, as the Needs attention reason naming its cause bug. A command that fails reports its
+    error: the task is asked about, never closed."""
     merged = pr_merged(facts, agent)
-    if merged is None:
-        return None
-    left = facts.unfinished(agent["id"])
-    if not left:
+    if merged is None or not (left := facts.unfinished(agent["id"])):
         return None
     proof, comment = merged
-    return (proof, left), f"{comment} Unfinished: {'; '.join(left)}."
+    return (proof, left), attention_reason(
+        f"{comment} Unfinished: {'; '.join(left)} (cause bug TASK-15922)",
+        "its pull request merged with work left",
+        ("deliver the rest in a new session", "rescope the task"),
+        "Which?",
+    )
 
 
 def deploy_reopened(facts: TaskFacts, agent: Agent) -> bool:
@@ -382,9 +390,9 @@ def open_pulls(
     return proof, f"{said}: {proof}."
 
 
-def pr_failing(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
-    """The open pull requests whose required checks failed, with the question the task's reason ends in, else None."""
-    failing = open_pulls(
+def pr_checks_failed(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The open pull requests whose required checks failed, else None."""
+    return open_pulls(
         facts,
         agent,
         "Pull request checks failed",
@@ -395,6 +403,11 @@ def pr_failing(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
             == "failing"
         ),
     )
+
+
+def pr_failing(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The open pull requests whose required checks failed, with the question the task's reason ends in, else None."""
+    failing = pr_checks_failed(facts, agent)
     return failing and (
         failing[0],
         attention_reason(
@@ -421,13 +434,20 @@ def pr_conflicting(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
 def pr_unfinished(facts: TaskFacts, agent: Agent, alive: bool) -> tuple[str, str] | None:
     """The first of the failing, draft and conflicting facts that holds, once the task's holder is running (`alive`) or
     is not. A holder the probe cannot reach leaves the task where it is for the next pass."""
-    held = pr_failing(facts, agent) or pr_draft(facts, agent) or pr_conflicting(facts, agent)
+    held = pr_checks_failed(facts, agent) or pr_draft(facts, agent) or pr_conflicting(facts, agent)
     if held is None:
         return None
     running = facts.alive(agent["id"])
     if running is None or running != alive:
         return None
-    return held[0], f"{held[1]} {'Sent back to its session' if alive else 'Returned to Ready for a new session'}."
+    if alive:
+        return held[0], f"{held[1]} Sent back to its session."
+    return held[0], attention_reason(
+        f"{held[1]} No session holds it (cause bug TASK-15921)",
+        "its holder ended with its pull request not green",
+        RESTART_OR_RESCOPE,
+        ATTENTION_QUESTION,
+    )
 
 
 def pr_unfinished_alive(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
@@ -647,6 +667,18 @@ def stale(facts: TaskFacts, agent: Agent) -> dict[str, list[str]]:
     }
 
 
+def started_work(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
+    """The ask when a Ready task ever entered In Progress: Ready holds only new work, so a started one is asked about."""
+    if not facts.started(agent["id"]):
+        return None
+    return "started", attention_reason(
+        "The task was started and is in Ready (cause bug TASK-16096)",
+        "Ready holds only new work",
+        RESTART_OR_RESCOPE,
+        "Which?",
+    )
+
+
 def by_claim(fact: Callable[[TaskFacts, Agent], Any], *, claimed: bool) -> Callable[[TaskFacts, Agent], Any]:
     """`fact` for the tasks a session claimed or for the rest, so a claimed task never falls through to Ready."""
     return lambda facts, agent: fact(facts, agent) if bool(agent["assignee"]) == claimed else None
@@ -659,6 +691,7 @@ FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "pr_closed_unmerged": pr_closed_unmerged,
     "pr_closed_unmerged_complete": pr_closed_unmerged_complete,
     "pr_merged_unfinished": pr_merged_unfinished,
+    "started_work": started_work,
     "pr_ready": pr_ready,
     "criteria_checked": criteria_checked,
     "pr_failing": pr_failing,

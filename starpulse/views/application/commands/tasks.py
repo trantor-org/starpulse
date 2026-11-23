@@ -51,7 +51,7 @@ from starpulse.views.application.commands.guard import (
     who_of,
     with_request,
 )
-from starpulse.views.application.commands.moves import move_refusal
+from starpulse.views.application.commands.moves import move_refusal, started_refusal
 from starpulse.views.application.commands.replays import Replays
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
@@ -100,18 +100,18 @@ _PLAN_REASON = "planReason"
 
 @with_request(EditRequest, "Editing a task")
 def edit_task(
-    request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
+    request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor, *, started: Callable[[str], bool]
 ) -> tuple[int, dict[str, Any]]:
     """Apply the edit `request` names to a task through `edit` in one write: the HTTP status and JSON body.
 
     A `request_key` that an earlier send of the edit carried answers that send's answer and writes nothing, so a
     client that timed out sends the same key again without appending its comment a second time.
     """
-    return _REPLAYS.run(request.request_key, lambda: _edited(request, feed, read, edit))
+    return _REPLAYS.run(request.request_key, lambda: _edited(request, feed, read, edit, started=started))
 
 
 def _edited(
-    request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
+    request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor, *, started: Callable[[str], bool]
 ) -> tuple[int, dict[str, Any]]:
     """One edit, as `edit_task` runs it.
 
@@ -135,7 +135,7 @@ def _edited(
     if holder_refusal(feed, agent, task, who) is not None and not comment.strip():
         comment = f"Edited by session {who.session}, not the holder: {', '.join(sorted(changes))}"
     lane = lane_id(str(changes["status"])) if "status" in changes else agent["state"]
-    if lane != agent["state"] and (refused := move_refusal(agent, task, lane, who) or holder_refusal(feed, agent, task, who)) is not None:
+    if lane != agent["state"] and (refused := started_refusal(feed, task, lane, started) or move_refusal(agent, task, lane, who) or holder_refusal(feed, agent, task, who)) is not None:
         return refused  # a status written beside other fields is a move: the machine offers it to `who` or it is refused
     with EDIT_LOCK:
         if (current := read(task)) is None:

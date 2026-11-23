@@ -124,7 +124,15 @@ def ready(state: str, done: str, only: str | None = None) -> Select[Any]:
     blocked = (
         select(1)
         .select_from(dependency.outerjoin(target, target.c.id == dependency.c.value))
-        .where(or_(target.c.id.is_(None), func.lower(func.replace(target.c.state, " ", "_")).not_in(done_lanes(done))))
+        .where(
+            or_(
+                target.c.id.is_(None),
+                and_(
+                    target.c.archived == false(),
+                    func.lower(func.replace(target.c.state, " ", "_")).not_in(done_lanes(done)),
+                ),
+            )
+        )
     )
     ready_tasks = select(tasks.c.id).where(
         tasks.c.archived == false(), tasks.c.state == state, ~exists(blocked.correlate(tasks))

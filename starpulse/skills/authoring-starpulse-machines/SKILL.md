@@ -24,12 +24,12 @@ change how the page draws it; `docs/cli.md` describes each.
      done: {final: true}
    events:
      START: [{from: ready, to: in_progress}]
-     RETURN_READY: [{from: in_progress, to: ready}]
      SUBMIT: [{from: in_progress, to: review, if: {when: {pr: {exists: true}}}}]
+     SEND_BACK: [{from: review, to: in_progress}]
      MERGE: [{from: review, to: done}]
    bindings: {claim: START}
    writers:
-     RETURN_READY: [{actor: operator, trigger: the board page}]
+     SEND_BACK: [{actor: operator, trigger: the board page}]
    ```
 
 2. `states` need exactly one `initial: true`; ids are lower-case `[a-z][a-z0-9_]*`. A `final` state ends the flow.
