@@ -187,13 +187,36 @@ def _running(record: dict[str, Any]) -> bool:
         return False
 
 
+_PARSED: dict[Path, tuple[tuple[int, int], Any]] = {}
+
+
+def _parsed(entry: Path) -> Any:
+    """`entry` read and parsed, once for each change of its mtime or size: one holder lookup per held task would otherwise
+    read every record again; None when it is unreadable."""
+    try:
+        stat = entry.stat()
+    except OSError:
+        return None
+    version = (stat.st_mtime_ns, stat.st_size)
+    cached = _PARSED.get(entry)
+    if cached is not None and cached[0] == version:
+        return cached[1]
+    try:
+        data = json.loads(entry.read_text())
+    except OSError, ValueError:
+        data = None
+    _PARSED[entry] = (version, data)
+    return data
+
+
 def _running_records(sessions: Path, match: Callable[[dict[str, Any]], bool]) -> Iterator[dict[str, Any]]:
     """The records `match` accepts whose process runs: liveness costs a process lookup, so it is read only for a match."""
-    for entry in sorted(sessions.glob("*.json")):
-        try:
-            data = json.loads(entry.read_text())
-        except OSError, ValueError:
-            continue
+    entries = sorted(sessions.glob("*.json"))
+    present = set(entries)
+    for gone in [path for path in _PARSED if path.parent == sessions and path not in present]:
+        del _PARSED[gone]
+    for entry in entries:
+        data = _parsed(entry)
         if isinstance(data, dict) and match(data) and _running(data):
             yield data
 

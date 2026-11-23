@@ -310,7 +310,7 @@ class MissRequest(_Writer):
 
 
 class MilestoneCreateRequest(_Request):
-    """`POST /api/milestones`: open a milestone; only the title is required."""
+    """`PUT /api/milestones`: open a milestone; only the title is required."""
 
     title: str
     outcome: str | None = None
@@ -319,21 +319,24 @@ class MilestoneCreateRequest(_Request):
     retro: str | None = None
 
 
-class MilestoneEditRequest(_Request):
-    """`POST /api/milestones/edit`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` `changes` names."""
-
-    milestone: str
-    changes: dict[str, Any]
+class MilestoneListRequest(_Request):
+    """`POST /api/milestones`: list the open milestones. It takes no field."""
 
 
-class MilestoneArchiveRequest(_Request):
-    """`POST /api/milestones/archive`: archive `milestone`."""
+class MilestonePutRequest(_Request):
+    """`PUT /api/milestones/{id}`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` named, if the milestone
+    still reads `base`, the `revision` of the record the caller read."""
 
-    milestone: str
+    base: NonBlank
+    title: str | None = None
+    outcome: str | None = None
+    specs: list[str] | None = None
+    adrs: list[str] | None = None
+    retro: str | None = None
 
 
 class DocCreateRequest(_Request):
-    """`POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`."""
+    """`PUT /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`."""
 
     title: str
     type: str | None = None
@@ -341,24 +344,22 @@ class DocCreateRequest(_Request):
     body: str | None = None
 
 
-class DocEditRequest(_Request):
-    """`POST /api/docs/edit`: replace the `title`, `type` or `body` `changes` names."""
+class DocListRequest(_Request):
+    """`POST /api/docs`: list the docs `ids` names, bodies left out."""
 
-    doc: str
-    changes: dict[str, Any]
-
-
-class DocArchiveRequest(_Request):
-    """`POST /api/docs/archive`: archive `doc`."""
-
-    doc: str
+    ids: list[str]
 
 
-class DocRestoreRequest(_Request):
-    """`POST /api/docs/restore`: return the archived doc `doc` to `folder` under the board's docs (the docs folder
-    itself when absent), unchanged."""
+class DocPutRequest(_Request):
+    """`PUT /api/docs/{id}`: replace the `title`, `type` or `body` named, if the doc still reads `base`, the `revision`
+    of the record the caller read. `archived: false` first returns an archived doc to `folder` under the board's docs
+    (the docs folder itself when absent), unchanged."""
 
-    doc: str
+    base: NonBlank
+    title: str | None = None
+    type: str | None = None
+    body: str | None = None
+    archived: Literal[False] | None = None
     folder: str | None = None
 
 

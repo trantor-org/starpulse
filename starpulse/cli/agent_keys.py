@@ -71,7 +71,7 @@ DISPATCH_KEYS = ("ok", "task", "session", "reason", "skill")
 LIFECYCLE_KEYS = ("ok", "task", "to", "reason", "skill")
 
 
-MILESTONE_KEYS = ("id", "title", "outcome", "specs", "adrs", "retro", "description")
+MILESTONE_KEYS = ("id", "title", "outcome", "specs", "adrs", "retro", "description", "archived", "revision")
 
 
 PULL_KEYS = (
@@ -96,4 +96,4 @@ PULL_KEYS = (
 )
 
 
-DOC_KEYS = ("id", "title", "type", "created_date", "updated_date", "path", "body")
+DOC_KEYS = ("id", "title", "type", "created_date", "updated_date", "path", "body", "archived", "revision")

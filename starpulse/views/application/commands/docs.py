@@ -1,39 +1,28 @@
-"""The board's docs: list, read, create, edit, archive and restore."""
+"""The board's docs: list, read, create, upsert and archive."""
 
-import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from starpulse.board.model.seam import (
-    Board,
-)
-from starpulse.contracts.api.dto.requests import (
-    DocArchiveRequest,
-    DocCreateRequest,
-    DocEditRequest,
-    DocRestoreRequest,
-)
-from starpulse.views.application.commands.guard import with_request
-
-if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    pass
-
-logger = logging.getLogger(__name__)
+from starpulse.board.model.seam import Board
+from starpulse.contracts.api.dto.requests import DocCreateRequest, DocListRequest, DocPutRequest
+from starpulse.views.application.commands.guard import lan_refusal, on_lan, with_request
+from starpulse.views.application.commands.revisions import lock, revised
 
 
-def docs_list(board: Board, ids: list[str]) -> tuple[int, dict[str, Any]]:
-    """The open docs among `ids`, in that order and bodies left out: the HTTP status and JSON body. A doc that is not
-    open is skipped, and no ids is refused, since nothing needs every doc. Reading is not LAN-limited."""
-    if not ids:
-        return 400, {"error": "name the docs: /api/docs?ids=doc-1,doc-2"}
-    found = (board.read_doc(doc) for doc in ids)
+@with_request(DocListRequest, "Listing docs")
+def docs_list(request: DocListRequest, board: Board) -> tuple[int, dict[str, Any]]:
+    """The docs among the ids `request` names, in that order and bodies left out, an archived doc included: the HTTP
+    status and JSON body. A doc the board has none of is skipped, and no ids is refused, since nothing needs every doc."""
+    if not request.ids:
+        return 400, {"error": 'name the docs: {"ids": ["doc-1", "doc-2"]}'}
+    found = (board.read_doc(doc) for doc in request.ids)
     return 200, {"docs": [{key: value for key, value in record.items() if key != "body"} for record in found if record]}
 
 
 def doc_record(board: Board, doc: str) -> tuple[int, dict[str, Any]]:
-    """The record, body included, of one open doc: the HTTP status and JSON body."""
+    """The record of one doc with its body and `revision`, an archived doc's included: the HTTP status and JSON body."""
     if (record := board.read_doc(doc)) is None:
-        return 404, {"error": f"{doc} is not an open doc"}
-    return 200, {"doc": record}
+        return 404, {"error": f"{doc} is not a doc"}
+    return 200, {"doc": revised(record)}
 
 
 @with_request(DocCreateRequest, "Adding a doc")
@@ -49,45 +38,43 @@ def create_doc(request: DocCreateRequest, board: Board) -> tuple[int, dict[str, 
     return 201, {"doc": written.output}
 
 
-@with_request(DocEditRequest, "Editing a doc")
-def edit_doc(request: DocEditRequest, board: Board) -> tuple[int, dict[str, Any]]:
-    """Apply the `changes` `request` names to a doc through the board's `edit_doc`: the HTTP status and JSON body.
-    `changed` names the fields whose value the edit changed; an edit that changes none writes nothing."""
-    doc, changes = request.doc, request.changes
-    if not changes:
-        return 400, {"error": 'an edit needs {"doc": "doc-N", "changes": {...}}'}
-    if (current := board.read_doc(doc)) is None:
-        return 404, {"error": f"{doc} is not an open doc"}
-    if not (todo := {field: value for field, value in changes.items() if value != current.get(field)}):
-        return 200, {"doc": doc, "changed": []}
-    written = board.edit_doc(doc, todo)
-    if not written.ok:
-        return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"doc": doc, "changed": list(todo)}
+@with_request(DocPutRequest, "Writing a doc")
+def put_doc(request: DocPutRequest, doc: str, board: Board) -> tuple[int, dict[str, Any]]:
+    """Upsert the fields `request` names into a doc, if the doc still reads `base`: the HTTP status and JSON body.
 
-
-@with_request(DocArchiveRequest, "Archiving a doc")
-def archive_doc(request: DocArchiveRequest, board: Board) -> tuple[int, dict[str, Any]]:
-    """Archive the doc `request` names through the board's `archive_doc`: the HTTP status and JSON body."""
-    doc = request.doc
-    if board.read_doc(doc) is None:
-        return 404, {"error": f"{doc} is not an open doc"}
-    written = board.archive_doc(doc)
-    if not written.ok:
-        return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"doc": doc}
-
-
-@with_request(DocRestoreRequest, "Restoring a doc")
-def restore_doc(request: DocRestoreRequest, board: Board) -> tuple[int, dict[str, Any]]:
-    """Return the archived doc `request` names to the folder it names under the board's docs through the board's
-    `restore_doc`: the HTTP status and JSON body.
-
-    The writer owns every other refusal (no archived file, the id already open, the destination taken, a folder that is
-    not a path of plain names), which answers 409 with its reason.
+    A stale `base`, or a write to an archived doc that does not restore it, is 409. `archived: false` returns an
+    archived doc to `folder` first. `changed` names what the write changed; one that changes nothing writes nothing.
     """
-    doc, folder = request.doc, request.folder or ""
-    written = board.restore_doc(doc, folder)
+    with lock:
+        if (current := board.read_doc(doc)) is None:
+            return 404, {"error": f"{doc} is not a doc"}
+        ident = current["id"]
+        if request.base != revised(current)["revision"]:
+            return 409, {"error": f"{ident} changed since its revision {request.base}: read it again"}
+        restoring = request.archived is False and current["archived"]
+        if current["archived"] and not restoring:
+            return 409, {"error": f"{ident} is archived: PUT it with archived false to restore it"}
+        if request.folder is not None and not restoring:
+            return 400, {"error": "a folder names where a restored doc goes: send it with archived false"}
+        changed = ["archived"] if restoring else []
+        if restoring and not (written := board.restore_doc(ident, request.folder or "")).ok:
+            return 409, {"error": written.output, "skill": written.skill}
+        fields = request.model_dump(exclude_unset=True, exclude={"base", "archived", "folder"})
+        if todo := {field: value for field, value in fields.items() if value != current.get(field)}:
+            if not (written := board.edit_doc(ident, todo)).ok:
+                return 409, {"error": written.output, "skill": written.skill}
+            changed += list(todo)
+    return 200, {"doc": ident, "changed": changed}
+
+
+def delete_doc(source: str, doc: str, board: Board) -> tuple[int, dict[str, Any]]:
+    """Archive the open doc `doc` through the board's `archive_doc`: the HTTP status and JSON body."""
+    if not on_lan(source):
+        return lan_refusal("Archiving a doc")
+    with lock:
+        if (current := board.read_doc(doc)) is None or current["archived"]:
+            return 404, {"error": f"{doc} is not an open doc"}
+        written = board.archive_doc(current["id"])
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"doc": doc}
+    return 200, {"doc": current["id"]}

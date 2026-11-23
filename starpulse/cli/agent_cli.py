@@ -1142,7 +1142,7 @@ def _parser() -> argparse.ArgumentParser:
     milestone_show = leaf(
         milestone_verbs,
         "show",
-        "one open milestone: its title, outcome, specs, ADRs, retro and whole description",
+        "one milestone: its title, outcome, specs, ADRs, retro, whole description, whether it is archived and its revision",
         _in_tasks("milestone_show"),
         MILESTONE_KEYS,
         (0, 2, 3, 4),
@@ -1190,7 +1190,7 @@ def _parser() -> argparse.ArgumentParser:
     doc_show = leaf(
         doc_verbs,
         "show",
-        "one open doc: its title, type, dates, path and whole body",
+        "one doc: its title, type, dates, path, whole body, whether it is archived and its revision",
         _in_tasks("doc_show"),
         DOC_KEYS,
         (0, 2, 3, 4),

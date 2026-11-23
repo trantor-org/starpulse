@@ -1,34 +1,24 @@
-"""The board's milestones: list, read, create, edit and archive."""
+"""The board's milestones: list, read, create, upsert and archive."""
 
-import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from starpulse.board.model.seam import (
-    Board,
-)
-from starpulse.contracts.api.dto.requests import (
-    MilestoneArchiveRequest,
-    MilestoneCreateRequest,
-    MilestoneEditRequest,
-)
-from starpulse.views.application.commands.guard import with_request
-
-if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    pass
-
-logger = logging.getLogger(__name__)
+from starpulse.board.model.seam import Board
+from starpulse.contracts.api.dto.requests import MilestoneCreateRequest, MilestoneListRequest, MilestonePutRequest
+from starpulse.views.application.commands.guard import lan_refusal, on_lan, with_request
+from starpulse.views.application.commands.revisions import lock, revised
 
 
-def milestones_list(board: Board) -> tuple[int, dict[str, Any]]:
-    """The open milestones the board keeps: the HTTP status and JSON body. Reading is not LAN-limited, like the snapshot."""
-    return 200, {"milestones": board.milestones()}
+@with_request(MilestoneListRequest, "Listing milestones")
+def milestones_list(request: MilestoneListRequest, board: Board) -> tuple[int, dict[str, Any]]:
+    """The open milestones the board keeps, each with its `revision`: the HTTP status and JSON body."""
+    return 200, {"milestones": [revised(record) for record in board.milestones()]}
 
 
 def milestone_record(board: Board, milestone: str) -> tuple[int, dict[str, Any]]:
-    """The record of one open milestone: the HTTP status and JSON body."""
+    """The record of one milestone with its `revision`, an archived milestone's included: the HTTP status and JSON body."""
     if (record := board.read_milestone(milestone)) is None:
-        return 404, {"error": f"{milestone} is not an open milestone"}
-    return 200, {"milestone": record}
+        return 404, {"error": f"{milestone} is not a milestone"}
+    return 200, {"milestone": revised(record)}
 
 
 @with_request(MilestoneCreateRequest, "Adding a milestone")
@@ -44,30 +34,37 @@ def create_milestone(request: MilestoneCreateRequest, board: Board) -> tuple[int
     return 201, {"milestone": written.output}
 
 
-@with_request(MilestoneEditRequest, "Editing a milestone")
-def edit_milestone(request: MilestoneEditRequest, board: Board) -> tuple[int, dict[str, Any]]:
-    """Apply the `changes` `request` names to a milestone through the board's `edit_milestone`: the HTTP status and JSON
-    body. `changed` names the fields whose value the edit changed; an edit that changes none writes nothing."""
-    milestone, changes = request.milestone, request.changes
-    if not changes:
-        return 400, {"error": 'an edit needs {"milestone": "m-N", "changes": {...}}'}
-    if (current := board.read_milestone(milestone)) is None:
-        return 404, {"error": f"{milestone} is not an open milestone"}
-    if not (todo := {field: value for field, value in changes.items() if value != current.get(field)}):
-        return 200, {"milestone": milestone, "changed": []}
-    written = board.edit_milestone(milestone, todo)
+@with_request(MilestonePutRequest, "Writing a milestone")
+def put_milestone(request: MilestonePutRequest, milestone: str, board: Board) -> tuple[int, dict[str, Any]]:
+    """Upsert the fields `request` names into a milestone, if it still reads `base`: the HTTP status and JSON body.
+
+    A stale `base`, or a write to an archived milestone, is 409. `changed` names what the write changed; one that
+    changes nothing writes nothing.
+    """
+    with lock:
+        if (current := board.read_milestone(milestone)) is None:
+            return 404, {"error": f"{milestone} is not a milestone"}
+        if request.base != revised(current)["revision"]:
+            return 409, {"error": f"{milestone} changed since its revision {request.base}: read it again"}
+        if current["archived"]:
+            return 409, {"error": f"{milestone} is archived"}
+        fields = request.model_dump(exclude_unset=True, exclude={"base"})
+        if not (todo := {field: value for field, value in fields.items() if value != current.get(field)}):
+            return 200, {"milestone": milestone, "changed": []}
+        written = board.edit_milestone(milestone, todo)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"milestone": milestone, "changed": list(todo)}
 
 
-@with_request(MilestoneArchiveRequest, "Archiving a milestone")
-def archive_milestone(request: MilestoneArchiveRequest, board: Board) -> tuple[int, dict[str, Any]]:
-    """Archive the milestone `request` names through the board's `archive_milestone`: the HTTP status and JSON body."""
-    milestone = request.milestone
-    if board.read_milestone(milestone) is None:
-        return 404, {"error": f"{milestone} is not an open milestone"}
-    written = board.archive_milestone(milestone)
+def delete_milestone(source: str, milestone: str, board: Board) -> tuple[int, dict[str, Any]]:
+    """Archive the open milestone `milestone` through the board's `archive_milestone`: the HTTP status and JSON body."""
+    if not on_lan(source):
+        return lan_refusal("Archiving a milestone")
+    with lock:
+        if (current := board.read_milestone(milestone)) is None or current["archived"]:
+            return 404, {"error": f"{milestone} is not an open milestone"}
+        written = board.archive_milestone(milestone)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"milestone": milestone}

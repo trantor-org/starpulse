@@ -132,7 +132,7 @@ def _find(root: Path, doc: str, folder: str = "docs") -> tuple[Path, str, dict, 
     return next(by_path, None) or next((file for file in files if str(file[2]["id"]).strip() == doc), None)
 
 
-def _record(prefix: str, path: Path, frontmatter: dict) -> dict[str, Any]:
+def _record(prefix: str, path: Path, frontmatter: dict, archived: bool = False) -> dict[str, Any]:
     return {
         "id": str(frontmatter["id"]).strip(),
         "title": str(frontmatter.get("title") or ""),
@@ -140,6 +140,7 @@ def _record(prefix: str, path: Path, frontmatter: dict) -> dict[str, Any]:
         "created_date": str(frontmatter.get("created_date") or ""),
         "updated_date": str(frontmatter.get("updated_date") or ""),
         "path": str(path).removeprefix(prefix),
+        "archived": archived,
     }
 
 
@@ -167,11 +168,15 @@ def _named(root: Path, doc: str) -> tuple[Path, str, dict, str] | None:
 
 
 def reader(root: Path) -> DocReader:
-    """A board reader of one open doc's record with its body, or None."""
+    """A board reader of one doc's record with its body, an archived doc's included, or None."""
 
     def read(doc: str, /) -> dict[str, Any] | None:
         found = (re.fullmatch(r"doc-\d+", doc) and _named(root, doc)) or _find(root, doc)
-        return {**_record(f"{root / 'docs'}/", found[0], found[2]), "body": found[3]} if found else None
+        if found:
+            return {**_record(f"{root / 'docs'}/", found[0], found[2]), "body": found[3]}
+        if found := _find(root, doc, "archive/docs"):
+            return {**_record(f"{root / 'archive' / 'docs'}/", found[0], found[2], archived=True), "body": found[3]}
+        return None
 
     return read
 

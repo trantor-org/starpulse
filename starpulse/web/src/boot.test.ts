@@ -153,6 +153,17 @@ describe("the page's boot", () => {
     expect(mount).toHaveBeenCalledTimes(1);
   });
 
+  it("draws no Star Map frame when the address opens the drill-in over it, and mounts the page without waiting for one", async () => {
+    history.replaceState(null, "", "/?view=constellation&drill=TASK-1");
+    const mount = vi.fn();
+    const { boot } = await import("./boot");
+    boot(mount);
+
+    expect(made.calls[0][4], "no first draw of the Star Map is the page's mark").toBeUndefined();
+    expect(made.spy.show).toHaveBeenCalledWith(false);
+    expect(mount).toHaveBeenCalledTimes(1);
+  });
+
   it("asks for the page, the view's chunk and the card models before it builds the renderer, so their fetches run while it builds", async () => {
     history.replaceState(null, "", "/?view=kanban");
     const built: number[] = [], note = () => built.push(made.calls.length);

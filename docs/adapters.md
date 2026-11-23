@@ -24,12 +24,13 @@ The `starpulse.board.Board` the server holds says:
   acceptance criteria, type, references, documentation, Definition of Done) and answers with its id
   (`POST /api/tasks`),
 - milestone records: `milestones()`, `read_milestone(id)`, `create_milestone(title, details)` (answering with the new
-  id), `edit_milestone(id, changes)` and `archive_milestone(id)` (`GET /api/milestones`, `GET /api/milestones/<id>`,
-  `POST /api/milestones`, `POST /api/milestones/edit` and `POST /api/milestones/archive`; the writes answer only the
-  loopback and private network),
+  id), `edit_milestone(id, changes)` and `archive_milestone(id)` (`POST /api/milestones` lists, `GET /api/milestones/<id>` reads, `PUT /api/milestones` creates,
+  `PUT /api/milestones/<id>` upserts over the `revision` a read named as `base`, and `DELETE /api/milestones/<id>`
+  archives; the writes answer only the loopback and private network),
 - and doc records the same way: `docs()` (without bodies), `read_doc(id)`, `create_doc(title, details)`,
-  `edit_doc(id, changes)`, `archive_doc(id)` and `restore_doc(id, folder)` (`/api/docs`, `/api/docs/<id>`,
-  `/api/docs/edit`, `/api/docs/archive` and `/api/docs/restore`).
+  `edit_doc(id, changes)`, `archive_doc(id)` and `restore_doc(id, folder)` (`POST /api/docs` lists the `ids` it names,
+  `GET /api/docs/<id>`, `PUT /api/docs`, `PUT /api/docs/<id>` and `DELETE /api/docs/<id>`; `archived: false` in the
+  upsert restores).
 
 `serve` records every machine event (task- and run-keyed) and each Board lane change it
   places into StarPulse's own store (`starpulse_machine_events`, `starpulse_lane_changes`), and the page reads that

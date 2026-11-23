@@ -299,15 +299,15 @@ export async function fetchRevisions(id: string, fetcher: typeof apiFetch = apiF
 /** A milestone as `GET /api/milestones/<id>` gives it, less its sections. */
 export interface MilestoneDoc { id: string; title: string; description: string; specs: string[] }
 
-/** A doc as `GET /api/docs?ids=` lists it. */
+/** A doc as `POST /api/docs` lists it. */
 export interface DocSummary { id: string; title: string; type: string }
 
 /** One row of the rail's Docs: `id` is empty for a linked file the board does not serve, and such a row does not open. */
 export interface DocLink { kind: "Milestone" | "Spec" | "Doc"; id: string; title: string; openable: boolean }
 
-async function getJson<T>(url: string, key: string, fetcher: typeof apiFetch): Promise<T | null> {
+async function getJson<T>(url: string, key: string, fetcher: typeof apiFetch, init?: RequestInit): Promise<T | null> {
   try {
-    const response = await fetcher(url);
+    const response = await fetcher(url, init);
     const body = response.ok ? (await response.json().catch(() => null)) as Record<string, T> | null : null;
     return body?.[key] ?? null;
   } catch {
@@ -319,7 +319,7 @@ export const fetchMilestone = (id: string, fetcher: typeof apiFetch = apiFetch) 
   getJson<MilestoneDoc>(`/api/milestones/${encodeURIComponent(id)}`, "milestone", fetcher);
 /** The docs among `ids`, read in one request; no request when none is named, since the route never lists every doc. */
 export const fetchDocs = async (ids: string[], fetcher: typeof apiFetch = apiFetch): Promise<DocSummary[]> =>
-  ids.length ? (await getJson<DocSummary[]>(`/api/docs?ids=${ids.map(encodeURIComponent).join(",")}`, "docs", fetcher)) ?? [] : [];
+  ids.length ? (await getJson<DocSummary[]>("/api/docs", "docs", fetcher, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids }) })) ?? [] : [];
 export const fetchDoc = (id: string, fetcher: typeof apiFetch = apiFetch) =>
   getJson<DocSummary & { body: string }>(`/api/docs/${encodeURIComponent(id)}`, "doc", fetcher);
 

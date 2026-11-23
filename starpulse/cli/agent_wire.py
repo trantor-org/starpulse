@@ -146,16 +146,28 @@ def whole_snapshot(args: argparse.Namespace, environ: Mapping[str, str]) -> dict
 
 
 def post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    """The status and JSON object the server at `base` answers a POST of `body` to `path` with; {} for any other body.
+    return _send("POST", base, path, body)
+
+
+def put(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    return _send("PUT", base, path, body)
+
+
+def delete(base: str, path: str) -> tuple[int, dict[str, Any]]:
+    return _send("DELETE", base, path, None)
+
+
+def _send(method: str, base: str, path: str, body: dict[str, Any] | None) -> tuple[int, dict[str, Any]]:
+    """The status and JSON object the server at `base` answers `method` of `body` to `path` with; {} for any other body.
 
     A 503 that carries `Retry-After` is the server asking the caller to send the write again, and raises `CliError`
     `unavailable` whose document names `retry_after`, the seconds to wait.
     """
     request = urllib.request.Request(
         f"{base}{path}",
-        data=json.dumps(body).encode(),
+        data=None if body is None else json.dumps(body).encode(),
         headers={"Content-Type": "application/json", **auth(base)},
-        method="POST",
+        method=method,
     )
     try:
         with urllib.request.urlopen(

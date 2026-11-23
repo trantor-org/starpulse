@@ -1,7 +1,8 @@
 """Milestones.
 
-- `GET /api/milestones`, `/api/milestones/{id}`: the milestones, and one.
-- `POST /api/milestones`, `/api/milestones/edit`, `/api/milestones/archive`: create, edit and archive one.
+- `POST /api/milestones`: the open milestones. `GET /api/milestones/{id}`: one milestone with its `revision`.
+- `PUT /api/milestones`: create one. `PUT /api/milestones/{id}`: write one over the `base` it read.
+- `DELETE /api/milestones/{id}`: archive one.
 """
 
 from typing import TYPE_CHECKING
@@ -9,15 +10,15 @@ from typing import TYPE_CHECKING
 from starlette.requests import Request
 from starlette.responses import Response
 
-from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
+from starpulse.views.adapters.inbound.api.answering import answer, client, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
-from starpulse.views.adapters.inbound.api.writing import guarded, whole_body
+from starpulse.views.adapters.inbound.api.writing import guarded, whole, whole_body
 from starpulse.views.application.commands.milestones import (
-    archive_milestone,
     create_milestone,
-    edit_milestone,
+    delete_milestone,
     milestone_record,
     milestones_list,
+    put_milestone,
 )
 from starpulse.views.model.encoding import encode
 
@@ -31,31 +32,34 @@ def record(request: Request) -> Response:
     return answer(request, encode("milestone", body), status)
 
 
-@reading
-def listed(request: Request) -> Response:
-    status, body = milestones_list(seams(request).board)
-    return answer(request, encode("milestones", body), status)
-
-
 def routes(api: Api) -> list[ApiRoute]:
     board = api.board
 
     return [
         ReadRoute("/milestones/{id:path}", record),
-        ReadRoute("/milestones", listed),
         WriteRoute(
             "/milestones",
             ("POST",),
+            guarded("milestones", whole_body(lambda client, raw: milestones_list(client, raw, board))),
+        ),
+        WriteRoute(
+            "/milestones",
+            ("PUT",),
             guarded("milestone_create", whole_body(lambda client, raw: create_milestone(client, raw, board))),
         ),
         WriteRoute(
-            "/milestones/edit",
-            ("POST",),
-            guarded("milestone_edit", whole_body(lambda client, raw: edit_milestone(client, raw, board))),
+            "/milestones/{id:path}",
+            ("PUT",),
+            guarded(
+                "milestone_put",
+                lambda request: put_milestone(client(request), whole(request), request.path_params["id"], board),
+            ),
         ),
         WriteRoute(
-            "/milestones/archive",
-            ("POST",),
-            guarded("milestone_archive", whole_body(lambda client, raw: archive_milestone(client, raw, board))),
+            "/milestones/{id:path}",
+            ("DELETE",),
+            guarded(
+                "milestone_archive", lambda request: delete_milestone(client(request), request.path_params["id"], board)
+            ),
         ),
     ]

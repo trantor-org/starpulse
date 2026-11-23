@@ -29,7 +29,6 @@ export interface ApiContract {
     | DocCreated
     | DocEdited
     | DocArchived
-    | DocRestored
     | Started
     | RunStarted
     | Accepted
@@ -77,12 +76,11 @@ export interface ApiContract {
     | ReviewRequest
     | CreateRequest
     | MilestoneCreateRequest
-    | MilestoneEditRequest
-    | MilestoneArchiveRequest
+    | MilestoneListRequest
+    | MilestonePutRequest
     | DocCreateRequest
-    | DocEditRequest
-    | DocArchiveRequest
-    | DocRestoreRequest
+    | DocListRequest
+    | DocPutRequest
     | WindowRequest
     | SchedulerRequest
   )[];
@@ -256,10 +254,6 @@ export interface DocArchived {
   doc: string;
   [k: string]: unknown;
 }
-export interface DocRestored {
-  doc: string;
-  [k: string]: unknown;
-}
 export interface Started {
   at: number;
   task: string;
@@ -416,7 +410,7 @@ export interface RunRef1 {
   [k: string]: unknown;
 }
 /**
- * `GET /api/docs/<id>`: one open doc.
+ * `GET /api/docs/<id>`: one doc, archived or open.
  */
 export interface DocShown {
   doc: DocRecord;
@@ -426,17 +420,25 @@ export interface DocShown {
  * A doc as the board's reader gives it: the summary and the text after its front matter.
  */
 export interface DocRecord {
+  /**
+   * The doc was archived: read from the archive, off the open ones.
+   */
+  archived?: boolean;
   body: string;
   created_date: string;
   id: string;
   path: string;
+  /**
+   * What a `PUT /api/docs/{id}` names as its `base` to write only over this record.
+   */
+  revision: string;
   title: string;
   type: string;
   updated_date: string;
   [k: string]: unknown;
 }
 /**
- * `GET /api/docs?ids=`: the named open docs, without bodies, in the order asked.
+ * `POST /api/docs`: the named docs, without bodies, in the order asked.
  */
 export interface Docs {
   docs: DocSummary[];
@@ -446,6 +448,10 @@ export interface Docs {
  * A doc as the board's lister gives it: its front matter and where it is filed, without its body.
  */
 export interface DocSummary {
+  /**
+   * The doc was archived: read from the archive, off the open ones.
+   */
+  archived?: boolean;
   created_date: string;
   id: string;
   path: string;
@@ -1606,7 +1612,7 @@ export interface MachineRow {
   [k: string]: unknown;
 }
 /**
- * `GET /api/milestones/<id>`: one open milestone.
+ * `GET /api/milestones/<id>`: one milestone, archived or open.
  */
 export interface MilestoneShown {
   milestone: MilestoneRecord;
@@ -1617,16 +1623,24 @@ export interface MilestoneShown {
  */
 export interface MilestoneRecord {
   adrs: string[];
+  /**
+   * The milestone was archived: read from the archive, off the open ones.
+   */
+  archived?: boolean;
   description: string;
   id: string;
   outcome: string;
   retro: string;
+  /**
+   * What a `PUT /api/milestones/{id}` names as its `base` to write only over this record.
+   */
+  revision: string;
   specs: string[];
   title: string;
   [k: string]: unknown;
 }
 /**
- * `GET /api/milestones`: every open milestone, by ascending number.
+ * `POST /api/milestones`: every open milestone, by ascending number.
  */
 export interface Milestones {
   milestones: MilestoneRecord[];
@@ -1958,7 +1972,7 @@ export interface CreateRequest {
   urgency?: string | null;
 }
 /**
- * `POST /api/milestones`: open a milestone; only the title is required.
+ * `PUT /api/milestones`: open a milestone; only the title is required.
  */
 export interface MilestoneCreateRequest {
   adrs?: string[] | null;
@@ -1968,22 +1982,23 @@ export interface MilestoneCreateRequest {
   title: string;
 }
 /**
- * `POST /api/milestones/edit`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` `changes` names.
+ * `POST /api/milestones`: list the open milestones. It takes no field.
  */
-export interface MilestoneEditRequest {
-  changes: {
-    [k: string]: unknown;
-  };
-  milestone: string;
+export interface MilestoneListRequest {}
+/**
+ * `PUT /api/milestones/{id}`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` named, if the milestone
+ * still reads `base`, the `revision` of the record the caller read.
+ */
+export interface MilestonePutRequest {
+  adrs?: string[] | null;
+  base: string;
+  outcome?: string | null;
+  retro?: string | null;
+  specs?: string[] | null;
+  title?: string | null;
 }
 /**
- * `POST /api/milestones/archive`: archive `milestone`.
- */
-export interface MilestoneArchiveRequest {
-  milestone: string;
-}
-/**
- * `POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`.
+ * `PUT /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`.
  */
 export interface DocCreateRequest {
   body?: string | null;
@@ -1992,27 +2007,23 @@ export interface DocCreateRequest {
   type?: string | null;
 }
 /**
- * `POST /api/docs/edit`: replace the `title`, `type` or `body` `changes` names.
+ * `POST /api/docs`: list the docs `ids` names, bodies left out.
  */
-export interface DocEditRequest {
-  changes: {
-    [k: string]: unknown;
-  };
-  doc: string;
+export interface DocListRequest {
+  ids: string[];
 }
 /**
- * `POST /api/docs/archive`: archive `doc`.
+ * `PUT /api/docs/{id}`: replace the `title`, `type` or `body` named, if the doc still reads `base`, the `revision`
+ * of the record the caller read. `archived: false` first returns an archived doc to `folder` under the board's docs
+ * (the docs folder itself when absent), unchanged.
  */
-export interface DocArchiveRequest {
-  doc: string;
-}
-/**
- * `POST /api/docs/restore`: return the archived doc `doc` to `folder` under the board's docs (the docs folder
- * itself when absent), unchanged.
- */
-export interface DocRestoreRequest {
-  doc: string;
+export interface DocPutRequest {
+  archived?: false | null;
+  base: string;
+  body?: string | null;
   folder?: string | null;
+  title?: string | null;
+  type?: string | null;
 }
 /**
  * `PUT /api/history-window`: set the shared history window.

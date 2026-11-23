@@ -410,7 +410,7 @@ def record_call(
     message = document.get("error") or f"{base} answered {status} for {path}: is it a StarPulse server?"
     if status == 404 and "error" in document:
         # The server gives both 404s as text only: a board that keeps no such records, else one that is not open.
-        absent = (f"is not an open {noun}", *missing)
+        absent = (f"is not an open {noun}", f"is not a {noun}", *missing)
         raise agent_wire.CliError("not_found" if any(text in message for text in absent) else "unavailable", message)
     if status in (400, 403, 409):
         raise agent_wire.CliError("refused", message)
@@ -769,17 +769,24 @@ def pull_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     return found[0]
 
 
+def _quoted(collection: str, ident: str) -> str:
+    return f"{collection}/{urllib.parse.quote(ident, safe='')}"
+
+
+def _revision(base: str, path: str, key: str) -> str:
+    """The `revision` of the record at `path`, which a PUT names as its `base`."""
+    status, reply = agent_wire.get(base, path)
+    return record_call(base, path, status, reply, noun=key)[key]["revision"]
+
+
 def milestone_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/milestones"
-    status, reply = agent_wire.get(base, path)
+    status, reply = agent_wire.post(base, path, {})
     return {"milestones": record_call(base, path, status, reply)["milestones"]}
 
 
 def milestone_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = (
-        agent_wire.server_url(args.server, environ),
-        f"/api/milestones/{urllib.parse.quote(args.milestone, safe='')}",
-    )
+    base, path = agent_wire.server_url(args.server, environ), _quoted("/api/milestones", args.milestone)
     status, reply = agent_wire.get(base, path)
     return record_call(base, path, status, reply)["milestone"]
 
@@ -788,28 +795,28 @@ def milestone_add(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     base, path = agent_wire.server_url(args.server, environ), "/api/milestones"
     body: dict[str, Any] = {"title": args.title}
     body.update(_milestone_fields(args))
-    status, reply = agent_wire.post(base, path, body)
+    status, reply = agent_wire.put(base, path, body)
     return {"milestone": record_call(base, path, status, reply, ok=(201,))["milestone"]}
 
 
 def milestone_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/milestones/edit"
+    base, path = agent_wire.server_url(args.server, environ), _quoted("/api/milestones", args.milestone)
     changes = {**({"title": args.title} if args.title is not None else {}), **_milestone_fields(args)}
     if not changes:
         raise agent_wire.CliError("usage", "name what to change: --title, --outcome, --spec, --adr or --retro")
-    status, reply = agent_wire.post(base, path, {"milestone": args.milestone, "changes": changes})
+    status, reply = agent_wire.put(base, path, {"base": _revision(base, path, "milestone"), **changes})
     document = record_call(base, path, status, reply)
     return {"milestone": document["milestone"], "changed": document["changed"]}
 
 
 def milestone_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/milestones/archive"
-    status, reply = agent_wire.post(base, path, {"milestone": args.milestone})
+    base, path = agent_wire.server_url(args.server, environ), _quoted("/api/milestones", args.milestone)
+    status, reply = agent_wire.delete(base, path)
     return {"milestone": record_call(base, path, status, reply)["milestone"]}
 
 
 def doc_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), f"/api/docs/{urllib.parse.quote(args.doc, safe='')}"
+    base, path = agent_wire.server_url(args.server, environ), _quoted("/api/docs", args.doc)
     status, reply = agent_wire.get(base, path)
     return record_call(base, path, status, reply, noun="doc")["doc"]
 
@@ -822,7 +829,7 @@ def _doc_fields(args: argparse.Namespace) -> dict[str, Any]:
 def doc_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/docs"
     body = {"title": args.title, **_doc_fields(args), **({"folder": args.folder} if args.folder is not None else {})}
-    status, reply = agent_wire.post(base, path, body)
+    status, reply = agent_wire.put(base, path, body)
     doc = record_call(base, path, status, reply, ok=(201,), noun="doc")["doc"]
     if args.task is None:
         return {"doc": doc}
@@ -832,24 +839,25 @@ def doc_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str
 
 
 def doc_update(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/docs/edit"
+    base, path = agent_wire.server_url(args.server, environ), _quoted("/api/docs", args.doc)
     changes = {**({"title": args.title} if args.title is not None else {}), **_doc_fields(args)}
     if not changes:
         raise agent_wire.CliError("usage", "name what to change: --title, --type or --body")
-    status, reply = agent_wire.post(base, path, {"doc": args.doc, "changes": changes})
+    status, reply = agent_wire.put(base, path, {"base": _revision(base, path, "doc"), **changes})
     document = record_call(base, path, status, reply, noun="doc")
     return {"doc": document["doc"], "changed": document["changed"]}
 
 
 def doc_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/docs/archive"
-    status, reply = agent_wire.post(base, path, {"doc": args.doc})
+    base, path = agent_wire.server_url(args.server, environ), _quoted("/api/docs", args.doc)
+    status, reply = agent_wire.delete(base, path)
     return {"doc": record_call(base, path, status, reply, noun="doc")["doc"]}
 
 
 def doc_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/docs/restore"
-    status, reply = agent_wire.post(base, path, {"doc": args.doc, **({"folder": args.folder} if args.folder else {})})
+    base, path = agent_wire.server_url(args.server, environ), _quoted("/api/docs", args.doc)
+    sent = {"base": _revision(base, path, "doc"), "archived": False, **({"folder": args.folder} if args.folder else {})}
+    status, reply = agent_wire.put(base, path, sent)
     return {"doc": record_call(base, path, status, reply, noun="doc")["doc"]}
 
 

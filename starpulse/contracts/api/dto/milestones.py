@@ -44,16 +44,18 @@ class MilestoneRecord(_Api):
     adrs: list[str]
     retro: str
     description: str
+    archived: bool = Field(False, description="The milestone was archived: read from the archive, off the open ones.")
+    revision: str = Field(description="What a `PUT /api/milestones/{id}` names as its `base` to write only over this record.")
 
 
 class Milestones(_Api):
-    """`GET /api/milestones`: every open milestone, by ascending number."""
+    """`POST /api/milestones`: every open milestone, by ascending number."""
 
     milestones: list[MilestoneRecord]
 
 
 class MilestoneShown(_Api):
-    """`GET /api/milestones/<id>`: one open milestone."""
+    """`GET /api/milestones/<id>`: one milestone, archived or open."""
 
     milestone: MilestoneRecord
 
@@ -67,22 +69,24 @@ class DocSummary(_Api):
     created_date: str
     updated_date: str
     path: str
+    archived: bool = Field(False, description="The doc was archived: read from the archive, off the open ones.")
 
 
 class DocRecord(DocSummary):
     """A doc as the board's reader gives it: the summary and the text after its front matter."""
 
     body: str
+    revision: str = Field(description="What a `PUT /api/docs/{id}` names as its `base` to write only over this record.")
 
 
 class Docs(_Api):
-    """`GET /api/docs?ids=`: the named open docs, without bodies, in the order asked."""
+    """`POST /api/docs`: the named docs, without bodies, in the order asked."""
 
     docs: list[DocSummary]
 
 
 class DocShown(_Api):
-    """`GET /api/docs/<id>`: one open doc."""
+    """`GET /api/docs/<id>`: one doc, archived or open."""
 
     doc: DocRecord
 

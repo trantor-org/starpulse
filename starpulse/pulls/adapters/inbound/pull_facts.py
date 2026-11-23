@@ -99,6 +99,8 @@ def _check_suite(store: PullStore, delivery: Delivery, payload: Mapping[str, Any
     if delivery.action != "completed":
         return False
     suite = payload["check_suite"]
+    if "head_sha" not in suite:  # a reconcile row queued before its body carried the head
+        return False
     edit = _suite(suite["head_sha"], suite["id"], _stamped(suite))
     return _write(store, _at_head(store, delivery.repository, suite["head_sha"]), edit, now, suite["head_sha"])
 

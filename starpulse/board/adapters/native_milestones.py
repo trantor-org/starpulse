@@ -63,10 +63,10 @@ def _parsed(path: Path, mtime_ns: int, size: int) -> tuple[dict, str] | None:
     return (frontmatter, body) if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip() else None
 
 
-def _files(root: Path) -> list[tuple[Path, dict, str]]:
-    """Each open milestone's file with its front matter and body, by ascending number."""
+def _files(root: Path, folder: str = "milestones") -> list[tuple[Path, dict, str]]:
+    """Each milestone's file under `folder` with its front matter and body, by ascending number."""
     found = []
-    for path in (root / "milestones").glob("m-*.md"):
+    for path in (root / folder).glob("m-*.md"):
         try:
             stat = path.stat()
             parsed = _parsed(path, stat.st_mtime_ns, stat.st_size)
@@ -77,11 +77,11 @@ def _files(root: Path) -> list[tuple[Path, dict, str]]:
     return sorted(found, key=lambda file: int(re.sub(r"\D", "", str(file[1]["id"])) or 0))
 
 
-def _find(root: Path, milestone: str) -> tuple[Path, dict, str] | None:
-    return next((file for file in _files(root) if str(file[1]["id"]).strip() == milestone), None)
+def _find(root: Path, milestone: str, folder: str = "milestones") -> tuple[Path, dict, str] | None:
+    return next((file for file in _files(root, folder) if str(file[1]["id"]).strip() == milestone), None)
 
 
-def _record(frontmatter: dict, body: str) -> dict[str, Any]:
+def _record(frontmatter: dict, body: str, archived: bool = False) -> dict[str, Any]:
     description = _description(body)
     sections = _sections(description)
     return {
@@ -92,6 +92,7 @@ def _record(frontmatter: dict, body: str) -> dict[str, Any]:
         "adrs": _bullets(sections.get("ADRs", "")),
         "retro": sections.get("Retro", ""),
         "description": description,
+        "archived": archived,
     }
 
 
@@ -101,11 +102,13 @@ def lister(root: Path) -> MilestoneLister:
 
 
 def reader(root: Path) -> MilestoneReader:
-    """A board reader of one open milestone's record, or None."""
+    """A board reader of one milestone's record, an archived milestone's included, or None."""
 
     def read(milestone: str, /) -> dict[str, Any] | None:
-        found = _find(root, milestone)
-        return _record(found[1], found[2]) if found else None
+        if found := _find(root, milestone):
+            return _record(found[1], found[2])
+        found = _find(root, milestone, "archive/milestones")
+        return _record(found[1], found[2], archived=True) if found else None
 
     return read
 
