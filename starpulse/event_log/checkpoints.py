@@ -44,7 +44,6 @@ class Checkpoints:
         values = {
             "name": name,
             "position": position,
-            "schema_version": 0,  # a durable column no reader reads; the baseline squash drops it
             "state": None if model is None else model.model_dump(mode="json"),
             "saved_at": time.time(),
         }

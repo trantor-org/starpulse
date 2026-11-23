@@ -6,10 +6,6 @@ to the instance, not the package:
 - `roots`: absolute checkout paths. A path a tool call read or wrote is cut to an area (its first two components) below
   the root it is under; a `*` matches one path component, so `/repo/.claude/worktrees/*` is every worktree of `/repo`.
   A path under no root is no area, and with no root there are no areas.
-- `stop_activities`, `lifecycle_skills` and `[[analytics.skill_loads]]` (per `skill`, what should load it: `activities`
-  globs, a task `title` regular expression or a `label`): no read uses them now that the trace-case folds and the
-  missed-load count are gone, and the keys stay so a config that sets them loads.
-
 What a session's own events say about its work is read against more keys, so the package names no instance's
 tasks or skills:
 
@@ -44,30 +40,22 @@ More keys name the instance's vocabulary for reading its sessions and scoring it
 - `size_bands`: a table of each task size (`"5"`) to the `[steps, active minutes]` a task of that size lands within (its
   p90); no verb reads it now that `analytics estimates` is gone, and the key stays so a config that sets it loads.
 - `default_repo`: an `owner/name` no verb reads now; the key stays so a config that sets it loads.
-
-`[[analytics.skill_machines]]` tables: the stages of a skill's run (each a tool call whose activity matches a glob of
-`activities` and, when `ok` is set, that succeeded or failed). No route reads them now that `task-diff` is gone, and the
-key stays so a config that sets it loads.
 """
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-__all__ = ["Analytics", "AnalyticsError", "Labeller", "MachineStage", "SkillLoad", "SkillMachine", "parse_analytics"]
+__all__ = ["Analytics", "AnalyticsError", "Labeller", "parse_analytics"]
 
 _KEYS = {
     "roots",
-    "stop_activities",
-    "lifecycle_skills",
-    "skill_loads",
     "injected_openings",
     "session_origins",
     "operator_tools",
     "claims",
     "completion_skill",
     "completion_call",
-    "skill_machines",
     "labeller",
     "eval_attribute",
     "ladder",
@@ -76,43 +64,11 @@ _KEYS = {
     "size_bands",
     "default_repo",
 }
-_LOAD_KEYS = {"skill", "activities", "title", "label"}
-_MACHINE_KEYS = {"skill", "stages"}
-_STAGE_KEYS = {"name", "activities", "ok"}
 _LABELLER_KEYS = {"url", "model", "instructions", "criteria", "timeout"}
 
 
 class AnalyticsError(ValueError):
     """The table cannot be read; the message names the key to fix."""
-
-
-@dataclass(frozen=True)
-class SkillLoad:
-    """What should load `skill`: any activity matching one of the `activities` globs, or a task with a title matching
-    `title` or carrying `label`."""
-
-    skill: str
-    activities: frozenset[str] = frozenset()
-    title: re.Pattern[str] | None = None
-    label: str | None = None
-
-
-@dataclass(frozen=True)
-class MachineStage:
-    """One required stage of a skill's machine: a tool call of any activity matching a glob of `activities`, and when
-    `ok` is set, one that succeeded (`True`) or failed (`False`)."""
-
-    name: str
-    activities: frozenset[str]
-    ok: bool | None = None
-
-
-@dataclass(frozen=True)
-class SkillMachine:
-    """The stages a run under `skill` must reach, in this order, to conform to the skill's machine."""
-
-    skill: str
-    stages: tuple[MachineStage, ...]
 
 
 @dataclass(frozen=True)
@@ -131,12 +87,6 @@ class Labeller:
 class Analytics:
     roots: tuple[str, ...] = ()
     """The checkouts a path is cut to an area under; none: no areas."""
-    stop_activities: frozenset[str] = frozenset()
-    """Activities that never define a trace cluster."""
-    lifecycle_skills: frozenset[str] = frozenset()
-    """Skills every task's delivery loads, left out of what a cluster's cases loaded."""
-    skill_loads: tuple[SkillLoad, ...] = field(default_factory=tuple)
-    """What should load each declared skill."""
     injected_openings: tuple[str, ...] = ()
     """Prefixes that label a prompt `injected`; none: every prompt is `human`."""
     session_origins: tuple[tuple[str, tuple[str, ...]], ...] = ()
@@ -149,8 +99,6 @@ class Analytics:
     """The skill whose load, with a `completion_call`, marks a session's task complete."""
     completion_call: re.Pattern[str] | None = None
     """The shell command that, after `completion_skill` loaded, marks the task complete."""
-    skill_machines: tuple[SkillMachine, ...] = ()
-    """Per skill, the stages a run reaches in order to conform; a skill with none declared has every run conform."""
     labeller: Labeller | None = None
     """The endpoint that labels a human prompt's intent at ingest; none: no prompt carries a label."""
     eval_attribute: str = ""
@@ -209,58 +157,12 @@ def _size_bands(raw: object) -> tuple[tuple[int, int, float], ...]:
     return tuple(sorted(bands))
 
 
-def _load(raw: object, at: int) -> SkillLoad:
-    who = f"analytics.skill_loads[{at}]"
-    if not isinstance(raw, dict):
-        raise AnalyticsError(f"{who} must be a [[analytics.skill_loads]] table")
-    if unknown := sorted(raw.keys() - _LOAD_KEYS):
-        raise AnalyticsError(f"{who}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_LOAD_KEYS))}")
-    if not isinstance(skill := raw.get("skill"), str) or not skill:
-        raise AnalyticsError(f"{who} needs skill")
-    activities = frozenset(_texts(raw, "activities"))
-    title, label = raw.get("title"), raw.get("label")
-    if not (activities or title or label):
-        raise AnalyticsError(f"{who}: needs activities, title or label")
-    if label is not None and not isinstance(label, str):
-        raise AnalyticsError(f"{who}: label must be text")
-    pattern = None
-    if title is not None:
-        try:
-            pattern = re.compile(str(title), re.IGNORECASE)
-        except re.error as exc:
-            raise AnalyticsError(f"{who}: title is not a regular expression: {exc}") from exc
-    return SkillLoad(skill, activities, pattern, label)
-
-
 def _table(raw: object, who: str, known: set[str], name: str) -> dict[str, object]:
     if not isinstance(raw, dict):
         raise AnalyticsError(f"{who} must be a {name} table")
     if unknown := sorted(raw.keys() - known):
         raise AnalyticsError(f"{who}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(known))}")
     return raw
-
-
-def _stage(raw: object, who: str) -> MachineStage:
-    table = _table(raw, who, _STAGE_KEYS, "stage")
-    if not isinstance(name := table.get("name"), str) or not name:
-        raise AnalyticsError(f"{who} needs name")
-    activities = frozenset(_texts(table, "activities"))
-    if not activities:
-        raise AnalyticsError(f"{who}: needs activities")
-    if (ok := table.get("ok")) is not None and not isinstance(ok, bool):
-        raise AnalyticsError(f"{who}: ok must be true or false")
-    return MachineStage(name, activities, ok)
-
-
-def _machine(raw: object, at: int) -> SkillMachine:
-    who = f"analytics.skill_machines[{at}]"
-    table = _table(raw, who, _MACHINE_KEYS, "[[analytics.skill_machines]]")
-    if not isinstance(skill := table.get("skill"), str) or not skill:
-        raise AnalyticsError(f"{who} needs skill")
-    stages = table.get("stages")
-    if not isinstance(stages, list) or not stages:
-        raise AnalyticsError(f"{who}: needs stages")
-    return SkillMachine(skill, tuple(_stage(stage, f"{who}.stages[{n}]") for n, stage in enumerate(stages)))
 
 
 def _labeller(raw: object) -> Labeller:
@@ -314,16 +216,10 @@ def parse_analytics(raw: object) -> Analytics:
     roots = _texts(raw, "roots")
     if not all(root.startswith("/") for root in roots):
         raise AnalyticsError("analytics: roots must be absolute paths")
-    loads = raw.get("skill_loads", [])
-    if not isinstance(loads, list):
-        raise AnalyticsError("analytics: skill_loads must be a list of [[analytics.skill_loads]] tables")
     skill = raw.get("completion_skill", "")
     if not isinstance(skill, str):
         raise AnalyticsError("analytics: completion_skill must be text")
     call = raw.get("completion_call")
-    machines = raw.get("skill_machines", [])
-    if not isinstance(machines, list):
-        raise AnalyticsError("analytics: skill_machines must be a list of [[analytics.skill_machines]] tables")
     return Analytics(
         eval_attribute=_text(raw, "eval_attribute"),
         ladder=_texts(raw, "ladder"),
@@ -332,15 +228,11 @@ def parse_analytics(raw: object) -> Analytics:
         size_bands=_size_bands(raw.get("size_bands", {})),
         default_repo=_text(raw, "default_repo"),
         roots=roots,
-        stop_activities=frozenset(_texts(raw, "stop_activities")),
-        lifecycle_skills=frozenset(_texts(raw, "lifecycle_skills")),
-        skill_loads=tuple(_load(table, at) for at, table in enumerate(loads)),
         injected_openings=_texts(raw, "injected_openings"),
         session_origins=_origins(raw.get("session_origins", {})),
         operator_tools=frozenset(_texts(raw, "operator_tools")),
         claims=_claims(raw),
         completion_skill=skill,
         completion_call=None if call is None else _pattern(call, "completion_call"),
-        skill_machines=tuple(_machine(table, at) for at, table in enumerate(machines)),
         labeller=None if (labeller := raw.get("labeller")) is None else _labeller(labeller),
     )

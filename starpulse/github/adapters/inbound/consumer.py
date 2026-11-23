@@ -21,7 +21,7 @@ from starpulse.github.adapters.inbound.head_checks import HeadChecks
 from starpulse.github.adapters.outbound.head_reader import GitHubReader
 from starpulse.github.adapters.outbound.queue import SqlQueue
 from starpulse.github.adapters.outbound.rest import RateLimited, connect
-from starpulse.github.model.events import CONSUMER, REFUSED, cloudevent, facts_of, run_event_of
+from starpulse.github.model.events import CONSUMER, HANDLED, REFUSED, cloudevent, facts_of, run_event_of
 from starpulse.github.ports.events import Entry, Ingest, Links, OpenWatch, Queue, Stop, Watch
 
 __all__ = ["consume", "follow", "run", "start"]
@@ -82,13 +82,15 @@ def _one(
 def consume(
     queue: Queue, ingest: Ingest, links: Links, checks: HeadChecks | None = None, resync: Callable[[str, bytes], None] | None = None
 ) -> None:
-    """Try each delivery due now once, then return."""
-    for entry in queue.claim():
-        try:
-            _one(queue, ingest, links, entry, checks, resync)
-        except Exception:
-            logger.exception("github events: %s", entry.delivery.delivery_id)
-            queue.fail(entry.delivery.delivery_id, "consumer error")
+    """Try each delivery due now once, then return; the pass records its outcomes in one transaction."""
+    entries = queue.claim()
+    with queue.batch():
+        for entry in entries:
+            try:
+                _one(queue, ingest, links, entry, checks, resync)
+            except Exception:
+                logger.exception("github events: %s", entry.delivery.delivery_id)
+                queue.fail(entry.delivery.delivery_id, "consumer error")
 
 
 def run(
@@ -162,7 +164,7 @@ def start(
     Returns the context's reload, which has nothing to re-read."""
     if config.github is None:
         raise ValueError("no [github] table in the config")
-    queue = SqlQueue(engine, CONSUMER)
+    queue = SqlQueue(engine, CONSUMER, only=HANDLED)
     publishes_checks = any(CHECKS_MACHINE in p.machines for p in config.producers if p.name == "github")
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     checks = HeadChecks(GitHubReader(connect(token))) if publishes_checks else None

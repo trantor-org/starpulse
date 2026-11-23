@@ -80,7 +80,6 @@ from starpulse.pulls.model.task_actor.derivation import (
     FACTS,
     FAULT,
     FAULT_NEXT,
-    RESTART_OR_RESCOPE,
     TERMINAL,
 )
 
@@ -136,7 +135,7 @@ _YIELD_S = 2.0
 #: derived under, so a start derives only the tasks that changed since.
 CHECKPOINT = "pulls.task_actor_checkpoint"
 #: Bumped when a fact function reads something new or reads it differently: a checkpoint of another revision is unread.
-_FACTS_REVISION = 5
+_FACTS_REVISION = 6
 #: Seconds between two saves of the checkpoint while the actor runs.
 #: Seconds after a task's derived facts change before the checkpoint is saved.
 _CHECKPOINT_DEBOUNCE_S = 10.0
@@ -202,16 +201,15 @@ def _lint_record(agent: Mapping[str, Any]) -> tuple[Any, ...]:
     return (*(agent.get(field) for field in _LINTED), tuple(agent["labels"]), tuple(agent.get("dependencies", ())))
 
 
-def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], bool, bool]:
+def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], bool]:
     """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests, checked criteria,
-    whether a session claimed it and whether its final summary is recorded. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
+    and whether its final summary is recorded. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
     return (
         agent["state"],
         tuple(agent.get("dependencies", ())),
         tuple(agent.get("prs", ())),
         ticks,
-        bool(agent.get("assignee")),
         bool((agent.get("final_summary") or "").strip()),
     )
 
@@ -1378,8 +1376,9 @@ class TaskActor:
     def lane_entered(self, name: str, lane: str) -> None:
         """A task entered `lane`: its holder's session ends when the lane is one of `end_lanes`, which the reaper does once
         the session is idle; a session busy now is ended by `holder_settled` when it settles. A task entering Needs attention
-        by any writer with no live holder gets one started (`_revive_unheld`), so its ask shows as needs you."""
-        if lane in self._end_lanes:
+        by any writer with no live holder gets one started (`_revive_unheld`), so its ask shows as needs you. Started work
+        entering Ready keeps its session: `started_work` moves it on to Needs attention, where the session is its ask."""
+        if lane in self._end_lanes and not (lane == self._feed.roles.ready and self._started(name)):
             self._end_session(name)
         if lane == self._feed.roles.attention:
             self._revive_unheld(name)
@@ -1958,17 +1957,13 @@ class TaskActor:
             machine_events.publish(IN_PROGRESS, event, actor=ACTOR, task=name, data={"reason": reason}, log=self._log)
 
     def _return_unwoken(self, name: str) -> None:
-        """A send-back whose holder no wake reached goes to Needs attention, unless the holder has since moved it."""
+        """A send-back whose holder no wake reached revives the task as `_resume_failed` does, unless the holder has
+        since moved it."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
             if agent is None or agent["state"] != self._feed.roles.working:
                 return
-            self._attend(
-                name,
-                "its holder could not be woken",
-                "was sent back to its session (cause bug TASK-15920)",
-                options=RESTART_OR_RESCOPE,
-            )
+        self.holder_ended(name, unreachable=True)
 
     def _attend_unstarted(self, name: str) -> None:
         with self._lock:

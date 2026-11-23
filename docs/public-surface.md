@@ -41,11 +41,9 @@ internal and can change in any release.
   as before. The Star Map draws one row unless a second row makes the sun more than 5% larger, and keeps each state's
   footprint the same whatever it holds.
 - The config file's keys, among them
-  the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills`, `injected_openings`, `operator_tools`, `claims`,
+  the `[analytics]` table's `roots`, `injected_openings`, `operator_tools`, `claims`,
   `completion_skill`, `completion_call`, `eval_attribute`, `ladder`, `phases`, `default_repo`, the `[analytics.weights]` table, the optional `[analytics.labeller]` table's `url`, `model`, `instructions`,
-  `criteria` and `timeout`, each `[[analytics.skill_loads]]`'s
-  `skill`, `activities`, `title` and `label`, and each `[[analytics.skill_machines]]`'s `skill` and `stages` (`name`,
-  `activities`, `ok`), and the `[search]` table's optional `embeddings_url`, `model` and
+  `criteria` and `timeout`, and the `[search]` table's optional `embeddings_url`, `model` and
   `token_env` ([Config file](serving.md#config-file)),
   and the machine YAML with its JSON Schema (`machine.schema.json`).
 - A machine state's optional `label` (the name a person reads, the id when absent) and `aliases` (names retired from the state that

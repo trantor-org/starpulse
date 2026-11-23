@@ -7,7 +7,8 @@ row as its anchor, or at the newest `backfill` deliveries when it declares a cap
 """
 
 import time
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Iterator
+from contextlib import contextmanager
 from typing import NamedTuple
 
 from sqlalchemy import Column, Float, Index, Integer, String, Table, and_, exists, func, literal, or_, select, true, update
@@ -94,7 +95,8 @@ def backlogs(engine: Engine, clock: Callable[[], float] = time.time) -> dict[str
 class SqlQueue:
     """The deliveries of `consumer`: claim the due ones, then complete, skip or fail each. `backfill` is the most
     earlier deliveries its first claim takes; none by default. A due delivery whose `(event, action)` is in `urgent` is
-    claimed ahead of every older one. With `only`, the consumer holds a row for those events' deliveries alone."""
+    claimed ahead of every older one. With `only`, the consumer holds a row for the deliveries of those events, or of those
+    `(event, action)` pairs, alone: any other costs it no write. `batch` records a pass's outcomes in one transaction."""
 
     def __init__(
         self,
@@ -103,14 +105,22 @@ class SqlQueue:
         clock: Callable[[], float] = time.time,
         backfill: int = 0,
         urgent: Collection[tuple[str, str]] = (),
-        only: Collection[str] = (),
+        only: Collection[str | tuple[str, str]] = (),
     ) -> None:
         self._engine, self._consumer, self._clock, self._backfill = engine, consumer, clock, backfill
         self._insert = INSERTS[engine.dialect.name]
         self._seeded = 0  # the newest inbox id this queue has seeded: a claim looks only past it
         self._floor: int | None = None  # the newest inbox id the consumer holds a row for: a claim seeds only past it
         self._urgent = or_(*(and_(inbox.c.event == event, inbox.c.action == action) for event, action in urgent)) if urgent else None
-        self._only = inbox.c.event.in_(only) if only else true()
+        self._only = (
+            or_(
+                inbox.c.event.in_([name for name in only if isinstance(name, str)]),
+                *(and_(inbox.c.event == name[0], inbox.c.action == name[1]) for name in only if not isinstance(name, str)),
+            )
+            if only
+            else true()
+        )
+        self._held_outcomes: dict[tuple[str, str | None], list[str]] | None = None  # `batch`'s: (status, error) to delivery ids
         self._held = exists().where(state.delivery_id == inbox.c.delivery_id, state.consumer == consumer)
 
     def _mine(self, delivery_id: str):  # noqa: ANN202
@@ -189,11 +199,34 @@ class SqlQueue:
             ).scalar_one()
         return None if earliest is None else max(0.0, earliest - self._clock())
 
+    @contextmanager
+    def batch(self) -> Iterator[None]:
+        """Hold each `complete` and `skip` made in the block, and record them in one transaction when it ends, however it ends."""
+        self._held_outcomes = held = {}
+        try:
+            yield
+        finally:
+            self._held_outcomes = None
+            if held:
+                with self._engine.begin() as db:
+                    for (status, error), ids in held.items():
+                        db.execute(
+                            update(github_inbox_state)
+                            .where(state.consumer == self._consumer, state.delivery_id.in_(ids))
+                            .values(status=status, last_error=error, updated_at=self._clock())
+                        )
+
+    def _outcome(self, delivery_id: str, status: str, error: str | None) -> None:
+        if self._held_outcomes is None:
+            self._set(delivery_id, status=status, last_error=error)
+        else:
+            self._held_outcomes.setdefault((status, error), []).append(delivery_id)
+
     def complete(self, delivery_id: str) -> None:
-        self._set(delivery_id, status="done", last_error=None)
+        self._outcome(delivery_id, "done", None)
 
     def skip(self, delivery_id: str, reason: str) -> None:
-        self._set(delivery_id, status="skipped", last_error=reason)
+        self._outcome(delivery_id, "skipped", reason)
 
     def fail(self, delivery_id: str, error: str, *, fatal: bool = False, exhausted: str = "dead") -> str:
         with self._engine.begin() as db:

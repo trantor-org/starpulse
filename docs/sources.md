@@ -138,8 +138,7 @@ including the directory after `--project` or `--directory`. The path a file tool
 components below an `[analytics]` root. A session no branch or claim ever ties to a task has steps with no task.
 
 Nothing in the server groups those activities now: the offload and correction reports read the stored `steps` rows in
-process and group them themselves. The `[analytics]` keys `stop_activities`, `lifecycle_skills`, `skill_loads` and
-`skill_machines` still load, and nothing reads them.
+process and group them themselves.
 
 ## Save GitHub webhook deliveries
 

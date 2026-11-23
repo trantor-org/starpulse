@@ -53,14 +53,12 @@ gaps = Table(
 )
 
 #: How far each reader of the log got: an integer position and, for a reader that rebuilds state, the snapshot it
-#: rebuilds from. A snapshot the model cannot validate is not read; the reader replays from the log. `schema_version` is
-#: written as 0 and read by nothing.
+#: rebuilds from. A snapshot the model cannot validate is not read; the reader replays from the log.
 checkpoints = Table(
     "starpulse_checkpoints",
     metadata,
     Column("name", String, primary_key=True),
     Column("position", Integer, nullable=False),
-    Column("schema_version", Integer, nullable=False),
     Column("state", JSON(none_as_null=True), nullable=True),
     Column("saved_at", Float, nullable=False),
 )
@@ -203,21 +201,6 @@ analytics_answers = Table(
     Column("status", Integer, nullable=False),
     Column("folded_at", Float, nullable=False),
     Index("ix_starpulse_answers_folded_at", "folded_at"),
-)
-
-#: Dead: nothing writes or reads it since the folds advance at ingest. It stays declared because the release before
-#: this one still reads it; the next release drops it.
-signals = Table(
-    "starpulse_signals",
-    metadata,
-    Column("key", String, primary_key=True),
-    Column("harness", String, nullable=False),
-    Column("session", String, nullable=False),
-    Column("time", Float, nullable=False),
-    Column("kind", String, nullable=False),
-    Column("fields", JSON, nullable=False),
-    Index("ix_starpulse_signals_time", "time"),
-    Index("ix_starpulse_signals_session", "harness", "session", "time"),
 )
 
 #: One view's fold of one harness session, as plain JSON: the persisted result the analytics views combine, and no

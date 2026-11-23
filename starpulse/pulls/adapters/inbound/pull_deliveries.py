@@ -31,7 +31,7 @@ from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail, o
 from starpulse.pulls.adapters.outbound.pull_reads import READ_EVENTS, PullReads, refresh
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 
-__all__ = ["CONSUMER", "READS", "URGENT", "apply", "consume", "consume_reads", "start"]
+__all__ = ["CONSUMER", "HANDLED", "READS", "URGENT", "apply", "consume", "consume_reads", "start"]
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +120,10 @@ _ACTIONS: dict[str, tuple[Delta, ...]] = {
     "dequeued": (_queued(False),),
 }
 
+#: The deliveries the consumer holds a row for: a `push` (its force push), each fact event and each `pull_request` action
+#: with a row of `_ACTIONS`. Any other has nothing to apply, so it gets no row and no write.
+HANDLED: tuple[str | tuple[str, str], ...] = ("push", *FACTS, *(("pull_request", action) for action in _ACTIONS))
+
 
 def _outdated(record: Record, pull: Mapping[str, Any]) -> bool:
     """Whether a listing snapshot says open for a record closed or merged at or after the snapshot's own `updated_at`."""
@@ -194,42 +198,47 @@ def consume(
     merged: Callable[[float], None] | None = None,
     checked: Callable[[], None] | None = None,
 ) -> None:
-    """Apply each delivery due now once, then return: a delivery that applies or has no row is done, one that cannot be
-    read is retried and then dead. An `URGENT` delivery's write is handed to `merged` with the time it was received,
-    before its refresh reads and the next delivery. A finished checks run on the default branch calls `checked`. A
-    `READ_EVENTS` delivery makes no read here (`consume_reads` does); `apply` writes only its force push."""
-    for entry in queue.claim():
-        delivery = entry.delivery
-        delivery_id = delivery.delivery_id
-        urgent = (delivery.event, delivery.action) in URGENT
-        handover = partial(merged, entry.received_at) if merged is not None and urgent else None
-        try:
-            if checked is not None and _main_checked(delivery):
-                checked()
-                queue.complete(delivery_id)
+    """Apply each delivery due now once, then return: a delivery that applies is done, one that writes nothing is skipped,
+    one that cannot be read is retried and then dead, and the pass records the done and skipped in one transaction. An
+    `URGENT` delivery's write is handed to `merged` with the time it was received, before its refresh reads and the next
+    delivery. A finished checks run on the default branch calls `checked`. A `READ_EVENTS` delivery makes no read here
+    (`consume_reads` does); `apply` writes only its force push."""
+    entries = queue.claim()
+    with queue.batch():
+        for entry in entries:
+            delivery = entry.delivery
+            delivery_id = delivery.delivery_id
+            urgent = (delivery.event, delivery.action) in URGENT
+            handover = partial(merged, entry.received_at) if merged is not None and urgent else None
+            try:
+                if checked is not None and _main_checked(delivery):
+                    checked()
+                    queue.complete(delivery_id)
+                    continue
+                wrote = apply(store, delivery, clock(), reads, handover)
+            except Exception:
+                logger.exception("github pulls: %s", delivery_id)
+                queue.fail(delivery_id, "consumer error")
                 continue
-            wrote = apply(store, delivery, clock(), reads, handover)
-        except Exception:
-            logger.exception("github pulls: %s", delivery_id)
-            queue.fail(delivery_id, "consumer error")
-            continue
-        if wrote:
-            queue.complete(delivery_id)
-        else:
-            queue.skip(delivery_id, "no-field")
+            if wrote:
+                queue.complete(delivery_id)
+            else:
+                queue.skip(delivery_id, "no-field")
 
 
 def consume_reads(queue: Queue, store: PullStore, reads: PullReads, clock: Callable[[], float] = time.time) -> None:
     """Make the reads each `READ_EVENTS` delivery due now names, once, then return: one GitHub refuses is retried and
     then dead."""
-    for entry in queue.claim():
-        try:
-            refresh(store, reads, entry.delivery, clock())
-        except Exception:
-            logger.exception("github pull reads: %s", entry.delivery.delivery_id)
-            queue.fail(entry.delivery.delivery_id, "consumer error")
-        else:
-            queue.complete(entry.delivery.delivery_id)
+    entries = queue.claim()
+    with queue.batch():
+        for entry in entries:
+            try:
+                refresh(store, reads, entry.delivery, clock())
+            except Exception:
+                logger.exception("github pull reads: %s", entry.delivery.delivery_id)
+                queue.fail(entry.delivery.delivery_id, "consumer error")
+            else:
+                queue.complete(entry.delivery.delivery_id)
 
 
 def start(
@@ -263,7 +272,7 @@ def start(
         return PullReads(connect_client(lambda: os.environ.get(token_env or ""), app_jwt), SqlCursors(engine))
 
     reads = connected() if token_env else None
-    queue = SqlQueue(engine, CONSUMER, urgent=URGENT)
+    queue = SqlQueue(engine, CONSUMER, urgent=URGENT, only=HANDLED)
     thread("github pulls", queue, lambda: consume(queue, store, reads=reads, merged=merged, checked=checked))
     if reads is not None:
         reading, own = SqlQueue(engine, READS, only=READ_EVENTS), connected()

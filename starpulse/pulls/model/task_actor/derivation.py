@@ -710,9 +710,10 @@ def started_work(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     )
 
 
-def by_claim(fact: Callable[[TaskFacts, Agent], Any], *, claimed: bool) -> Callable[[TaskFacts, Agent], Any]:
-    """`fact` for the tasks a session claimed or for the rest, so a claimed task never falls through to Ready."""
-    return lambda facts, agent: fact(facts, agent) if bool(agent["assignee"]) == claimed else None
+def by_start(fact: Callable[[TaskFacts, Agent], Any], *, started: bool) -> Callable[[TaskFacts, Agent], Any]:
+    """`fact` for the tasks that ever entered In Progress or for the rest, so started work never falls through to Ready
+    when its session ended and cleared the claim."""
+    return lambda facts, agent: fact(facts, agent) if facts.started(agent["id"]) == started else None
 
 
 #: Each fact kind a lane's `waits` name, and the function that answers it.
@@ -735,12 +736,12 @@ FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "wait_requested": wait_requested,
     "ask_requested": ask_requested,
     "archive_requested": archive_requested,
-    "deps_done": by_claim(deps_done, claimed=False),
+    "deps_done": by_start(deps_done, started=False),
     "deps_done_with_pr": deps_done_with_pr,
-    "deps_done_started": by_claim(deps_done, claimed=True),
-    "criteria_met_started": by_claim(criteria_met, claimed=True),
+    "deps_done_started": by_start(deps_done, started=True),
+    "criteria_met_started": by_start(criteria_met, started=True),
     "deps_unresolved": deps_unresolved,
-    "criteria_met": by_claim(criteria_met, claimed=False),
+    "criteria_met": by_start(criteria_met, started=False),
     "owner_stale": owner_stale,
     "overdue": overdue,
 }

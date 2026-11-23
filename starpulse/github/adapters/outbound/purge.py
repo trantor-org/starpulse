@@ -2,7 +2,8 @@
 
 Past `RETENTION` a delivery no consumer has pending leaves the live inbox, archived first when a dead row still names
 it (`restore` brings it back for a `requeue`). A delivery every consumer skipped keeps no body once `SKIP_GRACE` has
-let a slow consumer seed it, except for the events a reader or the reconcile reads back.
+let a slow consumer seed it, except for the events a reader or the reconcile reads back. A delivery no consumer holds a row
+for (one none handles) counts as skipped once a consumer holds a row at or past it.
 """
 
 import base64
@@ -36,6 +37,19 @@ def _has(*status: str):  # noqa: ANN202
     return exists().where(and_(named, state.status.in_(status)) if status else named)
 
 
+def _newest_held():  # noqa: ANN202
+    """The newest inbox id some consumer holds a row for: a consumer seeds only past its own newest row, so a rowless
+    delivery at or below it was seen and is not owed a body."""
+    other = inbox.alias()
+    return (
+        select(other.c.id)
+        .where(exists().where(state.delivery_id == other.c.delivery_id))
+        .order_by(other.c.id.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+
+
 def purge(engine: Engine, archive: Path, clock: Callable[[], float]) -> None:
     """Empty the bodies every consumer skipped, then delete the deliveries past `RETENTION` that none has pending.
 
@@ -47,8 +61,8 @@ def purge(engine: Engine, archive: Path, clock: Callable[[], float]) -> None:
         inbox.c.received_at < now - SKIP_GRACE,
         inbox.c.event.not_in(_READ),
         func.length(inbox.c.body) > 0,
-        _has(),
         ~exists().where(state.delivery_id == inbox.c.delivery_id, state.status != "skipped"),
+        inbox.c.id <= _newest_held(),
     )
     old = and_(inbox.c.received_at < now - RETENTION, ~_has("pending"), inbox.c.id < select(func.max(inbox.c.id)).scalar_subquery())
     last = 0
