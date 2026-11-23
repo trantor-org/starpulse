@@ -1,6 +1,6 @@
 """StarPulse's tables that more than one module reads or writes, in one metadata with the history's own.
 
-The event log (`event_log`) and the history store (`history`) share a database and the `starpulse_gaps` table, so
+The event log (`event_log`) and the history store (`history`) share a database, so
 the tables they share are declared here, where neither module has to import the other.
 """
 
@@ -205,9 +205,8 @@ analytics_answers = Table(
     Index("ix_starpulse_answers_folded_at", "folded_at"),
 )
 
-#: The harness-telemetry signals, one row per signal key: an insert of a present key changes nothing, and `rowid` (the
-#: table's implicit one) orders the rows as they landed. `fields` is the signal's stored fields as JSON; the columns
-#: beside it are the ones a read filters or orders by. The hourly prune deletes rows whose `time` is past the keep window.
+#: Dead: nothing writes or reads it since the folds advance at ingest. It stays declared because the release before
+#: this one still reads it; the next release drops it.
 signals = Table(
     "starpulse_signals",
     metadata,
@@ -221,11 +220,11 @@ signals = Table(
     Index("ix_starpulse_signals_session", "harness", "session", "time"),
 )
 
-#: One view's fold of one harness session, as plain JSON: the persisted result the analytics views combine. A session's
-#: rows are folded together, `folded_through` being the highest `starpulse_signals` rowid they read. `basis` is dead,
-#: written as empty: the `signals` family's stamp replaced it and the baseline squash drops the column. `first_at` and
-#: `last_at` are the times of the session's first and last signal; the hourly prune deletes rows whose `last_at` is
-#: past the keep window.
+#: One view's fold of one harness session, as plain JSON: the persisted result the analytics views combine, and no
+#: signal behind it. A session has a `ledger` row (the state its next export folds from), the `steps`, `cost` and
+#: `spend` results, and the skill-cost worker's `counted` row. `folded_through` is the revision of the write that made
+#: the row, taken from the `signal_folds_revision` setting. `basis` is dead, written as empty: the baseline squash drops
+#: the column. `first_at` and `last_at` are the times of the session's first and last signal.
 signal_folds = Table(
     "starpulse_signal_folds",
     metadata,

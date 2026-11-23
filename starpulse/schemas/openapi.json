@@ -930,118 +930,6 @@
         }
       }
     },
-    "/api/task-diff/{id}": {
-      "get": {
-        "summary": "One task's diff",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "get_api_task_diff_id",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "hours",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskDiff"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/WindowTooLong"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/task-cost-to-go/{id}": {
-      "get": {
-        "summary": "One task's cost to go",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "get_api_task_cost_to_go_id",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "hours",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskCostToGo"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/WindowTooLong"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/task/{id}": {
       "get": {
         "summary": "One task",
@@ -2556,129 +2444,6 @@
         }
       }
     },
-    "/api/machine-events": {
-      "post": {
-        "summary": "Ingest CloudEvents",
-        "tags": [
-          "ingest"
-        ],
-        "operationId": "post_api_machine_events",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/cloudevents-batch+json": {
-              "schema": {
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Accepted"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/temporal-completion": {
-      "post": {
-        "summary": "Ingest a Temporal completion",
-        "tags": [
-          "ingest"
-        ],
-        "operationId": "post_api_temporal_completion",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Accepted"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/webhook": {
-      "post": {
-        "summary": "Ingest a GitHub webhook",
-        "tags": [
-          "ingest"
-        ],
-        "operationId": "post_api_webhook",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Accepted"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/scheduler": {
       "get": {
         "summary": "The scheduler's state",
@@ -2872,6 +2637,88 @@
         }
       }
     },
+    "/intake/grafana": {
+      "post": {
+        "summary": "Ingest a Grafana alert",
+        "tags": [
+          "ingest"
+        ],
+        "operationId": "post_intake_grafana",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/intake/temporal-completion": {
+      "post": {
+        "summary": "Ingest a Temporal completion",
+        "tags": [
+          "ingest"
+        ],
+        "operationId": "post_intake_temporal_completion",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/swagger": {
       "get": {
         "summary": "The Swagger page of this document",
@@ -3057,22 +2904,6 @@
           "steps"
         ],
         "title": "ActiveRun",
-        "type": "object"
-      },
-      "ActivityCount": {
-        "properties": {
-          "activity": {
-            "type": "string"
-          },
-          "count": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "activity",
-          "count"
-        ],
-        "title": "ActivityCount",
         "type": "object"
       },
       "ApiError": {
@@ -8527,87 +8358,6 @@
         "title": "RuleBreak",
         "type": "object"
       },
-      "RunDiff": {
-        "description": "One transition's reference run against its slowest clean run.",
-        "properties": {
-          "kind": {
-            "type": "string"
-          },
-          "size": {
-            "type": "integer"
-          },
-          "skill": {
-            "type": "string"
-          },
-          "runs": {
-            "description": "Clean completions of the transition.",
-            "type": "integer"
-          },
-          "conformant": {
-            "description": "Of `runs`, those that conform to the skill's machine.",
-            "type": "integer"
-          },
-          "reference": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunRef"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The fewest-step conformant clean run; None when `conformant` is 0."
-          },
-          "slow": {
-            "$ref": "#/components/schemas/RunRef",
-            "description": "The most-step clean run."
-          },
-          "slow_only": {
-            "description": "Activities the slow run made more often than the reference.",
-            "items": {
-              "$ref": "#/components/schemas/ActivityCount"
-            },
-            "type": "array"
-          },
-          "reference_only": {
-            "description": "Activities the reference made more often than the slow run.",
-            "items": {
-              "$ref": "#/components/schemas/ActivityCount"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "kind",
-          "size",
-          "skill",
-          "runs",
-          "conformant",
-          "reference",
-          "slow",
-          "slow_only",
-          "reference_only"
-        ],
-        "title": "RunDiff",
-        "type": "object"
-      },
-      "RunRef": {
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "steps": {
-            "description": "Model requests, a subagent's included.",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "task",
-          "steps"
-        ],
-        "title": "RunRef",
-        "type": "object"
-      },
       "RunStarted": {
         "properties": {
           "runId": {
@@ -9999,42 +9749,6 @@
         "title": "Started",
         "type": "object"
       },
-      "StateCost": {
-        "description": "One skill-machine state's expected cost-to-go within a kind and size.",
-        "properties": {
-          "kind": {
-            "type": "string"
-          },
-          "size": {
-            "type": "integer"
-          },
-          "skill": {
-            "type": "string"
-          },
-          "state": {
-            "description": "A stage of the skill's machine, or `[start]` before its first.",
-            "type": "string"
-          },
-          "n": {
-            "description": "The times the state was seen left in the clean completed runs.",
-            "type": "integer"
-          },
-          "cost_to_go": {
-            "description": "The expected agent steps from a run's first step in the state until the run ends.",
-            "type": "number"
-          }
-        },
-        "required": [
-          "kind",
-          "size",
-          "skill",
-          "state",
-          "n",
-          "cost_to_go"
-        ],
-        "title": "StateCost",
-        "type": "object"
-      },
       "Step": {
         "additionalProperties": false,
         "description": "One step of a DAG in its latest run.",
@@ -10252,56 +9966,6 @@
         "title": "TakenOver",
         "type": "object"
       },
-      "TaskCostToGo": {
-        "description": "`GET /api/task-cost-to-go/{id}`: the task's kind and size, and the rows `CostToGo` holds for them; no kind or size, no rows.",
-        "properties": {
-          "now": {
-            "type": "number"
-          },
-          "window_s": {
-            "type": "number"
-          },
-          "cost_to_go": {
-            "items": {
-              "$ref": "#/components/schemas/StateCost"
-            },
-            "type": "array"
-          },
-          "task": {
-            "type": "string"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "now",
-          "window_s",
-          "cost_to_go",
-          "task",
-          "kind",
-          "size"
-        ],
-        "title": "TaskCostToGo",
-        "type": "object"
-      },
       "TaskCriterion": {
         "description": "One acceptance criterion of a Board task and whether it is checked.",
         "properties": {
@@ -10364,56 +10028,6 @@
           "settled"
         ],
         "title": "TaskDelta",
-        "type": "object"
-      },
-      "TaskDiff": {
-        "description": "`GET /api/task-diff/{id}`: the task's kind and size, and the rows `RunDiffs` holds for them; no kind or size, no rows.",
-        "properties": {
-          "now": {
-            "type": "number"
-          },
-          "window_s": {
-            "type": "number"
-          },
-          "diff": {
-            "items": {
-              "$ref": "#/components/schemas/RunDiff"
-            },
-            "type": "array"
-          },
-          "task": {
-            "type": "string"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "now",
-          "window_s",
-          "diff",
-          "task",
-          "kind",
-          "size"
-        ],
-        "title": "TaskDiff",
         "type": "object"
       },
       "TaskEventHistory": {

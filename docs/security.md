@@ -6,7 +6,7 @@ another site cannot write through your browser. `/api/move` is unauthenticated o
 agent's accident, not an adversary.
 
 The Claude Code receiver publishes which session moved, on which event and when; prompt, reply and tool text is
-never stored. For session health it also keeps, per Claude Code event, only counts, durations,
+never stored. For the session folds it also keeps, per Claude Code event, only counts, durations,
 token counts, a model, effort, tool, skill or decision name, the branch, and the ref a shell `git switch` or
 `git checkout` names, and for each tool call the activity it performed (a leading command name such as `git status`
 or `ssh root@nas-host`, never its arguments) and the file path a file tool read or wrote; it never reads a prompt, a

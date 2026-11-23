@@ -1,6 +1,6 @@
 """The CloudEvents ingest over gRPC: `starpulse.v1.CloudEventsIngest`, `Publish` and `PublishBatch`.
 
-The same ingest as `POST /api/machine-events`, bound to the CloudEvents protobuf format (`io.cloudevents.v1`) and served
+The same ingest as the Connect one, bound to the CloudEvents protobuf format (`io.cloudevents.v1`) and served
 by a Connect-style ASGI handler on the page's port, so `grpc-status` travels in HTTP/2 trailers. The producer's token is
 the `authorization` metadata (`Bearer <token>`); the checks and the append are `CloudEventsIngest.write`'s, so an HTTP
 status it answers is the gRPC code of the same refusal.

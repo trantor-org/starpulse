@@ -1,6 +1,6 @@
 """How long the history recorder's oldest unrecorded entry of each stream has waited, for `/metrics`.
 
-The recorder (`record_machine_events` and its two siblings) copies the log into the history store and saves a cursor
+The recorder (`record_machine_events`) copies the log into the history store and saves a cursor
 with each row. A recorder that stopped leaves its cursor behind the log's newest entry of the stream and every
 history-derived answer (`starpulse task trace`, the qa guard) empty, with nothing else failing; this gauge is the
 one place the gap shows.
@@ -13,12 +13,12 @@ from collections.abc import Callable
 from prometheus_client import CollectorRegistry, Gauge, generate_latest
 from sqlalchemy import func, select
 
-from starpulse.event_log import events, verdict_events
+from starpulse.event_log import events
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import events as log_entries
 
-STREAMS = (events.STREAM, verdict_events.STREAM)
+STREAMS = (events.STREAM,)
 
 logger = logging.getLogger(__name__)
 

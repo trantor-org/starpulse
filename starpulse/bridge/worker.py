@@ -2,8 +2,9 @@
 keeps each session's consumer on the subjects of the task it holds, applying `subscribe` and `unsubscribe` too
 (`bridge.requests`).
 
-It resumes from its own checkpoint (`bridge:nats`), saved after each acknowledged entry; a first start begins at the
-newest entry. A down server only delays an entry: the publish is retried until it lands.
+It resumes from its own checkpoint (`bridge:nats`), saved once per batch of acknowledged entries: a write per entry
+queued behind the log's other writers and held the tail minutes behind under load. A crash replays at most one batch,
+which the stream's message ids and the idempotent subscriber absorb. A first start begins at the newest entry. A down server only delays an entry: the publish is retried until it lands.
 """
 
 import logging
@@ -75,6 +76,7 @@ def run(
     """Publish and subscribe until `stop` is set; `woke` runs after each entry, when a session's consumer may have news."""
 
     published = Published(log)
+    handled = 0
 
     def handle(entry: Entry) -> None:
         if subject := subject_for(board, entry):
@@ -91,14 +93,20 @@ def run(
         except BadRequestError as exc:  # the server refuses this subscription for good; retrying only stalls the tail
             logger.error("bridge: entry %s subscription is refused and skipped: %s", entry.id, exc)
         woke()
-        log.checkpoints.save(CHECKPOINT, entry.id)
+        nonlocal handled
+        handled = entry.id
+
+    def keep() -> None:
+        published.keep()
+        if handled:
+            log.checkpoints.save(CHECKPOINT, handled)
 
     try:
         started, position = _await_start_position(log, stop)
         if started:
             _reconcile(subscriber, stop)
             Tail(log, "bridge", after=position, streams=STREAMS).run(
-                handle, stop, transient=(Unavailable,), after_batch=published.keep
+                handle, stop, transient=(Unavailable,), after_batch=keep
             )
     finally:
         publisher.close()

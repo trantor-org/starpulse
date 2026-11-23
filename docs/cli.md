@@ -426,9 +426,9 @@ names into `DIR` as `starpulse-<local time>.db`, proves it with `PRAGMA integrit
 (default 14). It prints one JSON line with the copy's path, `integrity` and the `kept` count, and exits 2 for a store that
 is not SQLite, which its own backup tool owns. The read lock is held only for the copy, so `serve` keeps answering.
 
-## Signals in the history database
+## Session folds in the history database
 
-The adapters write each harness signal into `starpulse_signals` in the history database, once per key, so a replayed export adds no row. `SignalFolds` folds the table per session into `starpulse_signal_folds` from a rowid cursor in the settings, and the hourly prune of the event log deletes the rows of both tables older than 8 days. No verb fills or reads them: the analytics and trace routes read the fold rows.
+The adapters send each harness signal to the server, which folds it into the session's `ledger`, `spend`, `steps` and `cost` rows in `starpulse_signal_folds` and keeps no signal row. No verb fills or reads them: the sessions sink and `GET /api/task-spend/{id}` read the fold rows, and no prune deletes them.
 
 ## Reloading a running serve
 

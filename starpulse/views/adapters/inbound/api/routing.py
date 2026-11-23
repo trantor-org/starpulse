@@ -1,6 +1,6 @@
 """What every `/api` module is handed, and the modules in the order their routes match.
 
-`api_routes` is the routes under `/api`; `metrics.routes` is the one route that is not.
+`api_routes` is the routes under `/api`; `metrics.routes` and `intake.routes` are the ones that are not.
 """
 
 import time
@@ -53,10 +53,12 @@ class Api:
     page_gauge: Callable[[], str] | None = None
     pull_reads: PullReads = field(init=False)  # made with the seams: it hears the store's saves from the start
     slow_reads: SlowReads = field(init=False)
+    scrape_reads: SlowReads = field(init=False)
 
     def __post_init__(self) -> None:
         self.pull_reads = PullReads(self.services.pulls, self.feed.cited, lambda: self.snapshots.stored("pulls")[1])
         self.slow_reads = SlowReads("/api/pulls", self.services.slow_read_s)
+        self.scrape_reads = SlowReads("/metrics", self.services.slow_read_s)
 
     @cached_property
     def streams(self) -> Streams:

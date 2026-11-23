@@ -10,7 +10,7 @@ Schema under `starpulse/schemas/`. Unknown fields are an error, so a misspelt on
 
 | Contract | Record | Written to |
 |---|---|---|
-| `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds), optionally `source` and `data` (set by a producer posting through `POST /api/machine-events`, see docs/sources.md) | the CloudEvents ingest, `POST /api/machine-events`; an adapter in the server process appends to `machine:events` |
+| `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds), optionally `source` and `data` (set by a producer sending through `starpulse event emit` or Connect, see docs/sources.md) | the CloudEvents ingest; an adapter in the server process appends to `machine:events` |
 | `runs` | `Dag`: `name`, `status`, `runId`, `startedAt`, `finishedAt`, `steps` | a runs adapter's `RunsSink`, or a Step CloudEvent posted to the ingest |
 
 Pick the contract first: a hook that says a task moved is machine events, a scheduler is runs. The board is not a
@@ -31,7 +31,7 @@ Done when every kit check passes against records your adapter actually produced.
 
 ## Post machine events and runs to the ingest
 
-The ingest, `POST /api/machine-events`, is the one write path for machine events and for runs, from a cron line, a systemd
+The ingest (`starpulse event emit`, or Connect and gRPC `starpulse.v1.CloudEventsIngest`) is the one write path for machine events and for runs, from a cron line, a systemd
 unit, a CI job or a scheduler hook. It needs no Redis and no access to the database. Declare the producer in the server's
 config, with its token in the environment (docs/serving.md):
 
@@ -43,22 +43,19 @@ machines = ["delivery"]      # the machines it may write; a run-only producer le
 actors = ["ci"]
 ```
 
-Post one CloudEvent, `Content-Type: application/cloudevents+json`, or a JSON list as `application/cloudevents-batch+json`,
-with `Authorization: Bearer $CI_BOT_TOKEN`. A machine event carries `machine`, `type` (the event), `actor` and exactly one
+Send one CloudEvent, or a batch of up to 200, with the producer's bearer token. A machine event carries `machine`, `type` (the event), `actor` and exactly one
 of `subject` (the task) or `run`. A run is a Step event: `type` `StepStarted` or `StepFinished`, `subject` the run's id,
 and `data` holding `workflow`, `status` (`not_started`, `queued`, `running`, `succeeded`, `failed`, `aborted` or `skipped`),
 and for a step's entry `step` with `depends` naming the steps it waits on. The run is drawn as `pushed/<source>/<workflow>`.
-A producer that speaks Connect or gRPC calls `starpulse.v1.CloudEventsIngest` `Publish` or `PublishBatch` on the same port, the token in `authorization` metadata and the event as `io.cloudevents.v1.CloudEvent` (docs/sources.md, Over Connect).
+A producer that speaks Connect or gRPC calls `starpulse.v1.CloudEventsIngest` `Publish` or `PublishBatch` on the server's port, the token in `authorization` metadata and the event as `io.cloudevents.v1.CloudEvent` (docs/sources.md, Over Connect).
 
 ```sh
-curl -fsS -X POST "$STARPULSE_URL/api/machine-events" -H "Authorization: Bearer $CI_BOT_TOKEN" \
-  -H 'Content-Type: application/cloudevents+json' \
-  -d '{"specversion":"1.0","id":"r1-start","source":"ci-bot","type":"StepStarted","subject":"r1",
-       "data":{"workflow":"nightly","status":"running"}}'
+starpulse event emit --source ci-bot --type StepStarted --subject r1 --token-env CI_BOT_TOKEN \
+  --data workflow=nightly --data status=running
 ```
 
-201 means the entry is in the event log; a repeated `id` from one source is written once. 4xx means the event was
-refused and nothing was written: 401 for a missing or wrong token, 403 for another producer's `source`, machine or actor,
+Exit 0 means the stream holds the event; a repeated `id` from one source is written once. Over Connect a refusal writes
+nothing: 401 for a missing or wrong token, 403 for another producer's `source`, machine or actor,
 400 for an event its machine does not declare or a malformed one, 413 for an oversize body. 503 means the database is
 unreachable, so retry. A missing entry never means the run failed.
 

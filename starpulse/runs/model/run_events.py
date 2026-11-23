@@ -1,6 +1,6 @@
 """The runs stream contract: one entry when a workflow run or one of its steps starts or ends.
 
-The CloudEvents ingest writes it (`POST /api/machine-events`), so a workflow needs no adapter to be seen.
+The CloudEvents ingest writes it, so a workflow needs no adapter to be seen.
 Emission is fail-open (`EventLog.publish` never raises): a missing entry means the emit failed,
 never that the run did not happen.
 

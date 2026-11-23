@@ -286,7 +286,8 @@ class TaskActor:
     pin-bump rule (`unblock.PinGate`): a dependency in a pinned repository is merged on the parent's pin bump.
     `judge` is what the board's rules say of a move (`Board.judge`): the board writer lets every move of the actor
     land, so the actor reads a refusal there first and skips a move the rules hold back.
-    `latest` says whether an event subject's last event already happened (None: none has), and `holds` the reasons the board withholds a task's `deps_done` (`Board.holds`). `read` is the
+    `latest` says whether an event subject's last event already happened (None: none has), `accounts` is the subject
+    prefix of the alert that fires while every Claude account is full (None: room is never lacking), and `holds` the reasons the board withholds a task's `deps_done` (`Board.holds`). `read` is the
     board's task reader (`Board.read`).
     `unfinished` is the work a task whose pull requests merged still has (`Board.unfinished`). `main_green` is the SHA of main's latest passed Validate (None: none passed, or no source),
     and `owner_source` the `source` prefix of the tasks that pass closes while nothing waits on them (empty: none).
@@ -307,6 +308,7 @@ class TaskActor:
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         latest: Callable[[str], bool] | None = None,
+        accounts: str | None = None,
         unpublished: Callable[[str], str | None] = lambda _subject: None,
         holds: Callable[[str], Sequence[str]] = _no_holds,
         parked: Callable[[str], None] = _ignore,
@@ -371,6 +373,9 @@ class TaskActor:
         self._releasable: set[str] = set()
         self._dates: dict[str, tuple[str, ...]] = {}
         self._latest = latest
+        self._accounts = accounts
+        #: The dispatches held back while no account has room, each task's latest session, pinned on the room event.
+        self._roomless: dict[str, str] = {}
         self._unpublished = unpublished
         self._publisher: dict[str, tuple[str | None, float]] = {}
         self._holds = holds
@@ -844,7 +849,13 @@ class TaskActor:
         self._heard.pop(name, None)
 
     def event_seen(self, subject: str) -> None:
-        """Derive the Waiting tasks parked on `subject` again: the first event on a subject they wait on releases them."""
+        """Derive the Waiting tasks parked on `subject` again: the first event on a subject they wait on releases them,
+        and the room event pins the dispatches held back for want of an account."""
+        if self._accounts is not None and subject == f"{self._accounts}.resolved":
+            with self._lock:
+                held, self._roomless = self._roomless, {}
+            for name, session in held.items():
+                self.dispatched(name, session)
         with self._lock:
             names = sorted(self._until.get(subject, ()))
             for name in names:
@@ -1133,7 +1144,7 @@ class TaskActor:
 
     def _record(self, url: str) -> dict[str, Any] | None:
         record = pull_record(self._store, url)
-        if record and record["state"] == "OPEN" and record["mergeable"] == "CONFLICTING":
+        if record and record["state"] == "OPEN" and record["mergeable"] != "MERGEABLE":
             version = (record["headRefOid"], record["fetchedAt"])
             if self._settled.get(url, ((), None))[0] != version:
                 self._settled[url] = (version, self._mergeable(record["repo"], record["number"]))
@@ -1497,6 +1508,10 @@ class TaskActor:
         from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a session is named
 
         with self._lock:
+            if self._accounts is not None and self._latest is not None and self._latest(f"{self._accounts}.firing"):
+                self._roomless[name] = session
+                return
+            self._roomless.pop(name, None)
             agent = self._feed.task(name, lean=True)
             roles = self._feed.roles
             if agent is None or not session or agent["state"] not in (roles.ready, roles.attention, roles.working):
@@ -1523,6 +1538,8 @@ class TaskActor:
         from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a session is named
 
         with self._lock:
+            if self._roomless.get(name) == session:
+                del self._roomless[name]
             holder = str((self._read(name) or {}).get("assignee") or "")
             if not same_holder(holder, session):
                 return

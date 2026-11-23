@@ -251,7 +251,7 @@ class MachineEvent(_Contract):
 
 
 class CloudEvent(BaseModel):
-    """One CloudEvents 1.0 structured event, as a producer builds it and the ingest (`POST /api/machine-events`) reads it.
+    """One CloudEvents 1.0 structured event, as a producer builds it and the ingest reads it.
 
     `subject` is the task a machine event moves, or the run id of a Step event; `machine`, `actor` and `run` are the
     ingest's extensions. An attribute the spec lets a producer add beyond these is ignored.

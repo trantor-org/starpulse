@@ -55,6 +55,8 @@ HEAD_BYTES = 16 * 1024
 TAIL_BYTES = 64 * 1024
 MISS_TTL_S = 30.0
 """How long a session with no transcript stays unlooked-for: each lookup globs every transcript-project directory."""
+SNAPSHOT_TTL_S = 1.0
+"""How long the session records read for one lookup serve the next: one wake's holder lookups share one read."""
 _BRIDGES: dict[tuple[Path, str], tuple[float, frozenset[str]]] = {}
 _PATHS: dict[tuple[Path, str], Path] = {}
 _MISSES: dict[tuple[Path, str], float] = {}
@@ -188,6 +190,7 @@ def _running(record: dict[str, Any]) -> bool:
 
 
 _PARSED: dict[Path, tuple[tuple[int, int], Any]] = {}
+_SNAPSHOTS: dict[Path, tuple[float, list[dict[str, Any]]]] = {}
 
 
 def _parsed(entry: Path) -> Any:
@@ -209,16 +212,23 @@ def _parsed(entry: Path) -> Any:
     return data
 
 
-def _running_records(sessions: Path, match: Callable[[dict[str, Any]], bool]) -> Iterator[dict[str, Any]]:
-    """The records `match` accepts whose process runs: liveness costs a process lookup, so it is read only for a match."""
+def _records(sessions: Path) -> list[dict[str, Any]]:
+    """The parsed records of `sessions`, listed and stat-ed once per `SNAPSHOT_TTL_S`: one wake's holder lookups share a read."""
+    taken = _SNAPSHOTS.get(sessions)
+    if taken is not None and _clock() - taken[0] < SNAPSHOT_TTL_S:
+        return taken[1]
     entries = sorted(sessions.glob("*.json"))
     present = set(entries)
     for gone in [path for path in _PARSED if path.parent == sessions and path not in present]:
         del _PARSED[gone]
-    for entry in entries:
-        data = _parsed(entry)
-        if isinstance(data, dict) and match(data) and _running(data):
-            yield data
+    records = [data for data in map(_parsed, entries) if isinstance(data, dict)]
+    _SNAPSHOTS[sessions] = (_clock(), records)
+    return records
+
+
+def _running_records(sessions: Path, match: Callable[[dict[str, Any]], bool]) -> Iterator[dict[str, Any]]:
+    """The records `match` accepts whose process runs: liveness costs a process lookup, so it is read only for a match."""
+    return (record for record in _records(sessions) if match(record) and _running(record))
 
 
 def _record_of(sessions: Path, session: str) -> dict[str, Any] | None:

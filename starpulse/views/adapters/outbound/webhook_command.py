@@ -1,4 +1,4 @@
-"""The command a `POST /api/webhook` hands its body to."""
+"""The command a `POST /intake/grafana` hands its body to."""
 
 import hmac
 import subprocess

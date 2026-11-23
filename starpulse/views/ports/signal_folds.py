@@ -1,18 +1,12 @@
 """The fold rows the analytics routes read, as the queries and `Services` see them."""
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from typing import Any, Protocol
-
-from starpulse.contracts.signals import Signal
 
 
 class SignalFoldReader(Protocol):
-    """What `SignalFolds` gives the routes: the oldest signal's time, a window's fold rows, the step rows of a page of it and a window's sessions."""
+    """What `SignalFolds` gives the routes: the oldest folded signal's time and a window's fold rows."""
 
     def window(self, since: float, views: Iterable[str] = ...) -> dict[str, list[Any]]: ...
 
-    def step_window(self, since: float, after: float | None, wanted: int) -> dict[str, list[Any]]: ...
-
     def oldest(self) -> float | None: ...
-
-    def sessions(self, since: float = 0.0) -> Iterator[list[Signal]]: ...

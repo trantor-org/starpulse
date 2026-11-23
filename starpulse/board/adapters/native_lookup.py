@@ -41,15 +41,19 @@ def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed
 
     A file named for the id is checked first; any other is parsed only when its raw front matter has an `id:` line
     spelling the id, so a lookup parses the file it returns rather than every file on the board. The file found last
-    time is tried before the folders are listed; one that was renamed, moved or rewritten for another task is a miss.
+    time, then the same name in each other folder (a completed task's file moves with its name), is tried before the
+    folders are listed; one that was renamed or rewritten for another task is a miss.
     A miss on folders unchanged since the last miss reads nothing.
     A file named for the id is first looked for in the folders as last listed; a miss there lists them again, so a
     file added or renamed since is found, and the others are only ever checked against a fresh listing.
     """
     key = (root, task.casefold(), folders)
     spelled = _id_line(task)
-    if (path := _FOUND.get(key)) is not None and _has_id(path, task, spelled, False):
-        return path
+    if (path := _FOUND.get(key)) is not None:
+        for kept in (path, *(root / folder / path.name for folder in folders)):
+            if _has_id(kept, task, spelled, False):
+                _FOUND[key] = kept
+                return kept
     stamps = _stamps(root, folders)
     if _MISSED.get(key) == stamps:
         return None

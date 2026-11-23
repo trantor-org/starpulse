@@ -65,8 +65,8 @@ CONTEXT_ENTRIES = (
     "starpulse.sessions.adapters.outbound.session_start",
     "starpulse.sessions.adapters.outbound.wake_metrics",
     "starpulse.views.model.encoding",
-    "starpulse.flow_metrics.adapters.completion_steps",
-    "starpulse.views.adapters.outbound.signal_folds",  # `contexts` imports it late; its fold code sets every fold basis
+    "starpulse.flow_metrics.adapters.outbound.session_ledger",
+    "starpulse.views.adapters.outbound.signal_folds",  # `contexts` imports it late
     _ADAPTER_ENTRY,
 )
 
@@ -143,6 +143,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "ci": _owned_by("contexts"),
     "sequences": _owned_by("contexts"),
     "awaits": _owned_by("contexts"),
+    "account_room_alert": _owned_by("contexts"),
     "scheduler": _owned_by("contexts"),
     "level": _owned_by(),
     "session_start_url": _owned_by("contexts"),

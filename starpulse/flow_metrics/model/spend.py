@@ -1,6 +1,6 @@
 """The spend report: per task and phase, the tokens a task burned and what they weigh against the task's cell.
 
-A phase is a task's stretch of steps (`steps.session_owned`, a subagent's counted to its task). A step under
+A phase is a task's stretch of steps (`ledger.spend_of`, a subagent's counted to its task). A step under
 `qa`, `deliver` or `review-fix` (`cr-triage` too) is that phase. A step before the session's first naming signal bills to no task. Every other step is `claim` until the step that
 carries the task's claim, or the first step that edits a file when no claim is in the window, and `implement` after
 it, over all the task's sessions in the window; a task with no edit and no claim in the window is all `implement`.
@@ -21,59 +21,21 @@ the session's; a row of subagent steps alone takes its first step's.
 from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from math import inf
 from statistics import median
 from typing import Any
 
-from starpulse.contracts.adapters import TaskKeys
-from starpulse.contracts.analytics import Analytics
-from starpulse.contracts.signals import Signal
 from starpulse.flow_metrics.model.cells import MIN_N, cell_of, profile_of
-from starpulse.flow_metrics.model.session_health import attributed, by_session, session_signals
-from starpulse.flow_metrics.model.steps import Owned, session_owned
 
-__all__ = ["FLAG_RATIO", "combine_spend", "fold_spend", "spend_report"]
+__all__ = ["FLAG_RATIO", "combine_spend"]
 
 #: How many times its cell's median a task's weighted tokens must reach to be flagged.
 FLAG_RATIO = 3
-_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
 _SKILL_PHASE = {"qa": "qa", "deliver": "deliver", "review-fix": "review_fix", "cr-triage": "review_fix"}
 _CLASSES = ("input", "output", "cache_read", "cache_write")
 
 
 def _wte(tokens: Mapping[str, int]) -> float:
     return tokens["input"] + 1.25 * tokens["cache_write"] + 0.1 * tokens["cache_read"] + 5 * tokens["output"]
-
-
-def _edits(owned: Owned) -> bool:
-    return any(call.kind == "tool" and call.name in _EDITS for call in owned.calls)
-
-
-def fold_spend(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> dict[str, Any]:
-    """The fold of one session's `signals`: its `harness` and `session`, its captured, non-auxiliary steps that belong
-    to a task, each with whether it `edits`, and each task's first claim time and compaction times, as plain JSON data `combine_spend` reads."""
-    ordered = session_signals(signals, keys, analytics) if signals else []
-    named = next((s.time for task, s in attributed(ordered, keys, backfill=False) if task), inf)
-    owned = [
-        {**o.step, "edits": _edits(o)}
-        for o in session_owned(signals, keys, analytics)
-        if o.step["captured"] and o.step["origin"] != "auxiliary" and o.step["task"] and o.step["at"] >= named
-    ]
-    compactions: dict[str, list[float]] = defaultdict(list)
-    claims: dict[str, float] = {}
-    for task, s in attributed(ordered, keys):
-        if task and s.kind == "compaction":
-            compactions[task].append(s.time)
-        elif task and s.kind == "claim":
-            claims.setdefault(task, s.time)
-    first = signals[0] if signals else None
-    return {
-        "harness": first.harness if first else "",
-        "session": first.session if first else "",
-        "steps": owned,
-        "claims": claims,
-        "compactions": dict(compactions),
-    }
 
 
 def _phase(step: Mapping[str, Any], editing: bool) -> str:
@@ -118,19 +80,8 @@ def _row(task: str, phase: str) -> dict[str, Any]:
     }
 
 
-def spend_report(
-    found: Iterable[Signal],
-    keys: TaskKeys | None,
-    tasks: Mapping[str, Mapping[str, Any]],
-    analytics: Analytics | None = None,
-) -> list[dict[str, Any]]:
-    """One row per (task, phase) of the steps of `found`, by task then the phase's first step; see the module
-    docstring."""
-    return combine_spend((fold_spend(group, keys, analytics) for group in by_session(found)), tasks)
-
-
 def combine_spend(folds: Iterable[Mapping[str, Any]], tasks: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """`spend_report` of the sessions whose `fold_spend` results `folds` holds, in the order the sessions are given."""
+    """the spend report of the sessions whose `ledger.spend_of` results `folds` holds, in the order the sessions are given."""
     held = list(folds)
     steps = sorted((step for fold in held for step in fold["steps"]), key=lambda step: step["at"])
     rows: dict[tuple[str, str], dict[str, Any]] = {}

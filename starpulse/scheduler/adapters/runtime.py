@@ -186,6 +186,7 @@ def build(
     merged: Callable[[Mapping[str, Any]], bool] = lambda agent: False,
     lane: str = "",
     transcript: Callable[[str], float | None] = lambda session: None,
+    end: Callable[[str], None] = lambda task: None,
 ) -> Runtime:
     """The switch kept in `log`'s store and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
 
@@ -246,5 +247,6 @@ def build(
             log=log,
             harness=harness,
             transcript=transcript,
+            end=end,
         )
     return Runtime(toggle, sampler, quiet_hours, harness, policy, session_caps, capacity_limits, loop, reading=feed.one_read)

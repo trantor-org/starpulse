@@ -23,7 +23,7 @@ class Backlogs:
             "pending_rows": "Deliveries a consumer has yet to finish",
             "oldest_due_seconds": "Seconds the oldest due pending delivery has waited",
             "dead_rows": "Deliveries a consumer gave up on, until requeued or dismissed",
-            "oldest_check_seconds": "Seconds since the oldest unfinished check_run, check_suite or status delivery was saved",
+            "oldest_check_seconds": "Seconds since the oldest unfinished check_run, check_suite or status delivery not ended no-task was saved",
         }
         gauges = [GaugeMetricFamily(f"starpulse_github_{name}", text, labels=["consumer"]) for name, text in help_of.items()]
         for consumer, backlog in self._backlogs().items():

@@ -401,7 +401,7 @@ class ConfigFile(_Table):
         description=(
             "How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the "
             "table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this "
-            "resumes at the oldest kept row and records the span it missed in `starpulse_gaps`. The `machine:events` "
+            "resumes at the oldest kept row. The `machine:events` "
             "stream is exempt: the prune never deletes it, because a read-model rebuild refolds every machine's tasks "
             "from it. On its first pass the sweeper also puts the archived rows of that stream back at their archived "
             "`id`, once. A whole number of days."
@@ -500,14 +500,14 @@ class ConfigFile(_Table):
         default=None,
         min_length=1,
         description=(
-            "The command `POST /api/webhook` runs, as an argv, with the request body on stdin once the bearer token "
+            "The command `POST /intake/grafana` runs, as an argv, with the request body on stdin once the bearer token "
             "`webhook_token_env` names matches. Exit 0: accepted (202). Any other exit or a timeout: 502 with the "
             "command's stderr, so the sender retries. 404 when this is unset. Needs `webhook_token_env`."
         ),
     )
     webhook_token_env: EnvName | None = Field(
         default=None,
-        description="The environment variable holding the bearer token `POST /api/webhook` requires; the value is the name, never the token.",
+        description="The environment variable holding the bearer token `POST /intake/grafana` requires; the value is the name, never the token.",
     )
     github_token_env: EnvName | None = Field(
         default=None,
@@ -533,7 +533,7 @@ class ConfigFile(_Table):
         default=[],
         description=(
             "A system that posts machine events as CloudEvents (see docs/sources.md, Post machine events as "
-            "CloudEvents). `POST /api/machine-events` and the Connect `starpulse.v1.CloudEventsIngest` answer 404 "
+            "CloudEvents). The Connect `starpulse.v1.CloudEventsIngest` answers 404 "
             "until one is declared. A producer writes only the machines and actors listed here."
         ),
     )
@@ -589,6 +589,13 @@ class ConfigFile(_Table):
         description=(
             "The lifecycle machines whose unfinished placement of a task ends in an event, so a session that settles "
             "meanwhile is not resumed: a link's lens in the phase it runs, or a machine with no link until it ends."
+        ),
+    )
+    account_room_alert: str | None = Field(
+        default=None,
+        description=(
+            "The name of the alert that fires while no account has room to start a session. The task actor holds a "
+            "dispatch while that alert's latest event is `firing` and pins it on `resolved`; unset, it never holds one."
         ),
     )
     claude_code: dict[str, Any] | None = Field(

@@ -5,7 +5,7 @@
 the `runs` contract's `Dag` records: a running execution is an `ActiveRun` with the activity it is on, that activity's
 attempt and the failure its last attempt ended in; a closed one is a `RecentRun`, and a failed one carries the activity
 it failed on, that activity's attempt and the failure. A closed execution never changes, so its history is read once.
-`read` feeds the sweeper's `runs` kind; a start reaches the page as a `StepStarted` event its starter posts, a close as a completion callback (`POST /api/temporal-completion`), and each asks `follow` to list the server again. `start` is None, so a workflow
+`read` feeds the sweeper's `runs` kind; a start reaches the page as a `StepStarted` event its starter posts, a close as a completion callback (`POST /intake/temporal-completion`), and each asks `follow` to list the server again. `start` is None, so a workflow
 has no Run now: these workflows start from the Board's lifecycle, not from the page.
 """
 

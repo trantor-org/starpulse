@@ -14,11 +14,7 @@ from starpulse.board.model.seam import (
 )
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
-from starpulse.contracts.api.registry import BODIES
-from starpulse.flow_metrics.model.cells import cell_of
-from starpulse.flow_metrics.model.flow import combine_cost_to_go, combine_diff
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
-from starpulse.flow_metrics.model.session_health import combine_health
 from starpulse.flow_metrics.model.spend import combine_spend
 from starpulse.views.model.encoding import encode
 
@@ -265,13 +261,6 @@ def _history_s(oldest: float | None, now: float) -> float:
     return now - (now if oldest is None else oldest)
 
 
-#: The views each kind-and-size read combines; a read uses no other view's rows.
-_ROUTE_VIEWS = {
-    "diff": ("runs", "health"),
-    "cost_to_go": ("runs", "health"),
-}
-
-
 def _held_folds(
     telemetry: SignalFoldReader,
     window: float,
@@ -294,31 +283,8 @@ def _held_folds(
         logger.warning("%s: signal table unreadable: %s", label, exc)
         return _error("the telemetry log cannot be read"), 503
     if held is None:
-        body = {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}
-        return (encode(kind, body) if kind in BODIES else json.dumps(body).encode()), 400
+        return encode(kind, {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
     return held
-
-
-def _kind_size_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    now: float,
-    label: str,
-    report: Callable[[dict[str, list[Any]], float], list[dict[str, Any]]],
-) -> tuple[bytes, int]:
-    """The body and status for a report by kind and size of the signals from the last `hours` (default 168
-    each) as of `now`, keyed `label`: `{now, window_s, <label>: report(folds, since)}`, `since` the start of the
-    last `hours`. An instance that receives no harness telemetry is 501, a log that cannot be read 503, and a window
-    longer than the telemetry history 400 with `history_s`."""
-    window = _hours(query, "hours", _WINDOW_HOURS)
-    if window is None:
-        return _error("hours must be a positive number"), 400
-    if telemetry is None:
-        return _error(f"this instance receives no harness telemetry, so it cannot report {label}"), 501
-    held = _held_folds(telemetry, window, label, now, label, _ROUTE_VIEWS[label])
-    if isinstance(held, tuple):
-        return held
-    return encode(label, {"now": now, "window_s": window * 3600, label: report(held, now - window * 3600)}), 200
 
 
 def spend_response(
@@ -352,59 +318,3 @@ def task_spend_response(week: tuple[bytes, int], task: str) -> tuple[bytes, int]
     report = json.loads(body)
     rows = [row for row in report["spend"] if row["task"] == task]
     return encode("taskSpend", {"task": task, "now": report["now"], "window_s": report["window_s"], "spend": rows}), 200
-
-
-def _cohort_response(
-    week: tuple[bytes, int], task: str, titled: Callable[[], Mapping[str, Mapping[str, Any]]], label: str, contract: str
-) -> tuple[bytes, int]:
-    raw, status = week
-    if status != 200:
-        return week
-    report = json.loads(raw)
-    cell = cell_of(titled(), task)
-    rows = [row for row in report[label] if cell == (row["kind"], row["size"])]
-    kind, size = cell or (None, None)
-    answer = {"task": task, "kind": kind, "size": size, "now": report["now"], "window_s": report["window_s"], label: rows}
-    return encode(contract, answer), 200
-
-
-def task_diff_response(week: tuple[bytes, int], task: str, titled: Callable[[], Mapping[str, Mapping[str, Any]]]) -> tuple[bytes, int]:
-    """The body and status for `/api/task-diff/<task>`: the rows of the `week` answer `diff_response` gave for the
-    task's kind and size, none for a task without that label; a refusal passes through."""
-    return _cohort_response(week, task, titled, "diff", "taskDiff")
-
-
-def task_cost_to_go_response(week: tuple[bytes, int], task: str, titled: Callable[[], Mapping[str, Mapping[str, Any]]]) -> tuple[bytes, int]:
-    """The body and status for `/api/task-cost-to-go/<task>`: the rows of the `week` answer `cost_to_go_response`
-    gave for the task's kind and size, none for a task without that label; a refusal passes through."""
-    return _cohort_response(week, task, titled, "cost_to_go", "taskCostToGo")
-
-
-def diff_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    keys: TaskKeys | None,
-    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
-    now: float,
-    analytics: Analytics | None = None,
-) -> tuple[bytes, int]:
-    """The body and status for `diff_response`: each transition's reference run against its slowest clean run
-    (`flow.fast_slow_diff`) over the last `hours`; a window longer than the history is 400, no telemetry 501."""
-    return _kind_size_response(
-        telemetry, query, now, "diff", lambda held, _: combine_diff(held["runs"], combine_health(held["health"]), titled(), analytics)
-    )
-
-
-def cost_to_go_response(
-    telemetry: SignalFoldReader | None,
-    query: dict[str, list[str]],
-    keys: TaskKeys | None,
-    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
-    now: float,
-    analytics: Analytics | None = None,
-) -> tuple[bytes, int]:
-    """The body and status for `cost_to_go_response`: the expected agent steps to a run's end from each
-    skill-machine state (`flow.cost_to_go`) over the last `hours`; a window longer than the history is 400, no telemetry 501."""
-    return _kind_size_response(
-        telemetry, query, now, "cost_to_go", lambda held, _: combine_cost_to_go(held["runs"], combine_health(held["health"]), titled(), analytics)
-    )

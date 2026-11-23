@@ -43,6 +43,8 @@ LISTINGS_KEPT = 4
 LISTING_ROWS = 2000
 #: The most records a listing without bodies may hold and still be kept: a body is most of a record's size.
 BODILESS_ROWS = 10 * LISTING_ROWS
+#: The most records (or absences) of point lookups of what only the database holds that a store keeps.
+LOOKUPS_KEPT = 1000
 
 
 class PullStore:
@@ -74,6 +76,12 @@ class PullStore:
         #: a stream of distinct `?repo=` values never grows it.
         self._listed: dict[tuple[str | None, str | None, bool], list[dict[str, Any]]] = {}
         self._keep_listings = False
+        #: The answer of each point lookup (repository, number, bodies) of a record only the database holds, an empty
+        #: one for a record it lacks, once `keep_lookups` says every write reaches this store: a save or refresh holds
+        #: the record, which then shadows the answer, so a derivation that cites an old pull request reads it once, not
+        #: at every derivation. At most `LOOKUPS_KEPT`, the oldest dropped first.
+        self._keep_lookups = False
+        self._looked: dict[tuple[str, int, bool], list[dict[str, Any]]] = {}
         since = (datetime.now(UTC) - window).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._hold(
             select(pull_requests).where(or_(pull_requests.c.state == "OPEN", pull_requests.c.updated_at >= since))
@@ -203,6 +211,11 @@ class PullStore:
         every save another process makes (`refresh_on_save`): a store that does not would miss a row written since."""
         self._keep_listings = True
 
+    def keep_lookups(self) -> None:
+        """Keep the answer of each point lookup of a record only the database holds until the process ends, for the store
+        that makes every write (the pulls worker's): a store another process writes would miss a row saved since."""
+        self._keep_lookups = True
+
     def subscribe(self, listener: Callable[[], None]) -> None:
         """Call `listener` in the refreshing thread after each save or refresh, so an answer built from the store is
         ready before a reader asks for it."""
@@ -274,6 +287,13 @@ class PullStore:
         holds each record it changes. Only a read of `detail` pays to decode it."""
         listing = self._keep_listings and number is None and not needle and not detailed
         rows = self._listed.get((repo, state, bodies)) if listing else None
+        point = (
+            (repo, number, bodies)
+            if self._keep_lookups and repo and number is not None and state is None and not needle and not detailed
+            else None
+        )
+        if point and (looked := self._looked.get(point)) is not None:
+            return looked
         if rows is None:
             filters = {"repo": repo, "number": number, "state": state}
             columns = [
@@ -287,6 +307,11 @@ class PullStore:
             if needle:
                 query = query.where(pull_requests.c.body.contains(needle, autoescape=True))
             rows = self._read(query)
+            if point:
+                with self._lock:
+                    while len(self._looked) >= LOOKUPS_KEPT:
+                        del self._looked[next(iter(self._looked))]
+                    self._looked[point] = rows
             if listing and len(rows) <= (LISTING_ROWS if bodies else BODILESS_ROWS):
                 with self._lock:
                     while len(self._listed) >= LISTINGS_KEPT:

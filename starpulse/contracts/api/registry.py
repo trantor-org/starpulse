@@ -94,11 +94,7 @@ from starpulse.contracts.api.dto.snapshot import (
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import (
-    CostToGo,
-    RunDiffs,
     Spend,
-    TaskCostToGo,
-    TaskDiff,
     TaskSpend,
 )
 
@@ -132,8 +128,6 @@ RESPONSES: dict[str, Any] = {
     "/api/task/": TaskRecord,
     "/api/moves/": TaskMoves,
     "/api/task-spend/": TaskSpend,
-    "/api/task-diff/": TaskDiff,
-    "/api/task-cost-to-go/": TaskCostToGo,
     "/api/task-records": TaskRecords,
     "/api/milestones/": MilestoneShown,
     "/api/docs/": DocShown,
@@ -190,10 +184,6 @@ BODIES: dict[str, Any] = {
     "search": SearchResults | ApiError,
     "spend": Spend | ApiError | WindowTooLong,
     "taskSpend": TaskSpend | ApiError | WindowTooLong,
-    "taskDiff": TaskDiff | ApiError | WindowTooLong,
-    "taskCostToGo": TaskCostToGo | ApiError | WindowTooLong,
-    "diff": RunDiffs | ApiError | WindowTooLong,
-    "cost_to_go": CostToGo | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
     "harnesses": Harnesses,
     "window": WindowState | ApiError,
@@ -285,8 +275,6 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("PUT", "/api/history-window"): _write("Set the history window", "window", WindowRequest),
     ("DELETE", "/api/history-window"): _write("Reset the history window to its default", "window"),
     ("GET", "/api/task-spend/{id}"): _read("One task's spend", "taskSpend", "hours"),
-    ("GET", "/api/task-diff/{id}"): _read("One task's diff", "taskDiff", "hours"),
-    ("GET", "/api/task-cost-to-go/{id}"): _read("One task's cost to go", "taskCostToGo", "hours"),
     ("GET", "/api/task/{id}"): _read("One task", "task"),
     ("GET", "/api/moves/{id}"): _read("One task's moves", "moves"),
     ("GET", "/api/task-records"): _read("Task records, the ids named when given", "task_records", "ids"),
@@ -319,13 +307,12 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("PUT", "/api/docs"): _write("Create a doc", "doc_create", DocCreateRequest),
     ("POST", "/api/run/{name}"): _write("Run a workflow", "run"),
     ("POST", "/api/runs/{instance}/{workflow}/rerun"): _write("Rerun a workflow run", "run"),
-    ("POST", "/api/machine-events"): _write("Ingest CloudEvents", "ingest", "application/cloudevents-batch+json"),
-    ("POST", "/api/temporal-completion"): _write("Ingest a Temporal completion", "ingest", "application/json"),
-    ("POST", "/api/webhook"): _write("Ingest a GitHub webhook", "ingest", "application/json"),
     ("GET", "/api/scheduler"): _read("The scheduler's state", "scheduler"),
     ("PUT", "/api/scheduler"): _write("Switch the scheduler on or off", "scheduler", SchedulerRequest),
     ("GET", "/api/pulls"): _read("Pull requests", "pulls", "bodies", "body_contains", "number", "repo", "state", "task"),
     ("GET", "/api/openapi"): Op("This document"),
     ("GET", "/metrics"): _read("Prometheus metrics", media="text/plain"),
+    ("POST", "/intake/grafana"): _write("Ingest a Grafana alert", "ingest", "application/json"),
+    ("POST", "/intake/temporal-completion"): _write("Ingest a Temporal completion", "ingest", "application/json"),
     ("GET", "/swagger"): Op("The Swagger page of this document", media="text/html"),
 }
