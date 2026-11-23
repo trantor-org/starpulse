@@ -107,6 +107,8 @@ RECOVERY_FINISHED_METRIC = "starpulse_task_actor_recovery_finished"
 MERGED_WAITING_METRIC = "starpulse_task_actor_merged_review_waiting"
 DERIVE_METRIC = "starpulse_task_actor_derive_seconds"
 HOLDER_RESUME = "HOLDER_RESUME"
+#: The deliver states after its pull request opened.
+_DELIVERED = frozenset({"pr_opened", "ci_green", "pr_ready"})
 #: Resumes or revives a fault with no progress between gets before the next one moves the task to Needs attention.
 _ONE_TRY = 1
 #: Nudges an idle holder with an open criterion gets before the next idle moves its task to Needs attention.
@@ -1786,15 +1788,20 @@ class TaskActor:
 
     def _awaits(self, agent: dict[str, Any]) -> bool:
         """Whether an event ends the wait of a settled task: its open pull request's checks still pending (a CI pass,
-        fail or merge), or a pull request of its own the store holds no record of yet (the record landing), or an
-        unfinished placement in an awaited machine (`awaits`): a lens a link of the phase it is in runs, until its exit
-        state (a placement left while the task is in no such phase holds nothing), else a machine no link names, until
-        a final state."""
+        fail or merge), a pull request of its own the store holds no record of yet (the record landing), a task citing
+        none whose deliver machine opened its pull request (the cite or the record landing), or an unfinished
+        placement in an awaited machine (`awaits`): a lens a link of the phase it is in runs, until its exit state (a
+        placement left while the task is in no such phase holds nothing), else a machine no link names, until a final
+        state."""
         name = agent["id"]
-        for url in self._own_prs(agent):
+        own = self._own_prs(agent)
+        for url in own:
             state, *_, checks, _, _ = self._pull_state(url)
             if not state or state == "OPEN" and checks == "pending":  # no state: the pulls consumer lags the delivery
                 return True
+        delivery = self._feed.machine_task("deliver", name)
+        if not own and delivery and delivery["state"] in _DELIVERED:  # its cite and record lag
+            return True
         for machine in self._awaiting:
             placed = self._feed.machine_task(machine, name)
             if not placed:

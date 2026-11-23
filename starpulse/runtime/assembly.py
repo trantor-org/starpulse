@@ -6,7 +6,6 @@ import os
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
-from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Engine, create_engine
@@ -38,8 +37,6 @@ from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
 from starpulse.pulls.model.ci import CiError, attach
 from starpulse.scheduler.model.config import ACTOR as SCHEDULER_ACTOR
-from starpulse.runs.application.queries.reconcile import Reconcile
-from starpulse.runs.model.config import RunsInstance
 from starpulse.runtime import read_model_follow
 from starpulse.runtime.config import Config, ConfigError, runs_adapter
 from starpulse.sweeper.passes import Outcome, Step
@@ -246,30 +243,6 @@ def prune_steps(log: EventLog, config: Config, base: Path) -> list[Step]:
             logger.info("EventLog: pruned %d rows older than %d days", pruned, days)
 
     return [Step("event-log-prune", events)]
-
-
-class _RunsKind:
-    """The sweeper's `runs` kind: `Reconcile` over the followed instances' sources."""
-
-    name = "runs"
-
-    def __init__(self, reconcile: Reconcile) -> None:
-        self._reconcile = reconcile
-
-    def run(self) -> Outcome:
-        corrected, sampled = self._reconcile.run()
-        return Outcome(corrected, sampled)
-
-
-def runs_kind(log: EventLog, adapters: Sequence[tuple[RunsInstance, ModuleType]]) -> _RunsKind:
-    """The `runs` kind over each instance whose adapter module has a `read(url)`, which lists the instance's workflows
-    as the page draws them; the sweeper builds it here as it imports no context."""
-    sources = {
-        instance.name: functools.partial(adapter.read, instance.url)
-        for instance, adapter in adapters
-        if hasattr(adapter, "read")
-    }
-    return _RunsKind(Reconcile(log, sources))
 
 
 def stored_updates(store: PullStore) -> Callable[[str, int], str | None]:

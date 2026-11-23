@@ -184,7 +184,6 @@ def default_starters(
         github_kinds,
         own_pull_merged,
         prune_steps,
-        runs_kind,
         worker_board,
     )
     from starpulse.runtime.assembly import history_store as build_history_store
@@ -311,7 +310,7 @@ def default_starters(
             own,
             load=load,
             prune=prune_steps(log, config, base),
-            contexts=[runs_kind(log, adapters), *board_kinds(shared), *github_kinds(config, log)],
+            contexts=[*board_kinds(shared), *github_kinds(config, log)],
         )
 
     def bridge(own: threading.Event) -> Callable[[], None]:
