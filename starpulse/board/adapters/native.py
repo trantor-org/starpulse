@@ -21,7 +21,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -374,16 +374,23 @@ def _land(
     write_steps.step("guard")
     if audit or not judged.ok:
         return judged
-    if before is not None and path.read_text() != before:
-        return _STALE
-    try:
-        _commit(path, text, actor, created=before is None)
-    except StaleVersion:
-        return _STALE
     # Unique per write, so concurrent writers never share a scratch file; not a `.md` file, so a scan never reads it half written.
+    # Written before the History append, so a failed write leaves no History without its file; only the rename follows it.
     scratch = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
-    scratch.write_text(text)
-    os.replace(scratch, path)
+    try:
+        scratch.write_text(text)
+        # A create holds the board lock already; an update holds its folder's from the check to the rename, so no other
+        # process lands a write between them.
+        with _allocating(path.parent) if before is not None else nullcontext():
+            if before is not None and path.read_text() != before:
+                return _STALE
+            try:
+                _commit(path, text, actor, created=before is None)
+            except StaleVersion:
+                return _STALE
+            os.replace(scratch, path)
+    finally:
+        scratch.unlink(missing_ok=True)
     write_steps.step("land")
     return judged
 
@@ -869,7 +876,9 @@ def _editor(
         if audit:
             return written
         if status and lane_id(status) not in {done, COMPLETED}:
-            written = _reactivated(root, task, written, actor)  # a completed task edited out of Done leaves `completed/`
+            written = _reactivated(
+                root, task, written, actor
+            )  # a completed task edited out of Done leaves `completed/`
         return _moved(written, spelled.get(lane_id(status), status)) if status else written
 
     return edit

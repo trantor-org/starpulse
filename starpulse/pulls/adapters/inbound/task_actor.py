@@ -115,6 +115,8 @@ _NUDGES = 3
 _FAILED_RESUMES = 3
 #: Seconds between two progress lines of the start recovery.
 _PROGRESS_S = 30.0
+#: Seconds before a pull request GitHub could not yet answer for (`mergeable` gave None) is asked again.
+_MERGEABLE_RETRY_S = 30.0
 #: Seconds the exposition waits for the actor lock before it leaves out the series that need it.
 _LOCK_WAIT_S = 2.0
 #: Seconds the merged Review tasks count is kept, so a scrape loop never makes the scan over the open tasks a load.
@@ -333,8 +335,9 @@ class TaskActor:
         self._main_green = main_green
         #: GitHub's answer now whether a pull request merges; a push that clears a conflict sends no event for it.
         self._mergeable = mergeable
-        #: Per pull request, the stored record's version and what `mergeable` answered for it, so each is read once.
-        self._settled: dict[str, tuple[tuple[str, str], str | None]] = {}
+        #: Per pull request, the stored record's version, what `mergeable` answered for it and when: an answer is read once,
+        #: a None (GitHub still computing, or out of reach) again after `_MERGEABLE_RETRY_S`.
+        self._settled: dict[str, tuple[tuple[str, str], str | None, float]] = {}
         #: The pull request versions whose `mergeable` read is running off the lock, and the tries of each task's write the
         #: board refused as locked, whose next try waits off the lock.
         self._reading_pulls: set[tuple[str, tuple[str, str]]] = set()
@@ -708,7 +711,9 @@ class TaskActor:
                     if agent["state"] == self._feed.roles.working and self._awaits(agent):
                         self._memory.keep(agent["id"], awaited=True)
             for agent in tasks:
-                if agent["state"] == self._feed.roles.attention:  # found there: no lane event comes for a move made while down
+                if (
+                    agent["state"] == self._feed.roles.attention
+                ):  # found there: no lane event comes for a move made while down
                     self._revive_unheld(agent["id"])
             open_ids = {agent["id"] for agent in tasks}
             self._derived = {name: digest for name, digest in self._derived.items() if name in open_ids}
@@ -763,7 +768,10 @@ class TaskActor:
                 if stop is not None and stop.is_set():
                     break  # a stopped actor closes its notices: a move made after would miss its hook
                 self._yield()
-                with self._lock, self._feed.pinned_rows():  # the flag holds only under the lock, so no other thread's move reads it
+                with (
+                    self._lock,
+                    self._feed.pinned_rows(),
+                ):  # the flag holds only under the lock, so no other thread's move reads it
                     if stop is not None and stop.is_set():
                         break  # the stop came while this pass waited for the lock
                     if not self._unchanged(name):
@@ -1148,9 +1156,12 @@ class TaskActor:
         record = pull_record(self._store, url)
         if record and record["state"] == "OPEN" and record["mergeable"] != "MERGEABLE":
             version = (record["headRefOid"], record["fetchedAt"])
-            if (settled := self._settled.get(url, ((), None)))[0] != version:
+            settled = self._settled.get(url, ((), None, 0.0))
+            if settled[0] != version:
                 self._read_mergeable(url, version, record["repo"], record["number"])
                 return {**record, "mergeable": "UNKNOWN"}  # unsettled until the read hands its answer in
+            if settled[1] is None and self._clock() - settled[2] >= _MERGEABLE_RETRY_S:
+                self._read_mergeable(url, version, record["repo"], record["number"])
             if settled[1] == "MERGEABLE":
                 return {**record, "mergeable": "MERGEABLE"}
         return record
@@ -1174,7 +1185,7 @@ class TaskActor:
         try:
             with self._pressing(), self._lock:
                 self._reading_pulls.discard((url, version))
-                self._settled[url] = (version, answer)
+                self._settled[url] = (version, answer, self._clock())
                 self._pull_states[url] = self._pull_state(url)
                 self.touch(self._webhooks(sorted(self._by_pr.get(url, ())), "mergeable read"))
         except Exception:  # touch derives under the lock and may raise

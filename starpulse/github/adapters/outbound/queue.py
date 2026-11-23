@@ -11,7 +11,22 @@ from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager
 from typing import NamedTuple
 
-from sqlalchemy import Column, Float, Index, Integer, String, Table, and_, exists, func, literal, or_, select, true, update
+from sqlalchemy import (
+    Column,
+    Float,
+    Index,
+    Integer,
+    String,
+    Table,
+    and_,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    true,
+    update,
+)
 from sqlalchemy.engine import Engine
 
 from starpulse.github.adapters.outbound.inbox import INSERTS
@@ -109,6 +124,7 @@ class SqlQueue:
     ) -> None:
         self._engine, self._consumer, self._clock, self._backfill = engine, consumer, clock, backfill
         self._insert = INSERTS[engine.dialect.name]
+        self._sqlite = engine.dialect.name == "sqlite"
         self._seeded = 0  # the newest inbox id this queue has seeded: a claim looks only past it
         self._floor: int | None = None  # the newest inbox id the consumer holds a row for: a claim seeds only past it
         self._urgent = or_(*(and_(inbox.c.event == event, inbox.c.action == action) for event, action in urgent)) if urgent else None
@@ -129,18 +145,32 @@ class SqlQueue:
     def _set(self, delivery_id: str, *, only: str | None = None, **values: object) -> bool:
         where = self._mine(delivery_id) if only is None else and_(self._mine(delivery_id), state.status == only)
         with self._engine.begin() as db:
-            return db.execute(update(github_inbox_state).where(where).values(updated_at=self._clock(), **values)).rowcount == 1
+            return (
+                db.execute(update(github_inbox_state).where(where).values(updated_at=self._clock(), **values)).rowcount
+                == 1
+            )
 
     def _start(self, now: float) -> int:
         """The inbox id a claim seeds past: the newest delivery the consumer holds a row for, which is the newest delivery
         (or the newest `backfill`) for a consumer with no row: the empty inbox starts it at 0. Every older delivery was
-        seeded or never will be, and a walk from the oldest row after each restart held the lock for minutes."""
+        seeded or never will be, and a walk from the oldest row after each restart held the lock for minutes. A Postgres
+        sequence commits out of order, so there it is the oldest row: a lower id can still land after a higher one."""
+        newest_first = inbox.c.id.desc() if self._sqlite else inbox.c.id
         with self._engine.connect() as db:
-            floor = db.execute(select(inbox.c.id).where(self._held).order_by(inbox.c.id.desc()).limit(1)).scalar_one_or_none()
+            floor = db.execute(
+                select(inbox.c.id).where(self._held).order_by(newest_first).limit(1)
+            ).scalar_one_or_none()
         if floor is None and self._floor is None:
-            newest = select(inbox.c.id, inbox.c.delivery_id).order_by(inbox.c.id.desc()).limit(self._backfill or 1).subquery()
+            newest = (
+                select(inbox.c.id, inbox.c.delivery_id)
+                .order_by(inbox.c.id.desc())
+                .limit(self._backfill or 1)
+                .subquery()
+            )
             status = "pending" if self._backfill else "skipped"
-            head = select(newest.c.delivery_id, literal(self._consumer), literal(status), literal(0), literal(now), literal(now)).where(
+            head = select(
+                newest.c.delivery_id, literal(self._consumer), literal(status), literal(0), literal(now), literal(now)
+            ).where(
                 newest.c.id > 0  # SQLite reads `ON CONFLICT` after a bare `FROM` as a join
             )
             with self._engine.begin() as db:
@@ -155,7 +185,9 @@ class SqlQueue:
         due = (
             select(inbox, state.attempts)
             .join(github_inbox_state, state.delivery_id == inbox.c.delivery_id)
-            .where(state.consumer == self._consumer, state.status == "pending", state.next_attempt_at <= now, self._only)
+            .where(
+                state.consumer == self._consumer, state.status == "pending", state.next_attempt_at <= now, self._only
+            )
             .order_by(inbox.c.id)
             .limit(limit)
         )
@@ -163,19 +195,22 @@ class SqlQueue:
             seeded = db.execute(newest).scalar_one()
         # SQLite has one writer, so ids commit in order; a Postgres sequence does not, and always looks from the start.
         # An inbox that lost its newest rows reuses their ids.
-        sqlite_db = self._engine.dialect.name == "sqlite"
-        after = self._seeded if sqlite_db and self._seeded <= seeded else 0
+        after = self._seeded if self._sqlite and self._seeded <= seeded else 0
         after = max(after, self._start(now) if after == 0 else self._floor or 0)
         # A delivery older than `RETENTION` is never seeded: `purge` dropped its row once it was done, and a restart that
         # seeded it again replayed a week of deliveries ahead of the fresh ones.
         # A seed holds SQLite's one write lock while it scans: a first claim over a multi-GB inbox took over a minute and
         # dropped the listener's saves, so a window of ids is one transaction and the listener writes between windows.
-        window = _SEED_WINDOW if sqlite_db else max(seeded - after, 1)
+        window = _SEED_WINDOW if self._sqlite else max(seeded - after, 1)
         for start in range(after, seeded, window):
             unseen = select(
                 inbox.c.delivery_id, literal(self._consumer), literal("pending"), literal(0), literal(now), literal(now)
             ).where(
-                inbox.c.id > start, inbox.c.id <= min(start + window, seeded), inbox.c.received_at >= now - RETENTION, ~self._held, self._only
+                inbox.c.id > start,
+                inbox.c.id <= min(start + window, seeded),
+                inbox.c.received_at >= now - RETENTION,
+                ~self._held,
+                self._only,
             )
             with self._engine.begin() as db:
                 db.execute(self._insert(github_inbox_state).from_select(_SEED, unseen).on_conflict_do_nothing())
@@ -186,7 +221,9 @@ class SqlQueue:
         self._seeded = seeded
         return [
             Entry(
-                Delivery(row.delivery_id, row.event, row.action, row.repository, bytes(row.body)), row.attempts, row.received_at
+                Delivery(row.delivery_id, row.event, row.action, row.repository, bytes(row.body)),
+                row.attempts,
+                row.received_at,
             )
             for row in rows
         ]
@@ -195,7 +232,9 @@ class SqlQueue:
         """Seconds until the earliest pending delivery is due (0 when one is due now), or `None` with none pending."""
         with self._engine.connect() as db:
             earliest = db.execute(
-                select(func.min(state.next_attempt_at)).where(state.consumer == self._consumer, state.status == "pending")
+                select(func.min(state.next_attempt_at)).where(
+                    state.consumer == self._consumer, state.status == "pending"
+                )
             ).scalar_one()
         return None if earliest is None else max(0.0, earliest - self._clock())
 
@@ -236,7 +275,10 @@ class SqlQueue:
                 update(github_inbox_state)
                 .where(self._mine(delivery_id))
                 .values(
-                    status=status, attempts=spent, last_error=error, updated_at=self._clock(),
+                    status=status,
+                    attempts=spent,
+                    last_error=error,
+                    updated_at=self._clock(),
                     next_attempt_at=self._clock() + backoff(spent),
                 )  # fmt: skip
             )
@@ -248,10 +290,27 @@ class SqlQueue:
     def requeue(self, delivery_id: str) -> bool:
         """Make a dead row pending again with its attempts spent anew; `False` for a row that is not dead or whose body
         the purge archived (`restore` it first)."""
-        with self._engine.connect() as db:
-            if not db.execute(select(exists().where(inbox.c.delivery_id == delivery_id))).scalar_one():
-                return False
-        return self._set(delivery_id, only="dead", status="pending", attempts=0, next_attempt_at=self._clock(), last_error=None)
+        with (
+            self._engine.begin() as db
+        ):  # one statement, so a purge cannot take the body between the check and the move
+            return (
+                db.execute(
+                    update(github_inbox_state)
+                    .where(
+                        self._mine(delivery_id),
+                        state.status == "dead",
+                        exists().where(inbox.c.delivery_id == delivery_id),
+                    )
+                    .values(
+                        status="pending",
+                        attempts=0,
+                        next_attempt_at=self._clock(),
+                        last_error=None,
+                        updated_at=self._clock(),
+                    )
+                ).rowcount
+                == 1
+            )
 
     def dismiss(self, delivery_id: str) -> bool:
         """Skip a dead row for good, keeping its last error; `False` for a row that is not dead."""

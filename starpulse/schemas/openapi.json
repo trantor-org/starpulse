@@ -2685,16 +2685,32 @@
           "ingest"
         ],
         "operationId": "post_intake_temporal_completion",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              }
+        "parameters": [
+          {
+            "name": "workflow",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Nexus-Operation-State",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Nexus-Link",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
-        },
+        ],
         "responses": {
           "200": {
             "description": "The answer",
