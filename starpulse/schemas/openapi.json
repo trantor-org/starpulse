@@ -10,10 +10,55 @@
       "url": "/"
     }
   ],
+  "tags": [
+    {
+      "name": "tasks",
+      "description": "One task, its moves and spend, and every write that moves or edits tasks"
+    },
+    {
+      "name": "board",
+      "description": "The board snapshot, its flows, machines, harnesses and history"
+    },
+    {
+      "name": "streams",
+      "description": "Server-sent streams of the board, its columns and ledgers"
+    },
+    {
+      "name": "milestones",
+      "description": "Milestones"
+    },
+    {
+      "name": "docs",
+      "description": "Docs"
+    },
+    {
+      "name": "jobs",
+      "description": "Workflows, their runs and the scheduler"
+    },
+    {
+      "name": "ingest",
+      "description": "Events and webhooks that feed the board"
+    },
+    {
+      "name": "pulls",
+      "description": "Pull requests"
+    },
+    {
+      "name": "ops",
+      "description": "Health, metrics and the diagnostics of the server"
+    },
+    {
+      "name": "pages",
+      "description": "This document and its Swagger page"
+    }
+  ],
   "paths": {
     "/api/events": {
       "get": {
         "summary": "Stream the board: a snapshot, then each change",
+        "tags": [
+          "streams"
+        ],
         "operationId": "get_api_events",
         "parameters": [
           {
@@ -79,6 +124,9 @@
     "/api/held": {
       "get": {
         "summary": "Stream the columns with the tasks a session holds",
+        "tags": [
+          "streams"
+        ],
         "operationId": "get_api_held",
         "parameters": [
           {
@@ -107,6 +155,9 @@
     "/api/lanes": {
       "get": {
         "summary": "Stream the columns, only the states named when given",
+        "tags": [
+          "streams"
+        ],
         "operationId": "get_api_lanes",
         "parameters": [
           {
@@ -135,6 +186,9 @@
     "/api/events/body/{key}": {
       "get": {
         "summary": "A stored snapshot body by its key",
+        "tags": [
+          "streams"
+        ],
         "operationId": "get_api_events_body_key",
         "parameters": [
           {
@@ -173,6 +227,9 @@
     "/api/snapshot": {
       "get": {
         "summary": "The board snapshot",
+        "tags": [
+          "board"
+        ],
         "operationId": "get_api_snapshot",
         "parameters": [
           {
@@ -201,6 +258,9 @@
     "/api/flows": {
       "get": {
         "summary": "The flows of the board",
+        "tags": [
+          "board"
+        ],
         "operationId": "get_api_flows",
         "responses": {
           "200": {
@@ -219,6 +279,9 @@
     "/api/ledger/{rest}/events": {
       "get": {
         "summary": "Stream a ledger's rows as they land",
+        "tags": [
+          "streams"
+        ],
         "operationId": "get_api_ledger_rest_events",
         "parameters": [
           {
@@ -247,6 +310,9 @@
     "/api/ledger/{rest}": {
       "get": {
         "summary": "A page of a ledger",
+        "tags": [
+          "streams"
+        ],
         "operationId": "get_api_ledger_rest",
         "parameters": [
           {
@@ -301,6 +367,9 @@
     "/api/doctor": {
       "get": {
         "summary": "The contract report",
+        "tags": [
+          "ops"
+        ],
         "operationId": "get_api_doctor",
         "responses": {
           "200": {
@@ -319,6 +388,9 @@
     "/api/health": {
       "get": {
         "summary": "Whether the server is ready",
+        "tags": [
+          "ops"
+        ],
         "operationId": "get_api_health",
         "responses": {
           "200": {
@@ -337,6 +409,9 @@
     "/api/runs": {
       "get": {
         "summary": "The workflow runs",
+        "tags": [
+          "jobs"
+        ],
         "operationId": "get_api_runs",
         "responses": {
           "200": {
@@ -355,6 +430,9 @@
     "/api/machines": {
       "get": {
         "summary": "The machines and their lanes",
+        "tags": [
+          "board"
+        ],
         "operationId": "get_api_machines",
         "parameters": [
           {
@@ -417,6 +495,9 @@
     "/api/done": {
       "get": {
         "summary": "A page of finished tasks",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_done",
         "parameters": [
           {
@@ -463,6 +544,9 @@
     "/api/search": {
       "get": {
         "summary": "Search tasks",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_search",
         "parameters": [
           {
@@ -533,6 +617,9 @@
     "/api/search/similar": {
       "get": {
         "summary": "Tasks like a text",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_search_similar",
         "parameters": [
           {
@@ -603,6 +690,9 @@
     "/api/harnesses": {
       "get": {
         "summary": "The harnesses and their windows",
+        "tags": [
+          "board"
+        ],
         "operationId": "get_api_harnesses",
         "responses": {
           "200": {
@@ -621,6 +711,9 @@
     "/api/history": {
       "get": {
         "summary": "Lane, machine or task-event history",
+        "tags": [
+          "board"
+        ],
         "operationId": "get_api_history",
         "parameters": [
           {
@@ -685,6 +778,9 @@
     "/api/history-window": {
       "get": {
         "summary": "How many hours of history the store keeps",
+        "tags": [
+          "board"
+        ],
         "operationId": "get_api_history_window",
         "responses": {
           "200": {
@@ -711,6 +807,9 @@
       },
       "put": {
         "summary": "Set the history window",
+        "tags": [
+          "board"
+        ],
         "operationId": "put_api_history_window",
         "requestBody": {
           "required": true,
@@ -747,6 +846,9 @@
       },
       "delete": {
         "summary": "Reset the history window to its default",
+        "tags": [
+          "board"
+        ],
         "operationId": "delete_api_history_window",
         "responses": {
           "200": {
@@ -775,6 +877,9 @@
     "/api/task-spend/{id}": {
       "get": {
         "summary": "One task's spend",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_task_spend_id",
         "parameters": [
           {
@@ -828,6 +933,9 @@
     "/api/task-diff/{id}": {
       "get": {
         "summary": "One task's diff",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_task_diff_id",
         "parameters": [
           {
@@ -881,6 +989,9 @@
     "/api/task-cost-to-go/{id}": {
       "get": {
         "summary": "One task's cost to go",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_task_cost_to_go_id",
         "parameters": [
           {
@@ -934,6 +1045,9 @@
     "/api/task/{id}": {
       "get": {
         "summary": "One task",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_task_id",
         "parameters": [
           {
@@ -972,6 +1086,9 @@
     "/api/moves/{id}": {
       "get": {
         "summary": "One task's moves",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_moves_id",
         "parameters": [
           {
@@ -1010,6 +1127,9 @@
     "/api/task-records": {
       "get": {
         "summary": "Task records, the ids named when given",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_task_records",
         "parameters": [
           {
@@ -1038,6 +1158,9 @@
     "/api/retired": {
       "get": {
         "summary": "Retired tasks",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "get_api_retired",
         "parameters": [
           {
@@ -1108,6 +1231,9 @@
     "/api/move": {
       "post": {
         "summary": "Move tasks to a state",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_move",
         "requestBody": {
           "required": true,
@@ -1160,6 +1286,9 @@
     "/api/start": {
       "post": {
         "summary": "Start a session on a task",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_start",
         "requestBody": {
           "required": true,
@@ -1205,6 +1334,9 @@
     "/api/edit": {
       "post": {
         "summary": "Edit a task",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_edit",
         "requestBody": {
           "required": true,
@@ -1253,6 +1385,9 @@
     "/api/archive": {
       "post": {
         "summary": "Archive tasks",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_archive",
         "requestBody": {
           "required": true,
@@ -1305,6 +1440,9 @@
     "/api/verdict": {
       "post": {
         "summary": "Record a verdict",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_verdict",
         "requestBody": {
           "required": true,
@@ -1350,6 +1488,9 @@
     "/api/miss": {
       "post": {
         "summary": "Record a miss",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_miss",
         "requestBody": {
           "required": true,
@@ -1395,6 +1536,9 @@
     "/api/restore": {
       "post": {
         "summary": "Restore an archived task",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_restore",
         "requestBody": {
           "required": true,
@@ -1440,6 +1584,9 @@
     "/api/take-over": {
       "post": {
         "summary": "Take a session over",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_take_over",
         "requestBody": {
           "required": true,
@@ -1478,6 +1625,9 @@
     "/api/retire": {
       "post": {
         "summary": "Retire a task",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_retire",
         "requestBody": {
           "required": true,
@@ -1523,6 +1673,9 @@
     "/api/retired/import": {
       "post": {
         "summary": "Import retired tasks",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_retired_import",
         "requestBody": {
           "required": true,
@@ -1568,6 +1721,9 @@
     "/api/dispatch": {
       "post": {
         "summary": "Dispatch a session to a task",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_dispatch",
         "requestBody": {
           "required": true,
@@ -1606,6 +1762,9 @@
     "/api/park": {
       "post": {
         "summary": "Park a task",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_park",
         "requestBody": {
           "required": true,
@@ -1651,6 +1810,9 @@
     "/api/review": {
       "post": {
         "summary": "Record a review",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_review",
         "requestBody": {
           "required": true,
@@ -1696,6 +1858,9 @@
     "/api/complete": {
       "post": {
         "summary": "Complete a task",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_complete",
         "requestBody": {
           "required": true,
@@ -1741,6 +1906,9 @@
     "/api/reopen": {
       "post": {
         "summary": "Reopen a task",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_reopen",
         "requestBody": {
           "required": true,
@@ -1786,6 +1954,9 @@
     "/api/tasks": {
       "post": {
         "summary": "Create tasks",
+        "tags": [
+          "tasks"
+        ],
         "operationId": "post_api_tasks",
         "requestBody": {
           "required": true,
@@ -1838,6 +2009,9 @@
     "/api/milestones/{id}": {
       "get": {
         "summary": "One milestone, archived or open",
+        "tags": [
+          "milestones"
+        ],
         "operationId": "get_api_milestones_id",
         "parameters": [
           {
@@ -1874,6 +2048,9 @@
       },
       "put": {
         "summary": "Write a milestone over the revision named",
+        "tags": [
+          "milestones"
+        ],
         "operationId": "put_api_milestones_id",
         "parameters": [
           {
@@ -1927,6 +2104,9 @@
       },
       "delete": {
         "summary": "Archive a milestone",
+        "tags": [
+          "milestones"
+        ],
         "operationId": "delete_api_milestones_id",
         "parameters": [
           {
@@ -1972,6 +2152,9 @@
     "/api/milestones": {
       "post": {
         "summary": "The open milestones",
+        "tags": [
+          "milestones"
+        ],
         "operationId": "post_api_milestones",
         "requestBody": {
           "required": true,
@@ -2008,6 +2191,9 @@
       },
       "put": {
         "summary": "Create a milestone",
+        "tags": [
+          "milestones"
+        ],
         "operationId": "put_api_milestones",
         "requestBody": {
           "required": true,
@@ -2053,6 +2239,9 @@
     "/api/docs/{id}": {
       "get": {
         "summary": "One doc, archived or open",
+        "tags": [
+          "docs"
+        ],
         "operationId": "get_api_docs_id",
         "parameters": [
           {
@@ -2089,6 +2278,9 @@
       },
       "put": {
         "summary": "Write or restore a doc over the revision named",
+        "tags": [
+          "docs"
+        ],
         "operationId": "put_api_docs_id",
         "parameters": [
           {
@@ -2142,6 +2334,9 @@
       },
       "delete": {
         "summary": "Archive a doc",
+        "tags": [
+          "docs"
+        ],
         "operationId": "delete_api_docs_id",
         "parameters": [
           {
@@ -2187,6 +2382,9 @@
     "/api/docs": {
       "post": {
         "summary": "The docs named, without bodies",
+        "tags": [
+          "docs"
+        ],
         "operationId": "post_api_docs",
         "requestBody": {
           "required": true,
@@ -2223,6 +2421,9 @@
       },
       "put": {
         "summary": "Create a doc",
+        "tags": [
+          "docs"
+        ],
         "operationId": "put_api_docs",
         "requestBody": {
           "required": true,
@@ -2268,6 +2469,9 @@
     "/api/run/{name}": {
       "post": {
         "summary": "Run a workflow",
+        "tags": [
+          "jobs"
+        ],
         "operationId": "post_api_run_name",
         "parameters": [
           {
@@ -2306,6 +2510,9 @@
     "/api/runs/{instance}/{workflow}/rerun": {
       "post": {
         "summary": "Rerun a workflow run",
+        "tags": [
+          "jobs"
+        ],
         "operationId": "post_api_runs_instance_workflow_rerun",
         "parameters": [
           {
@@ -2352,6 +2559,9 @@
     "/api/machine-events": {
       "post": {
         "summary": "Ingest CloudEvents",
+        "tags": [
+          "ingest"
+        ],
         "operationId": "post_api_machine_events",
         "requestBody": {
           "required": true,
@@ -2390,6 +2600,9 @@
     "/api/temporal-completion": {
       "post": {
         "summary": "Ingest a Temporal completion",
+        "tags": [
+          "ingest"
+        ],
         "operationId": "post_api_temporal_completion",
         "requestBody": {
           "required": true,
@@ -2428,6 +2641,9 @@
     "/api/webhook": {
       "post": {
         "summary": "Ingest a GitHub webhook",
+        "tags": [
+          "ingest"
+        ],
         "operationId": "post_api_webhook",
         "requestBody": {
           "required": true,
@@ -2466,6 +2682,9 @@
     "/api/scheduler": {
       "get": {
         "summary": "The scheduler's state",
+        "tags": [
+          "jobs"
+        ],
         "operationId": "get_api_scheduler",
         "responses": {
           "200": {
@@ -2492,6 +2711,9 @@
       },
       "put": {
         "summary": "Switch the scheduler on or off",
+        "tags": [
+          "jobs"
+        ],
         "operationId": "put_api_scheduler",
         "requestBody": {
           "required": true,
@@ -2530,6 +2752,9 @@
     "/api/pulls": {
       "get": {
         "summary": "Pull requests",
+        "tags": [
+          "pulls"
+        ],
         "operationId": "get_api_pulls",
         "parameters": [
           {
@@ -2608,6 +2833,9 @@
     "/api/openapi": {
       "get": {
         "summary": "This document",
+        "tags": [
+          "pages"
+        ],
         "operationId": "get_api_openapi",
         "responses": {
           "200": {
@@ -2626,6 +2854,9 @@
     "/metrics": {
       "get": {
         "summary": "Prometheus metrics",
+        "tags": [
+          "ops"
+        ],
         "operationId": "get_metrics",
         "responses": {
           "200": {
@@ -2644,6 +2875,9 @@
     "/swagger": {
       "get": {
         "summary": "The Swagger page of this document",
+        "tags": [
+          "pages"
+        ],
         "operationId": "get_swagger",
         "responses": {
           "200": {

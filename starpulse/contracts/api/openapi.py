@@ -69,6 +69,43 @@ def _answers(op: Op) -> dict[str, Any]:
     return answers
 
 
+#: The tag of each route by the first segment of its path after `/api`, and what the tag groups.
+TAGS = {
+    "tasks": "One task, its moves and spend, and every write that moves or edits tasks",
+    "board": "The board snapshot, its flows, machines, harnesses and history",
+    "streams": "Server-sent streams of the board, its columns and ledgers",
+    "milestones": "Milestones",
+    "docs": "Docs",
+    "jobs": "Workflows, their runs and the scheduler",
+    "ingest": "Events and webhooks that feed the board",
+    "pulls": "Pull requests",
+    "ops": "Health, metrics and the diagnostics of the server",
+    "pages": "This document and its Swagger page",
+}
+_SEGMENT_TAG = {
+    **dict.fromkeys(
+        "task task-spend task-diff task-cost-to-go tasks task-records moves move start edit archive verdict rating "
+        "miss restore take-over retire retired dispatch park review complete reopen done search".split(),
+        "tasks",
+    ),
+    **dict.fromkeys("snapshot flows machines harnesses history history-window".split(), "board"),
+    **dict.fromkeys("events held lanes ledger".split(), "streams"),
+    **dict.fromkeys("run runs scheduler".split(), "jobs"),
+    **dict.fromkeys("machine-events temporal-completion webhook".split(), "ingest"),
+    **dict.fromkeys("doctor health".split(), "ops"),
+    "milestones": "milestones",
+    "docs": "docs",
+    "pulls": "pulls",
+    "openapi": "pages",
+    "swagger": "pages",
+    "metrics": "ops",
+}
+
+
+def _tag(path: str) -> str:
+    return _SEGMENT_TAG[path.split("/")[2 if path.startswith("/api/") else 1]]
+
+
 def _operation(method: str, path: str, op: Op) -> dict[str, Any]:
     names = re.findall(r"\{(\w+)\}", path)
     parameters = [{"name": n, "in": "path", "required": True, "schema": {"type": "string"}} for n in names] + [
@@ -76,6 +113,7 @@ def _operation(method: str, path: str, op: Op) -> dict[str, Any]:
     ]
     operation: dict[str, Any] = {
         "summary": op.summary,
+        "tags": [_tag(path)],
         "operationId": f"{method.lower()}_{re.sub(r'\W+', '_', path).strip('_')}",
     }
     if parameters:
@@ -105,6 +143,7 @@ def _document() -> dict[str, Any]:
         "openapi": "3.1.0",
         "info": {"title": "StarPulse API", "version": "1", "description": "Every route `starpulse serve` answers."},
         "servers": [{"url": "/"}],
+        "tags": [{"name": name, "description": text} for name, text in TAGS.items()],
         "paths": paths,
         "components": {"schemas": schemas},
     }

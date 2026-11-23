@@ -9,13 +9,14 @@ from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute
 
 _SWAGGER = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.35.1"
 
-#: The page holds nothing but the viewer's pinned scripts, which the browser checks against their hashes.
+#: The page holds the viewer's pinned scripts, which the browser checks against their hashes, and one rule that clears the grey boxes.
 PAGE = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <title>StarPulse API</title>
 <link rel="stylesheet" href="{_SWAGGER}/swagger-ui.css" integrity="sha384-WlYgdmXYOOBWL5apwjDEZwN+U3HmXSSu5R6V5aGxEcf7z+KuRNwBhoxKVN1i3D5I" crossorigin="anonymous">
+<style>.swagger-ui section.models .json-schema-2020-12, .swagger-ui section.models .json-schema-2020-12 button {{ background: none; }}</style>
 </head>
 <body>
 <div id="swagger-ui"></div>

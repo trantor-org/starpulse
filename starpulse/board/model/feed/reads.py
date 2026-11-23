@@ -26,14 +26,42 @@ class ReadMethods:
         entry is replaced, never changed in place.
         """
         key, row = self._found(task_id)
-        return self._read_model_agent(key, lean, row)
+        return None if row is None else self._read_model_agent(key, lean, row)
+
+    def _row(self, key: str) -> Mapping[str, Any] | None:
+        """The read model's row of `key`: within this thread's `pinned_rows`, the one it loaded first, a miss included."""
+        if (held := getattr(self._rows, "held", None)) is None:
+            return self._read_model.task(key)
+        rows = held[1]
+        if key not in rows:
+            rows[key] = self._read_model.task(key)
+        return rows[key]
+
+    @contextmanager
+    def pinned_rows(self) -> Iterator[None]:
+        """Within the block this thread loads each task's row from the read model once, for a pass that asks for the same
+        rows again and again. `repin` drops them when the read model moved, so a row is never older than the position
+        the pass last saw."""
+        if getattr(self._rows, "held", None) is not None:
+            yield
+            return
+        self._rows.held = (self._read_model.position(), {})
+        try:
+            yield
+        finally:
+            self._rows.held = None
+
+    def repin(self) -> None:
+        """Within `pinned_rows`, forget the rows held when the read model has moved since they were loaded."""
+        if (held := getattr(self._rows, "held", None)) is not None and held[0] != (position := self._read_model.position()):
+            self._rows.held = (position, {})
 
     def _found(self, task_id: str) -> tuple[str, Mapping[str, Any] | None]:
         """The key the read model holds `task_id` under, with its row: its own key, else the id it was renamed to. A
         task renamed on disk keeps its old row until its stream is rewritten, so both spellings must find it; an archived
         row yields to the live row the id was renamed to."""
         candidates = (task_id, self._aliases.get(task_id))
-        rows = {key: self._read_model.task(key) for key in candidates if key}
+        rows = {key: self._row(key) for key in candidates if key}
         held = [key for key, row in rows.items() if row is not None]
         live = [key for key in held if not rows[key]["archived"]]
         key = next(iter(live or held), task_id)
@@ -87,7 +115,7 @@ class ReadMethods:
     def held(self, task_id: str) -> dict | None:
         """The open Board task as `task` has it, or a settled Done one, which a reopen reaches."""
         key, row = self._found(task_id)
-        return self._read_model_agent(key, row=row, settled_done=True)
+        return None if row is None else self._read_model_agent(key, row=row, settled_done=True)
 
     def current_id(self, task_id: str) -> str:
         """The id the task answers to now: `task_id` itself unless a rename gave the task another."""

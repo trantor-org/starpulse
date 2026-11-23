@@ -90,7 +90,8 @@ The page's types are generated from those models: after changing one, run `uv ru
 difference, and runs `redocly lint` on the OpenAPI document (rules in `starpulse/web/redocly.yaml`).
 A route is declared once in `ROUTES` in `starpulse/contracts/api/registry.py`, with its summary, query names and DTOs; the OpenAPI
 document is built from that table, and `tests/unit/contracts/test_openapi.py` fails when the document, the registry and the
-routes the app mounts disagree.
+routes the app mounts disagree. Each route takes one tag from the first segment of its path (`TAGS` and `_tag` in
+`starpulse/contracts/api/openapi.py`); a route whose segment has no tag fails the build, so add the segment there.
 [`bench/`](benchmarks.md) holds the instance event-log benchmark, the page-latency harness that times every
 request and page surface against the 50 ms budget, and a Locust load test that holds that budget under many viewers.
 

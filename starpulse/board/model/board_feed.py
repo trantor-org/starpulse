@@ -104,6 +104,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._read_model = read_model
         #: The `open_tasks` list this thread's `one_read` built, None outside one.
         self._pinned = threading.local()
+        #: The `(read model position, rows by key)` this thread's `pinned_rows` holds, None outside one.
+        self._rows = threading.local()
         #: The list `open_tasks` last built, with the read model position and local day it was built at: a call that finds
         #: both unchanged answers from it, since no task row differs.
         self._built: tuple[tuple[int, float], list[dict]] | None = None

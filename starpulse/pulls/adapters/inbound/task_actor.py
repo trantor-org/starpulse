@@ -756,7 +756,7 @@ class TaskActor:
                 if stop is not None and stop.is_set():
                     break  # a stopped actor closes its notices: a move made after would miss its hook
                 self._yield()
-                with self._lock:  # the flag holds only under the lock, so no other thread's move reads it
+                with self._lock, self._feed.pinned_rows():  # the flag holds only under the lock, so no other thread's move reads it
                     if stop is not None and stop.is_set():
                         break  # the stop came while this pass waited for the lock
                     if not self._unchanged(name):
@@ -1184,7 +1184,8 @@ class TaskActor:
             return any((record := self._record(url)) and record["state"] == "MERGED" for url in urls)
 
         names = sorted({each.task for each in events}, key=lambda name: (not merged(name), name))
-        return {name for name in names if self._derive(name, observed)}
+        with self._feed.pinned_rows():
+            return {name for name in names if self._derive(name, observed)}
 
     @staticmethod
     def _webhooks(names: Iterable[str], cause: str) -> list[TaskTouched]:
@@ -1197,6 +1198,7 @@ class TaskActor:
     def _derive(self, name: str, observed: float) -> bool:
         """Derive the task's waits, time the derivation, and note the facts it settled on for the checkpoint. Say whether
         it moved the task to another lane."""
+        self._feed.repin()
         agent = self._feed.task(name, lean=True)
         if agent is None or (name in self._seen and self._seen[name][0] != agent["state"]):
             return False  # a lane change not yet handled: its change event derives, after it sets any send-back hold
@@ -1209,6 +1211,7 @@ class TaskActor:
             moved = self._fault(agent, "derive", error)
         finally:
             self._timed_derive(agent["state"], self._hooked, self._clock() - started)
+        self._feed.repin()
         self._settle_awaited(name)
         if self._unsettled or name in self._held or name in self._pin_held:
             self._derived.pop(name, None)  # its hold or failure can end with no fact of the task changing
