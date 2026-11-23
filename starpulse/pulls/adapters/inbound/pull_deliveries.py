@@ -28,7 +28,7 @@ from starpulse.github.model.reconcile import epoch
 from starpulse.github.ports.events import OpenWatch, Queue, Stop
 from starpulse.pulls.adapters.inbound.pull_facts import FACTS, forced_push
 from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail, opened, reopened
-from starpulse.pulls.adapters.outbound.pull_reads import READ_EVENTS, PullReads, refresh
+from starpulse.pulls.adapters.outbound.pull_reads import PULL_READS, READ_EVENTS, PullReads, refresh
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 
 __all__ = ["CONSUMER", "HANDLED", "READS", "URGENT", "apply", "consume", "consume_reads", "start"]
@@ -36,8 +36,9 @@ __all__ = ["CONSUMER", "HANDLED", "READS", "URGENT", "apply", "consume", "consum
 logger = logging.getLogger(__name__)
 
 CONSUMER = "pulls"
-#: The consumer of the `READ_EVENTS` deliveries: a push's compare read per open pull request takes minutes under load,
-#: so it runs on a cursor and thread of its own, never ahead of a delivery that writes.
+#: The consumer of the `READ_EVENTS` deliveries: a push's compare read per open pull request takes minutes under load, and
+#: an `opened` or `synchronize`'s files and compare reads take seconds, so they run on a cursor and thread of their own,
+#: never ahead of a delivery that writes.
 READS = "pull-reads"
 #: The `(event, action)` deliveries claimed ahead of every older one: a merge moves its task at once.
 URGENT = (("pull_request", "closed"),)
@@ -148,13 +149,14 @@ def apply(
     store: PullStore,
     delivery: Delivery,
     now: float,
-    reads: PullReads | None = None,
     amended: Callable[[], None] | None = None,
 ) -> bool:
     """Write the fields `delivery`'s event and action name to the records they concern, and say whether it wrote. `amended` is
-    called once the record is written, ahead of the reads that refresh it."""
-    if delivery.event in READ_EVENTS:  # its reads are `consume_reads`'s
-        return delivery.event == "push" and forced_push(store, delivery, json.loads(delivery.body), now)
+    called once the record is written. The reads that refresh it are `consume_reads`'s."""
+    if delivery.event == "repository_ruleset":
+        return False
+    if delivery.event == "push":
+        return forced_push(store, delivery, json.loads(delivery.body), now)
     if (fact := FACTS.get(delivery.event)) is not None:
         return fact(store, delivery, json.loads(delivery.body), now)
     deltas = _ACTIONS.get(delivery.action)
@@ -185,8 +187,6 @@ def apply(
         return False
     if amended is not None:
         amended()
-    if reads is not None:
-        refresh(store, reads, delivery, now)
     return True
 
 
@@ -194,15 +194,14 @@ def consume(
     queue: Queue,
     store: PullStore,
     clock: Callable[[], float] = time.time,
-    reads: PullReads | None = None,
     merged: Callable[[float], None] | None = None,
     checked: Callable[[], None] | None = None,
 ) -> None:
     """Apply each delivery due now once, then return: a delivery that applies is done, one that writes nothing is skipped,
     one that cannot be read is retried and then dead, and the pass records the done and skipped in one transaction. An
-    `URGENT` delivery's write is handed to `merged` with the time it was received, before its refresh reads and the next
-    delivery. A finished checks run on the default branch calls `checked`. A `READ_EVENTS` delivery makes no read here
-    (`consume_reads` does); `apply` writes only its force push."""
+    `URGENT` delivery's write is handed to `merged` with the time it was received, before the next delivery. A
+    finished checks run on the default branch calls `checked`. No delivery makes a read here (`consume_reads` does);
+    `apply` writes a push only for its force push."""
     entries = queue.claim()
     with queue.batch():
         for entry in entries:
@@ -215,7 +214,7 @@ def consume(
                     checked()
                     queue.complete(delivery_id)
                     continue
-                wrote = apply(store, delivery, clock(), reads, handover)
+                wrote = apply(store, delivery, clock(), handover)
             except Exception:
                 logger.exception("github pulls: %s", delivery_id)
                 queue.fail(delivery_id, "consumer error")
@@ -227,11 +226,14 @@ def consume(
 
 
 def consume_reads(queue: Queue, store: PullStore, reads: PullReads, clock: Callable[[], float] = time.time) -> None:
-    """Make the reads each `READ_EVENTS` delivery due now names, once, then return: one GitHub refuses is retried and
-    then dead."""
+    """Make the reads each `READ_EVENTS` delivery due now names, once, then return: a pull request action with no read is
+    skipped, one GitHub refuses, or one read ahead of its record's write, is retried and then dead."""
     entries = queue.claim()
     with queue.batch():
         for entry in entries:
+            if entry.delivery.event == "pull_request" and entry.delivery.action not in PULL_READS:
+                queue.skip(entry.delivery.delivery_id, "no-read")
+                continue
             try:
                 refresh(store, reads, entry.delivery, clock())
             except Exception:
@@ -252,7 +254,7 @@ def start(
 ) -> None:
     """Follow the inbox in the main store `engine` opens on a thread until `stop` is set, with a cursor of its own beside the
     `events` one, handing each `URGENT` delivery's write to `merged` and each finished main checks run to `checked` (`consume`). With a token, a second
-    thread and cursor (`READS`) make the push and ruleset reads (`consume_reads`) with a client of its own; the store's owner disposes `engine`."""
+    thread and cursor (`READS`) make the pull request, push and ruleset reads (`consume_reads`) with a client of its own; the store's owner disposes `engine`."""
     url = engine.url
     token_env = config.github.reconcile_token_env
 
@@ -273,7 +275,7 @@ def start(
 
     reads = connected() if token_env else None
     queue = SqlQueue(engine, CONSUMER, urgent=URGENT, only=HANDLED)
-    thread("github pulls", queue, lambda: consume(queue, store, reads=reads, merged=merged, checked=checked))
+    thread("github pulls", queue, lambda: consume(queue, store, merged=merged, checked=checked))
     if reads is not None:
         reading, own = SqlQueue(engine, READS, only=READ_EVENTS), connected()
         thread("github pull reads", reading, lambda: consume_reads(reading, store, own))

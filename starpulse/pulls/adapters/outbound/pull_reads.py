@@ -19,10 +19,12 @@ from starpulse.pulls.adapters.outbound.pull_events import bare_detail
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.pulls.model.required import with_missing
 
-__all__ = ["READ_EVENTS", "PullReads", "refresh"]
+__all__ = ["PULL_READS", "READ_EVENTS", "PullReads", "refresh"]
 
-#: The deliveries besides `pull_request` that name a read.
-READ_EVENTS = frozenset({"push", "repository_ruleset"})
+#: The deliveries that name a read; a `pull_request` one reads only for an action in `PULL_READS`.
+READ_EVENTS = frozenset({"push", "repository_ruleset", "pull_request"})
+#: The `pull_request` actions that read: a new head's files and its distance behind the base.
+PULL_READS = frozenset({"opened", "synchronize"})
 
 #: GitHub's page size, and the pages of a pull request's files: its listing stops at 3000.
 _PAGE = 100
@@ -149,10 +151,9 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
     if delivery.event == "pull_request":
         pull: Mapping[str, Any] = body["pull_request"]
         record = _detailed(store, repository, pull["number"], now)
-        if delivery.action in ("opened", "synchronize"):
-            held = record["detail"].get("files")
-            reads.files(repository, pull["number"], held, lambda files: _put(store, record, files=files))
-            reads.required(repository, record["baseRefName"], force=False)
+        held = record["detail"].get("files")
+        reads.files(repository, pull["number"], held, lambda files: _put(store, record, files=files))
+        reads.required(repository, record["baseRefName"], force=False)
         if delivery.action == "synchronize":
             _behind(store, reads, record, record["headRefOid"], record["baseRefName"])
     elif delivery.event == "push":
