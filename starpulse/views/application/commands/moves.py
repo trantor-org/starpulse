@@ -56,7 +56,7 @@ class _ClaimBody(ClaimRequest):
 
 @with_request(MoveRequest, "Moving a task")
 def move_task(
-    request: MoveRequest, feed: BoardFeed, writer: MoveWriter, start: Starter | None = None
+    request: MoveRequest, feed: BoardFeed, writer: MoveWriter, start: Starter | None = None, *, started: Callable[[str], bool]
 ) -> tuple[int, dict[str, Any]]:
     """Move the task `request` names, or each of its `tasks`, to the column it names, through `writer`: the HTTP status
     and JSON body. A batch answers 200 with the tasks moved and each refused one's error, so one refusal leaves the
@@ -67,15 +67,17 @@ def move_task(
 
     The operator's move of one unheld task into the working state also starts a session through `start`, on the
     task's own profile: the answer names its `url`, or the `startError` that kept it from starting. A batch move starts none.
+
+    A task `started` (it ever entered the working state) is refused a move into Ready, whoever asks: Ready holds only new work.
     """
     who = who_of(request)
     if request.task is not None:
-        return _move_one(feed, request.task, request.to, who, writer, start)
+        return _move_one(feed, request.task, request.to, who, writer, start, started)
     if request.tasks is None:
         return 400, {"error": "invalid request: task: Field required"}
     moved, refused, warned = [], {}, {}
     for task in request.tasks or ():
-        status, body = _move_one(feed, task, request.to, who, writer, None)
+        status, body = _move_one(feed, task, request.to, who, writer, None, started)
         if status == 200:
             moved.append(task)
             if body.get("warnings"):
@@ -86,15 +88,17 @@ def move_task(
 
 
 def _move_one(
-    feed: BoardFeed, task: str, column: str, who: Who, writer: MoveWriter, start: Starter | None
+    feed: BoardFeed, task: str, column: str, who: Who, writer: MoveWriter, start: Starter | None, started: Callable[[str], bool]
 ) -> tuple[int, dict[str, Any]]:
     """Move the `task` the board holds to `column` as `who` for `move_task`: the HTTP status and JSON body."""
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
+    if (refused := started_refusal(feed, task, column, started)) is not None:
+        return refused
     status, body = _move(feed, agent, task, column, who, writer)
     if status == 200 and start is not None and _dragged_unheld(feed, agent, column, who):
-        started_status, started = start(StartRequest(task=task, profile=agent.get("model") or None))
-        body = {**body, **({"url": started["url"]} if started_status == 200 else {"startError": started["error"]})}
+        start_status, session = start(StartRequest(task=task, profile=agent.get("model") or None))
+        body = {**body, **({"url": session["url"]} if start_status == 200 else {"startError": session["error"]})}
     return status, body
 
 
@@ -110,6 +114,13 @@ def _unheld(agent: dict) -> bool:
 def column_status(column: str) -> str:
     """The status a board column is written as; the board spells it as its lanes do."""
     return column.replace("_", " ").title()
+
+
+def started_refusal(feed: BoardFeed, task: str, column: str, started: Callable[[str], bool]) -> tuple[int, dict[str, str]] | None:
+    """The 409 for a move of a task that ever entered the working state into Ready, which holds only new work, else None."""
+    if column == feed.roles.ready and started(task):
+        return 409, {"error": f"{task} was started, and Ready holds only new work: move it to In Progress or Needs attention"}
+    return None
 
 
 def move_refusal(agent: dict, task: str, column: str, who: Who) -> tuple[int, dict[str, str]] | None:

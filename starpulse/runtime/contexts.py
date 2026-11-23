@@ -166,9 +166,16 @@ class _PullLinks:
 
 
 def default_starters(
-    config: Config, path: Path | None, base: Path, log: EventLog, names: Sequence[str], stop: StopEvent
+    config: Config,
+    path: Path | None,
+    base: Path,
+    log: EventLog,
+    names: Sequence[str],
+    stop: StopEvent,
+    go: threading.Event | None = None,
 ) -> dict[str, Starter]:
-    """The starter of each context in `names`, all over `log` and one board. Raises `ValueError` for a name that is no
+    """The starter of each context in `names`, all over `log` and one board; with `go`, the Board writer starts as a standby
+    that takes over the writer role when `go` is set. Raises `ValueError` for a name that is no
     context or a `[[runs]]` instance whose adapter the config cannot load."""
     from starpulse.runtime.assembly import (
         assemble,
@@ -200,7 +207,7 @@ def default_starters(
 
         return board_worker.start(
             config, path, base, log, own, load=load, assemble=assemble, history_store=history_store, follow=follow,
-            followers=feed_followers(adapters), ready=shared.publish, snapshots=SnapshotStore(log.engine, encode_snapshot),
+            followers=feed_followers(adapters), ready=shared.publish, snapshots=SnapshotStore(log.engine, encode_snapshot), go=go,
         )  # fmt: skip
 
     def pulls(own: threading.Event) -> Callable[[], None]:
@@ -414,16 +421,24 @@ def _keep(
     started: Callable[[str], None] | None = None,
     *,
     gate: threading.Event | None = None,
+    go: threading.Event | None = None,
+    prepared: Callable[[], None] | None = None,
 ) -> None:
     """Start the context on its own stop event, again after a growing wait each time `starter` raises, then hold the
     thread until the process stops. A failed start's stop event is set, so what it began before raising ends. `started`
     is told the name once `starter` returns; a failure of its own is logged, never a failed start.
 
     The `LEADER` sets `gate` once its first start attempt has returned or raised; every other context waits for `gate`
-    before its first start, so the leader's start is never one of several competing for the process."""
+    before its first start, so the leader's start is never one of several competing for the process.
+
+    A standby process (`go`) is a replacement preparing beside the process it replaces: the leader's start is its
+    prepare, `prepared` is told once it returns, and every other context waits for `go` before its first start. The
+    leader's stop event is set by `run_contexts` after every other context ended, so the Board stays the last to go."""
     leads = name == LEADER
     if gate is not None and not leads:
         gate.wait()
+    if go is not None and not leads:
+        go.wait()
     wait = backoff[0]
     while not stop.is_set():
         own = StopEvent()
@@ -443,13 +458,16 @@ def _keep(
         logger.info("%s: started", name)
         if leads and gate is not None:
             gate.set()
+        if leads and prepared:
+            prepared()
         if started:
             try:
                 started(name)
             except Exception:
                 logger.exception("%s: could not record its start", name)
         stop.wait()
-        own.set()
+        if not leads:
+            own.set()
         return
 
 
@@ -464,18 +482,21 @@ def run_contexts(
     hold: Callable[[threading.Event, Callable[[], None]], None] | None = None,
     backoff: tuple[float, float] = BACKOFF_S,
     started: Callable[[str], None] | None = None,
+    go: threading.Event | None = None,
+    prepared: Callable[[], None] | None = None,
 ) -> None:
     """Run each context of `names` on a `ctx-<name>` thread until `stop` is set, and return once they are told to end.
 
     `starters` replaces the real starters (tests); `started` is told each context's name as it starts, and without it a
-    `serve` boot token (`hold.BOOT_ENV`) makes each start stamp the event log; `hold` is the wait for `SIGTERM` and `SIGHUP` (`runtime.hold`).
+    `serve` boot token (`hold.BOOT_ENV`) makes each start stamp the event log; `hold` is the wait for `SIGTERM` and `SIGHUP` (`runtime.hold`). With `go`, the process is a standby replacement: only the
+    leader starts until `go` is set, and `prepared` is told when the leader's start returns.
     Raises `ValueError` before any thread starts when a name is no context or a runs adapter cannot load."""
     sys.setswitchinterval(SWITCH_INTERVAL_S)
     base = base or (path.parent if path else Path.cwd())
     if starters is None:
         log = EventLog(database_url(config.database_url, base))
         child_cpu.keep_process(log)
-        starters = default_starters(config, path, base, log, names, stop)
+        starters = default_starters(config, path, base, log, names, stop, go)
         boot = os.environ.get(BOOT_ENV)
         if started is None and boot:
 
@@ -491,7 +512,7 @@ def run_contexts(
         threading.Thread(
             target=_keep,
             args=(name, starters[name], stop, reloads, stops, backoff, started),
-            kwargs={"gate": first},
+            kwargs={"gate": first, "go": go, "prepared": prepared},
             name=f"ctx-{name}",
             daemon=True,
         )
@@ -499,6 +520,8 @@ def run_contexts(
     ]
     for thread in threads:
         thread.start()
+    if prepared and first is None:  # no Board writer to prepare: the process is as ready as it will be
+        prepared()
 
     def reload_all() -> None:
         for name, reload in list(reloads.items()):
@@ -513,7 +536,15 @@ def run_contexts(
         stop.set()
         if first is not None:
             first.set()
-        for own in list(stops.values()):
-            own.set()
+        if go is not None:
+            go.set()  # a context still waiting to start sees the stop
+        for name, own in list(stops.items()):
+            if name != LEADER:
+                own.set()
+        for thread in threads:
+            if thread.name != f"ctx-{LEADER}":
+                thread.join(_JOIN_S)
+        if LEADER in stops:  # the Board writer stores that it stopped last, so its stream is stale for the least time
+            stops[LEADER].set()
         for thread in threads:
             thread.join(_JOIN_S)

@@ -40,6 +40,7 @@ HELD_BACK = frozenset({"move", "tick"})
 SAVE_EVERY = 10.0
 #: What `caught_up` puts on the queue to have `run` store a body held back.
 _FLUSH = ("flush", {})
+_TAKE_OVER = "take-over"
 
 #: The kinds of change the fold takes; `tick` is the writer's clock.
 FOLDS = frozenset({"task", "move", "pulls", "claim", "dags", "ledgers", "snapshot", "tick"})
@@ -126,12 +127,15 @@ class HeldSnapshot:
                     batch = []
                 while not self._changes.empty():
                     batch.append(self._changes.get_nowait())
-                changes = [change for change in batch if change is not None and change is not _FLUSH]
+                taking = [change[1]["store"] for change in batch if change and change[0] == _TAKE_OVER]
+                changes = [change for change in batch if change is not None and change is not _FLUSH and change[0] != _TAKE_OVER]
                 if time.monotonic() >= due:
                     changes.append(("tick", {}))
                     due = time.monotonic() + TICK
                 if changes:
                     self._folded(changes)
+                if taking:
+                    self._attach(taking[-1])
                 if self._held_back() and (any(change is _FLUSH for change in batch) or self._clock() >= self._body_due):
                     self._save([], force=True)
                     if self._held_back():  # the store refused it: try again after the interval, not at once
@@ -141,6 +145,19 @@ class HeldSnapshot:
         finally:
             self._folding = False
             self._feed.unsubscribe(self._changes)
+
+    def take_over(self, store: SnapshotStore) -> None:
+        """Become the writer of `store` from here on: a standby snapshot (built with no store) folds every change the feed
+        publishes and stores none, and this stores the snapshot it holds as a `snapshot` delta, the first one a started
+        writer stores, then each change after it. Safe from any thread: the writer thread does it in order with the folds."""
+        self._changes.put((_TAKE_OVER, {"store": store}))  # type: ignore[arg-type]
+
+    def _attach(self, store: SnapshotStore) -> None:
+        self._store, self._stored = store, None
+        if self._stale:
+            self._rebuilt([], restarted=True)
+        else:
+            self._save([("snapshot", self.snapshot)], force=True)
 
     def caught_up(self, timeout: float) -> bool:
         """Whether every change the feed published is folded into the snapshot and, with a store, stored, waiting up to

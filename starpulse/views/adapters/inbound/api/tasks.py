@@ -146,7 +146,9 @@ def routes(api: Api) -> list[ApiRoute]:
 
     def landed(task: str) -> bool:
         _, body = _stored_record(api, task)
-        return any(pull.get("merged") or pull.get("state") == "MERGED" for pull in body.get("record", {}).get("pulls", []))
+        return any(
+            pull.get("merged") or pull.get("state") == "MERGED" for pull in body.get("record", {}).get("pulls", [])
+        )
 
     def start(request: StartRequest) -> tuple[int, dict[str, Any]]:
         return start_requested(request, feed, assign, services.start_session, services.harnesses)
@@ -158,13 +160,16 @@ def routes(api: Api) -> list[ApiRoute]:
 
     # Every write route, by path: the handler over the seams it needs and the kind of body it answers
     # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.
+    def started(task: str) -> bool:
+        return api.history.entered(task, feed.roles.working)
+
     writes: dict[str, tuple[TaskWrite, str]] = {
-        "/move": (lambda client, raw: move_task(client, raw, feed, writer, start), "move"),
+        "/move": (lambda client, raw: move_task(client, raw, feed, writer, start, started=started), "move"),
         "/start": (
             lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
             "start",
         ),
-        "/edit": (lambda client, raw: edit_task(client, raw, feed, read, edit), "edit"),
+        "/edit": (lambda client, raw: edit_task(client, raw, feed, read, edit, started=started), "edit"),
         "/archive": (lambda client, raw: archive_task(client, raw, feed, archive), "archive"),
         "/verdict": (lambda client, raw: record_verdict(client, raw, feed, read, edit), "verdict"),
         "/rating": (lambda client, raw: record_rating(client, raw, feed), "rating"),

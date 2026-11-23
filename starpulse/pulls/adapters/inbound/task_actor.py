@@ -74,7 +74,15 @@ from starpulse.pulls.adapters.inbound.unblock import PinGate
 from starpulse.pulls.adapters.outbound.pull_requests import own_prs, pull_record, uncited
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
 from starpulse.pulls.model.task_actor import TaskTouched, Trigger, derivation
-from starpulse.pulls.model.task_actor.derivation import ATTENTION_QUESTION, DONE_HELD, FACTS, FAULT, FAULT_NEXT, TERMINAL
+from starpulse.pulls.model.task_actor.derivation import (
+    ATTENTION_QUESTION,
+    DONE_HELD,
+    FACTS,
+    FAULT,
+    FAULT_NEXT,
+    RESTART_OR_RESCOPE,
+    TERMINAL,
+)
 
 if TYPE_CHECKING:  # annotation only: the pull store and the event log open the database stack
     from starpulse.event_log.event_log import EventLog
@@ -128,7 +136,7 @@ _YIELD_S = 2.0
 #: derived under, so a start derives only the tasks that changed since.
 CHECKPOINT = "pulls.task_actor_checkpoint"
 #: Bumped when a fact function reads something new or reads it differently: a checkpoint of another revision is unread.
-_FACTS_REVISION = 4
+_FACTS_REVISION = 5
 #: Seconds between two saves of the checkpoint while the actor runs.
 #: Seconds after a task's derived facts change before the checkpoint is saved.
 _CHECKPOINT_DEBOUNCE_S = 10.0
@@ -139,7 +147,15 @@ SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0
 LOCK_BACKOFF_S = (0.1, 0.4, 1.6)
 
 #: The facts whose event parks a task in Needs attention: the comment is also its `## Needs attention` reason, a question.
-_ASKS = ("overdue", "pr_failing", "pr_closed_unmerged", "operator_pushback")
+_ASKS = (
+    "overdue",
+    "pr_failing",
+    "pr_closed_unmerged",
+    "operator_pushback",
+    "pr_unfinished_dead",
+    "pr_merged_unfinished",
+    "started_work",
+)
 
 #: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
 _ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")
@@ -307,8 +323,11 @@ class TaskActor:
         log: EventLog | None = None,
         main_green: Callable[[], str | None] | None = None,
         owner_source: str = "",
+        started: Callable[[str], bool] = lambda _task: False,
     ) -> None:
         self._main_green = main_green
+        #: Whether a task ever entered the working lane, given its id, which the history of its lane changes answers.
+        self._started = started
         self._owner_source = owner_source
         self._read = read
         self._idle = idle
@@ -1870,17 +1889,16 @@ class TaskActor:
             machine_events.publish(IN_PROGRESS, event, actor=ACTOR, task=name, data={"reason": reason}, log=self._log)
 
     def _return_unwoken(self, name: str) -> None:
-        """A send-back whose holder no wake reached goes to Ready for a new session, unless the holder has since moved it."""
+        """A send-back whose holder no wake reached goes to Needs attention, unless the holder has since moved it."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
             if agent is None or agent["state"] != self._feed.roles.working:
                 return
-            self._write(
+            self._attend(
                 name,
-                self._feed.roles.ready,
-                "Returned to Ready: it was sent back to its session but its holder could not be woken.",
-                self._clock(),
-                source=agent["state"],
+                "its holder could not be woken",
+                "was sent back to its session (cause bug TASK-15920)",
+                options=RESTART_OR_RESCOPE,
             )
 
     def _attend_unstarted(self, name: str) -> None:

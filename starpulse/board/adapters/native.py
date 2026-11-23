@@ -826,8 +826,10 @@ def _editor(
             gated = {item["id"] for item in criteria.authored(_description(body))}
             held = lane_id(str(frontmatter.get("status") or "")) == guard.waiting and lane_id(status) in {"", guard.waiting}
             body = _apply(task, frontmatter, body, link(changes), spelled)
-            if held and "description" in changes and (lost := gated - {i["id"] for i in criteria.authored(_description(body))}):
-                raise ValueError(f"a Waiting task keeps its Start Criteria; the edit drops {', '.join(sorted(lost))}")
+            # An edit may re-gate a Waiting task onto other subjects or onto tasks, never leave it with no gate.
+            ungated = not criteria.authored(_description(body)) and not _strings(frontmatter.get("dependencies"))
+            if held and "description" in changes and gated and ungated:
+                raise ValueError(f"a Waiting task keeps its Start Criteria; the edit drops {', '.join(sorted(gated))}")
             for text in texts:
                 recorded = _recorded(text, _comments(body))
                 body = _comment(body, text, actor) if text.strip() and not recorded else body

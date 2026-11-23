@@ -155,7 +155,7 @@ that needs the meaning ranking on its first ask.
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}`; the page sends
 `operator`, and a move naming no actor is `anonymous` (`agent` when it names a session), never the operator. The server refuses an actor outside the event's writers before the board
-writer is asked, so a move declared for `operator` alone (sending an In Progress task back to Ready) is refused to
+writer is asked, so a move declared for `operator` alone (moving a started task to Ready) is refused to
 `starpulse task move`, which always moves as `agent`. The board's `writer` receives that actor as its third
 argument: `writer(task, status, actor)`. `/api/move` is unauthenticated on the LAN, so this stops an agent's
 accident, not an adversary.
@@ -415,7 +415,9 @@ sees no change.
 ## Migrating the store
 
 `starpulse migrate --config <c>` brings the event log to the head of its Alembic chain, builds it when empty, and runs the
-one-time imports. Migrations are expand/contract: one that only adds keeps the store readable by the release before it, and
+one-time imports. The chain starts at one baseline revision (`0058`) that creates every table: a store at the last pre-squash
+revision (`0057`) is stamped at it with no DDL and the tables nothing declares are dropped, and a store below `0057` is
+refused naming the bridge release (`migrate.BRIDGE_RELEASE`), the release that carries it to `0057` first. Migrations are expand/contract: one that only adds keeps the store readable by the release before it, and
 one that drops or renames sets `CONTRACT = True` in its file. The store records a reader floor in `starpulse_reader_floor`,
 the latest contract revision at or below its own (the chain's base when none). A release whose chain holds the floor opens a
 store ahead of it as it is; a release that lacks the floor refuses it with `StoreNotMigrated` naming the floor.

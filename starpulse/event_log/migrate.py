@@ -1,12 +1,15 @@
-"""Versions a store's schema by the Alembic chain in `migrations/`.
+"""Versions a store's schema by the Alembic chain in `migrations/`, which starts at one baseline.
 
 Migrations are expand/contract: a release's migrations only add, and a migration that drops or renames sets
 `CONTRACT = True`. The store records a reader floor, the latest contract revision at or below its own, so a release
 whose chain holds the floor opens a store a newer release migrated.
 
+A store the last release before the squash left, at `PRE_SQUASH_HEAD`, is stamped at the baseline without DDL, and the
+tables the chain made and nothing declares are dropped; a store below it is refused, naming `BRIDGE_RELEASE`, the
+release that carries it there.
+
 A SQLite store is opened by many owners (the log, the history, the pulls readers, each in its own thread
 or process), so the chain runs under SQLite's write lock: the first opener builds the schema and the rest find it done.
-A store with no tables replays a template the chain built once per process instead of running the chain again.
 """
 
 import threading
@@ -16,11 +19,13 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
-from sqlalchemy import Connection, Engine, create_engine, delete, insert, inspect, select, text
+from sqlalchemy import Connection, Engine, delete, insert, inspect, select, text
 
 from starpulse.event_log.tables import VERSION_TABLE, reader_floor
 
 __all__ = [
+    "BRIDGE_RELEASE",
+    "PRE_SQUASH_HEAD",
     "StoreNotMigrated",
     "alembic_config",
     "chain_floor",
@@ -33,6 +38,11 @@ __all__ = [
 ]
 
 _MIGRATIONS = Path(__file__).parent / "migrations"
+#: The last revision before the squash, and the release that carries a store there.
+PRE_SQUASH_HEAD = "0057"
+BRIDGE_RELEASE = "v0.5.0-04d5169"
+#: The tables the chain before the squash made and nothing has declared or read since.
+_RETIRED = ("starpulse_summary_basis", "starpulse_source_instances", "starpulse_forward_instances")
 #: Alembic's environment is process-global, so two threads of one process cannot run the chain at once.
 _RUNNING = threading.Lock()
 
@@ -52,35 +62,6 @@ def alembic_config(db: Connection, migrations: Path = _MIGRATIONS) -> AlembicCon
 @cache
 def _head(migrations: Path = _MIGRATIONS) -> str | None:
     return ScriptDirectory(str(migrations)).get_current_head()
-
-
-@cache
-def _template() -> tuple[tuple[str, ...], dict[str, list[tuple]]]:
-    """The DDL of a store the chain built, in the order SQLite created it, and the rows each table holds."""
-    engine = create_engine("sqlite://")
-    with engine.connect() as db:
-        command.upgrade(alembic_config(db), "head")
-        db.commit()
-        ddl = (
-            db.exec_driver_sql(
-                "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid"
-            )
-            .scalars()
-            .all()
-        )
-        tables = inspect(db).get_table_names()
-        rows = {table: list(db.exec_driver_sql(f'SELECT * FROM "{table}"')) for table in tables}
-        return tuple(ddl), {table: held for table, held in rows.items() if held}
-
-
-def _replay(db: Connection) -> None:
-    """Build the template's schema and rows on the empty store `db`; SQLite's backup API cannot write under its lock."""
-    ddl, rows = _template()
-    for statement in ddl:
-        db.exec_driver_sql(statement)
-    for table, held in rows.items():
-        marks = ", ".join("?" * len(held[0]))
-        db.exec_driver_sql(f'INSERT INTO "{table}" VALUES ({marks})', [tuple(row) for row in held])
 
 
 @cache
@@ -119,8 +100,17 @@ def record_floor(db: Connection, migrations: Path = _MIGRATIONS) -> None:
         db.execute(insert(reader_floor).values(revision=floor))
 
 
+def _squashed(recorded: str | None) -> bool:
+    """Whether the store records a revision of the chain before the squash, which this release no longer holds."""
+    return recorded is not None and recorded not in _revisions() and recorded <= PRE_SQUASH_HEAD
+
+
+def _below_squash(recorded: str | None) -> bool:
+    return _squashed(recorded) and recorded != PRE_SQUASH_HEAD
+
+
 def _ahead(recorded: str | None) -> bool:
-    return recorded is not None and recorded not in _revisions()
+    return recorded is not None and recorded not in _revisions() and not _squashed(recorded)
 
 
 def _opens(db: Connection, recorded: str | None) -> bool:
@@ -138,6 +128,11 @@ def _settled(db: Connection) -> bool:
 
 def _refusal(engine: Engine, db: Connection, recorded: str | None) -> StoreNotMigrated:
     url = engine.url.render_as_string(hide_password=True)
+    if _below_squash(recorded):
+        return StoreNotMigrated(
+            f"{url} is at revision {recorded}, below the squash: run release {BRIDGE_RELEASE} on it first, "
+            f"which carries it to {PRE_SQUASH_HEAD}, then this one"
+        )
     if not _ahead(recorded):
         return StoreNotMigrated(f"{url} is not migrated: run `starpulse migrate`")
     floor = stored_floor(db)
@@ -158,14 +153,13 @@ def migrate(engine: Engine) -> None:
             return
         db.exec_driver_sql("BEGIN IMMEDIATE")  # the chain's DDL runs inside it, and a second opener waits here
         recorded = _recorded(db)
-        if _ahead(recorded):
+        if _ahead(recorded) or _below_squash(recorded):
             raise _refusal(engine, db, recorded)
-        if recorded is None and not inspect(db).get_table_names():
-            _replay(db)
-            db.commit()
-            return
-        config = alembic_config(db)
-        command.upgrade(config, "head")
+        if recorded == PRE_SQUASH_HEAD:
+            for table in _RETIRED:
+                db.exec_driver_sql(f"DROP TABLE IF EXISTS {table}")
+            db.execute(text(f"UPDATE {VERSION_TABLE} SET version_num = :base"), {"base": ScriptDirectory(str(_MIGRATIONS)).get_base()})
+        command.upgrade(alembic_config(db), "head")
         db.commit()
 
 

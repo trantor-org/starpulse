@@ -82,11 +82,17 @@ def start(
     followers: Followers,
     ready: Callable[[Board, BoardFeed], None] | None = None,
     snapshots: SnapshotStore | None = None,
+    go: threading.Event | None = None,
 ) -> Callable[[], None]:
     """Start the Board writer's threads over `log`, each ending when `stop` is set, and return its reload. Its feed hears
     every change the snapshot draws: the read model's folds, the machine rows, the dates, the claim refusals, the verdicts,
     and what `followers` start. The read model's fold starts last; `ready` is then told the board and feed it folds, which another context in the process
-    may share. With `snapshots`, the held snapshot stores its bodies and deltas there each fold. Raises `ValueError` as `assemble` does."""
+    may share. With `snapshots`, the held snapshot stores its bodies and deltas there each fold. Raises `ValueError` as `assemble` does.
+
+    With `go`, the writer starts as a standby beside the writer it replaces: it builds the feed and the held snapshot from
+    the read model and follows what the old writer folds, folding and storing nothing itself. When `go` is set, which is
+    once the old writer ended, it stores its snapshot as the first delta and folds the log from there, so there is one
+    writer at any instant and no rebuild between the two."""
     model = ReadModel(log.engine, declared_fields(config.board))
     board, feed = assemble(config, base, None, [], model)
     feed.cap_lanes(MAX_HOURS * 3600)  # the widest window a page can ask for; an older lane stays only for an open task, and decoding the rest is the worker's heap
@@ -94,15 +100,35 @@ def start(
     feed.ready.set()
     feed.record_lanes(store, log)  # the lane each write makes is recorded by `serve`; the Board child places none
     board.attach(log)
-    held = HeldSnapshot(feed, store=snapshots)
+    held = HeldSnapshot(feed, store=None if go else snapshots)
     stop.listen(held.retire)  # a stream open tells its page the Board is stale from here until a writer stores again
     threading.Thread(target=held.run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
     MachineDeltas(feed, model).follow(stop, log)  # a context sharing this feed hears each machine row as a `move`
-    search = SearchIndex.open(log.engine, config.search)  # the one fold indexes search, as the API's second fold once did
-    follow(
-        Projector(log.engine, EventStore(log.engine), search, log=log, drawn=feed.machines, keys=board.keys),
-        feed, stop, log,
-    )  # fmt: skip
+
+    def fold() -> None:
+        search = SearchIndex.open(log.engine, config.search)  # the one fold indexes search, as the API's second fold once did
+        follow(
+            Projector(log.engine, EventStore(log.engine), search, log=log, drawn=feed.machines, keys=board.keys),
+            feed, stop, log,
+        )  # fmt: skip
+
+    if go is None:
+        fold()
+    else:
+        standing = StopEvent()
+        stop.listen(standing.set)
+        following = follow(None, feed, standing, log)  # what the old writer folds, drawn without folding it
+
+        def take_over() -> None:
+            go.wait()
+            standing.set()
+            following.join()
+            if stop.is_set() or snapshots is None:
+                return
+            held.take_over(snapshots)
+            fold()
+
+        threading.Thread(target=take_over, name="board-take-over", daemon=True).start()
     refusals = ClaimRefusals(feed)
     follow_stream(refusals, log, CLAIMS_STREAM, refusals.handle_entry, stop=stop)  # the claim refusals
     verdicts = Verdicts(feed)

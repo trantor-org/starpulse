@@ -100,12 +100,16 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.context == "contexts":
         from starpulse.runtime.contexts import contexts_of, run_contexts
+        from starpulse.runtime.hold import announce_ready, go_event
 
         path = discover(args.config)
         try:
             config = load(path)
             base = args.config.parent if args.config else Path.cwd()
-            return run_contexts(config, path, contexts_of(config), StopEvent(), base=base)
+            return run_contexts(
+                config, path, contexts_of(config), StopEvent(), base=base,
+                go=go_event(os.environ), prepared=lambda: announce_ready(os.environ),
+            )  # fmt: skip
         except (OSError, ValueError) as exc:
             parser.exit(1, f"{path}: {exc}\n")
     if args.context == "scheduler":

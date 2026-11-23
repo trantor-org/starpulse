@@ -71,16 +71,6 @@ checkpoints = Table(
     Column("saved_at", Float, nullable=False),
 )
 
-#: The one instance each source's token speaks for: the first instance id that source sent.
-#: No code writes it now; the table stays with the migration chain.
-source_instances = Table(
-    "starpulse_source_instances",
-    metadata,
-    Column("source", String, primary_key=True),
-    Column("instance", String, nullable=False),
-    Column("bound_at", Float, nullable=False),
-)
-
 #: An operator setting the instance keeps across restarts: the scheduler switch and the Admin
 #: history-window override. One row per key, with the epoch second it was last written; a missing row means the
 #: setting's default.

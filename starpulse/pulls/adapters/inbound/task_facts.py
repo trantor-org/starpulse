@@ -67,6 +67,9 @@ class ActorFacts:
             logger.warning("task actor: cannot read the unfinished work of %s: %s", name, error)
             return (f"the board's unfinished work cannot be read: {error}",)
 
+    def started(self, name: str) -> bool:
+        return self._actor._started(name)
+
     def alive(self, name: str) -> bool | None:
         try:
             return self._actor._alive(name)

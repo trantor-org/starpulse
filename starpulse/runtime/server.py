@@ -147,6 +147,8 @@ def main(argv: list[str] | None = None) -> None:
         commands,
         sockets={"api": listening} if "api" in commands else {},
         held=held,
+        standby={"contexts"},
+        warm=180.0,  # the ceiling for the contexts worker, which prepares about a minute beside the old one
         read=reader,
         baseline=reader.at_start,
         control=None if rehearsing() else control_file(args.config),  # a rehearsal must not replace the live endpoint
