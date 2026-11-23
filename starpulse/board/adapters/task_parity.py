@@ -14,7 +14,7 @@ from sqlalchemy import Engine
 
 from starpulse.board.adapters.native import _Retired, _record_of
 from starpulse.board.adapters.native_scan import _FOLDERS
-from starpulse.board.adapters.task_history import _KINDS, _META, _OWN, KIND, TaskHistory, seed
+from starpulse.board.adapters.task_history import KIND, TaskHistory, _replayed, seed
 from starpulse.board.model import criteria
 from starpulse.board.model.markdown import render
 from starpulse.event_log.readmodel.fold import replay
@@ -84,17 +84,6 @@ class Replays:
             self._rows.clear()
         else:
             self._rows.pop(task, None)
-
-
-def _replayed(row: Record) -> dict[str, Any]:
-    """The record a replayed `row` draws, in the shape of a task file's record."""
-    record: dict[str, Any] = {key: row[name] for key, name in _OWN.items()}
-    record |= {key: row["meta"].get(key) for key in _META}
-    for kind, key in _KINDS.items():
-        record[key] = [item for item in row["criteria"] if item["kind"] == kind]
-    record["assignee"] = row["assignee"]
-    record["comments"] = [{"text": item["text"]} for item in row["comments"]]
-    return record
 
 
 def _shown(record: Record, archived: bool) -> tuple[str, dict[str, Any], str, list[str], bool]:

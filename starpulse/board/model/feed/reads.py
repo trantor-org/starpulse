@@ -118,10 +118,6 @@ class ReadMethods:
         self._built = (key, agents)
         return list(agents)
 
-    def done_tasks(self) -> list[str]:
-        """The ids of unarchived Done tasks of any age, the cold ones `open_tasks` leaves out."""
-        return self._read_model.held_done(self._roles.done)
-
     @contextmanager
     def one_read(self) -> Iterator[None]:
         """Within the block this thread's `open_tasks` builds the list once, for a caller that asks for it a dozen times

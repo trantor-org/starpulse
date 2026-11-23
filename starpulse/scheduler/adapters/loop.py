@@ -704,7 +704,7 @@ class Loop:
         tasks, decisions = self._decide(self.readings(), set(), log=False)
         if not decisions:
             return None
-        top = decisions[0]  # the admitted in enforced order come first, then the refused by depth
+        top = decisions[0]  # the admitted in enforced order come first, then the refused in the same order
         agent = next(a for a in tasks if a["id"] == top.task)
         now = self._clock()
         pause = self._selected_paused(now)

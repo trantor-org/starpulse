@@ -1,30 +1,32 @@
-"""The native board's writes as Events: each successful write appends what it changed to the Task's History (D2).
+"""The native board's writes as Events: each write appends what it changes to the Task's History (D2) before it renders the file.
 
-The board still writes the task's file; this records, per write, the intent the file's before and after show. A Task
-with no History yet is seeded with a `TaskImported` of its record before the write, so a replay equals the row."""
+A write reads its base from the History, appends the Events that take it to the file the write would render, with a
+compare-and-swap at the head it read, and only then writes the file. An append that fails or loses the swap fails the
+write and writes no file; a Task with no History refuses every write."""
 
 import json
 from collections import Counter
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
+from starpulse.board.model import criteria
 from starpulse.board.model.seam import OPERATOR, Written
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
 from starpulse.machine_engine.model.transitions import lane_id
 
 WRITER = "native-board"
-#: The actor of the Events that bring a History to its file (`reconciled`).
-RECONCILER = "starpulse/lane-sweep"
+#: The actor of the Events `starpulse migrate`'s `files_win` appends to bring a History to its file.
+FILES_WIN = "starpulse/files-win"
 #: The writer of Events an editor import appends: the operator's break-glass edit, not a command of the board (D5).
 BREAK_GLASS = "break-glass"
 _break_glass: ContextVar[bool] = ContextVar("break_glass", default=False)
-#: Each stale head is another append that landed (the directory scan's first import, then its reconcile of the write's own file change), so a few rereads settle it.
-_APPEND_ATTEMPTS = 5
 
 
 @contextmanager
@@ -105,25 +107,36 @@ def seed(record: Record, at: float) -> dict[str, Any]:
     return seed
 
 
-def _held(store: EventStore, task: str, before: Record) -> Record:
-    """`before` with each own field the History holds otherwise, so a write after a lost append still records the file's
-    fields, and its move from where the History left it."""
-    row = replay(store.read(KIND, task))
-    filed = seed(before, 0.0)
-    own = {key: row[name] for key, name in _OWN.items() if row[name] != filed[name]}
-    return {**before, **own, "assignee": row["assignee"], "source": row["meta"].get("source", ""), "comments": row["comments"]}
+def _replayed(row: Record) -> dict[str, Any]:
+    """The record a replayed `row` draws, in the shape of a task file's record."""
+    record: dict[str, Any] = {key: row[name] for key, name in _OWN.items()}
+    record |= {key: row["meta"].get(key) for key in _META}
+    for kind, key in _KINDS.items():
+        record[key] = [item for item in row["criteria"] if item["kind"] == kind]
+    record["assignee"] = row["assignee"]
+    record["comments"] = [{"text": item["text"]} for item in row["comments"]]
+    return record
+
+
+def _column(record: Record, key: str) -> Any:
+    return list(record.get(key) or []) if key in _LISTS else record.get(key) or ""
 
 
 def _field_changes(before: Record, after: Record) -> dict[str, Any]:
-    changes = {}
-    for key, name in _OWN.items():
-        if key != "status" and before.get(key) != after.get(key):
-            changes[name] = after.get(key)
-    return changes
+    return {
+        name: after.get(key)
+        for key, name in _OWN.items()
+        if key != "status" and _column(before, key) != _column(after, key)
+    }
+
+
+def _meta_value(record: Record, key: str) -> Any:
+    value = record.get(key) or None
+    return criteria.bare(value) if key == "start_criteria" and value else value
 
 
 def _meta_changes(before: Record, after: Record) -> dict[str, Any]:
-    return {key: after.get(key) or None for key in _META if before.get(key) != after.get(key)}
+    return {key: after.get(key) or None for key in _META if _meta_value(before, key) != _meta_value(after, key)}
 
 
 def _criteria_events(before: Record, after: Record) -> list[Event]:
@@ -148,15 +161,6 @@ def _criteria_events(before: Record, after: Record) -> list[Event]:
     return events
 
 
-def _restored(record: Record) -> Event:
-    """A returning task's FieldsEdited: every column its file shows, so the fold's row is the file's, not the one it left with."""
-    columns = seed(record, 0.0)
-    columns.pop("comments")
-    columns.pop("meta")
-    meta = {key: record.get(key) or None for key in _META}
-    return ("FieldsEdited", {"changes": columns, "meta": meta})
-
-
 def revises_plan(status: str, held: str, plan: str, unstarted: Collection[str]) -> bool:
     """Whether writing `plan` over `held` on a task in `status` changes a plan that work began under (D10).
 
@@ -179,11 +183,9 @@ def _comment_events(before: Record, after: Record) -> list[Event]:
 
 
 def _events(before: Record, after: Record | None, note: str) -> list[Event]:
-    """The Events that take `before` to `after`; None is a task that left the board, `{}` one that was not on it."""
+    """The Events that take `before` to `after`; None is a task that left the board."""
     if after is None:
         return ([("CommentAdded", {"text": f"Archived: {note}"})] if note else []) + [("Archived", {})]
-    if not before:
-        return [("Rehydrated", {}), _restored(after)]
     events: list[Event] = []
     edited: dict[str, Any] = {}
     changes, meta = _field_changes(before, after), _meta_changes(before, after)
@@ -197,7 +199,7 @@ def _events(before: Record, after: Record | None, note: str) -> list[Event]:
         events.append(("Transitioned", {"from": before.get("status"), "to": after.get("status")}))
     events += _criteria_events(before, after)
     events += _comment_events(before, after)
-    if before.get("assignee") != after.get("assignee"):
+    if (before.get("assignee") or "") != (after.get("assignee") or ""):
         held = after.get("assignee")
         events.append(("Claimed", {"assignee": held}) if held else ("Released", {}))
     return events
@@ -207,6 +209,49 @@ def _plan_reason(args: tuple[Any, ...]) -> str:
     """The reason an edit's changes (its first argument) give for rewriting the plan; blank when it gives none."""
     changes = args[0] if args else None
     return str(changes.get("planReason") or "").strip() if isinstance(changes, Mapping) else ""
+
+
+class Refused(Exception):
+    """A write whose Events its Task's History could not take: nothing is written."""
+
+
+@dataclass(frozen=True)
+class _Write:
+    history: "TaskHistory"
+    unstarted: Collection[str] | None
+    reason: str
+
+
+_write: ContextVar[_Write | None] = ContextVar("task_write", default=None)
+
+
+def appended(
+    task: str,
+    after: Record | None,
+    actor: str,
+    *,
+    created: bool = False,
+    note: str = "",
+    rehydrates: bool = False,
+) -> None:
+    """Append the Events that take `task`'s History to `after`, the file about to be rendered (None: the task leaves the
+    board, with `note` as its reason), as `actor`; nothing outside a recorded write.
+
+    `created` makes them the task's first Event, and `rehydrates` leads them with a `Rehydrated` when the task replays archived.
+    Raises `StaleVersion` when the History moved after it was read, and `Refused` when it cannot take the Events."""
+    if (write := _write.get()) is None:
+        return
+    history = write.history
+
+    def events(row: Record, revisions: int) -> list[Event]:
+        if after is None:
+            return [] if row["archived"] else _events({}, None, note)
+        found = ([("Rehydrated", {})] if rehydrates and row["archived"] else []) + _events(_replayed(row), after, note)
+        if write.reason and revises_plan(row["state"], row["plan"], after.get("plan") or "", write.unstarted or ()):
+            found.append(("PlanRevised", {"ordinal": revisions + 1, "reason": write.reason}))
+        return found
+
+    history.append(task, actor, events, created=after if created else None)
 
 
 class TaskHistory:
@@ -219,89 +264,25 @@ class TaskHistory:
         self._store = EventStore(engine)
 
     def recorded(
-        self,
-        write: Callable[..., Written],
-        read: Callable[[str], Record | None],
-        *,
-        actor_at: int | None = None,
-        reason_at: int | None = None,
-        also: Callable[[str], Iterable[str]] | None = None,
-        unstarted: Collection[str] | None = None,
-        rehydrates: bool | Callable[..., bool] = False,
+        self, write: Callable[..., Written], *, unstarted: Collection[str] | None = None
     ) -> Callable[..., Written]:
-        """`write` (a verb taking a task id first) that appends what it changed once it succeeds.
+        """`write` (a verb taking a task id first) with each change of a file it makes appended to its Task's History first,
+        through `appended`, `archived` and `rehydrated`; a write whose append fails or loses its swap is not ok.
 
-        `rehydrates` is a write that returns a completed task to the active board (a reopen): its Events lead with `Rehydrated`. A callable takes the task and the write's arguments, before it, and
-        says whether this call is one.
-
-        `actor_at` is the index in the arguments after the task of an actor passed positionally; `reason_at` that of an archive's reason.
-        `also` names the other tasks the write edits, so an archive's removal of itself from its dependents is recorded too.
         `unstarted` (an edit's lanes where work has not begun) makes a plan change with a `planReason` in the changes also
         append a numbered `PlanRevised`."""
 
         def run(task: str, *args: Any, **kwargs: Any) -> Written:
-            before = read(task)
-            others = {name: read(name) for name in also(task)} if also else {}
             reason = _plan_reason(args) if unstarted is not None else ""
-            rehydrating = rehydrates(task, *args, **kwargs) if callable(rehydrates) else rehydrates
-            written = write(task, *args, **kwargs)
-            if written.ok:
-                actor = kwargs.get("actor") or (
-                    args[actor_at] if actor_at is not None and len(args) > actor_at else OPERATOR
-                )
-                note = args[reason_at] if reason_at is not None and len(args) > reason_at else ""
-                after = read(task)
-                task = str((after or before or {}).get("id") or task)
-                revised = bool(reason and before and after) and revises_plan(
-                    before.get("status") or "", before.get("plan") or "", after.get("plan") or "", unstarted or ()
-                )
-                self._append(task, before, after, actor, note.strip(), reason if revised else None, rehydrating)
-                for name, was in others.items():
-                    self._append(name, was, read(name), actor, "")
-            return written
-
-        return run
-
-    def reconciled(self, read: Callable[[str], Record | None]) -> Callable[[str], bool]:
-        """A verb that appends the Events bringing a task's History to its file, whatever left them apart; whether any were needed.
-
-        A file edited by a write that recorded nothing (an archive's unlink, before it named its dependents) leaves the read model
-        in the old state, and the board draws the read model. The next write heals it through `_held`; this heals it without one.
-        A task with no file but a History (a rename made while the server was stopped) is archived; one with neither is no task."""
-
-        def run(task: str) -> bool:
-            record = read(task)
-            if record is None and not (self._store and self._store.head(KIND, task)):
-                return False
-            return self._append(task, record, record, RECONCILER, "")
-
-        return run
-
-    def dehydrated(
-        self, complete: Callable[[str], Written], read: Callable[[str], Record | None]
-    ) -> Callable[[str], Written]:
-        """`complete` (a verb moving a Done task out of the active board) that records an `Archived`
-        once it succeeds: the task stays in its History, and replaying that rehydrates it."""
-
-        def run(task: str) -> Written:
-            before = read(task)
-            written = complete(task)
-            if written.ok:
-                self._append(task, before, None, OPERATOR, "")
-            return written
-
-        return run
-
-    def created(self, create: Callable[..., Written], read: Callable[[str], Record | None]) -> Callable[..., Written]:
-        """`create` that appends the new task's `TaskCreated` once it succeeds."""
-
-        def run(title: str, details: Mapping[str, Any], /, actor: str = OPERATOR) -> Written:
-            written = create(title, details, actor=actor)
-            record = read(written.output) if written.ok else None
-            if record is not None and self._store is not None:
-                with suppress(StaleVersion):  # the scan imported the new file first: its History already holds the task
-                    self._store.append(KIND, written.output, 0, [self._new("TaskCreated", seed(record, 0.0), actor)])
-            return written
+            token = _write.set(_Write(self, unstarted, reason))
+            try:
+                return write(task, *args, **kwargs)
+            except Refused as refused:
+                return Written(False, str(refused))
+            except StaleVersion:
+                return Written(False, f"{task}: its History changed while it was written", transient=True)
+            finally:
+                _write.reset(token)
 
         return run
 
@@ -328,7 +309,7 @@ class TaskHistory:
         if store is None or not events:
             return False
         store.append(
-            KIND, task, store.head(KIND, task), [self._new(kind, payload, RECONCILER) for kind, payload in events]
+            KIND, task, store.head(KIND, task), [self._new(kind, payload, FILES_WIN) for kind, payload in events]
         )
         return True
 
@@ -346,44 +327,30 @@ class TaskHistory:
         store.append(KIND, task, head, [self._new("Archived" if archived else "Rehydrated", {}, OPERATOR)])
         return True
 
-    def _append(
-        self,
-        task: str,
-        before: Record | None,
-        after: Record | None,
-        actor: str,
-        note: str,
-        revision: str | None = None,
-        rehydrates: bool = False,
-    ) -> bool:
-        """Append the Events that take `before` to `after`, and a numbered `PlanRevised` of `revision` when it is not None;
-        whether any were appended."""
+    def append(
+        self, task: str, actor: str, events: Callable[[Record, int], list[Event]], *, created: Record | None = None
+    ) -> None:
+        """Append what `events` makes of the replay of `task`'s History at the head read, at that head; a created task's
+        `TaskCreated` of `created` at none."""
         store = self._store
         if store is None:
-            return False
-        for _ in range(_APPEND_ATTEMPTS):
-            head = store.head(KIND, task)
-            if after is None and head and store.read(KIND, task, head - 1)[-1].type == "Archived":
-                return False  # retiring an archived task leaves the board no more than it already has
-            base = before if before is not None else after
-            held = _held(store, task, before) if head and before else before
-            events = [("Rehydrated", {})] if rehydrates else []
-            events += _events(held or {}, after, note)
-            if revision is not None:
-                events.append(("PlanRevised", {"ordinal": self._revisions(store, task) + 1, "reason": revision}))
-            seeded = [("TaskImported", seed(base, 0.0))] if head == 0 and base else []
-            if not events and not seeded:
-                return False
-            try:
-                store.append(KIND, task, head, [self._new(kind, payload, actor) for kind, payload in seeded + events])
-                return True
-            except StaleVersion:
-                continue
-        raise StaleVersion(f"task {task} kept moving while its History was appended to")
-
-    @staticmethod
-    def _revisions(store: EventStore, task: str) -> int:
-        return sum(1 for event in store.read(KIND, task) if event.type == "PlanRevised")
+            return
+        head = store.head(KIND, task)
+        if created is not None:
+            if head:
+                raise Refused(f"{task} already has a History")
+            batch: list[Event] = [("TaskCreated", seed(created, 0.0))]
+        elif not head:
+            raise Refused(f"{task} has no History, so it takes no write")
+        else:
+            stored = store.read(KIND, task)
+            batch = events(replay(stored), sum(1 for event in stored if event.type == "PlanRevised"))
+        if not batch:
+            return
+        try:
+            store.append(KIND, task, head, [self._new(kind, payload, actor) for kind, payload in batch])
+        except (OSError, SQLAlchemyError) as error:
+            raise Refused(f"{task}: its History could not be appended to: {error}") from error
 
     @staticmethod
     def _new(kind: str, payload: dict[str, Any], actor: str) -> NewEvent:

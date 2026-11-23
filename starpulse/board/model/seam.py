@@ -253,8 +253,6 @@ class Board:
     """Reads the retired tasks a page at a time, newest first."""
     import_retired: RetiredImporter
     """Keeps a task retired elsewhere among the retired tasks."""
-    reconcile: Callable[[str], bool]
-    """Brings a task's History to its file and says whether it had to."""
     files: Callable[[], Iterable[tuple[str, list[str]]]]
     """Lists each open task file's id and the aliases it answers to."""
     done_files: Callable[[], Iterable[tuple[str, list[str]]]]

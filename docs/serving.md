@@ -536,20 +536,22 @@ budget and the board to its soft memory limit.
 
 ## Task History
 
-The native board records every successful Task write in the Task's `task` stream (`board/task_history.py`), beside the
-task file it still writes. One wrapper around the board's `writer`, `assign`, `edit`, `archive`, `restore`, `complete`,
-`retire` and `create` covers every entry path: the `starpulse task` verbs, `/api/tasks`, `/api/edit`, the page, the
+The native board appends every Task write to the Task's `task` stream (`board/task_history.py`) first and renders the
+task file after. A verb reads its base from the History, appends with a compare-and-set at the head it read, and writes the
+file only once the append lands; one wrapper around the board's `writer`, `assign`, `edit`, `archive`, `restore`,
+`complete`, `retire` and `create` covers every entry path: the `starpulse task` verbs, `/api/tasks`, `/api/edit`, the page, the
 Scheduler and the task actor, which all call those verbs.
 
-- The Events are the intent the file's before and after show: `TaskCreated`, `FieldsEdited` (own columns and `meta`),
+- The Events are the intent the History's replay and the verb's result show: `TaskCreated`, `FieldsEdited` (own columns and `meta`),
   `Transitioned` (both states), `CriterionAdded`, `CriterionChecked`, `CommentAdded`, `Claimed`/`Released`, `Archived` and
   `Rehydrated`. A refused write appends nothing.
 - A plan rewrite on a started task also appends `PlanRevised` (`ordinal`, `reason`, counted per task from 1), after the
   `FieldsEdited` it accompanies. The `/api/edit` change `planReason` carries the reason; the edit is refused without it.
   The fold ignores the Event; `GET /api/history?task=` reports the count as `plan_revisions`.
-- A Task whose stream is empty is seeded first with a `TaskImported` of its record, so a replay equals the row for tasks
-  written before History.
-- An append that finds the head moved reads it again and retries, up to five attempts in all, then raises `StaleVersion`: the directory scan's import and reconcile append to the same History while a write does.
+- A Task with no History takes no write (`<task> has no History, so it takes no write`) and a create over an existing
+  History is refused: `starpulse import-board` and `starpulse parity --import` give a file its `TaskImported`.
+- An append that finds the head moved re-reads it and retries, up to five attempts in all; a failed or lost append fails
+  the write and writes no file.
 - A board whose log is not attached records nothing.
 
 A deployment declares its own Task fields in `[board.fields]`:
