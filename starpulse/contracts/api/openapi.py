@@ -108,9 +108,11 @@ def _tag(path: str) -> str:
 
 def _operation(method: str, path: str, op: Op) -> dict[str, Any]:
     names = re.findall(r"\{(\w+)\}", path)
-    parameters = [{"name": n, "in": "path", "required": True, "schema": {"type": "string"}} for n in names] + [
-        {"name": n, "in": "query", "required": False, "schema": {"type": "string"}} for n in op.query
-    ]
+    parameters = (
+        [{"name": n, "in": "path", "required": True, "schema": {"type": "string"}} for n in names]
+        + [{"name": n, "in": "query", "required": n in op.required, "schema": {"type": "string"}} for n in op.query]
+        + [{"name": n, "in": "header", "required": True, "schema": {"type": "string"}} for n in op.headers]
+    )
     operation: dict[str, Any] = {
         "summary": op.summary,
         "tags": [_tag(path)],

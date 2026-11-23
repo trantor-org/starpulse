@@ -64,16 +64,25 @@ def purge(engine: Engine, archive: Path, clock: Callable[[], float]) -> None:
         ~exists().where(state.delivery_id == inbox.c.delivery_id, state.status != "skipped"),
         inbox.c.id <= _newest_held(),
     )
-    old = and_(inbox.c.received_at < now - RETENTION, ~_has("pending"), inbox.c.id < select(func.max(inbox.c.id)).scalar_subquery())
+    old = and_(
+        inbox.c.received_at < now - RETENTION,
+        ~_has("pending"),
+        inbox.c.id < select(func.max(inbox.c.id)).scalar_subquery(),
+    )
     last = 0
     while ids := _ids(engine, skipped, last):
         with engine.begin() as db:
-            db.execute(update(inbox).where(inbox.c.id.in_(ids)).values(body=b""))
+            db.execute(update(inbox).where(inbox.c.id.in_(ids), skipped).values(body=b""))
         last = ids[-1]
     last = 0
     while True:
         with engine.connect() as db:
-            rows = db.execute(select(inbox, _has("dead").label("dead")).where(old, inbox.c.id > last).order_by(inbox.c.id).limit(_BATCH)).all()
+            rows = db.execute(
+                select(inbox, _has("dead").label("dead"))
+                .where(old, inbox.c.id > last)
+                .order_by(inbox.c.id)
+                .limit(_BATCH)
+            ).all()
         if not rows:
             return
         if dead := [row for row in rows if row.dead]:
@@ -84,7 +93,9 @@ def purge(engine: Engine, archive: Path, clock: Callable[[], float]) -> None:
             gone = ~exists().where(inbox.c.delivery_id == state.delivery_id)
             db.execute(
                 delete(github_inbox_state).where(
-                    state.delivery_id.in_([row.delivery_id for row in rows]), state.status.in_(("done", "skipped")), gone
+                    state.delivery_id.in_([row.delivery_id for row in rows]),
+                    state.status.in_(("done", "skipped")),
+                    gone,
                 )
             )
         last = rows[-1].id
@@ -96,20 +107,28 @@ def _ids(engine: Engine, where: Any, after: int) -> list[int]:
 
 
 def _archive(directory: Path, rows: list[Any]) -> None:
-    """Append each row to the gzip JSONL file of its UTC day and fsync, before the caller deletes it."""
+    """Append each row to the gzip JSONL file of its UTC day and fsync, before the caller deletes it; a failed append is cut back."""
     days: dict[str, list[str]] = {}
     for row in rows:
-        entry = {name: getattr(row, name) for name in ("id", "delivery_id", "source", "event", "action", "repository", "received_at")}
+        entry = {
+            name: getattr(row, name)
+            for name in ("id", "delivery_id", "source", "event", "action", "repository", "received_at")
+        }
         entry["body"] = base64.b64encode(row.body).decode()
         day = datetime.fromtimestamp(row.received_at, UTC).strftime("%Y-%m-%d")
         days.setdefault(day, []).append(json.dumps(entry, separators=(",", ":")) + "\n")
     directory.mkdir(parents=True, exist_ok=True)
     for day, lines in days.items():
         with (directory / f"{day}.jsonl.gz").open("ab") as raw:
-            with gzip.GzipFile(fileobj=raw, mode="wb") as member:  # a gzip file may hold several members
-                member.write("".join(lines).encode())
-            raw.flush()
-            os.fsync(raw.fileno())
+            size = raw.tell()
+            try:
+                with gzip.GzipFile(fileobj=raw, mode="wb") as member:  # a gzip file may hold several members
+                    member.write("".join(lines).encode())
+                raw.flush()
+                os.fsync(raw.fileno())
+            except BaseException:
+                raw.truncate(size)  # a failed append leaves no torn member for the next one to follow
+                raise
 
 
 def restore(engine: Engine, archive: Path, delivery_id: str) -> bool:
@@ -125,6 +144,10 @@ def restore(engine: Engine, archive: Path, delivery_id: str) -> bool:
                 entry.pop("id")
                 entry["body"] = base64.b64decode(entry["body"])
                 with engine.begin() as db:
-                    db.execute(INSERTS[engine.dialect.name](inbox).values(**entry).on_conflict_do_nothing(index_elements=["delivery_id"]))
+                    db.execute(
+                        INSERTS[engine.dialect.name](inbox)
+                        .values(**entry)
+                        .on_conflict_do_nothing(index_elements=["delivery_id"])
+                    )
                 return True
     return False

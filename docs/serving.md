@@ -438,8 +438,8 @@ Connect `starpulse.v1.CloudEventsIngest` Publish and PublishBatch on this port (
                    `machine:events`; a `StepStarted` or `StepFinished` with no `machine`, `subject` the run's id and
                    `data` {workflow, status[, step, depends]}, to `runs:events`. 400 for an event the contract refuses,
                    401 for a missing or wrong token, 403 for another producer's source, machine or actor, 413 over the
-                   limit, 503 when the log refuses it, 404 when no producer is declared. A batch is checked whole, and a
-                   refusal writes nothing
+                   limit, 503 when the log refuses it, 404 when no producer is declared. A batch is checked whole, so a
+                   refused entry writes none; a 503 may leave the entries before it committed, and posting the batch again adds only the rest
 POST /intake/temporal-completion?workflow=<type>  Temporal's close callback (`Nexus-Operation-State`, `Nexus-Link` headers) with the `[[producers]]` bearer of a producer
                    named `temporal`; writes the run's close to `runs:events`. 201 {accepted}; 400 for a missing state, link or workflow, 401 for a wrong token
 POST /intake/grafana  a Grafana alert group, with the `webhook_token_env` bearer; handed on stdin to `webhook_command`; 404 where none is configured

@@ -9,7 +9,7 @@ A producer sends one CloudEvents 1.0 structured JSON event (`application/cloudev
 `id` is the event id, `source` the producer (its `[[producers]]` name), `type` the machine's event, `subject` the task
 it moved, or the extension `run` the run it moved: exactly one of the two. `machine` and `actor` are extensions;
 `time` and `data` (a JSON object under `MAX_DATA`) are optional. Each token belongs to one producer, which writes only
-its own machines and actors. A batch is checked whole before any entry is appended, so a refused entry writes none.
+its own machines and actors. A batch is checked whole before any entry is appended, so a refused entry writes none. A 503 is not checked ahead: entries before the one the log refused stay committed.
 
 A run's Step event rides the same ingest: `type` is `StepStarted` or `StepFinished`, there is no `machine`, `subject`
 is the run id and `data` carries `workflow`, `status` and, for a step's entry, `step` and `depends`. It lands on the
@@ -21,7 +21,7 @@ or one with another outcome, is refused. It lands on the `task:verdicts` stream 
 
 Answers 201, 400 (the entry is wrong), 401 (no known token), 403 (a machine, actor or source the producer may not
 use), 413 (`data` over the cap) or 503 (the log did not take an entry; every entry carries a stable id, so the sender
-posts the batch again).
+posts the batch again and the log keeps each entry once).
 """
 
 import json

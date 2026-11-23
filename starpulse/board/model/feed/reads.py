@@ -53,7 +53,9 @@ class ReadMethods:
 
     def repin(self) -> None:
         """Within `pinned_rows`, forget the rows held when the read model has moved since they were loaded."""
-        if (held := getattr(self._rows, "held", None)) is not None and held[0] != (position := self._read_model.position()):
+        if (held := getattr(self._rows, "held", None)) is not None and held[0] != (
+            position := self._read_model.position()
+        ):
             self._rows.held = (position, {})
 
     def _found(self, task_id: str) -> tuple[str, Mapping[str, Any] | None]:
@@ -105,6 +107,8 @@ class ReadMethods:
             agent = None if summary["archived"] else self._read_model_agent(summary["id"])
             if agent and agent["state"] == self._roles.done:
                 agent = done_dot(agent)
+            elif agent:
+                agent = self._active(agent)
             self._publish(
                 "task", {"id": summary["id"], "agent": agent, "settled": None, "archived_today": archived_today}
             )
@@ -139,7 +143,10 @@ class ReadMethods:
         working task's `session_activity` is read again on each call, since a session's turn moves no task."""
         if (held := getattr(self._pinned, "tasks", None)) is not None:
             return list(held)
-        key = (self._read_model.position(), local_midnight(self._clock()))  # before the build: a change in it rebuilds next
+        key = (
+            self._read_model.position(),
+            local_midnight(self._clock()),
+        )  # before the build: a change in it rebuilds next
         if (built := self._built) is not None and built[0] == key:
             return [self._active(agent) for agent in built[1]]
         agents = self._hot()
@@ -211,7 +218,9 @@ class ReadMethods:
     def publish_move(self, flow: str, agent: dict) -> None:
         """Publish one machine row the Board child folded as a `move` delta; the feed places nothing itself."""
         with self._lock:
-            self._publish("move", {"machine": flow, "id": agent["id"], "agent": {**agent, "model": agent["model"] or ""}})
+            self._publish(
+                "move", {"machine": flow, "id": agent["id"], "agent": {**agent, "model": agent["model"] or ""}}
+            )
 
     def await_stream(self) -> None:
         """Say the stream has not been reached yet, so a page shows that instead of an empty Board."""

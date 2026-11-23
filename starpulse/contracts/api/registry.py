@@ -227,13 +227,16 @@ BODIES: dict[str, Any] = {
 
 class Op(NamedTuple):
     """One method of one route: what it does, the model of the request body (a media type for a body no model
-    describes), the models of its `200` answer and its query names; `media` is the type of the answer."""
+    describes), the models of its `200` answer and its query names; `media` is the type of the answer, `headers` the
+    request headers the route requires and `required` the query names it requires."""
 
     summary: str
     body: Any = None
     request: Any = None
     query: tuple[str, ...] = ()
     media: str = "application/json"
+    headers: tuple[str, ...] = ()
+    required: tuple[str, ...] = ()
 
 
 def _read(summary: str, kind: str | None = None, *query: str, media: str = "application/json") -> Op:
@@ -256,16 +259,16 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/events/body/{key}"): Op("A stored snapshot body by its key", BODIES["snapshot"] | ApiError),
     ("GET", "/api/snapshot"): _read("The board snapshot", "snapshot", "view"),
     ("GET", "/api/flows"): Op("The flows of the board", Snapshot),
-    ("GET", "/api/ledger/{rest}/events"): Op("Stream a ledger's rows as they land", BODIES["ledger_rows"], media=_STREAM),
+    ("GET", "/api/ledger/{rest}/events"): Op(
+        "Stream a ledger's rows as they land", BODIES["ledger_rows"], media=_STREAM
+    ),
     ("GET", "/api/ledger/{rest}"): _read("A page of a ledger", "ledger", "before", "limit"),
     ("GET", "/api/doctor"): _read("The contract report", "doctor"),
     ("GET", "/api/health"): _read("Whether the server is ready", "ready"),
     ("GET", "/api/runs"): _read("The workflow runs", "runs"),
     ("GET", "/api/machines"): _read("The machines and their lanes", "machines", "before", "lanes", "limit", "open"),
     ("GET", "/api/done"): _read("A page of finished tasks", "done", "before", "limit"),
-    ("GET", "/api/search"): _read(
-        "Search tasks", "search", "before", "finished_within_days", "label", "limit", "q"
-    ),
+    ("GET", "/api/search"): _read("Search tasks", "search", "before", "finished_within_days", "label", "limit", "q"),
     ("GET", "/api/search/similar"): _read(
         "Tasks like a text", "search", "before", "finished_within_days", "label", "limit", "q"
     ),
@@ -296,7 +299,9 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/reopen"): _write("Reopen a task", "reopen", ReopenRequest),
     ("POST", "/api/tasks"): _write("Create tasks", "create", CreateRequest),
     ("GET", "/api/milestones/{id}"): _read("One milestone, archived or open", "milestone"),
-    ("PUT", "/api/milestones/{id}"): _write("Write a milestone over the revision named", "milestone_put", MilestonePutRequest),
+    ("PUT", "/api/milestones/{id}"): _write(
+        "Write a milestone over the revision named", "milestone_put", MilestonePutRequest
+    ),
     ("DELETE", "/api/milestones/{id}"): _write("Archive a milestone", "milestone_archive"),
     ("POST", "/api/milestones"): _write("The open milestones", "milestones", MilestoneListRequest),
     ("PUT", "/api/milestones"): _write("Create a milestone", "milestone_create", MilestoneCreateRequest),
@@ -309,10 +314,18 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/runs/{instance}/{workflow}/rerun"): _write("Rerun a workflow run", "run"),
     ("GET", "/api/scheduler"): _read("The scheduler's state", "scheduler"),
     ("PUT", "/api/scheduler"): _write("Switch the scheduler on or off", "scheduler", SchedulerRequest),
-    ("GET", "/api/pulls"): _read("Pull requests", "pulls", "bodies", "body_contains", "number", "repo", "state", "task"),
+    ("GET", "/api/pulls"): _read(
+        "Pull requests", "pulls", "bodies", "body_contains", "number", "repo", "state", "task"
+    ),
     ("GET", "/api/openapi"): Op("This document"),
     ("GET", "/metrics"): _read("Prometheus metrics", media="text/plain"),
     ("POST", "/intake/grafana"): _write("Ingest a Grafana alert", "ingest", "application/json"),
-    ("POST", "/intake/temporal-completion"): _write("Ingest a Temporal completion", "ingest", "application/json"),
+    ("POST", "/intake/temporal-completion"): Op(
+        "Ingest a Temporal completion",
+        BODIES["ingest"],
+        query=("workflow",),
+        headers=("Nexus-Operation-State", "Nexus-Link"),
+        required=("workflow",),
+    ),
     ("GET", "/swagger"): Op("The Swagger page of this document", media="text/html"),
 }
