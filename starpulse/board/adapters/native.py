@@ -52,7 +52,7 @@ from starpulse.board.adapters.native_scan import (
 from starpulse.board.adapters.native_scan import (
     _profile as _profile_of,
 )
-from starpulse.board.adapters.task_history import KIND, TaskHistory, revises_plan
+from starpulse.board.adapters.task_history import KIND, TaskHistory, appended, revises_plan
 from starpulse.board.model import criteria, entry, rules, write_steps
 from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.guard import Guard, Validate
@@ -80,7 +80,7 @@ from starpulse.board.model.seam import (
 )
 from starpulse.contracts.tiers import TIERS, implied_tier
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
-from starpulse.event_log.store import lacks_history
+from starpulse.event_log.store import StaleVersion, lacks_history
 from starpulse.event_log.tables import pull_requests, retired_tasks
 from starpulse.github.adapters.outbound.rest import connect, get, pull_mergeable
 from starpulse.machine_engine.model.state_roles import StateRoles
@@ -376,12 +376,28 @@ def _land(
         return judged
     if before is not None and path.read_text() != before:
         return _STALE
+    try:
+        _commit(path, text, actor, created=before is None)
+    except StaleVersion:
+        return _STALE
     # Unique per write, so concurrent writers never share a scratch file; not a `.md` file, so a scan never reads it half written.
     scratch = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     scratch.write_text(text)
     os.replace(scratch, path)
     write_steps.step("land")
     return judged
+
+
+def _identity(path: Path, text: str | None = None) -> tuple[str, dict]:
+    """The id of the task a file holds, and its record."""
+    record = _record_of(path.read_text() if text is None else text)
+    return str(record["id"] or path.stem), record
+
+
+def _commit(path: Path, text: str, actor: str, *, created: bool = False) -> None:
+    """Append to the History of the task a file `text` is about to render the Events that take it there."""
+    task, record = _identity(path, text)
+    appended(task, record, actor, created=created)
 
 
 def _update(
@@ -713,7 +729,8 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise ValueError(f"{field} must be a list of text")
         key = _LISTS[field]
-        frontmatter[key] = [item.strip() for item in value if item.strip()]
+        items = [item.strip() for item in value if item.strip()]
+        frontmatter[key] = list(dict.fromkeys(items)) if key == "references" else items  # a task cites a reference once
         if not frontmatter[key] and key in _OPTIONAL_LISTS:
             del frontmatter[key]
     else:
@@ -852,7 +869,7 @@ def _editor(
         if audit:
             return written
         if status and lane_id(status) not in {done, COMPLETED}:
-            written = _reactivated(root, task, written)  # a completed task edited out of Done leaves `completed/`
+            written = _reactivated(root, task, written, actor)  # a completed task edited out of Done leaves `completed/`
         return _moved(written, spelled.get(lane_id(status), status)) if status else written
 
     return edit
@@ -1022,6 +1039,7 @@ def _archiver(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
                 moves.append((dependent, ready))
         target = root / "archive" / "tasks" / path.name
         try:
+            appended(_identity(path)[0], None, actor)
             target.parent.mkdir(parents=True, exist_ok=True)
             os.replace(path, target)
         except OSError as error:
@@ -1221,7 +1239,10 @@ class _Retired:
         if not (kept := self.rows(task)):
             return None
         target = directory / kept[0]["name"]
+        if target.exists():
+            return Written(False, f"{task}: {target} already exists")
         try:
+            appended(kept[0]["task"], _record_of(kept[0]["text"]), OPERATOR, rehydrates=True)
             with target.open("xb") as file:
                 file.write(kept[0]["text"].encode())
         except FileExistsError:
@@ -1253,6 +1274,7 @@ def _retirer(root: Path, retired: _Retired, roles: StateRoles) -> TaskRetirer:
             return Written(False, f"{task} is {status or 'without a status'}, neither Done nor archived")
         held = path.with_name(f"{path.name}.retiring")
         try:
+            appended(str(frontmatter["id"]).strip(), None, OPERATOR)
             os.replace(path, held)
             if refused := retired.keep(str(frontmatter["id"]).strip(), path.name, held.read_bytes().decode()):
                 os.replace(held, path)
@@ -1313,7 +1335,7 @@ def _restorer(
         if (found := _find(root, task)) is not None:
             if found.parent.name != "completed" or lane_id(str(_split(found.read_text())[0].get("status"))) == done:
                 return Written(False, f"{task} is already on the board")
-            return _reactivated(root, task, Written(True, f"Restored task {task}"))
+            return _reactivated(root, task, Written(True, f"Restored task {task}"), OPERATOR)
         if (path := _find(root, task, ("archive/tasks",))) is None:
             return retired.take(task, root / "tasks") or Written(
                 False, f"{task} has no archived task file in {root / 'archive' / 'tasks'} and is not retired"
@@ -1326,7 +1348,11 @@ def _restorer(
                 False, f"{task} was archived in {held}, which the active definition lacks and no migrations entry names"
             )
         target = root / "tasks" / path.name
+        if target.exists():
+            return Written(False, f"{task}: {target} already exists")
         try:
+            id_, record = _identity(path)
+            appended(id_, record, OPERATOR, rehydrates=True)
             os.link(path, target)
             path.unlink()
         except FileExistsError:
@@ -1369,7 +1395,7 @@ def _writer(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Gua
 
         written = _update(root, task, edit, guard, actor)
         if lane_id(status) not in {roles.done, COMPLETED}:
-            written = _reactivated(root, task, written)  # a completed task moved out of Done leaves `completed/`
+            written = _reactivated(root, task, written, actor)  # a completed task moved out of Done leaves `completed/`
         return _moved(written, spelled.get(lane_id(status), status))
 
     return write
@@ -1379,12 +1405,14 @@ class _Unheld(Exception):
     """The task file no longer holds the State a write judged."""
 
 
-def _reactivated(root: Path, task: str, written: Written) -> Written:
+def _reactivated(root: Path, task: str, written: Written, actor: str) -> Written:
     """`written`, its task's file moved from `completed/` to `tasks/` when the write left it there; a name taken refuses."""
     if not written.ok or (edited := _find(root, task)) is None or edited.parent.name != "completed":
         return written
     target = root / "tasks" / edited.name
     try:
+        id_, record = _identity(edited)
+        appended(id_, record, actor, rehydrates=True)
         os.link(edited, target)
         edited.unlink()
     except FileExistsError:
@@ -1415,23 +1443,9 @@ def _reopener(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
             written = _update(root, task, edit, guard, actor)
         except _Unheld as unheld:
             return Written(False, str(unheld))
-        return _moved(_reactivated(root, task, written), working)
+        return _moved(_reactivated(root, task, written, actor), working)
 
     return reopen
-
-
-def _completed(root: Path, task: str) -> bool:
-    return (found := _find(root, task)) is not None and found.parent.name == "completed"
-
-
-def _leaves_completed(root: Path, done: str | None) -> Callable[..., bool]:
-    """Whether an edit moves a completed task out of Done: the test of `_editor`'s move out of `completed/`."""
-
-    def leaves(task: str, changes: Mapping[str, Any], /, *_: Any, **__: Any) -> bool:
-        lane = lane_id(str(changes.get("status") or ""))
-        return bool(lane) and lane not in {done, COMPLETED} and _completed(root, task)
-
-    return leaves
 
 
 def _keeps(kept: re.Pattern[str], frontmatter: dict) -> bool:
@@ -1459,6 +1473,7 @@ def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles, keep: o
             return Written(False, f"{task} carries a label that keeps it in {root / 'tasks'}")
         target = root / "completed" / path.name
         try:
+            appended(str(frontmatter.get("id") or path.stem).strip(), None, OPERATOR)
             target.parent.mkdir(exist_ok=True)
             os.replace(path, target)
         except OSError as error:
@@ -1469,7 +1484,7 @@ def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles, keep: o
     return complete
 
 
-def _uncompleted(root: Path, keep: object) -> None:
+def _uncompleted(root: Path, keep: object, rehydrate: Callable[[str], object]) -> None:
     """Return each `completed/` file with a label that fully matches the regex `keep` to `tasks/`, as `_completer` would
     have kept it there; a file completed before the label was kept is writable again."""
     if not keep or not (root / "completed").is_dir():
@@ -1478,6 +1493,7 @@ def _uncompleted(root: Path, keep: object) -> None:
     for path in sorted((root / "completed").glob("*.md")):
         with contextlib.suppress(OSError):  # a file that cannot be read or linked stays in `completed/`
             if _keeps(kept, _split_record(path.read_text())[0]):
+                rehydrate(_identity(path)[0])
                 os.link(path, root / "tasks" / path.name)
                 path.unlink()
 
@@ -1854,7 +1870,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         guard.standing,
         guard.readable,
         tuple(lane.label or labelled.get(lane.name, lane.name) for lane in rows.lanes if lane.role),
-        lambda task: recorded["reconcile"](task),
     )
 
     history = TaskHistory()
@@ -1864,7 +1879,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         history.attach(log.engine)
         history.import_retired(retired.pairs(without_history=True), _record_of)
         if settings.get("complete_done"):
-            _uncompleted(root, settings.get("complete_keep_labels"))
+            _uncompleted(root, settings.get("complete_keep_labels"), lambda task: history.settle(task, False))
             for done_task in _done_in_tasks(root, made.roles.done):
                 complete(done_task)  # a Done file left in `tasks/` before a move completed it on landing
 
@@ -1872,9 +1887,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         attach(log)
         made.start(feed, group, log)
 
-    read = made.read
-
-    complete = history.dehydrated(made.complete, read)
+    complete = history.recorded(made.complete)
 
     def completing(write: MoveWriter) -> MoveWriter:
         def land(task: str, status: str, actor: str) -> Written:
@@ -1898,36 +1911,16 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
         return land
 
-    def archiving(write: MoveWriter) -> MoveWriter:
-        leaves = _leaves_completed(root, made.roles.done)
-        moves = history.recorded(
-            write, read, actor_at=1, rehydrates=lambda task, status, *_: leaves(task, {"status": status})
-        )
-        archives = history.recorded(
-            write, read, actor_at=1, also=lambda task: _open_dependents(root, _names(root, task), made.roles.done)
-        )
-        return lambda task, status, *rest: (archives if lane_id(status) == ARCHIVED else moves)(task, status, *rest)
-
     recorded = {
-        "writer": completing(archiving(made.writer)),
-        "assign": history.recorded(made.assign, read),
-        "edit": completing_edit(
-            history.recorded(
-                made.edit, read, unstarted=_unstarted(made.roles), rehydrates=_leaves_completed(root, made.roles.done)
-            )
-        ),
-        "archive": history.recorded(
-            made.archive,
-            read,
-            reason_at=0,
-            also=lambda task: _open_dependents(root, _names(root, task), made.roles.done),
-        ),
-        "restore": history.recorded(made.restore, read, rehydrates=lambda task: _completed(root, task)),
-        "reopen": history.recorded(made.reopen, read, actor_at=1, rehydrates=True),
+        "writer": completing(history.recorded(made.writer)),
+        "assign": history.recorded(made.assign),
+        "edit": completing_edit(history.recorded(made.edit, unstarted=_unstarted(made.roles))),
+        "archive": history.recorded(made.archive),
+        "restore": history.recorded(made.restore),
+        "reopen": history.recorded(made.reopen),
         "complete": complete,
-        "retire": history.recorded(made.retire, read),
-        "create": history.created(made.create, read),
-        "reconcile": history.reconciled(_own(root, read)),
+        "retire": history.recorded(made.retire),
+        "create": history.recorded(made.create),
         "files": lambda: [(task, _aliases(frontmatter)) for task, frontmatter in _open_tasks(root, made.roles.done)],
         "done_files": lambda: [
             (task, _aliases(frontmatter)) for task, frontmatter in _done_tasks(root, made.roles.done)
@@ -1944,21 +1937,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         }
     )
     return final
-
-
-def _own(root: Path, read: Callable[[str], Any]) -> Callable[[str], Any]:
-    """`read`, but None for an id only another task's file lists as an alias: that id's task is gone, renamed."""
-
-    def own(task: str) -> Any:
-        path = _find(root, task)
-        try:
-            frontmatter, _ = _split(path.read_text()) if path else ({}, "")
-        except OSError:
-            return None
-        held = str(frontmatter.get("id") or "").strip() or task
-        return read(task) if path and held.casefold() == task.casefold() else None
-
-    return own
 
 
 #: How many tasks' standing verdicts `_standing` keeps, the oldest placed dropped first.

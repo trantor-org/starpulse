@@ -57,7 +57,6 @@ def refusing(**fields: Any) -> Board:
             "retired_projected": lambda *_: [],
             "retired_page": lambda *_: ([], None),
             "import_retired": _refused,
-            "reconcile": lambda *_: False,
             "files": lambda: (),
             "done_files": lambda: (),
             "rescan": lambda: 0,

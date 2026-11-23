@@ -173,6 +173,8 @@ def decide(
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
+    The refused follow in that order too, so the first decision is the task that would start first.
+
     A task whose profile names no tier in the policy's weights is refused `NO_PROFILE`, whatever room is left. A
     leftover-tier task is priced against the headroom less the demand of every other task admitted, so it starts only
     when nothing else needs the room, and ranks after them.
@@ -212,7 +214,7 @@ def decide(
     admitted = [d for d in decisions if d.admitted]
     enforced = sorted(admitted, key=lambda d: keys[d.task])
     ranked = [replace(d, enforced_rank=rank) for rank, d in enumerate(enforced, 1)]
-    refused = sorted((d for d in decisions if not d.admitted), key=lambda d: (-d.depth, d.task))
+    refused = sorted((d for d in decisions if not d.admitted), key=lambda d: keys[d.task])
     if no_profile_logged is not None and log:
         no_profile = {d.task for d in refused if d.blocked_by == NO_PROFILE}
         refused_logged = [d for d in refused if d.blocked_by != NO_PROFILE or d.task not in no_profile_logged]

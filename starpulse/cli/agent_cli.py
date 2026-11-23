@@ -669,6 +669,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     board.add_argument("--state", help="only this column, by its state id (`in_progress`)")
     board.add_argument("--milestone", help="only tasks in this milestone")
+    board.add_argument(
+        "--no-cold", action="store_true", help="with `--milestone`, skip the Done tasks past their first day (a request per hundred)"
+    )
     board.add_argument("--type", help="only tasks of this type (`spike`)")
     board.add_argument("--label", help="only tasks with this label")
     board.add_argument("--profile", help="only tasks routed to this agent profile (`@agent-standard-high`)")

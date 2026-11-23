@@ -87,8 +87,8 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     for column in board["columns"]:
         column["tasks"] = [next(settled) for _ in column["tasks"]]
     finished = roles_of(snapshot).done
-    # an unfiltered board skips the cold pages (147 requests); a milestone or the done state asks for them
-    if finished and args.state in (None, finished) and (args.state or args.milestone):
+    # an unfiltered board skips the cold pages (a request per hundred Done tasks); a milestone or the done state asks for them, unless `--no-cold`
+    if finished and args.state in (None, finished) and (args.state or args.milestone) and not args.no_cold:
         done = done_ids(snapshot)
         column = next(column for column in board["columns"] if column["state"] == finished)
         bare = {"milestone": "", "labels": [], "dependencies": [], "prs": [], "moves": {}}

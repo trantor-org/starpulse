@@ -579,7 +579,6 @@ def project_board(
     refusal: Callable[[Mapping[str, Any], str, str], Mapping[str, Any] | None] = lambda *_: None,
     readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
     statuses: tuple[str, ...] = (),
-    placed: Callable[[str], object] = lambda _task: False,
 ) -> SimpleNamespace:
     """The parts of the Board of the Markdown project in `root`, kept current by a directory watch, with the writers `writers` builds.
 
@@ -587,8 +586,7 @@ def project_board(
     and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text;
     `refusal` is the update a board rule that refuses a task's move to a lane makes to the move; `readable` answers
     what the board's `readable` rules find broken in a task's description, "" when it reads well. `statuses` are the
-    lanes the policy holds, which replace the config file's. `placed` brings a task's History to its file (or archives it
-    when the file is gone), which each scan calls for the tasks it finds changed.
+    lanes the policy holds, which replace the config file's.
     """
     config = read_config(root, statuses)
     require_project(root, config)
@@ -614,13 +612,11 @@ def project_board(
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         # Built here, not at load: a `Move` is an adapter model, and a board read never starts the watch.
-        # The first scan places every file, a task's History through `placed`, and a write meeting it waits for the task it places.
         moves = board_moves(drawn, declared, lane_ids)
         scan = NativeScan(
             root,
-            lambda task: placed(task.id),
+            lambda _task: None,
             moves,
-            placed,
             retired=retired,
             refusal=refusal,
             roles=roles,
