@@ -23,9 +23,11 @@ _PASSED = frozenset({"success", "neutral", "skipped"})
 _STATUS_RESULTS = {"success": "pass", "pending": "pending"}  # any other state fails
 
 
-def _write(store: PullStore, records: list[Record], edit: Edit, now: float) -> bool:
+def _write(store: PullStore, records: list[Record], edit: Edit, now: float, head: str | None = None) -> bool:
     def change(current: Record | None) -> Record | None:
-        delta = edit(current, now) if current else None
+        if not current or (head is not None and current["headRefOid"] != head):  # a push moved the head since the read
+            return None
+        delta = edit(current, now)
         return current | delta if delta else None
 
     return any([store.amend(record["repo"], record["number"], change) for record in records])
@@ -36,11 +38,12 @@ def _at_head(store: PullStore, repo: str, sha: str) -> list[Record]:
 
 
 def _posted(name: str, result: str) -> Edit:
-    def edit(record: Record, _now: float) -> Record:
+    def edit(record: Record, now: float) -> Record:
         checks = record["requiredChecks"]
         if name not in {check["name"] for check in checks}:
             return {}
-        return {"requiredChecks": [{**check, "result": result} if check["name"] == name else check for check in checks]}
+        posted = [{**check, "result": result} if check["name"] == name else check for check in checks]
+        return {"requiredChecks": posted, "fetchedAt": max(now, record["fetchedAt"])}  # `PullStore._guarded` reads this
 
     return edit
 
@@ -50,12 +53,12 @@ def _check_run(store: PullStore, delivery: Delivery, payload: Mapping[str, Any],
         return False
     run = payload["check_run"]
     result = "pass" if run["conclusion"] in _PASSED else "failing"
-    return _write(store, _at_head(store, delivery.repository, run["head_sha"]), _posted(run["name"], result), now)
+    return _write(store, _at_head(store, delivery.repository, run["head_sha"]), _posted(run["name"], result), now, run["head_sha"])
 
 
 def _status(store: PullStore, delivery: Delivery, payload: Mapping[str, Any], now: float) -> bool:
     result = _STATUS_RESULTS.get(payload["state"], "failing")
-    return _write(store, _at_head(store, delivery.repository, payload["sha"]), _posted(payload["context"], result), now)
+    return _write(store, _at_head(store, delivery.repository, payload["sha"]), _posted(payload["context"], result), now, payload["sha"])
 
 
 def _with_suite(ci: Mapping[str, Any], sha: str, suite_id: int, fields: Record) -> Record:
@@ -97,13 +100,13 @@ def _check_suite(store: PullStore, delivery: Delivery, payload: Mapping[str, Any
         return False
     suite = payload["check_suite"]
     edit = _suite(suite["head_sha"], suite["id"], _stamped(suite))
-    return _write(store, _at_head(store, delivery.repository, suite["head_sha"]), edit, now)
+    return _write(store, _at_head(store, delivery.repository, suite["head_sha"]), edit, now, suite["head_sha"])
 
 
 def _workflow_run(store: PullStore, delivery: Delivery, payload: Mapping[str, Any], now: float) -> bool:
     run = payload["workflow_run"]
     edit = _suite(run["head_sha"], run["check_suite_id"], _stamped(run) | {"workflowRun": {"runAttempt": run["run_attempt"]}})
-    return _write(store, _at_head(store, delivery.repository, run["head_sha"]), edit, now)
+    return _write(store, _at_head(store, delivery.repository, run["head_sha"]), edit, now, run["head_sha"])
 
 
 def _forced(sha: str, at: float) -> Edit:

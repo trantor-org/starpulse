@@ -59,7 +59,7 @@ def session_health(
     config: SessionsConfig | None = None,
     redact: Callable[[str], str] | None = None,
 ) -> list[SessionHealth]:
-    """One row per (session, task) of the Claude Code and Codex OTLP/HTTP log payloads `exports`, oldest first.
+    """One row per (session, task) of the Claude Code OTLP/HTTP log payloads `exports`, oldest first.
 
     `keys` is the board's task key scheme, which ties a session's branch and claims to a task; with none, every row's
     `task` is None. `config`'s `[analytics]` table is read as `serve` reads it, less its labeller: this calls no

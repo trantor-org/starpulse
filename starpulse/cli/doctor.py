@@ -111,12 +111,12 @@ def _board(board: dict[str, Any], errors: list[str]) -> dict[str, str]:
 
 
 def _ready(status: int, body: Any) -> dict[str, str]:
-    """The `ready` check: the server answered `/api/ready` 200, or the components it names as not ready."""
+    """The `ready` check: the server answered `/api/health` 200, or the components it names as not ready."""
     if status == 200:
         return _result("ready", True, "every component ready")
     components = body.get("components", {}) if isinstance(body, dict) else {}
     named = [f"{name}: {part['detail']}" for name, part in components.items() if not part["ready"]]
-    return _result("ready", False, "; ".join(named) or f"/api/ready answered {status}")
+    return _result("ready", False, "; ".join(named) or f"/api/health answered {status}")
 
 
 def _cue(cue: dict[str, Any], listed: set[str], instances: dict[str, RunsInstance], probes: Probes) -> dict[str, str]:
@@ -199,7 +199,7 @@ def run_checks(
 
     `snapshot` is the server's snapshot, or the reason it could not be read; `config` is the loaded config, or the
     reason it could not be loaded; `server` is the address the snapshot was read from; `ready` is
-    the status and body of its `/api/ready`, which the `ready` check judges."""
+    the status and body of its `/api/health`, which the `ready` check judges."""
     checks = [
         _result(
             "config", *((False, config) if isinstance(config, str) else (True, f"{len(config.runs)} runs instances"))

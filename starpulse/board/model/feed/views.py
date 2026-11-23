@@ -52,7 +52,7 @@ class ViewMethods:
             return {"dags": self._workflows(), "cues": list(self._cues)}
 
     def _hot(self) -> list[dict]:
-        """The live Tasks of the read model as agents, queried on each request: nothing of the Board is held between them."""
+        """The live Tasks of the read model as agents, queried on each call; `open_tasks` keeps the last build until a task changes."""
         summaries = self._read_model.snapshot(self._roles.done, local_midnight(self._clock()))
         ready = {
             task_id

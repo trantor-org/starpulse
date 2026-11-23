@@ -20,7 +20,6 @@ from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import (
     HistoryStore,
-    record_breaking_changes,
     record_machine_events,
     record_verdicts,
 )
@@ -59,9 +58,6 @@ def start(
     store = history_store(config, base, machines)
     threading.Thread(target=record_machine_events, args=(store, log, stop), name="machine-history", daemon=True).start()
     threading.Thread(target=record_verdicts, args=(store, log, stop), name="verdict-history", daemon=True).start()
-    threading.Thread(
-        target=record_breaking_changes, args=(store, log, stop), name="breaking-change-history", daemon=True
-    ).start()
     return lambda: reload(path, config, load)
 
 

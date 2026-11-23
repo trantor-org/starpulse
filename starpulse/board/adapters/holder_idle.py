@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 HARNESS_MACHINE = "harness"
 SETTLED = "SESSION_SETTLED"
 ENDED = "SESSION_ENDED"
+DISPATCHED = "SESSION_DISPATCHED"
 STOPPED = "SESSION_STOPPED"  # a turn's end, which trails a settle and says nothing of whether the session is idle
 WORKING = "in_progress"
 PARKED = frozenset({"needs_attention", "waiting", "done"})  # lanes whose holder ended its turn before the move
@@ -34,6 +35,22 @@ def _task_of(entry: Entry, event: str) -> str | None:
     fields = entry.fields
     moved = fields.get("machine") == HARNESS_MACHINE and fields.get("event") == event
     return fields.get("task") if entry.stream == MACHINE_STREAM and moved else None
+
+
+def _session_of(entry: Entry, key: str = "session") -> str:
+    """The session a dispatch or an end names under `key` in its data, else empty."""
+    return str((entry.fields.get("data") or {}).get(key) or "")
+
+
+def dispatcher(log: EventLog) -> Callable[[str, str, str], None]:
+    """What publishes the dispatch of a session to a task, naming the holder it replaces when the caller found one dead."""
+    from starpulse.event_log import events  # the server imports no database stack until a store opens
+
+    def dispatch(task: str, session: str, replaces: str) -> None:
+        data = {"session": session, **({"replaces": replaces} if replaces else {})}
+        events.publish(HARNESS_MACHINE, DISPATCHED, actor="starpulse", task=task, data=data, log=log)
+
+    return dispatch
 
 
 def _newest(engine: Engine, task: str, until: float) -> str | None:
@@ -58,10 +75,13 @@ def follow_holder_idle(
     ended: Callable[[str], None] = lambda _task: None,
     entered: Callable[[str], None] | None = None,
     moved: Callable[[str, str], None] = lambda _task, _lane: None,
+    dispatched: Callable[[str, str], None] = lambda _task, _session: None,
+    lease_ended: Callable[[str, str], None] = lambda _task, _session: None,
 ) -> threading.Thread:
     """Call `settled` with the task of each session that settles, and `entered` (`settled` when none) with each task
     moved from a parked lane to In Progress, after this call, within the event's own latency; call `ended` with the task
-    of each session whose process ends, and `moved` with each task and the lane it entered. The mover may not be the holder, which settled when it
+    of each session whose process ends, `lease_ended` first with that task and the session, `dispatched` with the task and
+    session of each dispatch, and `moved` with each task and the lane it entered. The mover may not be the holder, which settled when it
     parked the task and settles no more, so the move is the only event that tells it. A task parked before this call
     and moved after a server restart is not seen, because the lane map starts empty.
 
@@ -85,7 +105,12 @@ def follow_holder_idle(
             moved(task, lane)
         elif task := _task_of(entry, SETTLED):
             settled(task)
+        elif task := _task_of(entry, DISPATCHED):
+            if replaces := _session_of(entry, "replaces"):
+                lease_ended(task, replaces)
+            dispatched(task, _session_of(entry))
         elif task := _task_of(entry, ENDED):
+            lease_ended(task, _session_of(entry))
             ended(task)
 
     def run() -> None:

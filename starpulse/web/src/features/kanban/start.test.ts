@@ -19,7 +19,7 @@ const HARNESSES: Harnesses = {
       name: "claude", label: "Claude Code", sessions: true, reason: "",
       tiers: { fast: { model: "haiku", efforts: [] }, standard: { model: "sonnet", efforts: ["medium", "high"] }, deep: { model: "opus", efforts: ["medium", "high"] } },
     },
-    { name: "codex", label: "Codex", sessions: false, reason: "Remote Control is Claude's", tiers: { standard: { model: "gpt-5", efforts: ["medium", "high"] } } },
+    { name: "other", label: "Other", sessions: false, reason: "Remote Control is Claude's", tiers: { standard: { model: "gpt-5", efforts: ["medium", "high"] } } },
   ],
 };
 const SESSION = "https://claude.ai/code/session_01";

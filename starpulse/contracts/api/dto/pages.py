@@ -55,7 +55,7 @@ class LaneSurface(_Api):
 
 
 class Machines(_Api):
-    """`GET /api/machines`: the next page of machines entered from `open`, and each lane's surface by lane name."""
+    """`GET /api/machines`: the next page of machines entered from `open`, and with `?lanes=1` each lane's surface by lane name."""
 
     open: str | None
     machines: list[MachineRow]

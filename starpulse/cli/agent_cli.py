@@ -4,7 +4,7 @@
     starpulse task show PROJ-45
     starpulse task moves PROJ-45
     starpulse task move PROJ-45 <state>
-    starpulse task claim PROJ-45 --session s-1
+    starpulse task dispatch PROJ-45 --session s-1
     starpulse task park PROJ-45 --until-task PROJ-40 --comment "needs the API"
     starpulse task trace PROJ-45 --machine in-progress
     starpulse task create "Rotate the secret" --priority high --label ops --ac "It rotates"
@@ -35,17 +35,16 @@
     starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
     starpulse doctor
-    starpulse skills install --claude --codex
+    starpulse skills install --claude
     starpulse help --agent
 
 Every verb writes one JSON document to stdout, an error as `{"error": "...", "code": "..."}`, and nothing to stderr.
 Every task write (`move`, `create`, `edit`, `profile`, `archive`, `checkpoint-ac`) is made as the actor `agent`, naming its
 session and harness when `--session` and `--harness`, or `STARPULSE_SESSION` and `STARPULSE_HARNESS`, give them: the change's
-lane entry records both, a create stamps `created_by: <harness>:<session>`, a claim (a move to `in_progress`) records the
-session as the task's assignee, and the board writer may answer with `advice`. A move the board machine declares for the operator alone, or that the
+lane entry records both, a create stamps `created_by: <harness>:<session>`, and the board writer may answer with `advice`. A move the board machine declares for the operator alone, or that the
 board's guard refuses, is `{"ok": false, "reason": "...", "skill": "..."}`, the verdict, and exit 1.
-`task claim` moves a task to In Progress holding the session (an opaque string) and is refused while another session
-holds it or the session holds another In Progress task; `task park` takes exactly one of `--until-task`, `--until` and
+`task dispatch` asks the task actor to pin the session (an opaque string) to a task and move it to In Progress, and is
+refused while another session holds it or the session holds another In Progress task; `task park` takes exactly one of `--until-task`, `--until` and
 `--operator` and picks the lane from it (`waiting`, or `needs_attention` for the operator); `task review` moves to Review
 with `--ref` evidence and the board's rules judge the record. Each answers like `task move`: a refusal is `ok: false`
 with its reason and skill, exit 1, and nothing is written.
@@ -113,13 +112,12 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 from starpulse.cli import agent_flags, agent_wire
 from starpulse.cli.agent_keys import (
-    CLAIM_KEYS,
+    DISPATCH_KEYS,
     DOC_KEYS,
     LIFECYCLE_KEYS,
     MILESTONE_KEYS,
     MOVE_KEYS,
     PULL_KEYS,
-    RELEASE_KEYS,
     SNAPSHOT_KEYS,
     TASK_KEYS,
 )
@@ -357,7 +355,7 @@ def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     ready = None
     try:
         snapshot: dict[str, Any] | str = agent_wire.get_flows(base)
-        ready = agent_wire.get(base, "/api/ready")
+        ready = agent_wire.get(base, "/api/health")
     except agent_wire.CliError as exc:
         snapshot = str(exc)
     return doctor.run_checks(snapshot, config, doctor.LIVE, base, ready)
@@ -390,7 +388,7 @@ def _skills_install(args: argparse.Namespace, environ: Mapping[str, str]) -> dic
 
     harnesses = [harness for harness in skill_install.HARNESS_DIRS if getattr(args, harness)]
     if not harnesses:
-        raise agent_wire.CliError("usage", "choose the harness to install for: --claude, --codex or both")
+        raise agent_wire.CliError("usage", "choose the harness to install for: --claude")
     scope, root = _skills_root(args, environ)
     try:
         return {"scope": scope, "installed": skill_install.install(root, harnesses, args.force)}
@@ -500,9 +498,9 @@ def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
 def _session_records(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """One session's transcript records grouped by the task each belongs to, in the order the tasks are first named,
     read from the transcript files under `--transcripts`, else `[board] transcripts`, else Claude Code's own directory."""
-    from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.contracts.adapters import TaskKeys  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.contracts.analytics import Analytics  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid on first use
     from starpulse.sessions.adapters.outbound.transcript_records import records_by_task, session_records  # noqa: PLC0415 - import cost, paid on first use
@@ -741,26 +739,17 @@ def _parser() -> argparse.ArgumentParser:
     move.add_argument("task", nargs="+", help="each task's key (`PROJ-45`); several move in one call")
     move.add_argument("to", help="the column's state id (`review`), as `task moves` lists")
     agent_flags.writer_flags(move)
-    claim = leaf(
+    dispatch = leaf(
         task_verbs,
-        "claim",
-        "claim a task for a session: it moves to In Progress holding that session; refused when another session holds it or this one holds another",
-        _in_tasks("task_claim"),
-        CLAIM_KEYS,
+        "dispatch",
+        "dispatch a session to a task: the task actor pins it and moves a Ready or Needs attention task to In Progress; refused when another session holds it or this one holds another",
+        _in_tasks("task_dispatch"),
+        DISPATCH_KEYS,
         (0, 1, 2, 3, 4),
     )
-    claim.add_argument("task", help="the task's key (`PROJ-45`)")
-    agent_flags.writer_flags(claim)
-    release = leaf(
-        task_verbs,
-        "release",
-        "end a task's claim, whoever holds it: it keeps its lane and loses its assignee so the next claim adopts it; refused when no session holds it",
-        _in_tasks("task_release"),
-        RELEASE_KEYS,
-        (0, 1, 2, 3, 4),
-    )
-    release.add_argument("task", help="the task's key (`PROJ-45`)")
-    agent_flags.writer_flags(release)
+    dispatch.add_argument("task", help="the task's key (`PROJ-45`)")
+    dispatch.add_argument("--replaces", default="", help="the dead session that held the task, whose lease ends first")
+    agent_flags.writer_flags(dispatch)
     park = leaf(
         task_verbs,
         "park",
@@ -1059,21 +1048,6 @@ def _parser() -> argparse.ArgumentParser:
     checkpoint.add_argument("task", help="the task's key (`PROJ-45`)")
     checkpoint.add_argument("criterion", type=int, help="the criterion's number (`2` for `#2`)")
     checkpoint.add_argument("evidence", help="what shows it holds, recorded as `Verified AC #N: <evidence>`")
-    breaking = verbs.add_parser(
-        "breaking-change",
-        description="the commits that broke the default branch",
-        help="the commits that broke the default branch",
-    )
-    breaking_verbs = breaking.add_subparsers(dest="verb", required=True, metavar="verb")
-    listing = leaf(
-        breaking_verbs,
-        "list",
-        "each commit a detector named as a break, with its detections, oldest first",
-        _in_tasks("breaking_change_list"),
-        ("changes",),
-        (0, 2, 3),
-    )
-    listing.add_argument("--open", action="store_true", help="only the commits no postmortem has closed")
     machine = verbs.add_parser(
         "machine",
         description="the machines the server draws and the machine files",
@@ -1241,7 +1215,7 @@ def _parser() -> argparse.ArgumentParser:
     doc_update.add_argument("doc", help="the doc's id (`doc-116`)")
     doc_update.add_argument("--title", help="the new title; the file is renamed to match")
     for command in (doc_create, doc_update):
-        command.add_argument("--type", help="specification, guide, readme or other (the default on create)")
+        command.add_argument("--type", help="specification, guide, readme, postmortem or other (the default on create)")
         command.add_argument("--body", help="the doc's whole text after its front matter")
     doc_archive = leaf(
         doc_verbs,
@@ -1379,7 +1353,7 @@ def _parser() -> argparse.ArgumentParser:
     incident_open.add_argument("type", help="the kind of fault (`ci`)")
     incident_open.add_argument("key", help="which one (`wedged`)")
     incident_open.add_argument(
-        "--owner", help="an existing task that owns the fault, instead of creating and claiming one"
+        "--owner", help="an existing task that owns the fault, instead of creating and dispatching to one"
     )
     incident_open.add_argument(
         "--failing-pull",
@@ -1455,7 +1429,6 @@ def _parser() -> argparse.ArgumentParser:
     for sub in (listing, install):
         sub.add_argument("--user", action="store_true", help="the home directory's skills, not this project's")
     install.add_argument("--claude", action="store_true", help="install for Claude Code, into .claude/skills")
-    install.add_argument("--codex", action="store_true", help="install for Codex, into .agents/skills")
     install.add_argument("--force", action="store_true", help="replace a copy modified since install")
     manifest = leaf(
         verbs,

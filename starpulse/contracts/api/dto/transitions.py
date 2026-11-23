@@ -44,7 +44,7 @@ class SpendPhase(_Api):
 
 
 class Spend(_Api):
-    """The analytics spend route's body: each task's tokens by phase, oldest task first, Codex left out."""
+    """The analytics spend route's body: each task's tokens by phase, oldest task first."""
 
     now: float
     window_s: float

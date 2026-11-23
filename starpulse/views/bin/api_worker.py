@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.adapters.history_window import HistoryWindow
+from starpulse.board.adapters.holder_idle import dispatcher
 from starpulse.board.adapters.lane_metrics import metrics_of as lane_metrics_of
 from starpulse.board.adapters.lane_policy import lane_surfaces
 from starpulse.board.adapters.native import DEFAULT_PATH
@@ -31,20 +32,20 @@ from starpulse.event_log.child_cpu import metrics_of as child_cpu_metrics_of
 from starpulse.event_log.follower_lag import metrics_of as follower_lag_metrics_of
 from starpulse.event_log.recorder_lag import metrics_of as history_lag_metrics_of
 from starpulse.event_log.wake import StopEvent
+from starpulse.flow_metrics.adapters.completion_steps import metrics_of as completion_steps_metrics_of
 from starpulse.pulls.adapters.inbound.delivery import (
     PROJECTION as PULLS_PROJECTION,
 )
 from starpulse.pulls.adapters.inbound.delivery import (
     SAVED_STREAM,
     Projected,
-    actor_views_of,
     metrics_of,
     refresh_on_save,
 )
 from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
 from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
-from starpulse.scheduler.adapters.exposition import autopilot_exposition, autopilot_log
+from starpulse.scheduler.adapters.exposition import autopilot_exposition
 from starpulse.scheduler.adapters.remote import Remote
 from starpulse.sessions.adapters.outbound.session_start import starter
 from starpulse.sessions.adapters.outbound.wake_metrics import metrics_of as wake_metrics_of
@@ -52,11 +53,10 @@ from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
 from starpulse.views.adapters.inbound.asgi_app import page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.inbound.snapshots import Snapshots
-from starpulse.flow_metrics.adapters.completion_steps import metrics_of as completion_steps_metrics_of
-from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound import skill_cost
+from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
-from starpulse.views.adapters.outbound.storage_metrics import cached, storage_exposition
+from starpulse.views.adapters.outbound.storage_metrics import cached, docs_exposition, storage_exposition
 from starpulse.views.adapters.outbound.take_over import command_take_over
 from starpulse.views.adapters.outbound.webhook_command import command_webhook
 from starpulse.views.application.queries.answers import Answers
@@ -68,7 +68,7 @@ from starpulse.views.ports.services import Services
 class Host:
     """What the page needs from `starpulse.runtime`, the composition root that builds it: no context imports `runtime`,
     so `runtime` passes these in. `probes` is the live health probes, `contract` the doctor's reading of them, `readiness`
-    the reader of `/api/ready` over the log, the feed and the config."""
+    the reader of `/api/health` over the log, the feed and the config."""
 
     config: Callable[..., ApiConfig]
     resolve_listen: Callable[..., None]
@@ -125,6 +125,7 @@ def serve_page(
 
     starts, reruns, run_safe, producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()
+    board_dir = base / str(config.board.get("path", DEFAULT_PATH))
     port = listening.getsockname()[1]
     # Every reader keeps its own cursor over the one event log, so a second copy on another port sees every entry too.
     # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
@@ -153,7 +154,7 @@ def serve_page(
     saved_after = log.head() or 0  # before the store loads: a save between the two is announced past it
     pulls = PullStore(log.engine)
     caught_up.entries(SAVED_STREAM, refresh_on_save(pulls), saved_after)
-    actor_metrics = actor_view = None
+    actor_metrics = None
     # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its
     # projection and asks it
     caught_up.state(PULLS_PROJECTION, Projected(log, feed).apply)
@@ -170,7 +171,6 @@ def serve_page(
         caught_up.every_read(runs.refresh)  # a worker that exits announces nothing to the log
     if config.task_actor:
         actor_metrics = metrics_of(log)
-        actor_view = actor_views_of(log)
     host.announce(port)
     from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
 
@@ -187,6 +187,7 @@ def serve_page(
         reruns=reruns,
         harnesses=config.harnesses,
         start_session=starter(config.session_start_url),
+        dispatch=dispatcher(log),
         events=cloudevents,
         scheduler=Remote(log),
         contract=lambda: host.contract(feed.contract_inputs(), config, host.probes),
@@ -203,7 +204,6 @@ def serve_page(
         lanes=lambda: lane_surfaces(log.engine, config.board, base),
         slow_read_s=config.slow_read_seconds,
         actor_metrics=actor_metrics,
-        actor_view=actor_view,
         # the lane followers run in `starpulse worker contexts` and `conformance`; this process relays the metrics they keep
         lane_metrics=lane_metrics_of(log),
         autopilot_metrics=lambda: autopilot_exposition(log),
@@ -211,8 +211,9 @@ def serve_page(
             lambda: storage_exposition(
                 database=Path(sqlite_file) if (sqlite_file := make_url(url).database) else None,
                 archive=base / config.event_log_archive_dir,
-                board=base / str(config.board.get("path", DEFAULT_PATH)),
+                board=board_dir,
             )
+            + docs_exposition(board_dir)
         ),
         sweeper_metrics=sweeper_metrics_of(log),
         bridge_metrics=lambda read=(bridge_metrics_of(log), wake_metrics_of(log)): "".join(part() for part in read),
@@ -222,7 +223,6 @@ def serve_page(
         skill_cost_metrics=skill_cost.metrics_of(log),
         child_cpu_metrics=child_cpu_metrics_of(log),
         github_metrics=host.github_metrics(config, base),
-        autopilot_log=lambda: autopilot_log(log),
     )
     snapshots = Snapshots(SnapshotStore(log.engine, encode_snapshot), log, stop)
     gc.callbacks.append(PAUSES.callback)

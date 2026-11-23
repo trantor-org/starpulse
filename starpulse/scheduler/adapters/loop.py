@@ -44,9 +44,6 @@ from starpulse.scheduler.model.admission import (
 )
 from starpulse.scheduler.model.changes import record
 from starpulse.scheduler.model.config import Scheduler
-from starpulse.scheduler.model.decision_log import EMPTY as EMPTY_DECISION_LOG
-from starpulse.scheduler.model.decision_log import KEY as DECISION_LOG_KEY
-from starpulse.scheduler.model.decision_log import note
 from starpulse.scheduler.model.harness_setting import DEFAULT as DEFAULT_HARNESS
 from starpulse.scheduler.model.harness_setting import HarnessSetting
 from starpulse.scheduler.model.inputs import STALE_S, points
@@ -90,14 +87,6 @@ GATE_HISTORY_EVERY = 300.0
 START_LIMIT = "start-limit"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
 _HOST = ("cpu", "memory")
-
-
-def _verdict(decision: Decision) -> str:
-    """`admitted`, or `refused/<gate>` for the gate that bound `decision`."""
-    if decision.admitted:
-        return "admitted"
-    refused = [gate for gate, verdict in gate_verdicts(decision) if verdict == "refused"]
-    return f"refused/{refused[0] if refused else decision.blocked_by}"
 
 
 def _run_from(fields: Mapping[str, Any]) -> _Run | None:
@@ -190,6 +179,7 @@ class Loop:
         self._events: queue.Queue | None = None
         self._no_profile_logged: set[str] = set()  # the Ready tasks whose no-profile refusal is already logged
         self._blocked = False  # the last pass was refused for capacity: only a capacity event retries it
+        self._refused = False  # a revive or resume want the last grant pass left pending for headroom: the next fresh sample retries it
         self._sampled_at: float | None = None  # the sample of the last `scheduler` status the loop was offered
         self._restore()
 
@@ -284,7 +274,8 @@ class Loop:
 
     def wants(self, kind: str, data: Mapping[str, Any]) -> bool:
         """Whether a feed event (or a `wake`) can free or fill capacity: a task entering the eligible lane, a running task's
-        own change, a harness session stopping, or the `scheduler` status of a new sample whose next pick would start.
+        own change, a harness session stopping, or the `scheduler` status of a new sample whose next pick would start or while a
+        revive or resume want waits for room.
         Every tool use is a harness move too, so only a stop counts. A tick publishes its status too, over the sample it
         ticked on, so a status wakes the loop once per sample: a start that keeps failing waits for the next sample."""
         if kind == "wake":
@@ -292,7 +283,7 @@ class Loop:
         if kind == "scheduler":
             fresh = data["sampledAt"] != self._sampled_at
             self._sampled_at = data["sampledAt"]
-            return fresh and data["enabled"] and (data.get("next") or {}).get("verdict") == "starting"
+            return fresh and (self._refused or data["enabled"] and (data.get("next") or {}).get("verdict") == "starting")
         if kind == "task":
             if data["id"] in self._running:
                 return self._capacity_event()
@@ -373,6 +364,7 @@ class Loop:
             self._granted[picked.task] = (asked[picked.task]["at"], picked.demand)
             readings = [replace(r, use=r.use + picked.demand[r.name]) for r in readings]
         start_requests.admit(self._log, grants)
+        self._refused = bool(pending)
 
     def _admission_off(self, now: float) -> str | None:
         """Why this tick admits nothing, or None; a gated-off tick logs no per-task decision, so this names the gate."""
@@ -501,7 +493,6 @@ class Loop:
             if run is not None and (fields.get("stopped") or not self._gone(task, run, agents, now)):
                 (self._parked if fields.get("stopped") else self._running)[task] = run
         self._starts = self._state.starts()
-        self._note(restored=True)
         names = sorted({*self._running, *self._parked})
         logger.info("StarPulse scheduler: restored %d in-flight: %s", len(names), ", ".join(names) or "none")
 
@@ -700,7 +691,6 @@ class Loop:
             gate_tally = Counter(self._kept_state(GATE_TALLY_KEY) or {})
             gate_tally.update(gates)
             self._keep_state(GATE_TALLY_KEY, dict(gate_tally))
-            self._note(verdicts=[_verdict(decision) for decision in decisions])
 
     def next_pick(self) -> dict[str, Any] | None:
         """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.
@@ -825,7 +815,6 @@ class Loop:
             )
             self._remember()
             started.append(picked.task)
-            self._note(started=picked.task)
             logger.info("StarPulse scheduler: started %s at %s", picked.task, session)
             self._note_claim(picked.task, session)
         if last is not None:
@@ -959,15 +948,6 @@ class Loop:
 
     def _save_pauses(self) -> None:
         self._keep_state(PAUSES_KEY, self._paused)
-
-    def _note(self, **entry: Any) -> None:
-        """Add `entry` (`note`'s keywords) to the decision log the server's `/autopilot-log` serves."""
-        try:
-            kept = self._ledger.log.state(DECISION_LOG_KEY)[1] or EMPTY_DECISION_LOG
-        except Exception:  # an unreadable log is left as kept: rebuilding from empty would overwrite its history
-            logger.exception("StarPulse scheduler: cannot read %s", DECISION_LOG_KEY)
-            return
-        self._keep_state(DECISION_LOG_KEY, note(kept, self._clock(), **entry))
 
     def _kept_state(self, key: str) -> Any:
         try:

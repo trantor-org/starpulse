@@ -67,7 +67,7 @@
     },
     "harness": {
       "default": "",
-      "description": "The harness (`claude`, `cursor`) of that session; empty when the write named none.",
+      "description": "The harness (`claude`) of that session; empty when the write named none.",
       "title": "Harness",
       "type": "string"
     }

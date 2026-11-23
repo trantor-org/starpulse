@@ -18,9 +18,8 @@ export interface ApiContract {
     | RetiredImported
     | Completed
     | Reopened
-    | Claimed
+    | Dispatched
     | Parked
-    | ClaimReleased
     | Reviewed
     | Created
     | CreatedEach
@@ -39,7 +38,6 @@ export interface ApiContract {
     | StaleEdit
     | WindowTooLong
   )[];
-  breakingChanges: BreakingChanges;
   build: BuildEvent;
   contractReport: ContractReport;
   costToGo: CostToGo;
@@ -74,9 +72,8 @@ export interface ApiContract {
     | RetiredImportRequest
     | CompleteRequest
     | ReopenRequest
-    | ClaimRequest
+    | DispatchRequest
     | ParkRequest
-    | ReleaseRequest
     | ReviewRequest
     | CreateRequest
     | MilestoneCreateRequest
@@ -192,19 +189,12 @@ export interface Reopened {
   task: string;
   [k: string]: unknown;
 }
-export interface Claimed {
-  assignee: string;
+export interface Dispatched {
+  session: string;
   task: string;
-  to: string;
   [k: string]: unknown;
 }
 export interface Parked {
-  task: string;
-  to: string;
-  [k: string]: unknown;
-}
-export interface ClaimReleased {
-  releasedFrom: string;
   task: string;
   to: string;
   [k: string]: unknown;
@@ -302,30 +292,6 @@ export interface StaleEdit {
 export interface WindowTooLong {
   error: string;
   history_s: number;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/breaking-changes[?open=1]`: each commit once, oldest first; `open=1` keeps those with no postmortem.
- */
-export interface BreakingChanges {
-  changes: BreakingChange[];
-  [k: string]: unknown;
-}
-export interface BreakingChange {
-  commit: string;
-  detections: BreakingDetection[];
-  first_seen: number;
-  outcome?: string | null;
-  postmortem_task?: string | null;
-  pr?: number | null;
-  task?: string | null;
-  [k: string]: unknown;
-}
-export interface BreakingDetection {
-  at: number;
-  detector: string;
-  evidence?: string | null;
-  outcome?: string | null;
   [k: string]: unknown;
 }
 /**
@@ -1599,7 +1565,7 @@ export interface MachineStep {
   [k: string]: unknown;
 }
 /**
- * `GET /api/machines`: the next page of machines entered from `open`, and each lane's surface by lane name.
+ * `GET /api/machines`: the next page of machines entered from `open`, and with `?lanes=1` each lane's surface by lane name.
  */
 export interface Machines {
   lanes?: {
@@ -1727,7 +1693,7 @@ export interface ReadyReport {
   [k: string]: unknown;
 }
 /**
- * One part of the server `/api/ready` judges.
+ * One part of the server `/api/health` judges.
  */
 export interface ReadyComponent {
   detail: string;
@@ -1912,12 +1878,14 @@ export interface ReopenRequest {
   task: string;
 }
 /**
- * `POST /api/claim`: move `task` to In Progress and record `session` as its assignee, an opaque string; the same
- * assignee claiming again changes nothing, and an assignee already on another open claim is refused.
+ * `POST /api/dispatch`: a dispatch of the `session` it names (an opaque string) to `task`, which the task actor
+ * answers by pinning the session and moving a Ready or Needs attention task to In Progress. `replaces` names the
+ * holder the caller found dead, whose lease the dispatch ends first. A task another session holds is refused.
  */
-export interface ClaimRequest {
+export interface DispatchRequest {
   actor?: string | null;
   harness?: string | null;
+  replaces?: string | null;
   session?: string | null;
   task: string;
 }
@@ -1934,16 +1902,6 @@ export interface ParkRequest {
   task: string;
   until?: string[] | null;
   untilTask?: string[] | null;
-}
-/**
- * `POST /api/release`: end the claim whoever holds `task`: it loses its assignee, records the session as released and
- * keeps its lane, so the next claim adopts it.
- */
-export interface ReleaseRequest {
-  actor?: string | null;
-  harness?: string | null;
-  session?: string | null;
-  task: string;
 }
 /**
  * `POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge
@@ -2025,7 +1983,7 @@ export interface MilestoneArchiveRequest {
   milestone: string;
 }
 /**
- * `POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme` or `other`.
+ * `POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`.
  */
 export interface DocCreateRequest {
   body?: string | null;
@@ -2563,7 +2521,7 @@ export interface Roles {
   [k: string]: unknown;
 }
 /**
- * The analytics spend route's body: each task's tokens by phase, oldest task first, Codex left out.
+ * The analytics spend route's body: each task's tokens by phase, oldest task first.
  */
 export interface Spend {
   now: number;

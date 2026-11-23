@@ -5,12 +5,12 @@ the kind x size cell of the task it worked. A subagent's requests carry the pare
 task that spawned it (`side_steps` of `steps` are those); a compaction's own call is no step. A step is *wasted* when
 a call it owns failed, was refused by a guard or hook, or repeats the shell command of the call before it in its
 session. `agent_s` is its requests' and calls' seconds and `peak_context` the most input, cache read and cache write
-tokens one request held. A step of a task with no kind or no size label, or of a Codex session, is in no row.
+tokens one request held. A step of a task with no kind or no size label, or of an uncaptured session, is in no row.
 
 The cell report: median steps per clean completion for each kind x size cell of the board's tasks.
 
 A cell is the tasks whose board labels are `kind-<kind>` and `size-<size>`. Its members are the task slices
-(`starpulse.flow_metrics.model.session_health.slice_health`) that completed, left out when a Codex session worked them, which
+(`starpulse.flow_metrics.model.session_health.slice_health`) that completed, left out when an uncaptured session worked them, which
 the steps ledger does not cover. A slice that completed *clean* counts toward the cell; the others only lower its
 `clean_rate`, completions that were clean over completions.
 

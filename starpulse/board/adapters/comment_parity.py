@@ -7,25 +7,29 @@ Operations doc's Board Lane Disagrees With the Task File section holds the contr
 
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, select, update
+from sqlalchemy.dialects import sqlite
 
 from starpulse.board.adapters.native import _COMMENTS_SECTION, _STAMP, _record_of, _Retired
 from starpulse.board.adapters.native_scan import _FOLDERS
 from starpulse.board.adapters.task_history import KIND, TaskHistory
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore
-from starpulse.event_log.tables import retired_tasks
+from starpulse.event_log.tables import retired_tasks, settings
 
 __all__ = ["reconcile_comments"]
 
 logger = logging.getLogger(__name__)
 
 _PREFIX = "Archived: "
+#: The setting that records the reconcile done, so a later migrate walks no task: a boot check rehearses migrate on a copy.
+_RECONCILED = "comment_parity_reconciled"
 _CLOCK = ZoneInfo("America/Phoenix")
 _Entry = dict[str, Any]
 
@@ -102,11 +106,16 @@ def _brought(task: str, text: str, archived: bool, history: TaskHistory, store: 
     return text, in_history
 
 
-def reconcile_comments(root: Path, engine: Engine) -> int:
+def reconcile_comments(root: Path, engine: Engine, *, rehearsing: bool = False) -> int:
     """Bring each task file under `root`, each retired task's row and its History to one comment list; how many tasks
     changed on either side.
 
-    A task without History is first imported, as `move_key_labels` does."""
+    A task without History is first imported, as `move_key_labels` does. It runs once per store: a later call finds
+    `_RECONCILED` set and changes nothing, and a `rehearsing` run, which migrates a copy the live store never gets back, skips
+    it."""
+    with engine.connect() as db:
+        if rehearsing or db.execute(select(settings.c.key).where(settings.c.key == _RECONCILED)).first():
+            return 0
     store, history = EventStore(engine), TaskHistory()
     history.attach(engine)
     changed = 0
@@ -132,4 +141,9 @@ def reconcile_comments(root: Path, engine: Engine) -> int:
         if brought != text or in_history:
             logger.info("migrate: retired %s comments reconciled (row %s, history %s)", task, brought != text, in_history)
             changed += 1
+    now = time.time()
+    with engine.begin() as db:
+        db.execute(
+            sqlite.insert(settings).values(key=_RECONCILED, value=True, updated_at=now).on_conflict_do_nothing()
+        )
     return changed

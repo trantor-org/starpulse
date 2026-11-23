@@ -232,7 +232,11 @@ class PullRequests:
             self._trail.record(
                 {
                     task: [
-                        parse(url, stored[url]["detail"]["ci"], stored[url]["headRefOid"])
+                        parse(
+                            url,
+                            stored[url]["detail"]["ci"] | {"closed": stored[url]["state"] == "CLOSED"},  # the state outranks a stale flag
+                            stored[url]["headRefOid"],
+                        )
                         for url in prs
                         if url in stored
                     ]

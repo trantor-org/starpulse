@@ -129,7 +129,6 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "tracker_url": _owned_by(),
     "harnesses_file": _owned_by(),
     "analytics": _owned_by("contexts"),
-    "cursor_context": _owned_by(),
     "claude_code": _owned_by("contexts"),
     "github": _owned_by("contexts"),
     "producers": _owned_by("contexts"),
@@ -154,13 +153,25 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
 }
 
 
+#: The tables whose `host` and `port` `serve` binds the contexts child's held sockets to: a replacement child is handed
+#: the held socket, so a new address needs `serve` itself restarted, which binds it.
+_BOUND_TABLES = ("github", "claude_code")
+
+
+def _address(raw: Mapping[str, object], table: str) -> tuple[object, object]:
+    held = raw.get(table)
+    return (held.get("host"), held.get("port")) if isinstance(held, Mapping) else (None, None)
+
+
 def restarts_serve(old: Mapping[str, object], new: Mapping[str, object]) -> bool:
     """Whether a change from the `old` to the `new` raw `starpulse.toml` needs `serve` itself restarted.
 
-    True when a changed key is one only `serve` reads or one no owner is named for. Any other change is applied by
-    replacing the children that own it: the set of children does not depend on the config."""
+    True when a changed key is one only `serve` reads or one no owner is named for, or a table `serve` holds a socket
+    for names another host or port. Any other change is applied by replacing the children that own it: the set of
+    children does not depend on the config."""
     changed = {key for key in old.keys() | new.keys() if old.get(key) != new.get(key)}
-    return any(SELF in CONFIG_OWNERS.get(key, (SELF,)) for key in changed)
+    moved = any(_address(old, table) != _address(new, table) for table in _BOUND_TABLES)
+    return moved or any(SELF in CONFIG_OWNERS.get(key, (SELF,)) for key in changed)
 
 
 #: Imports each module in `argv[2:]` and prints the directory holding package `argv[1]`, then the file of each module of

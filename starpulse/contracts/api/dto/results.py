@@ -79,19 +79,13 @@ class Reopened(_Api):
     task: str
 
 
-class Claimed(_Api):
+class Dispatched(_Api):
     task: str
-    to: str
-    assignee: str
-
-
-class ClaimReleased(_Api):
-    task: str
-    to: str
-    releasedFrom: str
+    session: str
 
 
 class Parked(_Api):
+    # `to` is the lane the task actor is asked to move the task to, not one the task is in
     task: str
     to: str
 

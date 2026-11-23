@@ -10,6 +10,7 @@ import os
 import re
 import threading
 import uuid
+from collections import Counter
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -32,7 +33,7 @@ from starpulse.board.model.seam import (
     Written,
 )
 
-_TYPES = ("specification", "guide", "readme", "other")
+_TYPES = ("specification", "guide", "readme", "postmortem", "other")
 _CREATE = {"type", "folder", "body"}
 _EDIT = {"title", "type", "body"}
 _FOLDER = re.compile(r"[\w -]+(/[\w -]+)*")
@@ -115,6 +116,12 @@ def _files(root: Path, folder: str = "docs") -> list[tuple[Path, str, dict, str]
     files = sorted(found, key=lambda file: int(re.sub(r"\D", "", str(file[2]["id"])) or 0))
     _listings[top] = (stamps, files)
     return list(files)
+
+
+def counts(root: Path) -> Counter[str]:
+    """The open docs under `root` by `type`; a doc with none, or one outside `_TYPES`, counts as `other`."""
+    kinds = (front.get("type") for _, _, front, _ in _files(root))
+    return Counter(kind if kind in _TYPES else "other" for kind in kinds)
 
 
 def _find(root: Path, doc: str, folder: str = "docs") -> tuple[Path, str, dict, str] | None:

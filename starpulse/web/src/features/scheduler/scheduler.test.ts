@@ -18,7 +18,7 @@ const HARNESSES = {
   tiers: ["fast", "standard"],
   harnesses: [
     { name: "claude", label: "Claude Code", sessions: true, reason: "", tiers: {} },
-    { name: "cursor", label: "Cursor", sessions: true, reason: "", tiers: {} },
+    { name: "other", label: "Other", sessions: true, reason: "", tiers: {} },
   ],
 };
 const IN_FLIGHT = [{ task: "TASK-1", title: "First", model: "opus · high", started: 40, url: "#demo-session-0001" }];
@@ -86,7 +86,7 @@ describe("the Autopilot card's store", () => {
     ]);
     expect(current.dimensions[0].detail).toContain("80%");
     expect(store.get().unavailable).toBe("");
-    expect(store.get().harnesses.map((h) => h.name)).toEqual(["claude", "cursor"]);
+    expect(store.get().harnesses.map((h) => h.name)).toEqual(["claude", "other"]);
   });
 
   it("defaults the harness to claude and carries pauses and per-harness session use when the server serves them", async () => {
@@ -106,10 +106,10 @@ describe("the Autopilot card's store", () => {
     const store = new SchedulerStore(fetcher);
     await store.load();
 
-    await store.setHarness("cursor");
+    await store.setHarness("other");
 
-    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ harness: "cursor" }) });
-    expect(store.get().current?.harness).toBe("cursor");
+    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ harness: "other" }) });
+    expect(store.get().current?.harness).toBe("other");
     expect(store.get().phase).toEqual({ kind: "idle" });
   });
 

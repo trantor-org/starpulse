@@ -7,6 +7,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from starpulse.board.adapters import native_docs
+
 #: A walk of the Board is thousands of stats; a scrape inside this span reads the last one.
 CACHE_S = 60.0
 
@@ -56,3 +58,15 @@ def cached(read: Callable[[], str]) -> Callable[[], str]:
             return held[1]
 
     return get
+
+
+def docs_exposition(board: Path) -> str:
+    """`starpulse_docs` per doc type: the open docs on the Board."""
+    return "\n".join(
+        [
+            "# HELP starpulse_docs Open docs on the Board by type.",
+            "# TYPE starpulse_docs gauge",
+            *(f'starpulse_docs{{type="{kind}"}} {count}' for kind, count in sorted(native_docs.counts(board).items())),
+            "",
+        ]
+    )

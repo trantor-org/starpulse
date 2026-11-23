@@ -2,9 +2,11 @@
 
 Each run source is listed and compared with the workflows the projection holds for its instance
 (`starpulse.runs.application.queries.projection`). An instance whose runs differ missed a pushed event: it is counted as
-corrected and a `RESYNC` entry names it, so the worker that owns its adapter reads the source again. A process's first
-pass compares nothing: the projection predates a restart and each adapter lists its source at start, so a difference
-there is catch-up, not a missed push.
+resynced by a `RESYNC` entry naming it, so the worker that owns its adapter reads the source again, and counted as
+corrected only when a run a push announces differs. A Temporal Schedule starts its runs (`command-job/*` workflow ids)
+with no start post and no completion callback, so the sweeper keeps them by design: they resync, never count. A
+process's first pass compares nothing: the projection predates a restart and each adapter lists its source at start, so
+a difference there is catch-up, not a missed push.
 """
 
 import logging
@@ -19,12 +21,27 @@ logger = logging.getLogger(__name__)
 __all__ = ["RESYNC", "Reconcile"]
 
 
-def _runs(dags: list[dict]) -> dict[str, tuple]:
-    """Each workflow's latest run and status, with the ids of its active runs."""
-    return {
-        dag["name"]: (dag.get("runId"), dag.get("status"), sorted(run["runId"] for run in dag.get("active", [])))
-        for dag in dags
-    }
+_SCHEDULED = "/workflows/command-job%2F"
+"""The run url part of a Temporal Schedule's workflow id (`command-job/<job>-<fire time>`), which no push announces."""
+
+
+def _scheduled(run: dict) -> bool:
+    return _SCHEDULED in run.get("url", "")
+
+
+def _runs(dags: list[dict], *, pushed: bool = False) -> dict[str, tuple]:
+    """Each workflow's latest run and status, with the ids of its active runs; `pushed` leaves out the scheduled runs."""
+    found = {}
+    for dag in dags:
+        latest, status, active, recent = dag.get("runId"), dag.get("status"), dag.get("active", []), dag.get("recent", [])
+        if pushed:
+            skipped = {run["runId"] for run in [*active, *recent] if _scheduled(run)}
+            active = [run for run in active if run["runId"] not in skipped]
+            if latest in skipped:
+                newest = active[-1] if active else next((run for run in recent if run["runId"] not in skipped), None)
+                latest, status = (newest["runId"], "running" if active else newest["status"]) if newest else (None, None)
+        found[dag["name"]] = (latest, status, sorted(run["runId"] for run in active))
+    return found
 
 
 class Reconcile:
@@ -53,7 +70,7 @@ class Reconcile:
             sampled += 1
             held = kept.get(instance, {}).get("dags", []) if isinstance(kept.get(instance), dict) else []
             if (now := _runs(listed)) != (before := _runs(held)):
-                corrected += 1
+                corrected += _runs(listed, pushed=True) != _runs(held, pushed=True)
                 differing = sorted(name for name in now.keys() | before.keys() if now.get(name) != before.get(name))
                 logger.info("runs: %s differs from the projection in %s; resyncing it", instance, ", ".join(differing))
                 self._log.publish(RESYNC, {"instance": instance})

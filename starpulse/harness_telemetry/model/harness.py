@@ -15,6 +15,7 @@ _TABLE = {
     "states": {"idle": {"initial": True}, "active": {}, "stopped": {}, "ended": {}},
     "events": {
         "SESSION_STARTED": [{"from": _ALL, "to": "active"}],
+        "SESSION_DISPATCHED": [{"from": _ALL, "to": "active"}],
         "SKILL_USED": [{"from": ["active", "stopped"], "to": "active"}],
         "TOOL_USED": [{"from": ["active", "stopped"], "to": "active"}],
         "SESSION_STOPPED": [{"from": "active", "to": "stopped"}],

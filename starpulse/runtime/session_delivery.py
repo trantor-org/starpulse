@@ -33,19 +33,17 @@ import time
 from collections.abc import Callable, Collection, Mapping
 from pathlib import Path
 
-from starpulse.contracts.signals import CLAUDE_CODE
+from starpulse.bridge.delivery import Event, Route
+from starpulse.bridge.subjects import INCIDENT
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.claude_sessions import live_process, local_id, local_ids
 from starpulse.event_log.event_log import EventLog
-from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
-from starpulse.harness_telemetry.adapters.inbound.telemetry import ClaimUnreadable, telemetry_log
+from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.harness_telemetry.adapters.outbound.session_exit import ExitWatch, watch_registered
 from starpulse.harness_telemetry.model.harness import ended_id
-from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
-from starpulse.bridge.delivery import Event, Route
-from starpulse.bridge.subjects import INCIDENT
-from starpulse.sessions.ports.notify import Line, Notifier, Registration
+from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
 from starpulse.sessions.adapters.outbound.registry import Registry
+from starpulse.sessions.ports.notify import Line, Notifier, Registration
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +96,7 @@ def line_for(event: Event) -> Line:
         body = json.loads(event.body)
         fields = body["fields"]
         event_id = body["event_id"]
-    except (ValueError, KeyError, TypeError):
+    except ValueError, KeyError, TypeError:
         return Line(event.subject, event.subject)
     if not isinstance(fields, dict):
         return Line(event.subject, event.subject)
@@ -116,7 +114,7 @@ def _moved_fields(event: Event) -> dict | None:
         return None
     try:
         fields = json.loads(event.body)["fields"]
-    except (ValueError, KeyError, TypeError):
+    except ValueError, KeyError, TypeError:
         return None
     return fields if isinstance(fields, dict) else None
 
@@ -140,7 +138,7 @@ def _passed(event: Event, head: Callable[[str, int], str | None] | None) -> bool
     try:
         body = json.loads(event.body)
         judged = body["fields"]["data"]["head"]
-    except (ValueError, KeyError, TypeError):
+    except ValueError, KeyError, TypeError:
         return False
     url = PULL_URL.search(str(body.get("event_id", "")))
     stored = head(url[1], int(url[2])) if url and judged else None
@@ -150,7 +148,7 @@ def _passed(event: Event, head: Callable[[str, int], str | None] | None) -> bool
 def _seen_key(event: Event) -> tuple[str, str] | None:
     try:
         return event.subject, str(json.loads(event.body)["event_id"])
-    except (ValueError, KeyError, TypeError):
+    except ValueError, KeyError, TypeError:
         return None
 
 
@@ -186,7 +184,7 @@ def route(
         local = _local(sessions, name)
         return registry.get(local) if local else None
 
-    def find(name: str):  # noqa: ANN202
+    def find(name: str):
         registration = registered(name)
         if registration is None:
             return None
@@ -217,7 +215,9 @@ def route(
     return find
 
 
-def forget_ended(registry: Registry, alive: Callable[[str], str | None], sessions: Path) -> Callable[[Collection[str]], None]:
+def forget_ended(
+    registry: Registry, alive: Callable[[str], str | None], sessions: Path
+) -> Callable[[Collection[str]], None]:
     """Remove the registration of every session that is neither running nor named by a consumer in `names`: nothing
     is delivered to it, and a session that returns registers again at its next prompt, by the `session_register` hook."""
 
@@ -231,20 +231,24 @@ def forget_ended(registry: Registry, alive: Callable[[str], str | None], session
     return forget
 
 
-def exit_watcher(log: EventLog, registry: Registry, sessions: Path) -> Callable[[], None]:
+def exit_watcher(
+    log: EventLog, registry: Registry, sessions: Path, holds: Callable[[str], str | None]
+) -> Callable[[], None]:
     """A sync that holds a process descriptor per registered session with a running process: when one exits, a clean
-    exit, kill or crash alike, `SESSION_ENDED` lands on the harness machine, under the task the session last claimed."""
-    telemetry = telemetry_log(log)
+    exit, kill or crash alike, `SESSION_ENDED` lands on the harness machine, under the task `holds` says the session
+    holds (the one the actor pinned it to), and names the session so the actor ends its lease."""
 
     def ended(session: str, pid: int) -> None:
-        try:
-            claim = telemetry.last_claim(CLAUDE_CODE, session)
-        except ClaimUnreadable:
-            claim = None  # the end is kept under the session as a run rather than lost
-        task = claim[0] if claim else None
+        task = holds(session)
         machine_events.publish(
-            "harness", "SESSION_ENDED", actor="claude-code", task=task, run=None if task else session,
-            event_id=ended_id(session, pid), log=log,
+            "harness",
+            "SESSION_ENDED",
+            actor="claude-code",
+            task=task,
+            run=None if task else session,
+            event_id=ended_id(session, pid),
+            data={"session": session},
+            log=log,
         )
 
     watch = ExitWatch(ended)

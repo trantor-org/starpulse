@@ -76,7 +76,7 @@ class Run(NamedTuple):
 
 
 def fold_runs(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> list[dict[str, Any]]:
-    """The fold of one session's `signals`: a row per step that is not a compaction's own call or a Codex session's,
+    """The fold of one session's `signals`: a row per step that is not a compaction's own call or an uncaptured session's,
     with its task, the skill in force, its activities and the tool calls it owns, as plain JSON data."""
     return [
         {

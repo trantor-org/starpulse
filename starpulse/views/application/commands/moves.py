@@ -1,6 +1,5 @@
-"""Move a task between lanes, claim it for a session and start a session on it."""
+"""Move a task between lanes, dispatch a session to it and start a session on it."""
 
-import logging
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -8,24 +7,19 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board.model import criteria
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import (
-    AGENT,
     OPERATOR,
-    TASK_ACTOR,
     AssigneeWriter,
     MoveWriter,
-    TaskReleaser,
 )
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api.dto.requests import (
-    ClaimRequest,
+    DispatchRequest,
     MoveRequest,
     NonBlank,
-    ReleaseRequest,
     StartRequest,
 )
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.views.application.commands.guard import (
-    RELEASED_ASSIGNEE,
     Who,
     held_task,
     holder_refusal,
@@ -38,8 +32,6 @@ from starpulse.views.application.commands.guard import (
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     pass
 
-logger = logging.getLogger(__name__)
-
 
 #: Starts the session a `StartRequest` names; `move_task` calls it for the operator's move of an unheld task.
 Starter = Callable[[StartRequest], tuple[int, dict[str, Any]]]
@@ -48,15 +40,20 @@ Starter = Callable[[StartRequest], tuple[int, dict[str, Any]]]
 _START_MODES = frozenset({"interactive", "headless"})
 
 
-class _ClaimBody(ClaimRequest):
-    """A claim names its session, the opaque string that holds the task."""
+class _DispatchBody(DispatchRequest):
+    """A dispatch names its session, the opaque string the task actor pins to the task."""
 
     session: NonBlank
 
 
 @with_request(MoveRequest, "Moving a task")
 def move_task(
-    request: MoveRequest, feed: BoardFeed, writer: MoveWriter, start: Starter | None = None, *, started: Callable[[str], bool]
+    request: MoveRequest,
+    feed: BoardFeed,
+    writer: MoveWriter,
+    start: Starter | None = None,
+    *,
+    started: Callable[[str], bool],
 ) -> tuple[int, dict[str, Any]]:
     """Move the task `request` names, or each of its `tasks`, to the column it names, through `writer`: the HTTP status
     and JSON body. A batch answers 200 with the tasks moved and each refused one's error, so one refusal leaves the
@@ -88,7 +85,13 @@ def move_task(
 
 
 def _move_one(
-    feed: BoardFeed, task: str, column: str, who: Who, writer: MoveWriter, start: Starter | None, started: Callable[[str], bool]
+    feed: BoardFeed,
+    task: str,
+    column: str,
+    who: Who,
+    writer: MoveWriter,
+    start: Starter | None,
+    started: Callable[[str], bool],
 ) -> tuple[int, dict[str, Any]]:
     """Move the `task` the board holds to `column` as `who` for `move_task`: the HTTP status and JSON body."""
     if (agent := held_task(feed, task)) is None:
@@ -108,7 +111,7 @@ def _dragged_unheld(feed: BoardFeed, agent: dict, column: str, who: Who) -> bool
 
 
 def _unheld(agent: dict) -> bool:
-    return agent.get("assignee") in (None, "", RELEASED_ASSIGNEE)
+    return not agent.get("assignee")
 
 
 def column_status(column: str) -> str:
@@ -116,10 +119,14 @@ def column_status(column: str) -> str:
     return column.replace("_", " ").title()
 
 
-def started_refusal(feed: BoardFeed, task: str, column: str, started: Callable[[str], bool]) -> tuple[int, dict[str, str]] | None:
+def started_refusal(
+    feed: BoardFeed, task: str, column: str, started: Callable[[str], bool]
+) -> tuple[int, dict[str, str]] | None:
     """The 409 for a move of a task that ever entered the working state into Ready, which holds only new work, else None."""
     if column == feed.roles.ready and started(task):
-        return 409, {"error": f"{task} was started, and Ready holds only new work: move it to In Progress or Needs attention"}
+        return 409, {
+            "error": f"{task} was started, and Ready holds only new work: move it to In Progress or Needs attention"
+        }
     return None
 
 
@@ -135,32 +142,18 @@ def move_refusal(agent: dict, task: str, column: str, who: Who) -> tuple[int, di
 
 
 def _move(
-    feed: BoardFeed, agent: dict, task: str, column: str, who: Who, writer: MoveWriter, claiming: bool = False
+    feed: BoardFeed, agent: dict, task: str, column: str, who: Who, writer: MoveWriter
 ) -> tuple[int, dict[str, str]]:
     """Move the held task `agent` to `column` as `who` through `writer`: the HTTP status and JSON body of the move."""
     if (refused := move_refusal(agent, task, column, who) or holder_refusal(feed, agent, task, who)) is not None:
         return refused
-    return _write_move(feed, task, column, who, writer, claiming)
+    return _write_move(feed, task, column, who, writer)
 
 
-def _write_move(
-    feed: BoardFeed, task: str, column: str, who: Who, writer: MoveWriter, claiming: bool = False
-) -> tuple[int, dict[str, Any]]:
-    """Write `task` into `column` as `who` through `writer`, unjudged by the machine: the HTTP status and JSON body.
-
-    Only a `claiming` write hands the writer the session, which makes it the task's holder: a plain move, such as an
-    answer's resume from another session, leaves the holder as it was."""
+def _write_move(feed: BoardFeed, task: str, column: str, who: Who, writer: MoveWriter) -> tuple[int, dict[str, Any]]:
+    """Write `task` into `column` as `who` through `writer`, unjudged by the machine: the HTTP status and JSON body."""
     status = column_status(column)
-    written = record_written(
-        feed,
-        task,
-        who,
-        lambda: (
-            writer(task, status, who.actor, who.session)
-            if claiming and who.session
-            else writer(task, status, who.actor)
-        ),
-    )
+    written = record_written(feed, task, who, lambda: writer(task, status, who.actor))
     if written.unavailable:
         return 501, {"error": written.output}
     if not written.ok:
@@ -174,70 +167,43 @@ def _write_move(
     }
 
 
-def _claimer(who: Who, agent: dict, working: str) -> Who:
-    """`who` as the claim's writer: the task actor's when the machine names no agent writer for the move into `working`,
-    so an agent session never moves its own task in."""
-    if who.actor != AGENT or (raw := agent.get("moves", {}).get(working)) is None:
-        return who
-    return who if Move.read(raw).permits(AGENT) else who._replace(actor=TASK_ACTOR)
+#: Publishes the dispatch of a session to a task: `(task, session, replaces)`.
+Dispatcher = Callable[[str, str, str], None]
 
 
-@with_request(_ClaimBody, "Claiming a task")
-def claim_task(request: _ClaimBody, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
-    """Move the task `request` names to In Progress holding the session it names: the HTTP status and JSON body.
+@with_request(_DispatchBody, "Dispatching a session")
+def dispatch_task(request: _DispatchBody, feed: BoardFeed, dispatch: Dispatcher | None) -> tuple[int, dict[str, str]]:
+    """Publish the dispatch of the session `request` names to its task: the HTTP status and JSON body.
 
-    The holder is an opaque string. A task In Progress under another holder, or when the holder already has another
-    task In Progress, is refused 409 naming the holder or the task. A task the feed shows In Progress held by no
-    session, by its own task name (a label, never a session) or by this holder (its local id or its claude.ai URL) is
-    adopted: the claim is written without a lane move, so a park the feed has not yet placed (a restart's replay) is
-    still undone rather than answered 200 with the task left parked.
+    The task actor pins the session and moves the lane; this route writes nothing. It refuses, 409, what the actor
+    would leave: a task another session holds (unless `replaces` names that holder, whom the caller found dead), a
+    session that already holds another task In Progress, and a task outside Ready, Needs attention and In Progress.
     """
-    from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a claim names a session
+    from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a dispatch names a session
 
-    task = request.task
+    task, session, replaces = request.task, request.session, request.replaces or ""
+    if dispatch is None:
+        return 501, {"error": "this deployment publishes no dispatch events"}
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
-    working = feed.roles.working
-    who = _claimer(who_of(request), agent, working)
-    named_for_task = str(agent.get("assignee")).casefold() == task.casefold()
-    mine = same_holder(agent.get("assignee"), who.session)
-    adopt = agent["state"] == working and (_unheld(agent) or named_for_task or mine)
-    if agent["state"] == working and not adopt:
-        return 409, {"error": f"{task} is already In Progress, held by {agent['assignee']}"}
+    roles, holder = feed.roles, str(agent.get("assignee") or "")
+    if agent["state"] not in (roles.ready, roles.attention, roles.working):
+        return 409, {
+            "error": f"{task} is in {agent['state']}: a session is dispatched only to a Ready, Needs attention or In Progress task"
+        }
+    if holder and not same_holder(holder, session) and not (replaces and same_holder(holder, replaces)):
+        return 409, {"error": f"{task} is already In Progress, held by {holder}"}
     others = [
         a["id"]
         for a in feed.open_tasks()
-        if a["state"] == working and same_holder(a.get("assignee"), who.session) and a["id"] != task
+        if a["state"] == roles.working and same_holder(a.get("assignee"), session) and a["id"] != task
     ]
     if others:
         return 409, {
-            "error": f"this session already holds {others[0]} In Progress: park it, defer it or finish it before "
-            f"claiming {task}"
+            "error": f"this session already holds {others[0]} In Progress: park it, defer it or finish it before dispatching to {task}"
         }
-    if adopt:
-        status, body = _write_move(feed, task, working, who, writer, claiming=not mine)
-    else:
-        status, body = _move(feed, agent, task, working, who, writer, claiming=True)
-    return (200, {**body, "assignee": who.session}) if status == 200 else (status, body)
-
-
-@with_request(ReleaseRequest, "Releasing a claim")
-def release_task(request: ReleaseRequest, feed: BoardFeed, release: TaskReleaser) -> tuple[int, dict[str, str]]:
-    """End the claim on the task `request` names, whoever holds it: the HTTP status and JSON body.
-
-    The task loses its assignee, records the session as released and keeps its lane, so the next claim adopts it. A task
-    no session holds is refused 409; judging whether the holder is gone is the caller's.
-    """
-    task, who = request.task, who_of(request)
-    if (agent := held_task(feed, task)) is None:
-        return not_held(feed, task)
-    state, holder = agent["state"], agent.get("assignee")
-    if not holder or holder == RELEASED_ASSIGNEE:
-        return 409, {"error": f"{task} holds no claim"}
-    written = record_written(feed, task, who, lambda: release(task, state, session=holder, actor=who.actor))
-    if not written.ok:
-        return 409, {"error": written.output}
-    return 200, {"task": task, "to": state, "releasedFrom": holder}
+    dispatch(task, session, replaces)
+    return 202, {"task": task, "session": session}
 
 
 def _start_refusal(feed: BoardFeed, task: str, agent: dict[str, Any]) -> str | None:
@@ -246,8 +212,10 @@ def _start_refusal(feed: BoardFeed, task: str, agent: dict[str, Any]) -> str | N
     actor returns to Waiting, where the reaper ends the session."""
     startable = feed.roles.startable
     if agent["state"] == feed.roles.working:
-        if (holder := agent.get("assignee")) and holder != RELEASED_ASSIGNEE:
-            return f"{task} is held by {holder}: a session starts an In Progress task only once its claim is released"
+        if holder := agent.get("assignee"):
+            return (
+                f"{task} is held by {holder}: a session starts an In Progress task only once its holder's session ended"
+            )
         return None
     if agent["state"] == feed.roles.review:
         return None  # a closed Review session reopens through a Resume start, which leaves the task in Review
@@ -261,7 +229,11 @@ def _start_refusal(feed: BoardFeed, task: str, agent: dict[str, Any]) -> str | N
     open_dependencies = [dependency for dependency in agent.get("dependencies", ()) if not feed.is_done(dependency)]
     if open_dependencies:
         on = f"{task} is in {agent['state']} on {', '.join(open_dependencies)}"
-        return f"{on}: it starts once that is done" if waiting else f"{on}: the task actor returns it to {feed.roles.waiting}"
+        return (
+            f"{on}: it starts once that is done"
+            if waiting
+            else f"{on}: the task actor returns it to {feed.roles.waiting}"
+        )
     waits = criteria.subjects(agent.get("description", "")) if waiting else ()
     if not waits:
         return None
@@ -335,18 +307,3 @@ def start_task(
 ) -> tuple[int, dict[str, Any]]:
     """`POST /api/start`: `start_requested` for the request body a page or a client posts."""
     return start_requested(request, feed, assign, start_session, harnesses, clock)
-
-
-def release_closed(feed: BoardFeed, task: str, release: TaskReleaser, announce: Callable[[str], None]) -> bool:
-    """End the claim a closed workflow held on `task`, leaving it in its lane for a session to start on; False when no
-    session holds it."""
-    if (agent := held_task(feed, task)) is None or agent.get("assignee") in (None, "", RELEASED_ASSIGNEE):
-        return False
-    state, holder = agent["state"], agent["assignee"]
-    if not record_written(feed, task, Who(TASK_ACTOR, "", ""), lambda: release(task, state, session=holder, actor=TASK_ACTOR)).ok:
-        return False
-    try:
-        announce(task)
-    except Exception:
-        logger.exception("workflow close: the released notice for %s failed", task)
-    return True

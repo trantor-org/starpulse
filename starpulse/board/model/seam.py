@@ -45,7 +45,6 @@ __all__ = [
     "TaskCreator",
     "TaskEditor",
     "TaskReader",
-    "TaskReleaser",
     "TaskReopener",
     "TaskRestorer",
     "TaskRetirer",
@@ -99,11 +98,9 @@ class Written(NamedTuple):
 
 
 class MoveWriter(Protocol):
-    """A board writer: set a task's status for `actor` and say what it did. A move that names the mover's `session`
-    passes it as a fourth argument; one that names none passes three, so a writer that predates sessions keeps working.
-    A claim records the session as the task's assignee."""
+    """A board writer: set a task's status for `actor` and say what it did. The assignee is the task actor's alone."""
 
-    def __call__(self, task: str, status: str, actor: str, session: str = "") -> Written: ...
+    def __call__(self, task: str, status: str, actor: str) -> Written: ...
 
 
 class AssigneeWriter(Protocol):
@@ -111,12 +108,6 @@ class AssigneeWriter(Protocol):
     did. The same holds for `TaskEditor`, `TaskArchiver` and `TaskCreator`."""
 
     def __call__(self, task: str, profile: str, /, actor: str = ...) -> Written: ...
-
-
-class TaskReleaser(Protocol):
-    """Ends a task's claim: move it to a State and drop its `session`."""
-
-    def __call__(self, task: str, status: str, /, session: str, actor: str = ...) -> Written: ...
 
 
 #: One task's full record keyed by its editable fields, or None when the board has no such task.
@@ -189,7 +180,7 @@ MilestoneEditor = Callable[[str, Mapping[str, Any]], Written]
 MilestoneArchiver = Callable[[str], Written]
 #: One doc's record with its `body`, or None when the board has no open doc with that id.
 DocReader = Callable[[str], Mapping[str, Any] | None]
-#: File a doc with this title and details (`type`: `specification`, `guide`, `readme` or `other`, the default; `folder`
+#: File a doc with this title and details (`type`: `specification`, `guide`, `readme`, `postmortem` or `other`, the default; `folder`
 #: under the board's `docs/`; `body`, each optional); a successful `Written.output` is the new doc's id.
 DocCreator = Callable[[str, Mapping[str, Any]], Written]
 #: Replace the `title`, `type` or `body` a doc is given, keeping the rest.
@@ -228,8 +219,6 @@ class Board:
     """Sets a task's status when the page moves it."""
     assign: AssigneeWriter
     """Sets the assignee the page picked when starting a task's session."""
-    release: TaskReleaser
-    """Ends a task's claim and returns it to a State."""
     source: str
     """What the page says the Board is read from until the board is ready."""
     read: TaskReader

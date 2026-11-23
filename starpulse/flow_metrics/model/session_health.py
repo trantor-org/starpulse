@@ -29,7 +29,7 @@ from typing import Any
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
-from starpulse.contracts.signals import CODEX, Signal, claim_key, claimed, main_thread_source
+from starpulse.contracts.signals import Signal, claim_key, claimed, main_thread_source
 
 __all__ = [
     "attributed",
@@ -49,21 +49,11 @@ _EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
 _USER_REJECTS = {"user_reject", "user_abort"}
 _TOKENS = ("input", "output", "cache_read", "cache_write", "reasoning")
 _SPEND = (*_TOKENS, "subagents", "first_request_cache_write")
-#: `originator` values of Codex's interactive front ends; `codex_exec` is its headless one.
-_CODEX_INTERACTIVE = {"codex-tui", "codex_cli_rs"}
 
 
 def session_kind(session: list[Signal]) -> str:
     """`interactive`, `headless` or `unknown`: how the session was driven, from its first signals that say."""
     for s in session:
-        if s.kind == "start" and s.harness == CODEX:
-            return (
-                "headless"
-                if s.detail == "codex_exec"
-                else "interactive"
-                if s.detail in _CODEX_INTERACTIVE
-                else "unknown"
-            )
         source = main_thread_source(s.detail)
         if s.kind == "request" and source in {"sdk", "repl_main_thread"}:
             return "headless" if source == "sdk" else "interactive"

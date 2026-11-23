@@ -1,4 +1,4 @@
-"""Whether `serve` can serve the board, as `GET /api/ready` and `starpulse rehearse` read it.
+"""Whether `serve` can serve the board, as `GET /api/health` and `starpulse rehearse` read it.
 
 A server is ready when the event log is at the schema head, the Board is assembled, the Board context (the writer of
 the Start Criteria dating) has started and every other supervised context has started. Each context records its start
@@ -38,7 +38,7 @@ def forget_starts(url: str) -> None:
         engine.dispose()
 
 
-#: The context whose process is the one writer of the Board's dating; `/api/ready` names it apart from the others.
+#: The context whose process is the one writer of the Board's dating; `/api/health` names it apart from the others.
 WRITER = "board"
 
 

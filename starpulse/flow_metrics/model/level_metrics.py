@@ -1,7 +1,7 @@
 """The level's flow numbers: WIP, throughput, time in state and aging on the Backlog flow metric definitions, plus the
 shares and dwell the orbit card draws, from the runs of one machine merged across sources.
 
-`level_metrics` is a pure function of the runs a history keeps (`HistoryStore.level_runs`), so a fixture history gives
+`level_metrics` is a pure function of the runs a history keeps, so a fixture history gives
 numbers that can be worked out by hand. A run's `steps` are the states it entered and when; a run's first step is where
 it was first seen, not a transition, so the stay before it is unknown and no completion or ending is counted for it. A
 stay runs from one step to the next, and the stay a run is still in has no end and counts to `now`. History begins at

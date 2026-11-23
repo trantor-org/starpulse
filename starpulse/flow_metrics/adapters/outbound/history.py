@@ -11,10 +11,8 @@ gap. It also keeps the step graphs `push_runs` learns from the pushed run events
 
 import json
 import logging
-import threading
 import time
-from collections import OrderedDict
-from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from sqlalchemy import (
@@ -24,11 +22,9 @@ from sqlalchemy import (
     Float,
     Index,
     Integer,
-    Select,
     String,
     Table,
     Text,
-    cast,
     create_engine,
     func,
     or_,
@@ -39,37 +35,19 @@ from sqlalchemy import event as sa_event
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import OperationalError
 
-from starpulse.event_log import breaking_change_events, lane_events, verdict_events
 from starpulse.event_log import events as machine_events
+from starpulse.event_log import lane_events, verdict_events
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import WAL_SIZE_LIMIT, EventLog, bound_wal, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.store import EventStore
-from starpulse.event_log.table_registry import clear_stamp, is_stamped, write_stamp
-from starpulse.event_log.tables import breaking_change_detections as _detections
-from starpulse.event_log.tables import breaking_changes as _breaking_changes
 from starpulse.event_log.tables import gaps as _gaps
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
 from starpulse.event_log.tables import task_verdicts as _task_verdicts
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
-from starpulse.flow_metrics.adapters.outbound.summaries import (
-    BOARD,
-    SUMMARY_TABLES,
-    Fold,
-    Summariser,
-    cases,
-    lane_intervals,
-    lanes,
-    read_case,
-    source,
-    write_lane,
-    write_step,
-)
-from starpulse.flow_metrics.model.level import Level
-from starpulse.flow_metrics.model.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
-from starpulse.machine_engine.model.stays import Dwell, LaneStays, Stay
+from starpulse.flow_metrics.adapters.outbound import summaries  # noqa: F401 - declares the dead step-summaries table until a migration drops it
 from starpulse.machine_engine.model.transitions import Table as Transitions
 from starpulse.machine_engine.model.transitions import lane_id
 
@@ -77,26 +55,11 @@ __all__ = ["HistoryStore", "machine_steps"]
 
 logger = logging.getLogger(__name__)
 
-#: How many raw rows a rebuild of the summaries reads at a time.
-_CHUNK = 5000
-#: How many tasks one statement asks the lane intervals for, under SQLite's limit on bound parameters.
-_TASKS_PER_QUERY = 500
-#: A time is read as whole seconds and a fraction of this many parts, both integers, so its text loses no digit.
-_FRACTION_SCALE = 2**52
-
-#: How long one read of the level's window serves requests, and how many windows (one per level and span asked, the
-#: latest minute's) are kept.
-_WINDOW_BUCKET_S = 60.0
-_WINDOWS_KEPT = 8
-
-#: How long one computed level answer serves requests, and how many answers (one per route and query) are kept.
-_ANSWER_BUCKET_S = 5.0
-_ANSWERS_KEPT = 32
-_Answer = tuple[bytes, int]
-
 #: How long a write waits on another process's write lock, in seconds. Every worker opens the store at `serve` start,
-#: and one rebuilding the summaries of a large history holds the lock for seconds.
+#: and one migrating a large history holds the lock for seconds.
 _SQLITE_BUSY_TIMEOUT = 60.0
+#: How many event ids one statement asks the lane history for, under SQLite's limit on bound parameters.
+_TASKS_PER_QUERY = 500
 
 _lane_changes = Table(
     "starpulse_lane_changes",
@@ -163,22 +126,6 @@ def _rechain(db: Connection, tasks: Iterable[str]) -> None:
         before[key] = new
 
 
-def _joined(db: Connection, query: Select) -> list[str]:
-    """The one text column `query` selects, read as one value: each row stepped one at a time retakes the GIL, which a
-    busy thread holds for its whole 5 ms switch interval."""
-    column = query.selected_columns[0]
-    joined = db.execute(query.with_only_columns(func.group_concat(column, "\x1e"))).scalar()
-    return joined.split("\x1e") if joined else []
-
-
-def _in_id_order(db: Connection, query: Select, id_column: Column, after: int = 0) -> Iterator[Mapping[str, Any]]:
-    """The rows of `query`, which selects `id`, past id `after` in id order, read a chunk at a time so a write may run
-    between them."""
-    while rows := db.execute(query.where(id_column > after).limit(_CHUNK)).mappings().all():
-        yield from rows
-        after = rows[-1]["id"]
-
-
 def _held_ids(db: Connection, event_ids: list[str]) -> set[str]:
     """The `event_ids` the lane history holds."""
     c = _lane_changes.c
@@ -240,14 +187,6 @@ class HistoryStore:
         bound_wal(self.engine)
         self._machines = machines
         self._retention = None if retention_days is None else retention_days * 86400.0
-        self._summariser = Summariser(machines)
-        # the level windows read since the last summary write
-        self._windows: dict[tuple[Level, float, float], RunWindow] = {}
-        self._windows_lock = threading.Lock()
-        self._summaries_version = 0
-        # the level answers computed since the last summary write, least recently used first
-        self._answers: OrderedDict[Hashable, _Answer] = OrderedDict()
-        self._answer_flight = threading.Lock()
         require_migrated(self.engine)
 
     def _insert(self, table: Table):
@@ -263,10 +202,10 @@ class HistoryStore:
         return entered(self.engine, task, status)
 
     def record_machine(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
-        """Write one machine event and fold it into the summaries; one the store already holds is a no-op.
+        """Write one machine event; one the store already holds is a no-op.
 
         `cursor`, the event's id in the log, is saved in the same transaction, so the store never holds an event
-        its cursor has not passed or a cursor past an event it lacks, or an event its summaries lack.
+        its cursor has not passed or a cursor past an event it lacks.
         """
         row = {
             "event_id": fields.get("event_id") or entry_id,
@@ -279,13 +218,9 @@ class HistoryStore:
         }
         with self.engine.begin() as db:
             insert = self._insert(_machine_events).values(row).on_conflict_do_nothing()
-            written = db.execute(insert.returning(_machine_events.c.id)).first() is not None
-            if written:
-                self._summarise_event(db, row)
+            db.execute(insert)
             if cursor is not None:
                 self.checkpoints.save(machine_events.STREAM, cursor, conn=db)
-        if written:
-            self._summaries_changed()
 
     def record_verdict(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
         """Write one qa verdict; one the store already holds is a no-op. `cursor`, the verdict's id in the log, is saved
@@ -318,83 +253,6 @@ class HistoryStore:
                 for lens, round, outcome, reason, at in db.execute(query)
             ]
 
-    def record_breaking_change(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
-        """Write one breaking-change entry: a detection joins its commit's row, which the first one opens, and a
-        postmortem closes the row. A replayed entry changes nothing. `cursor`, the entry's id in the log, is saved in the
-        same transaction."""
-        commit = fields["commit"]
-        at = float(fields["time"])
-        recorded = fields["event"] == breaking_change_events.RECORDED
-        pr = fields.get("pr")
-        row = {
-            "commit_sha": commit,
-            "pr": int(pr) if pr is not None else None,
-            "task": fields.get("task") if recorded else None,
-            "outcome": fields.get("outcome"),
-            "first_seen": at,
-        }
-        with self.engine.begin() as db:
-            db.execute(self._insert(_breaking_changes).values(row).on_conflict_do_nothing())
-            if recorded:
-                detection = {
-                    "event_id": entry_id,
-                    "commit_sha": commit,
-                    "detector": fields["detector"],
-                    "outcome": fields.get("outcome"),
-                    "evidence": fields.get("evidence"),
-                    "occurred_at": at,
-                }
-                db.execute(self._insert(_detections).values(detection).on_conflict_do_nothing())
-            else:
-                closing = update(_breaking_changes).where(_breaking_changes.c.commit_sha == commit)
-                db.execute(closing.values(postmortem_task=fields.get("task")))
-            if cursor is not None:
-                self.checkpoints.save(breaking_change_events.STREAM, cursor, conn=db)
-
-    def breaking_changes(self, *, open_only: bool = False) -> list[dict]:
-        """Every commit that broke the branch, oldest first, with its `detections` (`detector`, `outcome`, `evidence`,
-        `at`); `open_only` keeps those no postmortem has closed."""
-        columns = _breaking_changes.c
-        found = _detections.c
-        query = select(_breaking_changes).order_by(columns.first_seen, columns.id)
-        if open_only:
-            query = query.where(columns.postmortem_task.is_(None))
-        detections = select(
-            found.commit_sha, found.detector, found.outcome, found.evidence, found.occurred_at
-        ).order_by(found.occurred_at, found.id)
-        with self.engine.connect() as db:
-            seen: dict[str, list[dict]] = {}
-            for commit, detector, outcome, evidence, at in db.execute(detections):
-                seen.setdefault(commit, []).append(
-                    {"detector": detector, "outcome": outcome, "evidence": evidence, "at": at}
-                )
-            return [
-                {
-                    "commit": row.commit_sha,
-                    "pr": row.pr,
-                    "task": row.task,
-                    "outcome": row.outcome,
-                    "first_seen": row.first_seen,
-                    "postmortem_task": row.postmortem_task,
-                    "detections": seen.get(row.commit_sha, []),
-                }
-                for row in db.execute(query)
-            ]
-
-    def _summaries_changed(self) -> None:
-        """Forget the level windows: called once a write to the summaries has committed, so a window read after it sees the
-        write and one read before it is never kept."""
-        with self._windows_lock:
-            self._summaries_version += 1
-            self._windows.clear()
-            self._answers.clear()
-
-    def _summarise_event(self, db: Connection, row: dict) -> None:
-        who = self._summariser
-        if (key := who.event_key(row["machine"], row["task"], row["run"], row["event_id"])) is not None:
-            step = who.event_step(key, read_case(db, key), row["event"], row["occurred_at"], row["event_id"])
-            write_step(db, self._insert, key, step)
-
     def record_lane(
         self,
         event_id: str,
@@ -406,7 +264,7 @@ class HistoryStore:
         event: Mapping[str, Any] | None = None,
         actor: str | None = None,
     ) -> bool:
-        """Write a task's lane change and fold it into the summaries; True when a row was written. The status is kept as
+        """Write a task's lane change; True when a row was written. The status is kept as
         its lane id (`In Progress` is `in_progress`). One that repeats the task's last (a reconcile) is no change, and
         neither is an event id or a move (task, lane, time) the store already holds: a second writer adds no row.
 
@@ -421,8 +279,6 @@ class HistoryStore:
                 insert_event(db, lane_events.STREAM, event, event_id)
             if cursor is not None:
                 self.checkpoints.save(lane_events.STREAM, cursor, conn=db)
-        if written:
-            self._summaries_changed()
         return written
 
     def _fold_lane(
@@ -437,25 +293,14 @@ class HistoryStore:
         change = self._insert(_lane_changes).values(
             event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at, actor=actor
         )
-        if db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is None:
-            return False
-        self._summarise_lane(db, event_id, task, status, at)
-        return True
-
-    def _summarise_lane(self, db: Connection, event_id: str, task: str, status: str, at: float) -> None:
-        who = self._summariser
-        key = who.lane_key(task, event_id)
-        if (step := who.lane_step(read_case(db, key), status, at, event_id)) is not None:
-            write_step(db, self._insert, key, step)
-        write_lane(db, self._insert, event_id, task, status, at)
+        return db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is not None
 
     def import_lanes(self, changes: Iterable[Change]) -> int:
         """Add the lane changes of an earlier history, each once: how many of them the store holds that it did not.
 
         A change is written as the board's own event id names it, so one the store holds is not written again, and a
         move the store holds under another id (task, lane, time) or a change into the lane its task was already in
-        adds nothing. Changes may be older than the rows the store holds, so the touched tasks are chained again and the
-        store's summaries are then rebuilt: nothing may record while it runs.
+        adds nothing. Changes may be older than the rows the store holds, so the touched tasks are chained again.
         """
         ordered = sorted(changes, key=lambda change: change.at)
         ids = [change.event_id for change in ordered]
@@ -474,56 +319,8 @@ class HistoryStore:
                 row = {"event_id": event_id, "task": task, "old_status": None, "new_status": status, "observed_at": at}
                 db.execute(self._insert(_lane_changes).values(row).on_conflict_do_nothing())
             _rechain(db, {task for _, task in last})
-        self.rebuild_summaries()
         with self.engine.connect() as db:
             return len(_held_ids(db, ids) - held)
-
-    def build_summaries(self) -> None:
-        """Rebuild the summaries when they were not folded under this stamp: a store that predates it, or one opened
-        under edited machines or fold code. Summaries folded under it are left as they are, so a second call changes
-        nothing."""
-        with self.engine.connect() as db:
-            folded = is_stamped(db, "summaries", self._summariser.stamp())
-        if not folded:
-            self.rebuild_summaries()
-
-    def rebuild_summaries(self) -> None:
-        """Replace the summaries with ones folded from the raw rows under the machines this store holds: the machine
-        events, then the lane changes, each in the order it was recorded, through the fold a write takes.
-
-        The rows are folded in memory while writers carry on, so a large history holds no lock for its length. The write
-        lock is then taken only to swap the summaries in, after folding the rows recorded since the fold read them, so
-        the swap lasts as long as dropping, creating and writing the tables, and no row recorded meanwhile is missing
-        from them. A reader sees the old tables or the new, never an empty or missing one.
-        """
-        stamp = self._summariser.stamp()
-        fold = Fold(self._summariser)
-        with self.engine.connect() as db:
-            seen = self._fold_rows(db, fold, (0, 0))
-        with self.engine.begin() as db:
-            clear_stamp(db, "summaries")  # the first write takes the lock, so the rows read next are the last
-            for table in SUMMARY_TABLES:
-                table.drop(db)
-                table.create(db)
-            self._fold_rows(db, fold, seen)
-            fold.write(db)
-            write_stamp(db, "summaries", stamp)
-        self._summaries_changed()
-
-    @staticmethod
-    def _fold_rows(db: Connection, fold: Fold, after: tuple[int, int]) -> tuple[int, int]:
-        """Fold the machine events and lane changes recorded past the ids `after`; the ids of the last it folded."""
-        e, c = _machine_events.c, _lane_changes.c
-        events = select(e.id, e.event_id, e.task, e.run, e.machine, e.event, e.occurred_at).order_by(e.id)
-        changes = select(c.id, c.event_id, c.task, c.new_status, c.observed_at).order_by(c.id)
-        last_event, last_change = after
-        for row in _in_id_order(db, events, e.id, last_event):
-            fold.event(row)
-            last_event = row["id"]
-        for row in _in_id_order(db, changes, c.id, last_change):
-            fold.lane(row["event_id"], row["task"], row["new_status"], row["observed_at"])
-            last_change = row["id"]
-        return last_event, last_change
 
     def record_gap(self, stream: str, after_id: str, before_id: str, lost: int) -> None:
         """Note that `lost` entries of `stream` between `after_id` and `before_id` were trimmed unread."""
@@ -567,55 +364,6 @@ class HistoryStore:
             rows = db.execute(select(g.stream, g.after_id, g.before_id, g.lost).order_by(g.id)).all()
         return [{"stream": s, "after_id": a, "before_id": b, "lost": n} for s, a, b, n in rows]
 
-    def health_stays(self, machine: dict, *, start: float, now: float, stuck_s: float) -> LaneStays:
-        """The lane stays the Board `machine`'s health between `start` and `now` reads, from the lane summaries.
-
-        The database folds the stays that ended at or after `start` into one `Dwell` per lane, counts the stays that
-        began in the window per lane and folds the stays still going in a state that is not final into one `Dwell`
-        per lane, so what comes back is a row per lane plus the stays still going in a state that is neither initial
-        nor final for `stuck_s` or nearly: it grows with the lanes and the tasks stuck, not with the stays the window
-        holds or the tasks in flight; the tasks in each lane now and every lane recorded come from the lane counts.
-        """
-        i = lane_intervals.c
-        live = [lane for state in machine["states"] if not state["final"] for lane in (state["name"], state["id"])]
-        watched = [
-            lane
-            for state in machine["states"]
-            if not (state["final"] or state["initial"])
-            for lane in (state["name"], state["id"])
-        ]
-        length = i.left_at - i.entered_at
-        # a second of slack, so the reader's own `now - began >= stuck_s` decides a stay at the threshold
-        stuck = (
-            select(i.task, i.lane, i.entered_at)
-            .where(i.left_at.is_(None), i.lane.in_(watched), i.entered_at < now - stuck_s + 1.0)
-            .order_by(i.entered_at, i.id)
-        )
-        held = select(lanes.c.lane, func.sum(lanes.c.open_tasks)).group_by(lanes.c.lane).order_by(lanes.c.lane)
-        with self.engine.connect() as db:
-            counts = dict(db.execute(held).all())
-            # Every lane a stay was in is counted, so naming them lets ended seek each lane's stays in the window.
-            recorded = i.lane.in_(list(counts))
-            ended = select(i.lane, func.count(), func.sum(length), func.max(length)).where(recorded, i.left_at >= start)
-            # Keep the lane predicate off entered: with it SQLite satisfies GROUP BY from the stay index by scanning
-            # every stay in each lane; the time range alone seeks the entered-at index and groups only the window.
-            entered = select(i.lane, func.count()).where(i.entered_at.between(start, now))
-            going = select(i.lane, func.count(), func.sum(now - i.entered_at), func.min(i.entered_at)).where(
-                i.lane.in_(live), i.left_at.is_(None)
-            )
-            dwell = {lane: Dwell(n, total, longest) for lane, n, total, longest in db.execute(ended.group_by(i.lane))}
-            open_dwell = {
-                lane: Dwell(n, total, now - first) for lane, n, total, first in db.execute(going.group_by(i.lane))
-            }
-            return LaneStays(
-                dwell,
-                dict(db.execute(entered.group_by(i.lane)).all()),
-                open_dwell,
-                [Stay(task, lane, began, None) for task, lane, began in db.execute(stuck)],
-                counts,
-                list(counts),
-            )
-
     def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
         """`(task, at, from, to)` for every lane change of every task at or after epoch `since` (None: all), oldest
         first."""
@@ -640,135 +388,6 @@ class HistoryStore:
         """`(event_id, task, lane, at)` for every lane change of every task, oldest first."""
         c = _lane_changes.c
         return self._read(select(c.event_id, c.task, c.new_status, c.observed_at).order_by(*_LANE_ORDER))
-
-    def level_runs(self, flow: str) -> list[Run]:
-        """Every task's trajectory on `flow` as a `Run` of the source its event ids name, for the level's aggregates.
-
-        The Board's trajectories are its lane changes, each lane read as the state of that name or id (a lane that is
-        no state is skipped); another machine's are its events placed as `machine_steps` places them. A source is the
-        `<source>/` an event id carries, which namespaces a source's event; an id with none is no
-        source's and its run is `UNATTRIBUTED`. A run is one source's one task.
-        """
-        machine = self._machines[flow]
-        if flow == "board":
-            states = {key: state["id"] for state in machine["states"] for key in (state["name"], state["id"])}
-            c = _lane_changes.c
-            query = select(c.event_id, c.task, c.observed_at, c.new_status).order_by(*_LANE_ORDER)
-            rows = [(event_id, task, at, states.get(lane)) for event_id, task, at, lane in self._read(query)]
-        else:
-            table, current = Transitions(machine), {}
-            c = _machine_events.c
-            query = (
-                select(c.event_id, c.task, c.occurred_at, c.event)
-                .where(c.machine == flow, c.task.is_not(None))
-                .order_by(*_STEP_ORDER)
-            )
-            rows = []
-            for event_id, task, at, event in self._read(query):
-                key = (source(event_id), task)
-                current[key] = table.target(current.get(key), event) or current.get(key, table.initial)
-                rows.append((event_id, task, at, current[key]))
-        steps: dict[tuple[str, str], list[tuple[float, str]]] = {}
-        for event_id, task, at, state in rows:
-            if state is not None:
-                steps.setdefault((source(event_id), task), []).append((at, state))
-        return [Run(source, task, tuple(path)) for (source, task), path in steps.items()]
-
-    def level_window(self, level: Level, *, now: float, window_s: float) -> RunWindow:
-        """The runs the level's numbers over the last `window_s` seconds up to `now` need, from the lane summaries.
-
-        The Board's are every task that changed lane in the window or the trailing 12 weeks (aging reads those) and
-        every task still waiting or working, each with its whole trajectory; the history's start and its sources come
-        from the lane counts. The read grows with that activity and the tasks in flight, not with the history. Another
-        machine's trajectories are its events, which are read whole (`level_runs`).
-        """
-        if level.machine != BOARD:
-            return RunWindow(self.level_runs(level.machine))
-        # The window holds every run that moved since a cutoff `now` sets, and a cutoff earlier than a request needs only
-        # adds runs the level's numbers clip away, so one read at the start of the minute answers every request in it.
-        bucket = now - now % _WINDOW_BUCKET_S
-        key = (level, window_s, bucket)
-        with self._windows_lock:
-            version, held = self._summaries_version, self._windows.get(key)
-        if held is None:
-            held = self._read_level_window(level, now=bucket, window_s=window_s)
-            with self._windows_lock:
-                if self._summaries_version == version:  # a write that committed meanwhile may be missing from it
-                    for stale in [k for k in self._windows if k[:2] == key[:2] and k[2] < bucket]:
-                        del self._windows[stale]  # a later minute never asks for an earlier bucket again
-                    if len(self._windows) >= _WINDOWS_KEPT:
-                        del self._windows[next(iter(self._windows))]
-                    self._windows[key] = held
-        return held
-
-    def level_answer(self, level: Level, key: Hashable, *, now: float, compute: Callable[[], _Answer]) -> _Answer:
-        """`compute()` for `key`, or the answer an earlier request computed in the same few seconds, as long as no
-        summary has been written since.
-
-        Only the Board's level is kept: another machine's runs are its events, which this store does not version. The
-        answer is as old as the first request of its bucket, and a request that finds one being computed waits for it
-        rather than computing it again.
-        """
-        if level.machine != BOARD:
-            return compute()
-        key = (level, key, now - now % _ANSWER_BUCKET_S)
-        with self._answer_flight:
-            with self._windows_lock:
-                version, held = self._summaries_version, self._answers.get(key)
-                if held is not None:
-                    self._answers.move_to_end(key)
-            if held is None:
-                held = compute()
-                with self._windows_lock:
-                    if self._summaries_version == version:  # a write that committed meanwhile may be missing from it
-                        self._answers[key] = held
-                        if len(self._answers) > _ANSWERS_KEPT:
-                            self._answers.popitem(last=False)
-        return held
-
-    def _read_level_window(self, level: Level, *, now: float, window_s: float) -> RunWindow:
-        machine = self._machines[BOARD]
-        states = {key: state["id"] for state in machine["states"] for key in (state["name"], state["id"])}
-        _, working, waiting = state_roles(level, machine)
-        i, c, n = lane_intervals.c, cases.c, lanes.c
-        with self.engine.connect() as db:
-            # no DISTINCT: it would send SQLite down the whole task index instead of the range of recent entries
-            moved = _joined(db, select(i.task).where(i.entered_at >= min(now - window_s, now - AGING_WINDOW_S)))
-            live = _joined(db, select(c.case_id).where(c.machine == BOARD, c.state.in_([*waiting, *working])))
-            tasks = sorted({*moved, *live})
-            # by task, then time, then the order they were recorded in: the task index hands them over in that order
-            whole = cast(i.entered_at, Integer)
-            fraction = cast((i.entered_at - whole) * _FRACTION_SCALE, Integer)
-            packed = func.printf(
-                "%d\x1f%d\x1f%s\x1f%s\x1f%s",
-                whole,
-                fraction,
-                func.coalesce("s" + i.source, "n"),
-                i.task,
-                i.lane,
-            )
-            steps: dict[tuple[str | None, str], list[tuple[float, str]]] = {}
-            for start in range(0, len(tasks), _TASKS_PER_QUERY):
-                stays = (
-                    select(packed.label("stay"))
-                    .where(i.task.in_(tasks[start : start + _TASKS_PER_QUERY]))
-                    .order_by(i.task, i.entered_at, i.id)
-                    .subquery()
-                )
-                # one value per chunk: every step a row costs retakes the GIL, which a busy thread holds for 5 ms
-                joined = db.execute(select(func.group_concat(stays.c.stay, "\x1e"))).scalar()
-                for stay in joined.split("\x1e") if joined else ():
-                    second, part, who, task, lane = stay.split("\x1f")
-                    if (state := states.get(lane)) is not None:
-                        key = (who[1:] if who[0] == "s" else None, task)
-                        if (path := steps.get(key)) is None:
-                            path = steps[key] = []
-                        path.append((int(second) + int(part) / _FRACTION_SCALE, state))
-            seen = db.execute(
-                select(n.source, func.min(n.first_at)).where(n.lane.in_(list(states))).group_by(n.source)
-            ).all()
-        runs = [Run(who, task, tuple(path)) for (who, task), path in steps.items()]
-        return RunWindow(runs, min((first for _, first in seen), default=None), sorted(who for who, _ in seen))
 
     def _read(self, query):
         with self.engine.connect() as db:
@@ -839,11 +458,6 @@ def record_machine_events(store: HistoryStore, log: EventLog, stop: StopEvent) -
 def record_verdicts(store: HistoryStore, log: EventLog, stop: StopEvent) -> None:
     """Copy the log's qa verdicts into `store` until `stop`, as `record_machine_events` does the machine events."""
     _copy(store, log, stop, verdict_events.STREAM, store.record_verdict)
-
-
-def record_breaking_changes(store: HistoryStore, log: EventLog, stop: StopEvent) -> None:
-    """Copy the log's breaking-change entries into `store` until `stop`, as `record_verdicts` does the qa verdicts."""
-    _copy(store, log, stop, breaking_change_events.STREAM, store.record_breaking_change)
 
 
 def _copy(

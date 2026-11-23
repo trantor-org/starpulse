@@ -67,7 +67,7 @@ def machines_response(
     feed: BoardFeed, query: dict[str, list[str]], lanes: Callable[[], dict[str, Any]] | None = None
 ) -> tuple[bytes, int]:
     """The body and status for `/api/machines`: the next page of machines entered from `open`, older than `before`,
-    and each lane's surface (`lanes`: none when it is not configured)."""
+    and, only when `?lanes=1` is asked, each lane's surface (`lanes`: none when it is not configured); no page reads them."""
     asked = _page_query(query, "machines")
     if isinstance(asked, bytes):
         return asked, 400
@@ -75,7 +75,7 @@ def machines_response(
     found = feed.machine_rows(open_, *asked)
     if found is None:
         return _error(f"{open_} is not a machine here"), 404
-    return encode("machines", {**found, "lanes": lanes() if lanes else {}}), 200
+    return encode("machines", {**found, "lanes": lanes() if lanes else {}} if "lanes" in query else found), 200
 
 
 def done_response(feed: BoardFeed, read: TaskReader, query: dict[str, list[str]]) -> tuple[bytes, int]:
@@ -96,13 +96,6 @@ def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
     card = {key: record[key] for key in ("labels", "milestone", "type") if key in record}
     named = {"id": stub["id"], "title": record.get("title") or stub["id"], "state": "done"}
     return named | {"model": record.get("profile") or "", "entered": stub["entered"]} | card
-
-
-def breaking_changes_response(history: HistoryStore, query: dict[str, list[str]]) -> tuple[bytes, int]:
-    """The body for `/api/breaking-changes`: every commit that broke the branch, or with `?open=1` those no postmortem
-    has closed."""
-    open_only = query.get("open", [""])[0] in ("1", "true")
-    return encode("breaking_changes", {"changes": history.breaking_changes(open_only=open_only)}), 200
 
 
 def history_response(

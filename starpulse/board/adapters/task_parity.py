@@ -20,7 +20,7 @@ from starpulse.board.model.markdown import render
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore
 
-__all__ = ["Filed", "Parity", "align_claims", "check", "filed", "import_missing"]
+__all__ = ["Filed", "Parity", "Replays", "align_claims", "check", "filed", "import_missing", "scanned"]
 
 Record = Mapping[str, Any]
 _SHOWN = 6
@@ -46,19 +46,44 @@ class Parity:
         return not (self.missing or self.differing)
 
 
-def filed(root: Path, engine: Engine) -> Iterator[Filed]:
-    """Every open, completed and archived task file under `root`, then every retired task of the store whose id no file holds."""
-    held: set[str] = set()
+def scanned(root: Path) -> Iterator[Filed]:
+    """Every open, completed and archived task file under `root`."""
     for folder, settled in _FOLDERS:
         for path in sorted((root / folder).glob("*.md")):
             record = _record_of(path.read_text())
-            held.add(task := record["id"] or path.stem)
-            yield Filed(task, record, settled is not None)
+            yield Filed(record["id"] or path.stem, record, settled is not None)
+
+
+def filed(root: Path, engine: Engine, scan: Iterable[Filed] | None = None) -> Iterator[Filed]:
+    """Every open, completed and archived task file under `root` (`scan`, when the caller already read them), then every retired task of the store whose id no file holds."""
+    held: set[str] = set()
+    for item in scanned(root) if scan is None else scan:
+        held.add(item.task)
+        yield item
     retired = _Retired()
     retired.engine = engine
     for task, text in retired.pairs():
         if task not in held:  # a file holding the id outranks an old row of another task
             yield Filed(task, _record_of(text), True)
+
+
+class Replays:
+    """Each task's History replayed once, `{}` for a task with none, until the caller that appended to it drops it (`drop`; no task drops all)."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._store = EventStore(engine)
+        self._rows: dict[str, dict[str, Any]] = {}
+
+    def row(self, task: str) -> dict[str, Any]:
+        if (row := self._rows.get(task)) is None:
+            row = self._rows[task] = replay(self._store.read(KIND, task))
+        return row
+
+    def drop(self, task: str | None = None) -> None:
+        if task is None:
+            self._rows.clear()
+        else:
+            self._rows.pop(task, None)
 
 
 def _replayed(row: Record) -> dict[str, Any]:
@@ -113,16 +138,16 @@ def import_missing(items: Iterable[Filed], engine: Engine) -> list[str]:
     return [item.task for item in items if history.imported(item.task, item.record, item.archived)]
 
 
-def align_claims(items: Iterable[Filed], engine: Engine) -> list[str]:
+def align_claims(items: Iterable[Filed], engine: Engine, rows: Replays | None = None) -> list[str]:
     """Set the claim of each of `items` whose History holds another to its file's, a `FieldsEdited` of `assignee`; the tasks that got one."""
-    store, history = EventStore(engine), TaskHistory()
+    history = TaskHistory()
     history.attach(engine)
+    rows = rows or Replays(engine)
     aligned = []
     for item in items:
-        if not store.head(KIND, item.task):
-            continue
         held = item.record.get("assignee") or ""
-        if replay(store.read(KIND, item.task))["assignee"] != held:
+        if (row := rows.row(item.task)) and row["assignee"] != held:
             history.edited(item.task, {"changes": {"assignee": held}})
+            rows.drop(item.task)
             aligned.append(item.task)
     return aligned
