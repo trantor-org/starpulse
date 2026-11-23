@@ -654,20 +654,6 @@ body.drilling #crumb { visibility: hidden; }
 #kbm .tv .editrefusal code { color: var(--agent-text); }
 #kbm .tv .refusal { margin: 0; }
 
-#kbm .tvrail .rate { display: flex; gap: 6px; }
-#kbm .tvrail .ratebtn { all: unset; padding: 4px 14px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); color: var(--slate); font-size: calc(11.5px * var(--fs)); }
-#kbm .tvrail .ratebtn:hover, #kbm .tvrail .ratebtn:focus-visible { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 50%, transparent); }
-#kbm .tvrail .ratebtn:disabled { opacity: .5; }
-#kbm .tvrail .ratebtn[aria-pressed="true"][data-verdict="pass"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
-#kbm .tvrail .ratebtn[aria-pressed="true"][data-verdict="fail"] { color: var(--fail); border-color: color-mix(in srgb, var(--fail) 55%, transparent); background: color-mix(in srgb, var(--fail) 10%, transparent); }
-#kbm .tvrail .ratemeta { margin-top: 6px; color: var(--muted); font-size: calc(11px * var(--fs)); }
-#kbm .tvrail .ratewhy { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; color: var(--ink-2); }
-#kbm .tvrail .ratewhy .fv { width: 100%; margin: 0; }
-#kbm .tvrail .ratewhy .count { margin-left: auto; color: var(--faint); font-size: calc(10.5px * var(--fs)); }
-#kbm .tvrail .ratewhy .count.full { color: var(--fail); }
-#kbm .tvrail .ratewhy button { all: unset; color: var(--agent-text); font-size: calc(11px * var(--fs)); }
-#kbm .tvrail .ratewhy button:hover, #kbm .tvrail .ratewhy button:focus-visible { text-decoration: underline; }
-
 
 #kbm .tvrail .box { display: flex; flex-direction: column; gap: 3px; max-height: calc(176px * var(--fs)); overscroll-behavior: contain; margin-right: -6px; padding-right: 6px;
   mask-image: linear-gradient(var(--ink) calc(100% - 18px), transparent); }
@@ -683,9 +669,6 @@ body.drilling #crumb { visibility: hidden; }
 #kbm .mini { all: unset; cursor: pointer; margin-left: 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
 #kbm .mini:hover, #kbm .mini:focus-visible { color: var(--ink); }
 #kbm .tvrail .why { font-size: calc(11px * var(--fs)); color: var(--slate); margin-bottom: 6px; }
-#kbm .tvrail .who2.dev { margin: 0 0 6px; }
-#kbm .tvrail .tier { font-size: calc(10.5px * var(--fs)); color: var(--run-text); }
-#kbm .tvrail .rs .editrefusal { margin-top: 6px; }
 
 #kbm .tvhead .mv { position: relative; }
 #kbm .tvhead .startbtn, #kbm .ask .startbtn { all: unset; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-text); font-size: calc(11.5px * var(--fs)); white-space: nowrap; }
