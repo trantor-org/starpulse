@@ -14,6 +14,7 @@ from typing import Any, Protocol
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import resolved
 from starpulse.board.model.markdown import (
+    ARCHIVE_REQUEST,
     ASK_REQUEST,
     WAIT_REQUEST,
     attention_reason,
@@ -532,6 +533,7 @@ def _requested(marker: str) -> Callable[[TaskFacts, Agent], Held]:
 
 wait_requested = _requested(WAIT_REQUEST)
 ask_requested = _requested(ASK_REQUEST)
+archive_requested = _requested(ARCHIVE_REQUEST)
 
 
 def deps_done(facts: TaskFacts, agent: Agent) -> Held:
@@ -731,6 +733,7 @@ FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "operator_pushback": operator_pushback,
     "wait_requested": wait_requested,
     "ask_requested": ask_requested,
+    "archive_requested": archive_requested,
     "deps_done": by_claim(deps_done, claimed=False),
     "deps_done_with_pr": deps_done_with_pr,
     "deps_done_started": by_claim(deps_done, claimed=True),

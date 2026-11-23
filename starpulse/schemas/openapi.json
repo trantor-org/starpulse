@@ -1347,44 +1347,6 @@
         }
       }
     },
-    "/api/rating": {
-      "post": {
-        "summary": "Record a rating",
-        "operationId": "post_api_rating",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RatingRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Rated"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/miss": {
       "post": {
         "summary": "Record a miss",
@@ -7051,127 +7013,6 @@
         "title": "QuietHours",
         "type": "object"
       },
-      "Rated": {
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "verdict": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "changes": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "task",
-          "verdict",
-          "reason",
-          "changes"
-        ],
-        "title": "Rated",
-        "type": "object"
-      },
-      "Rating": {
-        "description": "A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch\nseconds), who set it (`actor`, empty when the write named none) and how many changes the task's rating has had.",
-        "properties": {
-          "verdict": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "at": {
-            "type": "number"
-          },
-          "actor": {
-            "type": "string"
-          },
-          "changes": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "verdict",
-          "reason",
-          "at",
-          "actor",
-          "changes"
-        ],
-        "title": "Rating",
-        "type": "object"
-      },
-      "RatingRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/rating`: record one change of `task`'s pass/fail rating: `pass`, `fail` with an optional `reason`, or\n`cleared`. Every change is kept; the latest one is the task's rating.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          },
-          "verdict": {
-            "enum": [
-              "pass",
-              "fail",
-              "cleared"
-            ],
-            "type": "string"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "maxLength": 120,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "required": [
-          "task",
-          "verdict"
-        ],
-        "title": "RatingRequest",
-        "type": "object"
-      },
       "RawTask": {
         "description": "A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in.",
         "properties": {
@@ -9561,21 +9402,6 @@
             ],
             "default": null,
             "description": "How many tasks were archived since local midnight, the window of the Done count."
-          },
-          "ratings": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/Rating"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Each rated task's latest pass/fail rating, by task id; a task never rated is absent."
           },
           "move_sets": {
             "anyOf": [

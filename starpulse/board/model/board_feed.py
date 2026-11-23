@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.event_log import rating_events
 from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.machine_engine.model.state_roles import StateRoles
@@ -119,8 +118,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._lanes: LaneRecorder | None = None
         #: Where each lane change `_lanes` wrote is also appended as a `lane_events` entry; None appends nothing.
         self._lane_log: EventLog | None = None
-        #: The pass/fail ratings the `task:ratings` stream holds, shown in the snapshot; None shows none.
-        self._ratings: rating_events.Ratings | None = None
         #: The tasks an accepted take-over flipped to interactive, shown in the snapshot.
         self._interactive: set[str] = set()
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})

@@ -11,7 +11,6 @@ export interface ApiContract {
     | Archived
     | ArchivedEach
     | Judged
-    | Rated
     | Restored
     | Retired
     | TakenOver
@@ -63,7 +62,6 @@ export interface ApiContract {
     | EditRequest
     | ArchiveRequest
     | VerdictRequest
-    | RatingRequest
     | MissRequest
     | RestoreRequest
     | RetireRequest
@@ -152,13 +150,6 @@ export interface ArchivedEach {
 export interface Judged {
   check: string;
   fix?: string | null;
-  task: string;
-  verdict: string;
-  [k: string]: unknown;
-}
-export interface Rated {
-  changes: number;
-  reason: string;
   task: string;
   verdict: string;
   [k: string]: unknown;
@@ -1787,18 +1778,6 @@ export interface VerdictRequest {
   verdict: string;
 }
 /**
- * `POST /api/rating`: record one change of `task`'s pass/fail rating: `pass`, `fail` with an optional `reason`, or
- * `cleared`. Every change is kept; the latest one is the task's rating.
- */
-export interface RatingRequest {
-  actor?: string | null;
-  harness?: string | null;
-  reason?: string | null;
-  session?: string | null;
-  task: string;
-  verdict: "pass" | "fail" | "cleared";
-}
-/**
  * `POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write.
  */
 export interface MissRequest {
@@ -2204,12 +2183,6 @@ export interface Snapshot {
     [k: string]: Pull[];
   } | null;
   /**
-   * Each rated task's latest pass/fail rating, by task id; a task never rated is absent.
-   */
-  ratings?: {
-    [k: string]: Rating;
-  } | null;
-  /**
    * True while a just-started server is still reading its board: its Board is partial until a snapshot without it follows.
    */
   reading?: boolean | null;
@@ -2466,18 +2439,6 @@ export interface MachineEntry {
 export interface MachineEntryFrom {
   machine: string;
   state: string;
-  [k: string]: unknown;
-}
-/**
- * A task's latest pass/fail rating: its verdict, the reason it names (empty when none), when it was set (epoch
- * seconds), who set it (`actor`, empty when the write named none) and how many changes the task's rating has had.
- */
-export interface Rating {
-  actor: string;
-  at: number;
-  changes: number;
-  reason: string;
-  verdict: string;
   [k: string]: unknown;
 }
 /**

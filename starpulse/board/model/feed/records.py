@@ -1,13 +1,13 @@
-"""Feed writes: its pulls, ratings and the lanes a board write records."""
+"""Feed writes: its pulls and the lanes a board write records."""
 
 import contextlib
 import threading
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from starpulse.board.model import write_steps
-from starpulse.event_log import lane_events, rating_events
+from starpulse.event_log import lane_events
 from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.stays import LaneRow
 from starpulse.machine_engine.model.transitions import lane_id
@@ -41,19 +41,6 @@ class RecordsMixin:
         self.stopped.set()
         for thread in self._threads:
             thread.join(timeout)
-
-    def record_ratings(self, log: EventLog) -> None:
-        """Show the ratings `log` holds in each snapshot, and append the changes `rate` records to it."""
-        self._ratings = rating_events.Ratings(log)
-
-    def ratings(self) -> dict[str, dict]:
-        """Each rated task's latest rating; none when the feed records none."""
-        return {} if self._ratings is None else self._ratings.latest()
-
-    def rate(self, fields: dict[str, Any]) -> dict[str, Any] | None:
-        """Record a change of a task's rating (`rating_events.change`): the task's rating now with its change count,
-        or None when the change is not recorded (no ratings log, or the append failed)."""
-        return None if self._ratings is None else self._ratings.rate(fields)
 
     def record_take_over(self, task_id: str) -> None:
         """Show `task_id` as interactive in each snapshot from now on, and tell the streams it changed."""

@@ -3,7 +3,7 @@ import { descend, type Sky } from "../../render/sky";
 import { skillOf } from "../../render/skills";
 import type { TaskRecord } from "./taskViewModel";
 import type { Option } from "../../shared/ChoiceMenu";
-import type { ClaimRelease, MachineState, Move, Pull, Rating, Roles, TrailStep } from "../../api";
+import type { ClaimRelease, MachineState, Move, Pull, Roles, TrailStep } from "../../api";
 import { ago } from "../../shared/clock";
 import { sessionNickname } from "./nickname";
 
@@ -54,8 +54,6 @@ export interface KanbanTask {
   phase?: PhaseAt | null;
   /** The first `readable` guard rule the description breaks, empty when it reads well: the card draws the legacy-format badge for a non-empty one, the dialog none. */
   readable?: string;
-  /** The pass/fail verdict on the task, drawn in the task view only; absent when it was never rated or the rating was cleared. */
-  rating?: Rating;
   /** Ready again after waiting: its last Board move was out of Waiting, so a machine state from before it no longer describes the card. */
   released: boolean;
   /** The claim the sweeper released from the task, which left it unheld; absent or null when none ended the claim. */
@@ -415,7 +413,6 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, sessionActivity: a.session_activity ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       phase: climb(sky, a.id),
-      rating: sky.ratings?.[a.id],
       ...(a.readable ? { readable: a.readable } : {}),
       ...(a.criteria ? { acceptanceCriteria: numbered(a.criteria) } : {}),
       ...(a.definition_of_done ? { definitionOfDone: numbered(a.definition_of_done) } : {}),

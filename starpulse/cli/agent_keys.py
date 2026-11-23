@@ -15,7 +15,6 @@ SNAPSHOT_KEYS = (
     "move_sets",
     "milestone_done",
     "archived_today",
-    "ratings",
     "interactive",
     "roles",
     "error",
@@ -56,7 +55,6 @@ TASK_KEYS = (
     "source",
     "prs",
     "moves",
-    "rating",
     "released",
     "description",
 )

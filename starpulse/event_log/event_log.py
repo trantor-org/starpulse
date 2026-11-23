@@ -86,9 +86,9 @@ _POOL_OVERFLOW = 16
 #: How many rows a prune archives and deletes at a time, so a long backlog is never held in memory at once.
 _PRUNE_BATCH = 1000
 
-#: The streams the prune keeps whatever their age: `task:ratings` is refolded into every rating on start, and
-#: `machine:events` into every machine's task placement on a read-model rebuild.
-RETAINED_STREAMS = ("machine:events", "task:ratings")
+#: The streams the prune keeps whatever their age: `machine:events` is refolded into every machine's task placement on a
+#: read-model rebuild.
+RETAINED_STREAMS = ("machine:events",)
 # Built once: a statement made per poll recompiles its lazy attributes every time, which dominated the server's CPU
 # at ~45 live sessions (every commit wakes every tail).
 # SQLite answers a lone min or max from the primary key.

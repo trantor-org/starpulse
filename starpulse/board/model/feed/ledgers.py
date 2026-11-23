@@ -1,4 +1,4 @@
-"""Feed ledgers: the lane and rating rows a page reads in pages."""
+"""Feed ledgers: the lane rows a page reads in pages."""
 
 import queue
 from typing import TYPE_CHECKING

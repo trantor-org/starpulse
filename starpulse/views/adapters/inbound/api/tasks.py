@@ -6,7 +6,7 @@
 - `GET /api/retired`: one page of the retired tasks, newest first, at most `limit` after the `before` cursor, with
   `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
   `fields=dependencies`, unpaged.
-- `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `rating`, `miss`, `restore`, `take-over`, `retire`,
+- `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `miss`, `restore`, `take-over`, `retire`,
   `retired/import`, `dispatch`, `park`, `review`, `complete`, `reopen` and `tasks`: a task's writes, each over the
   seams it needs.
 """
@@ -40,7 +40,6 @@ from starpulse.views.application.commands.tasks import (
     edit_task,
     import_retired,
     record_miss,
-    record_rating,
     record_verdict,
     reopen_task,
     restore_task,
@@ -169,9 +168,8 @@ def routes(api: Api) -> list[ApiRoute]:
             "start",
         ),
         "/edit": (lambda client, raw: edit_task(client, raw, feed, read, edit, started=started), "edit"),
-        "/archive": (lambda client, raw: archive_task(client, raw, feed, archive), "archive"),
+        "/archive": (lambda client, raw: archive_task(client, raw, feed, archive, edit), "archive"),
         "/verdict": (lambda client, raw: record_verdict(client, raw, feed, read, edit), "verdict"),
-        "/rating": (lambda client, raw: record_rating(client, raw, feed), "rating"),
         "/miss": (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
         "/restore": (lambda client, raw: restore_task(client, raw, feed, restore), "restore"),
         "/take-over": (lambda client, raw: take_over_task(client, raw, services.take_over, feed), "take_over"),

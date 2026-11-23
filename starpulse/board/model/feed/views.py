@@ -221,14 +221,12 @@ class ViewMethods:
             return self._snapshot(now, modelled)
 
     def _modelled_fields(self, now: float) -> dict[str, Any]:
-        """The snapshot's fields read from a store: the flows, the machine page and strip, the Done account, and the
-        ratings (a read of their own stream behind their own lock)."""
+        """The snapshot's fields read from a store: the flows, the machine page and strip, and the Done account."""
         flows, derived = self._flows(now)
         return {
             "flows": [{**f, **derived.get(f["name"], {})} for f in flows],
             **self.machine_fields(flows, derived, now),
             **self._done_fields(),
-            "ratings": self.ratings(),
         }
 
     def ledger_marks(self) -> dict:

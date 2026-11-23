@@ -159,7 +159,7 @@ _ASKS = (
 )
 
 #: The facts a comment alone raises, which the view does not show.
-_COMMENTED = frozenset(("operator_pushback", "wait_requested", "ask_requested"))
+_COMMENTED = frozenset(("operator_pushback", "wait_requested", "ask_requested", "archive_requested"))
 
 #: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
 _ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")

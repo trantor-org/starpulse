@@ -360,7 +360,7 @@ describe("labelRuleError", () => {
 
 describe("detailFields", () => {
   it("reads kind, size, area and mode from their prefixed labels and leaves the free-form ones as chips", () => {
-    const labels = ["kind-execute", "size-5", "needs-review", "area-starpulse", "mode-attended", "trial-a", "follow-up"];
+    const labels = ["kind-execute", "size-5", "needs-review", "area-starpulse", "mode-attended", "follow-up"];
     expect(detailFields(labels)).toEqual({ kind: "execute", size: "5", area: "starpulse", mode: "attended", chips: ["needs-review", "follow-up"] });
   });
 

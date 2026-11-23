@@ -71,6 +71,7 @@ WAIT_FACTS = (
     "operator_pushback",
     "wait_requested",
     "ask_requested",
+    "archive_requested",
     "pr_unfinished_alive",
     "pr_unfinished_dead",
     "deps_done",

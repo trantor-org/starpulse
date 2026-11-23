@@ -289,16 +289,6 @@ class VerdictRequest(_Writer):
     fix: str | None = None
 
 
-class RatingRequest(_Writer):
-    """`POST /api/rating`: record one change of `task`'s pass/fail rating: `pass`, `fail` with an optional `reason`, or
-    `cleared`. Every change is kept; the latest one is the task's rating.
-    """
-
-    task: NonBlank
-    verdict: Literal["pass", "fail", "cleared"]
-    reason: str | None = Field(default=None, max_length=120)
-
-
 class MissRequest(_Writer):
     """`POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write."""
 

@@ -2,7 +2,7 @@
 
 A side field (pulls, claims, dags, the ledger marks) is replaced from its change's own payload, a `snapshot` change
 and a local midnight build the snapshot whole again, and the writer's clock tick (`TICK`) ages what time alone moves:
-the machine window and the merge strip. A rating is announced by no change, so every fold reads it again.
+the machine window and the merge strip.
 
 A task delta re-reads its Task through the whole build's query (`drawn_task`), not from the delta's own agent: a
 guarded move, the Definition of Done and the readable verdict differ between the two, and the held snapshot must equal
@@ -45,7 +45,6 @@ _TAKE_OVER = "take-over"
 #: The kinds of change the fold takes; `tick` is the writer's clock.
 FOLDS = frozenset({"task", "move", "pulls", "claim", "dags", "ledgers", "snapshot", "tick"})
 #: The change that updates each snapshot key; `build` is a key the writer's whole build holds, which no change moves.
-#: `ratings` is read again from the feed on every fold, because a rating is appended with no change to announce it.
 RULES: dict[str, tuple[str, ...]] = {
     "flows": ("task", "move", "snapshot", "tick"),
     "machinePage": ("move", "snapshot", "tick"),
@@ -55,7 +54,6 @@ RULES: dict[str, tuple[str, ...]] = {
     "milestone_done": ("task", "snapshot", "tick"),
     "archived_today": ("task", "snapshot", "tick"),
     "now": ("task", "move", "pulls", "claim", "dags", "ledgers", "tick"),
-    "ratings": ("task", "move", "pulls", "claim", "dags", "ledgers", "tick"),
     "pulls": ("pulls", "snapshot"),
     "claims": ("claim", "snapshot"),
     "dags": ("dags", "snapshot"),
@@ -314,7 +312,6 @@ class HeldSnapshot:
             **self._feed.machine_fields(flows, derived, now),
             "milestone_done": dict(sorted(Counter(self._cold.values()).items())),
             "archived_today": self.snapshot["archived_today"] if archived_today is None else archived_today,
-            "ratings": self._feed.ratings(),
             "interactive": self._feed.interactive(),
             **fields,
             "now": now,

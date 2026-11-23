@@ -494,14 +494,6 @@ def task_verdict(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
     return {key: judged[key] for key in ("task", "check", "verdict")}
 
 
-def task_rate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/rating"
-    body = {"task": args.task, "verdict": "cleared" if args.verdict == "clear" else args.verdict, "reason": args.reason}
-    status, reply = agent_wire.post(base, path, {**body, **writer(args, environ)})
-    rated = record_call(base, path, status, reply, missing=_TASK_MISSING)
-    return {key: rated[key] for key in ("task", "verdict", "reason", "changes")}
-
-
 def task_miss(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/miss"
     body = {"task": args.task, "check": args.check, "fix": _created_task(args), "evidence": args.evidence}
