@@ -38,6 +38,7 @@ from typing import Any, NamedTuple
 from sqlalchemy import Engine, String, bindparam, create_engine, delete, event, func, select, type_coerce
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.engine import Connection, make_url
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
 from starpulse.event_log.checkpoints import Checkpoints
@@ -190,9 +191,9 @@ def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
     cursor.close()
 
 
-def bound_wal(engine: Engine) -> None:
-    """Truncate the engine's database's -wal file whenever a connection comes back to the pool with it past
-    `WAL_SIZE_LIMIT`.
+def bound_wal(engine: Engine, stop: threading.Event) -> None:
+    """Start the thread that truncates the engine's database's -wal file whenever it is past `WAL_SIZE_LIMIT`, until
+    `stop` is set. One process runs it (the api worker's); a connection checkin runs no checkpoint.
 
     `journal_size_limit` shrinks the file only when a commit restarts the log, and SQLite restarts it only at a moment
     no reader is on any of its frames. Readers that always overlap (the contexts worker's) leave no such
@@ -204,32 +205,20 @@ def bound_wal(engine: Engine) -> None:
     if database in (None, "", ":memory:"):
         return
     wal = Path(f"{database}-wal")
-    gate = threading.Lock()
-    retry_at = 0.0
+    unpooled = unpooled_engine(engine)
 
-    def truncate(dbapi_connection: Any, _record: Any) -> None:
-        nonlocal retry_at
-        if time.monotonic() < retry_at or not gate.acquire(blocking=False):
-            return
-        try:
-            if wal.stat().st_size <= WAL_SIZE_LIMIT:
-                return
-            retry_at = time.monotonic() + _WAL_TRUNCATE_RETRY_S
-            cursor = dbapi_connection.cursor()
-            wait_ms = cursor.execute("PRAGMA busy_timeout").fetchone()[0]
+    def truncate() -> None:
+        while not stop.wait(_WAL_TRUNCATE_RETRY_S):
             try:
-                cursor.execute(f"PRAGMA busy_timeout={_WAL_TRUNCATE_WAIT_MS}")
-                if not cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]:
-                    retry_at = 0.0
-            finally:
-                cursor.execute(f"PRAGMA busy_timeout={wait_ms}")
-                cursor.close()
-        except OSError, sqlite3.OperationalError:  # no -wal file yet, or the checkpoint lost the lock: next checkin
-            pass
-        finally:
-            gate.release()
+                if wal.stat().st_size > WAL_SIZE_LIMIT:
+                    with unpooled.connect() as db:
+                        raw = db.connection.dbapi_connection
+                        raw.execute(f"PRAGMA busy_timeout={_WAL_TRUNCATE_WAIT_MS}")
+                        raw.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except (OSError, SQLAlchemyError, sqlite3.OperationalError):  # no -wal file yet, or the database is busy: next round
+                pass
 
-    event.listen(engine, "checkin", truncate)
+    threading.Thread(target=truncate, name="wal-truncate", daemon=True).start()
 
 
 class EventLog:
@@ -268,7 +257,6 @@ class EventLog:
                     self._engine = store_engine(self.url)
                 if not self._listening:
                     event.listen(self._engine, "connect", _sqlite_pragmas)
-                    bound_wal(self._engine)
                     self._listening = True
                 with self._engine.connect() as db:
                     _sqlite_wal(db.connection.dbapi_connection)

@@ -113,7 +113,7 @@ def serve_page(
     from sqlalchemy.engine import make_url  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.event_log import EventLog  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.event_log.event_log import EventLog, bound_wal  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.migrate import StoreNotMigrated  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.declared import declared_fields  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -144,6 +144,7 @@ def serve_page(
     # the Board writer's projector indexes each task for search; this process only reads the index
     search = SearchIndex.open(log.engine, config.search)
     stop = StopEvent()
+    bound_wal(log.engine, stop)  # the one process that checkpoints: a checkin in any worker runs none
     board.attach(log)
     feed.ready.set()
     # no follower runs in this process: what the workers keep in the log is applied when a request reads it (`CaughtUp`)
