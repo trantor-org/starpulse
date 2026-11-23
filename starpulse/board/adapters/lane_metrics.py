@@ -69,7 +69,7 @@ def monitor(
     replay. The stalled gauge ages with no entry, so `log` keeps its deadlines and `metrics_of` counts them at scrape."""
     conformance = Conformance(
         feed.machines,
-        entered=(feed.roles.done, lane_events.ARCHIVED),
+        entered=(feed.roles.done, lane_events.ARCHIVED, feed.roles.working),
         working=feed.roles.working,
         open_tasks=feed.open_tasks,
         review=feed.roles.review,
