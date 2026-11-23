@@ -188,6 +188,7 @@ class Loop:
         self._full_counts: tuple[int, int] = (0, 0)  # the live count and limit the last refusal named
         self._failed: dict[str, tuple[int, float]] = {}  # a task whose start failed: its failures so far, when to retry
         self._events: queue.Queue | None = None
+        self._no_profile_logged: set[str] = set()  # the Ready tasks whose no-profile refusal is already logged
         self._blocked = False  # the last pass was refused for capacity: only a capacity event retries it
         self._sampled_at: float | None = None  # the sample of the last `scheduler` status the loop was offered
         self._restore()
@@ -653,6 +654,7 @@ class Loop:
             self._policy,
             self._ledger,
             log=log,
+            no_profile_logged=self._no_profile_logged if lane is None else None,
         )
         if log:
             self._count(decisions)

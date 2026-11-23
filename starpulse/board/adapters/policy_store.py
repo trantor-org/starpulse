@@ -1,124 +1,60 @@
 """The policy tables of StarPulse's store, and the loader that reads them.
 
-A store whose policy tables are all empty is governed by today's files: `load` then answers the policy `files` builds.
-The tables are written by a migration (the operator's own chain, a later slice), never by StarPulse at runtime.
+Policy is stored like machines: `starpulse_policy_versions` keeps every policy ever activated by the hash of its document, and
+`starpulse_policy_active` names the one that governs. A store whose active row is absent holds no policy and is governed by
+today's files: `load` then answers the policy `files` builds. `write` adds a version and activates it; the operator's chain
+and a later API route are its writers.
 """
 
+import json
+import time
 from collections.abc import Callable
-from dataclasses import fields
+from hashlib import sha256
 from pathlib import Path
-from typing import Any
 
-from sqlalchemy import (
-    JSON,
-    Column,
-    Connection,
-    Engine,
-    Integer,
-    PrimaryKeyConstraint,
-    String,
-    Table,
-    Text,
-    create_engine,
-    inspect,
-    select,
-)
+from sqlalchemy import JSON, Column, Connection, Engine, Float, ForeignKey, Integer, String, Table, create_engine, delete, inspect, insert, select
 from sqlalchemy.engine import make_url
 
-from starpulse.board.model.policy import Exit, Lane, LaneTool, Policy, PolicyRule, Profile, Route, Vocabulary, Watch
+from starpulse.board.model.policy import Policy
+from starpulse.board.model.policy_diff import policy_of, rows
 from starpulse.event_log.tables import metadata
 
-__all__ = ["exits", "held", "lanes", "load", "profiles", "routes", "rules", "stored", "tools", "vocabularies", "watches"]
+__all__ = ["active", "held", "load", "stored", "versions", "write"]
 
-lanes = Table(
-    "starpulse_policy_lanes",
+#: Every policy ever activated, kept by the hash of its document (the table rows `rows` gives). Nothing prunes or rewrites it.
+versions = Table(
+    "starpulse_policy_versions",
     metadata,
-    Column("name", String, primary_key=True),
-    Column("role", String),
-    Column("position", Integer, nullable=False),
-    Column("skill", String),
-    Column("label", String),
+    Column("hash", String, primary_key=True),
+    Column("document", JSON, nullable=False),
+    Column("created_at", Float, nullable=False),
 )
-routes = Table(
-    "starpulse_policy_routes",
+#: The version that governs: one row, `id` 1.
+active = Table(
+    "starpulse_policy_active",
     metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("event", String, nullable=False),
-    Column("source", String, nullable=False),
-    Column("target", String, nullable=False),
-    Column("condition", JSON),
-)
-exits = Table(
-    "starpulse_policy_exits",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("event", String, nullable=False),
-    Column("actor", String, nullable=False),
-    Column("trigger", String, nullable=False),
-)
-watches = Table(
-    "starpulse_policy_watches",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("lane", String, nullable=False),
-    Column("fact", String, nullable=False),
-    Column("event", String, nullable=False),
-    Column("position", Integer, nullable=False),
-)
-rules = Table(
-    "starpulse_policy_rules",
-    metadata,
-    Column("position", Integer, primary_key=True, autoincrement=False),
-    Column("on", JSON, nullable=False),
-    Column("require", JSON, nullable=False),
-    Column("reason", Text, nullable=False),
-    Column("skill", String, nullable=False),
-    Column("unless_actor", JSON, nullable=False),
-)
-vocabularies = Table(
-    "starpulse_policy_vocabularies",
-    metadata,
-    Column("name", String, nullable=False),
-    Column("value", String, nullable=False),
-    Column("position", Integer, nullable=False),
-    PrimaryKeyConstraint("name", "value"),
-)
-profiles = Table(
-    "starpulse_policy_profiles",
-    metadata,
-    Column("kind", String, nullable=False),
-    Column("size", Integer, nullable=False),
-    Column("profile", String, nullable=False),
-    PrimaryKeyConstraint("kind", "size"),
-)
-tools = Table(
-    "starpulse_policy_tools",
-    metadata,
-    Column("lane", String, nullable=False),
-    Column("tool", String, nullable=False),
-    PrimaryKeyConstraint("lane", "tool"),
-)
-
-#: Each table's row type and the order its rows are read in.
-_READ: tuple[tuple[Table, type, Any], ...] = (
-    (lanes, Lane, lanes.c.position),
-    (routes, Route, routes.c.id),
-    (exits, Exit, exits.c.id),
-    (watches, Watch, (watches.c.lane, watches.c.position)),
-    (rules, PolicyRule, rules.c.position),
-    (vocabularies, Vocabulary, (vocabularies.c.name, vocabularies.c.position)),
-    (profiles, Profile, (profiles.c.kind, profiles.c.size)),
-    (tools, LaneTool, (tools.c.lane, tools.c.tool)),
+    Column("id", Integer, primary_key=True, autoincrement=False),
+    Column("hash", String, ForeignKey("starpulse_policy_versions.hash"), nullable=False),
+    Column("activated_at", Float, nullable=False),
 )
 
 
 def stored(db: Connection) -> Policy:
-    """The policy the store's tables hold; empty when they hold none."""
-    held = []
-    for table, row, order in _READ:
-        query = select(*(table.c[field.name] for field in fields(row))).order_by(*(order if isinstance(order, tuple) else (order,)))
-        held.append(tuple(row(**record._mapping) for record in db.execute(query)))
-    return Policy(*held)
+    """The policy the active version holds; empty when none is active."""
+    document = db.execute(select(versions.c.document).join(active, active.c.hash == versions.c.hash)).scalar()
+    return policy_of(document) if document is not None else Policy()
+
+
+def write(db: Connection, policy: Policy) -> str:
+    """Add `policy` as a version unless the store has it, make it the active one, and return its hash."""
+    document = rows(policy)
+    digest = sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
+    now = time.time()
+    if db.execute(select(versions.c.hash).where(versions.c.hash == digest)).scalar() is None:
+        db.execute(insert(versions).values(hash=digest, document=document, created_at=now))
+    db.execute(delete(active))
+    db.execute(insert(active).values(id=1, hash=digest, activated_at=now))
+    return digest
 
 
 def load(engine: Engine, files: Callable[[], Policy]) -> tuple[str, Policy]:
@@ -129,7 +65,7 @@ def load(engine: Engine, files: Callable[[], Policy]) -> tuple[str, Policy]:
 
 
 def held(url: str) -> Policy:
-    """The policy the store at `url` holds; empty when the store is absent or not yet migrated (no lanes table, or one missing a column), which leaves the board
+    """The policy the store at `url` holds; empty when the store is absent or not yet migrated (no versions or active table), which leaves the board
     with no guard, profile cell or watch until the policy chain fills it. A SQLite file that does not exist is not created;
     any other database error propagates, so a board never starts unguarded on a fault."""
     target = make_url(url)
@@ -139,7 +75,6 @@ def held(url: str) -> Policy:
     try:
         with engine.connect() as db:
             inspector = inspect(db)
-            present = {c["name"] for c in inspector.get_columns(lanes.name)} if inspector.has_table(lanes.name) else set()
-            return stored(db) if present >= set(lanes.c.keys()) else Policy()
+            return stored(db) if inspector.has_table(versions.name) and inspector.has_table(active.name) else Policy()
     finally:
         engine.dispose()

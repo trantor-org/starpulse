@@ -1,0 +1,119 @@
+"""The OpenAPI 3.1 document of every route the registry names, as `openapi.json` holds it."""
+
+import json
+import re
+import types
+import typing
+from functools import cache
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
+from pydantic.json_schema import models_json_schema
+
+from starpulse.contracts.api.dto.errors import ApiError
+from starpulse.contracts.api.registry import ROUTES, Op
+from starpulse.contracts.api.schema import _Generator
+
+#: Where the document is written, beside `api.schema.json`.
+OPENAPI = Path(__file__).parents[2] / "schemas" / "openapi.json"
+
+REF = "#/components/schemas/{model}"
+
+#: Pydantic leaves a bound on a number union under its own name; JSON Schema names it like this.
+_BOUNDS = {"gt": "exclusiveMinimum", "ge": "minimum", "lt": "exclusiveMaximum", "le": "maximum"}
+
+
+def _bounded(node: Any) -> Any:
+    if isinstance(node, dict):
+        return {_BOUNDS.get(key, key): _bounded(value) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_bounded(item) for item in node]
+    return node
+
+
+def models_of(annotation: Any) -> list[type[BaseModel]]:
+    """The models an annotation names, through unions."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return [annotation]
+    if isinstance(annotation, types.UnionType) or typing.get_origin(annotation) is typing.Union:
+        return [model for arg in typing.get_args(annotation) for model in models_of(arg)]
+    return []
+
+
+def schema_of(model: type[BaseModel], mode: typing.Literal["validation", "serialization"]) -> dict[str, Any]:
+    """`model`'s JSON schema as its component holds it: nested models are referenced, not inlined."""
+    found = model.model_json_schema(by_alias=True, ref_template=REF, schema_generator=_Generator, mode=mode)
+    found.pop("$defs", None)
+    return _bounded(found)
+
+
+def _ref(models: list[type[BaseModel]]) -> dict[str, Any]:
+    refs = [{"$ref": REF.format(model=model.__name__)} for model in models]
+    return refs[0] if len(refs) == 1 else {"oneOf": refs}
+
+
+def _answers(op: Op) -> dict[str, Any]:
+    models = models_of(op.body)
+    failed = [m for m in models if issubclass(m, ApiError)]
+    passed = [m for m in models if m not in failed]
+    if passed:
+        schema = _ref(passed)
+    elif op.media == "application/json":
+        schema = {"type": "object"}
+    else:
+        schema = {"type": "string"}
+    answers: dict[str, Any] = {"200": {"description": "The answer", "content": {op.media: {"schema": schema}}}}
+    if failed:
+        answers["4XX"] = {"description": "A refusal", "content": {"application/json": {"schema": _ref(failed)}}}
+    return answers
+
+
+def _operation(method: str, path: str, op: Op) -> dict[str, Any]:
+    names = re.findall(r"\{(\w+)\}", path)
+    parameters = [{"name": n, "in": "path", "required": True, "schema": {"type": "string"}} for n in names] + [
+        {"name": n, "in": "query", "required": False, "schema": {"type": "string"}} for n in op.query
+    ]
+    operation: dict[str, Any] = {
+        "summary": op.summary,
+        "operationId": f"{method.lower()}_{re.sub(r'\W+', '_', path).strip('_')}",
+    }
+    if parameters:
+        operation["parameters"] = parameters
+    if isinstance(op.request, str):
+        operation["requestBody"] = {"required": True, "content": {op.request: {"schema": {"type": "object"}}}}
+    elif op.request is not None:
+        operation["requestBody"] = {"required": True, "content": {"application/json": {"schema": _ref([op.request])}}}
+    return {**operation, "responses": _answers(op)}
+
+
+@cache
+def _document() -> dict[str, Any]:
+    paths: dict[str, Any] = {}
+    for (method, path), op in ROUTES.items():
+        paths.setdefault(path, {})[method.lower()] = _operation(method, path, op)
+    requests = {m for op in ROUTES.values() if not isinstance(op.request, str) for m in models_of(op.request)}
+    answered = {m for op in ROUTES.values() for m in models_of(op.body)}
+    _, defs = models_json_schema(
+        [(m, "validation") for m in requests] + [(m, "serialization") for m in answered - requests],
+        by_alias=True,
+        ref_template=REF,
+        schema_generator=_Generator,
+    )
+    schemas = _bounded(dict(sorted(defs.get("$defs", {}).items())))
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "StarPulse API", "version": "1", "description": "Every route `starpulse serve` answers."},
+        "servers": [{"url": "/"}],
+        "paths": paths,
+        "components": {"schemas": schemas},
+    }
+
+
+def document() -> dict[str, Any]:
+    """The document: a copy, so a caller may change it."""
+    return json.loads(render())
+
+
+def render() -> str:
+    return json.dumps(_document(), indent=2) + "\n"

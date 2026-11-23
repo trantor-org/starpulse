@@ -8,9 +8,8 @@ import stat
 from collections.abc import Mapping
 
 from starpulse.contracts.reads import BACKLOG
-from starpulse.github.model.github_config import GitHub
 from starpulse.runtime.config import Config
-from starpulse.runtime.hold import GITHUB_FD_ENV, LISTEN_FD_ENV
+from starpulse.runtime.hold import LISTEN_FD_ENV
 
 logger = logging.getLogger(__name__)
 
@@ -89,22 +88,31 @@ def _bound_to(sock: socket.socket, host: str, port: int) -> bool:
     return bound_port == port and address in named
 
 
-def github_socket(environ: Mapping[str, str], settings: GitHub) -> socket.socket | None:
-    """The GitHub webhook socket `serve` holds for the `contexts` child: the one the previous image handed over on the
-    descriptor `GITHUB_FD_ENV` names when it listens on `settings`' port, else one bound now. `None` when the address
-    cannot be bound, which leaves the child to bind it and retry as it does without `serve` holding the socket."""
-    if (handed := environ.get(GITHUB_FD_ENV)) is not None:
+def handed_socket(env_name: str) -> socket.socket | None:
+    """The socket `serve` handed this `contexts` child on the descriptor `env_name` names, forgetting the name so a
+    process this one starts reads no descriptor it does not hold; `None` when none was handed."""
+    if (handed := os.environ.pop(env_name, None)) is None:
+        return None
+    os.set_inheritable(int(handed), False)
+    return socket.socket(fileno=int(handed))
+
+
+def held_socket(environ: Mapping[str, str], env_name: str, host: str, port: int, what: str) -> socket.socket | None:
+    """The `what` socket `serve` holds for the `contexts` child: the one the previous image handed over on the
+    descriptor `env_name` names when it listens on `host`:`port`, else one bound now. `None` when the address cannot be
+    bound, which leaves the child to bind it and retry as it does without `serve` holding the socket."""
+    if (handed := environ.get(env_name)) is not None:
         try:
             adopted = socket.socket(fileno=int(handed))
         except (OSError, ValueError):
-            logger.warning("%s=%s is no socket; binding the github port instead", GITHUB_FD_ENV, handed)
+            logger.warning("%s=%s is no socket; binding the %s port instead", env_name, handed, what)
         else:
             adopted.set_inheritable(False)
-            if _bound_to(adopted, settings.host, settings.port):
+            if _bound_to(adopted, host, port):
                 return adopted
             adopted.close()  # the table now names another address: the contexts child that held this one is replaced
     try:
-        return socket.create_server((settings.host, settings.port), backlog=BACKLOG)
+        return socket.create_server((host, port), backlog=BACKLOG)
     except OSError as exc:
-        logger.warning("serve cannot hold the github port %s:%s: %s", settings.host, settings.port, exc.strerror)
+        logger.warning("serve cannot hold the %s port %s:%s: %s", what, host, port, exc.strerror)
         return None

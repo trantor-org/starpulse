@@ -38,7 +38,6 @@ from starpulse.runtime.config import Config, MemoryLimit, runs_adapter
 from starpulse.runtime.control import Control
 from starpulse.runtime.hold import (
     ADOPT_ENV,
-    GITHUB_FD_ENV,
     GO_FD_ENV,
     LISTEN_FD_ENV,
     READY_FD_ENV,
@@ -52,7 +51,7 @@ logger = logging.getLogger(__name__)
 _HANGUP = getattr(signal, "SIGHUP", None)
 
 #: The `starpulse worker` children `serve` supervises, in start order.
-WORKER_CONTEXTS = ("api", "contexts")
+WORKER_CONTEXTS = ("api", "contexts", "conformance")
 
 _MB = 1024 * 1024
 
@@ -67,20 +66,26 @@ def adapter_contexts(config: Config) -> list[str]:
 
 
 def worker_commands(config_path: Path | None) -> dict[str, list[str]]:
-    """The command of each child `serve` supervises (`WORKER_CONTEXTS`): the Page API and the one `contexts` process,
-    which runs the contexts the config names (`starpulse.runtime.contexts.contexts_of`)."""
+    """The command of each child `serve` supervises (`WORKER_CONTEXTS`): the Page API, the one `contexts` process,
+    which runs the contexts the config names (`starpulse.runtime.contexts.contexts_of`), and the `conformance` process,
+    which runs the monitor alone so its replay holds no GIL the contexts share."""
     tail = ["--config", str(config_path)] if config_path else []
     return {context: [launch.interpreter(), "-m", "starpulse", "worker", context, *tail] for context in WORKER_CONTEXTS}
 
 
 def spawn_child(
-    command: Sequence[str], listening: socket.socket | None = None, ready: int | None = None, go: int | None = None
+    command: Sequence[str],
+    listening: socket.socket | None = None,
+    ready: int | None = None,
+    go: int | None = None,
+    held: Mapping[str, socket.socket] | None = None,
 ) -> subprocess.Popen:
     """Start a child that dies with `serve` (its stdin pipe closes) and sits outside the terminal's process group.
 
     A `listening` socket is handed to it on the same descriptor number, named by `LISTEN_FD_ENV`; a `ready` descriptor
     (the write end of a pipe), likewise by `READY_FD_ENV`, and a `go` descriptor (the read end of a pipe `serve` closes the
-    other end of when the child may take over from its predecessor), by `GO_FD_ENV`."""
+    other end of when the child may take over from its predecessor), by `GO_FD_ENV`; each `held` socket likewise by the
+    variable it is keyed by."""
     env = supervised_env()
     if listening is not None:
         env[LISTEN_FD_ENV] = str(listening.fileno())
@@ -88,12 +93,17 @@ def spawn_child(
         env[READY_FD_ENV] = str(ready)
     if go is not None:
         env[GO_FD_ENV] = str(go)
+    for env_name, kept in (held or {}).items():
+        env[env_name] = str(kept.fileno())
     return subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
         env=env,
         start_new_session=True,
-        pass_fds=tuple(fd for fd in (listening and listening.fileno(), ready, go) if fd is not None),
+        pass_fds=tuple(
+            fd for fd in (listening and listening.fileno(), ready, go, *(k.fileno() for k in (held or {}).values()))
+            if fd is not None
+        ),
     )
 
 
@@ -125,7 +135,7 @@ class Supervisor:
         *,
         spawn: Callable[..., Any] = spawn_child,
         sockets: Mapping[str, socket.socket] | None = None,
-        held: Mapping[str, socket.socket] | None = None,
+        held: Mapping[str, Mapping[str, socket.socket]] | None = None,
         first_delay: float = 1.0,
         longest_delay: float = 60.0,
         stable_after: float = 60.0,
@@ -205,8 +215,10 @@ class Supervisor:
                     self._check_memory(name, child, now)
 
     def _launch(self, name: str, child: _Child, now: float, ready: int | None = None, go: int | None = None) -> None:
-        listening = self._sockets.get(name) or self._held.get(name)
+        listening = self._sockets.get(name)
         handshake = {key: fd for key, fd in (("ready", ready), ("go", go)) if fd is not None}
+        if name in self._held:
+            handshake["held"] = self._held[name]
         child.proc = self._spawn(child.command, *([] if listening is None else [listening]), **handshake)
         child.started = child.sampled = now
         child.launches += 1
@@ -453,9 +465,10 @@ class Supervisor:
             listening.set_inheritable(True)
             os.environ[LISTEN_FD_ENV] = str(listening.fileno())
             handed.append(name)
-        for listening in self._held.values():  # the `contexts` child's: it is replaced, never started beside the old one
-            listening.set_inheritable(True)
-            os.environ[GITHUB_FD_ENV] = str(listening.fileno())
+        for held in self._held.values():  # the `contexts` child's: it is replaced, never started beside the old one
+            for env_name, listening in held.items():
+                listening.set_inheritable(True)
+                os.environ[env_name] = str(listening.fileno())
         handed.extend(sorted(self._handed))
         parts = []
         for name in handed:

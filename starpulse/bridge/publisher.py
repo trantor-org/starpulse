@@ -7,13 +7,13 @@ a deleted store. It publishes, and `run` hands any other JetStream operation (th
 
 import asyncio
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar
 
 import nats
 from nats.errors import Error as NatsError
 from nats.errors import MaxPayloadError
-from nats.js.api import StorageType, StreamConfig
+from nats.js.api import RetentionPolicy, StorageType, StreamConfig
 from nats.js.errors import BadRequestError
 
 #: Messages kept per subject: the newest events of a task or pull request, which is what a late subscriber starts from.
@@ -34,11 +34,11 @@ def _calling(callback: Callable[[], None]) -> Callable[[Any], Awaitable[None]]:
 
 
 class Publisher:
-    def __init__(self, url: str, stream: str, subjects: list[str]) -> None:
+    def __init__(self, url: str, stream: str, subjects: list[str], *, work_queue: bool = False) -> None:
+        """A `work_queue` stream keeps each message until a consumer acknowledges it, instead of the newest `PER_SUBJECT`."""
         self._url = url
-        self._config = StreamConfig(
-            name=stream, subjects=subjects, storage=StorageType.FILE, max_msgs_per_subject=PER_SUBJECT
-        )
+        kept = {"retention": RetentionPolicy.WORK_QUEUE} if work_queue else {"max_msgs_per_subject": PER_SUBJECT}
+        self._config = StreamConfig(name=stream, subjects=subjects, storage=StorageType.FILE, **kept)
         self._loop = asyncio.new_event_loop()
         self._client: Any = None
         self._js: Any = None
@@ -46,9 +46,11 @@ class Publisher:
         self._listening: list[tuple[str, Callable[[], None]]] = []
         threading.Thread(target=self._loop.run_forever, name="bridge-nats", daemon=True).start()
 
-    def publish(self, subject: str, body: bytes, msg_id: str) -> None:
+    def publish(self, subject: str, body: bytes, msg_id: str, headers: Mapping[str, str] | None = None) -> None:
         """Publish `body` and wait for the stream's ack; `msg_id` makes a republish within the duplicate window a no-op."""
-        self.run(lambda js: js.publish(subject, body, headers={"Nats-Msg-Id": msg_id}, timeout=_TIMEOUT_S))
+        self.run(
+            lambda js: js.publish(subject, body, headers={**(headers or {}), "Nats-Msg-Id": msg_id}, timeout=_TIMEOUT_S)
+        )
 
     def listen(self, subject: str, callback: Callable[[], None]) -> None:
         """Call `callback` for each message on the core `subject` once connected; set before the first call to `run`."""

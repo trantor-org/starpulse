@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-__all__ = ["authored", "expect_dates", "subjects"]
+__all__ = ["authored", "bare", "expect_dates", "subjects"]
 
 EVENT = "event"
 _SECTION = re.compile(r"^## Start Criteria\s*$(.*?)(?=^## |\Z)", re.M | re.S)
@@ -45,6 +45,11 @@ def authored(description: str) -> list[dict[str, Any]]:
         }
         for raw in _declared(description)
     ]
+
+
+def bare(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`items` cut to the authored `{id, kind, expr}`, without the status fields an evaluator adds."""
+    return [{key: item.get(key) for key in ("id", "kind", "expr")} for item in items]
 
 
 def subjects(description: str) -> tuple[str, ...]:

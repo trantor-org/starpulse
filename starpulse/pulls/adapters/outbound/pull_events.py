@@ -141,12 +141,22 @@ def _reported(record: Record, fields: Mapping[str, Any], _at: float) -> Record:
     )
 
 
+def _mergeability(value: str) -> Callable[[Record, Mapping[str, Any], float], Record]:
+    def delta(record: Record, fields: Mapping[str, Any], _at: float) -> Record:
+        data = fields.get("data")
+        sha = data.get("sha") if isinstance(data, Mapping) else None
+        # a result of another head than the record's (a sibling task's push) says nothing of this head
+        return {} if sha and record["headRefOid"] and sha != record["headRefOid"] else {"mergeable": value}
+
+    return delta
+
+
 #: What each event causes in the record, by (machine, event); a push leaves the head to the next `ci:jobs` entry.
 _DELTAS: dict[tuple[str, str], Callable[[Record, Mapping[str, Any], float], Record]] = {
     (GITHUB_MACHINE, "PR_OPENED"): lambda *_: {"state": "OPEN"},
     REOPENING: reopened,
-    (GITHUB_MACHINE, "CONFLICTED"): lambda *_: {"mergeable": "CONFLICTING"},
-    (GITHUB_MACHINE, "MERGEABLE"): lambda *_: {"mergeable": "MERGEABLE"},
+    (GITHUB_MACHINE, "CONFLICTED"): _mergeability("CONFLICTING"),
+    (GITHUB_MACHINE, "MERGEABLE"): _mergeability("MERGEABLE"),
     (GITHUB_MACHINE, "THREADS_CHANGED"): _threads,
     (GITHUB_MACHINE, "PR_MERGED"): _closed("MERGED"),
     (GITHUB_MACHINE, "PR_CLOSED"): _closed("CLOSED"),
@@ -224,7 +234,9 @@ class RecordProjection:
             self._changed()
         return bool(targets)
 
-    def _amend(self, repo: str, number: int, name: tuple[str, str], key: str, fields: Mapping[str, Any], at: float) -> bool:
+    def _amend(
+        self, repo: str, number: int, name: tuple[str, str], key: str, fields: Mapping[str, Any], at: float
+    ) -> bool:
         # read under the store's lock, so a delivery naming the head between a read and the save is never written over
 
         def change(found: Record | None) -> Record | None:
@@ -256,6 +268,11 @@ class RecordProjection:
         stored = {pull: self._store.find(repo=pull[0], number=pull[1]) for pull in pulls}
         wanted = "CLOSED" if name == REOPENING else "OPEN"
         candidates = [pull for pull in pulls if not stored[pull] or stored[pull][0]["state"] == wanted]
+        if name[1] == "PUSHED" and isinstance(data := fields.get("data"), Mapping) and data.get("repository"):
+            pushed = str(data["repository"]).lower()  # GitHub names ignore case
+            return [
+                pull for pull in candidates if pull[0].lower() == pushed
+            ]  # a push to one repository leaves another's head standing
         if name not in CLOSING | ROLLUPS | {REOPENING}:
             return candidates
         if named:

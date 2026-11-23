@@ -1,19 +1,30 @@
-"""The generic harness machine: one agent session's start, the skills and tools it uses, and its stop.
+"""The shared session events: one agent session's start, the skills and tools it uses, and its stop.
 
-Any harness adapter (Codex, Claude Code) writes events on this one machine, so it depends on no
-project's hooks or conventions. `machines/harness.yaml` declares it; its `bindings` name the hook
-events a harness fires (`SessionStart`, `PostToolUse`, `Stop`) that move it.
+Any harness adapter writes these events, so the table depends on no project's hooks or conventions. It is declared
+here, never as a machine file; each adapter's `events` map names the hook events and log records that fire them.
 """
 
 from pathlib import Path
 
-from starpulse.machine_engine.adapters.machine_loader import load_machine
+from starpulse.machine_engine.model.machine_definition import compile_document
 from starpulse.machine_engine.model.snapshot import describe
 
-#: The machine files beside the package: `adapters/harnesses/` is two levels below them.
-MACHINES = Path(__file__).parents[2] / "machines"
-HARNESS = load_machine(MACHINES / "harness.yaml")
-#: The machine as the page draws it, keyed by name like a board adapter's machines.
+_ALL = ["idle", "active", "stopped", "ended"]
+_TABLE = {
+    "name": "harness",
+    "states": {"idle": {"initial": True}, "active": {}, "stopped": {}, "ended": {}},
+    "events": {
+        "SESSION_STARTED": [{"from": _ALL, "to": "active"}],
+        "SKILL_USED": [{"from": ["active", "stopped"], "to": "active"}],
+        "TOOL_USED": [{"from": ["active", "stopped"], "to": "active"}],
+        "SESSION_STOPPED": [{"from": "active", "to": "stopped"}],
+        "SESSION_ENDED": [{"from": ["active", "stopped"], "to": "ended"}],
+        "SESSION_SETTLED": [{"from": ["idle", "active", "stopped"], "to": "stopped"}],
+    },
+}
+SESSION_EVENTS = tuple(_TABLE["events"])
+HARNESS = compile_document(_TABLE, Path("session-events"))
+#: The session table as the page draws it, keyed by name like a board adapter's machines.
 SESSION_MACHINES = {HARNESS.name: describe(HARNESS.machine)}
 
 

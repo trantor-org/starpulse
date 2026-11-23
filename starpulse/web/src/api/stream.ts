@@ -2,6 +2,7 @@
 
 import type { SchedulerStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
 import { browserCache, type SnapshotCache } from "./savedSnapshot";
+import { apiFetch } from "./apiFetch";
 import { keep, same } from "./same";
 import { decodeMove, decodeSnapshot, intern } from "./trails";
 import type { Snapshot as WireSnapshot } from "./types.gen";
@@ -234,7 +235,7 @@ export function openStream(
       if (!data.startsWith("ref ")) return take(JSON.parse(data) as WireSnapshot);
       const path = data.slice(4);
       const mine: (() => void)[] = (waiting = []);
-      const asked = adopt?.bodies?.[path] ?? fetch(path);
+      const asked = adopt?.bodies?.[path] ?? apiFetch(path);
       if (adopt?.bodies) delete adopt.bodies[path];
       asked
         .then((r) => (r.ok ? (r.json() as Promise<WireSnapshot>) : Promise.reject(new Error(`${path}: ${r.status}`))))

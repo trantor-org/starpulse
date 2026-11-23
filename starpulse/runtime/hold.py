@@ -35,9 +35,12 @@ def supervised_env() -> dict[str, str]:
 #: child, and by a `serve` that re-executes itself to its next image.
 LISTEN_FD_ENV = "STARPULSE_LISTEN_FD"
 
-#: Set by a `serve` that re-executes itself to the descriptor of the GitHub webhook socket it holds for the `contexts`
-#: child; its next image adopts it (`github_socket`).
+#: Set to the descriptor of the GitHub webhook socket `serve` holds for the `contexts` child: in that child, and in a
+#: `serve` that re-executes itself, whose next image adopts it (`held_socket`).
 GITHUB_FD_ENV = "STARPULSE_GITHUB_FD"
+
+#: The same for the Claude Code OTLP receiver's socket.
+CLAUDE_CODE_FD_ENV = "STARPULSE_CLAUDE_CODE_FD"
 
 #: Set to a descriptor number in the Page API child a replacing `serve` starts beside the old one: the child writes a byte
 #: to it when it is about to serve, and `serve` ends the old child on that byte (`announce_ready`).

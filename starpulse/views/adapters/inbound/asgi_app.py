@@ -37,6 +37,7 @@ from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS
 from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.api import metrics
 from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, WORKERS
+from starpulse.views.adapters.inbound.api.openapi import swagger
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
 from starpulse.views.adapters.inbound.compression import Gzip
@@ -359,6 +360,7 @@ class PageApp:
             Mount("/api", routes=[self._route(route, "/api") for route in api]),
             *(self._route(route) for route in metrics),
             *(Route(path, self._page, methods=["GET"]) for path in ("/", "/board", "/runs")),
+            Route("/swagger", swagger, methods=["GET"]),
             Route("/flow/{flow}", self._flow, methods=["GET"]),
             Route("/{path:served}", self._file, methods=["GET"]),
         ]

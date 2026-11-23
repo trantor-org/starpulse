@@ -1,7 +1,7 @@
 """The Claude Code adapter: Claude Code's OpenTelemetry log export becomes events on the harness machine.
 
 Point a session's log export at the receiver and every prompt, skill activation, tool result and reply
-moves the session through the machine's `bindings`:
+moves the session through the port's `events` map:
 
     CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_LOGS_EXPORTER=otlp OTEL_EXPORTER_OTLP_PROTOCOL=http/json \\
     OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_LOG_TOOL_DETAILS=1 \\
@@ -31,6 +31,7 @@ The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.m
 
 import argparse
 import re
+import socket
 import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -48,11 +49,13 @@ from starpulse.event_log.opening import open_event_log
 from starpulse.event_log.wake import StopEvent
 from starpulse.harness_telemetry.adapters.outbound import step_seconds
 from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
+from starpulse.harness_telemetry.adapters.outbound.claude import ClaudeHarness
 from starpulse.harness_telemetry.model.harness import HARNESS, ended_id
 from starpulse.harness_telemetry.adapters.inbound.otlp import SETTLED, TOOL_RESULT, LogEvent, receiver
 from starpulse.harness_telemetry.adapters.inbound.telemetry import ClaimUnreadable, redactor, signals, telemetry_log
 
 ACTOR = "claude-code"
+CLAUDE = ClaudeHarness()
 DEFAULT_PORT = 4318
 
 
@@ -127,7 +130,7 @@ class ClaudeCodeAdapter:
         task = self.keys.for_branch(log.branch) or self._claimed(log.session)
         return {
             "machine": HARNESS.name,
-            "event": name or HARNESS.bindings[log.kind],
+            "event": name or CLAUDE.events[log.kind],
             "task": task,
             "run": None if task else log.session,
             "actor": ACTOR,
@@ -136,7 +139,7 @@ class ClaudeCodeAdapter:
 
 
 def _moves(log: LogEvent) -> bool:
-    return log.kind in HARNESS.bindings and not (log.kind == TOOL_RESULT and log.tool_name == "Skill")
+    return log.kind in CLAUDE.events and not (log.kind == TOOL_RESULT and log.tool_name == "Skill")
 
 
 def handler(
@@ -173,9 +176,12 @@ def publisher(log: EventLog) -> Callable[[dict], int | None]:
     return publish
 
 
-def bind(settings: ClaudeCode, config: Any, log: EventLog) -> ThreadingHTTPServer:
-    """The receiver listening on `settings`' address, appending to `log`. Raises `ValueError` for a redactor that cannot be
-    loaded and `OSError` for an address that cannot be bound."""
+def bind(
+    settings: ClaudeCode, config: Any, log: EventLog, listening: socket.socket | None = None
+) -> ThreadingHTTPServer:
+    """The receiver listening on `listening`, the socket `serve` keeps open across a worker replacement, else on
+    `settings`' address, appending to `log`. Raises `ValueError` for a redactor that cannot be loaded and `OSError` for
+    an address that cannot be bound."""
     keys = TaskKeys(key=re.compile(settings.key), branch=re.compile(settings.branch), key_format=settings.key_format)
     redact = redactor(settings.redactor) if settings.redactor else None
     telemetry = telemetry_log(log)
@@ -192,26 +198,32 @@ def bind(settings: ClaudeCode, config: Any, log: EventLog) -> ThreadingHTTPServe
         step_seconds.observe(found)
         telemetry.publish(found)
 
-    return ThreadingHTTPServer(
-        (settings.host, settings.port),
-        handler(
-            adapter,
-            publisher(log),
-            lambda payload: publish_signals(signals(payload, redact, analytics=config.analytics, keys=keys)),
-            (step_seconds.CONTENT_TYPE, step_seconds.exposition),
-        ),
+    receiver = handler(
+        adapter,
+        publisher(log),
+        lambda payload: publish_signals(signals(payload, redact, analytics=config.analytics, keys=keys)),
+        (step_seconds.CONTENT_TYPE, step_seconds.exposition),
     )
+    if listening is None:
+        return ThreadingHTTPServer((settings.host, settings.port), receiver)
+    server = ThreadingHTTPServer(listening.getsockname()[:2], receiver, bind_and_activate=False)
+    server.socket.close()  # closing the held socket ends this process's copy; a delivery before the next accept queues
+    server.socket = listening
+    return server
 
 
-def start(config: Any, log: EventLog, stop: StopEvent) -> Callable[[], None]:
-    """The `claude-code` context: serve `[claude_code]` on threads until `stop` is set, which closes the listener.
+def start(
+    config: Any, log: EventLog, stop: StopEvent, listening: socket.socket | None = None
+) -> Callable[[], None]:
+    """The `claude-code` context: serve `[claude_code]` on threads, on `listening` when `serve` holds the socket, until
+    `stop` is set, which closes the listener.
 
     Raises `ValueError` without the table or with a redactor that cannot be loaded, and `OSError` when the address is
     taken, which the `contexts` process retries with a backoff. Returns the context's reload, which has nothing to
     re-read: the table is a restart block."""
     if config.claude_code is None:
         raise ValueError("the claude-code context needs a [claude_code] table")
-    server = bind(config.claude_code, config, log)
+    server = bind(config.claude_code, config, log, listening)
 
     def close() -> None:
         stop.wait()

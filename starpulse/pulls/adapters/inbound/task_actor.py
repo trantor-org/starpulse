@@ -324,8 +324,13 @@ class TaskActor:
         main_green: Callable[[], str | None] | None = None,
         owner_source: str = "",
         started: Callable[[str], bool] = lambda _task: False,
+        mergeable: Callable[[str, int], str | None] = lambda _repo, _number: None,
     ) -> None:
         self._main_green = main_green
+        #: GitHub's answer now whether a pull request merges; a push that clears a conflict sends no event for it.
+        self._mergeable = mergeable
+        #: Per pull request, the stored record's version and what `mergeable` answered for it, so each is read once.
+        self._settled: dict[str, tuple[tuple[str, str], str | None]] = {}
         #: Whether a task ever entered the working lane, given its id, which the history of its lane changes answers.
         self._started = started
         self._owner_source = owner_source
@@ -692,6 +697,9 @@ class TaskActor:
                 for agent in tasks:
                     if agent["state"] == self._feed.roles.working and self._awaits(agent):
                         self._memory.keep(agent["id"], awaited=True)
+            for agent in tasks:
+                if agent["state"] == self._feed.roles.attention:  # found there: no lane event comes for a move made while down
+                    self._revive_unheld(agent["id"])
             open_ids = {agent["id"] for agent in tasks}
             self._derived = {name: digest for name, digest in self._derived.items() if name in open_ids}
             self._derived_moved.set()
@@ -1112,7 +1120,14 @@ class TaskActor:
         return touched
 
     def _record(self, url: str) -> dict[str, Any] | None:
-        return pull_record(self._store, url)
+        record = pull_record(self._store, url)
+        if record and record["state"] == "OPEN" and record["mergeable"] == "CONFLICTING":
+            version = (record["headRefOid"], record["fetchedAt"])
+            if self._settled.get(url, ((), None))[0] != version:
+                self._settled[url] = (version, self._mergeable(record["repo"], record["number"]))
+            if self._settled[url][1] == "MERGEABLE":
+                return {**record, "mergeable": "MERGEABLE"}
+        return record
 
     def _own_prs(self, agent: dict[str, Any]) -> list[str]:
         return own_prs(self._store, agent)
@@ -1312,7 +1327,7 @@ class TaskActor:
         revived as `holder_ended` revives one, and parks when no session can be reopened."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
-            self._memory.keep(name, awaited=None, revive_held=None, busy=None)
+            self._memory.keep(name, awaited=None, revive_held=None, unreachable=None, busy=None)
             if agent is None or agent["state"] != self._feed.roles.working:
                 self._memory.keep(name, resumes=None)
                 self._unwant(name)
@@ -1365,9 +1380,17 @@ class TaskActor:
 
     def lane_entered(self, name: str, lane: str) -> None:
         """A task entered `lane`: its holder's session ends when the lane is one of `end_lanes`, which the reaper does once
-        the session is idle; a session busy now is ended by `holder_settled` when it settles."""
+        the session is idle; a session busy now is ended by `holder_settled` when it settles. A task entering Needs attention
+        by any writer with no live holder gets one started (`_revive_unheld`), so its ask shows as needs you."""
         if lane in self._end_lanes:
             self._end_session(name)
+        if lane == self._feed.roles.attention:
+            self._revive_unheld(name)
+
+    def _revive_unheld(self, name: str) -> None:
+        """Start a session on a task in Needs attention that has no live holder: a hibernated or never-started holder gets no
+        end event, so the revive is its start."""
+        self._queue(lambda: None if self._holder_alive(name) else self.holder_ended(name))
 
     def _end_closed(self, name: str) -> None:
         """A holder of `name` settled or ended while the task sits in a closed lane: end its session."""
@@ -1408,7 +1431,8 @@ class TaskActor:
         too: the settle has no one to resume, and no later event comes."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
-            self._memory.keep(name, revive_held=None)
+            unreachable = unreachable or self._memory.has(name, "unreachable")  # a deferred revive keeps its reason
+            self._memory.keep(name, revive_held=None, unreachable=None)
             roles = self._feed.roles
             parked = agent is not None and agent["state"] == roles.attention
             if agent is None or agent["state"] not in (roles.working, roles.attention):
@@ -1433,7 +1457,7 @@ class TaskActor:
                 ):
                     return
                 if self._awaits(agent):
-                    self._memory.keep(name, awaited=True, revive_held=True)
+                    self._memory.keep(name, awaited=True, revive_held=True, unreachable=True if unreachable else None)
                     return
             held = ("parked", self._progress(agent))  # the one revive a task gets in Needs attention, counted apart
             key = held if parked else (tuple(resolved(item) for item in items), self._progress(agent)) if opened else self._progress(agent)
@@ -1450,6 +1474,9 @@ class TaskActor:
                 )
                 return
         if not self._admitted(name, "revive"):
+            if unreachable:
+                with self._lock:
+                    self._memory.keep(name, unreachable=True)
             return
         try:
             self._idle(name, "revive")
@@ -1529,6 +1556,10 @@ class TaskActor:
         placed = self._feed.machine_task(HARNESS_MACHINE, name)
         return bool(placed) and placed["state"] == "active"
 
+    def _holder_alive(self, name: str) -> bool:
+        placed = self._feed.machine_task(HARNESS_MACHINE, name)
+        return bool(placed) and placed["state"] != "ended"
+
     def _confirmed(self, name: str) -> bool:
         try:
             self._idle(name, "confirm")
@@ -1537,33 +1568,14 @@ class TaskActor:
             with self._lock:
                 self._memory.keep(name, busy=True)
             return False
-        return True
-
-    def _switch_raised(self, name: str) -> None:
-        """At an idle holder's resume, a profile changed since its last one is typed into the holder by the `idle` hook's
-        `switch`, which records the outcome on the task. The first resume only notes the profile, as a session runs on
-        the one it started on; the note outlives a park, so a profile raised while the task waits on the operator
-        reaches the holder once it is back."""
-        profile = (self._feed.task(name, lean=True) or {}).get("profile")
         with self._lock:
-            before = (self._memory.of(name).get("profile") or [profile])[0]
-            if before == profile:
-                self._memory.keep(name, profile=[profile])  # a list, which holds a task with no profile too
-                return
-        try:
-            self._idle(name, "switch")
-        except Exception as error:
-            logger.info("task actor: %s profile switch to %s failed: %s", name, profile, error)
-            return  # the note keeps the profile it was last switched to, so the next resume tries again
-        with self._lock:
-            self._memory.keep(name, profile=[profile])
+            return not self._session_active(name)  # a settle read after the session woke again: its next settle comes
 
     def _resume_sent(self, name: str) -> bool:
         """Send the holder's resume. One that fails is sent again at once, no clock, until `_resume_failed` parks the
         task: a holder whose resume was lost settles no more, so no later settle comes to send it."""
         if not self._admitted(name, "resume"):
             return False
-        self._switch_raised(name)
         failed = 0
         while True:
             try:
@@ -1685,13 +1697,14 @@ class TaskActor:
 
     def _awaits(self, agent: dict[str, Any]) -> bool:
         """Whether an event ends the wait of a settled task: its open pull request's checks still pending (a CI pass,
-        fail or merge), or an unfinished placement in an awaited machine (`awaits`): a lens a link of the phase it is in
-        runs, until its exit state (a placement left while the task is in no such phase holds nothing), else a machine
-        no link names, until a final state."""
+        fail or merge), or a pull request of its own the store holds no record of yet (the record landing), or an
+        unfinished placement in an awaited machine (`awaits`): a lens a link of the phase it is in runs, until its exit
+        state (a placement left while the task is in no such phase holds nothing), else a machine no link names, until
+        a final state."""
         name = agent["id"]
         for url in self._own_prs(agent):
             state, *_, checks, _, _ = self._pull_state(url)
-            if state == "OPEN" and checks == "pending":
+            if not state or state == "OPEN" and checks == "pending":  # no state: the pulls consumer lags the delivery
                 return True
         for machine in self._awaiting:
             placed = self._feed.machine_task(machine, name)
@@ -1748,12 +1761,14 @@ class TaskActor:
     ) -> bool:
         changes = {"status": target, **stale}
         refusal = self._judged(name, changes, comment)
-        written = refusal if not refusal.ok else self._apply(name, changes, comment)
+        written = refusal if not refusal.ok else self._apply(name, changes, comment, refusal.version)
         if written.ok and self._recovering:
             logger.error(
                 "task actor: start recovery moved %s %s -> %s, a move its lane's events missed", name, source, target
             )
         if written.ok:
+            if target == self._review:
+                self._refused.pop(name, None)  # the refusal is repaired: a send-back must not resume on it
             if source == self._review and target == self._feed.roles.working:
                 self._memory.keep(name, own_send_back=True)
             self._landed(self._clock() - observed)
@@ -1820,6 +1835,9 @@ class TaskActor:
         is written once: not again on another trigger, and a board write of it that fails is logged and counted only."""
         name, lane = agent["id"], agent["state"]
         reason = f"{FAULT} {step}: {error}"
+        dependencies = tuple(agent.get("dependencies", ()))
+        if dependencies:  # Needs attention carries none, so the reason names them
+            reason += f" (was waiting on {', '.join(dependencies)})"
         if self._probing or self._faults.get(name) == (lane, reason):
             return False
         self._faults[name] = (lane, reason)
@@ -1834,6 +1852,8 @@ class TaskActor:
         changes: dict[str, Any] = {"description": section_set(agent["description"], "Needs attention", text)}
         if target != lane:
             changes["status"] = target
+            if dependencies:
+                changes["dependencies"] = []
         written = self._apply(name, changes, reason)
         if not written.ok:
             logger.warning("task actor: the fault of %s was not written: %s", name, written.output)
@@ -2005,10 +2025,10 @@ class TaskActor:
             except Exception:  # touch derives under the lock and may raise; a dead reader is never restarted
                 logger.exception("task actor: cannot derive %s on its holds", name)
 
-    def _apply(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
+    def _apply(self, name: str, changes: Mapping[str, Any], comment: str, over: str = "") -> Written:
         # the board-files pass finds the lane recorded under the actor; no other task's write holds this one up
         with self._feed.recording_of(name):
-            written = self._edit_retrying(name, changes, comment)
+            written = self._edit_retrying(name, changes, comment, over)
             if written.ok and written.lane:
                 self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, "", ""))
         return written
@@ -2019,12 +2039,12 @@ class TaskActor:
         except Exception as error:  # a board that raises refuses like one that answers no
             return Written(False, str(error))
 
-    def _edit_retrying(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
+    def _edit_retrying(self, name: str, changes: Mapping[str, Any], comment: str, over: str = "") -> Written:
         """The board's edit, retried with backoff while SQLite reports the database locked; a lock that outlasts the
         retries is `transient`, a failure of the database and no refusal of the change."""
         for delay in (*LOCK_BACKOFF_S, None):
             try:
-                return self._edit(name, changes, comment, actor=ACTOR)
+                return self._edit(name, changes, comment, actor=ACTOR, over=over)
             except Exception as error:  # a board that raises refuses like one that answers no
                 if "database is locked" not in str(error):
                     return Written(False, str(error))

@@ -321,7 +321,8 @@ reload does not reload it again.
 
 ## Endpoint reference
 
-Every HTTP endpoint `starpulse serve` answers, with its payload and refusals. The schema is `starpulse/schemas/api.schema.json`; the implementation of a pull request row is `PullRequests._row`.
+Every HTTP endpoint `starpulse serve` answers, with its payload and refusals. The schema is `starpulse/schemas/api.schema.json`; the OpenAPI 3.1 document of every route is `starpulse/schemas/openapi.json`, served at
+`GET /api/openapi` and drawn at `GET /swagger` (Swagger UI from a pinned jsDelivr release, so the page needs internet); the implementation of a pull request row is `PullRequests._row`.
 
 ```text
 Every write (POST /api/..., PUT /api/scheduler, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
@@ -398,6 +399,8 @@ GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for th
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
+GET /api/openapi   The OpenAPI 3.1 document of every route (`starpulse/schemas/openapi.json`)
+GET /swagger       Swagger UI drawing that document (loads a pinned release from jsDelivr)
 GET /api/ready     {ready, components}: 200 when the event log is at the schema head, the Board is assembled and every
                    context this `serve` supervises has started, else 503 naming each component (`store`, `board`, `writer`,
                    `contexts`) that is not, each {ready, detail}; reads no task and writes nothing. `starpulse doctor` and

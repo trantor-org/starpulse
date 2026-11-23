@@ -86,7 +86,10 @@ def _ran(suite: dict) -> bool:
 
 
 def parse(url: str, node: dict, head: str) -> PullHistory:
-    """The history in one GraphQL `pullRequest` node (the `Pull` fragment of `pull_requests`) whose head is `head`."""
+    """The history in one GraphQL `pullRequest` node (the `Pull` fragment of `pull_requests`) whose head is `head`.
+
+    The node's `mergeable` judges the node's last commit: once `head` is a newer one, a push has since cleared or
+    replaced that conflict, and GitHub sends no event, so the stale answer raises none for the new head."""
     chain = [item["commit"] for item in node.get("commits", {}).get("nodes", [])]
     heads: dict[str, Head] = {}
     for commit in chain:
@@ -112,7 +115,10 @@ def parse(url: str, node: dict, head: str) -> PullHistory:
         opened=epoch_of(node["createdAt"]),
         heads=tuple(sorted(heads.values(), key=lambda pushed: pushed.at)),
         head=head,
-        conflicting=node.get("mergeable") == "CONFLICTING" and not node.get("merged") and not node.get("closed"),
+        conflicting=node.get("mergeable") == "CONFLICTING"
+        and not node.get("merged")
+        and not node.get("closed")
+        and (not chain or chain[-1]["oid"] == head),
         merged_at=epoch_of(node["mergedAt"]) if node.get("mergedAt") else None,
         closed=bool(node.get("closed")) and not node.get("merged"),
         closed_at=epoch_of(node["closedAt"]) if node.get("closedAt") else None,

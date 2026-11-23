@@ -3,20 +3,19 @@
 The chain is a second Alembic chain beside StarPulse's, in a directory the operator names and versioned in its own table.
 Each migration carries `CHANGES`, the rows it adds, removes and changes in each table by key (or, for a table whose keyed
 change cannot be rebuilt in order, the whole table before and after), so the chain's head records the policy the store
-should hold: the fold of every migration forward.
+should hold: the fold of every migration forward. Each migration writes the policy it reaches as a new active version.
 """
 
 import importlib.util
 import re
 from pathlib import Path
-from typing import Any
 
 from alembic.script import ScriptDirectory
 from alembic.util import rev_id
-from sqlalchemy import URL, ColumnElement, Connection, Table, and_, column, inspect, select, table
+from sqlalchemy import URL, Connection, column, inspect, select, table
 from starpulse.board.adapters import policy_store
 from starpulse.board.model.policy import Policy
-from starpulse.board.model.policy_diff import KEYS, Changes, Rows, apply, changes, render, rows
+from starpulse.board.model.policy_diff import Changes, Rows, apply, changes, policy_of, render, rows
 
 __all__ = [
     "DEFAULT_VERSION_TABLE",
@@ -63,34 +62,11 @@ class DeclaredError(ValueError):
 
 
 def replace(bind: Connection, diff: Changes, side: str) -> None:
-    """Move each table `diff` names to its `side`, by key where the entry is keyed; a second run leaves the same rows."""
-    for name, entry in diff.items():
-        target = getattr(policy_store, name)
-        _add_missing_columns(bind, target)
-        if side in entry:
-            bind.execute(target.delete())
-            if entry[side]:
-                bind.execute(target.insert(), entry[side])
-            continue
-        added, removed = ("add", "remove") if side == "after" else ("remove", "add")
-        for row in (*entry.get(removed, []), *entry.get(added, [])):
-            bind.execute(target.delete().where(_held(target, name, row)))
-        for edit in entry.get("change", []):
-            bind.execute(target.update().where(_held(target, name, edit["key"])).values(edit[side]))
-        if entry.get(added):
-            bind.execute(target.insert(), entry[added])
-
-
-def _add_missing_columns(bind: Connection, target: Table) -> None:
-    """The chain runs before StarPulse's own store migration, so a store may still lack a column the rows it writes carry."""
-    present = {c["name"] for c in inspect(bind).get_columns(target.name)}
-    for col in target.columns:
-        if col.name not in present:
-            bind.exec_driver_sql(f"ALTER TABLE {target.name} ADD COLUMN {col.name} {col.type.compile(bind.dialect)}")
-
-
-def _held(target: Table, name: str, row: dict[str, Any]) -> ColumnElement[bool]:
-    return and_(*(target.c[column] == row[column] for column in KEYS[name]))
+    """Make the active policy the `side` of `diff` applied to it, as a new active version; the chain may run before the store's own
+    migration, so the version tables are created where missing."""
+    policy_store.versions.create(bind, checkfirst=True)
+    policy_store.active.create(bind, checkfirst=True)
+    policy_store.write(bind, policy_of(apply(rows(policy_store.stored(bind)), diff, side)))
 
 
 def declared(file: Path, attr: str) -> Policy:

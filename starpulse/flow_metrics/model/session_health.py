@@ -230,8 +230,11 @@ def grouped(
     return [session_signals(group, keys, analytics) for group in by_session(found)]
 
 
-def attributed(ordered: list[Signal], keys: TaskKeys | None) -> Iterator[tuple[str | None, Signal]]:
-    """Each signal of one session, oldest first, with the task it belongs to (see the module docstring)."""
+def attributed(
+    ordered: list[Signal], keys: TaskKeys | None, backfill: bool = True
+) -> Iterator[tuple[str | None, Signal]]:
+    """Each signal of one session, oldest first, with the task it belongs to (see the module docstring); with
+    `backfill` false the signals before the first naming signal belong to no task."""
     task = keys.for_branch(ordered[0].branch) if keys else None
     tasks: list[str | None] = []
     for s in ordered:
@@ -243,7 +246,7 @@ def attributed(ordered: list[Signal], keys: TaskKeys | None) -> Iterator[tuple[s
     # A task, once named, is never unnamed, so the signals still None are those before the first naming signal.
     first = next((t for t in tasks if t is not None), None)
     for task, s in zip(tasks, ordered, strict=True):
-        yield task or first, s
+        yield task or (first if backfill else None), s
 
 
 def _turn_ids(ordered: list[Signal]) -> list[str]:

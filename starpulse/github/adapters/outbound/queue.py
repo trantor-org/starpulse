@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable, Collection
 from typing import NamedTuple
 
-from sqlalchemy import Column, Float, Index, Integer, String, Table, and_, delete, exists, func, literal, or_, select, update
+from sqlalchemy import Column, Float, Index, Integer, String, Table, and_, delete, exists, func, literal, or_, select, true, update
 from sqlalchemy.engine import Engine
 
 from starpulse.github.adapters.outbound.inbox import INSERTS
@@ -88,7 +88,7 @@ def backlogs(engine: Engine, clock: Callable[[], float] = time.time) -> dict[str
 class SqlQueue:
     """The deliveries of `consumer`: claim the due ones, then complete, skip or fail each. `backfill` is the most
     earlier deliveries its first claim takes; none by default. A due delivery whose `(event, action)` is in `urgent` is
-    claimed ahead of every older one."""
+    claimed ahead of every older one. With `only`, the consumer holds a row for those events' deliveries alone."""
 
     def __init__(
         self,
@@ -97,12 +97,14 @@ class SqlQueue:
         clock: Callable[[], float] = time.time,
         backfill: int = 0,
         urgent: Collection[tuple[str, str]] = (),
+        only: Collection[str] = (),
     ) -> None:
         self._engine, self._consumer, self._clock, self._backfill = engine, consumer, clock, backfill
         self._insert = INSERTS[engine.dialect.name]
         self._seeded = 0  # the newest inbox id this queue has seeded: a claim looks only past it
         self._floor: int | None = None  # the oldest inbox id the consumer holds a row for: a claim seeds only past it
         self._urgent = or_(*(and_(inbox.c.event == event, inbox.c.action == action) for event, action in urgent)) if urgent else None
+        self._only = inbox.c.event.in_(only) if only else true()
 
     def _mine(self, delivery_id: str):  # noqa: ANN202
         return and_(state.delivery_id == delivery_id, state.consumer == self._consumer)
@@ -137,7 +139,7 @@ class SqlQueue:
         due = (
             select(inbox, state.attempts)
             .join(github_inbox_state, state.delivery_id == inbox.c.delivery_id)
-            .where(state.consumer == self._consumer, state.status == "pending", state.next_attempt_at <= now)
+            .where(state.consumer == self._consumer, state.status == "pending", state.next_attempt_at <= now, self._only)
             .order_by(inbox.c.id)
             .limit(limit)
         )
@@ -157,7 +159,7 @@ class SqlQueue:
             unseen = select(
                 inbox.c.delivery_id, literal(self._consumer), literal("pending"), literal(0), literal(now), literal(now)
             ).where(
-                inbox.c.id > start, inbox.c.id <= min(start + window, seeded), inbox.c.received_at >= now - RETENTION, ~seen
+                inbox.c.id > start, inbox.c.id <= min(start + window, seeded), inbox.c.received_at >= now - RETENTION, ~seen, self._only
             )
             with self._engine.begin() as db:
                 db.execute(self._insert(github_inbox_state).from_select(_SEED, unseen).on_conflict_do_nothing())

@@ -7,7 +7,7 @@ from typing import Any
 
 from starpulse.board.model.policy import Exit, Lane, LaneTool, Policy, PolicyRule, Profile, Route, Vocabulary, Watch
 
-__all__ = ["KEYS", "Changes", "Rows", "apply", "changes", "drift_report", "render", "rows"]
+__all__ = ["KEYS", "Changes", "Rows", "apply", "changes", "drift_report", "policy_of", "render", "rows"]
 
 Rows = dict[str, list[dict[str, Any]]]
 #: A changed table is either keyed (`add`, `remove` and `change` entries) or whole (`before` and `after` rows, the older form).
@@ -50,6 +50,11 @@ def rows(policy: Policy) -> Rows:
     """The table rows `policy` is stored as, JSON-plain and in the order the store reads them."""
     held = json.loads(json.dumps(asdict(policy)))
     return {table: _sorted(table, held[table]) for table in _ROW}
+
+
+def policy_of(held: Rows) -> Policy:
+    """The `Policy` whose rows `held` are: the inverse of `rows`."""
+    return Policy(**{table: tuple(_ROW[table](**record) for record in held.get(table, [])) for table in _ROW})
 
 
 def changes(before: Rows, after: Rows) -> Changes:
@@ -134,5 +139,7 @@ def _moved(table: str, held: list[dict[str, Any]], entry: dict[str, list[dict[st
     added, removed = ("add", "remove") if side == "after" else ("remove", "add")
     edits = {_ident(table, edit["key"]): edit[side] for edit in entry.get("change", [])}
     gone = {_ident(table, row) for row in entry.get(removed, [])}
-    kept = [{**row, **edits.get(_ident(table, row), {})} for row in held if _ident(table, row) not in gone]
-    return _sorted(table, [*kept, *entry.get(added, [])])
+    put = {_ident(table, row): row for row in entry.get(added, [])}
+    kept = [put.get(_ident(table, row), {**row, **edits.get(_ident(table, row), {})}) for row in held if _ident(table, row) not in gone]
+    present = {_ident(table, row) for row in held}
+    return _sorted(table, [*kept, *(row for key, row in put.items() if key not in present)])

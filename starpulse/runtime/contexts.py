@@ -29,7 +29,7 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.config import Config, rehearsing
-from starpulse.runtime.hold import BOOT_ENV, LISTEN_FD_ENV
+from starpulse.runtime.hold import BOOT_ENV, CLAUDE_CODE_FD_ENV, GITHUB_FD_ENV
 from starpulse.runtime.readiness import stamp
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ def contexts_of(config: Config) -> list[str]:
     if rehearsing():
         return list(REHEARSED_CONTEXTS)
     kept = [c for c in BACKGROUND_CONTEXTS if c != "search" or config.search.embeddings_url]
-    github_events = config.github and any(producer.name == "github" for producer in config.producers)
+    github_events = config.github and config.bridge.enabled and any(p.name == "github" for p in config.producers)
     receivers = [
         name
         for name, table in (
@@ -274,23 +274,31 @@ def default_starters(
         # the api worker serves the text these followers keep in the log, so their catch-up and sweep stay off its GIL
         from starpulse.board.adapters import lane_metrics as followers
         from starpulse.board.adapters.search import SearchIndex
+
+        board, feed = shared()
+        search = SearchIndex.open(log.engine, config.search) if config.search.embeddings_url else None
+        followers.start(feed, board, log, own, vectors=search.embed_missing if search is not None else None)
+        return lambda: logger.info("lane-metrics: the board config is read at start; restart to apply a change")
+
+    def conformance(own: threading.Event) -> Callable[[], None]:
+        # its own worker: a replay of the retained log would crawl on the GIL the contexts share, and the exports stay
+        # hidden until the monitor has caught up
+        from starpulse.board.adapters import lane_metrics as followers
         from starpulse.event_log.conformance_monitor import BOARD
         from starpulse.flow_metrics.model.liveness import work_machines
         from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 
         board, feed = shared()
-        search = SearchIndex.open(log.engine, config.search) if config.search.embeddings_url else None
-        followers.start(
+        followers.monitor(
             feed,
             board,
             log,
             own,
             work_machines(feed.machines, BOARD, feed.roles.working),
-            vectors=search.embed_missing if search is not None else None,
             sessions=SESSION_MACHINES,
             types=config.board.get("types", ()),
         )
-        return lambda: logger.info("lane-metrics: the board config is read at start; restart to apply a change")
+        return lambda: logger.info("conformance: the board config is read at start; restart to apply a change")
 
     def sweeper(own: threading.Event) -> Callable[[], None]:
         from starpulse.sweeper.bin import sweeper_worker
@@ -308,11 +316,11 @@ def default_starters(
 
     def bridge(own: threading.Event) -> Callable[[], None]:
         from starpulse.bridge import worker
+        from starpulse.event_log.claude_sessions import live_socket, sessions_dir
+        from starpulse.machine_engine.model.transitions import lane_id
         from starpulse.pulls.adapters.outbound.pulls import stored_head
         from starpulse.runtime.session_delivery import exit_watcher, forget_ended, route
         from starpulse.sessions.adapters.outbound import claude_code_notify as claude
-        from starpulse.event_log.claude_sessions import live_socket, sessions_dir
-        from starpulse.machine_engine.model.transitions import lane_id
         from starpulse.sessions.adapters.outbound.registry import Registry, directory
         from starpulse.sessions.adapters.outbound.wake_metrics import Wakes
 
@@ -331,6 +339,19 @@ def default_starters(
             delivered=Wakes(log, lane_of),
         )
         registry = Registry(directory(base, config.bridge.sessions_dir))
+        events = None
+        if config.producers:
+            from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES
+            from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
+            from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
+            from starpulse.runtime.assembly import declared
+
+            events = CloudEventsIngest(
+                {p.name: p for p in config.producers},
+                ingest_tokens(config.producers, os.environ),
+                log,
+                {**declared(config, base)[1], **GITHUB_MACHINES},
+            )
         return worker.start(
             config.bridge.port,
             config.bridge.board,
@@ -348,6 +369,7 @@ def default_starters(
             forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ)),
             config.bridge.incidents,
             exit_watcher(log, registry, sessions_dir(os.environ)),
+            events,
         )
 
     def search(own: threading.Event) -> Callable[[], None]:
@@ -358,14 +380,15 @@ def default_starters(
     def claude_code(own: threading.Event) -> Callable[[], None]:
         from starpulse.harness_telemetry.adapters.inbound import claude_code as receiver
 
-        return receiver.start(config, log, own)
+        return receiver.start(config, log, own, receiving)
 
-    listening = None
-    if "github" in names:  # once: a second socket object on the descriptor would close it when the first is collected
-        from starpulse.runtime.listen import inherited_socket
+    # once each: a second socket object on a descriptor would close it when the first is collected
+    listening = receiving = None
+    if "github" in names or "claude-code" in names:
+        from starpulse.runtime.listen import handed_socket
 
-        listening = inherited_socket(os.environ)
-        os.environ.pop(LISTEN_FD_ENV, None)  # a process this one starts must not read a descriptor it does not hold
+        listening = handed_socket(GITHUB_FD_ENV) if "github" in names else None
+        receiving = handed_socket(CLAUDE_CODE_FD_ENV) if "claude-code" in names else None
 
     def github(own: threading.Event) -> Callable[[], None]:
         from starpulse.event_log.event_log import unpooled_engine
@@ -374,17 +397,16 @@ def default_starters(
         return listener.start(config, own, unpooled_engine(log.engine), listening)
 
     def github_events(own: threading.Event) -> Callable[[], None]:
+        from starpulse.bridge.ingest import Producer
         from starpulse.event_log.readmodel.read_model import ReadModel
         from starpulse.event_log.watch import open_watch
         from starpulse.github.adapters.inbound import consumer
-        from starpulse.github.adapters.outbound.ingest import HttpIngest
         from starpulse.runs.adapters.inbound.status_resync import Resync
 
         producer = next((p for p in config.producers if p.name == "github"), None)
         token = os.environ.get(producer.token_env, "") if producer else ""
         if not token:
             raise ValueError("github-events: the producer github holds no token in the environment")
-        server = os.environ.get("STARPULSE_WRITE_URL") or f"http://127.0.0.1:{config.port}"
         woodpecker = {
             urllib.parse.urlsplit(run.url or "").path.strip("/"): run.name
             for run in config.runs
@@ -394,7 +416,7 @@ def default_starters(
             config,
             own,
             log.engine,
-            HttpIngest(server, token),
+            Producer(f"nats://127.0.0.1:{config.bridge.port}", config.bridge.board, token),
             _PullLinks(ReadModel(log.engine)),
             open_watch,
             Resync(log, woodpecker),
@@ -402,7 +424,7 @@ def default_starters(
 
     known: dict[str, Starter] = {
         "board": board, "pulls": pulls, "scheduler": scheduler, "runs": runs, "flow-metrics": flow_metrics,
-        "signal-folds": signal_folds, "lane-metrics": lane_metrics, "search": search, "sweeper": sweeper, "bridge": bridge, "claude-code": claude_code,
+        "signal-folds": signal_folds, "lane-metrics": lane_metrics, "conformance": conformance, "search": search, "sweeper": sweeper, "bridge": bridge, "claude-code": claude_code,
         "github": github, "github-events": github_events, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
     }  # fmt: skip
     unknown = [name for name in names if name not in known]
@@ -484,18 +506,19 @@ def run_contexts(
     started: Callable[[str], None] | None = None,
     go: threading.Event | None = None,
     prepared: Callable[[], None] | None = None,
+    child: str = "contexts",
 ) -> None:
     """Run each context of `names` on a `ctx-<name>` thread until `stop` is set, and return once they are told to end.
 
     `starters` replaces the real starters (tests); `started` is told each context's name as it starts, and without it a
-    `serve` boot token (`hold.BOOT_ENV`) makes each start stamp the event log; `hold` is the wait for `SIGTERM` and `SIGHUP` (`runtime.hold`). With `go`, the process is a standby replacement: only the
+    `serve` boot token (`hold.BOOT_ENV`) makes each start stamp the event log; `hold` is the wait for `SIGTERM` and `SIGHUP` (`runtime.hold`); `child` names this process for the CPU metric. With `go`, the process is a standby replacement: only the
     leader starts until `go` is set, and `prepared` is told when the leader's start returns.
     Raises `ValueError` before any thread starts when a name is no context or a runs adapter cannot load."""
     sys.setswitchinterval(SWITCH_INTERVAL_S)
     base = base or (path.parent if path else Path.cwd())
     if starters is None:
         log = EventLog(database_url(config.database_url, base))
-        child_cpu.keep_process(log)
+        child_cpu.keep_process(log, child)
         starters = default_starters(config, path, base, log, names, stop, go)
         boot = os.environ.get(BOOT_ENV)
         if started is None and boot:

@@ -1,0 +1,10 @@
+# `redocly lint` of ../schemas/openapi.json, run by ci/static_checks.sh. The recommended rules, less the three that
+# do not fit this API: it answers one operator on a private network with no auth, its event unions share field names
+# by design (a `oneOf` of DTOs is how the page's types are generated), and a read of a view has no client error.
+extends:
+  - recommended
+rules:
+  security-defined: off
+  info-license: off
+  operation-4xx-response: off
+  no-illogical-composition-keywords: off

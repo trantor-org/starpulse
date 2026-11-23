@@ -1,29 +1,26 @@
-"""`starpulse event emit`: post one CloudEvent to a server's ingest, as the `[[producers]]` system `--source` names.
+"""`starpulse event emit`: publish one CloudEvent to a server's JetStream ingest, as the `[[producers]]` system `--source` names.
 
     starpulse event emit --source flow --type StepFinished --subject run-1 --data workflow=nightly --data status=failed
     starpulse event emit --source ci-bot --type WORKTREE_READY --subject PROJ-1 --machine in-progress --actor ci
 
-The server is `--url`, else `STARPULSE_WRITE_URL`, else `STARPULSE_URL`. The bearer token is the variable
-`STARPULSE_PRODUCER_<SOURCE>_TOKEN` (the source upper-cased, `-` as `_`), unless `--token-env` names another. The
-event is `starpulse.contracts.CloudEvent`: the same model the ingest reads, so a field it would refuse is refused here
-before anything is sent. Exits 0 when the ingest answers 201, else 1 with the reason on stderr.
+The NATS server is the `[bridge]` `port` and `board` of `--config` (default `starpulse.toml`). The bearer token is the
+variable `STARPULSE_PRODUCER_<SOURCE>_TOKEN` (the source upper-cased, `-` as `_`), unless `--token-env` names another.
+The event is `starpulse.contracts.CloudEvent`: the same model the ingest reads, so a field it would refuse is refused
+here before anything is published. Exits 0 once the stream holds the event, else 1 with the reason on stderr; the server
+applies it afterwards, and one it refuses (a machine or actor the producer may not use) is logged there, not answered.
 """
 
 import argparse
 import os
 import sys
-import urllib.error
-import urllib.request
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from pydantic import ValidationError
 
-from starpulse.cli.agent_wire import DEFAULT_SERVER
 from starpulse.contracts.adapters import CloudEvent
 
 __all__ = ["main"]
-
-CONTENT_TYPE = "application/cloudevents+json"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -38,7 +35,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data", action="append", default=[], metavar="KEY=VALUE", help="a text field of `data`; repeats"
     )
-    parser.add_argument("--url", help="the server; else STARPULSE_WRITE_URL, STARPULSE_URL")
+    parser.add_argument("--config", type=Path, help="the starpulse.toml naming the [bridge]; default starpulse.toml")
     parser.add_argument("--token-env", help="the variable holding the token; else STARPULSE_PRODUCER_<SOURCE>_TOKEN")
     return parser
 
@@ -46,22 +43,6 @@ def _parser() -> argparse.ArgumentParser:
 def _data(pairs: Sequence[str]) -> dict[str, str] | None:
     fields = dict(pair.partition("=")[::2] for pair in pairs)
     return fields or None
-
-
-def _post(url: str, token: str, event: CloudEvent) -> tuple[int, str]:
-    request = urllib.request.Request(
-        f"{url}/api/machine-events",
-        data=event.model_dump_json(exclude_none=True).encode(),
-        headers={"Content-Type": CONTENT_TYPE, "Authorization": f"Bearer {token}"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=10.0) as resp:  # seconds the ingest may take to answer
-            return resp.status, resp.read().decode()
-    except urllib.error.HTTPError as exc:  # before OSError, which it subclasses
-        return exc.code, exc.read().decode()
-    except OSError as exc:
-        return 0, str(exc)
 
 
 def main(argv: Sequence[str], environ: Mapping[str, str] = os.environ) -> int:
@@ -97,9 +78,21 @@ def main(argv: Sequence[str], environ: Mapping[str, str] = os.environ) -> int:
     except ValidationError as invalid:
         print(f"not a CloudEvent: {invalid}", file=sys.stderr)
         return 1
-    url = (args.url or environ.get("STARPULSE_WRITE_URL") or environ.get("STARPULSE_URL") or DEFAULT_SERVER).rstrip("/")
-    status, body = _post(url, token, event)
+    from starpulse.bridge.ingest import Producer  # noqa: PLC0415 - the NATS client loads only to publish
+    from starpulse.runtime.config import discover, load  # noqa: PLC0415
+
+    try:
+        bridge = load(discover(args.config)).bridge
+    except (OSError, ValueError) as exc:
+        print(f"config unreadable: {exc}", file=sys.stderr)
+        return 1
+    url = f"nats://127.0.0.1:{bridge.port}"
+    producer = Producer(url, bridge.board, token)
+    try:
+        status = producer.post(event.model_dump(mode="json", exclude_none=True))
+    finally:
+        producer.close()
     if status == 201:
         return 0
-    print(f"the ingest at {url} answered {status or 'nothing'}: {body}", file=sys.stderr)
+    print(f"the ingest at {url} answered {status or 'nothing'}", file=sys.stderr)
     return 1

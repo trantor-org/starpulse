@@ -14,12 +14,13 @@ from typing import Any
 from nats.errors import MaxPayloadError
 from nats.js.errors import BadRequestError
 
+from starpulse.bridge import ingest
 from starpulse.bridge.consumers import Consumers
 from starpulse.bridge.delivery import Delivery, JetStreamMailbox, Route
 from starpulse.bridge.metrics import Published
 from starpulse.bridge.publisher import Publisher, Unavailable
-from starpulse.bridge.requests import serve
 from starpulse.bridge.reach import Reach
+from starpulse.bridge.requests import serve
 from starpulse.bridge.subjects import CHECKPOINT, STREAMS, payload, stream_subjects, subject_for, wake_subject
 from starpulse.bridge.subscriber import Subscriber
 from starpulse.bridge.subscriptions import Rules
@@ -80,7 +81,9 @@ def run(
             try:
                 publisher.publish(subject, payload(entry), entry.event_id)
             except MaxPayloadError:  # no retry can land it; the entry stays in the event log
-                logger.error("bridge: entry %s for %s exceeds the server's payload limit and is not published", entry.id, subject)
+                logger.error(
+                    "bridge: entry %s for %s exceeds the server's payload limit and is not published", entry.id, subject
+                )
             else:
                 published.count(subject)
         try:
@@ -120,11 +123,13 @@ def start(
     settle: Callable[[Collection[str]], None] | None = None,
     reach: Mapping[str, Reach] | None = None,
     registered: Callable[[], None] = lambda: None,
+    events: ingest.Request | None = None,
 ) -> Callable[[], None]:
     """Start the bridge over `log` for `board`, ending when `stop` is set; `feed()` is the board's read side. Return its reload.
 
     `route` finds how to reach a session's consumer: with it, the events waiting on a consumer it knows are delivered
-    (`bridge.delivery`). `reach` is each incident type's reach (`bridge.reach`). `settle` runs after each lane move and `reconcile`. `registered` runs when the delivery starts and each time a session registers.
+    (`bridge.delivery`). `reach` is each incident type's reach (`bridge.reach`). `settle` runs after each lane move and `reconcile`. `registered` runs when the delivery starts and each time a session registers. `events` applies what producers publish to the
+    board's ingest (`bridge.ingest`); without it none is applied.
     """
     stream = f"starpulse-{board}"
     url = f"nats://127.0.0.1:{port}"
@@ -134,9 +139,19 @@ def start(
     if route:
         link = Publisher(url, stream, stream_subjects(board))
         delivery = Delivery(JetStreamMailbox(link, stream), route, behind=Behind(log, DELIVERY))
-        link.listen(wake_subject(board), lambda: (registered(), delivery.wake()))  # `starpulse subscribe` signals it once a session's route is registered
-        threading.Thread(target=_deliver, args=(delivery, link, stop, registered), name="bridge-delivery", daemon=True).start()
+        link.listen(
+            wake_subject(board), lambda: (registered(), delivery.wake())
+        )  # `starpulse subscribe` signals it once a session's route is registered
+        threading.Thread(
+            target=_deliver, args=(delivery, link, stop, registered), name="bridge-delivery", daemon=True
+        ).start()
     wake = delivery.wake if delivery else lambda: None
-    threading.Thread(target=run, args=(log, publisher, board, subscriber, stop, wake), name="bridge", daemon=True).start()
+    threading.Thread(
+        target=run, args=(log, publisher, board, subscriber, stop, wake), name="bridge", daemon=True
+    ).start()
     threading.Thread(target=serve, args=(url, board, subscriber, stop), name="bridge-requests", daemon=True).start()
+    if events:
+        threading.Thread(
+            target=ingest.apply, args=(url, board, events, stop), name="bridge-ingest", daemon=True
+        ).start()
     return lambda: logger.info("reload: the bridge reads [bridge] at start; restart serve to apply a change")

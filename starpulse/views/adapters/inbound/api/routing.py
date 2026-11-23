@@ -17,6 +17,7 @@ from starpulse.views.adapters.inbound.api import (
     history,
     ledger,
     milestones,
+    openapi,
     pulls,
     runs,
     scheduler,
@@ -79,4 +80,5 @@ def api_routes(api: Api) -> list[ApiRoute]:
         *runs.routes(api),
         *scheduler.routes(api),
         *pulls.routes(api),
+        *openapi.routes,
     ]
