@@ -1,4 +1,4 @@
-"""Park a task for a typed reason and move it to Review with the evidence it ships."""
+"""Park a task for a typed reason as a request the task actor carries out, and move it to Review with the evidence it ships."""
 
 import logging
 from collections.abc import Callable
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import section_drop, section_set
+from starpulse.board.model.markdown import ASK_REQUEST, WAIT_REQUEST, section_drop, section_set
 from starpulse.board.model.seam import (
     TaskEditor,
     TaskReader,
@@ -53,8 +53,12 @@ def _lifecycle_edit(
     read: TaskReader,
     edit: TaskEditor,
     plan: Callable[[dict[str, Any]], dict[str, Any]],
+    *,
+    moves: bool = True,
 ) -> tuple[int, dict[str, Any]]:
     """Move `task` to `column` in one `edit` of the fields `plan` draws from its current record, as `who`.
+
+    With `moves` false the edit writes no lane: it is a request, and `column` is the lane the task actor is asked for.
 
     The board's rules judge the record the edit makes, so a refusal returns their reason and skill with nothing written;
     a `plan` that refuses raises `_RefusalError`. An edit the board accepts that leaves the task out of `column` is a 409
@@ -64,11 +68,11 @@ def _lifecycle_edit(
         if (current := read(task)) is None:
             return 404, {"error": f"{task} has no record to read"}
         try:
-            changes = {"status": column_status(column), **plan(current)}
+            changes = {**({"status": column_status(column)} if moves else {}), **plan(current)}
         except _RefusalError as refusal:
             return refusal.answer
         written = record_written(feed, task, who, lambda: edit(task, changes, comment, actor=who.actor))
-        if written.ok and (after := read(task)) is not None and lane_id(str(after.get("status") or "")) != column:
+        if moves and written.ok and (after := read(task)) is not None and lane_id(str(after.get("status") or "")) != column:
             return 409, {
                 "error": f"{task} is still {after.get('status')}: the board accepted the write to {changes['status']} "
                 "but did not move it"
@@ -197,11 +201,11 @@ def _without_question(current: dict[str, Any]) -> dict[str, Any]:
     return {"description": dropped} if dropped != current["description"].strip() else {}
 
 
-def _wait_on_operator(current: dict[str, Any], reason: Any) -> dict[str, Any]:
-    """The edit that records `reason` as what only the operator can clear."""
+def _wait_on_operator(reason: Any) -> str:
+    """The request comment that asks the task actor to put the task in front of the operator with `reason` as the question."""
     if not _nonblank(reason):
         raise _RefusalError(400, {"error": "operator needs the reason, in text, that only the operator can clear"})
-    return {"description": section_set(current["description"], "Needs attention", reason)}
+    return f"{ASK_REQUEST} {reason.strip()}"
 
 
 def _nonblank(value: Any) -> bool:
@@ -216,7 +220,7 @@ _PARK_REASONS = ("untilTask", "until", "operator")
 
 
 def _park_lane(feed: BoardFeed, reason: str) -> str | None:
-    """The lane a park for `reason` moves to: where a task waits on a fact, or on the operator."""
+    """The lane a park for `reason` asks for: where a task waits on a fact, or on the operator."""
     return feed.roles.attention if reason == "operator" else feed.roles.waiting
 
 
@@ -224,11 +228,12 @@ def _park_lane(feed: BoardFeed, reason: str) -> str | None:
 def park_task(
     request: ParkRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
 ) -> tuple[int, dict[str, Any]]:
-    """Park the In Progress task `request` names for the one reason it names: the HTTP status and JSON body.
+    """Request that the task actor park the In Progress task `request` names for the one reason it names: the HTTP status and JSON body.
 
-    The reason picks the lane and writes its gate in the same edit: `untilTask` adds dependencies (a `TASK-N#K` entry also records the criterion needed) and `until` writes the
-    Start Criteria block, both to Waiting, and `operator` writes the Needs attention section to Needs attention. The
-    machine must offer the writer that lane, and the board's rules judge the record the edit makes.
+    The reason picks the request and writes its gate and request comment in one edit, and no lane: `untilTask` adds
+    dependencies (a `TASK-N#K` entry also records the criterion needed), `until` writes the Start Criteria block and a
+    `Wait requested:` comment, and `operator` writes an `Ask requested:` comment holding the question. The task actor
+    moves the task to Waiting or Needs attention, and the board's rules judge that move.
     """
     task, comment, who = request.task, request.comment or "", who_of(request)
     reasons = [key for key in _PARK_REASONS if key in request.model_fields_set]
@@ -245,14 +250,20 @@ def park_task(
     column, value = _park_lane(feed, reason), getattr(request, reason)
     if column is None:
         return 409, {"error": f"this board's machine has no lane to park {task} in for {reason}"}
-    if (refused := move_refusal(agent, task, column, who)) is not None:
-        return refused
+    try:
+        asked = {
+            "untilTask": lambda: comment,
+            "until": lambda: f"{WAIT_REQUEST} {comment or 'its start criteria'}",
+            "operator": lambda: _wait_on_operator(value),
+        }[reason]()
+    except _RefusalError as refusal:
+        return refusal.answer
     plans = {
         "untilTask": lambda current: _wait_on_tasks(feed, task, current, value) | _without_question(current),
         "until": lambda current: _wait_on_events(feed, task, current, value),
-        "operator": lambda current: _wait_on_operator(current, value),
+        "operator": lambda current: {},
     }
-    return _lifecycle_edit(feed, task, column, who, comment, read, edit, plans[reason])
+    return _lifecycle_edit(feed, task, column, who, asked, read, edit, plans[reason], moves=False)
 
 
 _BAD_REVIEW = {"error": "references must each be a nonblank pull request link"}

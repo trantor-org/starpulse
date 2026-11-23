@@ -532,6 +532,11 @@ def _pulls(record: Record, settle: str | None = None) -> list[Mapping[str, Any] 
     return [record.pull_of(link[1], int(link[2]), settle) for link in links if link]
 
 
+def _counted(pulls: list[Mapping[str, Any] | None]) -> list[Mapping[str, Any] | None]:
+    """The cited pull requests a gate judges: the closed ones are skipped while another is not closed."""
+    return [pull for pull in pulls if pull is None or pull["state"] != "CLOSED"] or pulls
+
+
 def _another_tasks(record: Record, pull: Mapping[str, Any]) -> bool:
     own = _TASK_ID.fullmatch(str(record.front.get("id") or ""))
     named = own and re.search(rf"(?i)(?:^|/){re.escape(own[1])}-(\d+)(?=-|$)", pull.get("head_ref") or "")
@@ -543,14 +548,13 @@ def _pulls_ready(spec: Mapping[str, Any], where: str) -> Primitive:
 
     def holds(record: Record) -> bool:
         pulls = _pulls(record)
-        counted = [pull for pull in pulls if pull is None or pull["state"] != "CLOSED"] or pulls
         return all(
             pull is not None
             and (
                 pull["state"] == "MERGED"
                 or (pull["state"] == "OPEN" and not pull["draft"] and pull["checks"] == "pass")
             )
-            for pull in counted
+            for pull in _counted(pulls)
         )
 
     return holds
@@ -565,10 +569,16 @@ def _pulls_failing(spec: Mapping[str, Any], where: str) -> Primitive:
 
 def _pulls_clear(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, set(), where, "pulls_clear")
-    return lambda record: all(
-        pull is not None and (pull["state"] == "MERGED" or (not pull["threads"] and pull["mergeable"] == "MERGEABLE"))
-        for pull in _pulls(record, settle="mergeable")
-    )
+
+    def holds(record: Record) -> bool:
+        pulls = _pulls(record, settle="mergeable")
+        return all(
+            pull is not None
+            and (pull["state"] == "MERGED" or (not pull["threads"] and pull["mergeable"] == "MERGEABLE"))
+            for pull in _counted(pulls)
+        )
+
+    return holds
 
 
 class _PullsChanged:

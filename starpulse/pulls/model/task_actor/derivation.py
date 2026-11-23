@@ -13,7 +13,13 @@ from typing import Any, Protocol
 
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import resolved
-from starpulse.board.model.markdown import attention_reason, needs_attention_reason, operator_answered
+from starpulse.board.model.markdown import (
+    ASK_REQUEST,
+    WAIT_REQUEST,
+    attention_reason,
+    needs_attention_reason,
+    operator_answered,
+)
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import HELD, MERGE_EVIDENCE
 
@@ -335,7 +341,8 @@ def criteria_checked(facts: TaskFacts, agent: Agent) -> tuple[int, str] | None:
 
 
 def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
-    """The ready or merged pull requests when the task cites one that is, else None. A task sent back from Review
+    """The ready or merged pull requests when the task cites one and no open one of them is unready, else None; a
+    closed pull request is no delivery and holds nothing. A task sent back from Review
     stays put while its ready pull request keeps the head it was sent back on: a new head or a run of `review` is the
     session's answer. An open pull request is ready only when it does not conflict with its base and the rollup of
     its current head says every required check passed (`checks_verdict`): a required check not posted is not green,
@@ -366,8 +373,12 @@ def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
         merged = record["state"] == "MERGED" and record["mergedAt"]
         if merged and (epoch(record["mergedAt"]) or 0.0) < floor:
             continue
-        if merged or (record["state"] == "OPEN" and not why_unready(record, held.get(url))):
-            parts.append(f"{record['repo']}#{record['number']} {'merged' if merged else 'ready'}")
+        if merged:
+            parts.append(f"{record['repo']}#{record['number']} merged")
+        elif record["state"] == "OPEN":
+            if why_unready(record, held.get(url)):
+                return None  # Review waits for the last open pull request to go green
+            parts.append(f"{record['repo']}#{record['number']} ready")
     if not parts or facts.unlinked(agent):
         return None  # an open pull request naming the task is its delivery too: Review waits until it is cited
     proof = "; ".join(parts)
@@ -504,6 +515,23 @@ def operator_pushback(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
         return None
     words = newest.removeprefix(PUSHBACK).strip()
     return newest, words if "?" in words else f"{words}\n\nWhat change does it call for?"
+
+
+def _requested(marker: str) -> Callable[[TaskFacts, Agent], Held]:
+    """The fact that the task's newest comment is a request `marker` opens: its words, the comment a move makes."""
+
+    def requested(facts: TaskFacts, agent: Agent) -> Held:
+        if (texts := facts.comments(agent)) is None:
+            facts.unsettled()
+            return None
+        newest = texts[-1].strip() if texts else ""
+        return (newest, newest.removeprefix(marker).strip()) if newest.startswith(marker) else None
+
+    return requested
+
+
+wait_requested = _requested(WAIT_REQUEST)
+ask_requested = _requested(ASK_REQUEST)
 
 
 def deps_done(facts: TaskFacts, agent: Agent) -> Held:
@@ -701,6 +729,8 @@ FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "pr_unfinished_dead": pr_unfinished_dead,
     "phase_resumed": phase_resumed,
     "operator_pushback": operator_pushback,
+    "wait_requested": wait_requested,
+    "ask_requested": ask_requested,
     "deps_done": by_claim(deps_done, claimed=False),
     "deps_done_with_pr": deps_done_with_pr,
     "deps_done_started": by_claim(deps_done, claimed=True),

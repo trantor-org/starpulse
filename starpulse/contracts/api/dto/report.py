@@ -1,4 +1,4 @@
-"""`/api/doctor`: the contract report; `/api/ready`: the readiness report."""
+"""`/api/doctor`: the contract report; `/api/health`: the readiness report."""
 
 from typing import Literal
 
@@ -23,7 +23,7 @@ class ContractReport(_Api):
 
 
 class ReadyComponent(_Api):
-    """One part of the server `/api/ready` judges."""
+    """One part of the server `/api/health` judges."""
 
     ready: bool
     detail: str

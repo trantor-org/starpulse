@@ -105,10 +105,18 @@ class ReadMethods:
         return [] if row is None else pull_links(row["references"])
 
     def open_tasks(self) -> list[dict]:
-        """Every open Board task as the page draws it. Within this thread's `one_read` it is the list that read built."""
+        """Every open Board task as the page draws it. Within this thread's `one_read` it is the list that read built.
+
+        Outside one it is rebuilt only when the read model's position or the local day moved since the last build; a
+        working task's `session_activity` is read again on each call, since a session's turn moves no task."""
         if (held := getattr(self._pinned, "tasks", None)) is not None:
             return list(held)
-        return self._hot()
+        key = (self._read_model.position(), local_midnight(self._clock()))  # before the build: a change in it rebuilds next
+        if (built := self._built) is not None and built[0] == key:
+            return [self._active(agent) for agent in built[1]]
+        agents = self._hot()
+        self._built = (key, agents)
+        return list(agents)
 
     def done_tasks(self) -> list[str]:
         """The ids of unarchived Done tasks of any age, the cold ones `open_tasks` leaves out."""
@@ -117,7 +125,7 @@ class ReadMethods:
     @contextmanager
     def one_read(self) -> Iterator[None]:
         """Within the block this thread's `open_tasks` builds the list once, for a caller that asks for it a dozen times
-        to compose one answer. Nothing outlives the block: the feed holds no Task between requests."""
+        to compose one answer. The pinned list ends with the block; `open_tasks` keeps only its last build."""
         if getattr(self._pinned, "tasks", None) is not None:
             yield
             return

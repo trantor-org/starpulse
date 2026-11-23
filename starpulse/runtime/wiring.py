@@ -4,23 +4,15 @@ page build and the checks made before anything starts."""
 import argparse
 import logging
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import Any, NamedTuple
 
-from starpulse.flow_metrics.model.level import Level
-from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
-from starpulse.flow_metrics.model.trajectories import trajectory_analytics
 from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
 from starpulse.runs.model import opt_in
 from starpulse.runs.model.config import RunsInstance
 from starpulse.runtime.config import Config, ConfigError, discover, load, runs_adapter
-
-if (
-    TYPE_CHECKING
-):  # annotation only: a runtime import would put the scheduler and the page in the Delivery worker's import closure
-    from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -31,44 +23,6 @@ _HERE = Path(__file__).parents[1]
 #: The Vite build of web/; it holds nothing but the page, so all of it is served. `STARPULSE_STATIC` names another
 #: directory; the environment reaches the child workers a fresh interpreter starts, where a patched attribute would not.
 STATIC = Path(os.environ.get("STARPULSE_STATIC") or _HERE / "static")
-
-
-def trajectories_response(
-    history: HistoryStore, query: dict[str, list[str]], level: Level, machines: Mapping[str, dict], now: float
-) -> tuple[bytes, int]:
-    """The body and status of the trajectory analytics of the runs that ended in the last `hours` as of `now`, which
-    the scheduler ranks tasks by; refused when `hours` is no positive number."""
-    from starpulse.views.application.queries.responses import _WINDOW_HOURS, _error, _hours  # noqa: PLC0415 - the scheduler's answer is the page's, and `serve` and the contexts child import no page module
-    from starpulse.views.model.encoding import encode  # noqa: PLC0415
-
-    window = _hours(query, "hours", _WINDOW_HOURS)
-    if window is None:
-        return _error("hours must be a positive number"), 400
-
-    def answer() -> tuple[bytes, int]:
-        try:
-            held = history.level_window(level, now=now, window_s=window * 3600)
-            return (
-                encode(
-                    "trajectories",
-                    trajectory_analytics(
-                        level,
-                        machines[level.machine],
-                        held.runs,
-                        now=now,
-                        window_s=window * 3600,
-                        history_start=held.first,
-                        sources=held.sources,
-                    ),
-                ),
-                200,
-            )
-        except WindowPastHistory as exc:
-            return encode("trajectories", {"error": str(exc), "history_s": exc.history_s}), 400
-
-    # the query's own params, so a junk param cannot fill the memo
-    params = tuple(tuple(query.get(name, ())) for name in ("hours", "from", "to", "p"))
-    return history.level_answer(level, ("trajectories", params), now=now, compute=answer)
 
 
 def read_config(parser: argparse.ArgumentParser, path: Path | None) -> Config:

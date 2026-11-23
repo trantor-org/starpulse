@@ -54,12 +54,11 @@ from starpulse.board.adapters.native_scan import (
 )
 from starpulse.board.adapters.task_history import KIND, TaskHistory, revises_plan
 from starpulse.board.model import criteria, entry, rules, write_steps
-from starpulse.board.model.claims import assignee_of, claimed, released
+from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.guard import Guard, Validate
 from starpulse.board.model.policy import Policy, guards_of, profile_matrix
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
-    ANONYMOUS,
     FLAGGED,
     HELD,
     MERGE_EVIDENCE,
@@ -74,7 +73,6 @@ from starpulse.board.model.seam import (
     TaskCreator,
     TaskEditor,
     TaskReader,
-    TaskReleaser,
     TaskReopener,
     TaskRestorer,
     TaskRetirer,
@@ -829,7 +827,10 @@ def _editor(
                 if revises_plan(started, _section(_PLAN, body), str(changes["plan"] or "").strip(), unstarted):
                     raise ValueError("the plan needs a reason once work has started: pass --reason")
             gated = {item["id"] for item in criteria.authored(_description(body))}
-            held = lane_id(str(frontmatter.get("status") or "")) == guard.waiting and lane_id(status) in {"", guard.waiting}
+            held = lane_id(str(frontmatter.get("status") or "")) == guard.waiting and lane_id(status) in {
+                "",
+                guard.waiting,
+            }
             body = _apply(task, frontmatter, body, link(changes), spelled)
             # An edit may re-gate a Waiting task onto other subjects or onto tasks, never leave it with no gate.
             ungated = not criteria.authored(_description(body)) and not _strings(frontmatter.get("dependencies"))
@@ -1344,97 +1345,38 @@ def _restorer(
     return restore
 
 
-class _Claims:
-    """Where the board records an agent's claim once `attach` binds the event log: one `board:claims` entry.
-
-    A refusal carries its reason. A claim that lands carries the claiming session and no reason: it writes no lane entry
-    when the task is already in the working lane, so the bridge reads it to rebind the task's events to that session.
-    """
-
-    def __init__(self) -> None:
-        self.log: EventLog | None = None
-
-    def refused(self, task: str, actor: str, reason: str) -> None:
-        """Append the refusal of `actor`'s claim of `task` with its `reason` and the time, fail-open."""
-        self._append({"task": task, "actor": actor, "reason": reason, "time": time.time()})
-
-    def claimed(self, task: str, actor: str, session: str) -> None:
-        """Append the landed claim of `task` by `actor`'s `session`, fail-open."""
-        self._append({"task": task, "actor": actor, "session": session, "time": time.time()})
-
-    def _append(self, fields: dict) -> None:
-        if self.log is not None:
-            from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM  # noqa: PLC0415 - loading a board loads no feed
-
-            self.log.publish(CLAIMS_STREAM, fields)
-
-
 def _moved(written: Written, lane: str) -> Written:
     """`written` once it landed, with the `lane` it put the task in and the moment, for the server to record with the
     request's actor; a refused write moved nothing."""
     return written._replace(lane=lane, at=time.time()) if written.ok else written
 
 
-def _writer(
-    root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Guard = Guard(), claims: _Claims = _Claims()
-) -> MoveWriter:
+def _writer(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Guard = Guard()) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
     A move to `archived` is an archive, so the file leaves `tasks/` and `restore` finds it; a move out of Done returns a
     completed task's file to `tasks/`.
-
-    An agent's claim (a move to the working State that names its session) also records the session as the task's assignee,
-    and a claim, landed or refused, is recorded on `board:claims`.
     """
     spelled = {lane_id(status): status for status in statuses}
     archive = _archiver(root, statuses, roles, guard)
 
-    def write(task: str, status: str, actor: str, session: str = "") -> Written:
+    def write(task: str, status: str, actor: str) -> Written:
         if lane_id(status) == ARCHIVED:
             return archive(task, "", actor)
-        claim = actor != OPERATOR and session and lane_id(status) == roles.working
 
         def edit(frontmatter: dict, body: str) -> str:
             frontmatter["status"] = spelled.get(lane_id(status), status)
-            if claim:
-                claimed(frontmatter, session)
             return body
 
         written = _update(root, task, edit, guard, actor)
         if lane_id(status) not in {roles.done, COMPLETED}:
             written = _reactivated(root, task, written)  # a completed task moved out of Done leaves `completed/`
-        if claim and written.ok:
-            claims.claimed(task, actor, session)
-        elif claim:
-            claims.refused(task, actor, written.output)
         return _moved(written, spelled.get(lane_id(status), status))
 
     return write
 
 
 class _Unheld(Exception):
-    """The task file no longer holds the claim or the State a write judged."""
-
-
-def _releaser(root: Path, guard: Guard = Guard()) -> TaskReleaser:
-    """A board writer that ends `session`'s claim on a task still in `status`: it loses its `assignee` field, gains
-    `released_from` and keeps its State. A file another writer moved off `status` or whose claim `session` no longer holds
-    is refused untouched, so a release judged from a stale row cannot undo a later move."""
-
-    def release(task: str, status: str, /, session: str, actor: str = ANONYMOUS) -> Written:
-        def edit(frontmatter: dict, body: str) -> str:
-            held = str(frontmatter.get("status") or "")
-            holder = assignee_of(frontmatter)
-            if lane_id(held) != lane_id(status) or holder != session:
-                raise _Unheld(f"{task} is {held or 'without a status'} held by {holder or 'no session'}")
-            released(frontmatter)
-            return body
-
-        try:
-            return _update(root, task, edit, guard, actor)
-        except _Unheld as unheld:
-            return Written(False, str(unheld))
-
-    return release
+    """The task file no longer holds the State a write judged."""
 
 
 def _reactivated(root: Path, task: str, written: Written) -> Written:
@@ -1841,7 +1783,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         migrations = document.get("migrations", {})
         labelled = {name: spec["label"] for name, spec in document.get("states", {}).items() if spec.get("label")}
     retired = _Retired()
-    claims = _Claims()
     guard = Guard(
         rules.load(guards_of(rows)),
         _hook(settings.get("validate")),
@@ -1865,8 +1806,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         ready = next((status for status in config.statuses if lane_id(status) == roles.ready), "")
         gate = replace(guard, waiting=roles.waiting, ready=ready, holders=_holders(root, roles.done))
         return {
-            "writer": _writer(root, config.statuses, roles, gate, claims),
-            "release": _releaser(root, gate),
+            "writer": _writer(root, config.statuses, roles, gate),
             "assign": assign,
             "create": _creator(root, config, retired, gate, file_name, link),
             "read": _reader(root, roles.done),
@@ -1921,7 +1861,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
     def attach(log: EventLog) -> None:
         retired.engine = log.engine  # the retired tasks live in the view's history store
-        claims.log = log
         history.attach(log.engine)
         history.import_retired(retired.pairs(without_history=True), _record_of)
         if settings.get("complete_done"):
@@ -1938,8 +1877,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     complete = history.dehydrated(made.complete, read)
 
     def completing(write: MoveWriter) -> MoveWriter:
-        def land(task: str, status: str, actor: str, *session: str) -> Written:
-            written = write(task, status, actor, *session)
+        def land(task: str, status: str, actor: str) -> Written:
+            written = write(task, status, actor)
             if written.ok and settings.get("complete_done") and lane_id(status) == made.roles.done:
                 complete(task)
             return written
@@ -1972,7 +1911,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     recorded = {
         "writer": completing(archiving(made.writer)),
         "assign": history.recorded(made.assign, read),
-        "release": history.recorded(made.release, read, actor_at=1),
         "edit": completing_edit(
             history.recorded(
                 made.edit, read, unstarted=_unstarted(made.roles), rehydrates=_leaves_completed(root, made.roles.done)

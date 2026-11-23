@@ -152,10 +152,14 @@ _ASKS = (
     "pr_failing",
     "pr_closed_unmerged",
     "operator_pushback",
+    "ask_requested",
     "pr_unfinished_dead",
     "pr_merged_unfinished",
     "started_work",
 )
+
+#: The facts a comment alone raises, which the view does not show.
+_COMMENTED = frozenset(("operator_pushback", "wait_requested", "ask_requested"))
 
 #: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
 _ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")
@@ -422,7 +426,6 @@ class TaskActor:
         #: hold it could not read), which keeps its digest out of the checkpoint.
         self._hooked = False
         self._unsettled = False
-        self._probing = False
         #: The board hooks of moves already written, run one at a time in the order written by their own thread: a
         #: hook runs a command for seconds, and run under `_lock` it held back the move of every task behind it.
         self._notices: queue.SimpleQueue[Callable[[], None] | None] = queue.SimpleQueue()
@@ -889,7 +892,8 @@ class TaskActor:
             rearmed = agent["state"] in self._timed_lanes and tuple(
                 criteria.expect_dates(agent["description"])
             ) != self._dates.get(name, ())
-            pushable = "operator_pushback" in self._waits.get(agent["state"], {})  # a comment leaves the view as it was
+            waits = self._waits.get(agent["state"], {})
+            pushable = bool(_COMMENTED.intersection(waits))  # a comment leaves the view as it was
             if before == (now := _view(agent)) and not (repaired or rearmed or regated or pushable):
                 return
             self._index(agent)
@@ -970,8 +974,16 @@ class TaskActor:
     def _sequence(self, agent: Mapping[str, Any]) -> Sequence[str]:
         """The phases of `agent`: the row its `kind-<name>` label names (`decide`, `one-off`), else its type's row, else
         `default`; the same lookup as `temporal_runner.sequences.phases`, which this package cannot import."""
-        kinds = (self._sequences.get(label.removeprefix("kind-")) for label in agent.get("labels", ()) if label.startswith("kind-"))
-        return next(filter(None, kinds), None) or self._sequences.get(agent.get("type", "").lower()) or self._sequences.get("default", ())
+        kinds = (
+            self._sequences.get(label.removeprefix("kind-"))
+            for label in agent.get("labels", ())
+            if label.startswith("kind-")
+        )
+        return (
+            next(filter(None, kinds), None)
+            or self._sequences.get(agent.get("type", "").lower())
+            or self._sequences.get("default", ())
+        )
 
     def _route(self, link: Mapping[str, Any], task: str) -> str | None:
         """The event of the link's route to the phase after it in the sequence of `task` (its `decide` row when kind-decide, else its type), when the link draws one."""
@@ -1205,39 +1217,6 @@ class TaskActor:
         self._derived_moved.set()
         return moved
 
-    def view(self, name: str) -> dict[str, Any] | None:
-        """The actor's view of one task: the lane the feed and the actor each hold, the pull requests it saw, the move it
-        last tried, and the evidence of each fact its lane waits on (None when the fact does not hold). Writes nothing.
-        The feed is read before the actor lock is taken, so a contended feed never holds a move."""
-        agent = self._feed.task(name, lean=True)
-        if agent is None:
-            return None
-        with self._lock:
-            seen = self._seen.get(name)
-            tried = self._tried.get(name)
-            self._probing = True
-            try:
-                facts = {
-                    fact: (held[0] if (held := FACTS.get(fact, lambda *_: None)(self._port, agent)) else None)
-                    for fact in self._waits.get(agent["state"], {})
-                }
-            finally:
-                self._probing = False
-            return {
-                "task": name,
-                "feed_lane": agent["state"],
-                "seen_lane": seen[0] if seen else None,
-                "seen_prs": list(seen[2]) if seen else [],
-                "tried": dict(zip(("lane", "event", "evidence", "facts"), tried, strict=False)) if tried else None,
-                "facts": facts,
-                "unlinked": self._unlinked(agent),
-            }
-
-    def views(self) -> dict[str, Any]:
-        """The `view` of each open task in Review, by name: the lane whose merged task waits on the operator unseen."""
-        names = [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == self._review]
-        return {name: found for name in names if (found := self.view(name))}
-
     def _timed_derive(self, lane: str, hooked: bool, seconds: float) -> None:
         with self._metrics:
             histogram = self._derive_seconds.setdefault((lane, hooked), _Histogram(SLOW_BUCKETS_S))
@@ -1309,7 +1288,9 @@ class TaskActor:
         while down."""
         roles = self._feed.roles
         with self._lock:
-            return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] in (roles.working, roles.attention)]
+            return [
+                agent["id"] for agent in self._feed.open_tasks() if agent["state"] in (roles.working, roles.attention)
+            ]
 
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
         """A session settled. A holder whose task has an open criterion (neither checked nor struck through) is nudged by
@@ -1352,7 +1333,9 @@ class TaskActor:
             records = [self._record(url) for url in own]
             if own and all(record and record["state"] in TERMINAL for record in records):
                 # a merge GitHub has not timed yet settles on its next read; else no lifecycle rule takes the task
-                if derivation.pr_terminal(self._port, agent) is None and all(record["mergedAt"] or record["state"] != "MERGED" for record in records):
+                if derivation.pr_terminal(self._port, agent) is None and all(
+                    record["mergedAt"] or record["state"] != "MERGED" for record in records
+                ):
                     self._attend(
                         name,
                         "every pull request it cites has ended, yet none proves the work since it entered In Progress",
@@ -1460,7 +1443,13 @@ class TaskActor:
                     self._memory.keep(name, awaited=True, revive_held=True, unreachable=True if unreachable else None)
                     return
             held = ("parked", self._progress(agent))  # the one revive a task gets in Needs attention, counted apart
-            key = held if parked else (tuple(resolved(item) for item in items), self._progress(agent)) if opened else self._progress(agent)
+            key = (
+                held
+                if parked
+                else (tuple(resolved(item) for item in items), self._progress(agent))
+                if opened
+                else self._progress(agent)
+            )
             _, count = self._memory.resumes(name, key)
             if count >= _ONE_TRY:
                 if parked:
@@ -1497,6 +1486,46 @@ class TaskActor:
         self._unwant(name)
         with self._lock:
             self._memory.count(name, key, count + 1)
+
+    def dispatched(self, name: str, session: str) -> None:
+        """A session was dispatched to `name`: pin it as the task's holder, and move a Ready task, or a Needs attention one
+        the operator answered, to In Progress. A task another session holds keeps that holder, since its lease ends only
+        with its own session (`session_ended`)."""
+        from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a session is named
+
+        with self._lock:
+            agent = self._feed.task(name, lean=True)
+            roles = self._feed.roles
+            if agent is None or not session or agent["state"] not in (roles.ready, roles.attention, roles.working):
+                return
+            holder = str((self._read(name) or {}).get("assignee") or "")
+            if holder and not same_holder(holder, session):
+                logger.info(
+                    "task actor: %s stays with %s, which a dispatch of %s did not displace", name, holder, session
+                )
+                return
+            moving = agent["state"] != roles.working
+            if holder and not moving:
+                return
+            changes = {"status": roles.working, "assignee": session} if moving else {"assignee": session}
+            comment = f"Dispatched: {session} holds it."
+            refusal = self._judged(name, changes, comment) if moving else Written(True, name)
+            written = refusal if not refusal.ok else self._apply(name, changes, comment)
+        if not written.ok:
+            logger.warning("task actor: a dispatch of %s to %s was not pinned: %s", session, name, written.output)
+
+    def session_ended(self, name: str, session: str) -> None:
+        """The harness ended `session`: the lease of `name` it holds ends, and the task keeps its lane, since started work
+        never returns to Ready."""
+        from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a session is named
+
+        with self._lock:
+            holder = str((self._read(name) or {}).get("assignee") or "")
+            if not same_holder(holder, session):
+                return
+            written = self._apply(name, {"assignee": ""}, "")
+        if not written.ok:
+            logger.warning("task actor: the lease of %s on %s was not ended: %s", session, name, written.output)
 
     def _admitted(self, name: str, verb: str) -> bool:
         """Whether the scheduler's admission gate lets `name`'s `verb` start now. A start it has not yet admitted is kept as
@@ -1838,7 +1867,7 @@ class TaskActor:
         dependencies = tuple(agent.get("dependencies", ()))
         if dependencies:  # Needs attention carries none, so the reason names them
             reason += f" (was waiting on {', '.join(dependencies)})"
-        if self._probing or self._faults.get(name) == (lane, reason):
+        if self._faults.get(name) == (lane, reason):
             return False
         self._faults[name] = (lane, reason)
         logger.error("task actor: fault on %s at %s: %s", name, step, error)
@@ -1986,9 +2015,9 @@ class TaskActor:
     def _holds_of(self, name: str) -> tuple[str, ...] | None:
         """The reasons the board withholds the task's `deps_done`, as its hook printed them for the task's present facts;
         None while that read runs off the lock, whose result derives the task again. Each derivation takes a read of its
-        own, as the hook reads more than the facts digest, and a read is probed in place."""
+        own, as the hook reads more than the facts digest."""
         agent = self._feed.task(name, lean=True)
-        if self._holds is _no_holds or self._probing or agent is None:
+        if self._holds is _no_holds or agent is None:
             return self._read_holds(name)[0]
         digest = self._digest(agent)
         found = self._hold_reads.pop(name, None)
@@ -2064,7 +2093,7 @@ class TaskActor:
     def _note_hold(self, agent: dict[str, Any], reasons: tuple[str, ...], prefix: str = HELD) -> None:
         """Comment the hold's reasons on the task under `prefix`, once until they or its lane change."""
         name, sent = agent["id"], (agent["state"], "hold", reasons)
-        if self._probing or self._tried.get(name) == sent:
+        if self._tried.get(name) == sent:
             return
         self._tried[name] = sent
         logger.info("task actor: %s is held: %s", name, "; ".join(reasons))

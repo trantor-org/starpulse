@@ -7,7 +7,7 @@
   `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
   `fields=dependencies`, unpaged.
 - `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `rating`, `miss`, `restore`, `take-over`, `retire`,
-  `retired/import`, `claim`, `park`, `review`, `complete`, `reopen` and `tasks`: a task's writes, each over the
+  `retired/import`, `dispatch`, `park`, `review`, `complete`, `reopen` and `tasks`: a task's writes, each over the
   seams it needs.
 """
 
@@ -28,9 +28,8 @@ from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRo
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task
 from starpulse.views.application.commands.moves import (
-    claim_task,
+    dispatch_task,
     move_task,
-    release_task,
     start_requested,
     start_task,
 )
@@ -178,8 +177,7 @@ def routes(api: Api) -> list[ApiRoute]:
         "/take-over": (lambda client, raw: take_over_task(client, raw, services.take_over, feed), "take_over"),
         "/retire": (lambda client, raw: retire_task(client, raw, board), "retire"),
         "/retired/import": (lambda client, raw: import_retired(client, raw, board), "retired_import"),
-        "/claim": (lambda client, raw: claim_task(client, raw, feed, writer), "claim"),
-        "/release": (lambda client, raw: release_task(client, raw, feed, board.release), "release"),
+        "/dispatch": (lambda client, raw: dispatch_task(client, raw, feed, services.dispatch), "dispatch"),
         "/park": (lambda client, raw: park_task(client, raw, feed, read, edit), "park"),
         "/review": (lambda client, raw: review_task(client, raw, feed, read, edit), "review"),
         "/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),

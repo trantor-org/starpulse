@@ -7,7 +7,7 @@ imported and renamed with `RETIRED_SUFFIX`, so a second run finds the schema at 
 With `[board] source_labels` set it also appends, to each task's History, the move of its one label matching that regex to
 its `source` (`label_sources`, which first imports a task without History), and a second run finds nothing left to move.
 Each task's History is archived exactly when its file sits in `completed/` or `archive/tasks/` (`settle_archived`), the file winning.
-With `[board] files_win` set it also appends, to each task's History that replays differently from its file, the Events that bring it to the file (`files_win`), and a second run finds nothing left to bring. It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
+With `[board] files_win` set it also appends, to each task's History that replays differently from its file, the Events that bring it to the file (`files_win`), and a second run finds nothing left to bring. The steps share one parse of the task files and one replay of each History, so the run reads each once, not once per step. The comment reconcile (`comment_parity`) runs once, on the migrate of the live store, and not under a rehearsal's copy. It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
 not allow, a config that cannot be read, or a board the config does not assemble.
 """
 
@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
 
     from starpulse.contracts.adapters import TaskKeys
-
     from starpulse.event_log.event_log import EventLog
 
 __all__ = ["RETIRED_SUFFIX", "main", "maintain"]
@@ -63,7 +62,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     maintain(
         url,
         machines,
-        config.event_log_retention_days,
         base=base,
         state_dir=config.scheduler.state_dir,
         keys=board.keys,
@@ -75,20 +73,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     from starpulse.board.adapters.label_sources import move_key_labels  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.board.adapters.meta_backfill import backfill_meta  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.board.adapters.settle_archived import settle_archived  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.board.adapters.task_parity import align_claims, filed  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.board.adapters.task_parity import Replays, align_claims, filed, scanned  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.event_log import store_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
+    from starpulse.runtime.config import rehearsing  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     root = base / str(config.board.get("path", "backlog"))
     engine = store_engine(url)
     try:
-        settle_archived(root, engine)
-        if pattern := config.board.get("source_labels"):
-            move_key_labels(root, str(pattern), engine)
-        align_claims(filed(root, engine), engine)
-        backfill_meta(root, engine)
-        reconcile_comments(root, engine)
+        # The files are parsed and each History replayed once for all the steps; a step that writes drops what it wrote to.
+        scan, rows = list(scanned(root)), Replays(engine)
+        settle_archived(root, engine, scan, rows)
+        if (pattern := config.board.get("source_labels")) and move_key_labels(root, str(pattern), engine):
+            rows.drop()
+        align_claims(filed(root, engine, scan), engine, rows)
+        backfill_meta(root, engine, filed(root, engine, scan), rows)
+        if reconcile_comments(root, engine, rehearsing=rehearsing()):  # it rewrites files and appends to Histories
+            scan = list(scanned(root))
+            rows.drop()
         if config.board.get("files_win"):
-            brought = bring_to_files(filed(root, engine), engine)
+            brought = bring_to_files(filed(root, engine, scan), engine, rows)
             logger.info("migrate: brought %d task Histories to their files", brought)
     finally:
         engine.dispose()
@@ -99,7 +102,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 def maintain(
     url: str,
     machines: Mapping[str, dict],
-    retention_days: int | None,
     *,
     base: Path | None = None,
     state_dir: str | None = None,
@@ -107,7 +109,7 @@ def maintain(
     fold: bool = False,
     inbox_files: str | None = None,
 ) -> None:
-    """The work `HistoryStore` used to do on every open: the schema, then the summaries it needs.
+    """The work `HistoryStore` used to do on every open: the schema.
 
     With `inbox_files` (a glob for the old GitHub inbox databases) it copies their rows into the store once and leaves the files.
 
@@ -121,7 +123,6 @@ def maintain(
     from starpulse.event_log.readmodel.projector import Projector  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.readmodel.snapshot_store import build as build_snapshots  # noqa: PLC0415 - import cost, paid only by a run that migrates
     from starpulse.event_log.store import EventStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.flow_metrics.adapters.outbound.history import HistoryStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     engine = store_engine(url)
     try:
@@ -135,8 +136,6 @@ def maintain(
             import_files(log, base, base / (state_dir or ""))
         if inbox_files is not None:
             _carry_inbox(log, inbox_files)
-        history = HistoryStore(url, machines, engine, retention_days=retention_days)
-        history.build_summaries()
     finally:
         engine.dispose()
 

@@ -177,6 +177,8 @@ class HeadChecks:
                 continue
             rolled[repository, head.number] = mark
             data = {"repository": repository, "pr": head.number, "sha": sha, "state": state, "required": sorted(required), "unfinished": unfinished}
+            if refailed and report is not None:
+                data |= {"check": report.name, "at": report.at or None}  # the wake line reads alike without them
             events.append(_event(f"ROLLUP_{state.upper()}", task, (repository, head.number, sha, state, key), data))
         return Plan(events, lambda: self._last.update(rolled))
 

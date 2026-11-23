@@ -7,9 +7,9 @@ from typing import Any
 from pydantic.json_schema import GenerateJsonSchema
 
 from starpulse.contracts.api._base import _Api
+from starpulse.contracts.api.dto.dag import Runs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
-from starpulse.contracts.api.dto.breaking_changes import BreakingChanges
 from starpulse.contracts.api.dto.health import MachineHistory, TaskEventHistory
 from starpulse.contracts.api.dto.milestones import (
     Docs,
@@ -23,13 +23,12 @@ from starpulse.contracts.api.dto.milestones import (
 )
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
-from starpulse.contracts.api.dto.dag import Runs
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
-    ClaimRequest,
     CompleteRequest,
     CreateRequest,
+    DispatchRequest,
     DocArchiveRequest,
     DocCreateRequest,
     DocEditRequest,
@@ -42,7 +41,6 @@ from starpulse.contracts.api.dto.requests import (
     MoveRequest,
     ParkRequest,
     RatingRequest,
-    ReleaseRequest,
     ReopenRequest,
     RestoreRequest,
     RetiredImportRequest,
@@ -58,11 +56,10 @@ from starpulse.contracts.api.dto.results import (
     Accepted,
     Archived,
     ArchivedEach,
-    Claimed,
-    ClaimReleased,
     Completed,
     Created,
     CreatedEach,
+    Dispatched,
     DocArchived,
     DocCreated,
     DocEdited,
@@ -128,7 +125,6 @@ class ApiContract(_Api):
     laneHistory: LaneHistory
     machineHistory: MachineHistory
     taskEventHistory: TaskEventHistory
-    breakingChanges: BreakingChanges
     pulls: Pulls
     searchResults: SearchResults
     spend: Spend
@@ -166,9 +162,8 @@ class ApiContract(_Api):
         | RetiredImportRequest
         | CompleteRequest
         | ReopenRequest
-        | ClaimRequest
+        | DispatchRequest
         | ParkRequest
-        | ReleaseRequest
         | ReviewRequest
         | CreateRequest
         | MilestoneCreateRequest
@@ -195,9 +190,8 @@ class ApiContract(_Api):
         | RetiredImported
         | Completed
         | Reopened
-        | Claimed
+        | Dispatched
         | Parked
-        | ClaimReleased
         | Reviewed
         | Created
         | CreatedEach

@@ -20,15 +20,14 @@ internal and can change in any release.
   whose file name is taken; `task retire TASK`, which returns `{task}` and is refused (exit 1) for a task that is open;
   `task retired [TASK]`, which returns `{tasks}`, each `{task, name, text}`; `task cold-done`, which returns `{tasks}`, every Done task past its hot day, newest first; `task import-retired FILE...`, which returns
   `{tasks}`, the imported ids; `task complete TASK`, which returns `{task}` and is refused (exit 1) for a task that is not Done;
-  `task release TASK`, which returns `{ok, task, to, releasedFrom, reason, skill}` and ends the claim without a lane move ([cli](cli.md));
-  `task claim TASK`, `task park TASK` and `task review TASK`, which return `{ok, task, to, assignee, reason, skill}` ([cli](cli.md)) and are refused (exit 1) with the reason and skill of the guard or rule that judged them; and
+  `task dispatch TASK --session S`, which returns `{ok, task, session, reason, skill}` and is refused (exit 1) when another session holds the task or the lane is wrong; the task actor pins the session from the event it publishes, so the reply is not the pin;
+  `task park TASK` and `task review TASK`, which return `{ok, task, to, assignee, reason, skill}` ([cli](cli.md)) and are refused (exit 1) with the reason and skill of the guard or rule that judged them; and
   `task checkpoint-ac TASK CRITERION EVIDENCE`, which returns `{task, criterion, changed}` and is refused (exit 1) for a
   criterion the task lacks. Each exits 0 on success, 1 refused, 2 usage, 3 when the board cannot write tasks and, for
   every verb but `create`, 4 for an unknown task.
 - `starpulse import-history`, and the JSON Lines it reads: one `{event_id, task, lane, time}` object per line ([format](cli.md#importing-a-boards-history)).
-- The documented entry point `python -m starpulse.runtime.claude_code`, which receives Claude Code's and Codex's OTLP log
-  exports, `python -m starpulse.runtime.cursor`, which reads Cursor's agent transcripts, and `python -m starpulse.runtime.cursor_context`,
-  which restarts a Cursor task session past its context limit.
+- The documented entry point `python -m starpulse.runtime.claude_code`, which receives Claude Code's OTLP log
+  exports.
 - `GET /api/task-spend/{id}`, `GET /api/task-diff/{id}` and `GET /api/task-cost-to-go/{id}` and their bodies in
   `api.schema.json`: one task's tokens by phase with the weighted total and norm flag (see
   [Connect sources](sources.md#report-each-tasks-spend-by-phase)), its cohort's reference run against its slowest clean
@@ -87,7 +86,7 @@ is public for the names listed here:
 - `starpulse.harness_telemetry`: loading the harness file and the tiers and efforts an agent profile names, and decoding Claude Code's OpenTelemetry log export.
 - `starpulse.machine_engine`: loading and validating a machine and the `Registry` of guards and actions, replaying recorded moves (`check_lanes`, `check_events`) and event traces (`conform`, `replay`, `runs`) against it, the paths and gate `bypasses` it generates, how it is described to the page and its workflows are named, and drafting one from a Mermaid state diagram (`draft_machine`).
 - `starpulse.runs`: the runs instance a config file declares (`RunsInstance`).
-- `starpulse.sessions`: what an agent session did: the Activity each tool call performed (`activities`, labels with no arguments), and session and slice Health folded from Claude Code's and Codex's log exports (`session_health`, `slice_health`) as the DTOs the session sink writes.
+- `starpulse.sessions`: what an agent session did: the Activity each tool call performed (`activities`, labels with no arguments), and session and slice Health folded from Claude Code's log exports (`session_health`, `slice_health`) as the DTOs the session sink writes.
 - `starpulse.runtime.adapter_kit`: the test kit an adapter author runs against their work, and the helpers that serve it.
 - `starpulse.runtime.ephemeral_board`: `ephemeral_board(seeds)`, which opens a task per `TaskSeed` on a scratch board and returns their records (the `starpulse task show` reply) with the `WriteInstance` that wrote them, so a project tests against a board without a harness of its own; a record is read after the Board writer has folded every verb run through the instance.
 - `starpulse.runtime.write_instance`: `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).
@@ -118,7 +117,7 @@ is public for the names listed here:
 
 ### Moved in 0.y
 
-Release 0.y deleted the top-level facade modules and the `_internal` package; a context's package is its public path. Update each import as the table says. `python -m starpulse.claude_code`, `python -m starpulse.cursor` and `python -m starpulse.cursor_context` are now `python -m starpulse.runtime.claude_code`, `.cursor` and `.cursor_context`. The `starpulse.board_feed` logger is now `starpulse.board.model.board_feed`. `python -m starpulse.mermaid_import` is `python -m starpulse.machine_engine.adapters.mermaid_import`.
+Release 0.y deleted the top-level facade modules and the `_internal` package; a context's package is its public path. Update each import as the table says. `python -m starpulse.claude_code` is now `python -m starpulse.runtime.claude_code`. The `starpulse.board_feed` logger is now `starpulse.board.model.board_feed`. `python -m starpulse.mermaid_import` is `python -m starpulse.machine_engine.adapters.mermaid_import`.
 
 | Old path | New path |
 | --- | --- |
@@ -136,7 +135,7 @@ Release 0.y deleted the top-level facade modules and the `_internal` package; a 
 | `starpulse.history` | `starpulse.flow_metrics` |
 | `starpulse.harnesses` | `starpulse.harness_telemetry` |
 | `starpulse.otlp` | `starpulse.harness_telemetry` |
-| `starpulse.claude_code`, `starpulse.cursor`, `starpulse.cursor_context` | `starpulse.runtime.claude_code`, `.cursor`, `.cursor_context` |
+| `starpulse.claude_code` | `starpulse.runtime.claude_code` |
 | `starpulse._internal.*` | not public; use the context packages above |
 
 A package test pins this list and each module's names, so adding or removing one is a reviewed change.
@@ -207,7 +206,7 @@ the value under that key:
 | `post_merge_checks` | `{}` | the body's `## Post-merge Checks` section is absent, or holds a fenced `yaml` block whose `post_merge_checks` list is valid (see Post-merge checks); a malformed check fails |
 | `pulls_ready` | `{}` | every pull request URL in `references` is in the PR store (`GET /api/pulls`) and is either merged, whatever its `checks`, or open and not a draft with `checks` `pass` (a pull request closed without merging fails); a task citing none holds. A pull request the store lacks, or a board not yet started, fails the rule; `starpulse pull show OWNER/NAME#N` tells which cause refused it. Only a URL of the form `https://github.com/OWNER/NAME/pull/N` counts as a citation: one with a suffix such as `/files` or `#fragment` is not read. It reads the store, never GitHub, so the standing verdict leaves it out |
 | `pulls_failing` | `{}` | some pull request URL in `references` is in the PR store, `OPEN`, and has `checks` `failing`; a task citing none, or only pending, passing or merged ones, fails |
-| `pulls_clear` | `{}` | every pull request URL in `references` is in the PR store and either `MERGED` or has no unresolved review thread and is `MERGEABLE` (an open `CONFLICTING` or `UNKNOWN` one fails; GitHub reports a merged one `UNKNOWN`); a task citing none holds. It reads the store, except that an open pull request whose stored `mergeable` is not `MERGEABLE` is settled from GitHub (`gh api`; an uncomputed or unreadable answer keeps the stored value), since no event clears a stored conflict after a push; the standing verdict leaves it out. Paired with `pulls_ready` on `to = "Review"`, a ready pull request with a finding is refused and the task actor hands the holder the refusal through the `REVIEW_REFUSED` machine event |
+| `pulls_clear` | `{}` | every pull request URL in `references` is in the PR store and either `MERGED` or has no unresolved review thread and is `MERGEABLE` (an open `CONFLICTING` or `UNKNOWN` one fails; GitHub reports a merged one `UNKNOWN`); a closed unmerged one is skipped while another cited one is not closed, as in `pulls_ready`; a task citing none holds. It reads the store, except that an open pull request whose stored `mergeable` is not `MERGEABLE` is settled from GitHub (`gh api`; an uncomputed or unreadable answer keeps the stored value), since no event clears a stored conflict after a push; the standing verdict leaves it out. Paired with `pulls_ready` on `to = "Review"`, a ready pull request with a finding is refused and the task actor hands the holder the refusal through the `REVIEW_REFUSED` machine event |
 | `pulls_changed` | `{ files = ["src/web/**", "*.html"], matches = "render evidence" }` | no cited pull request changed a file matching a glob of `files` (`fnmatch`, `*` crosses `/`); otherwise a checked `- [x]` line of the task body matches `matches` (a regular expression), or every pull request with a matching file has a body that matches. A checked `- [x]` line matching `matches` clears the rule first, even when a file list is unknown. A pull request whose changed files the store does not know (saved before they were kept, opened by an event no read of GitHub has followed, or with more than 100 files) fails the rule; `starpulse pull show OWNER/NAME#N` prints its `files`. A cited pull request whose head branch names another task (`claude/task-12-page` cited by `TASK-7`) is skipped: that task carries its own evidence. Both keys are required, `files` non-empty; it reads the store, never GitHub |
 | `all_of`, `any_of`, `exactly_one`, `none_of` | a non-empty list of primitives | all, at least one, exactly one or none of them hold |
 

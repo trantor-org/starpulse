@@ -40,64 +40,25 @@ reply and tool text is never stored.
 
 ## Measure session and slice health
 
-The same receiver also reads each export of Claude Code and of Codex for what a session did, and stores it as signals
-that the server folds into per-session rows (the sessions sink reads those rows; no route serves them). Point Codex's
-log export at it in its `config.toml`:
-
-```toml
-[otel]
-log_user_prompt = false
-exporter = { otlp-http = { endpoint = "http://127.0.0.1:4319/v1/logs", protocol = "json" } }
-```
-
-Cursor exports no telemetry, so a one-shot reader takes its agent transcripts instead, and a scheduler runs it:
-
-```sh
-python -m starpulse.runtime.cursor [--root ~/.cursor/projects] [--hours 48] [--config FILE] [--redactor MODULE:FUNCTION]
-```
-
-It reads each `<project>/agent-transcripts/<conversation-id>/<conversation-id>.jsonl` written in the window into the same
-signals, under harness `cursor`; a transcript read again adds nothing. A transcript records no model, effort, token, tool
-result or per-line time, so a Cursor row has `main_model` null, zero tokens, and `agent_s`, `idle_s` and
-`operator_wait_s` of 0 (every signal takes the time of the last prompt, to the minute). It carries steps (`requests`),
-tool calls by name (each `ok`), prompts (`human` with a `<user_query>`, otherwise `injected`), task claims and `git
-switch` from `Shell` commands, `turn_ended` errors as `interrupts`, and one compaction per `compaction/segment_*.md`
-(trigger `unknown`). Subagent transcripts are not read. No Cursor row is in any ranking.
-
-A transcript carries no token count either, and Cursor has no client-side compaction threshold, so a second one-shot
-holds each Cursor task session to a context limit from outside, and a scheduler runs it every few minutes:
-
-```sh
-python -m starpulse.runtime.cursor_context [--config FILE]
-```
-
-For each tmux session `task-N` whose pane runs `cursor-agent` it reads the footer percent of the pane (`Auto  60.3%`)
-against `window_tokens` and appends `{session, task, tokens, window}` to the `cursor:context` stream, one row per session
-per minute. A session at or past `limit_tokens` is asked once to update its working doc, comment on its task and
-commit its work in progress. On a later run it is ended and started fresh on the same task through
-`session_start_url` when its pane stopped changing, or `wrapup_s` seconds after the ask. A pane with no footer percent,
-a session below the limit and a non-Cursor session are left alone. The limits are the config's `[cursor_context]`
-table ([Config file](serving.md#config-file)).
+The same receiver also reads each Claude Code export for what a session did, and stores it as signals
+that the server folds into per-session rows (the sessions sink reads those rows; no route serves them).
 
 A session is one harness session id; it has one row per task it worked, found from the branch the export names
-(`vcs.ref.head.name`, which Codex's export does not carry, so its sessions have no task until a shell `git switch` or
-`git checkout` in them names one), or a command or `Skill` call that matches an `[analytics]` `claims` pattern claims
+(`vcs.ref.head.name`), or a command or `Skill` call that matches an `[analytics]` `claims` pattern claims
 one. Every step after a claim belongs to the claimed task, until the next claim or switch, and the steps before a
 session's first claim or task-naming switch, when its launch branch names no task, belong to that first task.
 A session row also holds its prompts (`operator_prompts` are the human prompts after the task's claim), `requests`
 (the main thread's model calls) and `side_requests` (a subagent's), `steps_before_edit` (the model requests before
 the task's first successful file write), `complete` (the session loaded the `completion_skill` and then ran a shell
 command matching `completion_call`), its rejected tool decisions, compactions, interrupts, models and efforts, `tokens`
-as `{input, output, cache_read, cache_write, reasoning}` (Codex's cached tokens taken out of its input), `cost_usd`
-(null for a harness that exports no cost) and the time sums below.
+as `{input, output, cache_read, cache_write, reasoning}`, `cost_usd` and the time sums below.
 
 - A turn is the signals that share a Claude Code `prompt.id`; its end is its last signal. A prompt is labelled
   `injected` when its opening matches an `injected_openings` prefix and `human` otherwise; the label is kept and the
   prompt's text never is. With an `[analytics.labeller]` configured, a `human` Claude Code prompt's text is also sent
   to that typed-decision endpoint, which names its intent (one of the table's `criteria`, else `unsure`); that
   label is kept on the prompt and the text never is. An endpoint that is unreachable, slower than its `timeout`
-  (default 2 s) or answers nothing usable leaves the label empty and ingest goes on. Codex exports no `prompt.id`, so a Codex prompt's turn is the signals up to the next
-  prompt, and its prompts are all `human`.
+  (default 2 s) or answers nothing usable leaves the label empty and ingest goes on.
 - Time comes from the events' own durations, not from the gaps between them. `agent_s` is the sum of the model
   requests' and tool results' durations (a subagent's included) and of the `hook_execution_complete` events a turn
   caused (their `total_duration_ms`; a hook with no `prompt.id`, such as a session-start one, is no agent time). A
@@ -107,14 +68,12 @@ as `{input, output, cache_read, cache_write, reasoning}` (Codex's cached tokens 
   before to a human prompt (never the session's first), `idle_s` the same before an injected prompt, a wait for a
   background task or scheduler. A prompt typed while the turn before still worked waits for nothing. A result of an
   `operator_tools` tool (a question answered, a plan approved) is no prompt but charges the silence before it to
-  `operator_wait_s`: from the last signal before it, other than that tool's own decision, to the tool's start. Codex exports no
-  request duration, so its `agent_s` is its tool results' alone.
+  `operator_wait_s`: from the last signal before it, other than that tool's own decision, to the tool's start.
 - An `interrupt` is a Claude Code turn with a `prompt.id` and no closing reply once a later prompt arrives: the session's
-  last turn, still open when its signals end, is no interrupt. Codex has no reply signal, so only the interrupts it exports count for it.
+  last turn, still open when its signals end, is no interrupt.
 
 What an export cannot say is absent rather than guessed: Claude Code exports no user interrupt, so one is read from
-a turn that never replied, Codex exports an interrupted turn only in `codex.turn_cost`, which it sends only with an API
-key, and Codex has no compaction event.
+a turn that never replied.
 Signals are kept once per key in the `starpulse_signals` table of the history database, which `SignalFolds` folds per
 session; the hourly prune deletes rows older than 8 days. A window longer than that reads only the fold rows already
 stored.
@@ -124,9 +83,9 @@ its model, effort, duration and the four token counts, and a `compaction` names 
 it was and whether to count it, and a third holds a command:
 
 - `agent`: the subagent that made a `request` or `tool` step, from the export's `agent.name` or, for Claude Code, its
-  `query_source` when that names a subagent; Codex's `agent_name` on a tool result. Empty for the main thread. A
+  `query_source` when that names a subagent. Empty for the main thread. A
   subagent's steps carry the parent's session id, so they count toward the task that spawned it.
-- `captured`: false for every Codex signal, which the ledger does not cover yet, so a ranking leaves it out. A signal
+- `captured`: false for a stored signal of a harness the ledger does not cover, so a ranking leaves it out. A signal
   stored before the field existed reads as captured only when its harness is Claude Code.
 - `command`: a Claude Code shell result's command, empty otherwise. It is kept only when the adapter runs with
   `--redactor MODULE:FUNCTION`: the function filters the text, a heredoc body is replaced by
@@ -147,7 +106,7 @@ refold keeps the older body and is tried again after five minutes.
 ## Report each task's spend by phase
 
 `GET /api/task-spend/{id}[?hours=N]` (168 hours by default) is `{task, now, window_s, spend}`: one row per phase of
-that task over its model requests, a subagent's counted to its task, Codex and Cursor left out, by the phase's first
+that task over its model requests, a subagent's counted to its task, an uncaptured session left out, by the phase's first
 step; `spend` is empty for a task with no spend in the window. A window that is no positive number, or longer than the
 folded history, is 400 with `history_s`. Its columns:
 
@@ -182,7 +141,7 @@ against 3.81 M for the other 26, above size 5's 2.72 M).
 `GET /api/task-diff/{id}[?hours=N]` (168 hours by default) is `{task, kind, size, now, window_s, diff}`: the rows of
 the cohort of the task's `kind-<kind>` and `size-<n>` labels, one per transition (a task's steps under one skill in
 force, `none` before any load) of that kind and size, by skill, with the skill `none` left out. A task missing either
-label has no cohort, and a Codex step is in none. A *run* is one task's steps under one skill in force, and its
+label has no cohort, and an uncaptured step is in none. A *run* is one task's steps under one skill in force, and its
 activities are those the main thread's steps made in order, less the `[analytics]` `stop_activities`; a subagent's
 steps run beside the main thread, so they add edges that never happened and are left out of the activities (they count
 in a run's steps). The group of a transition is its runs of tasks that completed clean: one session loaded the
@@ -419,14 +378,10 @@ missing a lens, round or outcome answers 400 and writes nothing. Every verdict i
 history store, and `/api/events` sends each as a `verdict` event (`task`, `lens`, `round`, `outcome`, `reason`, `at`).
 A lens that has sent no verdict has no row, so a reader never counts it as `PASS`.
 
-A commit that broke the default branch rides the route as `BreakingChangeRecorded`: no `machine`, `subject` the merge
-commit and `data` holding the `detector` and optionally `outcome`, `pr`, `task` and `evidence`. All are the producer's
-strings; StarPulse names no detector. `BreakingChangePostmortemed` (`subject` the commit, `data.task` the postmortem
-task) closes the commit's row. An event with no subject commit, or a `Recorded` one with no detector, answers 400 and
-writes nothing. The history store keeps one row per commit with one detection per detector, so two detectors naming one
-commit leave one row with two detections, and a repeated event id changes nothing. `GET /api/breaking-changes` (and
-`starpulse breaking-change list`) answers each commit once with its detections, oldest first; `?open=1` (`--open`)
-keeps those with no postmortem.
+A commit that broke the default branch is a `postmortem` doc, linked from the task that broke it through the task's
+`documentation` list. StarPulse keeps no breaking-change event, table or route: `BreakingChangeRecorded` and
+`BreakingChangePostmortemed` answer 400 like any unknown type, and `/metrics` counts the postmortems with the other docs
+(`starpulse_docs{type}`).
 
 ## Post machine events as CloudEvents
 

@@ -51,7 +51,7 @@ def worker_parser() -> argparse.ArgumentParser:
 
 
 def _readiness(log: Any, feed: Any, config: Any) -> Callable[[], dict[str, Any]]:
-    """The reader of `/api/ready` over the contexts `config` makes `serve` supervise and the boot token it handed them."""
+    """The reader of `/api/health` over the contexts `config` makes `serve` supervise and the boot token it handed them."""
     from starpulse.runtime.contexts import contexts_of  # noqa: PLC0415 - only the api worker pays for it
     from starpulse.runtime.hold import BOOT_ENV  # noqa: PLC0415
     from starpulse.runtime.readiness import readiness  # noqa: PLC0415

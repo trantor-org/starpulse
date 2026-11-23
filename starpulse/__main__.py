@@ -4,7 +4,7 @@
 `event emit` publishes one CloudEvent to the JetStream ingest (`starpulse.cli.event`), `github requeue|dismiss|purge` settles a dead GitHub
 delivery (`starpulse.cli.github_inbox`), `connect` writes the
 config's `[board]` for a tracker after checking it answers (`starpulse.cli.connect`), `migrate` brings the store to its
-schema (`starpulse.runtime.store_migrate`), `rehearse` starts `serve` on a copy of a store and waits for `/api/ready`
+schema (`starpulse.runtime.store_migrate`), `rehearse` starts `serve` on a copy of a store and waits for `/api/health`
 (`starpulse.runtime.rehearse`), `import-history` adds a
 board's earlier lane changes to the store (`starpulse.runtime.history_import`), and `conform` replays the recorded
 history against the machines the project declares (`starpulse.runtime.conform`); each reads the rest of the

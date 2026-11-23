@@ -7,7 +7,6 @@ latency budget, a fourth holds that page open idle to see it degrade, and a fift
 | Script | Measures | Needs |
 | --- | --- | --- |
 | `ic_event_log.py` | concurrent fail-open appends to an instance's SQLite WAL log while a reader polls by cursor, at 10 thousand and 1 million rows | a scratch file path |
-| `flow_reads.py` | the p95 of the level's trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
 | `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
 | `soak.py` | one tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files; against a running StarPulse, or a seeded one it starts and feeds events | Google Chrome, a built page for the seeded server, or a running StarPulse |
 | `load.py` | a Locust crowd of viewers, each holding the event stream open and reading the `/api` routes: per-route p50, p95 and p99 and the stream's first snapshot, against 50 ms | a running StarPulse |
@@ -23,44 +22,6 @@ uv run python bench/ic_event_log.py .tmp/bench-events.db
 The script replaces the file it is given, along with its `-wal` and `-shm` files. Each append opens a fresh
 connection, as a short-lived writer process does. It prints one line per table size: appends per second, the
 append and cursor-poll p50 and p99, and the database size.
-
-## Flow reads
-
-```sh
-uv run python bench/flow_reads.py .tmp/bench-flow                  # 10 thousand, 1 million and 10 million
-uv run python bench/flow_reads.py .tmp/bench-flow 10000 1000000
-uv run python bench/flow_reads.py .tmp/bench-flow --reuse          # read the stores a run left
-```
-
-**When to run.** After any change to a summarised read, rerun `flow_reads.py` at 10 thousand and 1 million events.
-
-The script records synthetic Board lane changes at a fixed rate (about 125 a day) into a SQLite store, summarises
-them as the store does at start-up, and asks the level's trajectories
-for the default week 60 times each. It prints the p95 in wall and CPU time with the statements each read sends, and
-exits 1 when the CPU p95 at any size is over 2x the first size's.
-
-Result (build host, SQLite, 60 reads each; CPU time judges the 2x gate):
-
-| Events | Level p95 (wall / CPU) | Trajectories p95 (wall / CPU) | Store |
-| ---: | --- | --- | ---: |
-| 10 thousand | 18.0 / 18.0 ms | 112.5 / 112.5 ms | 3 MB |
-| 1 million | 70.1 / 26.7 ms (x1.48) | 114.3 / 113.8 ms (x1.01) | 289 MB |
-| 10 million | 19.3 / 19.3 ms (x1.07) | 84.0 / 83.9 ms (x0.75) | 3.0 GB |
-
-The ratios are the CPU p95 against the 10 thousand row, all under 2x. None of the reads touches
-`starpulse_machine_events` or `starpulse_lane_changes`. The level and trajectories send no statements: the 60
-reads share the one window `HistoryStore.level_window` read for the first, which it keeps until a lane or machine
-event is recorded or the summaries are rebuilt (and re-reads each minute), so the level's p95 is its metrics and the
-trajectories' its analytics, which `HistoryStore.level_answer` keeps as the response body for 5 seconds per route and
-query until the same writes, so a repeat request inside them runs neither. Before the window cache, at 10 thousand, the level took 131-176 ms CPU and the trajectories
-137-176 ms CPU in four runs on the same host, which was loaded (load average 94) while these rows ran. Before the
-summaries the same reads folded every lane change: at 1 million, the level took 11.6 s (p95 of 3
-reads, wall). At 10 thousand the first level read reads the
-whole history, because the trailing 12 weeks that set the aging threshold reach back past its start; that is the most it
-ever reads, and why the level's cost stays where it is as the history grows. Loading 10 million lane changes took
-69.5 seconds and `rebuild_summaries` took 289.9 seconds.
-
-Rates depend on the host, so compare runs on the same machine.
 
 ## Page latency
 

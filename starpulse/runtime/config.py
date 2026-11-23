@@ -38,11 +38,6 @@ from starpulse.contracts.analytics import Analytics, AnalyticsError, parse_analy
 from starpulse.flow_metrics.model.level import Level, LevelError, parse_level
 from starpulse.github.model.github_config import GitHub, GitHubConfigError, parse_github
 from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode, ClaudeCodeError, parse_claude_code
-from starpulse.harness_telemetry.model.cursor_context_config import (
-    CursorContext,
-    CursorContextError,
-    parse_cursor_context,
-)
 from starpulse.harness_telemetry.model.harnesses import Harnesses, load_harnesses
 from starpulse.pulls.model.pins import Repo
 from starpulse.runs.model.config import Producer, RunsInstance
@@ -236,8 +231,6 @@ class Config:
     """The machines whose unfinished placement of a task holds its settled session (`awaits`); none named: none."""
     project: Project = field(default_factory=Project)
     """The project's own command line for each step a shipped skill names (`[project.commands]`); no table: none is mapped."""
-    cursor_context: CursorContext = field(default_factory=CursorContext)
-    """The context limit a Cursor task session is reset at (`[cursor_context]`); no table: 150000 of a 200000 window."""
     claude_code: ClaudeCode | None = None
     """The Claude Code adapter the `contexts` child runs (`[claude_code]`); no table: none runs."""
     github: GitHub | None = None
@@ -306,14 +299,6 @@ def _search(raw: object) -> Search:
     try:
         return parse_search(raw)
     except SearchError as exc:
-        raise ConfigError(str(exc)) from exc
-
-
-def _cursor_context(raw: object) -> CursorContext:
-    """The `[cursor_context]` table, or the default limit when the config has none; a refusal is a `ConfigError`."""
-    try:
-        return parse_cursor_context(raw)
-    except CursorContextError as exc:
         raise ConfigError(str(exc)) from exc
 
 
@@ -493,7 +478,6 @@ def load(path: Path | None) -> Config:
         sequences=_sequences(file.sequences),
         awaits=tuple(file.awaits or ()),
         project=_project(file.project),
-        cursor_context=_cursor_context(file.cursor_context),
         claude_code=_claude_code(file.claude_code),
         github=_github(file.github),
         bridge=Bridge(

@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 PROJECTION = "pulls.projection"
 METRICS = "pulls.metrics"
-ACTOR_VIEW = "pulls.actor_view"
 SAVED_STREAM = "pulls:saved"
 #: The worker state holding, by stream, the id of the last entry a replay handed over: the `follow_events` streams.
 CURSOR = "pulls.cursor"
@@ -168,10 +167,9 @@ def keep_metrics(
     exposition: Callable[[], str],
     stop: StopEvent,
     turned: threading.Event,
-    views: Callable[[], dict[str, Any]] | None = None,
 ) -> threading.Thread:
-    """Write `exposition()`, and the task actor's `views()` when given, to the log after each turn the actor sets
-    `turned` for, when it differs from what was last written, on a thread until `stop`."""
+    """Write `exposition()` to the log after each turn the actor sets `turned` for, when it differs from what was last
+    written, on a thread until `stop`."""
 
     def run() -> None:
         written: dict[str, Any] = {}
@@ -190,8 +188,6 @@ def keep_metrics(
                 turned.wait()
                 turned.clear()
                 keep(METRICS, exposition)
-                if views:
-                    keep(ACTOR_VIEW, views)
         finally:
             stop.unlisten(turned.set)
 
@@ -203,16 +199,3 @@ def keep_metrics(
 def metrics_of(log: EventLog) -> Callable[[], str]:
     """The worker's metrics text as last kept; empty before it kept any or when the log cannot be read."""
     return kept_text(log, METRICS)
-
-
-def actor_views_of(log: EventLog) -> Callable[[], dict[str, Any]]:
-    """The task actor's views of the Review tasks as last kept; empty before it kept any or when the log cannot be read."""
-
-    def read() -> dict[str, Any]:
-        try:
-            _, views = log.state(ACTOR_VIEW)
-        except Exception:
-            return {}
-        return views if isinstance(views, dict) else {}
-
-    return read

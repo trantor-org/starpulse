@@ -316,10 +316,10 @@
         }
       }
     },
-    "/api/ready": {
+    "/api/health": {
       "get": {
         "summary": "Whether the server is ready",
-        "operationId": "get_api_ready",
+        "operationId": "get_api_health",
         "responses": {
           "200": {
             "description": "The answer",
@@ -359,6 +359,14 @@
         "parameters": [
           {
             "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lanes",
             "in": "query",
             "required": false,
             "schema": {
@@ -747,44 +755,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WindowState"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/breaking-changes": {
-      "get": {
-        "summary": "The breaking changes",
-        "operationId": "get_api_breaking_changes",
-        "parameters": [
-          {
-            "name": "open",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BreakingChanges"
                 }
               }
             }
@@ -1633,16 +1603,16 @@
         }
       }
     },
-    "/api/claim": {
+    "/api/dispatch": {
       "post": {
-        "summary": "Claim a task",
-        "operationId": "post_api_claim",
+        "summary": "Dispatch a session to a task",
+        "operationId": "post_api_dispatch",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ClaimRequest"
+                "$ref": "#/components/schemas/DispatchRequest"
               }
             }
           }
@@ -1653,52 +1623,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Claimed"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/release": {
-      "post": {
-        "summary": "Release a claim",
-        "operationId": "post_api_release",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReleaseRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ClaimReleased"
+                  "$ref": "#/components/schemas/Dispatched"
                 }
               }
             }
@@ -2777,52 +2702,6 @@
         }
       }
     },
-    "/autopilot-log": {
-      "get": {
-        "summary": "The autopilot log",
-        "operationId": "get_autopilot_log",
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/actor-view": {
-      "get": {
-        "summary": "What the task actor holds, one task's when named",
-        "operationId": "get_actor_view",
-        "parameters": [
-          {
-            "name": "task",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/swagger": {
       "get": {
         "summary": "The Swagger page of this document",
@@ -3149,127 +3028,6 @@
         "title": "ArchivedEach",
         "type": "object"
       },
-      "BreakingChange": {
-        "properties": {
-          "commit": {
-            "type": "string"
-          },
-          "pr": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "outcome": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "first_seen": {
-            "type": "number"
-          },
-          "postmortem_task": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "detections": {
-            "items": {
-              "$ref": "#/components/schemas/BreakingDetection"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "commit",
-          "first_seen",
-          "detections"
-        ],
-        "title": "BreakingChange",
-        "type": "object"
-      },
-      "BreakingChanges": {
-        "description": "`GET /api/breaking-changes[?open=1]`: each commit once, oldest first; `open=1` keeps those with no postmortem.",
-        "properties": {
-          "changes": {
-            "items": {
-              "$ref": "#/components/schemas/BreakingChange"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "changes"
-        ],
-        "title": "BreakingChanges",
-        "type": "object"
-      },
-      "BreakingDetection": {
-        "properties": {
-          "detector": {
-            "type": "string"
-          },
-          "outcome": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "evidence": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "at": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "detector",
-          "at"
-        ],
-        "title": "BreakingDetection",
-        "type": "object"
-      },
       "BuildEvent": {
         "description": "The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,\nwhich names every chunk it loads by its digest. A page that holds another build than the one it is named is out of date.",
         "properties": {
@@ -3395,93 +3153,6 @@
           "ttl"
         ],
         "title": "ClaimRelease",
-        "type": "object"
-      },
-      "ClaimReleased": {
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "to": {
-            "type": "string"
-          },
-          "releasedFrom": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task",
-          "to",
-          "releasedFrom"
-        ],
-        "title": "ClaimReleased",
-        "type": "object"
-      },
-      "ClaimRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/claim`: move `task` to In Progress and record `session` as its assignee, an opaque string; the same\nassignee claiming again changes nothing, and an assignee already on another open claim is refused.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "title": "ClaimRequest",
-        "type": "object"
-      },
-      "Claimed": {
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "to": {
-            "type": "string"
-          },
-          "assignee": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task",
-          "to",
-          "assignee"
-        ],
-        "title": "Claimed",
         "type": "object"
       },
       "CompleteRequest": {
@@ -4531,6 +4202,80 @@
         "title": "DagsDelta",
         "type": "object"
       },
+      "DispatchRequest": {
+        "additionalProperties": false,
+        "description": "`POST /api/dispatch`: a dispatch of the `session` it names (an opaque string) to `task`, which the task actor\nanswers by pinning the session and moving a Ready or Needs attention task to In Progress. `replaces` names the\nholder the caller found dead, whose lease the dispatch ends first. A task another session holds is refused.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "task": {
+            "type": "string"
+          },
+          "replaces": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "title": "DispatchRequest",
+        "type": "object"
+      },
+      "Dispatched": {
+        "properties": {
+          "task": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "session"
+        ],
+        "title": "Dispatched",
+        "type": "object"
+      },
       "DocArchiveRequest": {
         "additionalProperties": false,
         "description": "`POST /api/docs/archive`: archive `doc`.",
@@ -4559,7 +4304,7 @@
       },
       "DocCreateRequest": {
         "additionalProperties": false,
-        "description": "`POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme` or `other`.",
+        "description": "`POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`.",
         "properties": {
           "title": {
             "type": "string"
@@ -6152,7 +5897,7 @@
         "type": "object"
       },
       "Machines": {
-        "description": "`GET /api/machines`: the next page of machines entered from `open`, and each lane's surface by lane name.",
+        "description": "`GET /api/machines`: the next page of machines entered from `open`, and with `?lanes=1` each lane's surface by lane name.",
         "properties": {
           "open": {
             "anyOf": [
@@ -7874,7 +7619,7 @@
         "type": "object"
       },
       "ReadyComponent": {
-        "description": "One part of the server `/api/ready` judges.",
+        "description": "One part of the server `/api/health` judges.",
         "properties": {
           "ready": {
             "type": "boolean"
@@ -8051,53 +7796,6 @@
           "steps"
         ],
         "title": "RecentRun",
-        "type": "object"
-      },
-      "ReleaseRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/release`: end the claim whoever holds `task`: it loses its assignee, records the session as released and\nkeeps its lane, so the next claim adopts it.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "title": "ReleaseRequest",
         "type": "object"
       },
       "ReopenRequest": {

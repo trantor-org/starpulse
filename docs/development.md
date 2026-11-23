@@ -91,7 +91,7 @@ difference, and runs `redocly lint` on the OpenAPI document (rules in `starpulse
 A route is declared once in `ROUTES` in `starpulse/contracts/api/registry.py`, with its summary, query names and DTOs; the OpenAPI
 document is built from that table, and `tests/unit/contracts/test_openapi.py` fails when the document, the registry and the
 routes the app mounts disagree.
-[`bench/`](benchmarks.md) holds the instance event-log and flow-read benchmarks, the page-latency harness that times every
+[`bench/`](benchmarks.md) holds the instance event-log benchmark, the page-latency harness that times every
 request and page surface against the 50 ms budget, and a Locust load test that holds that budget under many viewers.
 
 [`design/`](../design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`) and, behind
@@ -109,15 +109,3 @@ After a push to `main` that changes the page (`starpulse/web/**`) or another pre
 `starpulse-ui-preview` Woodpecker workflow runs `ci/ui_preview.py --main`, which republishes both demos under `main/` on the
 `gh-pages` branch GitHub Pages serves: the [live demo](https://trantor-org.github.io/starpulse/main/starpulse.html),
 with a screenshot of each starpulse view that the README shows. Pull requests get no published preview.
-
-## Flow read scaling
-
-Flow health and the level read the summaries the history store keeps on write, so a read costs the activity of its
-window, of the trailing 12 weeks (the level's aging threshold) and of the tasks still in flight, not the length of the
-history. [`bench/flow_reads.py`](../bench/flow_reads.py) records 10 thousand, 1 million and 10 million Board lane changes at
-a fixed rate into a SQLite store and reads the default week of each: the CPU p95 of health, the level and its trajectories
-at 1 million and at 10 million stayed within 1.6x of the p95 at 10 thousand in every run (one run: health 6.5, 6.3 and
-8.0 ms; level 171, 142 and 180 ms; trajectories 164, 135 and 155 ms), and no read touches the two raw tables. The full table and how to
-rerun it are in [Benchmarks](benchmarks.md#flow-reads). What still grows with the history: opening a store
-whose summaries are empty folds every row once (about 6 minutes for 10 million lane changes), and a history that
-supplies only `lane_rows` and `level_runs`, or a level on a machine other than the Board, is read whole.

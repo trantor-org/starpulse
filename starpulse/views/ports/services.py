@@ -38,6 +38,8 @@ class Services:
     harnesses: Harnesses | None = None
     start_session: Callable[..., str] | None = None
     """Starts a task's session in the harness the page picked."""
+    dispatch: Callable[[str, str, str], None] | None = None
+    """Publishes the dispatch of a session to a task, with the holder it replaces: `(task, session, replaces)`."""
     events: CloudEventsIngest | None = None
     webhook: Callable[[str | None, bytes], tuple[int, dict]] | None = None
     """Answers one `POST /api/webhook`: `(authorization, body)` to `(status, JSON body)`."""
@@ -56,7 +58,6 @@ class Services:
     lanes: Callable[[], dict[str, Any]] | None = None
     slow_read_s: float = SLOW_READ_S
     actor_metrics: Callable[[], str] | None = None
-    actor_view: Callable[[], dict[str, Any]] | None = None
     lane_metrics: Callable[[], str] | None = None
     autopilot_metrics: Callable[[], str] | None = None
     storage_metrics: Callable[[], str] | None = None
@@ -68,4 +69,3 @@ class Services:
     skill_cost_metrics: Callable[[], str] | None = None
     child_cpu_metrics: Callable[[], str] | None = None
     github_metrics: Callable[[], str] | None = None
-    autopilot_log: Callable[[], dict[str, Any]] | None = None

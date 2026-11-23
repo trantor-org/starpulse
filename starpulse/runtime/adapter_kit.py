@@ -224,7 +224,7 @@ def serve(
     machines = feed.machines if feed else {}
     settings, kept = f"sqlite:///{tmp_path / 'settings.sqlite'}", f"sqlite:///{tmp_path / 'history.sqlite'}"
     for store in () if migrated else (settings, kept):
-        maintain(store, machines, None)
+        maintain(store, machines)
     log = EventLog(settings)
     board = board or machines_only.refusing()
     stop = StopEvent()

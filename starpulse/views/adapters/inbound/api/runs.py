@@ -16,7 +16,6 @@ from starpulse.runs.adapters.inbound.temporal_completion import completion
 from starpulse.views.adapters.inbound.api.answering import client
 from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import guarded, pushed, writing
-from starpulse.views.application.commands.moves import release_closed
 from starpulse.views.application.commands.runs import rerun_dag, run_dag
 
 if TYPE_CHECKING:  # annotation only
@@ -41,9 +40,6 @@ def routes(api: Api) -> list[ApiRoute]:
         content_type = request.headers.get("Content-Type")
         return pushed(request, "ingest", lambda auth, raw: events(auth, content_type, raw), MAX_BATCH_BODY)
 
-    def release(task: str) -> None:
-        release_closed(feed, task, api.board.release, api.board.released)
-
     def temporal_completion(request: Request) -> Response | None:
         events = services.events
         if events is None:
@@ -51,7 +47,7 @@ def routes(api: Api) -> list[ApiRoute]:
         return pushed(
             request,
             "ingest",
-            lambda auth, _raw: completion(events, auth, request.headers, request.query_params, release),
+            lambda auth, _raw: completion(events, auth, request.headers, request.query_params),
             MAX_BATCH_BODY,
         )
 

@@ -114,7 +114,7 @@ Every child is a `subprocess` child with its own imports, on every platform, and
 
 `[worker_memory.api]` and `[worker_memory.contexts]` override either key for a child (whole megabytes, 1 or more; `soft_mb` below `hard_mb`). An unknown child, an unknown key or a soft limit not below the hard one is refused at load by name, and so is a per-context key from before the contexts shared a process (`[worker_memory.pulls]`, `[worker_memory.scheduler]`, `[worker_memory.temporal]` and the rest): the message names `[worker_memory.contexts]` as the replacement. The `api` child holds the telemetry window and the read model, so its limit is set above the peak the deployment measures; Trantor's `starpulse.toml` does.
 
-`GET /api/ready` is the api child's readiness: each context stamps its start in the `ready` worker state with the boot
+`GET /api/health` is the api child's readiness: each context stamps its start in the `ready` worker state with the boot
 token `serve` handed it (`STARPULSE_BOOT`), so a stamp left by an earlier boot, or copied with a store, never counts.
 `starpulse rehearse` reads it (see the CLI document).
 
@@ -385,7 +385,7 @@ GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_con
                    task cites (a read of those rows alone). A `number` that is not an integer, or a `state`
                    that is none of those, is 400
 GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
-                   names (none without a build); `starpulse_snapshot_build_seconds_count` and `_sum`, the snapshots the API built and the
+                   names (none without a build); `starpulse_docs{type}`, the open board docs of each type; `starpulse_snapshot_build_seconds_count` and `_sum`, the snapshots the API built and the
                    seconds they took (0: it serves the stored one); `starpulse_board_lane_unattributed_total`, the board:lanes entries
                    any process appended since this one started that name no actor; `starpulse_machine_conformance_violations_total{machine}` and
                    `starpulse_machine_conformance_events_total{machine}`, the recorded moves of each machine that no
@@ -401,17 +401,19 @@ GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doc
                    No checks (and ok) when the server runs with no config to check
 GET /api/openapi   The OpenAPI 3.1 document of every route (`starpulse/schemas/openapi.json`)
 GET /swagger       Swagger UI drawing that document (loads a pinned release from jsDelivr)
-GET /api/ready     {ready, components}: 200 when the event log is at the schema head, the Board is assembled and every
+GET /api/health     {ready, components}: 200 when the event log is at the schema head, the Board is assembled and every
                    context this `serve` supervises has started, else 503 naming each component (`store`, `board`, `writer`,
                    `contexts`) that is not, each {ready, detail}; reads no task and writes nothing. `starpulse doctor` and
                    `starpulse rehearse` read it
-GET /api/machines[?open=NAME][&before=T][&limit=N]
+GET /api/machines[?open=NAME][&before=T][&limit=N][&lanes=1]
                    {open, machines, more}: the next `limit` machines (default 20, at most 100) entered from the machine
                    `open` (default the In Progress machine), newest activity first, each as `{name, last}` (the snapshot
                    `flows` already holds the body and derivation). `before` is the `last` of the last machine held (epoch
                    seconds; none: the newest; a machine with no task counts as 0), machines sharing the boundary activity all come in
                    one page, so walking `before` neither repeats nor skips one. An `open` that is not a machine here is
-                   404, a `before` that is not a finite number or a `limit` outside 1-100 is 400
+                   404, a `before` that is not a finite number or a `limit` outside 1-100 is 400. `lanes=1` adds a top-level `lanes` map
+                   (each lane's `tools`, `exits` and `skill`, read from the policy on each such request); no page asks for it, so
+                   the body leaves it out by default
 GET /api/done[?before=T][&limit=N]
                    {tasks, more}: the next `limit` done tasks (default and most as `/api/machines`) past their hot day,
                    newest done first, each {id, title, state, model, labels, milestone, type, entered} read from the
@@ -779,12 +781,6 @@ applied_by = "pin-bump"
 # deliver = ["./bin/ship", "{task}"]
 # test = ["make", "test", "{args}"]
 
-# Optional: hold Cursor task sessions to a context limit (see `python -m starpulse.runtime.cursor_context` in docs/sources.md).
-# [cursor_context]
-# limit_tokens = 150000    # a session past this many context tokens is asked to checkpoint, then restarted fresh
-# window_tokens = 200000   # the context window the pane footer's percent is read against; limit_tokens may not exceed it
-# wrapup_s = 600           # seconds an asked session has to checkpoint before it is restarted regardless
-
 # Optional: have `serve` run the Claude Code receiver (see docs/sources.md); every key is optional.
 # [claude_code]
 # host = "0.0.0.0"         # the address to bind (default 127.0.0.1)
@@ -815,7 +811,7 @@ than 60s).
 
 ### Settings reference
 
-The board, `[scheduler]`, `[analytics]`, `[search]`, `[project]`, `[cursor_context]`, `[claude_code]` and `[github]` are described by the examples above and
+The board, `[scheduler]`, `[analytics]`, `[search]`, `[project]`, `[claude_code]` and `[github]` are described by the examples above and
 by [Scheduler](#scheduler); `[level]` by the flow graph it draws. Every other setting is described below, generated from the
 models in `starpulse/runtime/config_model.py`, which the loader takes its keys and defaults from: edit a description there, run
 `python -m starpulse.runtime.config_reference`, and commit the result. CI fails when this section differs from the models.
@@ -856,7 +852,6 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `project` (table): The project's own command line for each step a shipped skill names.
 - `sequences` (table of list of text): The phases a task goes through, in order, keyed by task type (`story`, `bug`), with `default` for a type it does not name. A lifecycle machine link that lists `routes` sends a task to the route its sequence names next.
 - `awaits` (list of text): The lifecycle machines whose unfinished placement of a task ends in an event, so a session that settles meanwhile is not resumed: a link's lens in the phase it runs, or a machine with no link until it ends.
-- `cursor_context` (table): Holds Cursor task sessions to a context limit (see docs/sources.md).
 - `claude_code` (table): Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).
 - `github` (table): Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).
 - `bridge` (`[bridge]` table): The NATS bridge's server that `serve` supervises unless `enabled = false` (see The NATS server).
@@ -953,7 +948,7 @@ time as the row's `updated_at` (a row the store already holds wins), then rename
   "inFlight": [{"task": "TASK-1", "title": "First", "model": "@agent-standard-high", "started": 1788307000.0, "url": "https://claude.ai/code/session_01"}],
   "next": {"task": "TASK-2", "title": "Second", "verdict": "waits", "reason": "cpu", "priority": "high/low"},
   "pauses": [{"harness": "claude", "until": 1788344400.0, "reason": "usage limit"}],
-  "sessionsByHarness": {"claude": {"use": 1.0, "limit": 3.0}, "cursor": {"use": 0.0, "limit": 2.0}},
+  "sessionsByHarness": {"claude": {"use": 1.0, "limit": 3.0}, "other": {"use": 0.0, "limit": 2.0}},
   "needsOperator": [{"task": "TASK-3", "title": "Choose the store"}],
   "blockedBy": [{"name": "cpu", "use": 95.0, "limit": 80.0}, {"name": "start-limit", "use": 48, "limit": 48, "count": 3}],
   "gateHistory": [{"at": 1788307200.5, "dimensions": [{"name": "cpu", "use": 95.0, "limit": 80.0}], "blockedBy": [{"name": "cpu", "use": 95.0, "limit": 80.0}]}]
@@ -1325,12 +1320,6 @@ failed board write of it is logged and counted in `starpulse_task_actor_refusals
   rate. The actor reads its lock-held series (this one and `pin_held`) with a 2 s timed acquire and
   omits them when it cannot, so a stuck turn never blocks the scrape; the recovery gauge needs no lock.
 
-`GET /actor-view` serves the actor's view of each Review task, as the pulls worker last kept it (every 15 s), and
-`?task=TASK-N` the one task's, or 404. A view holds `feed_lane`, the lane the board feed reports; `seen_lane` and
-`seen_prs`, what the actor last indexed (null and empty before it saw the task); `tried`, the last move it sent as
-`{lane, event, evidence}`; and `facts`, the evidence of each fact its lane waits on, null where the fact does not hold.
-A Review task whose `facts.pr_terminal` holds and whose `tried` is null is one the actor never derived.
-
 A hold or flag comment lists the first three reasons and a count of the rest, and is clipped to 4000 characters
 (`COMMENT_CAP`), so a failed probe of hundreds of references does not write a 26 KB comment.
 
@@ -1368,8 +1357,8 @@ earlier history; the stored-history replay judges it from the initial state. Gua
 ## History recorder lag
 
 The `contexts` child's flow-metrics recorders copy each stream's entries from the event log into the history store.
-`GET /metrics` reports how far behind each copy is: `starpulse_history_recorder_lag_seconds{stream}` for `machine:events`,
-the verdict stream and the breaking-change stream, the age of the oldest entry past the stream's saved checkpoint, 0 when
+`GET /metrics` reports how far behind each copy is: `starpulse_history_recorder_lag_seconds{stream}` for `machine:events`
+and the verdict stream, the age of the oldest entry past the stream's saved checkpoint, 0 when
 the copy is caught up. A value that keeps growing means the recorder has stopped, and `starpulse task trace` shows a
 shorter path than the live machine holds. The scrape omits the series when the log cannot be read.
 

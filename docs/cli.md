@@ -19,7 +19,6 @@ starpulse task profile PROJ-45 @agent-standard-high  # route it to an agent prof
 starpulse task archive PROJ-45 --reason "superseded"  # archive it from any lane, with the reason as a comment
 starpulse task verdict PROJ-45 live pass --evidence "up=1"  # record a post-merge check's verdict on its task
 starpulse task miss PROJ-45 live --title "Repair live"  # file the fix and record the MISS verdict, both or neither
-starpulse breaking-change list --open          # commits that broke the default branch with no postmortem yet, each with its detections
 starpulse task restore PROJ-45                   # return an archived task to the board, unchanged
 starpulse task retire PROJ-45                    # take a finished task off the board into the history store
 starpulse task retired PROJ-45                   # read a retired task's file name and text back
@@ -36,8 +35,8 @@ starpulse runs start prod/nightly                # start a run-safe workflow thr
 starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
-starpulse rehearse --config starpulse.toml --database-url copy.sqlite  # start serve on a COPY of the store and wait for /api/ready
-starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
+starpulse rehearse --config starpulse.toml --database-url copy.sqlite  # start serve on a COPY of the store and wait for /api/health
+starpulse skills install --claude        # copy the bundled skills into .claude/skills
 starpulse help --agent                           # every verb with its arguments, output keys and exit codes
 ```
 
@@ -82,9 +81,8 @@ lists exactly the verbs there are.
 | `task import-retired` | `FILE...` | `tasks`: the id each file's front matter names, each file kept in the history store as `task retire` keeps one, under its own name and byte for byte; the same file again is accepted, so a run a refusal stopped can be given the same files again; a file that is not there exits 2 before any is sent, a file with no id, a task on the board or other text under a kept number exits 1, a board that does not import retired tasks exits 3 |
 | `task complete` | `TASK` | `task`: a Done task moved to the board's completed tasks, where it is still read and edited; a task that is not Done (or already completed) is refused with the board's reason and skill (exit 1), an unknown task exits 4, a board that does not complete tasks exits 3 |
 | `task reopen` | `TASK` | `task`: a Done task, in the board's tasks or its completed ones, returned to In Progress with `--reason` as a `Reopened from Done:` comment written by the task actor; a task that is not Done, or one a merged pull request cites, is refused with the reason (exit 1), a board that does not reopen tasks exits 3 |
-| `task claim` | `TASK`, `--session`, `--harness` | `ok`, `task`, `to`, `assignee`, `reason` and `skill`: the task moved to In Progress with the session (an opaque string; `--session`, else `STARPULSE_SESSION`, required) recorded as its `assignee`; a claim by the holder it already has rewrites the claim without a lane move, so it still undoes a park the server has not yet placed; a task held by another session (or In Progress with no holder), or a session already holding another In Progress task, is refused with the holder or task named (exit 1) and nothing written; an unknown task exits 4, a board that cannot move tasks exits 3 |
-| `task release` | `TASK`, `--session`, `--harness` | `ok`, `task`, `to`, `releasedFrom`, `reason` and `skill`: the claim on the task ended whoever holds it (`POST /api/release`): it loses its `assignee`, records the session as `released_from` and keeps its lane, so the next `task claim` adopts it. The caller judges whether the holder is gone; a task no session holds is refused (exit 1) with nothing written; an unknown task exits 4, a board that cannot release claims exits 3 |
-| `task park` | `TASK`, one of `--until-task TASK` or `TASK#K` (repeatable), `--until SUBJECT` (repeatable event subject) and `--operator REASON`, and `--comment` | `ok`, `task`, `to`, `reason` and `skill`: the task paused for exactly one typed reason, which picks the lane in the same write: `--until-task` adds the named tasks to its dependencies (`TASK#K` also records that it needs only criterion K of that task, and is refused when K is absent or already checked) and `--until` replaces the events it waits on (each an alert or deploy subject, `starpulse.<board>.alert.<rule>.<event>` or `starpulse.<board>.deploy.<component>.<event>`, written as a `kind: event` start criterion), both moving it to `waiting`: the task actor releases it on the first of those events, or at once when that event is the latest its run recorded; `--operator` moves it to `needs_attention` with the reason as its pause reason. No reason or more than one exits 2; a named task that is already Done or is the task itself, subjects on a task that already waits on a task, or a list that is empty, not strings or not alert or deploy subjects is refused (exit 1) with nothing written; an unknown task exits 4, a board that cannot edit tasks exits 3 |
+| `task dispatch` | `TASK`, `--session`, `--harness`, `--replaces` | `ok`, `task`, `session`, `reason` and `skill`: `POST /api/dispatch` publishes `SESSION_DISPATCHED` for the session (an opaque string; `--session`, else `STARPULSE_SESSION`, required) and the task; the task actor pins it as the task's `assignee` and moves a Ready or Needs attention task to In Progress, and the lane moves only then. `--replaces` names a dead holder whose lease ends first. A task another session holds, a session already holding another In Progress task, or a task outside Ready, Needs attention and In Progress is refused with the holder or task named (exit 1) and nothing published; an unknown task exits 4, a board that cannot dispatch exits 3 |
+| `task park` | `TASK`, one of `--until-task TASK` or `TASK#K` (repeatable), `--until SUBJECT` (repeatable event subject) and `--operator REASON`, and `--comment` | `ok`, `task`, `to`, `reason` and `skill`: the task asked to pause for exactly one typed reason, which writes its gate and a request comment and no lane (`to` names the lane the task actor is asked to move it to): `--until-task` adds the named tasks to its dependencies (`TASK#K` also records that it needs only criterion K of that task, and is refused when K is absent or already checked) and `--until` replaces the events it waits on (each an alert or deploy subject, `starpulse.<board>.alert.<rule>.<event>` or `starpulse.<board>.deploy.<component>.<event>`, written as a `kind: event` start criterion), the task actor moves it to `waiting` on the request (`Wait requested:` for `--until`, the dependency for `--until-task`) and releases it on the first of those events, or at once when that event is the latest its run recorded; `--operator` writes an `Ask requested:` comment, and the task actor moves it to `needs_attention` with the reason as its pause reason. No reason or more than one exits 2; a named task that is already Done or is the task itself, subjects on a task that already waits on a task, or a list that is empty, not strings or not alert or deploy subjects is refused (exit 1) with nothing written; an unknown task exits 4, a board that cannot edit tasks exits 3 |
 | `task review` | `TASK`, `--ref` (repeatable), `--summary`, `--comment` | `ok`, `task`, `to`, `reason` and `skill`: the task moved to Review with the `--ref` evidence added to its references and `--summary` as its final summary; the board's `[[board.guards]]` judge the record the move would leave, and a rule's refusal exits 1 with its reason and skill and writes nothing; an unknown task exits 4, a board that cannot edit tasks exits 3 |
 | `task checkpoint-ac` | `TASK`, `CRITERION`, `EVIDENCE` | `task`, `criterion` and `changed` (`["acceptanceCriteria"]`, or empty when the criterion was already checked): the criterion `#CRITERION` checked and the comment `Verified AC #N: <evidence>` appended in one write, with the refusals of `task edit` (a session that does not hold the task may check a criterion; the write names it in a comment); a criterion the task lacks exits 1 and writes nothing, blank evidence exits 2, an unknown task exits 4, a board that cannot read or edit tasks exits 3 |
 | `task edit --editor` | `TASK` | `task` and `changed`: opens the task rendered as markdown (the same rendering as `task show --markdown`) in `$VISUAL`, else `$EDITOR`, else `vi`, and imports what the operator changed as the events of an edit, by actor `operator` with writer `break-glass`; an edit that removes or adds a section or field line the rendering cannot map back, or changes `Status` (a move is not an edit), is refused naming it with code `refused` and writes nothing; no change writes nothing |
@@ -113,8 +111,8 @@ lists exactly the verbs there are.
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load (a malformed `[project.commands]` entry included), or when a built-in board's machine names a writer workflow no `[[runs]]` domain lists, which `serve` refuses to start on |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
 | `session records` | `SESSION`, `--transcripts`, `--config` | `session`, `records` (the count) and `groups`, each `{task, records}` in the order the tasks are first named, `task` null for a session that names none; the records are the transcript's own JSON lines, read from `<transcripts>/<project>/<session>.jsonl` (`--transcripts`, else `[board] transcripts`, else `~/.claude/projects`) and never stored; a task is claimed by a branch the key scheme names or by a shell command or `Skill` call a `claims` pattern matches, and the records before the first claim join the first task; offline; exit 4 when no transcript of the session exists, 1 when the config does not load |
-| `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |
-| `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |
+| `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude}`, the harness `absent`, `installed`, `outdated` or `modified` |
+| `skills install` | `--claude`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |
 | `help --agent` | | `exit_codes` and `verbs` |
 
 `search` reads `GET /api/search?q=QUERY[&limit=N][&label=L]...[&finished_within_days=N][&before=TASK]`: the words of `q` are each a quoted phrase and all must match, so
@@ -181,11 +179,11 @@ A batch move names `tasks` in place of `task`: one `POST /api/move` with `{tasks
 
 A move may also name the mover's session: `POST /api/move` takes `{task, to, actor, session, harness}`, and
 `starpulse task move` sends `--session`, else `STARPULSE_SESSION`, and `--harness`, else `STARPULSE_HARNESS`; the
-task `create`, `edit`, `assign`, `archive` and `checkpoint` verbs send the same two. Only a claim (`POST /api/claim`) calls the writer with the session as a fourth argument,
-`writer(task, status, actor, session)`; a move, even one that names a session, calls it with three, so a move from a session
-that does not work the task, such as an answer's resume, never makes that session the holder. The writer records the session as the task's assignee when the call is a claim, `BoardTask.assignee`
+task `create`, `edit`, `assign`, `archive` and `checkpoint` verbs send the same two. The writer is called
+`writer(task, status, actor)`: a move never makes its session the holder. Only the task actor pins a session, from the
+`SESSION_DISPATCHED` event `POST /api/dispatch` publishes, and clears it on the harness session-end event. `BoardTask.assignee`
 carries it back, and a `Written.advice` string rides in the move's answer (`advice` in the CLI document, empty when
-the writer has none). The native adapter's writer records the assignee as the task's frontmatter `assignee` (a release removes it and writes `released_from`) and adds no line to its notes.
+the writer has none). The native adapter's writer records the assignee as the task's frontmatter `assignee` (the harness session-end event removes it) and adds no line to its notes.
 
 `doctor` runs every check even when one fails, so one call names every fault. The checks: `config` (the config file
 loads), `server` (it answers `/api/snapshot`), `adapter:board` and one `adapter:<name>` per `[[runs]]` instance (it is
@@ -202,14 +200,14 @@ runs in. Neither runs while the config or the server cannot be read.
 the server's own snapshot, config and log and held for a minute; the page draws it as the Ledger's doctor banner. A
 server with no contract to read answers `{ok: true, checks: []}`.
 
-`GET /api/ready` answers 200 when the server can serve the board and 503 when it cannot, with the same body:
+`GET /api/health` answers 200 when the server can serve the board and 503 when it cannot, with the same body:
 `{ready, components: {<name>: {ready, detail}}}`. The components are `store` (the event log is at the schema head),
 `board` (the Board is assembled), `writer` (the Board context, which dates the lanes and sweeps the claims, has started) and
 `contexts` (every other supervised context has started in this boot). `doctor` adds a `ready` check that fails naming
 each component that is not ready.
 
 `rehearse --config <c> --database-url <copy>` is the dress rehearsal of a release: it migrates the COPY, starts
-`serve` on it on a free loopback port below the ephemeral range, polls `/api/ready` and stops the server. It exits 0 when the server was
+`serve` on it on a free loopback port below the ephemeral range, polls `/api/health` and stops the server. It exits 0 when the server was
 ready within `--budget` seconds (default 120) and 1 otherwise, printing the unready components and the end of the
 server's log. The server runs with `STARPULSE_REHEARSE` set: the config drops its TLS, telemetry, session start,
 tokens, take-over command, producers and `[bridge]` (no `nats` child) and polls no pull requests, only the `board`, `flow-metrics` and `signal-folds` contexts run
@@ -227,8 +225,8 @@ impact, recheck its health, and diagnose only once it is green). They reach a pr
 `starpulse command run` with the `start`, `test`, `check`, `deliver`, `pr-status`, `check-logs`, `health`, `snapshot` and
 `mitigate` commands; a command
 the project does not map exits 4, and the skill does that step as the project's `AGENTS.md` says. `starpulse command show NAME` reads the same table without running it: it prints the `--arg` names the command's argv needs and, for a command with a `{body}`, the project's pull request template (the first of `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/pull_request_template.md`, `pull_request_template.md` beside the config), so a delivery skill's body keeps the project's sections on the first attempt. `skills install`
-copies them to `.claude/skills` (`--claude`) or `.agents/skills` (`--codex`) in the working directory, or with `--user`
-to `~/.claude/skills` or `~/.agents/skills`. An install records what it wrote, so a copy you edited afterwards is
+copies them to `.claude/skills` (`--claude`) in the working directory, or with `--user`
+to `~/.claude/skills`. An install records what it wrote, so a copy you edited afterwards is
 refused (exit 1) until you pass `--force`, while one the package has since updated is replaced; `skills list` reports
 which state each copy is in.
 
@@ -244,7 +242,7 @@ reads each skill's directory where it sits, so the machine beside `SKILL.md` is 
 step.
 The `starpulse-board` mod ([trantor-org/starpulse-board](https://github.com/trantor-org/starpulse-board), `/plugin marketplace add trantor-org/starpulse-board`, then `/plugin install starpulse-board@starpulse-board`)
 runs `starpulse board --assignee <session id>` when a session starts, after each tool call and after each turn, so a
-task claimed mid-turn shows before the turn ends. `--assignee` and `/api/held` match a session by any name a claim can carry: its local Claude id, its bridge id (`session_x`, `cse_x`) or its Remote Control URL, the bridge the session's transcript names under `[board] transcripts`. It opens no pane: the band above the prompt is the whole mod, in the
+task dispatched mid-turn shows before the turn ends. `--assignee` and `/api/held` match a session by any name a dispatch can carry: its local Claude id, its bridge id (`session_x`, `cse_x`) or its Remote Control URL, the bridge the session's transcript names under `[board] transcripts`. It opens no pane: the band above the prompt is the whole mod, in the
 terminal and in Claude Desktop. It draws the held task's lane icon, ID, title (or the reason a Needs attention task waits
 on the operator, or what a Waiting task waits on), a bar with one segment per checked acceptance criterion and `k/n`, the
 delivery phases and substates the board serves, the pull request's checks, threads and freshness, and the session's cost,
@@ -391,7 +389,7 @@ Revert the edit, then declare the change and revise again.
 
 ## Serving a lane's tools to the session that holds it
 
-`GET /api/machines` carries a top-level `lanes` map from the board policy (the database when its tables hold rows, else the
+`GET /api/machines?lanes=1` carries a top-level `lanes` map from the board policy (the database when its tables hold rows, else the
 files): each lane's allowed harness `tools`, its typed `exits` and its bound `skill`. An exit tool exists for each event an
 agent may fire from the lane: `board_review`, `board_park(reason, until)`, `board_defer(question)`, and
 `board_<event>` for any other. Each carries the JSON schema generated from the lane's exits; `until` is a task id

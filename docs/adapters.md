@@ -33,20 +33,7 @@ The `starpulse.board.Board` the server holds says:
 
 `serve` records every machine event (task- and run-keyed) and each Board lane change it
   places into StarPulse's own store (`starpulse_machine_events`, `starpulse_lane_changes`), and the page reads that
-  store: a `Board` has no history of its own. In the same transaction the store folds each of them into
-  summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
-  seconds in the from-state, per UTC day, machine, from-state and to-state), `starpulse_cases` (each task's or run's
-  current state, when it entered it and its last event), `starpulse_lane_intervals` (each stay in a lane, with the source its event id names) and
-  `starpulse_lanes` (per source and lane, the tasks in it now and when one first entered it). A store whose summaries carry no stamp, or one that differs, rebuilds them from its rows when
-  `starpulse migrate` maintains it (`HistoryStore.build_summaries`). The stamp is a `derived_stamp:summaries` settings row
-  hashing the summary table definitions, the initial and final states, moves and Board lanes of the machines, and the
-  fold's source, so an edit to a label or a position rebuilds nothing. `rebuild_summaries` folds the raw rows in memory through the steps a write takes, then drops, creates from metadata and fills
-  the tables in one transaction, so a reader sees the old or the new, never empty ones. The summaries follow the order events were recorded, and cover only the machines the page draws when the
-  store opens. The level and trajectory reads use these summaries and never scan the two
-  raw tables: the Board's level reads the trajectories of the tasks that changed lane in its window or the trailing
-  12 weeks (which set the aging threshold) and of the tasks still waiting or working, and takes where the history begins
-  and which sources reported from the lane counts. Their cost follows that activity, not the history's length (see
-  [Flow read scaling](development.md#flow-read-scaling)). A history that supplies only `lane_rows` and `level_runs` is read whole, and a level on a machine other than the Board reads that machine's events whole.
+  store: a `Board` has no history of its own.
 
 `starpulse.board.adapters.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
@@ -104,7 +91,7 @@ and cut to 50 characters. A new milestone takes the next number past every file 
 first heading byte for byte) and renames the file when the title changes, and an archive moves the file to
 `archive/milestones/`.
 It keeps docs in Backlog.md's format too: `docs/<folder>/doc-N - slug.md`, with the front matter `id`, `title`, `type`
-(`specification`, `guide`, `readme` or `other`), `created_date` and `updated_date` and the doc's text after it. A
+(`specification`, `guide`, `readme`, `postmortem` or `other`), `created_date` and `updated_date` and the doc's text after it. A
 subfolder of `docs/` such as `specs/` is part of the doc's path and stays through every edit. The slug is the title
 with `<>:"/\|?*` read as a space, `'(),` dropped and runs of space made `-`, its case kept. A new doc takes the next
 number past every file in `docs/` and `archive/docs/`; an update rewrites only the front matter lines it changes (and

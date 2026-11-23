@@ -1,9 +1,7 @@
-"""The signals session and slice health fold, read from Claude Code's and Codex's OTLP/HTTP log exports.
+"""The signals session and slice health fold, read from Claude Code's OTLP/HTTP log exports.
 
 An export is `resourceLogs[].scopeLogs[].logRecords[]`, each record a bag of typed attributes. A record becomes one
-`Signal`, keyed by the harness's own session id (`session.id` for Claude Code, `conversation.id` for Codex) and ordered
-by its `event.timestamp`. Codex names its event in the `event.name` attribute, which wins over the log record's own
-`eventName`, since the attribute is what the exporter sets.
+`Signal`, keyed by Claude Code's `session.id` and ordered by its `event.timestamp`.
 
 What a signal keeps is a count, a duration, a model or effort name, a tool, skill or decision name and the branch;
 the tool output and account fields every such record also carries are never read; a prompt's text is read only
@@ -12,10 +10,7 @@ reply's text is read only for whether its first sentence asks, and never kept; a
 a shell tool's input is read only for the `git switch` or `git checkout` ref it names, which is kept as a `branch`
 signal.
 
-| harness | records read |
-|---|---|
-| Claude Code | `user_prompt`, `api_request`, `tool_decision`, `tool_result`, `hook_execution_complete` (inside a turn), `skill_activated`, `assistant_response`, `compaction` |
-| Codex | `codex.conversation_starts`, `codex.user_prompt`, `codex.sse_event` (`response.completed`), `codex.tool_decision`, `codex.tool_result`, `codex.skill_invocation`, `codex.turn_cost` (an interrupted turn) |
+Records read: `user_prompt`, `api_request`, `tool_decision`, `tool_result`, `hook_execution_complete` (inside a turn), `skill_activated`, `assistant_response`, `compaction`.
 """
 
 import importlib
@@ -29,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
-from starpulse.contracts.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
+from starpulse.contracts.signals import CLAUDE_CODE, Signal, claim_key, claimed, main_thread_source
 from starpulse.harness_telemetry.model.activity import SHELLS, activities, elide_heredocs, paths, writes_file
 from starpulse.harness_telemetry.model.intent_classification import intent_label
 from starpulse.harness_telemetry.adapters.inbound.otlp import BRANCH, _attributes, _epoch, _records
@@ -37,7 +32,7 @@ from starpulse.harness_telemetry.adapters.inbound.otlp import BRANCH, _attribute
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
 
-__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "held", "redactor", "signals", "telemetry_log"]
+__all__ = ["CLAUDE_CODE", "Signal", "TelemetryLog", "held", "redactor", "signals", "telemetry_log"]
 
 log = logging.getLogger(__name__)
 
@@ -45,8 +40,6 @@ log = logging.getLogger(__name__)
 class ClaimUnreadable(Exception):
     """The stored claims could not be read, which is not the same as a session having claimed nothing."""
 
-#: Where Codex runs its main agent; a tool result from any other agent path is a subagent's.
-_MAIN_AGENT = {"", "/root"}
 #: `git switch` or `git checkout`, its flags, then the ref it names (never a `--` pathspec).
 _SWITCH = re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?(?:switch|checkout)\s+((?:-(?!-\s)[\w-]+\s+)*)([^\s;&|<>-][^\s;&|<>]*)")
 
@@ -79,21 +72,18 @@ def _cost(value: Any) -> float | None:
 
 
 def _input(attributes: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    """A tool call's input as the export gave it: Claude Code's `tool_input` or Codex's `arguments`, parsed when it is
-    a JSON object, and its raw text."""
-    for key in ("tool_input", "arguments"):
-        if (raw := attributes.get(key)) is None:
-            continue
-        try:
-            parsed = json.loads(str(raw))
-        except ValueError:
-            return {}, str(raw)
-        if not isinstance(parsed, dict):
-            return {}, str(raw)
-        if full := _full_command(attributes):
-            parsed = {**parsed, "command": full}
-        return parsed, str(raw)
-    return {}, ""
+    """A tool call's `tool_input` as the export gave it, parsed when it is a JSON object, and its raw text."""
+    if (raw := attributes.get("tool_input")) is None:
+        return {}, ""
+    try:
+        parsed = json.loads(str(raw))
+    except ValueError:
+        return {}, str(raw)
+    if not isinstance(parsed, dict):
+        return {}, str(raw)
+    if full := _full_command(attributes):
+        parsed = {**parsed, "command": full}
+    return parsed, str(raw)
 
 
 def _full_command(attributes: dict[str, Any]) -> str:
@@ -109,7 +99,7 @@ def _full_command(attributes: dict[str, Any]) -> str:
 
 def _command(tool_input: dict[str, Any]) -> str:
     """The shell command a tool call ran."""
-    command = tool_input.get("command") or tool_input.get("cmd")
+    command = tool_input.get("command")
     return command if isinstance(command, str) else ""
 
 
@@ -198,54 +188,6 @@ def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
         yield {"kind": "compaction", "name": str(a.get("trigger") or "")}
 
 
-def _codex(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
-    if name == "codex.conversation_starts":
-        yield {"kind": "start", "detail": str(a.get("originator") or ""), "model": str(a.get("model") or "")}
-    elif name == "codex.user_prompt":
-        yield {"kind": "prompt"}
-    elif name == "codex.sse_event" and a.get("event.kind") == "response.completed":
-        cached = _number(a.get("cached_token_count"))
-        yield {
-            "kind": "request",
-            "model": str(a.get("model") or ""),
-            "effort": str(a.get("model_reasoning_effort") or ""),
-            "input": max(_number(a.get("input_token_count")) - cached, 0),
-            "output": _number(a.get("output_token_count")),
-            "cache_read": cached,
-            "cache_write": _number(a.get("cache_write_token_count")),
-            "reasoning": _number(a.get("reasoning_token_count")),
-        }
-    elif name == "codex.tool_decision":
-        yield {
-            "kind": "decision",
-            "name": str(a.get("tool_name") or ""),
-            "ok": str(a.get("decision")).startswith("approved"),
-            "detail": str(a.get("source") or ""),
-        }
-    elif name == "codex.tool_result":
-        agent = str(a.get("agent_name") or "")
-        main = agent in _MAIN_AGENT
-        yield {
-            "kind": "tool",
-            "name": str(a.get("tool_name") or ""),
-            "ok": _flag(a.get("success")),
-            "origin": "main" if main else "side",
-            "agent": "" if main else agent,
-            "seconds": _seconds(a.get("duration_ms")),
-            **_call(a),
-        }
-    elif name == "codex.skill_invocation":
-        yield {"kind": "skill", "name": _skill(a)}
-    elif name == "codex.turn_cost" and _flag(a.get("turn.interrupted")):
-        yield {"kind": "interrupt", "effort": str(a.get("reasoning_effort") or "")}
-
-
-def _identity(attributes: dict[str, Any]) -> tuple[str, str, Callable[[str, dict[str, Any]], Iterator[dict]]]:
-    if str(attributes.get("event.name") or "").startswith("codex."):
-        return CODEX, str(attributes.get("conversation.id") or ""), _codex
-    return CLAUDE_CODE, str(attributes.get("session.id") or ""), _claude
-
-
 def redactor(setting: str) -> Callable[[str], str]:
     """The filter a `module:function` setting names, which a stored shell command passes through."""
     module, _, name = setting.partition(":")
@@ -299,7 +241,7 @@ def signals(
     found: list[Signal] = []
     for resource_branch, resource_eval, entrypoint, record in _records(payload, reading.eval_attribute):
         a = _attributes(record)
-        harness, session, read = _identity(a)
+        session = str(a.get("session.id") or "")
         at = _epoch(a.get("event.timestamp"))
         if not session or at is None:
             continue
@@ -307,13 +249,12 @@ def signals(
         branch = resource_branch or (str(a.get(BRANCH)) if a.get(BRANCH) else None)
         record_eval = a.get(reading.eval_attribute) if reading.eval_attribute else None
         purpose = resource_eval or (str(record_eval) if record_eval else "")
-        identity = a.get("event.sequence") if harness == CLAUDE_CODE else a.get("call_id")
-        key = f"{harness}:{session}:{name}:{identity}:{a.get('event.timestamp')}"
-        turn = str(a.get("prompt.id") or "") if harness == CLAUDE_CODE else ""
-        for parts in read(name, a):
-            if parts["kind"] == "tool" and harness == CLAUDE_CODE:
+        key = f"{CLAUDE_CODE}:{session}:{name}:{a.get('event.sequence')}:{a.get('event.timestamp')}"
+        turn = str(a.get("prompt.id") or "")
+        for parts in _claude(name, a):
+            if parts["kind"] == "tool":
                 parts = {**parts, "command": _stored_command(a, redact)}
-            elif parts["kind"] == "prompt" and harness == CLAUDE_CODE:
+            elif parts["kind"] == "prompt":
                 origin = _label(a.get("prompt"), reading.injected_openings)
                 intent = (
                     intent_label(reading.labeller, str(a["prompt"])) if reading.labeller and origin == "human" else ""
@@ -327,12 +268,11 @@ def signals(
                 }
             found.append(
                 Signal(
-                    harness,
+                    CLAUDE_CODE,
                     session,
                     time=at,
                     key=key,
                     branch=branch,
-                    captured=harness == CLAUDE_CODE,
                     turn=turn,
                     eval=purpose,
                     entrypoint=entrypoint,
@@ -342,24 +282,23 @@ def signals(
         if str(a.get("tool_name")) in SHELLS and (switch := _SWITCH.search(_command(_input(a)[0]))):
             found.append(
                 Signal(
-                    harness,
+                    CLAUDE_CODE,
                     session,
                     "branch",
                     at,
                     f"{key}:branch",
                     branch,
                     name=switch[2],
-                    captured=harness == CLAUDE_CODE,
                     turn=turn,
                     eval=purpose,
                     entrypoint=entrypoint,
                 )
             )
-        if harness == CLAUDE_CODE and name == "tool_result" and (text := _named_text(a)):
+        if name == "tool_result" and (text := _named_text(a)):
             if (task := claimed(text, reading.claims, keys)) is not None:
                 found.append(
                     Signal(
-                        harness,
+                        CLAUDE_CODE,
                         session,
                         "claim",
                         at,
@@ -374,7 +313,7 @@ def signals(
             if reading.completion_call and str(a.get("tool_name")) in SHELLS and reading.completion_call.search(text):
                 found.append(
                     Signal(
-                        harness,
+                        CLAUDE_CODE,
                         session,
                         "deliver",
                         at,
@@ -442,7 +381,7 @@ KEEP_S = 8 * 86400.0  # a day past the views' default 168 h window: the oldest h
 
 
 class TelemetryLog:
-    """Where the adapters put the signals both harnesses' exports gave: the `starpulse_signals` table.
+    """Where the adapters put the signals the exports gave: the `starpulse_signals` table.
 
     `publish` stores each signal under its `key`, so a replayed export adds nothing, and fails open like the log: a
     table that cannot be written drops the signals, never the export. The views read the table through its folds

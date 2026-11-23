@@ -13,12 +13,12 @@ from collections.abc import Callable
 from prometheus_client import CollectorRegistry, Gauge, generate_latest
 from sqlalchemy import func, select
 
-from starpulse.event_log import breaking_change_events, events, verdict_events
+from starpulse.event_log import events, verdict_events
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import events as log_entries
 
-STREAMS = (events.STREAM, verdict_events.STREAM, breaking_change_events.STREAM)
+STREAMS = (events.STREAM, verdict_events.STREAM)
 
 logger = logging.getLogger(__name__)
 

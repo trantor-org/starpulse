@@ -2,7 +2,7 @@
 
 It migrates the store `--database-url` names through the config (`starpulse migrate`), starts `serve` from the same
 config on a free loopback port below the kernel's ephemeral range, with TLS, telemetry, adapters, producers and every outbound call off and
-pruned rows archived in a scratch directory (`config.rehearsal`), polls `GET /api/ready` until it answers 200 or
+pruned rows archived in a scratch directory (`config.rehearsal`), polls `GET /api/health` until it answers 200 or
 `--budget` seconds pass, and stops the server. It exits 0 only when the server got ready, and otherwise 1 naming
 what did not. The store must be a copy: the rehearsal migrates it and `serve` writes to it.
 """
@@ -27,7 +27,7 @@ from starpulse.runtime.config import REHEARSE_ENV, load
 #: Seconds the whole rehearsal may take unless `--budget` says otherwise.
 BUDGET_S = 120.0
 
-#: Seconds between two reads of `/api/ready`, and how long a read may take.
+#: Seconds between two reads of `/api/health`, and how long a read may take.
 POLL_S = 0.5
 READ_S = 2.0
 
@@ -64,9 +64,9 @@ def free_port() -> int:
 
 
 def read_ready(port: int) -> tuple[int | None, dict | None]:
-    """The status and JSON body `/api/ready` answers on `port`; `None` status while nothing answers."""
+    """The status and JSON body `/api/health` answers on `port`; `None` status while nothing answers."""
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/ready", timeout=READ_S) as reply:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=READ_S) as reply:
             return reply.status, json.load(reply)
     except urllib.error.HTTPError as exc:
         try:
@@ -78,7 +78,7 @@ def read_ready(port: int) -> tuple[int | None, dict | None]:
 
 
 def unready(body: dict | None) -> str:
-    """The components `/api/ready` named as not ready, each with its detail."""
+    """The components `/api/health` named as not ready, each with its detail."""
     components = (body or {}).get("components", {})
     return "; ".join(f"{name}: {part['detail']}" for name, part in components.items() if not part["ready"])
 
@@ -140,7 +140,7 @@ def rehearse(
                 # adr-exempt: handshake
                 time.sleep(poll_s)
             status, body = last
-            why = unready(body) or ("nothing answered" if status is None else f"/api/ready answered {status}")
+            why = unready(body) or ("nothing answered" if status is None else f"/api/health answered {status}")
             return f"not ready within {budget:.0f}s: {why}\n{tail(log)}"
         finally:
             stop(server)

@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from starpulse.contracts.api.dto.dag import Runs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
-from starpulse.contracts.api.dto.breaking_changes import BreakingChanges
 from starpulse.contracts.api.dto.health import MachineHistory, TaskEventHistory
 from starpulse.contracts.api.dto.milestones import (
     Docs,
@@ -26,9 +25,9 @@ from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     ArchiveRequest,
-    ClaimRequest,
     CompleteRequest,
     CreateRequest,
+    DispatchRequest,
     DocArchiveRequest,
     DocCreateRequest,
     DocEditRequest,
@@ -41,7 +40,6 @@ from starpulse.contracts.api.dto.requests import (
     MoveRequest,
     ParkRequest,
     RatingRequest,
-    ReleaseRequest,
     ReopenRequest,
     RestoreRequest,
     RetiredImportRequest,
@@ -57,11 +55,10 @@ from starpulse.contracts.api.dto.results import (
     Accepted,
     Archived,
     ArchivedEach,
-    Claimed,
-    ClaimReleased,
     Completed,
     Created,
     CreatedEach,
+    Dispatched,
     DocArchived,
     DocCreated,
     DocEdited,
@@ -133,7 +130,7 @@ RESPONSES: dict[str, Any] = {
     "/api/harnesses": Harnesses,
     "/api/history-window": WindowState,
     "/api/doctor": ContractReport,
-    "/api/ready": ReadyReport,
+    "/api/health": ReadyReport,
     "/api/flows": Snapshot,
     "/api/runs": Runs,
     "/api/task/": TaskRecord,
@@ -148,7 +145,6 @@ RESPONSES: dict[str, Any] = {
     "/api/docs/": DocShown,
     "/api/retired": RetiredTasks,
     "/api/history": LaneHistory | MachineHistory | TaskEventHistory,
-    "/api/breaking-changes": BreakingChanges,
     "/api/pulls": Pulls,
     "/api/search": SearchResults,
     "/api/search/similar": SearchResults,
@@ -170,8 +166,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/retired/import": RetiredImportRequest,
     "/api/complete": CompleteRequest,
     "/api/reopen": ReopenRequest,
-    "/api/claim": ClaimRequest,
-    "/api/release": ReleaseRequest,
+    "/api/dispatch": DispatchRequest,
     "/api/park": ParkRequest,
     "/api/review": ReviewRequest,
     "/api/tasks": CreateRequest,
@@ -195,7 +190,6 @@ BODIES: dict[str, Any] = {
     "machines": Machines | ApiError,
     "done": DonePage | ApiError,
     "history": LaneHistory | MachineHistory | TaskEventHistory | ApiError,
-    "breaking_changes": BreakingChanges | ApiError,
     "pulls": Pulls | ApiError,
     "search": SearchResults | ApiError,
     "spend": Spend | ApiError | WindowTooLong,
@@ -227,8 +221,7 @@ BODIES: dict[str, Any] = {
     "retired_import": RetiredImported | SkillRefusal | ApiError,
     "complete": Completed | SkillRefusal | ApiError,
     "reopen": Reopened | SkillRefusal | ApiError,
-    "claim": Claimed | SkillRefusal | ApiError,
-    "release": ClaimReleased | ApiError,
+    "dispatch": Dispatched | ApiError,
     "park": Parked | SkillRefusal | ApiError,
     "review": Reviewed | SkillRefusal | ApiError,
     "create": Created | CreatedEach | SkillRefusal | ApiError,
@@ -282,9 +275,9 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/ledger/{rest}/events"): Op("Stream a ledger's rows as they land", BODIES["ledger_rows"], media=_STREAM),
     ("GET", "/api/ledger/{rest}"): _read("A page of a ledger", "ledger", "before", "limit"),
     ("GET", "/api/doctor"): _read("The contract report", "doctor"),
-    ("GET", "/api/ready"): _read("Whether the server is ready", "ready"),
+    ("GET", "/api/health"): _read("Whether the server is ready", "ready"),
     ("GET", "/api/runs"): _read("The workflow runs", "runs"),
-    ("GET", "/api/machines"): _read("The machines and their lanes", "machines", "before", "limit", "open"),
+    ("GET", "/api/machines"): _read("The machines and their lanes", "machines", "before", "lanes", "limit", "open"),
     ("GET", "/api/done"): _read("A page of finished tasks", "done", "before", "limit"),
     ("GET", "/api/search"): _read(
         "Search tasks", "search", "before", "finished_within_days", "label", "limit", "q"
@@ -297,7 +290,6 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/history-window"): _read("How many hours of history the store keeps", "window"),
     ("PUT", "/api/history-window"): _write("Set the history window", "window", WindowRequest),
     ("DELETE", "/api/history-window"): _write("Reset the history window to its default", "window"),
-    ("GET", "/api/breaking-changes"): _read("The breaking changes", "breaking_changes", "open"),
     ("GET", "/api/task-spend/{id}"): _read("One task's spend", "taskSpend", "hours"),
     ("GET", "/api/task-diff/{id}"): _read("One task's diff", "taskDiff", "hours"),
     ("GET", "/api/task-cost-to-go/{id}"): _read("One task's cost to go", "taskCostToGo", "hours"),
@@ -316,8 +308,7 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/take-over"): _write("Take a session over", "take_over", TakeOverRequest),
     ("POST", "/api/retire"): _write("Retire a task", "retire", RetireRequest),
     ("POST", "/api/retired/import"): _write("Import retired tasks", "retired_import", RetiredImportRequest),
-    ("POST", "/api/claim"): _write("Claim a task", "claim", ClaimRequest),
-    ("POST", "/api/release"): _write("Release a claim", "release", ReleaseRequest),
+    ("POST", "/api/dispatch"): _write("Dispatch a session to a task", "dispatch", DispatchRequest),
     ("POST", "/api/park"): _write("Park a task", "park", ParkRequest),
     ("POST", "/api/review"): _write("Record a review", "review", ReviewRequest),
     ("POST", "/api/complete"): _write("Complete a task", "complete", CompleteRequest),
@@ -344,7 +335,5 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/pulls"): _read("Pull requests", "pulls", "bodies", "body_contains", "number", "repo", "state", "task"),
     ("GET", "/api/openapi"): Op("This document"),
     ("GET", "/metrics"): _read("Prometheus metrics", media="text/plain"),
-    ("GET", "/autopilot-log"): _read("The autopilot log"),
-    ("GET", "/actor-view"): _read("What the task actor holds, one task's when named", None, "task"),
     ("GET", "/swagger"): Op("The Swagger page of this document", media="text/html"),
 }

@@ -22,7 +22,7 @@ const HARNESSES = {
   tiers: ["fast", "standard"],
   harnesses: [
     { name: "claude", label: "Claude Code", sessions: true, reason: "", tiers: {} },
-    { name: "cursor", label: "Cursor", sessions: true, reason: "", tiers: {} },
+    { name: "other", label: "Other", sessions: true, reason: "", tiers: {} },
   ],
 };
 const BY_HARNESS = { claude: { use: 2, limit: 3 }, cursor: { use: 0, limit: 2 } };
@@ -95,21 +95,21 @@ describe("the Admin view's Autopilot card", () => {
     const radios = [...host.querySelectorAll(`${HARNESS} [role="radio"]`)] as HTMLButtonElement[];
     expect(radios.map((b) => [b.textContent, b.getAttribute("aria-pressed"), b.disabled])).toEqual([
       ["Claude Code", "true", false],
-      ["Cursor", "false", false],
+      ["Other", "false", false],
     ]);
     expect(q(".hint")?.textContent).toContain("Starts on the picked harness");
 
     await act(async () => radios[1].click());
     await settle();
 
-    expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ harness: "cursor" }) });
+    expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ harness: "other" }) });
     expect(radios[1].getAttribute("aria-pressed")).toBe("true");
   });
 
   it("disables an exhausted harness and scopes the Sessions meter hint to the selection", async () => {
     await draw({
       pauses: [{ harness: "claude", until: 75_600, reason: "usage limit" }],
-      harness: "cursor",
+      harness: "other",
       dimensions: dims({ sessions: 0 }),
       sessionsByHarness: { claude: { use: 1, limit: 3 }, cursor: { use: 0, limit: 2 } },
     });
@@ -117,9 +117,9 @@ describe("the Admin view's Autopilot card", () => {
     const claude = host.querySelector(`${HARNESS} [role="radio"]`) as HTMLButtonElement;
     expect(claude.disabled).toBe(true);
     expect(claude.title).toContain("credits until");
-    expect(host.textContent).toContain("Cursor's session cap");
+    expect(host.textContent).toContain("Other's session cap");
     expect(host.textContent).toMatch(/Claude Code 1\/3 running/);
-    expect(q(".inflight")?.closest(".row")?.querySelector(".hint")?.textContent).toContain("on Cursor");
+    expect(q(".inflight")?.closest(".row")?.querySelector(".hint")?.textContent).toContain("on Other");
   });
 
   it("prints a fractional use as a whole number, and still fills its bar to the fraction", async () => {

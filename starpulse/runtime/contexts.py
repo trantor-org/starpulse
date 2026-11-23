@@ -316,7 +316,7 @@ def default_starters(
 
     def bridge(own: threading.Event) -> Callable[[], None]:
         from starpulse.bridge import worker
-        from starpulse.event_log.claude_sessions import live_socket, sessions_dir
+        from starpulse.event_log.claude_sessions import live_socket, same_holder, sessions_dir
         from starpulse.machine_engine.model.transitions import lane_id
         from starpulse.pulls.adapters.outbound.pulls import stored_head
         from starpulse.runtime.session_delivery import exit_watcher, forget_ended, route
@@ -330,6 +330,12 @@ def default_starters(
                 return "unknown"
             row = built[1].task(task, lean=True)
             return lane_id(str(row.get("state") or "")) if row else None
+
+        def held_by(session: str) -> str | None:
+            built = shared.peek()
+            if built is None:
+                return None
+            return next((row["id"] for row in built[1].open_tasks() if same_holder(row.get("assignee"), session)), None)
 
         notifier = claude.ClaudeCodeNotifier(
             post=claude.post_inbox,
@@ -368,7 +374,7 @@ def default_starters(
             ),
             forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ)),
             config.bridge.incidents,
-            exit_watcher(log, registry, sessions_dir(os.environ)),
+            exit_watcher(log, registry, sessions_dir(os.environ), held_by),
             events,
         )
 

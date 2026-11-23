@@ -60,17 +60,18 @@ _HIT_COLUMN = (
 _LOCATED = f"{_HIT_COLUMN} AS field, snippet({_TABLE}, {_HIT_COLUMN}, '', '', '…', 16) AS snippet"
 _SNIPPET_CHARS = 160
 #: The lexical query: MATCH first into a MATERIALIZED CTE, then `{filtered}` (facets) on those rowids. ANDing the
-#: facets IN onto MATCH makes SQLite look up each facet rowid in FTS (`0:=M`) and cost grows with rows × words. Only the
-#: `best` rows are located (`snippet` runs seven times a row, and a word most tasks hold matches thousands).
+#: facets IN onto MATCH makes SQLite look up each facet rowid in FTS (`0:=M`) and cost grows with rows × words. The
+#: CTE holds a match's rowid and rank alone (`{task}` adds the key a `before` filter reads): reading `task`, `title` and
+#: `lane` of every match cost five times its wall time when a word most tasks hold matched thousands. Only the `best` rows are
+#: read and located (`snippet` runs seven times a row).
 _BEST = (
     f"WITH matched AS MATERIALIZED ("
-    f"SELECT {_TABLE}.rowid AS row, task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, "
-    f"bm25({_TABLE}, {_WEIGHTS}) AS rank FROM {_TABLE} WHERE {_TABLE} MATCH :query"
-    f"), best AS MATERIALIZED (SELECT * FROM matched WHERE 1{{filtered}} ORDER BY rank, task LIMIT :limit) "
+    f"SELECT {_TABLE}.rowid AS row{{task}}, bm25({_TABLE}, {_WEIGHTS}) AS rank FROM {_TABLE} WHERE {_TABLE} MATCH :query"
+    f"), best AS MATERIALIZED (SELECT row, rank FROM matched WHERE 1{{filtered}} ORDER BY rank, row LIMIT :limit) "
 )
 _SEARCH = (
-    f"{_BEST}SELECT best.task, best.title, best.lane, best.score, {_LOCATED} FROM best JOIN {_TABLE} "
-    f"ON {_TABLE}.rowid = best.row WHERE {_TABLE} MATCH :query ORDER BY best.rank, best.task"
+    f"{_BEST}SELECT {_TABLE}.task, {_TABLE}.title, {_TABLE}.lane, -best.rank AS score, {_LOCATED} FROM best JOIN {_TABLE} "
+    f"ON {_TABLE}.rowid = best.row WHERE {_TABLE} MATCH :query ORDER BY best.rank, {_TABLE}.task"
 )
 _DIGEST = text(f"SELECT digest FROM {_TABLE} WHERE rowid = :row")
 _DELETE = text(f"DELETE FROM {_TABLE} WHERE rowid = :row")
@@ -100,10 +101,10 @@ _DROP_OTHER_RECIPES = text(f"DELETE FROM {_VECTORS} WHERE model != :model")
 #: task-like sentence, and changing it makes every vector again.
 _EMBEDDED_TEXT = "title+description"
 _RANKED = (
-    f"{_BEST}SELECT best.task, best.title, best.lane, best.score, {_LOCATED}, {_VECTORS}.vector AS vector "
+    f"{_BEST}SELECT {_TABLE}.task, {_TABLE}.title, {_TABLE}.lane, -best.rank AS score, {_LOCATED}, {_VECTORS}.vector AS vector "
     f"FROM best JOIN {_TABLE} ON {_TABLE}.rowid = best.row LEFT JOIN {_VECTORS} "
     f"ON {_VECTORS}.task_row = best.row AND {_VECTORS}.model = :model "
-    f"WHERE {_TABLE} MATCH :query ORDER BY best.rank, best.task"
+    f"WHERE {_TABLE} MATCH :query ORDER BY best.rank, {_TABLE}.task"
 )
 #: Every embedded task, for a query whose meaning (not its words) is what is wanted; `snippet` is the task's opening.
 _EMBEDDED_SELECT = (
@@ -409,14 +410,15 @@ class SearchIndex:
         limit = max(1, limit)
         vector = self._query_vector(query, wait)
         filtered, narrowing = _filtered(labels, finished_since, before, row="row")
+        task = ", task" if before else ""
         with self._engine.connect() as connection:
             if vector is None:
                 rows = connection.execute(
-                    text(_SEARCH.format(filtered=filtered)), {"query": match, "limit": limit, **narrowing}
+                    text(_SEARCH.format(filtered=filtered, task=task)), {"query": match, "limit": limit, **narrowing}
                 )
                 return [_named(dict(row._mapping)) for row in rows]
             rows = connection.execute(
-                text(_RANKED.format(filtered=filtered)),
+                text(_RANKED.format(filtered=filtered, task=task)),
                 {"query": match, "model": self._recipe, "limit": max(limit, _POOL), **narrowing},
             )
             hits = [_named(dict(row._mapping)) for row in rows]

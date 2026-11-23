@@ -94,7 +94,7 @@ class Placed:
         kept = directory is not None
         directory = directory or Path(tempfile.mkdtemp(prefix="placed-"))
         url = f"sqlite:///{directory / 'events.sqlite'}"
-        maintain(url, machines or {}, None)
+        maintain(url, machines or {})
         self.keys = keys
         self.log = EventLog(url)
         self.events = EventStore(self.log.engine)

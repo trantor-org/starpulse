@@ -16,18 +16,18 @@ from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from starpulse.event_log.claude_sessions import (
-    DEFAULT_SESSIONS,
-    DEFAULT_TRANSCRIPTS,
-    session_activity_of,
-    same_holder,
-)
 from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
 from starpulse.board.model.plain_text import render as render_text
 from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
 from starpulse.cli import agent_wire
-from starpulse.cli.agent_keys import CLAIM_KEYS, LIFECYCLE_KEYS, RELEASE_KEYS
+from starpulse.cli.agent_keys import LIFECYCLE_KEYS
+from starpulse.event_log.claude_sessions import (
+    DEFAULT_SESSIONS,
+    DEFAULT_TRANSCRIPTS,
+    same_holder,
+    session_activity_of,
+)
 from starpulse.event_log.lane_events import ARCHIVED
 from starpulse.machine_engine.model.transitions import lane_id
 
@@ -208,7 +208,9 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
         agent = {
             **agent,
             "description": record.get("description", ""),
-            "criteria": [{"text": item["text"], "checked": item["checked"]} for item in record.get("acceptanceCriteria") or []],
+            "criteria": [
+                {"text": item["text"], "checked": item["checked"]} for item in record.get("acceptanceCriteria") or []
+            ],
         }
     (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
     return _described(_active(view, snapshot), agent["description"], base)
@@ -227,7 +229,9 @@ def _without_done_dependencies(
         status, document = agent_wire.get(base, f"/api/task-records?{ids}")
         if status == 200:
             records = [item.get("record", {}) for item in document.get("records", ())]
-            finished |= {record["id"].casefold() for record in records if lane_id(record["status"]) in {done, "archived"}}
+            finished |= {
+                record["id"].casefold() for record in records if lane_id(record["status"]) in {done, "archived"}
+            }
     return [
         {
             **view,
@@ -319,7 +323,7 @@ def _move_each(args: argparse.Namespace, environ: Mapping[str, str], base: str) 
 def _lifecycle(
     args: argparse.Namespace, environ: Mapping[str, str], verb: str, fields: dict[str, Any]
 ) -> dict[str, Any]:
-    """Post the lifecycle verb `verb` (`claim`, `park`, `review`) for the task as the agent: the server's answer, with a
+    """Post the lifecycle verb `verb` (`park`, `review`) for the task as the agent: the server's answer, with a
     refusal as `ok: false` and its reason and skill, or an error when no board writer can answer."""
     base, path = agent_wire.server_url(args.server, environ), f"/api/{verb}"
     status, reply = agent_wire.post(base, path, {"task": args.task, **fields, **writer(args, environ)})
@@ -329,8 +333,6 @@ def _lifecycle(
             "ok": True,
             "task": args.task,
             "to": reply.get("to", ""),
-            "assignee": reply.get("assignee", ""),
-            "releasedFrom": reply.get("releasedFrom", ""),
             "reason": "",
             "skill": "",
         }
@@ -339,8 +341,6 @@ def _lifecycle(
             "ok": False,
             "task": args.task,
             "to": "",
-            "assignee": "",
-            "releasedFrom": "",
             "reason": message,
             "skill": reply.get("skill", ""),
         }
@@ -356,14 +356,22 @@ def _kept(output: dict[str, Any], keys: Sequence[str]) -> dict[str, Any]:
     return {key: output[key] for key in keys}
 
 
-def task_claim(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Claim the task for the session: it moves to In Progress with that session as assignee, refused when another holds it."""
-    return _kept(_lifecycle(args, environ, "claim", {}), CLAIM_KEYS)
-
-
-def task_release(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """End the claim on the task whoever holds it: it keeps its lane and loses its assignee, refused when none holds it."""
-    return _kept(_lifecycle(args, environ, "release", {}), RELEASE_KEYS)
+def task_dispatch(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Dispatch the session to the task: the task actor pins it and moves a Ready or Needs attention task to In Progress.
+    A refusal is `ok: false` with its reason, a task another session holds or a session holding another task."""
+    base = agent_wire.server_url(args.server, environ)
+    body = {"task": args.task, **({"replaces": args.replaces} if args.replaces else {}), **writer(args, environ)}
+    status, reply = agent_wire.post(base, "/api/dispatch", body)
+    message = reply.get("error") or f"{base} answered {status} for /api/dispatch"
+    if status == 202:
+        return {"ok": True, "task": args.task, "session": reply.get("session", ""), "reason": "", "skill": ""}
+    if status == 409:
+        return {"ok": False, "task": args.task, "session": "", "reason": message, "skill": reply.get("skill", "")}
+    if status == 404 and any(text in message for text in _TASK_MISSING):
+        raise agent_wire.CliError("not_found", message)
+    if status in (400, 403, 501):
+        raise agent_wire.CliError("refused", message)
+    raise agent_wire.CliError("unavailable", f"{base}: {message}")
 
 
 def task_park(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -705,13 +713,6 @@ def task_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
 
 def task_cold_done(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     return {"tasks": list(_cold_done(agent_wire.server_url(args.server, environ)))}
-
-
-def breaking_change_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base = agent_wire.server_url(args.server, environ)
-    path = "/api/breaking-changes?open=1" if args.open else "/api/breaking-changes"
-    status, reply = agent_wire.get(base, path)
-    return {"changes": record_call(base, path, status, reply, noun="breaking change")["changes"]}
 
 
 def task_import_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

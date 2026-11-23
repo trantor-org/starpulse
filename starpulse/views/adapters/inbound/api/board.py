@@ -1,7 +1,7 @@
 """What the page asks of the Board and its deployment besides the snapshot.
 
 - `GET /api/doctor`: the contract report.
-- `GET /api/ready`: 200 when the server can serve the board, 503 naming each component that is not ready.
+- `GET /api/health`: 200 when the server can serve the board, 503 naming each component that is not ready.
 - `GET /api/runs`: every runs workflow with its latest run, and the error a runs instance reported.
 - `GET /api/machines`, `/api/done`, `/api/search`: the lifecycle machines, the Done lane and a search of the tasks.
 - `GET /api/search/similar`: `/api/search` that waits to embed a new query, for a caller that needs the tasks nearest
@@ -66,9 +66,9 @@ def harnesses(request: Request) -> Response:
 
 routes: list[ApiRoute] = [
     ReadRoute("/doctor", doctor),
-    ReadRoute("/ready", ready),
+    ReadRoute("/health", ready),
     ReadRoute("/runs", runs),
-    ReadRoute("/machines", machines, params=frozenset({"before", "limit", "open"})),
+    ReadRoute("/machines", machines, params=frozenset({"before", "limit", "lanes", "open"})),
     ReadRoute("/done", done, params=frozenset({"before", "limit"})),
     ReadRoute("/search", search, params=frozenset({"before", "finished_within_days", "label", "limit", "q"})),
     ReadRoute("/search/similar", similar, params=frozenset({"before", "finished_within_days", "label", "limit", "q"})),

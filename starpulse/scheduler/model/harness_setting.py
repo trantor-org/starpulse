@@ -29,5 +29,5 @@ class HarnessSetting:
     def set(self, value: object) -> None:
         """Keep a non-empty harness name; anything else raises ValueError."""
         if not isinstance(value, str) or not value.strip():
-            raise ValueError('harness must be a non-empty name such as "claude" or "cursor"')
+            raise ValueError('harness must be a non-empty name such as "claude"')
         self.log.set_setting(KEY, value.strip())

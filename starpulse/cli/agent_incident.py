@@ -10,13 +10,13 @@ from typing import Any
 import nats
 from nats.errors import Error as NatsError
 
-from starpulse.event_log.claude_sessions import same_holder
 from starpulse.board.model.view import board_flow, roles_of
 from starpulse.bridge.reach import Reach
 from starpulse.bridge.subjects import token, wake_subject
 from starpulse.cli import agent_wire
 from starpulse.cli.agent_subscribe import bridge
-from starpulse.cli.agent_tasks import record_call, task_claim, task_park, writer
+from starpulse.cli.agent_tasks import record_call, task_dispatch, task_park, writer
+from starpulse.event_log.claude_sessions import same_holder
 
 _TIMEOUT_S = 5.0
 
@@ -112,7 +112,7 @@ def _description(source: str) -> str:
     )
 
 
-def _create_and_claim(args: argparse.Namespace, environ: Mapping[str, str], source: str) -> str:
+def _create_and_dispatch(args: argparse.Namespace, environ: Mapping[str, str], source: str) -> str:
     base, path = agent_wire.server_url(args.server, environ), "/api/tasks"
     body = {
         "title": f"Incident {args.type} {args.key}",
@@ -125,21 +125,21 @@ def _create_and_claim(args: argparse.Namespace, environ: Mapping[str, str], sour
     }
     status, reply = agent_wire.post(base, path, body)
     task = record_call(base, path, status, reply, ok=(201,))["task"]
-    _claim(args, environ, task)
+    _dispatch(args, environ, task)
     return task
 
 
-def _claim(args: argparse.Namespace, environ: Mapping[str, str], task: str) -> None:
-    claimed = task_claim(argparse.Namespace(**{**vars(args), "task": task}), environ)
-    if not claimed["ok"]:
-        raise agent_wire.CliError("refused", f"the incident task {task} was not claimed: {claimed['reason']}")
+def _dispatch(args: argparse.Namespace, environ: Mapping[str, str], task: str) -> None:
+    dispatched = task_dispatch(argparse.Namespace(**{**vars(args), "task": task, "replaces": ""}), environ)
+    if not dispatched["ok"]:
+        raise agent_wire.CliError("refused", f"the incident task {task} was not dispatched to: {dispatched['reason']}")
 
 
 def open_incident(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Publish `incident.<type>.<key>` to NATS and open the owner task the finder holds.
 
     One owner task per type and key: a task another session holds is joined, and nothing is published again. With
-    `--owner` that task is the owner and none is created or claimed. The tasks
+    `--owner` that task is the owner and none is created or dispatched to. The tasks
     the type's `[bridge.incidents.<type>]` reach covers wait on the owner task. While the
     board is down the publish still goes out and `task` is null; rerun once it returns to create the task, which finds
     the open one when a finder already did. A NATS server that does not answer fails the command only when the board
@@ -176,7 +176,7 @@ def open_incident(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
             return {"subject": source, "task": owner["id"], "holder": owner["assignee"], "published": False}
         if owner and not owner.get("assignee"):
             try:
-                _claim(args, environ, owner["id"])
+                _dispatch(args, environ, owner["id"])
             except agent_wire.CliError as exc:
                 if exc.code != "refused":
                     raise
@@ -184,7 +184,7 @@ def open_incident(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
                 if not (now and now.get("assignee") and not same_holder(now["assignee"], session)):
                     raise
                 return {"subject": source, "task": now["id"], "holder": now["assignee"], "published": False}
-        task = given["id"] if given else owner["id"] if owner else _create_and_claim(args, environ, source)
+        task = given["id"] if given else owner["id"] if owner else _create_and_dispatch(args, environ, source)
         if reach := config.incidents.get(kind):
             waiting, refused = _wait_on_owner(args, environ, snapshot, reach, task, source, session, args.failing_pull)
     except agent_wire.CliError as exc:

@@ -592,9 +592,6 @@ class ConfigFile(_Table):
             "meanwhile is not resumed: a link's lens in the phase it runs, or a machine with no link until it ends."
         ),
     )
-    cursor_context: dict[str, Any] | None = Field(
-        default=None, description="Holds Cursor task sessions to a context limit (see docs/sources.md)."
-    )
     claude_code: dict[str, Any] | None = Field(
         default=None,
         description="Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).",

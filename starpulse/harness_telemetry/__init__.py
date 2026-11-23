@@ -1,4 +1,4 @@
-"""Harness adapters: Claude Code, Codex and the OTLP receiver, and the harness tiers."""
+"""Harness adapters: Claude Code and the OTLP receiver, and the harness tiers."""
 
 import importlib
 from typing import TYPE_CHECKING

@@ -14,8 +14,8 @@ from pydantic import (
 )
 
 from starpulse.contracts.api._base import _Request
-from starpulse.contracts.tiers import TIERS
 from starpulse.contracts.api.dto.scheduler import QuietHours
+from starpulse.contracts.tiers import TIERS
 
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
 #: single write: a second write to finish a task is refused as not on the board until the next scan places the card.
@@ -159,18 +159,13 @@ class CompleteRequest(_Request):
     task: str
 
 
-class ClaimRequest(_Writer):
-    """`POST /api/claim`: move `task` to In Progress and record `session` as its assignee, an opaque string; the same
-    assignee claiming again changes nothing, and an assignee already on another open claim is refused."""
+class DispatchRequest(_Writer):
+    """`POST /api/dispatch`: a dispatch of the `session` it names (an opaque string) to `task`, which the task actor
+    answers by pinning the session and moving a Ready or Needs attention task to In Progress. `replaces` names the
+    holder the caller found dead, whose lease the dispatch ends first. A task another session holds is refused."""
 
     task: str
-
-
-class ReleaseRequest(_Writer):
-    """`POST /api/release`: end the claim whoever holds `task`: it loses its assignee, records the session as released and
-    keeps its lane, so the next claim adopts it."""
-
-    task: str
+    replaces: NonBlank | None = None
 
 
 class ParkRequest(_Writer):
@@ -338,7 +333,7 @@ class MilestoneArchiveRequest(_Request):
 
 
 class DocCreateRequest(_Request):
-    """`POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme` or `other`."""
+    """`POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`."""
 
     title: str
     type: str | None = None

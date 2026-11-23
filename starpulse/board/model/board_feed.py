@@ -105,6 +105,9 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._read_model = read_model
         #: The `open_tasks` list this thread's `one_read` built, None outside one.
         self._pinned = threading.local()
+        #: The list `open_tasks` last built, with the read model position and local day it was built at: a call that finds
+        #: both unchanged answers from it, since no task row differs.
+        self._built: tuple[tuple[int, float], list[dict]] | None = None
         #: The read model's position the page's deltas have been published up to; the snapshot carries what came before.
         self._followed = read_model.position()
         #: Which of the Board's States play which part (`Board.roles`); the default is Backlog.md's default statuses.
