@@ -12,13 +12,16 @@ from typing import Any
 from starpulse.github.model.checks import FAILED, PASSED
 
 __all__ = [
-    "BUDGET", "CAP", "CONSUMER", "MACHINE", "REFUSED", "RETENTION", "SOURCE", "Fact", "backoff", "cloudevent", "event_id", "facts_of", "run_event_of",
+    "BUDGET", "CAP", "CONSUMER", "HANDLED", "MACHINE", "REFUSED", "RETENTION", "SOURCE", "Fact", "backoff", "cloudevent", "event_id", "facts_of", "run_event_of",
 ]  # fmt: skip
 
 SOURCE = "github"
 MACHINE = "github-pull-request"
 #: The consumer that turns deliveries into machine events.
 CONSUMER = "events"
+#: The events the consumer holds a row for: those that report a pull request fact or a workflow run, and the `status` the
+#: runs resync reads. Any other has nothing to post, so it gets no row and no write.
+HANDLED = ("pull_request", "check_run", "check_suite", "status", "workflow_run")
 #: Failed attempts a delivery gets before it is dead (or, for a pull request still unlinked, skipped as `no-task`).
 BUDGET = 10
 #: The longest wait, in seconds, between two attempts.

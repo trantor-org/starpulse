@@ -723,16 +723,7 @@ applied_by = "pin-bump"
 # docs/sources.md). Every key is optional; with no table nothing is declared, and no path is an area.
 # [analytics]
 # roots = ["/srv/repo", "/srv/repo/.claude/worktrees/*"]  # absolute checkouts a path is cut to an area under; `*` is one component
-# stop_activities = ["Bash", "exec_command"]               # no read uses it now; a config that sets it still loads
-# lifecycle_skills = ["starting-tasks", "completing-tasks"] # no read uses it now; a config that sets it still loads
 # size_bands = { 1 = [50, 14], 5 = [170, 47] }          # each size -> [p90 steps, p90 active minutes]; no verb reads it now; a config that sets it still loads
-# [[analytics.skill_loads]]                                # no read uses these now; a config that sets them still loads
-# skill = "operating-nas"
-# activities = ["ssh root@nas-host"]                       # globs over an activity's name
-# [[analytics.skill_loads]]
-# skill = "verifying-claims"
-# title = "^(validate|verify|check)"                       # a regular expression over the task's title, case-insensitive
-# label = "validation"                                     # a label the task carries
 # injected_openings = ["<task-notification"]               # a prompt opening with one is labelled `injected`, any other `human`
 # [analytics.session_origins]                              # per origin name, the first-prompt prefixes that open a session it names
 # "start service" = ["Start TASK-"]                        # a session whose first prompt matches none is `operator`; the row reports it as `origin`
@@ -752,12 +743,6 @@ applied_by = "pin-bump"
 # ladder = ["haiku-low", "haiku-high", "sonnet-high"]      # `<family>-<effort>` profiles, cheapest first; a move up is a raise
 # default_repo = "owner/name"                              # no verb reads it now; a config that sets it still loads
 # completion_call = '\.venv/bin/deliver\b'                 # a shell command run after that skill loaded
-# [[analytics.skill_machines]]                             # no read uses it now; a config that sets it still loads
-# skill = "developing-test-first"
-# stages = [
-#   { name = "RED", activities = ["pytest", "make test*"], ok = false },  # a failing call matching a glob of `activities`
-#   { name = "GREEN", activities = ["pytest", "make test*"], ok = true },
-# ]
 
 # Optional: rank search by meaning as well as by words (see `search` in docs/cli.md). `embeddings_url` is an
 # OpenAI-compatible embeddings endpoint, local or cloud; with it unset, search is lexical and nothing calls out.

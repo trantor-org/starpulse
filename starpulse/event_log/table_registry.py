@@ -43,7 +43,7 @@ CLASSES: dict[str, str] = {
     **dict.fromkeys(_DURABLE, "durable"),
     **dict.fromkeys((t for family in FAMILIES.values() for t in family.tables), "derived"),
     **dict.fromkeys(_t("worker_state", "leases", "answers"), "ephemeral"),
-    **dict.fromkeys(_t("step_summaries", "signals", "gaps", "task_verdicts"), "dead"),
+    **dict.fromkeys(_t("step_summaries", "gaps", "task_verdicts"), "dead"),
 }
 
 

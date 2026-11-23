@@ -1,6 +1,7 @@
 """The ports of the `events` consumer: its queue over the inbox, the ingest it posts to, and the links from a pull request to a task."""
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -48,6 +49,10 @@ class Queue(Protocol):
 
     def due_in(self) -> float | None:
         """Seconds until the earliest pending delivery is due (0 when one is due now), or `None` with none pending."""
+        ...
+
+    def batch(self) -> AbstractContextManager[None]:
+        """Hold each `complete` and `skip` made in the block, and record them in one transaction when it ends."""
         ...
 
     def complete(self, delivery_id: str) -> None: ...
