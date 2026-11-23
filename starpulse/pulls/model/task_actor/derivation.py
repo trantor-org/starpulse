@@ -128,7 +128,7 @@ def dead(facts: TaskFacts, agent: Agent) -> tuple[str, ...]:
     """Why the task's wait can never end: a dependency the board holds in no store, one archived without leaving the
     task's dependencies, or event subjects none of which is heard or published by a component."""
     reasons = [f"{name} is not on the board" for name in missing(facts, agent)]
-    reasons += [f"{name} is archived and never reaches Done" for name in agent["dependencies"] if facts.is_archived(name)]
+    reasons += [f"{name} is archived and never reaches Done" for name in agent["dependencies"] if facts.is_archived(name) and not facts.is_done(name)]
     gate = criteria.subjects(agent["description"])
     if gate and not facts.heard(agent["id"]) and all(unpublished := [facts.unpublished(each) for each in gate]):
         reasons += unpublished
