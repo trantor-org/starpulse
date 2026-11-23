@@ -121,7 +121,7 @@ _LOCK_WAIT_S = 2.0
 _WAITING_TTL_S = 5.0
 LATENCY_METRIC = "starpulse_task_actor_latency_seconds"
 #: The upper bounds of the latency histogram's buckets, in seconds; the count past the last is the `+Inf` bucket's.
-BUCKETS_S = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
+BUCKETS_S = (0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0)
 PROJECTION_METRIC = "starpulse_task_actor_projection_seconds"
 HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 MERGE_MOVE_METRIC = "starpulse_task_merge_move_seconds"
@@ -335,6 +335,10 @@ class TaskActor:
         self._mergeable = mergeable
         #: Per pull request, the stored record's version and what `mergeable` answered for it, so each is read once.
         self._settled: dict[str, tuple[tuple[str, str], str | None]] = {}
+        #: The pull request versions whose `mergeable` read is running off the lock, and the tries of each task's write the
+        #: board refused as locked, whose next try waits off the lock.
+        self._reading_pulls: set[tuple[str, tuple[str, str]]] = set()
+        self._lock_tries: dict[str, int] = {}
         #: Whether a task ever entered the working lane, given its id, which the history of its lane changes answers.
         self._started = started
         self._owner_source = owner_source
@@ -1144,11 +1148,37 @@ class TaskActor:
         record = pull_record(self._store, url)
         if record and record["state"] == "OPEN" and record["mergeable"] != "MERGEABLE":
             version = (record["headRefOid"], record["fetchedAt"])
-            if self._settled.get(url, ((), None))[0] != version:
-                self._settled[url] = (version, self._mergeable(record["repo"], record["number"]))
-            if self._settled[url][1] == "MERGEABLE":
+            if (settled := self._settled.get(url, ((), None)))[0] != version:
+                self._read_mergeable(url, version, record["repo"], record["number"])
+                return {**record, "mergeable": "UNKNOWN"}  # unsettled until the read hands its answer in
+            if settled[1] == "MERGEABLE":
                 return {**record, "mergeable": "MERGEABLE"}
         return record
+
+    def _read_mergeable(self, url: str, version: tuple[str, str], repo: str, number: int) -> None:
+        """Read GitHub's answer for the pull request on a thread of its own, so the lock never waits on the network; its
+        hand-in derives the tasks citing it."""
+        if (url, version) in self._reading_pulls:
+            return
+        self._reading_pulls.add((url, version))
+        threading.Thread(
+            target=self._settle_mergeable, args=(url, version, repo, number), name="task-actor-mergeable", daemon=True
+        ).start()
+
+    def _settle_mergeable(self, url: str, version: tuple[str, str], repo: str, number: int) -> None:
+        try:
+            answer = self._mergeable(repo, number)
+        except Exception as error:  # a read that fails leaves the stored answer to stand, as a read that says nothing does
+            logger.warning("task actor: cannot read whether %s merges: %s", url, error)
+            answer = None
+        try:
+            with self._pressing(), self._lock:
+                self._reading_pulls.discard((url, version))
+                self._settled[url] = (version, answer)
+                self._pull_states[url] = self._pull_state(url)
+                self.touch(self._webhooks(sorted(self._by_pr.get(url, ())), "mergeable read"))
+        except Exception:  # touch derives under the lock and may raise
+            logger.exception("task actor: cannot derive the tasks of %s on its mergeable read", url)
 
     def _own_prs(self, agent: dict[str, Any]) -> list[str]:
         return own_prs(self._store, agent)
@@ -2084,19 +2114,26 @@ class TaskActor:
             return Written(False, str(error))
 
     def _edit_retrying(self, name: str, changes: Mapping[str, Any], comment: str, over: str = "") -> Written:
-        """The board's edit, retried with backoff while SQLite reports the database locked; a lock that outlasts the
-        retries is `transient`, a failure of the database and no refusal of the change."""
-        for delay in (*LOCK_BACKOFF_S, None):
-            try:
-                return self._edit(name, changes, comment, actor=ACTOR, over=over)
-            except Exception as error:  # a board that raises refuses like one that answers no
-                if "database is locked" not in str(error):
-                    return Written(False, str(error))
-                if delay is None:
-                    return Written(False, str(error), transient=True)
-                # adr-exempt: retry
-                time.sleep(delay)
-        raise AssertionError("unreachable")
+        """The board's edit; while SQLite reports the database locked, its next try waits off the actor lock (a timer
+        derives the task again after each of `LOCK_BACKOFF_S`), and a lock that outlasts them is `transient`, a failure of
+        the database and no refusal of the change."""
+        try:
+            written = self._edit(name, changes, comment, actor=ACTOR, over=over)
+        except Exception as error:  # a board that raises refuses like one that answers no
+            if "database is locked" not in str(error):
+                self._lock_tries.pop(name, None)
+                return Written(False, str(error))
+            tries = self._lock_tries.get(name, 0)
+            self._lock_tries[name] = tries + 1
+            if tries < len(LOCK_BACKOFF_S):
+                timer = threading.Timer(LOCK_BACKOFF_S[tries], self._derive_overdue, args=(name,))
+                timer.daemon = True
+                timer.start()
+            else:
+                self._lock_tries.pop(name, None)
+            return Written(False, str(error), transient=True)
+        self._lock_tries.pop(name, None)
+        return written
 
     def _landed(self, seconds: float) -> None:
         with self._metrics:

@@ -65,15 +65,27 @@ def get(transport: Transport, path: str) -> dict:
 _MERGEABLE = {True: "MERGEABLE", False: "CONFLICTING"}
 
 
+#: GitHub computes a pull request's mergeability on the first read after a push and answers null until it finishes, so a
+#: read asks `_MERGEABLE_READS` times, `_MERGEABLE_WAIT` seconds apart.
+_MERGEABLE_READS, _MERGEABLE_WAIT = 3, 1.0
+
+
 def pull_mergeable(repo: str, number: int, timeout: float) -> str | None:
     """GitHub's answer now whether the pull request merges (`MERGEABLE` or `CONFLICTING`); None when it is still
-    computing or unreachable. GitHub sends no event when a push clears a conflict, so a stored flag can outlive it."""
+    computing after the reads or unreachable. GitHub sends no event when a push clears a conflict, so a stored flag can
+    outlive it."""
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    try:
-        pull = get(connect(token, timeout), f"/repos/{repo}/pulls/{number}")
-    except OSError:
-        return None
-    return _MERGEABLE.get(pull.get("mergeable"))
+    transport = connect(token, timeout)
+    for read in range(_MERGEABLE_READS):
+        if read:
+            time.sleep(_MERGEABLE_WAIT)
+        try:
+            answer = _MERGEABLE.get(get(transport, f"/repos/{repo}/pulls/{number}").get("mergeable"))
+        except OSError:
+            return None
+        if answer:
+            return answer
+    return None
 
 
 def connect(token: str | None, timeout: float = 30.0) -> Transport:
