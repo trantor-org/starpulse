@@ -38,7 +38,7 @@ class Services:
     harnesses: Harnesses | None = None
     start_session: Callable[..., str] | None = None
     """Starts a task's session in the harness the page picked."""
-    dispatch: Callable[[str, str, str], None] | None = None
+    dispatch: Callable[[str, str, str], bool] | None = None
     """Publishes the dispatch of a session to a task, with the holder it replaces: `(task, session, replaces)`."""
     events: CloudEventsIngest | None = None
     webhook: Callable[[str | None, bytes], tuple[int, dict]] | None = None

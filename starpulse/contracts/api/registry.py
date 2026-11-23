@@ -227,8 +227,9 @@ BODIES: dict[str, Any] = {
 
 class Op(NamedTuple):
     """One method of one route: what it does, the model of the request body (a media type for a body no model
-    describes), the models of its `200` answer and its query names; `media` is the type of the answer, `headers` the
-    request headers the route requires and `required` the query names it requires."""
+    describes), the models of its answer and its query names; `media` is the type of the answer, `headers` the request
+    headers the route requires, `required` the query names it requires and `status` the codes the handler answers
+    success with."""
 
     summary: str
     body: Any = None
@@ -237,14 +238,15 @@ class Op(NamedTuple):
     media: str = "application/json"
     headers: tuple[str, ...] = ()
     required: tuple[str, ...] = ()
+    status: tuple[str, ...] = ("200",)
 
 
 def _read(summary: str, kind: str | None = None, *query: str, media: str = "application/json") -> Op:
     return Op(summary, None if kind is None else BODIES[kind], None, query, media)
 
 
-def _write(summary: str, kind: str, request: Any = None) -> Op:
-    return Op(summary, BODIES[kind], request)
+def _write(summary: str, kind: str, request: Any = None, *status: str) -> Op:
+    return Op(summary, BODIES[kind], request, status=status or ("200",))
 
 
 _STREAM = "text/event-stream"
@@ -292,24 +294,24 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/take-over"): _write("Take a session over", "take_over", TakeOverRequest),
     ("POST", "/api/retire"): _write("Retire a task", "retire", RetireRequest),
     ("POST", "/api/retired/import"): _write("Import retired tasks", "retired_import", RetiredImportRequest),
-    ("POST", "/api/dispatch"): _write("Dispatch a session to a task", "dispatch", DispatchRequest),
+    ("POST", "/api/dispatch"): _write("Dispatch a session to a task", "dispatch", DispatchRequest, "202"),
     ("POST", "/api/park"): _write("Park a task", "park", ParkRequest),
     ("POST", "/api/review"): _write("Record a review", "review", ReviewRequest),
     ("POST", "/api/complete"): _write("Complete a task", "complete", CompleteRequest),
     ("POST", "/api/reopen"): _write("Reopen a task", "reopen", ReopenRequest),
-    ("POST", "/api/tasks"): _write("Create tasks", "create", CreateRequest),
+    ("POST", "/api/tasks"): _write("Create tasks", "create", CreateRequest, "201", "200"),
     ("GET", "/api/milestones/{id}"): _read("One milestone, archived or open", "milestone"),
     ("PUT", "/api/milestones/{id}"): _write(
         "Write a milestone over the revision named", "milestone_put", MilestonePutRequest
     ),
     ("DELETE", "/api/milestones/{id}"): _write("Archive a milestone", "milestone_archive"),
     ("POST", "/api/milestones"): _write("The open milestones", "milestones", MilestoneListRequest),
-    ("PUT", "/api/milestones"): _write("Create a milestone", "milestone_create", MilestoneCreateRequest),
+    ("PUT", "/api/milestones"): _write("Create a milestone", "milestone_create", MilestoneCreateRequest, "201"),
     ("GET", "/api/docs/{id}"): _read("One doc, archived or open", "doc"),
     ("PUT", "/api/docs/{id}"): _write("Write or restore a doc over the revision named", "doc_put", DocPutRequest),
     ("DELETE", "/api/docs/{id}"): _write("Archive a doc", "doc_archive"),
     ("POST", "/api/docs"): _write("The docs named, without bodies", "docs", DocListRequest),
-    ("PUT", "/api/docs"): _write("Create a doc", "doc_create", DocCreateRequest),
+    ("PUT", "/api/docs"): _write("Create a doc", "doc_create", DocCreateRequest, "201"),
     ("POST", "/api/run/{name}"): _write("Run a workflow", "run"),
     ("POST", "/api/runs/{instance}/{workflow}/rerun"): _write("Rerun a workflow run", "run"),
     ("GET", "/api/scheduler"): _read("The scheduler's state", "scheduler"),

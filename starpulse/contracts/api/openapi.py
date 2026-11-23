@@ -48,9 +48,9 @@ def schema_of(model: type[BaseModel], mode: typing.Literal["validation", "serial
     return _bounded(found)
 
 
-def _ref(models: list[type[BaseModel]]) -> dict[str, Any]:
+def _ref(models: list[type[BaseModel]], union: str = "oneOf") -> dict[str, Any]:
     refs = [{"$ref": REF.format(model=model.__name__)} for model in models]
-    return refs[0] if len(refs) == 1 else {"oneOf": refs}
+    return refs[0] if len(refs) == 1 else {union: refs}
 
 
 def _answers(op: Op) -> dict[str, Any]:
@@ -63,9 +63,14 @@ def _answers(op: Op) -> dict[str, Any]:
         schema = {"type": "object"}
     else:
         schema = {"type": "string"}
-    answers: dict[str, Any] = {"200": {"description": "The answer", "content": {op.media: {"schema": schema}}}}
-    if failed:
-        answers["4XX"] = {"description": "A refusal", "content": {"application/json": {"schema": _ref(failed)}}}
+    answers: dict[str, Any] = {
+        status: {"description": "The answer", "content": {op.media: {"schema": schema}}} for status in op.status
+    }
+    if failed:  # each refusal extends `ApiError`, so a rich body also matches it: `anyOf`, never `oneOf`
+        answers["4XX"] = {
+            "description": "A refusal",
+            "content": {"application/json": {"schema": _ref(failed, "anyOf")}},
+        }
     return answers
 
 

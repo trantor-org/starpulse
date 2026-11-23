@@ -130,6 +130,7 @@ def start_delivery(
             actor.lane_entered,
             dispatched=actor.dispatched,
             lease_ended=actor.session_ended,
+            unstarted=actor.unstarted,
         )
         follow_admitted(actor.admitted, log, stop)
     lane_events.follow_entered(board.entered, log, stop)
