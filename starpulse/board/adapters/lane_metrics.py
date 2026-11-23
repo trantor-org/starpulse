@@ -66,7 +66,8 @@ def monitor(
     """Run the conformance monitor (`work`: the machines whose events are work; `sessions` the harness machine it judges
     beside the board's) until `stop`, and keep its exposition in `log` after each entry that changed it: the entries
     once it has read the log it found and every `PROGRESS_S` before, since a write per replayed entry outpaced no
-    replay. The stalled gauge ages with no entry, so `log` keeps its deadlines and `metrics_of` counts them at scrape."""
+    replay. The stalled gauge ages with no entry, so `log` keeps its deadlines and `metrics_of` counts them at scrape; a
+    replay keeps the last deadlines, so the gauge stays sampled until it has read up."""
     conformance = Conformance(
         feed.machines,
         entered=(feed.roles.done, lane_events.ARCHIVED, feed.roles.working),
@@ -90,7 +91,8 @@ def monitor(
                 found = (conformance.exposition(stalled=False), conformance.stall_state())
                 if found != written:
                     log.put_state(CONFORMANCE, found[0])
-                    log.put_state(STALLS, found[1])
+                    if found[1]:  # empty while the streams are read up: keep the last deadlines, so a lag is no gap
+                        log.put_state(STALLS, found[1])
                     written = found
             except Exception:
                 logger.warning("conformance: the metrics were not kept", exc_info=True)
