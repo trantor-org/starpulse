@@ -62,6 +62,20 @@ def get(transport: Transport, path: str) -> dict:
     return body
 
 
+_MERGEABLE = {True: "MERGEABLE", False: "CONFLICTING"}
+
+
+def pull_mergeable(repo: str, number: int, timeout: float) -> str | None:
+    """GitHub's answer now whether the pull request merges (`MERGEABLE` or `CONFLICTING`); None when it is still
+    computing or unreachable. GitHub sends no event when a push clears a conflict, so a stored flag can outlive it."""
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    try:
+        pull = get(connect(token, timeout), f"/repos/{repo}/pulls/{number}")
+    except OSError:
+        return None
+    return _MERGEABLE.get(pull.get("mergeable"))
+
+
 def connect(token: str | None, timeout: float = 30.0) -> Transport:
     """A transport to the GitHub API (`GITHUB_API_URL`, else api.github.com), signed in with `token` when there is one."""
     base = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")

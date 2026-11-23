@@ -23,8 +23,14 @@ test("a write's own content type is kept", async () => {
   expect(sentType(fetcher)).toBe("application/json; charset=utf-8");
 });
 
-test("a read is sent as it is", async () => {
+test("a read is sent with no content type", async () => {
   const fetcher = stubbedFetch();
   await apiFetch("/api/snapshot");
-  expect(fetcher).toHaveBeenCalledWith("/api/snapshot", undefined);
+  expect(sentType(fetcher)).toBeNull();
+});
+
+test.each([undefined, "GET", "POST"])("a %s request names the page as its client", async (method) => {
+  const fetcher = stubbedFetch();
+  await apiFetch("/api/snapshot", { method });
+  expect(new Headers(fetcher.mock.calls[0][1]?.headers).get("X-StarPulse-Client")).toBe("web");
 });

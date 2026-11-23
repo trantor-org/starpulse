@@ -15,9 +15,11 @@ from pathlib import Path
 
 import yaml
 
+from starpulse.harness_telemetry.adapters.outbound.claude import ClaudeHarness
+
 SOURCE = Path(__file__).parents[1] / "skills"
 #: Each harness's documented discovery path, relative to a project or the home directory.
-HARNESS_DIRS = {"claude": ".claude/skills", "codex": ".agents/skills"}
+HARNESS_DIRS = {"claude": ClaudeHarness().skills_dir, "codex": ".agents/skills"}
 MARKER = ".starpulse-install.json"
 
 

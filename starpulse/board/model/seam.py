@@ -94,6 +94,8 @@ class Written(NamedTuple):
     """Whether a declared guard or the board's validate hook refused the write: a defect in the task record an editor of the record repairs."""
     warnings: tuple[str, ...] = ()
     """The reasons of the lane rules the write broke and landed anyway, which only an operator's move may; empty for a clean write."""
+    version: str = ""
+    """What an audit judged the write over, to pass back as `over`; empty for a write that landed."""
 
 
 class MoveWriter(Protocol):
@@ -122,10 +124,11 @@ TaskReader = Callable[[str], Mapping[str, Any] | None]
 
 
 class TaskEditor(Protocol):
-    """Apply every change to a task in one write, with a comment or a list of them."""
+    """Apply every change to a task in one write, with a comment or a list of them. With `over`, the `version` an audit
+    judged, the write lands only on that record: a task changed since is no refusal (`transient`), judged again."""
 
     def __call__(
-        self, task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /, actor: str = ...
+        self, task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /, actor: str = ..., over: str = ...
     ) -> Written: ...
 
 

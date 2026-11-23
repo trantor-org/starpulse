@@ -13,12 +13,15 @@ import dataclasses
 import json
 import logging
 import math
+import multiprocessing
+import os
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Connection, bindparam, delete, func, insert, literal_column, select, text
+from sqlalchemy import Connection, String, bindparam, delete, func, insert, literal_column, select, text
 
 import starpulse.contracts.signals as signal_contract
 import starpulse.flow_metrics.model as model
@@ -54,6 +57,22 @@ VIEWS: dict[str, Fold] = {
     "trace_cases": traces.fold_trace_cases,
     "spend": spend.fold_spend,
 }
+
+
+#: A rebuild over at least this many sessions folds them in worker processes: one process folds a session in about a
+#: hundred milliseconds of Python, so a stamp change over thousands of sessions outlasts a deploy on the one core the GIL
+#: allows.
+_POOL_MIN = 64
+_POOL_MAX = 16
+_workers: dict[str, SignalFolds] = {}
+
+
+def _start_worker(url: str, keys: TaskKeys | None, analytics: Analytics | None) -> None:
+    _workers["folds"] = SignalFolds(EventLog(url), keys, analytics)
+
+
+def _fold_in_worker(key: tuple[str, str]) -> list[dict[str, Any]] | None:
+    return _workers["folds"]._compute(*key)
 
 
 def canonical(value: Any) -> Any:
@@ -92,6 +111,13 @@ _WINDOW = text(
 )
 
 
+_NEW = text(
+    "SELECT harness, session, min(rowid), max(rowid) FROM starpulse_signals"
+    " NOT INDEXED"  # left to itself SQLite walks the whole session index for the GROUP BY, 0.2 s a wake at 1.3 M rows
+    " WHERE rowid > :cursor GROUP BY harness, session ORDER BY min(rowid)"
+)
+
+
 def changed(events: EventLog, after: int, views: Iterable[str], since: float = 0.0) -> tuple[int, dict[str, list[Any]]]:
     """The per-session results of the `views` for each session folded past the rowid `after` and through the cursor
     (and with a signal at or after `since`), oldest first, with the cursor to pass as `after` next time.
@@ -118,6 +144,10 @@ def changed(events: EventLog, after: int, views: Iterable[str], since: float = 0
     for view, result in rows:
         answer[view].append(result)
     return through, answer
+
+
+# The result is the JSON text the fold made, so the column type's own dump, a second encode of every result, is skipped.
+_INSERT = insert(signal_folds).values(result=bindparam("result", type_=String))
 
 
 class SignalFolds:
@@ -148,33 +178,28 @@ class SignalFolds:
         cursor moves past every session that folded; a session whose fold raised is logged and left, and the cursor
         stops before its first new row so the next pass tries it again. Raises when the database does."""
         rebuilt = self._drop_changed()
-        # a rebuild refolds history, which adds nothing to the skill series; the board is read once for the pass
-        counting = None if rebuilt or self._titled is None else self._titled()
+        # a rebuild refolds history, which adds nothing to the skill series; the board is read once for the pass, at
+        # the first session folded, so a wake that folds nothing reads none
+        counting: Mapping[str, Mapping[str, Any]] | None = None
         folded = 0
         cursor = self._events.setting(CURSOR) or 0
         with self._engine.connect() as db:
-            new = db.execute(
-                select(
-                    signals.c.harness,
-                    signals.c.session,
-                    func.min(literal_column("rowid")),
-                    func.max(literal_column("rowid")),
-                )
-                .where(literal_column("rowid") > cursor)
-                .group_by(signals.c.harness, signals.c.session)
-                .order_by(func.min(literal_column("rowid")))
-            ).all()
+            new = db.execute(_NEW, {"cursor": cursor}).all()
         reached = cursor
+        pooled = self._pooled([(row[0], row[1]) for row in new]) if rebuilt and len(new) >= _POOL_MIN else None
         failed: list[int] = []
         finished: set[str] = set()
         for harness, session, first_row, last_row in new:
             reached = max(reached, last_row)
             if not rebuilt and self._current(harness, session) >= last_row:
                 continue
-            before = self._completed_tasks(harness, session)
-            if self._fold(harness, session, counting):
+            before = set() if rebuilt else self._completed_tasks(harness, session)  # a rebuild announces no completion
+            if counting is None and not rebuilt and self._titled is not None:
+                counting = self._titled()
+            if self._fold(harness, session, counting, pooled):
                 folded += 1
-                finished |= self._completed_tasks(harness, session) - before
+                if not rebuilt:
+                    finished |= self._completed_tasks(harness, session) - before
             else:
                 failed.append(first_row)
         if new:
@@ -304,21 +329,26 @@ class SignalFolds:
         found = [stored_signal({k: v for k, v in row[1].items() if v is not None}) for row in rows]
         return max((row[0] for row in rows), default=0), found
 
-    def _fold(
-        self,
-        harness: str,
-        session: str,
-        tasks: Mapping[str, Mapping[str, Any]] | None = None,
-    ) -> bool:
-        """Replace the session's fold rows with a fold of its stored signals; False when a fold raised, and the old
-        rows stay. A session with no signal left loses its rows."""
+    def _pooled(self, keys: list[tuple[str, str]]) -> Iterator[list[dict[str, Any]] | None]:
+        """`_compute` of each of the sessions `keys`, in order, folded in worker processes."""
+        context = multiprocessing.get_context("spawn")  # the process holds threads and database connections: no fork
+        with ProcessPoolExecutor(
+            min(_POOL_MAX, os.process_cpu_count() or 1),
+            mp_context=context,
+            initializer=_start_worker,
+            initargs=(self._events.url, self._keys, self._analytics),
+        ) as pool:
+            yield from pool.map(_fold_in_worker, keys, chunksize=4)
+
+    def _compute(self, harness: str, session: str) -> list[dict[str, Any]] | None:
+        """The fold rows of the session's stored signals, a result as its JSON text; None when a fold raised."""
         through, found = self._load(harness, session)
         try:
             results = {view: fold(found, self._keys, self._analytics) for view, fold in VIEWS.items()} if found else {}
-            stored = {view: json.loads(json.dumps(result)) for view, result in results.items()}
+            stored = {view: json.dumps(result) for view, result in results.items()}
         except Exception:
             log.exception("fold of %s session %s failed", harness, session)
-            return False
+            return None
         first_at = min((s.time for s in found), default=0.0)
         last_at = max((s.time for s in found), default=0.0)
         rows = [
@@ -333,13 +363,29 @@ class SignalFolds:
             }
             for view, result in stored.items()
         ]
+        return rows
+
+    def _fold(
+        self,
+        harness: str,
+        session: str,
+        tasks: Mapping[str, Mapping[str, Any]] | None = None,
+        pooled: Iterator[list[dict[str, Any]] | None] | None = None,
+    ) -> bool:
+        """Replace the session's fold rows with a fold of its stored signals, taken from `pooled` when a pool folds the
+        pass; False when a fold raised, and the old rows stay. A session with no signal left loses its rows."""
+        rows = next(pooled) if pooled is not None else self._compute(harness, session)
+        if rows is None:
+            return False
         with self._engine.begin() as db:
             before = self._stored_cost(db, harness, session) if tasks is not None else []
             db.execute(delete(signal_folds).where(signal_folds.c.harness == harness, signal_folds.c.session == session))
             if rows:
-                db.execute(insert(signal_folds), rows)
-        if tasks is not None and "cost" in stored:
-            skill_cost.add(cells.cost_increase(before, stored["cost"], tasks))
+                db.execute(_INSERT, rows)
+        if tasks is not None:
+            for row in rows:
+                if row["view"] == "cost":
+                    skill_cost.add(cells.cost_increase(before, json.loads(row["result"]), tasks))
         return bool(rows)
 
     @staticmethod

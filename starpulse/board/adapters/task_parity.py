@@ -2,7 +2,7 @@
 replay to a rendering that differs from their file's.
 
 A task's file and its replayed row are compared through `markdown.render`, plus the columns the rendering omits: the
-meta, the assignee, the comments' text and whether the task is archived."""
+meta (start criteria by their authored fields only), the assignee, the comments' text and whether the task is archived."""
 
 import difflib
 from collections.abc import Iterable, Iterator, Mapping
@@ -15,6 +15,7 @@ from sqlalchemy import Engine
 from starpulse.board.adapters.native import _Retired, _record_of
 from starpulse.board.adapters.native_scan import _FOLDERS
 from starpulse.board.adapters.task_history import _KINDS, _META, _OWN, KIND, TaskHistory, seed
+from starpulse.board.model import criteria
 from starpulse.board.model.markdown import render
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore
@@ -46,15 +47,18 @@ class Parity:
 
 
 def filed(root: Path, engine: Engine) -> Iterator[Filed]:
-    """Every open, completed and archived task file under `root`, then every retired task of the store."""
+    """Every open, completed and archived task file under `root`, then every retired task of the store whose id no file holds."""
+    held: set[str] = set()
     for folder, settled in _FOLDERS:
         for path in sorted((root / folder).glob("*.md")):
             record = _record_of(path.read_text())
-            yield Filed(record["id"] or path.stem, record, settled is not None)
+            held.add(task := record["id"] or path.stem)
+            yield Filed(task, record, settled is not None)
     retired = _Retired()
     retired.engine = engine
     for task, text in retired.pairs():
-        yield Filed(task, _record_of(text), True)
+        if task not in held:  # a file holding the id outranks an old row of another task
+            yield Filed(task, _record_of(text), True)
 
 
 def _replayed(row: Record) -> dict[str, Any]:
@@ -71,6 +75,8 @@ def _replayed(row: Record) -> dict[str, Any]:
 def _shown(record: Record, archived: bool) -> tuple[str, dict[str, Any], str, list[str], bool]:
     columns = seed(record, 0.0)
     meta = {key: value for key, value in columns["meta"].items() if value}
+    if "start_criteria" in meta:
+        meta["start_criteria"] = criteria.bare(meta["start_criteria"])
     texts = [item["text"] for item in record.get("comments") or []]
     return render(record), meta, columns["assignee"], texts, archived
 

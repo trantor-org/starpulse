@@ -7,6 +7,7 @@ creates the board, empty, when its directory is absent. It is the default `[boar
 
 import contextlib
 import fcntl
+import hashlib
 import importlib
 import json
 import os
@@ -51,7 +52,7 @@ from starpulse.board.adapters.native_scan import (
 from starpulse.board.adapters.native_scan import (
     _profile as _profile_of,
 )
-from starpulse.board.adapters.task_history import TaskHistory, revises_plan
+from starpulse.board.adapters.task_history import KIND, TaskHistory, revises_plan
 from starpulse.board.model import criteria, entry, rules, write_steps
 from starpulse.board.model.claims import assignee_of, claimed, released
 from starpulse.board.model.guard import Guard, Validate
@@ -81,8 +82,9 @@ from starpulse.board.model.seam import (
 )
 from starpulse.contracts.tiers import TIERS, implied_tier
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
+from starpulse.event_log.store import lacks_history
 from starpulse.event_log.tables import pull_requests, retired_tasks
-from starpulse.github.adapters.outbound.rest import connect, get
+from starpulse.github.adapters.outbound.rest import connect, get, pull_mergeable
 from starpulse.machine_engine.model.state_roles import StateRoles
 
 if TYPE_CHECKING:
@@ -200,16 +202,10 @@ _RECORDS_LOCK = threading.Lock()
 
 #: GitHub lists a pull request's files `_FILES_PAGE` to a page and stops at 3000.
 _FILES_PAGE, _FILES_PAGES = 100, 30
-_GITHUB_MERGEABLE = {True: "MERGEABLE", False: "CONFLICTING"}
 
 
 def _github_mergeable(repo: str, number: int) -> str | None:
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    try:
-        pull = get(connect(token, HOOK_TIMEOUT), f"/repos/{repo}/pulls/{number}")
-    except OSError:
-        return None
-    return _GITHUB_MERGEABLE.get(pull.get("mergeable"))
+    return pull_mergeable(repo, number, HOOK_TIMEOUT)
 
 
 def _github_files(repo: str, number: int) -> list[str] | None:
@@ -362,6 +358,8 @@ def _split_record(text: str) -> tuple[dict, str]:
 _STALE = Written(False, "the task file changed while it was being written")
 #: How many times `_update` redoes an edit on a file that changed under it before it gives up.
 _ATTEMPTS = 5
+#: Returned by `_update` when the file is not the one a write was judged over (`over`): no refusal, so it is judged again.
+_CHANGED = Written(False, "the task file changed after it was judged", transient=True)
 
 
 def _land(
@@ -396,9 +394,11 @@ def _update(
     actor: str = OPERATOR,
     *,
     audit: bool = False,
+    over: str = "",
 ) -> Written:
     """Rewrite the file of `task` with its front matter edited in place, its body as `edit` returns it and a new
-    `updated_date`, as `actor`; an `audit` only judges that rewrite (`_land`).
+    `updated_date`, as `actor`; an `audit` only judges that rewrite (`_land`) and names the file it read as `version`.
+    With `over`, a file that is not the one an audit named is `_CHANGED`.
 
     A file that changed between the read and the write is read and edited again, so another writer's change is kept;
     after `_ATTEMPTS` such races the edit is refused."""
@@ -407,11 +407,14 @@ def _update(
     try:
         for _ in range(_ATTEMPTS):
             before = path.read_text()
+            version = hashlib.sha256(before.encode()).hexdigest()
+            if over and version != over:
+                return _CHANGED
             frontmatter, body = _split(before)
             body = edit(frontmatter, body)
             landed = _land(path, before, _stamped(frontmatter), body, guard, actor, audit=audit)
             if landed.ok:
-                return Written(True, f"Updated task {task}", warnings=landed.warnings)
+                return Written(True, f"Updated task {task}", warnings=landed.warnings, version=version if audit else "")
             if landed is not _STALE:
                 return landed
     except OSError as error:
@@ -808,7 +811,9 @@ def _editor(
     """
     spelled = {lane_id(status): status for status in statuses}
 
-    def edit(task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /, actor: str = OPERATOR) -> Written:
+    def edit(
+        task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /, actor: str = OPERATOR, over: str = ""
+    ) -> Written:
         texts = [comment] if isinstance(comment, str) else comment
         status = str(changes.get("status") or "")
         reason = "\n".join(text.strip() for text in texts if text.strip())
@@ -840,7 +845,7 @@ def _editor(
         if audit:
             judged, actor = replace(judged, validate=None, types=()), TASK_ACTOR
         try:
-            written = _update(root, task, apply, judged, actor, audit=audit)
+            written = _update(root, task, apply, judged, actor, audit=audit, over=over)
         except ValueError as refusal:  # raised before the file is written, so a refusal writes nothing
             return Written(False, f"{task}: {refusal}")
         if audit:
@@ -1116,8 +1121,9 @@ class _Retired:
         """Every retired task's text, by id, a page of rows at a time, so no more than a page is held at once."""
         return (text for _, text in self.pairs())
 
-    def pairs(self) -> Iterator[tuple[str, str]]:
-        """Every retired `(task, text)`, by id, a page of rows at a time."""
+    def pairs(self, *, without_history: bool = False) -> Iterator[tuple[str, str]]:
+        """Every retired `(task, text)`, by id, a page of rows at a time; `without_history` keeps those whose task has no
+        Event, which the store alone decides, so a start reads the text of none that has one."""
         after = ""
         while self.engine is not None:
             query = (
@@ -1126,6 +1132,8 @@ class _Retired:
                 .order_by(retired_tasks.c.task)
                 .limit(_RETIRED_PAGE)
             )
+            if without_history:
+                query = query.where(lacks_history(KIND, retired_tasks.c.task))
             with self.engine.connect() as db:
                 page = db.execute(query).all()
             yield from ((row.task, row.text) for row in page)
@@ -1915,7 +1923,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         retired.engine = log.engine  # the retired tasks live in the view's history store
         claims.log = log
         history.attach(log.engine)
-        history.import_retired(retired.pairs(), _record_of)
+        history.import_retired(retired.pairs(without_history=True), _record_of)
         if settings.get("complete_done"):
             _uncompleted(root, settings.get("complete_keep_labels"))
             for done_task in _done_in_tasks(root, made.roles.done):

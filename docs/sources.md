@@ -153,7 +153,8 @@ folded history, is 400 with `history_s`. Its columns:
 
 - `task`, `kind`, `size`: the task and its board labels `kind-<kind>` and `size-<n>`, null when it has none.
 - `phase`: `claim`, `implement`, `qa`, `deliver` or `review_fix`. The skills `qa`, `deliver`, `review-fix` and
-  `cr-triage` set their phase. Every other step is `claim` until the step that carries the task's claim, or the first
+  `cr-triage` set their phase. A step before its session's first naming signal (claim or task branch) bills to no
+  task; session health keeps the back-fill. Every other step is `claim` until the step that carries the task's claim, or the first
   step of the task that edits a file (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `StrReplace`) when no claim is in
   the window, across all its sessions in the window, and `implement` after it; a task with no edit and no claim in the
   window is all `implement`, so a window that starts mid-task does not bill its work to `claim`.
@@ -296,10 +297,10 @@ faces GitHub forward only `POST`.
 
 ### Turn saved deliveries into machine events
 
-With a `[github]` table and a `[[producers]]` entry named `github` (`token_env`, `machines = ["github-pull-request"]`,
+With a `[github]` table, an enabled `[bridge]` and a `[[producers]]` entry named `github` (`token_env`, `machines = ["github-pull-request"]`,
 `actors = ["github"]`), `serve` also runs the `github-events` context: the `events` consumer, which reads the inbox and
-posts one CloudEvent per pull request fact to `/api/machine-events` (`STARPULSE_WRITE_URL`, else
-`http://127.0.0.1:<port>`) as the `github` actor. Without the entry or its token in the environment the context is
+publishes one CloudEvent per pull request fact to the bridge's JetStream ingest (`ingest.<board>` on the `[bridge]`
+`port`) as the `github` actor, and the `bridge` context applies it. Without the bridge, the entry or its token in the environment the context is
 absent or fails to start, and the inbox keeps every delivery.
 
 1. Each consumer keeps its own state per delivery in `github_inbox_state`: `pending`, `done`, `skipped` or `dead`.
@@ -323,6 +324,8 @@ absent or fails to start, and the inbox keeps every delivery.
    tried and saved before then, but a `pulls` merge (`pull_request` `closed`), 5,000 rows a transaction, so the listener saves between them: a backlog the consumer
    would only claim to re-read pull requests the reconcile reads anyway. A merge webhook does not wait on such a
    backlog: the `pulls` consumer claims a `pull_request` `closed` delivery ahead of every older one.
+   The `pull-reads` consumer claims only `push` and `repository_ruleset` deliveries and makes their GitHub reads on a
+   thread of its own, so a push's compare per open pull request never holds up a `pulls` write.
 
 The page's `/metrics` serves, per consumer, `starpulse_github_pending_rows{consumer}`,
 `starpulse_github_oldest_due_seconds{consumer}` (the age of its oldest pending row that is due) and
@@ -448,8 +451,10 @@ curl -X POST "$STARPULSE_URL/api/machine-events" \
 
 The same post from a shell or a scheduler hook is `starpulse event emit --source ci-bot --type BUILT --subject PROJ-1
 --machine delivery --actor ci --data sha=abc123`: it builds `starpulse.contracts.CloudEvent`, the model the ingest
-reads, and posts it to `--url` (else `STARPULSE_WRITE_URL`, `STARPULSE_URL`) with the token in
-`STARPULSE_PRODUCER_<SOURCE>_TOKEN`. It exits 0 on a 201 and 1 with the ingest's answer otherwise.
+reads, and publishes it to the JetStream ingest of the `[bridge]` in `--config` (default `starpulse.toml`) with the token
+in `STARPULSE_PRODUCER_<SOURCE>_TOKEN`. It exits 0 once the stream holds the event and 1 when the server is unreachable.
+The `bridge` context applies the event with the route's checks (token, machines, actors), so one it refuses is logged
+there, not answered to the emitter.
 
 A producer that reports a run system's Step events may set `adapter` to that system's run Adapter type
 (`adapter = "github_actions"`): its events then carry the system's own status label in `data.status`, and the ingest reads it

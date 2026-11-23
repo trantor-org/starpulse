@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 #: The run Adapters that run as their own workers (`starpulse.runs.bin.adapter_worker`): `serve`'s `contexts` child runs one as a thread for each that a `[[runs]]` instance names.
 OPT_IN = ("github-actions", "systemd", "woodpecker")
-CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", "sweeper", *OPT_IN, "contexts")
+CONTEXTS = ("api", "pulls", "scheduler", "runs", "flow-metrics", "search", "board", "sweeper", *OPT_IN, "contexts", "conformance")
 
 
 def worker_parser() -> argparse.ArgumentParser:
@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> None:
     # each context's bin reads its section of the root config, which only the runtime loads
     loader = {"discover": discover, "load": load}
 
-    if args.context == "contexts":
+    if args.context in ("contexts", "conformance"):
         from starpulse.runtime.contexts import contexts_of, run_contexts
         from starpulse.runtime.hold import announce_ready, go_event
 
@@ -106,8 +106,9 @@ def main(argv: list[str] | None = None) -> None:
         try:
             config = load(path)
             base = args.config.parent if args.config else Path.cwd()
+            names = contexts_of(config) if args.context == "contexts" else ["conformance"]
             return run_contexts(
-                config, path, contexts_of(config), StopEvent(), base=base,
+                config, path, names, StopEvent(), base=base, child=args.context,
                 go=go_event(os.environ), prepared=lambda: announce_ready(os.environ),
             )  # fmt: skip
         except (OSError, ValueError) as exc:

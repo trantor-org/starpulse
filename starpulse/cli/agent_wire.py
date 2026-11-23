@@ -66,8 +66,10 @@ def server_url(flag: str | None, environ: Mapping[str, str]) -> Server:
 
 
 def auth(base: str) -> dict[str, str]:
-    """The Authorization header `base` carries, if any."""
-    return {"Authorization": f"Bearer {base.token}"} if isinstance(base, Server) and base.token else {}
+    """The headers every request to `base` carries: the `cli` client name, which the server's latency metric labels as
+    its caller, and the Authorization bearer token, if any."""
+    named = {"X-StarPulse-Client": "cli"}
+    return {**named, "Authorization": f"Bearer {base.token}"} if isinstance(base, Server) and base.token else named
 
 
 def _open_get(request: urllib.request.Request, timeout: float) -> Any:

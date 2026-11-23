@@ -52,7 +52,8 @@ CONTEXT_ENTRIES = (
     "starpulse.flow_metrics.model.liveness",
     "starpulse.github.adapters.inbound.consumer",
     "starpulse.github.adapters.inbound.listener",
-    "starpulse.github.adapters.outbound.ingest",
+    "starpulse.pulls.adapters.outbound.github",
+    "starpulse.runs.adapters.inbound.cloudevents",
     "starpulse.runs.adapters.inbound.status_resync",
     "starpulse.runtime.assembly",
     "starpulse.runtime.read_model_follow",
@@ -69,11 +70,27 @@ CONTEXT_ENTRIES = (
     _ADAPTER_ENTRY,
 )
 
+#: The modules `starpulse worker conformance` loads for its one context, as `CONTEXT_ENTRIES` names the others': a change to
+#: any other context replaces no monitor, which would replay the log it holds the checkpoint of.
+CONFORMANCE_ENTRIES = (
+    "starpulse.runtime.contexts",
+    "starpulse.runtime.assembly",
+    "starpulse.runtime.read_model_follow",
+    "starpulse.board.adapters.lane_metrics",
+    "starpulse.event_log.conformance_monitor",
+    "starpulse.flow_metrics.model.liveness",
+    "starpulse.harness_telemetry.model.harness",
+)
+
+#: The modules each worker that runs contexts loads late, by its name.
+WORKER_ENTRIES = {"contexts": CONTEXT_ENTRIES, "conformance": CONFORMANCE_ENTRIES}
+
 #: The module each process starts from; its imports are what a change to the installed code can reach it through.
 ENTRIES = {
     SELF: "starpulse.runtime.server",
     "api": "starpulse.views.bin.api_worker",
     "contexts": "starpulse.runtime.worker",
+    "conformance": "starpulse.runtime.worker",
     CHILD: "starpulse.runtime.nats_server",
 }
 
@@ -118,7 +135,7 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "producers": _owned_by("contexts"),
     "project": _owned_by(),
     "database_url": _CHILDREN,
-    "board": _owned_by("contexts"),
+    "board": _owned_by("contexts", "conformance"),
     "runs": _owned_by("contexts"),
     "search": _owned_by("contexts"),
     "release": _owned_by("contexts"),
@@ -300,6 +317,8 @@ def _blocks(name: str, config: Config, base: Path) -> tuple[object, object]:
             _policy_hash(config, base),
         )
         return restart, (pulls_delivery_blocks(config), scheduler_live_blocks(config))
+    if name == "conformance":
+        return (board_built_blocks(config), _machine_hash(config, base)), ()
     return (), ()
 
 
@@ -329,6 +348,6 @@ class Reader:
     def __call__(self, name: str) -> Reading:
         config = self._config()
         # a worker's main takes the root config loader from `runtime`, so its entry imports none
-        extra = CONTEXT_ENTRIES if name == "contexts" else ()
+        extra = WORKER_ENTRIES.get(name, ())
         code = code_of(ENTRIES[name], extra=("starpulse.runtime.config", adapter_module(config.board_type), *extra))
         return Reading(code, *_blocks(name, config, self._base))

@@ -1,7 +1,7 @@
 """The spend report: per task and phase, the tokens a task burned and what they weigh against the task's cell.
 
 A phase is a task's stretch of steps (`steps.session_owned`, a subagent's counted to its task). A step under
-`qa`, `deliver` or `review-fix` (`cr-triage` too) is that phase. Every other step is `claim` until the step that
+`qa`, `deliver` or `review-fix` (`cr-triage` too) is that phase. A step before the session's first naming signal bills to no task. Every other step is `claim` until the step that
 carries the task's claim, or the first step that edits a file when no claim is in the window, and `implement` after
 it, over all the task's sessions in the window; a task with no edit and no claim in the window is all `implement`.
 Loading `starting-task` stays in force through the build, so that skill alone cannot split the two.
@@ -21,6 +21,7 @@ the session's; a row of subagent steps alone takes its first step's.
 from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from math import inf
 from statistics import median
 from typing import Any
 
@@ -51,14 +52,16 @@ def _edits(owned: Owned) -> bool:
 def fold_spend(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> dict[str, Any]:
     """The fold of one session's `signals`: its `harness` and `session`, its captured, non-auxiliary steps that belong
     to a task, each with whether it `edits`, and each task's first claim time and compaction times, as plain JSON data `combine_spend` reads."""
+    ordered = session_signals(signals, keys, analytics) if signals else []
+    named = next((s.time for task, s in attributed(ordered, keys, backfill=False) if task), inf)
     owned = [
         {**o.step, "edits": _edits(o)}
         for o in session_owned(signals, keys, analytics)
-        if o.step["captured"] and o.step["origin"] != "auxiliary" and o.step["task"]
+        if o.step["captured"] and o.step["origin"] != "auxiliary" and o.step["task"] and o.step["at"] >= named
     ]
     compactions: dict[str, list[float]] = defaultdict(list)
     claims: dict[str, float] = {}
-    for task, s in attributed(session_signals(signals, keys, analytics), keys) if signals else ():
+    for task, s in attributed(ordered, keys):
         if task and s.kind == "compaction":
             compactions[task].append(s.time)
         elif task and s.kind == "claim":

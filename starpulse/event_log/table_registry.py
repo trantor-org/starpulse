@@ -37,9 +37,8 @@ FAMILIES: dict[str, Family] = {
 _DURABLE = _t(
     "events", "machine_events", "lane_changes", "signals", "stream_events", "checkpoints", "settings", "gaps",
     "breaking_changes", "breaking_change_detections", "task_verdicts", "learned_steps", "scheduler_runs",
-    "retired_tasks", "pull_requests", "machine_versions", "machine_active", "reader_floor", "policy_exits",
-    "policy_lanes", "policy_profiles", "policy_routes", "policy_rules", "policy_tools", "policy_vocabularies",
-    "policy_watches",
+    "retired_tasks", "pull_requests", "machine_versions", "machine_active", "policy_versions",
+    "policy_active",
 ) + ("github_inbox", "github_inbox_state", "github_reconcile_state")  # the inbox's names are the readers' own
 CLASSES: dict[str, str] = {
     **dict.fromkeys(_DURABLE, "durable"),

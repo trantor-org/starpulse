@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.contracts.adapters import StartFailedError
+from starpulse.harness_telemetry.adapters.outbound.claude import ClaudeHarness
 
 #: The binaries a session needs on `PATH`.
 _BINARIES = ("tmux", "claude")
@@ -39,10 +40,7 @@ def builtin_starter(
         if missing := next((name for name in _BINARIES if which(name) is None), None):
             raise StartFailedError(f"the built-in starter needs {missing} on PATH")
         name = f"starpulse-{task}"
-        agent = ["--agent", profile] if profile else []
-        argv = [
-            "tmux", "new-session", "-d", "-s", name, "-c", str(cwd), "claude", *agent, "--remote-control", task, f"{verb} {task}"
-        ]
+        argv = ["tmux", "new-session", "-d", "-s", name, "-c", str(cwd), *ClaudeHarness().launch(task, verb, profile)]
         done = run(argv, capture_output=True, text=True, check=False)
         if done.returncode != 0:
             raise StartFailedError(f"tmux could not start {name}: {done.stderr.strip() or f'exit {done.returncode}'}")

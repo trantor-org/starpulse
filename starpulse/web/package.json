@@ -23,6 +23,7 @@
     "unique-names-generator": "4.7.1"
   },
   "devDependencies": {
+    "@redocly/cli": "^2.82.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

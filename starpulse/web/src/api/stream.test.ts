@@ -450,6 +450,16 @@ describe("openStream", () => {
       expect([kinds, seen[0].error]).toEqual([[undefined], "ci: down"]);
     });
 
+    it("is read naming the page as its client", async () => {
+      const reads = fetchStub();
+      openStream(handlers, open);
+
+      last().dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
+
+      const init = vi.mocked(fetch).mock.calls[0][1];
+      expect([reads.length, new Headers(init?.headers).get("X-StarPulse-Client")]).toEqual([1, "web"]);
+    });
+
     it("is read once when index.html's connection already asked for it", async () => {
       const reads = fetchStub();
       const asked = fetch(BODY);

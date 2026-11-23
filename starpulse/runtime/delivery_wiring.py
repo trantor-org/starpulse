@@ -16,7 +16,7 @@ from starpulse.event_log import lane_events
 from starpulse.event_log.start_requests import follow_admitted
 from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound.head_reader import GitHubReader
-from starpulse.github.adapters.outbound.rest import connect
+from starpulse.github.adapters.outbound.rest import connect, pull_mergeable
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor, moves_of
 from starpulse.pulls.adapters.outbound.main_green import MainGreen
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
@@ -29,6 +29,8 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
     from starpulse.pulls.adapters.outbound.pulls import PullStore
+
+_MERGEABLE_TIMEOUT = 10.0
 
 
 def _then(first: Callable[[], None], second: Callable[[], None]) -> Callable[[], None]:
@@ -105,6 +107,7 @@ def start_delivery(
             live=live,
             main_green=_main_green(config, pins),
             owner_source=config.owner_source,
+            mergeable=lambda repo, number: pull_mergeable(repo, number, _MERGEABLE_TIMEOUT),
             advance=lambda machine, task, event: machine_events.publish(
                 machine, event, actor=ACTOR, task=task, log=log
             ),

@@ -9,6 +9,7 @@ import argparse
 import logging
 import os
 import signal
+import socket
 import subprocess
 import sys
 from _thread import interrupt_main
@@ -18,8 +19,8 @@ from starpulse.runtime import launch, wiring
 from starpulse.runtime.closure import Reader
 from starpulse.runtime.config import Config, rehearsing
 from starpulse.runtime.control import control_file
-from starpulse.runtime.hold import BOOT_ENV, GITHUB_FD_ENV, LISTEN_FD_ENV, adopted_from_env, boot_token
-from starpulse.runtime.listen import github_socket, inherited_socket, listen, listen_options, resolve_listen
+from starpulse.runtime.hold import BOOT_ENV, CLAUDE_CODE_FD_ENV, GITHUB_FD_ENV, LISTEN_FD_ENV, adopted_from_env, boot_token
+from starpulse.runtime.listen import held_socket, inherited_socket, listen, listen_options, resolve_listen
 from starpulse.runtime.nats_server import bridge_commands
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 
@@ -131,11 +132,16 @@ def main(argv: list[str] | None = None) -> None:
         listening = listening or listen(parser, args)
         commands["api"] += ["--hours", str(args.hours)]
     admit_at_start(parser, args)
-    # the contexts child is handed the github webhook socket, which outlives it: a delivery posted while it is replaced
-    # waits in the backlog
-    webhook = github_socket(os.environ, config.github) if "contexts" in commands and config.github else None
-    os.environ.pop(GITHUB_FD_ENV, None)
-    held = {"contexts": webhook} if webhook else {}
+    # the contexts child is handed the github webhook and Claude Code OTLP sockets, which outlive it: a delivery or
+    # export posted while it is replaced waits in the backlog
+    held: dict[str, dict[str, socket.socket]] = {}
+    if "contexts" in commands:
+        tables = ((GITHUB_FD_ENV, config.github, "github"), (CLAUDE_CODE_FD_ENV, config.claude_code, "claude-code"))
+        for env_name, table, what in tables:
+            kept = held_socket(os.environ, env_name, table.host, table.port, what) if table else None
+            if kept:
+                held.setdefault("contexts", {})[env_name] = kept
+            os.environ.pop(env_name, None)
     reader = Reader(args.config)
     refused: list[str] = []
 

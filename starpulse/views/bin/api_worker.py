@@ -204,7 +204,7 @@ def serve_page(
         slow_read_s=config.slow_read_seconds,
         actor_metrics=actor_metrics,
         actor_view=actor_view,
-        # the lane followers run in `starpulse worker contexts`; this process relays the metrics they keep
+        # the lane followers run in `starpulse worker contexts` and `conformance`; this process relays the metrics they keep
         lane_metrics=lane_metrics_of(log),
         autopilot_metrics=lambda: autopilot_exposition(log),
         storage_metrics=cached(

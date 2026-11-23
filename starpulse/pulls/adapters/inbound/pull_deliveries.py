@@ -24,17 +24,21 @@ from starpulse.github.adapters.outbound.cursors import SqlCursors
 from starpulse.github.adapters.outbound.queue import SqlQueue
 from starpulse.github.adapters.outbound.rest import connect_client
 from starpulse.github.model.delivery import Delivery
+from starpulse.github.model.reconcile import epoch
 from starpulse.github.ports.events import OpenWatch, Queue, Stop
 from starpulse.pulls.adapters.inbound.pull_facts import FACTS, forced_push
 from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail, opened, reopened
 from starpulse.pulls.adapters.outbound.pull_reads import READ_EVENTS, PullReads, refresh
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 
-__all__ = ["CONSUMER", "URGENT", "apply", "consume", "start"]
+__all__ = ["CONSUMER", "READS", "URGENT", "apply", "consume", "consume_reads", "start"]
 
 logger = logging.getLogger(__name__)
 
 CONSUMER = "pulls"
+#: The consumer of the `READ_EVENTS` deliveries: a push's compare read per open pull request takes minutes under load,
+#: so it runs on a cursor and thread of its own, never ahead of a delivery that writes.
+READS = "pull-reads"
 #: The `(event, action)` deliveries claimed ahead of every older one: a merge moves its task at once.
 URGENT = (("pull_request", "closed"),)
 
@@ -88,7 +92,8 @@ def _merge(record: Record, pull: Mapping[str, Any], at: float) -> Record:
     # A reduced reconcile body may name no merge time: the stored one stands.
     stamp, sha = (pull.get("merged_at", record["mergedAt"]), pull.get("merge_commit_sha", record["mergeSha"])) if merged else (None, None)
     detail = _detail(record, at)
-    closed = {"closed": not merged, "closedAt": None if merged else pull["closed_at"]}
+    shut = record["state"] == "CLOSED"  # `_state` ran first; an open pull request is not closed
+    closed = {"closed": shut, "closedAt": pull["closed_at"] if shut else None}
     ci = detail["ci"] | {"merged": merged, "mergedAt": stamp} | closed
     return {"mergedAt": stamp, "mergeSha": sha, "detail": detail | {"mergedAt": stamp, "mergeSha": sha, "ci": ci}}
 
@@ -116,6 +121,14 @@ _ACTIONS: dict[str, tuple[Delta, ...]] = {
 }
 
 
+def _outdated(record: Record, pull: Mapping[str, Any]) -> bool:
+    """Whether a listing snapshot says open for a record closed or merged at or after the snapshot's own `updated_at`."""
+    if record["state"] == "OPEN" or str(pull.get("state", "")).upper() != "OPEN":
+        return False
+    closed = record["mergedAt"] or record["detail"]["ci"].get("closedAt")
+    return bool(closed) and epoch(pull["updated_at"]) <= epoch(closed)
+
+
 def _main_checked(delivery: Delivery) -> bool:
     """Whether the delivery reports a finished workflow run or check suite on the repository's default branch."""
     if delivery.event not in ("workflow_run", "check_suite") or delivery.action != "completed":
@@ -136,12 +149,8 @@ def apply(
 ) -> bool:
     """Write the fields `delivery`'s event and action name to the records they concern, and say whether it wrote. `amended` is
     called once the record is written, ahead of the reads that refresh it."""
-    if delivery.event in READ_EVENTS:
-        trailed = delivery.event == "push" and forced_push(store, delivery, json.loads(delivery.body), now)
-        if reads is None:
-            return trailed
-        refresh(store, reads, delivery, now)
-        return True
+    if delivery.event in READ_EVENTS:  # its reads are `consume_reads`'s
+        return delivery.event == "push" and forced_push(store, delivery, json.loads(delivery.body), now)
     if (fact := FACTS.get(delivery.event)) is not None:
         return fact(store, delivery, json.loads(delivery.body), now)
     deltas = _ACTIONS.get(delivery.action)
@@ -155,6 +164,8 @@ def apply(
             return None
         if found and delivery.action == "opened" and found["state"] != "OPEN":
             return None  # an `opened` applied late: only `reopened` moves a closed or merged record back to open
+        if found and delivery.action == "reconciled" and _outdated(found, pull):
+            return None  # a listing read before the close, applied after it: only a later snapshot reopens
         record = found or opened(delivery.repository, pull["number"], pull["body"] or "", now)
         for delta in deltas if found else (*_OPENED, *deltas):
             record = record | delta(record, pull, now)
@@ -179,7 +190,8 @@ def consume(
 ) -> None:
     """Apply each delivery due now once, then return: a delivery that applies or has no row is done, one that cannot be
     read is retried and then dead. An `URGENT` delivery's write is handed to `merged` with the time it was received,
-    before its refresh reads and the next delivery. A finished checks run on the default branch calls `checked`."""
+    before its refresh reads and the next delivery. A finished checks run on the default branch calls `checked`. A
+    `READ_EVENTS` delivery makes no read here (`consume_reads` does); `apply` writes only its force push."""
     for entry in queue.claim():
         delivery = entry.delivery
         delivery_id = delivery.delivery_id
@@ -201,6 +213,19 @@ def consume(
             queue.skip(delivery_id, "no-field")
 
 
+def consume_reads(queue: Queue, store: PullStore, reads: PullReads, clock: Callable[[], float] = time.time) -> None:
+    """Make the reads each `READ_EVENTS` delivery due now names, once, then return: one GitHub refuses is retried and
+    then dead."""
+    for entry in queue.claim():
+        try:
+            refresh(store, reads, entry.delivery, clock())
+        except Exception:
+            logger.exception("github pull reads: %s", entry.delivery.delivery_id)
+            queue.fail(entry.delivery.delivery_id, "consumer error")
+        else:
+            queue.complete(entry.delivery.delivery_id)
+
+
 def start(
     config: Any,
     engine: Engine,
@@ -211,22 +236,29 @@ def start(
     checked: Callable[[], None] | None = None,
 ) -> None:
     """Follow the inbox in the main store `engine` opens on a thread until `stop` is set, with a cursor of its own beside the
-    `events` one, handing each `URGENT` delivery's write to `merged` and each finished main checks run to `checked` (`consume`); the store's owner disposes `engine`."""
-    queue = SqlQueue(engine, CONSUMER, urgent=URGENT)
+    `events` one, handing each `URGENT` delivery's write to `merged` and each finished main checks run to `checked` (`consume`). With a token, a second
+    thread and cursor (`READS`) make the push and ruleset reads (`consume_reads`) with a client of its own; the store's owner disposes `engine`."""
     url = engine.url
-    watch = open_watch(url.database) if url.get_backend_name() == "sqlite" and url.database else None
     token_env = config.github.reconcile_token_env
-    reads = (
-        PullReads(connect_client(lambda: os.environ.get(token_env or ""), app_jwt), SqlCursors(engine))
-        if token_env
-        else None
-    )
 
-    def work() -> None:
-        try:
-            follow(queue, stop, watch, lambda: consume(queue, store, reads=reads, merged=merged, checked=checked), "github pulls")
-        finally:
-            if watch is not None:
-                watch.close()
+    def thread(name: str, queue: SqlQueue, step: Callable[[], None]) -> None:
+        watch = open_watch(url.database) if url.get_backend_name() == "sqlite" and url.database else None
 
-    threading.Thread(target=work, name="github-pulls", daemon=True).start()
+        def work() -> None:
+            try:
+                follow(queue, stop, watch, step, name)
+            finally:
+                if watch is not None:
+                    watch.close()
+
+        threading.Thread(target=work, name=name.replace(" ", "-"), daemon=True).start()
+
+    def connected() -> PullReads:
+        return PullReads(connect_client(lambda: os.environ.get(token_env or ""), app_jwt), SqlCursors(engine))
+
+    reads = connected() if token_env else None
+    queue = SqlQueue(engine, CONSUMER, urgent=URGENT)
+    thread("github pulls", queue, lambda: consume(queue, store, reads=reads, merged=merged, checked=checked))
+    if reads is not None:
+        reading, own = SqlQueue(engine, READS, only=READ_EVENTS), connected()
+        thread("github pull reads", reading, lambda: consume_reads(reading, store, own))
