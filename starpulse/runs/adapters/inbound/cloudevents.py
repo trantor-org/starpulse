@@ -1,6 +1,6 @@
-"""The CloudEvents ingest: `POST /api/machine-events`, the one public write path for a machine event.
+"""The CloudEvents ingest: the one public write path for a machine event, bound to Connect and gRPC.
 
-A producer posts one CloudEvents 1.0 structured JSON event (`application/cloudevents+json`) or a JSON array of them
+A producer sends one CloudEvents 1.0 structured JSON event (`application/cloudevents+json`) or a JSON array of them
 (`application/cloudevents-batch+json`) with `Authorization: Bearer <token>`:
 
     {"specversion": "1.0", "id": "e1", "source": "ci-bot", "type": "WORKTREE_READY", "subject": "PROJ-1",
@@ -11,7 +11,7 @@ it moved, or the extension `run` the run it moved: exactly one of the two. `mach
 `time` and `data` (a JSON object under `MAX_DATA`) are optional. Each token belongs to one producer, which writes only
 its own machines and actors. A batch is checked whole before any entry is appended, so a refused entry writes none.
 
-A run's Step event rides the same route: `type` is `StepStarted` or `StepFinished`, there is no `machine`, `subject`
+A run's Step event rides the same ingest: `type` is `StepStarted` or `StepFinished`, there is no `machine`, `subject`
 is the run id and `data` carries `workflow`, `status` and, for a step's entry, `step` and `depends`. It lands on the
 runs stream under the producer's name as its `instance`, and a producer needs no machines to post it.
 
@@ -44,7 +44,7 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
     from starpulse.runs.model.config import Producer
 
-#: The structured and batch content types the route takes.
+#: The structured and batch content types the ingest takes.
 SINGLE = "application/cloudevents+json"
 BATCH = "application/cloudevents-batch+json"
 #: The largest `data` object accepted, as JSON text: a machine event carries a pointer, not a payload.
@@ -63,7 +63,7 @@ def _reason(invalid: ValidationError) -> str:
 
 
 class CloudEventsIngest:
-    """Answers one `POST /api/machine-events`: `(authorization, content type, body)` to `(status, JSON body)`.
+    """Answers one ingest call: `(authorization, content type, body)` to `(status, JSON body)`.
 
     `machines` are the machines the page draws (the feed's); `tokens` hold each producer's token by producer name."""
 

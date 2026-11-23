@@ -196,9 +196,9 @@ class Config:
     take_over_command: tuple[str, ...] | None = None
     """The argv `POST /api/take-over` runs with the task id appended (exit 0 sent, 1 no workflow); none: the route answers 404."""
     webhook_command: tuple[str, ...] | None = None
-    """The argv `POST /api/webhook` runs with the request body on stdin; none: the route answers 404."""
+    """The argv `POST /intake/grafana` runs with the request body on stdin; none: the route answers 404."""
     webhook_token_env: str | None = None
-    """The environment variable holding the bearer token `POST /api/webhook` requires."""
+    """The environment variable holding the bearer token `POST /intake/grafana` requires."""
     pull_requests: bool = _DEFAULTS.pull_requests
     """`serve` keeps the pull request store, current from the lifecycle events and webhook deliveries; false: no store is kept, so an instance beside another that reads the same repositories keeps no second copy."""
     worker_memory: Mapping[str, MemoryLimit] = field(default_factory=lambda: dict(WORKER_MEMORY))
@@ -228,6 +228,8 @@ class Config:
     sequences: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     """The phases a task of each type goes through (`[sequences]`), with `default` for an unnamed type; no table: none."""
     awaits: tuple[str, ...] = ()
+    account_room_alert: str | None = None
+    """The alert whose `firing` event holds a dispatch until its `resolved` (`account_room_alert`); none named: none held."""
     """The machines whose unfinished placement of a task holds its settled session (`awaits`); none named: none."""
     project: Project = field(default_factory=Project)
     """The project's own command line for each step a shipped skill names (`[project.commands]`); no table: none is mapped."""
@@ -477,6 +479,7 @@ def load(path: Path | None) -> Config:
         search=_search(file.search),
         sequences=_sequences(file.sequences),
         awaits=tuple(file.awaits or ()),
+        account_room_alert=file.account_room_alert,
         project=_project(file.project),
         claude_code=_claude_code(file.claude_code),
         github=_github(file.github),

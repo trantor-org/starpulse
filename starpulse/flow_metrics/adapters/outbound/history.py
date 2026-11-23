@@ -4,14 +4,13 @@
 StarPulse owns these tables and creates them on first use.
 
 A consumer copies `machine:events` (every entry, task- or run-keyed) into it, a board adapter that reads a
-stream may record each lane change it reads, and a trim past an entry a consumer never read is recorded as a
-gap. It also keeps the step graphs `push_runs` learns from the pushed run events, so a restart restores them.
+stream may record each lane change it reads. It also keeps the step graphs `push_runs` learns from the pushed run
+events, so a restart restores them.
 `/api/history` reads the paths back through `lane_path` and `machine_path`.
 """
 
 import json
 import logging
-import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
@@ -36,16 +35,14 @@ from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import OperationalError
 
 from starpulse.event_log import events as machine_events
-from starpulse.event_log import lane_events, verdict_events
+from starpulse.event_log import lane_events
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import WAL_SIZE_LIMIT, EventLog, bound_wal, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.store import EventStore
-from starpulse.event_log.tables import gaps as _gaps
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
-from starpulse.event_log.tables import task_verdicts as _task_verdicts
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 from starpulse.flow_metrics.adapters.outbound import summaries  # noqa: F401 - declares the dead step-summaries table until a migration drops it
 from starpulse.machine_engine.model.transitions import Table as Transitions
@@ -222,37 +219,6 @@ class HistoryStore:
             if cursor is not None:
                 self.checkpoints.save(machine_events.STREAM, cursor, conn=db)
 
-    def record_verdict(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
-        """Write one qa verdict; one the store already holds is a no-op. `cursor`, the verdict's id in the log, is saved
-        in the same transaction."""
-        row = {
-            "event_id": entry_id,
-            "task": fields["task"],
-            "lens": fields["lens"],
-            "round": fields["round"],
-            "outcome": fields["outcome"],
-            "reason": fields["reason"],
-            "occurred_at": float(fields["time"]),
-        }
-        with self.engine.begin() as db:
-            db.execute(self._insert(_task_verdicts).values(row).on_conflict_do_nothing())
-            if cursor is not None:
-                self.checkpoints.save(verdict_events.STREAM, cursor, conn=db)
-
-    def verdicts(self, task: str) -> list[dict]:
-        """Every verdict given for `task`, oldest first: its `lens`, `round`, `outcome`, `reason` and `at`."""
-        columns = _task_verdicts.c
-        query = (
-            select(columns.lens, columns.round, columns.outcome, columns.reason, columns.occurred_at)
-            .where(columns.task == task)
-            .order_by(columns.occurred_at, columns.id)
-        )
-        with self.engine.connect() as db:
-            return [
-                {"lens": lens, "round": round, "outcome": outcome, "reason": reason, "at": at}
-                for lens, round, outcome, reason, at in db.execute(query)
-            ]
-
     def record_lane(
         self,
         event_id: str,
@@ -322,19 +288,6 @@ class HistoryStore:
         with self.engine.connect() as db:
             return len(_held_ids(db, ids) - held)
 
-    def record_gap(self, stream: str, after_id: str, before_id: str, lost: int) -> None:
-        """Note that `lost` entries of `stream` between `after_id` and `before_id` were trimmed unread."""
-        insert = self._insert(_gaps).values(
-            stream=stream, after_id=after_id, before_id=before_id, lost=lost, noted_at=time.time()
-        )
-        with self.engine.begin() as db:
-            db.execute(
-                insert.on_conflict_do_update(
-                    index_elements=["stream", "after_id"],
-                    set_={"before_id": insert.excluded.before_id, "lost": insert.excluded.lost},
-                )
-            )
-
     def record_step(self, workflow: str, step: str, depends: list[str] | None) -> None:
         """Remember a step of a pushed workflow; `depends` None keeps the dependencies already known."""
         insert = self._insert(_learned_steps).values(
@@ -356,13 +309,6 @@ class HistoryStore:
         for workflow, step, depends in rows:
             graphs.setdefault(workflow, {})[step] = json.loads(depends)
         return graphs
-
-    def gaps(self) -> list[dict]:
-        """Every recorded gap as `{stream, after_id, before_id, lost}`, oldest first."""
-        g = _gaps.c
-        with self.engine.connect() as db:
-            rows = db.execute(select(g.stream, g.after_id, g.before_id, g.lost).order_by(g.id)).all()
-        return [{"stream": s, "after_id": a, "before_id": b, "lost": n} for s, a, b, n in rows]
 
     def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
         """`(task, at, from, to)` for every lane change of every task at or after epoch `since` (None: all), oldest
@@ -453,11 +399,6 @@ def record_machine_events(store: HistoryStore, log: EventLog, stop: StopEvent) -
     reached is the sink down, not the entry bad, so the entry is read again on the next poll.
     """
     _copy(store, log, stop, machine_events.STREAM, store.record_machine)
-
-
-def record_verdicts(store: HistoryStore, log: EventLog, stop: StopEvent) -> None:
-    """Copy the log's qa verdicts into `store` until `stop`, as `record_machine_events` does the machine events."""
-    _copy(store, log, stop, verdict_events.STREAM, store.record_verdict)
 
 
 def _copy(

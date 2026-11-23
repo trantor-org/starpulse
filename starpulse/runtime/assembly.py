@@ -33,7 +33,6 @@ from starpulse.github.adapters.outbound.reconciled import Reconciled
 from starpulse.github.adapters.outbound.app_jwt import app_jwt
 from starpulse.github.adapters.outbound.rest import Client, connect_client
 from starpulse.github.model.github_config import GitHub
-from starpulse.harness_telemetry.adapters.inbound.telemetry import KEEP_S
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
@@ -233,7 +232,7 @@ _RESTORED = "event_log_archive_restored"
 
 def prune_steps(log: EventLog, config: Config, base: Path) -> list[Step]:
     """The sweeper's event-log housekeeping: one pass of the prune, which archives each row it deletes under
-    `event_log_archive_dir` and first, once, puts the retained streams' archived rows back, and one of the signal table and its folds, which keep the last `KEEP_S` seconds."""
+    `event_log_archive_dir` and first, once, puts the retained streams' archived rows back."""
     archive = base / config.event_log_archive_dir
     days = config.event_log_retention_days
 
@@ -246,11 +245,7 @@ def prune_steps(log: EventLog, config: Config, base: Path) -> list[Step]:
         if pruned := log.prune(days * 86400, archive_dir=archive):
             logger.info("EventLog: pruned %d rows older than %d days", pruned, days)
 
-    def signals() -> None:
-        if pruned := log.prune_signals(KEEP_S):
-            logger.info("EventLog: pruned %d signals older than %d s", pruned, KEEP_S)
-
-    return [Step("event-log-prune", events), Step("signal-prune", signals)]
+    return [Step("event-log-prune", events)]
 
 
 class _RunsKind:

@@ -2,11 +2,14 @@
 path by its convention.
 """
 
+from contextlib import AbstractContextManager
+from typing import Any
+
 from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
-from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute
 from starpulse.views.adapters.outbound import request_durations
 from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound.process_metrics import process_gauges
@@ -23,7 +26,6 @@ def prometheus(request: Request) -> Response:
         services.storage_metrics,
         services.sweeper_metrics,
         services.bridge_metrics,
-        services.completion_steps_metrics,
         services.history_lag_metrics,
         services.follower_lag_metrics,
         services.skill_cost_metrics,
@@ -41,6 +43,10 @@ def prometheus(request: Request) -> Response:
     return answer(request, text.encode(), content_type="text/plain; version=0.0.4; charset=utf-8")
 
 
+def timed(request: Request, arrival: Arrival) -> AbstractContextManager[Any]:
+    return seams(request).scrape_reads.watch("", arrival)
+
+
 routes: list[ApiRoute] = [
-    ReadRoute("/metrics", prometheus),
+    ReadRoute("/metrics", prometheus, timed),
 ]

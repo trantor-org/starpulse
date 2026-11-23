@@ -9,8 +9,12 @@ from pathlib import Path
 
 from starpulse.board.adapters import native_docs
 
-#: A walk of the Board is thousands of stats; a scrape inside this span reads the last one.
+#: A walk of the Board is thousands of stats; a scrape past this span reads the last one while the next walk runs.
 CACHE_S = 60.0
+
+
+#: The span of a gauge that is read from the log: under the 15 s scrape interval, so a scrape reads the last scrape's text.
+SCRAPE_CACHE_S = 10.0
 
 
 def _size(path: Path, follow_symlinks: bool) -> int:
@@ -44,17 +48,33 @@ def storage_exposition(*, database: Path | None, archive: Path, board: Path) -> 
     )
 
 
-def cached(read: Callable[[], str]) -> Callable[[], str]:
-    """`read`, asked at most once in `CACHE_S` seconds; callers arriving during a read wait for it."""
+def cached(read: Callable[[], str], span: float = CACHE_S) -> Callable[[], str]:
+    """`read`, asked at most once in `span` seconds (`CACHE_S` by default). The first caller waits for the first read,
+    and so do callers arriving during it; a later one past the span gets the last text at once while one thread reads
+    the next."""
     held: tuple[float, str] | None = None
     lock = threading.Lock()
+    refreshing = False
+
+    def refresh() -> None:
+        nonlocal held, refreshing
+        try:
+            text = read()
+            with lock:
+                held = (time.monotonic(), text)  # stamped when the read ends
+        finally:
+            with lock:
+                refreshing = False
 
     def get() -> str:
-        nonlocal held
+        nonlocal held, refreshing
         with lock:
-            if held is None or time.monotonic() - held[0] >= CACHE_S:
+            if held is None:
                 text = read()
-                held = (time.monotonic(), text)  # stamped when the read ends, so a slow read still serves its waiters
+                held = (time.monotonic(), text)  # stamped when the read ends
+            elif time.monotonic() - held[0] >= span and not refreshing:
+                refreshing = True
+                threading.Thread(target=refresh, name="storage-metrics", daemon=True).start()
             return held[1]
 
     return get

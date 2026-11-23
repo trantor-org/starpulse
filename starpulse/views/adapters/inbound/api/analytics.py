@@ -1,7 +1,4 @@
-"""The per-task analytics the page reads: `GET /api/task-spend/{id}`, `/api/task-diff/{id}` and `/api/task-cost-to-go/{id}`.
-
-One task's spend, or its kind and size's diff and cost-to-go rows, read from the stored fold rows.
-"""
+"""The per-task analytics the page reads: `GET /api/task-spend/{id}`, one task's spend read from the stored fold rows."""
 
 from collections.abc import Callable
 
@@ -11,12 +8,8 @@ from starlette.responses import Response
 from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Endpoint, ReadRoute
 from starpulse.views.application.queries.responses import (
-    cost_to_go_response,
-    diff_response,
     refuses_at_once,
     spend_response,
-    task_cost_to_go_response,
-    task_diff_response,
     task_spend_response,
 )
 from starpulse.views.ports.services import Services
@@ -73,12 +66,6 @@ routes: list[ApiRoute] = [
     ReadRoute(
         "/task-spend/{id:path}",
         _per_task(spend_response, "spend", lambda week, task, _: task_spend_response(week, task)),
-        params=frozenset({"hours"}),
-    ),
-    ReadRoute("/task-diff/{id:path}", _per_task(diff_response, "diff", task_diff_response), params=frozenset({"hours"})),
-    ReadRoute(
-        "/task-cost-to-go/{id:path}",
-        _per_task(cost_to_go_response, "cost-to-go", task_cost_to_go_response),
         params=frozenset({"hours"}),
     ),
 ]

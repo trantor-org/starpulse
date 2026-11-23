@@ -35,7 +35,7 @@ from starpulse.event_log.caught_up import CaughtUp
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
-from starpulse.views.adapters.inbound.api import metrics
+from starpulse.views.adapters.inbound.api import intake, metrics
 from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, WORKERS
 from starpulse.views.adapters.inbound.api.openapi import swagger
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
@@ -152,9 +152,9 @@ _BUSY_LOG_S = 10.0
 
 def _light(scope: Scope) -> bool:
     """Whether the request is one of the board's own reads and writes, which hold a thread only for a moment: the
-    snapshot, a task read, any write under `/api`, and the metrics scrape."""
+    snapshot, a task read, any write under `/api`, the metrics scrape and an intake post."""
     path, method = scope["path"], scope["method"]
-    return path in ("/metrics", "/api/snapshot") or (
+    return path in ("/metrics", "/api/snapshot") or path.startswith("/intake/") or (
         path.startswith("/api/") and (path.startswith("/api/task/") or method in ("POST", "PUT", "DELETE"))
     )
 
@@ -325,7 +325,7 @@ class _Observed:
 
 class PageApp:
     """The ASGI app of the page: `api` are the routes under `/api` (one module a resource, mounted together), `metrics`
-    the route beside them and the rest is the build's static files."""
+    the routes beside them (the scrape and the intake) and the rest is the build's static files."""
 
     def __init__(
         self,
@@ -354,11 +354,11 @@ class PageApp:
         )
         self._quiet = asyncio.Event()
         self._quiet.set()
-        # In match order: `/api` and `/metrics` first, the pages, and the files last, since a request a route matches
+        # In match order: `/api`, `/metrics` and `/intake` first, the pages, and the files last, since a request a route matches
         # by path alone is that route's 405 only while no later route matches it in full.
         table = [
             Mount("/api", routes=[self._route(route, "/api") for route in api]),
-            *(self._route(route) for route in metrics),
+            *(self._route(route, "") for route in metrics),
             *(Route(path, self._page, methods=["GET"]) for path in ("/", "/board", "/runs")),
             Route("/swagger", swagger, methods=["GET"]),
             Route("/flow/{flow}", self._flow, methods=["GET"]),
@@ -525,4 +525,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), metrics.routes, static, feed.machines.keys(), grpc, api, caught_up)
+    return PageApp(api_routes(api), [*metrics.routes, *intake.routes], static, feed.machines.keys(), grpc, api, caught_up)

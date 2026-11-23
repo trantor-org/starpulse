@@ -78,8 +78,8 @@ Call `drain` from a timer, a cron job or a loop; a call with nothing new costs o
 - **At least once.** A crash after the log handed over a row but before the commit reads it again, so key the sink on
   `event_id`, as `INSERT OR IGNORE` does above.
 - **Retention.** `serve` (through its sweeper, `starpulse worker sweeper`) prunes rows older than `event_log_retention_days` and archives them first (see the event log
-  archive in [Serve and configure](serving.md)). A cursor older than the oldest retained row resumes at that row and the
-  log notes the span you missed in `starpulse_gaps`; start a new sink from the archive when you need that span.
+  archive in [Serve and configure](serving.md)). A cursor older than the oldest retained row resumes at that row;
+  start a new sink from the archive when you need that span.
 - **A resident reader.** `Tail.run(handle, stop)` polls until `stop` is set and passes each entry to `handle`; pass the
   exceptions that mean your sink is down as `transient` so the entry is retried instead of skipped.
 - **A record that fails validation** raises out of `drain` before anything commits, so the sink never holds a

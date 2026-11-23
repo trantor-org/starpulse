@@ -2,7 +2,7 @@
 
 A step is a `request` signal, whichever thread made it (`origin` says which). Its calls are the `tool` signals it
 issued, and it carries the activities they performed and one key each: the shell command the instance's redactor
-left, else the tool's name. Its task is the one `sessions.attributed` names for the request.
+left, else the tool's name. Its task is the one `session_health.attribution` names for the request.
 
 The export's order cannot say which request issued a call: Claude Code starts a tool while the response is still
 streaming and logs the request when the stream ends, so a result can come before its own request. A call belongs to
@@ -19,12 +19,9 @@ from bisect import bisect_right
 from collections.abc import Iterable
 from typing import Any, NamedTuple
 
-from starpulse.contracts.adapters import TaskKeys
-from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import Signal
-from starpulse.flow_metrics.model.session_health import attributed, by_session, session_signals
 
-__all__ = ["NO_SKILL", "Owned", "combine_steps", "fold_steps", "session_owned", "session_steps"]
+__all__ = ["NO_SKILL", "Owned", "combine_steps", "owned_of"]
 
 #: The skill of a step taken before the session loaded any.
 NO_SKILL = "none"
@@ -57,14 +54,14 @@ def _step(task: str | None, s: Signal) -> dict[str, Any]:
     }
 
 
-def session_owned(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None) -> list[Owned]:
-    """Each model request of one session's `signals`, oldest first, with the `tool`, `skill` and `decision`
-    signals it owns, in the order they were exported."""
+def owned_of(pairs: list[tuple[str | None, Signal]], skill: str = NO_SKILL) -> list[Owned]:
+    """Each model request of one session's attributed signals `pairs`, oldest first, with the `tool`, `skill` and
+    `decision` signals it owns, in the order they were exported; `skill` is the one in force before the first."""
     steps: list[dict[str, Any]] = []
     seconds: list[float] = []
     starts: list[float] = []
     calls: list[Signal] = []
-    for task, s in attributed(session_signals(signals, keys, analytics), keys):
+    for task, s in pairs:
         if s.kind == "request":
             steps.append(_step(task, s))
             seconds.append(s.seconds)
@@ -85,27 +82,13 @@ def session_owned(signals: list[Signal], keys: TaskKeys | None, analytics: Analy
         elif call.kind == "tool":
             steps[owner]["activities"] += call.activities
             steps[owner]["keys"].append(call.command or call.name)
-    current = NO_SKILL
+    current = skill
     for step, load in zip(steps, loads, strict=True):
         current = load or current
         step["skill"] = current
     return [Owned(*row) for row in zip(steps, seconds, owned, strict=True)]
 
 
-def fold_steps(
-    signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
-) -> list[dict[str, Any]]:
-    """The fold of one session's `signals`: its step rows as plain JSON data; see the module docstring."""
-    return [owned.step for owned in session_owned(signals, keys, analytics)]
-
-
 def combine_steps(folds: Iterable[list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """The step rows of the sessions' `fold_steps` results as one list, oldest first."""
+    """The step rows of the sessions' `ledger.steps_of` results as one list, oldest first."""
     return sorted((row for rows in folds for row in rows), key=lambda r: (r["at"], r["harness"], r["session"]))
-
-
-def session_steps(
-    found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
-) -> list[dict[str, Any]]:
-    """One row per model request of the sessions `found` holds, oldest first; see the module docstring."""
-    return combine_steps(fold_steps(group, keys, analytics) for group in by_session(found))

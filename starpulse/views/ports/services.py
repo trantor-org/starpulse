@@ -42,7 +42,7 @@ class Services:
     """Publishes the dispatch of a session to a task, with the holder it replaces: `(task, session, replaces)`."""
     events: CloudEventsIngest | None = None
     webhook: Callable[[str | None, bytes], tuple[int, dict]] | None = None
-    """Answers one `POST /api/webhook`: `(authorization, body)` to `(status, JSON body)`."""
+    """Answers one `POST /intake/grafana`: `(authorization, body)` to `(status, JSON body)`."""
     scheduler: Runtime | Remote | None = None
     contract: Callable[[], dict[str, Any]] | None = None
     ready: Callable[[], dict[str, Any]] | None = None
@@ -63,7 +63,6 @@ class Services:
     storage_metrics: Callable[[], str] | None = None
     sweeper_metrics: Callable[[], str] | None = None
     bridge_metrics: Callable[[], str] | None = None
-    completion_steps_metrics: Callable[[], str] | None = None
     history_lag_metrics: Callable[[], str] | None = None
     follower_lag_metrics: Callable[[], str] | None = None
     skill_cost_metrics: Callable[[], str] | None = None

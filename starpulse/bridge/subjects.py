@@ -21,7 +21,7 @@ LANES = "board:lanes"
 MACHINE = "machine:events"
 CLAIMS = "board:claims"
 STREAMS = (LANES, MACHINE, CLAIMS)
-CHECKPOINT = "bridge:nats"  # the bridge's cursor over `STREAMS`, saved after each acknowledged entry
+CHECKPOINT = "bridge:nats"  # the bridge's cursor over `STREAMS`, saved once per batch of acknowledged entries
 INCIDENT = "incident."
 INCIDENTS = f"{INCIDENT}>"
 

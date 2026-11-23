@@ -115,12 +115,20 @@ _EMBEDDED_SELECT = (
 _EMBEDDED = text(_EMBEDDED_SELECT)
 #: Only the named rows of `_EMBEDDED`, which is how the held vectors catch up with the writes made since.
 _EMBEDDED_ROWS = text(f"{_EMBEDDED_SELECT} WHERE {_TABLE}.rowid IN :rows").bindparams(bindparam("rows", expanding=True))
-#: Walks the facets, one small row per task, to the tasks with no vector, and reads the search table's text only for
-#: those (`CROSS JOIN` fixes that order): a scan of the table itself reads every task's text, on every wake of the embedding context.
+#: The tasks that may lack a vector, a row each: a write that drops a task's vector adds it, a stored vector removes it,
+#: and `open` adds the tasks lacking one, so a pass with nothing to embed reads one empty table, never every task. Created
+#: with the index, the `CREATE IF NOT EXISTS` of the others.
+_PENDING_TABLE = "starpulse_task_pending"
+_CREATE_PENDING = f"CREATE TABLE IF NOT EXISTS {_PENDING_TABLE} (task_row INTEGER PRIMARY KEY)"
+_MARK_PENDING = text(f"INSERT OR IGNORE INTO {_PENDING_TABLE} (task_row) VALUES (:row)")
+_CLEAR_PENDING = text(f"DELETE FROM {_PENDING_TABLE} WHERE task_row = :row")
+_MARK_UNEMBEDDED = text(
+    f"INSERT OR IGNORE INTO {_PENDING_TABLE} (task_row) SELECT task_row FROM {_FACETS} "
+    f"WHERE task_row NOT IN (SELECT task_row FROM {_VECTORS} WHERE model = :model)"
+)
 _PENDING = text(
-    f"SELECT {_TABLE}.rowid AS row, title, description, digest FROM {_FACETS} CROSS JOIN {_TABLE} "
-    f"ON {_TABLE}.rowid = {_FACETS}.task_row "
-    f"WHERE {_FACETS}.task_row NOT IN (SELECT task_row FROM {_VECTORS} WHERE model = :model) LIMIT :limit"
+    f"SELECT {_TABLE}.rowid AS row, title, description, digest FROM {_PENDING_TABLE} CROSS JOIN {_TABLE} "
+    f"ON {_TABLE}.rowid = {_PENDING_TABLE}.task_row LIMIT :limit"
 )
 #: Stores a vector only for the text it was made from: a task replaced since is left for the next pass.
 _STORE = text(
@@ -301,8 +309,10 @@ class SearchIndex:
                 _ids_grow(connection)
                 connection.execute(text(_CREATE_VECTORS))
                 connection.execute(text(_CREATE_FACETS))
+                connection.execute(text(_CREATE_PENDING))
                 if index._url:
                     connection.execute(_DROP_OTHER_RECIPES, {"model": index._recipe})
+                    connection.execute(_MARK_UNEMBEDDED, {"model": index._recipe})
         except OperationalError as error:
             logger.warning("StarPulse: this SQLite has no FTS5, so the board is not searchable: %s", error)
             return None
@@ -373,6 +383,7 @@ class SearchIndex:
             return
         connection.execute(_DELETE, {"row": row})
         connection.execute(_DROP_VECTORS, {"row": row})
+        connection.execute(_MARK_PENDING, {"row": row})
         connection.execute(_INSERT, {"row": row, "digest": digest, **fields})
 
     def remove(self, task_id: str) -> None:
@@ -380,6 +391,7 @@ class SearchIndex:
         with self._lock, self._engine.begin() as connection:
             connection.execute(_DELETE, {"row": _row(task_id)})
             connection.execute(_DROP_VECTORS, {"row": _row(task_id)})
+            connection.execute(_CLEAR_PENDING, {"row": _row(task_id)})
             connection.execute(_DROP_FACETS, {"row": _row(task_id)})
 
     def search(
@@ -494,7 +506,7 @@ class SearchIndex:
         stored = 0
         while self._url:
             with self._engine.connect() as connection:
-                rows = connection.execute(_PENDING, {"model": self._recipe, "limit": _BATCH}).all()
+                rows = connection.execute(_PENDING, {"limit": _BATCH}).all()
             if not rows:
                 break
             texts = [f"{r.title}\n{r.description}"[:_TEXT_LIMIT] for r in rows]
@@ -513,6 +525,8 @@ class SearchIndex:
                         },
                     ).rowcount
                 ]
+                if done:  # an empty list would run the statement once with no row bound
+                    connection.execute(_CLEAR_PENDING, [{"row": row} for row in done])
             stored += len(done)
             if not done:
                 break

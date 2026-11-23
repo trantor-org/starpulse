@@ -90,6 +90,7 @@ def start_delivery(
             pins,
             config.board_repo,
             latest=lambda subject: last_event_is(log.engine, subject),
+            accounts=f"starpulse.{config.bridge.board}.alert.{config.account_room_alert}" if config.account_room_alert else None,
             started=lambda task: entered(log.engine, task, feed.roles.working),
             holds=board.holds,
             read=board.read,

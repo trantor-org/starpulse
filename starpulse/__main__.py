@@ -1,7 +1,7 @@
 """`starpulse serve|<verb> ...` (or `python -m starpulse`): the package's command line.
 
 `serve` runs the view (`starpulse.runtime.server`), `init` scaffolds a first install (`starpulse.cli.init`),
-`event emit` publishes one CloudEvent to the JetStream ingest (`starpulse.cli.event`), `github requeue|dismiss|purge` settles a dead GitHub
+`event emit` publishes one CloudEvent to the JetStream ingest (`starpulse.cli.event`), `github requeue|dismiss|restore|purge|retire` settles a dead GitHub
 delivery (`starpulse.cli.github_inbox`), `connect` writes the
 config's `[board]` for a tracker after checking it answers (`starpulse.cli.connect`), `migrate` brings the store to its
 schema (`starpulse.runtime.store_migrate`), `rehearse` starts `serve` on a copy of a store and waits for `/api/health`

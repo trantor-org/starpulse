@@ -1,11 +1,15 @@
 """The config blocks the scheduler worker is built from or re-reads, in a leaf module so `runtime.closure` names them without
 importing the worker."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from starpulse.scheduler.model.config import Scheduler
+
+
+class _Bridge(Protocol):
+    end: Sequence[str]
 
 
 class SchedulerConfig(Protocol):
@@ -16,6 +20,7 @@ class SchedulerConfig(Protocol):
     board: Mapping[str, object]
     scheduler: Scheduler
     session_start_url: str | None
+    bridge: _Bridge
 
 
 def scheduler_fixed_blocks(config: SchedulerConfig) -> tuple:

@@ -6,7 +6,7 @@ imported at the top of `starpulse.runtime.server`, so the Delivery worker's impo
 
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -34,12 +34,13 @@ def start_scheduler(
     *,
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
+    ender: Callable[[Sequence[str]], Callable[[str], None] | None],
     clock: Callable[[], float] = time.time,
 ) -> Runtime:
     """The scheduler's runtime with its sampler and dispatch loop running on daemon threads until `stop` is set.
 
     The loop admits from the lane `[scheduler] lane` names (else the board's initial lane), starts a session through
-    `session_start_url` (else the built-in tmux starter in `base`). `runtime` passes `starter` and `delivered`, as no context imports them.
+    `session_start_url` (else the built-in tmux starter in `base`). `runtime` passes `starter`, `delivered` and `ender`, as no context imports them.
     """
 
     def claim(task: str, comment: str) -> Written:
@@ -62,6 +63,7 @@ def start_scheduler(
         lane=lane,
         clock=clock,
         transcript=transcript_written(Path(DEFAULT_TRANSCRIPTS).expanduser()),
+        end=ender(config.bridge.end) or (lambda task: None),
     )
     runtime.wire_status(publish or feed.publish)
     pressure = threading.Event()

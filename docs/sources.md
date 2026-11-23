@@ -38,50 +38,41 @@ moves the task its branch names (`TASK-<n>` in the branch), so start Claude Code
 The receiver decodes each export but publishes only which session moved, on which event and when; prompt,
 reply and tool text is never stored.
 
-## Measure session and slice health
+## Fold what each session did
 
-The same receiver also reads each Claude Code export for what a session did, and stores it as signals
-that the server folds into per-session rows (the sessions sink reads those rows; no route serves them).
+The same receiver also reads each Claude Code export for what a session did, and the server folds each batch into
+per-session rows as it arrives (the sessions sink reads those rows; no route serves them).
 
 A session is one harness session id; it has one row per task it worked, found from the branch the export names
 (`vcs.ref.head.name`), or a command or `Skill` call that matches an `[analytics]` `claims` pattern claims
 one. Every step after a claim belongs to the claimed task, until the next claim or switch, and the steps before a
 session's first claim or task-naming switch, when its launch branch names no task, belong to that first task.
-A session row also holds its prompts (`operator_prompts` are the human prompts after the task's claim), `requests`
-(the main thread's model calls) and `side_requests` (a subagent's), `steps_before_edit` (the model requests before
-the task's first successful file write), `complete` (the session loaded the `completion_skill` and then ran a shell
-command matching `completion_call`), its rejected tool decisions, compactions, interrupts, models and efforts, `tokens`
-as `{input, output, cache_read, cache_write, reasoning}`, `cost_usd` and the time sums below.
 
-- A turn is the signals that share a Claude Code `prompt.id`; its end is its last signal. A prompt is labelled
-  `injected` when its opening matches an `injected_openings` prefix and `human` otherwise; the label is kept and the
-  prompt's text never is. With an `[analytics.labeller]` configured, a `human` Claude Code prompt's text is also sent
-  to that typed-decision endpoint, which names its intent (one of the table's `criteria`, else `unsure`); that
-  label is kept on the prompt and the text never is. An endpoint that is unreachable, slower than its `timeout`
-  (default 2 s) or answers nothing usable leaves the label empty and ingest goes on.
-- Time comes from the events' own durations, not from the gaps between them. `agent_s` is the sum of the model
-  requests' and tool results' durations (a subagent's included) and of the `hook_execution_complete` events a turn
-  caused (their `total_duration_ms`; a hook with no `prompt.id`, such as a session-start one, is no agent time). A
-  tool result's duration leaves its pre- and post-tool hooks out, so the hook events are what carry that time. Claude
-  Code logs no permission-prompt duration: only its `claude_code.tool.blocked_on_user` trace span has one, and traces
-  are not read. `operator_wait_s` is the time from the end of the turn
-  before to a human prompt (never the session's first), `idle_s` the same before an injected prompt, a wait for a
-  background task or scheduler. A prompt typed while the turn before still worked waits for nothing. A result of an
-  `operator_tools` tool (a question answered, a plan approved) is no prompt but charges the silence before it to
-  `operator_wait_s`: from the last signal before it, other than that tool's own decision, to the tool's start.
-- An `interrupt` is a Claude Code turn with a `prompt.id` and no closing reply once a later prompt arrives: the session's
-  last turn, still open when its signals end, is no interrupt.
+What the server keeps of a session is three folds, advanced as each batch of its signals arrives and stored in
+`starpulse_signal_folds` beside the session's `ledger` row (the settled tail and the state the folds resume from):
 
-What an export cannot say is absent rather than guessed: Claude Code exports no user interrupt, so one is read from
-a turn that never replied.
-Signals are kept once per key in the `starpulse_signals` table of the history database, which `SignalFolds` folds per
-session; the hourly prune deletes rows older than 8 days. A window longer than that reads only the fold rows already
-stored.
+- `steps`: one row per model request, with its model, effort, token counts, the activities and shell commands of the
+  tool calls it owns, the skill in force and whether it is an eval step.
+- `cost`: one row per task and skill of those steps: the steps, a subagent's, the wasted ones, the seconds and the
+  peak context.
+- `spend`: the captured, non-auxiliary steps that belong to a task, with whether each edits, each task's first claim
+  time and its compactions; `/api/task-spend/{id}` combines them.
+
+A turn is the signals that share a Claude Code `prompt.id`. A prompt is labelled `injected` when its opening
+matches an `injected_openings` prefix and `human` otherwise; with an `[analytics.labeller]` configured, a `human`
+Claude Code prompt's text is also sent to that typed-decision endpoint, which names its intent (one of the table's
+`criteria`, else `unsure`). The label is kept on the prompt signal and the text never is. An endpoint that is
+unreachable, slower than its `timeout` (default 2 s) or answers nothing usable leaves the label empty and ingest goes
+on.
+
+What an export cannot say is absent rather than guessed: Claude Code exports no user interrupt.
+A signal at or before its session's settled cut is dropped, and a session in flight when the folds started advancing
+at ingest begins from its first later signal. No signal is kept: the server folds each batch into the rows above and
+holds nothing to refold, and the folds table has no prune, so it grows with the sessions.
 
 One signal is one step of the record the steps-per-clean-completion ledger counts: a `request` is one model call, with
 its model, effort, duration and the four token counts, and a `compaction` names its trigger. Two fields say whose step
 it was and whether to count it, and a third holds a command:
-
 - `agent`: the subagent that made a `request` or `tool` step, from the export's `agent.name` or, for Claude Code, its
   `query_source` when that names a subagent. Empty for the main thread. A
   subagent's steps carry the parent's session id, so they count toward the task that spawned it.
@@ -94,14 +85,13 @@ it was and whether to count it, and a third holds a command:
 
 ## Kept answers
 
-The three per-task routes (`/api/task-spend/{id}`, `/api/task-diff/{id}`, `/api/task-cost-to-go/{id}`) filter one
-week answer each, the server's own fold over the stored session rows, kept in the `starpulse_answers` table under the
-keys `spend`, `diff` and `cost_to_go`. A kept body older than five minutes is returned at once and refolded in the
-background, so an answer is at most one refold and five minutes behind the board and the log, and a restarted `serve`
-answers from the saved rows before it has read a signal. Only the first read of a key the instance has never answered
-waits for a fold, and readers of it share one. A query that only refuses (an `hours` that is no positive number, or a
-window longer than the folded history) runs at once. A refusal (400, 501, 503) is returned and never kept; a failed
-refold keeps the older body and is tried again after five minutes.
+`/api/task-spend/{id}` filters one week answer, the server's own combine over the stored `spend` rows, kept in the
+`starpulse_answers` table under the key `spend`. A kept body older than five minutes is returned at once and
+recomputed in the background, so an answer is at most one recompute and five minutes behind the stored rows, and a
+restarted `serve` answers from the saved rows before it has read a signal. Only the first read of a key the instance
+has never answered waits, and readers of it share one. A query that only refuses (an `hours` that is no positive
+number, or a window longer than the folded history) runs at once. A refusal (400, 501, 503) is returned and never
+kept; a failed recompute keeps the older body and is tried again after five minutes.
 
 ## Report each task's spend by phase
 
@@ -113,7 +103,7 @@ folded history, is 400 with `history_s`. Its columns:
 - `task`, `kind`, `size`: the task and its board labels `kind-<kind>` and `size-<n>`, null when it has none.
 - `phase`: `claim`, `implement`, `qa`, `deliver` or `review_fix`. The skills `qa`, `deliver`, `review-fix` and
   `cr-triage` set their phase. A step before its session's first naming signal (claim or task branch) bills to no
-  task; session health keeps the back-fill. Every other step is `claim` until the step that carries the task's claim, or the first
+  task. Every other step is `claim` until the step that carries the task's claim, or the first
   step of the task that edits a file (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `StrReplace`) when no claim is in
   the window, across all its sessions in the window, and `implement` after it; a task with no edit and no claim in the
   window is all `implement`, so a window that starts mid-task does not bill its work to `claim`.
@@ -136,51 +126,6 @@ the first edit does, and a task worked by hand with no skill loaded is still pla
 no norm, and neither has a `batch-umbrella` task: its size counts the members it folds in, so it takes no norm and
 leaves its size's norm to the tasks that do one job (90 of 116 size 8 execute tasks in 192 hours, median 1.29 M WTE
 against 3.81 M for the other 26, above size 5's 2.72 M).
-## Diff a fast run against a slow one
-
-`GET /api/task-diff/{id}[?hours=N]` (168 hours by default) is `{task, kind, size, now, window_s, diff}`: the rows of
-the cohort of the task's `kind-<kind>` and `size-<n>` labels, one per transition (a task's steps under one skill in
-force, `none` before any load) of that kind and size, by skill, with the skill `none` left out. A task missing either
-label has no cohort, and an uncaptured step is in none. A *run* is one task's steps under one skill in force, and its
-activities are those the main thread's steps made in order, less the `[analytics]` `stop_activities`; a subagent's
-steps run beside the main thread, so they add edges that never happened and are left out of the activities (they count
-in a run's steps). The group of a transition is its runs of tasks that completed clean: one session loaded the
-completion skill and ran the completion call, with no operator prompt, interrupt or model or effort change. A group
-under 5 reports nothing. Its columns:
-
-- `runs`, `conformant`: the group's size and how many of its runs conform to the skill's machine.
-- `reference`: `{task, steps}` of the conformant run with the fewest steps (a subagent's included).
-- `slow`: `{task, steps}` of the run with the most steps, conformant or not.
-- `slow_only`, `reference_only`: `{activity, count}` of what the slow run made more often than the reference and the
-  reverse, by count then activity.
-
-A run *conforms* when its tool calls, oldest first, reach in order the stages of its skill's
-`[[analytics.skill_machines]]` entry ([Config file](serving.md#config-file)); a skill with no entry has every run
-conform. The reference is therefore never a run that skipped a stage, such as RED, however few steps it took, and a
-transition whose clean group has no conforming run is listed with `conformant` 0, `reference` null and
-`reference_only` empty, so the skipped stage shows.
-
-Blind spot: the diff compares activity counts of two runs, not their order, and one reference is one run's way, not
-the best way. The stages an instance declares are its reading of the skill's steps; StarPulse does not derive them.
-
-## Read the steps still to come from each state of a skill machine
-
-`GET /api/task-cost-to-go/{id}[?hours=N]` (168 hours by default) is `{task, kind, size, now, window_s, cost_to_go}`,
-the cohort's rows, one per state of each `[[analytics.skill_machines]]` machine within the task's kind and size, by
-skill, then the machine's order with `[start]` first. A step is in the stage its run had reached when the step began,
-and `[start]` before the first stage.
-The rows come from the trajectories' absorbing chain over the clean completed runs of the skill (the `diff` report's
-runs), with the run's last step absorbing into its end; a state's `cost_to_go` is the expected agent steps from a run's
-first step in it until the run ends, and the unit is steps, not days. A skill with no machine has no rows.
-
-- `kind`, `size`, `skill`, `state`: the cell.
-- `n`: the times the state was seen left in those runs. Every state is listed whatever its `n`; a consumer holds a cell
-  with a small one (a gate on cost holds a cell under 5).
-- `cost_to_go`: the expected steps, as the closed form `(I - Q)^-1` of the observed transitions.
-
-Blind spot: a state reached once reads as certain. The chain is the observed transitions only, with no smoothing, so
-`n` is the confidence a reader must apply.
-
 ## Group recurring work
 
 The same signals say what each session did, not only how long it took. A tool call is lifted to *activities* with no
@@ -190,43 +135,11 @@ its binary name or `shell_other`. An export that carries no command (`OTEL_LOG_T
 as its tool name. Claude Code caps each `tool_input` string over 512 characters, so a shell call reads its command from
 `tool_parameters.full_command`, which is whole, and falls back to `tool_input`. `uv run` is unwrapped through its flags,
 including the directory after `--project` or `--directory`. The path a file tool read or wrote is kept raw and cut at read time to an *area*, its first two
-components below an `[analytics]` root. A *case* is one session's work on one task, as under Measure session and slice health; a session
-that no branch or claim ever ties to a task is a case with no task.
+components below an `[analytics]` root. A session no branch or claim ever ties to a task has steps with no task.
 
-A case performs a skill's trigger by an activity matching one of its `[[analytics.skill_loads]]` globs, or, with tool
-calls, a task title matching its `title` or carrying its `label`.
-
-No route serves trace clusters. The nightly `trace_cluster_report` calls `trace_clusters_response` in process over the
-stored `trace_cases` fold rows, with the query `hours`, `threshold`, `min_sessions`, `outliers` and `new_hours`, and
-the body groups the window's cases that made a tool call by what they did. Each case is a set of its activities (not
-a `stop_activities` one) and areas, weighted TF-IDF (a feature in under `5` cases or in over a tenth of them says
-nothing) and normalized; cases merge by average-linkage on cosine distance while the nearest pair is under `threshold`
-(0.8 by default, up to 2). A cluster keeps only if it has `min_sessions` (5 by default, 1 or more) distinct sessions.
-`new_hours` keeps only the clusters whose oldest case is that recent; clustering still runs over the whole window. The
-body is `{now, window_s, threshold, min_sessions, cases, clustered, clusters}`, and a cluster is:
-
-- `key`: the first 12 hex digits of the SHA-1 of its sorted `descriptors`, so it holds while those hold.
-- `descriptors`: its six heaviest features, as `a:<activity>`, `r:<area>` or `w:<area>`.
-- `sessions`, `cases`, `tasks`, `first_at`, `last_at`, `kinds` (cases by `headless`, `interactive`, `unknown`),
-  `sample_sessions`, `sample_tasks` (5 each) and the three `titles` most of its cases carry.
-- `skills`: the three skills its cases activated most, as `{skill, cases}`, without `lifecycle_skills`; `uncovered`
-  counts the cases that activated none of them.
-- `missed_loads`: the declared skills whose trigger some of its cases ran without activating, as `{skill, performed,
-  missed}`.
-- With `outliers=N`, `medoid` and the `N` furthest `outliers`; otherwise `medoid` is null and `outliers` is empty. The
-  medoid is `{case, median_distance, trace}`: the case with the least total normalized edit distance to the others over
-  its activity order, the median of its distances to them, and its trace (`stop_activities` dropped, adjacent repeats
-  collapsed). An outlier is `{case, distance, deletions, insertions}`: its distance from the medoid, the medoid's
-  activities it lacks and its own that the medoid lacks.
-
-The first read of a query nobody has asked since its saved answer was dropped waits for a fold. A 168 hour fold with
-`outliers` over 1,300 cases takes under `COLD_READ_BUDGET_S` (8) CPU seconds, so a reader that waits 120 s on
-a busy host gets its answer; a test holds that budget.
-
-What a cluster *is for*, and what to do about one, is the reader's: the server computes no label and keeps no verdict.
-A cluster's `key` is not continuous with one a different implementation computed from the same sessions, because the
-order that breaks a tie between equal weights may differ.
-
+Nothing in the server groups those activities now: the offload and correction reports read the stored `steps` rows in
+process and group them themselves. The `[analytics]` keys `stop_activities`, `lifecycle_skills`, `skill_loads` and
+`skill_machines` still load, and nothing reads them.
 
 ## Save GitHub webhook deliveries
 
@@ -290,7 +203,7 @@ The page's `/metrics` serves, per consumer, `starpulse_github_pending_rows{consu
 `starpulse_github_oldest_due_seconds{consumer}` (the age of its oldest pending row that is due) and
 `starpulse_github_dead_rows{consumer}`, the dead rows it holds until `requeue` or `dismiss` clears them, and
 `starpulse_github_oldest_check_seconds{consumer}`, the age of its oldest pending `check_run`, `check_suite` or `status`
-delivery (0 with none), which the `starpulse-pr-checks-stalled` alert reads; the listener's own `/metrics` serves the same.
+delivery whose last attempt did not end `no-task` (0 with none), which the `starpulse-pr-checks-stalled` alert reads; the listener's own `/metrics` serves the same.
 
 7. A consumer with no row starts at the newest delivery, not the whole inbox: its first claim anchors there with a
    `skipped` row and every claim seeds only past its oldest own row. `SqlQueue(..., backfill=N)` makes the first claim
@@ -353,13 +266,11 @@ name = "cron"
 token_env = "CRON_INGEST_TOKEN"
 ```
 
-Set the token where `serve` runs and send it as a bearer:
+Name the token's variable with `--token-env` and emit the event:
 
 ```sh
-curl -X POST http://localhost:8766/api/machine-events -H "Authorization: Bearer $CRON_INGEST_TOKEN" \
-  -H "Content-Type: application/cloudevents+json" \
-  -d '{"specversion": "1.0", "id": "2026-10-03-start", "source": "cron", "type": "StepStarted", "subject": "2026-10-03",
-       "data": {"workflow": "nightly", "status": "running"}}'
+starpulse event emit --source cron --type StepStarted --subject 2026-10-03 \
+  --token-env CRON_INGEST_TOKEN --data workflow=nightly --data status=running
 ```
 
 A Step event is `type` `StepStarted` or `StepFinished` with no `machine`. `subject` is the run's id; `data` holds the
@@ -372,7 +283,7 @@ events add up to, and that graph is kept in the history store across restarts. E
 producer: a missing or wrong token answers 401, another producer's `source` 403, an event the contract does not allow
 400, and none of them writes anything; the other answers are the machine events' table below.
 
-A qa lens's verdict rides the route too: `type` `VerdictRecorded`, no `machine`, `subject` the task and `data` holding
+A qa lens's verdict rides the ingest too: `type` `VerdictRecorded`, no `machine`, `subject` the task and `data` holding
 the `lens`, the `round` (an integer from 1), the `outcome` (`PASS` or `CHANGES`) and optionally a `reason`. A verdict
 missing a lens, round or outcome answers 400 and writes nothing. Every verdict is kept, per lens and round, by the
 history store, and `/api/events` sends each as a `verdict` event (`task`, `lens`, `round`, `outcome`, `reason`, `at`).
@@ -385,9 +296,9 @@ A commit that broke the default branch is a `postmortem` doc, linked from the ta
 
 ## Post machine events as CloudEvents
 
-A build job, a bot or any service that is not on the host posts a lifecycle machine's event over HTTP as a
-[CloudEvents](https://cloudevents.io) 1.0 JSON event. Declare the producer, set its token in the server's
-environment, and the server accepts `POST /api/machine-events` (404 until one is declared):
+A build job, a bot or any service posts a lifecycle machine's event as a [CloudEvents](https://cloudevents.io) 1.0
+event, through `starpulse event emit` to the JetStream ingest or over Connect or gRPC. Declare the producer and set its
+token in the server's environment; the Connect ingest answers 404 until one is declared:
 
 ```toml
 [[producers]]
@@ -398,24 +309,19 @@ actors = ["ci"]
 ```
 
 ```bash
-curl -X POST "$STARPULSE_URL/api/machine-events" \
-  -H "Authorization: Bearer $CI_BOT_TOKEN" -H "Content-Type: application/cloudevents+json" \
-  -d '{"specversion": "1.0", "id": "build-41", "source": "ci-bot", "type": "BUILT", "subject": "PROJ-1",
-       "time": "2026-10-18T22:00:00Z", "machine": "delivery", "actor": "ci", "data": {"sha": "abc123"}}'
+starpulse event emit --source ci-bot --type BUILT --subject PROJ-1 --machine delivery --actor ci --data sha=abc123
 ```
 
-The same post from a shell or a scheduler hook is `starpulse event emit --source ci-bot --type BUILT --subject PROJ-1
---machine delivery --actor ci --data sha=abc123`: it builds `starpulse.contracts.CloudEvent`, the model the ingest
-reads, and publishes it to the JetStream ingest of the `[bridge]` in `--config` (default `starpulse.toml`) with the token
+`starpulse event emit` builds `starpulse.contracts.CloudEvent`, the model the ingest reads, and publishes it to the JetStream ingest of the `[bridge]` in `--config` (default `starpulse.toml`) with the token
 in `STARPULSE_PRODUCER_<SOURCE>_TOKEN`. It exits 0 once the stream holds the event and 1 when the server is unreachable.
-The `bridge` context applies the event with the route's checks (token, machines, actors), so one it refuses is logged
+The `bridge` context applies the event with the ingest's checks (token, machines, actors), so one it refuses is logged
 there, not answered to the emitter.
 
 A producer that reports a run system's Step events may set `adapter` to that system's run Adapter type
 (`adapter = "github_actions"`): its events then carry the system's own status label in `data.status`, and the ingest reads it
 through the adapter's `status_of`, so a hook posts the label as it is and an unknown label is a 400.
 
-`application/cloudevents-batch+json` takes a JSON array of up to 200 such events. The attributes map to a
+A batch (Connect `PublishBatch`) takes up to 200 such events. The attributes map to a
 `machine:events` entry:
 
 | CloudEvents | Entry | |
@@ -447,7 +353,7 @@ speaks HTTP/1.1 to the server carries only the Connect protocol, so a client beh
 (one `io.cloudevents.v1.CloudEvent`) and `PublishBatch` (a `CloudEventBatch` of up to 200), both answering
 `google.protobuf.Empty`. The token is the `authorization` metadata, `Bearer <token>`. Attributes are the table above's,
 carried in the event's `attributes` map (`time` as `ce_timestamp` or an RFC 3339 `ce_string`); `data` is JSON text or
-bytes, never a protobuf `Any`. The checks and the all-or-nothing batch are the HTTP ingest's; on the gRPC wire
+bytes, never a protobuf `Any`. The checks and the all-or-nothing batch are the ingest's; on the gRPC wire
 `grpc-status` arrives in the HTTP/2 trailers. A refusal's HTTP status maps to a code:
 
 | HTTP | Connect and gRPC |

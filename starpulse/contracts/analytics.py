@@ -6,11 +6,9 @@ to the instance, not the package:
 - `roots`: absolute checkout paths. A path a tool call read or wrote is cut to an area (its first two components) below
   the root it is under; a `*` matches one path component, so `/repo/.claude/worktrees/*` is every worktree of `/repo`.
   A path under no root is no area, and with no root there are no areas.
-- `stop_activities`: activities that say how a session was run, not what work it did; they never define a cluster.
-- `lifecycle_skills`: skills every task's delivery loads, so loading one says nothing about the work.
-- `[[analytics.skill_loads]]`: per `skill`, what should load it: any of `activities` (globs over an activity's name),
-  a task whose title matches `title` (a regular expression, case-insensitive) or one carrying `label`. A case that
-  ran a trigger without activating the skill is a missed load; a skill with no declaration is never reported.
+- `stop_activities`, `lifecycle_skills` and `[[analytics.skill_loads]]` (per `skill`, what should load it: `activities`
+  globs, a task `title` regular expression or a `label`): no read uses them now that the trace-case folds and the
+  missed-load count are gone, and the keys stay so a config that sets them loads.
 
 What a session's own events say about its work is read against more keys, so the package names no instance's
 tasks or skills:
@@ -47,9 +45,9 @@ More keys name the instance's vocabulary for reading its sessions and scoring it
   p90); no verb reads it now that `analytics estimates` is gone, and the key stays so a config that sets it loads.
 - `default_repo`: an `owner/name` no verb reads now; the key stays so a config that sets it loads.
 
-A run under a skill conforms to its machine (`GET /api/task-diff/{id}`) when it reaches the stages of its
-`[[analytics.skill_machines]]` entry in order: each stage is a tool call whose activity matches a glob of `activities`
-and, when `ok` is set, that succeeded or failed. A skill with no entry has every run conform.
+`[[analytics.skill_machines]]` tables: the stages of a skill's run (each a tool call whose activity matches a glob of
+`activities` and, when `ok` is set, that succeeded or failed). No route reads them now that `task-diff` is gone, and the
+key stays so a config that sets it loads.
 """
 
 import re

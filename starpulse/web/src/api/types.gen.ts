@@ -38,8 +38,6 @@ export interface ApiContract {
   )[];
   build: BuildEvent;
   contractReport: ContractReport;
-  costToGo: CostToGo;
-  diff: RunDiffs;
   docShown: DocShown;
   docs: Docs;
   donePage: DonePage;
@@ -90,8 +88,6 @@ export interface ApiContract {
   snapshot: Snapshot;
   spend: Spend;
   stale: StaleEvent;
-  taskCostToGo: TaskCostToGo;
-  taskDiff: TaskDiff;
   taskEventHistory: TaskEventHistory;
   taskMoves: TaskMoves;
   taskRecord: TaskRecord;
@@ -305,99 +301,6 @@ export interface ContractCheck {
   check: string;
   reason: string;
   status: "pass" | "warn" | "fail";
-  [k: string]: unknown;
-}
-/**
- * `GET /api/task-cost-to-go/{id}`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one.
- */
-export interface CostToGo {
-  cost_to_go: StateCost[];
-  now: number;
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * One skill-machine state's expected cost-to-go within a kind and size.
- */
-export interface StateCost {
-  /**
-   * The expected agent steps from a run's first step in the state until the run ends.
-   */
-  cost_to_go: number;
-  kind: string;
-  /**
-   * The times the state was seen left in the clean completed runs.
-   */
-  n: number;
-  size: number;
-  skill: string;
-  /**
-   * A stage of the skill's machine, or `[start]` before its first.
-   */
-  state: string;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/task-diff/{id}`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.
- */
-export interface RunDiffs {
-  diff: RunDiff[];
-  now: number;
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * One transition's reference run against its slowest clean run.
- */
-export interface RunDiff {
-  /**
-   * Of `runs`, those that conform to the skill's machine.
-   */
-  conformant: number;
-  kind: string;
-  /**
-   * The fewest-step conformant clean run; None when `conformant` is 0.
-   */
-  reference: RunRef | null;
-  /**
-   * Activities the reference made more often than the slow run.
-   */
-  reference_only: ActivityCount[];
-  /**
-   * Clean completions of the transition.
-   */
-  runs: number;
-  size: number;
-  skill: string;
-  slow: RunRef1;
-  /**
-   * Activities the slow run made more often than the reference.
-   */
-  slow_only: ActivityCount[];
-  [k: string]: unknown;
-}
-export interface RunRef {
-  /**
-   * Model requests, a subagent's included.
-   */
-  steps: number;
-  task: string;
-  [k: string]: unknown;
-}
-export interface ActivityCount {
-  activity: string;
-  count: number;
-  [k: string]: unknown;
-}
-/**
- * The most-step clean run.
- */
-export interface RunRef1 {
-  /**
-   * Model requests, a subagent's included.
-   */
-  steps: number;
-  task: string;
   [k: string]: unknown;
 }
 /**
@@ -2581,30 +2484,6 @@ export interface SpendPhase {
  */
 export interface StaleEvent {
   at: number;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/task-cost-to-go/{id}`: the task's kind and size, and the rows `CostToGo` holds for them; no kind or size, no rows.
- */
-export interface TaskCostToGo {
-  cost_to_go: StateCost[];
-  kind: string | null;
-  now: number;
-  size: number | null;
-  task: string;
-  window_s: number;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/task-diff/{id}`: the task's kind and size, and the rows `RunDiffs` holds for them; no kind or size, no rows.
- */
-export interface TaskDiff {
-  diff: RunDiff[];
-  kind: string | null;
-  now: number;
-  size: number | null;
-  task: string;
-  window_s: number;
   [k: string]: unknown;
 }
 /**

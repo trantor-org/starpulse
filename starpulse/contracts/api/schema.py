@@ -95,11 +95,7 @@ from starpulse.contracts.api.dto.snapshot import (
 )
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import (
-    CostToGo,
-    RunDiffs,
     Spend,
-    TaskCostToGo,
-    TaskDiff,
     TaskSpend,
 )
 
@@ -125,10 +121,6 @@ class ApiContract(_Api):
     searchResults: SearchResults
     spend: Spend
     taskSpend: TaskSpend
-    taskDiff: TaskDiff
-    taskCostToGo: TaskCostToGo
-    diff: RunDiffs
-    costToGo: CostToGo
     trajectories: Trajectories
     harnesses: Harnesses
     windowState: WindowState

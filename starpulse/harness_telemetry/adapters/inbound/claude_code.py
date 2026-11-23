@@ -184,7 +184,7 @@ def bind(
     an address that cannot be bound."""
     keys = TaskKeys(key=re.compile(settings.key), branch=re.compile(settings.branch), key_format=settings.key_format)
     redact = redactor(settings.redactor) if settings.redactor else None
-    telemetry = telemetry_log(log)
+    telemetry = telemetry_log(log, keys, config.analytics)
 
     transcripts = Path(config.board.get("transcripts", claude_sessions.DEFAULT_TRANSCRIPTS)).expanduser()
     adapter = ClaudeCodeAdapter(

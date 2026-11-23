@@ -95,7 +95,7 @@ requests it took and closes.
 
 ### Worker processes
 
-`serve` is a supervisor over two children, each a `starpulse worker <name>` process: `api` (the Page API) and `contexts`, the one process that runs every background context as a thread: `pulls` (Delivery), `scheduler`, `runs` with each run adapter a `[[runs]]` instance names (`github-actions`, `systemd`, `temporal`), `flow-metrics`, `signal-folds` (the per-session folds of the harness signals the per-task spend, diff and cost-to-go routes read), `lane-metrics` (the unattributed-lane count, the conformance monitor and the lane sweep, whose metrics text the Page API relays), `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` starts each as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in the event log. No unit file is needed to run StarPulse, and no setting turns a child off: `starpulse reload` picks the children whose code or config moved. The set of children does not depend on the config: a config naming every run adapter still has two.
+`serve` is a supervisor over two children, each a `starpulse worker <name>` process: `api` (the Page API) and `contexts`, the one process that runs every background context as a thread: `pulls` (Delivery), `scheduler`, `runs` with each run adapter a `[[runs]]` instance names (`github-actions`, `systemd`, `temporal`), `flow-metrics`, `signal-folds` (the per-session folds of the harness signals the per-task spend route and the sessions sink read), `lane-metrics` (the unattributed-lane count, the conformance monitor and the lane sweep, whose metrics text the Page API relays), `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating). `serve` starts each as a child, restarts it with a growing delay (1 s, doubling to 60 s; a child that ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in the event log. No unit file is needed to run StarPulse, and no setting turns a child off: `starpulse reload` picks the children whose code or config moved. The set of children does not depend on the config: a config naming every run adapter still has two.
 
 The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; the child serves the page build of the release it runs from (`STARPULSE_STATIC` names another directory, as a test's stub page), so a reload after a merge that rebuilds the page serves the new build. The child reads the Board from the read model the `contexts` child folds and starts no adapter watcher. A reload of the child starts the new one on the same socket, waits until it reports (`STARPULSE_READY_FD`) it is about to serve, or 30 s (`warm`) at most, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused. The child serves the snapshot the Board writer stored and builds none, so a connection that queued across a restart or a reload is answered from the store, never by a build in its request (a 503 with `Retry-After: 1` before the writer has stored one); an agent client (`starpulse` verbs) sends a GET once more when the server answered it with an empty reply.
 
@@ -246,7 +246,7 @@ A resumed process has a new socket and token: it registers again by running `sta
 passes once at start and every `[sweeper] interval_s` (default 3600 s). A pass runs each kind in order, then the
 housekeeping steps, and writes one journal line (`sweeper: pass N: readers=0 ...`) naming each kind and its correction
 count. The built-in `readers` kind wakes a log reader that has entries waiting and made no progress since the last pass,
-and counts it. The event-log prune and the signal prune are housekeeping steps of the pass.
+and counts it. The event-log prune is a housekeeping step of the pass.
 
 A project declares more kinds and housekeeping as commands, each printing its result on its last line, a count (`3`) or
 `{"corrected": 3, "sampled": 8}`:
@@ -425,33 +425,24 @@ GET /api/history?task=TASK-N[&machine=NAME]
                    machine as [{at, event, state}] in order, `steps` their count; with `machine`, `task` may be a run id. A task never seen has an empty path; no `task` is 400
                    and an unknown `machine` 404. The machine events are copied from their stream as they
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
-                   the config), so the path outlives the stream's trim. A trim past entries the copy never read is recorded as a gap
+                   the config), so the path outlives the stream's trim. A trim past entries the copy never read leaves it resuming at the oldest kept row
 GET /api/task-spend/{id}[?hours=N]
                    one task's spend by phase over the last `hours`, default 168, as `{task, now, window_s, spend}`:
                    each is a phase row of the report in docs/sources.md, `spend` empty for a task with no spend in
                    the window. It filters the week answer the server keeps under `spend`. An `hours` that is no positive
                    number, or a window longer than the folded history, is 400 with `history_s`
-GET /api/task-diff/{id}[?hours=N]
-                   the cohort of the task's `kind-` and `size-` labels: each transition's reference run against its slowest
-                   clean run, as `{task, kind, size, now, window_s, diff}`; a task missing either label has no cohort.
-                   Refusals as `/api/task-spend/{id}`
-GET /api/task-cost-to-go/{id}[?hours=N]
-                   the expected agent steps to a run's end from each state of each skill machine in that cohort, as
-                   `{task, kind, size, now, window_s, cost_to_go}`: each is `{kind, size, skill, state, n, cost_to_go}` for a
-                   state of the machine or `[start]`, `n` the times the state was seen left in the clean completed runs;
-                   every state is listed whatever its `n`. Refusals as `/api/task-spend/{id}`
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
-POST /api/machine-events (also Connect `starpulse.v1.CloudEventsIngest` Publish and PublishBatch on this port, docs/sources.md)
-                   post machine events and runs as CloudEvents 1.0 JSON (`application/cloudevents+json`, or a JSON array
-                   as `application/cloudevents-batch+json`), with `Authorization: Bearer <token>` of a `[[producers]]`
-                   entry; the one write path for both, needing no Redis (docs/sources.md). A machine event is written to
+Connect `starpulse.v1.CloudEventsIngest` Publish and PublishBatch on this port (docs/sources.md)
+                   post machine events and runs as CloudEvents 1.0, with `authorization: Bearer <token>` of a `[[producers]]`
+                   entry; the one write path for both over a port, needing no Redis. A machine event is written to
                    `machine:events`; a `StepStarted` or `StepFinished` with no `machine`, `subject` the run's id and
-                   `data` {workflow, status[, step, depends]}, to `runs:events`. 201 {accepted}; 400 for an event the
-                   contract refuses, 401 for a missing or wrong token, 403 for another producer's source, machine or
-                   actor, 413 over the limit, 503 when the log refuses it, 404 when no producer is declared. A batch is
-                   checked whole, and a refusal writes nothing. A GET answers 405
-POST /api/temporal-completion?workflow=<type>  Temporal's close callback (`Nexus-Operation-State`, `Nexus-Link` headers) with the `[[producers]]` bearer of a producer
+                   `data` {workflow, status[, step, depends]}, to `runs:events`. 400 for an event the contract refuses,
+                   401 for a missing or wrong token, 403 for another producer's source, machine or actor, 413 over the
+                   limit, 503 when the log refuses it, 404 when no producer is declared. A batch is checked whole, and a
+                   refusal writes nothing
+POST /intake/temporal-completion?workflow=<type>  Temporal's close callback (`Nexus-Operation-State`, `Nexus-Link` headers) with the `[[producers]]` bearer of a producer
                    named `temporal`; writes the run's close to `runs:events`. 201 {accepted}; 400 for a missing state, link or workflow, 401 for a wrong token
+POST /intake/grafana  a Grafana alert group, with the `webhook_token_env` bearer; handed on stdin to `webhook_command`; 404 where none is configured
 ```
 
 ## Event store
@@ -728,15 +719,14 @@ applied_by = "pin-bump"
 # verify_lane = "verifying"       # optional verify lane: its tasks take a `Verify TASK-N` session once the eligible lane has none to admit; set with verify_profile
 # verify_profile = "@agent-standard-medium"  # the agent profile every verify session starts on; the built-in starter passes it as `--agent`
 
-# Optional: what harness telemetry is read against for skill loads, skill machines and trace clusters (see Group recurring
-# work in docs/sources.md). Every key is optional; with no table nothing is declared, and no
-# path is an area.
+# Optional: what harness telemetry is read against (see Fold what each session did and Group recurring work in
+# docs/sources.md). Every key is optional; with no table nothing is declared, and no path is an area.
 # [analytics]
 # roots = ["/srv/repo", "/srv/repo/.claude/worktrees/*"]  # absolute checkouts a path is cut to an area under; `*` is one component
-# stop_activities = ["Bash", "exec_command"]               # activities that say how a session ran, never a cluster's descriptors
-# lifecycle_skills = ["starting-tasks", "completing-tasks"] # skills every task loads, left out of a cluster's skills
+# stop_activities = ["Bash", "exec_command"]               # no read uses it now; a config that sets it still loads
+# lifecycle_skills = ["starting-tasks", "completing-tasks"] # no read uses it now; a config that sets it still loads
 # size_bands = { 1 = [50, 14], 5 = [170, 47] }          # each size -> [p90 steps, p90 active minutes]; no verb reads it now; a config that sets it still loads
-# [[analytics.skill_loads]]                                # what should load a skill: any of these
+# [[analytics.skill_loads]]                                # no read uses these now; a config that sets them still loads
 # skill = "operating-nas"
 # activities = ["ssh root@nas-host"]                       # globs over an activity's name
 # [[analytics.skill_loads]]
@@ -762,7 +752,7 @@ applied_by = "pin-bump"
 # ladder = ["haiku-low", "haiku-high", "sonnet-high"]      # `<family>-<effort>` profiles, cheapest first; a move up is a raise
 # default_repo = "owner/name"                              # no verb reads it now; a config that sets it still loads
 # completion_call = '\.venv/bin/deliver\b'                 # a shell command run after that skill loaded
-# [[analytics.skill_machines]]                             # what a run under a skill reaches, in order, to conform (see Diff a fast run against a slow one in docs/sources.md)
+# [[analytics.skill_machines]]                             # no read uses it now; a config that sets it still loads
 # skill = "developing-test-first"
 # stages = [
 #   { name = "RED", activities = ["pytest", "make test*"], ok = false },  # a failing call matching a glob of `activities`
@@ -805,7 +795,7 @@ applied_by = "pin-bump"
 
 A `[[runs]]` instance's `type` names one of the built-in adapters `github_actions`, `systemd`, `temporal` and `woodpecker`, or an installed
 package's module. `serve` starts the worker of each built-in adapter that a configured instance names, as its own child
-(`starpulse worker github-actions --config <this file>`, likewise `systemd` and `woodpecker`; `temporal` has none, its closes arrive at `/api/temporal-completion`), and restarts it if it stops, as
+(`starpulse worker github-actions --config <this file>`, likewise `systemd` and `woodpecker`; `temporal` has none, its closes arrive at `/intake/temporal-completion`), and restarts it if it stops, as
 it does its other workers. No OS service unit is needed for an adapter. With its worker down or not yet started, the
 page shows the instance with the error "the woodpecker worker has not reported" or "last reported Ns ago" (its beat is older
 than 60s).
@@ -824,7 +814,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 
 - `tracker_url` (text): The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's own Kanban.
 - `database_url` (text): The SQLAlchemy URL of the history store; unset, `starpulse-history.sqlite` beside the config. The credentials never live here; they come from the driver's environment, such as `PGPASSWORD`.
-- `event_log_retention_days` (whole number, 1 or more, default `7`): How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept row and records the span it missed in `starpulse_gaps`. The `machine:events` stream is exempt: the prune never deletes it, because a read-model rebuild refolds every machine's tasks from it. On its first pass the sweeper also puts the archived rows of that stream back at their archived `id`, once. A whole number of days.
+- `event_log_retention_days` (whole number, 1 or more, default `7`): How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept row. The `machine:events` stream is exempt: the prune never deletes it, because a read-model rebuild refolds every machine's tasks from it. On its first pass the sweeper also puts the archived rows of that stream back at their archived `id`, once. A whole number of days.
 - `event_log_archive_dir` (text, default `"starpulse-archive"`): Where the sweeper writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to this file unless absolute.
 - `slow_read_seconds` (number, above 0, default `1.0`): The seconds a `GET /api/pulls` or `GET /api/task/<id>` read may take, from accept to the last byte written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of the same route running when it began, and `busy` and `streams`, the request workers in use (the read itself included) and the streams open when it was accepted. No other route is timed.
 - `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds its two worker children to, in megabytes (see Worker processes), set as `[worker_memory.api]` and `[worker_memory.contexts]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `api` 4096/8192, `contexts` 1536/3072.
@@ -837,12 +827,12 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `session_start_url` (text): The session-start service a started task is sent to (`POST <url>/start/TASK-N?harness=&mode=`); unset: nothing can be started.
 - `harnesses_file` (text): A file, relative to this one, that declares the tiers and per-harness models.
 - `pull_requests` (true or false, default `true`): `serve` keeps a pull request store, current from the lifecycle events and GitHub's webhook deliveries, that `/api/pulls`, the `ci` trail and `[release]` read. false never updates it: no event is applied, tasks carry no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so one store is kept.
-- `webhook_command` (list of text): The command `POST /api/webhook` runs, as an argv, with the request body on stdin once the bearer token `webhook_token_env` names matches. Exit 0: accepted (202). Any other exit or a timeout: 502 with the command's stderr, so the sender retries. 404 when this is unset. Needs `webhook_token_env`.
-- `webhook_token_env` (text): The environment variable holding the bearer token `POST /api/webhook` requires; the value is the name, never the token.
+- `webhook_command` (list of text): The command `POST /intake/grafana` runs, as an argv, with the request body on stdin once the bearer token `webhook_token_env` names matches. Exit 0: accepted (202). Any other exit or a timeout: 502 with the command's stderr, so the sender retries. 404 when this is unset. Needs `webhook_token_env`.
+- `webhook_token_env` (text): The environment variable holding the bearer token `POST /intake/grafana` requires; the value is the name, never the token.
 - `github_token_env` (text): The name of an environment variable holding a GitHub token. `serve` exports its value as `GITHUB_TOKEN` and `GH_TOKEN` before it starts any worker, so the GitHub reads and the child processes sign in with it; unset, or naming an unset variable, leaves both as they were. The value is the name, never the token.
 - `take_over_command` (list of text): The command `POST /api/take-over` runs, as an argv: StarPulse appends the task id (`{"task": "TASK-7"}` in the body) and the command asks the task's workflow engine to flip that task's workflow to interactive, so it types nothing more into the task's session. Exit 0: sent (200). Exit 1: the task has no running workflow (409). Any other exit: an error, with the command's stderr. 404 when this is unset. The command is the only place a workflow engine appears.
 - `runs` (list of `[[runs]]` table): One instance of a runs adapter per `[[runs]]` table.
-- `producers` (list of `[[producers]]` table): A system that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents). `POST /api/machine-events` and the Connect `starpulse.v1.CloudEventsIngest` answer 404 until one is declared. A producer writes only the machines and actors listed here.
+- `producers` (list of `[[producers]]` table): A system that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents). The Connect `starpulse.v1.CloudEventsIngest` answers 404 until one is declared. A producer writes only the machines and actors listed here.
 - `repos` (list of `[[repos]]` table): A repository whose merges apply through the parent's pin bump rather than a run of their own.
 - `ci` (`[ci]` table): Draws each task's pull-request CI as a sub-flow of these Board states.
 - `release` (`[release]` table): Releases Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task it depends on is Done (see Release); with no `[release]` table it releases none. The board must edit tasks and draw `waiting` and `ready` lanes, else `serve` refuses to start.
@@ -854,6 +844,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `project` (table): The project's own command line for each step a shipped skill names.
 - `sequences` (table of list of text): The phases a task goes through, in order, keyed by task type (`story`, `bug`), with `default` for a type it does not name. A lifecycle machine link that lists `routes` sends a task to the route its sequence names next.
 - `awaits` (list of text): The lifecycle machines whose unfinished placement of a task ends in an event, so a session that settles meanwhile is not resumed: a link's lens in the phase it runs, or a machine with no link until it ends.
+- `account_room_alert` (text): The name of the alert that fires while no account has room to start a session. The task actor holds a dispatch while that alert's latest event is `firing` and pins it on `resolved`; unset, it never holds one.
 - `claude_code` (table): Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).
 - `github` (table): Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).
 - `bridge` (`[bridge]` table): The NATS bridge's server that `serve` supervises unless `enabled = false` (see The NATS server).

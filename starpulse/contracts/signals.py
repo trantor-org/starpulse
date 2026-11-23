@@ -6,10 +6,11 @@
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 from starpulse.contracts.task_keys import TaskKeys
 
-__all__ = ["CLAUDE_CODE", "Signal", "claim_key", "claimed", "main_thread_source"]
+__all__ = ["CLAUDE_CODE", "Signal", "claim_key", "claimed", "main_thread_source", "signal_of"]
 
 CLAUDE_CODE = "claude-code"
 _MAIN_THREAD = "repl_main_thread"
@@ -78,6 +79,11 @@ class Signal:
     eval: str = ""
     entrypoint: str = ""
     agent_id: str = ""
+
+
+def signal_of(fields: dict[str, Any]) -> Signal:
+    """The `Signal` whose `dataclasses.asdict` fields, as JSON gave them back (tuples as lists), are `fields`."""
+    return Signal(**{k: tuple(v) if isinstance(v, list) else v for k, v in fields.items()})
 
 
 def claim_key(tool_key: str) -> str:

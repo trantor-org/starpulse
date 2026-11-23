@@ -223,12 +223,13 @@ def default_starters(
     def scheduler(own: threading.Event) -> Callable[[], None]:
         from starpulse.runtime.assembly import scheduler_board
         from starpulse.scheduler.bin import scheduler_worker
+        from starpulse.sessions.adapters.outbound.claude_code_notify import end_with
         from starpulse.sessions.adapters.outbound.session_start import starter
 
         return scheduler_worker.start(
             config, path, base, log, own, load=load,
             worker_board=lambda *_: scheduler_board(config, base, log, own),
-            starter=starter, delivered=own_pull_merged,
+            starter=starter, delivered=own_pull_merged, ender=end_with,
         )  # fmt: skip
 
     def runs(own: threading.Event) -> Callable[[], None]:
@@ -261,12 +262,11 @@ def default_starters(
         )  # fmt: skip
 
     def signal_folds(own: StopEvent) -> Callable[[], None]:
-        # the api worker reads the fold rows; folding them here keeps the catch-up off the Page API's GIL
-        from starpulse.flow_metrics.adapters.completion_steps import CompletionSteps
+        # the api worker reads the fold rows; counting their cost here keeps the catch-up off the Page API's GIL
         from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 
         _, feed = shared()
-        folds = SignalFolds(log, feed.keys, config.analytics, CompletionSteps(log, feed.titled).observe, feed.titled)
+        folds = SignalFolds(log, feed.titled)
         threading.Thread(target=folds.follow, args=(own,), name="signal-folds", daemon=True).start()
         return lambda: logger.info("signal-folds: the analytics config is read at start; restart to apply a change")
 

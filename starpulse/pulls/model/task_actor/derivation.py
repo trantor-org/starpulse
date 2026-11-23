@@ -172,8 +172,8 @@ def merged_at(facts: TaskFacts, agent: Agent) -> float | None:
 
 
 def why_unready(record: dict[str, Any], held_head: str | None) -> list[str]:
-    """The conditions that keep a pull request record from being ready: draft, conflicting, checks that are not passed, or
-    held after a send-back on its current head."""
+    """The conditions that keep a pull request record from being ready: draft, conflicting, a mergeability GitHub has not
+    settled, checks that are not passed, or held after a send-back on its current head."""
     verdict = checks_verdict(
         record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
     )
@@ -182,6 +182,7 @@ def why_unready(record: dict[str, Any], held_head: str | None) -> list[str]:
         for reason, holds in (
             ("draft", record["isDraft"]),
             ("conflicting", record["mergeable"] == "CONFLICTING"),
+            ("mergeability not settled", record["mergeable"] not in ("MERGEABLE", "CONFLICTING")),
             (f"checks {verdict}", verdict != "pass"),
             ("held after a send-back on this head", held_head == record["headRefOid"]),
         )

@@ -32,7 +32,6 @@ from starpulse.event_log.child_cpu import metrics_of as child_cpu_metrics_of
 from starpulse.event_log.follower_lag import metrics_of as follower_lag_metrics_of
 from starpulse.event_log.recorder_lag import metrics_of as history_lag_metrics_of
 from starpulse.event_log.wake import StopEvent
-from starpulse.flow_metrics.adapters.completion_steps import metrics_of as completion_steps_metrics_of
 from starpulse.pulls.adapters.inbound.delivery import (
     PROJECTION as PULLS_PROJECTION,
 )
@@ -56,7 +55,7 @@ from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.adapters.outbound import skill_cost
 from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
-from starpulse.views.adapters.outbound.storage_metrics import cached, docs_exposition, storage_exposition
+from starpulse.views.adapters.outbound.storage_metrics import SCRAPE_CACHE_S, cached, docs_exposition, storage_exposition
 from starpulse.views.adapters.outbound.take_over import command_take_over
 from starpulse.views.adapters.outbound.webhook_command import command_webhook
 from starpulse.views.application.queries.answers import Answers
@@ -159,7 +158,7 @@ def serve_page(
     caught_up.state(PULLS_PROJECTION, Projected(log, feed).apply)
     # the analytics routes read the per-session folds of the signal table; the `signal-folds` context of
     # `starpulse worker contexts` keeps them current, so no fold runs in this process
-    signal_folds = SignalFolds(log, feed.keys, config.analytics)
+    signal_folds = SignalFolds(log)
     # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks; an opt-in
     # worker's instance also shows the page whether that worker's process runs
@@ -216,12 +215,11 @@ def serve_page(
         ),
         sweeper_metrics=sweeper_metrics_of(log),
         bridge_metrics=lambda read=(bridge_metrics_of(log), wake_metrics_of(log)): "".join(part() for part in read),
-        completion_steps_metrics=completion_steps_metrics_of(log),
         history_lag_metrics=history_lag_metrics_of(log),
         follower_lag_metrics=follower_lag_metrics_of(log, CHECKPOINT, STREAMS),
         skill_cost_metrics=skill_cost.metrics_of(log),
         child_cpu_metrics=child_cpu_metrics_of(log),
-        github_metrics=host.github_metrics(config, base),
+        github_metrics=cached(host.github_metrics(config, base), SCRAPE_CACHE_S),
     )
     snapshots = Snapshots(SnapshotStore(log.engine, encode_snapshot), log, stop)
     gc.callbacks.append(PAUSES.callback)

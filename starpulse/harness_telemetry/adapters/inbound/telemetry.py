@@ -377,45 +377,45 @@ def held(found: Iterable[Signal]) -> list[Signal]:
     return [stored_signal(asdict(signal)) for signal in first.values()]
 
 
-KEEP_S = 8 * 86400.0  # a day past the views' default 168 h window: the oldest held signal never lies inside it
-
-
 class TelemetryLog:
-    """Where the adapters put the signals the exports gave: the `starpulse_signals` table.
+    """Where the adapters put the signals an export gave: each export advances its sessions' folds in the event log
+    (`SessionLedger`), and no signal is kept past it.
 
-    `publish` stores each signal under its `key`, so a replayed export adds nothing, and fails open like the log: a
-    table that cannot be written drops the signals, never the export. The views read the table through its folds
-    (`SignalFolds`), so this holds no signal and no key.
+    `publish` fails open like the log: a store that cannot be written drops the export's signals, never the export. A
+    replayed export changes no fold. `keys` and `analytics` are the ones the folds are made under.
     """
 
-    def __init__(self, log: EventLog) -> None:
+    def __init__(self, log: EventLog, keys: TaskKeys | None = None, analytics: Analytics | None = None) -> None:
         self._events = log
+        self._keys = keys
+        self._analytics = analytics
 
     def publish(self, found: Iterable[Signal]) -> None:
         from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415 - the database stack loads when a log opens
 
-        from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable  # noqa: PLC0415
-
         try:
-            SignalTable(self._events.engine).insert([asdict(signal) for signal in found])
+            self._ledger().apply(found)
         except SQLAlchemyError:
-            log.warning("signal table unwritable; dropping signals", exc_info=True)
+            log.warning("session folds unwritable; dropping signals", exc_info=True)
 
     def last_claim(self, harness: str, session: str) -> tuple[str, float] | None:
-        """The task `session` last claimed in a stored signal and when, or None when it claimed none.
+        """The task `session` last claimed in an export and when, or None when it claimed none.
 
-        Raises `ClaimUnreadable` when the table cannot be read, so a failed read is not taken for no claim."""
+        Raises `ClaimUnreadable` when the folds cannot be read, so a failed read is not taken for no claim."""
         from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415 - the database stack loads when a log opens
 
-        from starpulse.harness_telemetry.adapters.outbound.signal_table import SignalTable  # noqa: PLC0415
-
         try:
-            return SignalTable(self._events.engine).last_claim(harness, session)
+            return self._ledger().last_claim(harness, session)
         except SQLAlchemyError:
-            log.warning("signal table unreadable; no claim recalled", exc_info=True)
+            log.warning("session folds unreadable; no claim recalled", exc_info=True)
             raise ClaimUnreadable(session) from None
 
+    def _ledger(self):
+        from starpulse.flow_metrics.adapters.outbound.session_ledger import SessionLedger  # noqa: PLC0415
 
-def telemetry_log(log: EventLog) -> TelemetryLog:
-    """The `TelemetryLog` of the event log `log`."""
-    return TelemetryLog(log)
+        return SessionLedger(self._events, self._keys, self._analytics)
+
+
+def telemetry_log(log: EventLog, keys: TaskKeys | None = None, analytics: Analytics | None = None) -> TelemetryLog:
+    """The `TelemetryLog` of the event log `log`, folding under `keys` and `analytics`."""
+    return TelemetryLog(log, keys, analytics)

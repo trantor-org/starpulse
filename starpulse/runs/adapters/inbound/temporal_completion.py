@@ -1,4 +1,4 @@
-"""The Temporal completion callback: `POST /api/temporal-completion?workflow=<type>`.
+"""The Temporal completion callback: `POST /intake/temporal-completion?workflow=<type>`.
 
 Temporal's server posts it once a workflow started with a `completion_callbacks` entry closes, retrying until the
 ingest answers. The producer's bearer token rides the callback's own `Authorization` header; `Nexus-Operation-State`

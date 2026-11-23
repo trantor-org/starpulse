@@ -166,9 +166,15 @@ def apply(
             return None  # an `opened` applied late: only `reopened` moves a closed or merged record back to open
         if found and delivery.action == "reconciled" and _outdated(found, pull):
             return None  # a listing read before the close, applied after it: only a later snapshot reopens
+        stamp = pull.get("updated_at")
+        seen = _detail(found, now).get("deliveredAt") if found else None  # GitHub's clock only: `updatedAt` also takes machine events' own
+        if stamp and seen and epoch(stamp) < epoch(seen):
+            return None  # a delivery older than the last one applied, arriving late: it must not roll a newer field back
         record = found or opened(delivery.repository, pull["number"], pull["body"] or "", now)
         for delta in deltas if found else (*_OPENED, *deltas):
             record = record | delta(record, pull, now)
+        if stamp:
+            record = record | {"detail": _detail(record, now) | {"deliveredAt": stamp}}
         return record
 
     if not store.amend(delivery.repository, pull["number"], change):

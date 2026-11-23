@@ -1,6 +1,6 @@
 """How long each log follower has trailed the log, for `/metrics`: `starpulse_follower_lag_seconds{follower}`.
 
-The history recorder has its own gauge (`recorder_lag`). The bridge saves a cursor after each acknowledged entry, so its
+The history recorder has its own gauge (`recorder_lag`). The bridge saves a cursor after each batch of acknowledged entries, so its
 lag is read like the recorder's. The bridge's delivery and the holder-idle follower keep no cursor: each marks in the log's
 state the moment it began to trail and clears the mark when it caught up, and the Page API reads the age of the mark. A
 mark is written on a change only, never per entry.

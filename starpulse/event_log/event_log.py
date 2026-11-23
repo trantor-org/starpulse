@@ -4,8 +4,7 @@ Every producer on the host appends one row (`EventLog.publish`), which never rai
 fails the work that caused it. Every reader keeps its own cursor, the `id` of the last row it passed, and
 reads `id > cursor` (`Tail`); there are no consumer groups. A tail without a cursor replays the retained log, one
 given a cursor resumes after it, and `EventLog.prune` drops rows older than a retention, which the sweeper runs each pass
-(`runtime.assembly.prune_steps`) after writing each row to its UTC day's gzip JSONL archive file. A cursor below the oldest retained row means rows were pruned unread, which is recorded in
-`starpulse_gaps`.
+(`runtime.assembly.prune_steps`) after writing each row to its UTC day's gzip JSONL archive file. A cursor below the oldest retained row means rows were pruned unread, and the reader resumes at the oldest retained row.
 
 The database is the history store's: SQLite by default (in WAL mode, so processes on the host append while the
 server reads) or the file a `database_url` names. Delivery is at-least-once within retention, so a handler
@@ -43,7 +42,7 @@ from sqlalchemy.pool import NullPool
 
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.migrate import require_migrated
-from starpulse.event_log.tables import events, gaps, settings, signal_folds, signals, worker_state
+from starpulse.event_log.tables import events, settings, worker_state
 from starpulse.event_log.wake import FALLBACK_WAKE_S, RETRY_DELAY, StopEvent
 from starpulse.event_log.watch import open_watch
 
@@ -524,15 +523,6 @@ class EventLog:
                         restored += db.execute(sqlite.insert(events).on_conflict_do_nothing(), list(batch)).rowcount
         return restored
 
-    def prune_signals(self, keep: float, now: float | None = None) -> int:
-        """Delete the `starpulse_signals` rows whose `time` is more than `keep` seconds old, and the
-        `starpulse_signal_folds` rows whose `last_at` is, and return how many signals; raises when the database does. A
-        signal has no archive."""
-        cutoff = (time.time() if now is None else now) - keep
-        with self.engine.begin() as db:
-            db.execute(delete(signal_folds).where(signal_folds.c.last_at < cutoff))
-            return db.execute(delete(signals).where(signals.c.time < cutoff)).rowcount
-
     def last(self, stream: str) -> int | None:
         """The cursor of `stream`'s newest row, or None when it has none; raises when the database does."""
         with self.engine.connect() as db:
@@ -559,21 +549,6 @@ class EventLog:
         with self.engine.connect() as db:
             return db.execute(select(func.min(events.c.id))).scalar()
 
-    def record_gap(self, stream: str, after_id: int, before_id: int, lost: int) -> None:
-        """Note that up to `lost` rows between `after_id` and `before_id` were pruned before `stream`'s reader read
-        them; the same `after_id` again updates that gap."""
-        engine = self.engine
-        insert = sqlite.insert(gaps).values(
-            stream=stream, after_id=str(after_id), before_id=str(before_id), lost=lost, noted_at=time.time()
-        )
-        with engine.begin() as db:
-            db.execute(
-                insert.on_conflict_do_update(
-                    index_elements=["stream", "after_id"],
-                    set_={"before_id": insert.excluded.before_id, "lost": insert.excluded.lost},
-                )
-            )
-
 
 #: The longest a running tail waits between polls while they keep failing, in seconds.
 MAX_POLL_BACKOFF = 60.0
@@ -585,9 +560,8 @@ class Tail:
     The start is named: `Tail(...)` resumes after `after`, the `id` of the last row the reader already handled (the
     history recorder's persisted cursor); `Tail.replay` reads everything the log still retains, which is not a gap
     however much was pruned before; `Tail.live` reads only what is appended after it was taken. Rows of other
-    streams share the ids, so the cursor advances past them and a gap's `lost` counts every pruned id in its span,
-    an upper bound for this stream. A reader of several streams (`streams`, which default to `stream` alone) reads
-    them in log order under one cursor, and `stream` then names the reader.
+    streams share the ids, so the cursor advances past them. A reader of several streams (`streams`, which default
+    to `stream` alone) reads them in log order under one cursor, and `stream` then names the reader.
     """
 
     def __init__(
@@ -644,17 +618,12 @@ class Tail:
             cursor = self.cursor
             if head is None or head == cursor:  # idle: the one query above is the whole poll
                 return []
-            following = None if cursor is None else db.scalar(select(func.min(events.c.id)).where(events.c.id > cursor))
-            gap = following is not None and following > cursor + 1
-            start = following - 1 if gap else cursor or 0
             rows = db.execute(
                 select(*columns)
-                .where(events.c.stream.in_(self.streams), events.c.id > start, events.c.id <= head)
+                .where(events.c.stream.in_(self.streams), events.c.id > (cursor or 0), events.c.id <= head)
                 .order_by(events.c.id)
                 .limit(self.batch)
             ).all()
-        if gap:
-            self.log.record_gap(self.stream, cursor, following, following - cursor - 1)
         self.cursor = rows[-1].id if len(rows) == self.batch else head
         return rows
 

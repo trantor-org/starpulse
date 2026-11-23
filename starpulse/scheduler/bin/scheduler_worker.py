@@ -11,7 +11,7 @@ process when a Scheduler setting changed.
 import argparse
 import logging
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -42,10 +42,12 @@ class Scheduler:
         *,
         starter: Callable[..., Any],
         delivered: Callable[[EventLog, Mapping[str, Any]], bool],
+        ender: Callable[[Sequence[str]], Callable[[str], None] | None],
     ) -> None:
         self._config = config
         self._starter = starter
         self._delivered = delivered
+        self._ender = ender
         self._built = (base, board, feed, log)
         self._probe = probe
         self._stop = StopEvent()
@@ -68,6 +70,7 @@ class Scheduler:
             publish=publisher(log, feed),
             starter=self._starter,
             delivered=self._delivered,
+            ender=self._ender,
         )
         follow_wakes(log, self._wake, stop)
 
@@ -114,6 +117,7 @@ def start(
     worker_board: Callable[..., tuple[Board, BoardFeed]],
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
+    ender: Callable[[Sequence[str]], Callable[[str], None] | None],
 ) -> Callable[[], None]:
     """Start the sampler and the dispatch loop over `log` and return their reload; the threads are daemons that end with
     the process. Raises `ValueError` as `worker_board` does."""
@@ -126,6 +130,7 @@ def start(
         log,
         starter=starter,
         delivered=delivered,
+        ender=ender,
     )
     scheduler.start()
     return lambda: scheduler.reload(path, load)
@@ -141,6 +146,7 @@ def main(
     hold: Callable[[threading.Event, Callable[[], None]], None],
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
+    ender: Callable[[Sequence[str]], Callable[[str], None] | None],
 ) -> None:
     """Run the Scheduler worker; `runtime` passes the collaborators it builds, as no context imports it."""
     args = parser.parse_args(argv)
@@ -163,6 +169,7 @@ def main(
             worker_board=worker_board,
             starter=starter,
             delivered=delivered,
+            ender=ender,
         )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")

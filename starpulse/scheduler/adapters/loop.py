@@ -130,7 +130,8 @@ class Loop:
     request has merged, which leaves the task unstarted whatever its lane, `clock` is the loop's notion of now,
     `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, `log` is the
     history store a restart restores in-flight runs and start times from, and `transcript` answers when a session's
-    transcript was last written, which lists a session the harness machine does not key to its task.
+    transcript was last written, which lists a session the harness machine does not key to its task, and `end` ends a
+    task's idle sessions, which a run gone without ever claiming its task needs because no lane entry ends it.
     """
 
     def __init__(
@@ -150,6 +151,7 @@ class Loop:
         log: EventLog | None = None,
         harness: HarnessSetting | None = None,
         transcript: Callable[[str], float | None] = lambda session: None,
+        end: Callable[[str], None] = lambda task: None,
     ) -> None:
         self._feed = feed
         self._policy = policy
@@ -164,6 +166,7 @@ class Loop:
         self._quiet_hours = quiet_hours
         self._harness = harness
         self._transcript = transcript
+        self._end = end
         self._log = log
         self._state = SchedulerState(log) if log is not None else None
         self._running: dict[str, _Run] = {}
@@ -564,6 +567,8 @@ class Loop:
                 self._close(task, run, state or "closed", now)
                 continue
             if self._gone(task, run, agents, now):
+                if not run.claimed:
+                    self._end(task)
                 self._close(task, run, SESSION_GONE, now)
                 continue
             seen = self._feed.machine_task(HARNESS.name, task)
