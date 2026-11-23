@@ -10,6 +10,7 @@ from sqlalchemy import Engine, select
 
 from starpulse.event_log.events import STREAM as MACHINE_STREAM
 from starpulse.event_log.lane_events import STREAM as LANE_STREAM
+from starpulse.event_log.tables import events as log_events
 from starpulse.event_log.tables import machine_events
 from starpulse.event_log.wake import StopEvent
 
@@ -42,28 +43,32 @@ def _session_of(entry: Entry, key: str = "session") -> str:
     return str((entry.fields.get("data") or {}).get(key) or "")
 
 
-def dispatcher(log: EventLog) -> Callable[[str, str, str], None]:
-    """What publishes the dispatch of a session to a task, naming the holder it replaces when the caller found one dead."""
+def dispatcher(log: EventLog) -> Callable[[str, str, str], bool]:
+    """What publishes the dispatch of a session to a task, naming the holder it replaces when the caller found one dead,
+    and says whether the log appended it."""
     from starpulse.event_log import events  # the server imports no database stack until a store opens
 
-    def dispatch(task: str, session: str, replaces: str) -> None:
+    def dispatch(task: str, session: str, replaces: str) -> bool:
         data = {"session": session, **({"replaces": replaces} if replaces else {})}
-        events.publish(HARNESS_MACHINE, DISPATCHED, actor="starpulse", task=task, data=data, log=log)
+        published = events.publish(HARNESS_MACHINE, DISPATCHED, actor="starpulse", task=task, data=data, log=log)
+        return published is not None
 
     return dispatch
 
 
-def _newest(engine: Engine, task: str, until: float) -> str | None:
-    """The newest harness event of `task` up to `until`, a stop apart: one indexed lookup."""
+def _newest(engine: Engine, task: str, until: float) -> tuple[str, dict[str, str]] | None:
+    """The newest harness event of `task` up to `until`, a stop apart, and the data its log entry holds: one indexed lookup."""
     c = machine_events.c
     newest = (
-        select(c.event)
+        select(c.event, log_events.c.fields)
+        .select_from(machine_events.outerjoin(log_events, log_events.c.event_id == c.event_id))
         .where(c.task == task, c.machine == HARNESS_MACHINE, c.event != STOPPED, c.occurred_at <= until)
         .order_by(c.occurred_at.desc(), c.id.desc())
         .limit(1)
     )
     with engine.connect() as db:
-        return db.execute(newest).scalar()
+        row = db.execute(newest).first()
+    return None if row is None else (row.event, (row.fields or {}).get("data") or {})
 
 
 def follow_holder_idle(
@@ -77,6 +82,7 @@ def follow_holder_idle(
     moved: Callable[[str, str], None] = lambda _task, _lane: None,
     dispatched: Callable[[str, str], None] = lambda _task, _session: None,
     lease_ended: Callable[[str, str], None] = lambda _task, _session: None,
+    unstarted: Callable[[], list[str]] = list,
 ) -> threading.Thread:
     """Call `settled` with the task of each session that settles, and `entered` (`settled` when none) with each task
     moved from a parked lane to In Progress, after this call, within the event's own latency; call `ended` with the task
@@ -86,9 +92,10 @@ def follow_holder_idle(
     and moved after a server restart is not seen, because the lane map starts empty.
 
     Once `ready` is set (the actor has indexed its tasks) it also calls `settled` once with each task of `working`
-    whose newest harness event before this call, a `SESSION_STOPPED` aside, is a settle (`settled`) or an end (`ended`):
+    whose newest harness event before this call, a `SESSION_STOPPED` aside, is a settle (`settled`) or an end (`lease_ended` with the session its entry names, then `ended`):
     its holder settled or died while the actor was down and was not started again since. The cost is one indexed lookup per working task, never a read of
-    the stream. Nothing is called before `ready`, and the live tail's rows wait for it."""
+    the stream. It calls `dispatched` (`lease_ended` first for a dead holder it replaces) with each task of `working` or
+    `unstarted` whose newest such event is a dispatch: the actor was down for it and pinned no session since. Nothing is called before `ready`, and the live tail's rows wait for it."""
     from starpulse.event_log.event_log import Tail  # the server imports no database stack until a store opens
     from starpulse.event_log.follower_lag import HOLDER_IDLE, Behind
 
@@ -124,11 +131,17 @@ def follow_holder_idle(
         def follow() -> None:
             # a failed pass raises, and `run_on_wake` reads again before any settle is called
             tasks = working()
-            newest = {task: _newest(log.engine, task, started) for task in tasks}
-            for task in [task for task in tasks if newest[task] == SETTLED]:
+            newest = {task: _newest(log.engine, task, started) or ("", {}) for task in [*tasks, *unstarted()]}
+            for task in [task for task in tasks if newest[task][0] == SETTLED]:
                 settled(task)
-            for task in [task for task in tasks if newest[task] == ENDED]:
+            for task in [task for task in tasks if newest[task][0] == ENDED]:
+                lease_ended(task, str(newest[task][1].get("session") or ""))
                 ended(task)
+            for task in [task for task, (event, _) in newest.items() if event == DISPATCHED]:
+                data = newest[task][1]
+                if replaces := str(data.get("replaces") or ""):
+                    lease_ended(task, replaces)
+                dispatched(task, str(data.get("session") or ""))
             behind.caught_up()
             tail.run(handle, stop)
 

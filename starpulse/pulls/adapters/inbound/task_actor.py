@@ -123,6 +123,8 @@ _MERGEABLE_RETRY_S = 30.0
 _LOCK_WAIT_S = 2.0
 #: Seconds the merged Review tasks count is kept, so a scrape loop never makes the scan over the open tasks a load.
 _WAITING_TTL_S = 5.0
+#: Seconds before a `mergeable` lookup that gave no answer (still computing, or unreachable) is asked again.
+_MERGEABLE_RETRY_S = 30.0
 LATENCY_METRIC = "starpulse_task_actor_latency_seconds"
 #: The upper bounds of the latency histogram's buckets, in seconds; the count past the last is the `+Inf` bucket's.
 BUCKETS_S = (0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0)
@@ -1346,6 +1348,12 @@ class TaskActor:
             return [
                 agent["id"] for agent in self._feed.open_tasks() if agent["state"] in (roles.working, roles.attention)
             ]
+
+    def unstarted(self) -> list[str]:
+        """The open tasks in the ready lane, whose dispatch `follow_holder_idle` replays when the actor was down for it."""
+        roles = self._feed.roles
+        with self._lock:
+            return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == roles.ready]
 
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
         """A session settled. A holder whose task has an open criterion (neither checked nor struck through) is nudged by

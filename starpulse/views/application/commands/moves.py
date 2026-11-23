@@ -167,8 +167,8 @@ def _write_move(feed: BoardFeed, task: str, column: str, who: Who, writer: MoveW
     }
 
 
-#: Publishes the dispatch of a session to a task: `(task, session, replaces)`.
-Dispatcher = Callable[[str, str, str], None]
+#: Publishes the dispatch of a session to a task: `(task, session, replaces)`; whether the log appended it.
+Dispatcher = Callable[[str, str, str], bool]
 
 
 @with_request(_DispatchBody, "Dispatching a session")
@@ -178,6 +178,7 @@ def dispatch_task(request: _DispatchBody, feed: BoardFeed, dispatch: Dispatcher 
     The task actor pins the session and moves the lane; this route writes nothing. It refuses, 409, what the actor
     would leave: a task another session holds (unless `replaces` names that holder, whom the caller found dead), a
     session that already holds another task In Progress, and a task outside Ready, Needs attention and In Progress.
+    A dispatch the event log did not append is a 502, never a 202.
     """
     from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a dispatch names a session
 
@@ -202,7 +203,8 @@ def dispatch_task(request: _DispatchBody, feed: BoardFeed, dispatch: Dispatcher 
         return 409, {
             "error": f"this session already holds {others[0]} In Progress: park it, defer it or finish it before dispatching to {task}"
         }
-    dispatch(task, session, replaces)
+    if not dispatch(task, session, replaces):
+        return 502, {"error": f"the event log refused the dispatch of {session} to {task}: dispatch again"}
     return 202, {"task": task, "session": session}
 
 

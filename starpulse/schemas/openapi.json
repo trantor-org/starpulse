@@ -915,7 +915,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/ApiError"
                     },
@@ -1156,7 +1156,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1204,7 +1204,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1252,7 +1252,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/StaleEdit"
                     },
@@ -1310,7 +1310,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1358,7 +1358,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1406,7 +1406,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1454,7 +1454,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1543,7 +1543,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1591,7 +1591,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1624,7 +1624,7 @@
           }
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "The answer",
             "content": {
               "application/json": {
@@ -1680,7 +1680,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1728,7 +1728,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1776,7 +1776,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1824,7 +1824,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1857,6 +1857,23 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Created"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CreatedEach"
+                    }
+                  ]
+                }
+              }
+            }
+          },
           "200": {
             "description": "The answer",
             "content": {
@@ -1879,7 +1896,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -1976,7 +1993,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -2022,7 +2039,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -2094,7 +2111,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "The answer",
             "content": {
               "application/json": {
@@ -2109,7 +2126,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -2206,7 +2223,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -2252,7 +2269,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },
@@ -2324,7 +2341,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "The answer",
             "content": {
               "application/json": {
@@ -2339,7 +2356,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/SkillRefusal"
                     },

@@ -22,6 +22,7 @@ from sqlalchemy import (
     exists,
     func,
     literal,
+    not_,
     or_,
     select,
     true,
@@ -138,6 +139,7 @@ class SqlQueue:
         )
         self._held_outcomes: dict[tuple[str, str | None], list[str]] | None = None  # `batch`'s: (status, error) to delivery ids
         self._held = exists().where(state.delivery_id == inbox.c.delivery_id, state.consumer == consumer)
+        self._narrowed = bool(only)  # a row an earlier, wider `only` seeded may be pending: the first claim skips it
 
     def _mine(self, delivery_id: str):  # noqa: ANN202
         return and_(state.delivery_id == delivery_id, state.consumer == self._consumer)
@@ -179,7 +181,20 @@ class SqlQueue:
         self._floor = self._floor if floor is None else floor
         return self._floor or 0
 
+    def _skip_unclaimable(self) -> None:
+        """Skip the pending rows `only` excludes: a claim never takes them, so each would hold the lag gauge up for good."""
+        self._narrowed = False
+        mine = exists().where(inbox.c.delivery_id == state.delivery_id, self._only)
+        with self._engine.begin() as db:
+            db.execute(
+                update(github_inbox_state)
+                .where(state.consumer == self._consumer, state.status == "pending", not_(mine))
+                .values(status="skipped", last_error="unhandled", updated_at=self._clock())
+            )
+
     def claim(self, limit: int = 100) -> list[Entry]:
+        if self._narrowed:
+            self._skip_unclaimable()
         now = self._clock()
         newest = select(func.coalesce(func.max(inbox.c.id), 0))
         due = (
