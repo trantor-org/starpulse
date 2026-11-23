@@ -1,9 +1,10 @@
-"""The `pulls` consumer: each saved `pull_request` delivery writes the PR store's record, whether or not a task cites it.
+"""The `pulls` consumer: each saved delivery the spec's Field Sources table names writes the PR store's record, whether
+or not a task cites it.
 
-A delivery carries the whole pull request, but each action writes only the fields the spec's Field Sources table
+A `pull_request` delivery carries the whole pull request, but each action writes only the fields the spec's Field Sources table
 names for it, so an `edited` delivery never takes back a head a `synchronize` moved. An action with no row (`labeled`,
 `assigned`) leaves the record alone. A pull request the store lacks is made from the whole payload first, as the machine
-events make one.
+events make one. The other events (`pull_facts`) write the checks, threads and CI trail.
 """
 
 import json
@@ -24,6 +25,7 @@ from starpulse.github.adapters.outbound.queue import SqlQueue
 from starpulse.github.adapters.outbound.rest import connect_client
 from starpulse.github.model.delivery import Delivery
 from starpulse.github.ports.events import OpenWatch, Queue, Stop
+from starpulse.pulls.adapters.inbound.pull_facts import FACTS, forced_push
 from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail, opened, reopened
 from starpulse.pulls.adapters.outbound.pull_reads import READ_EVENTS, PullReads, refresh
 from starpulse.pulls.adapters.outbound.pulls import PullStore
@@ -75,7 +77,10 @@ def _head_ref(_record: Record, pull: Mapping[str, Any], _at: float) -> Record:
 
 def _head(record: Record, pull: Mapping[str, Any], _at: float) -> Record:
     sha = pull["head"]["sha"]
-    return {"headRefOid": sha} | ({} if sha == record["headRefOid"] else {"requiredChecks": []})  # the old head's verdicts
+    if sha == record["headRefOid"]:
+        return {"headRefOid": sha}
+    forgotten = [{"name": check["name"], "result": "pending"} for check in record["requiredChecks"]]  # the old head's verdicts
+    return {"headRefOid": sha, "requiredChecks": forgotten}
 
 
 def _merge(record: Record, pull: Mapping[str, Any], at: float) -> Record:
@@ -129,13 +134,16 @@ def apply(
     reads: PullReads | None = None,
     amended: Callable[[], None] | None = None,
 ) -> bool:
-    """Write the fields `delivery`'s action names to its pull request's record, and say whether it wrote. `amended` is
+    """Write the fields `delivery`'s event and action name to the records they concern, and say whether it wrote. `amended` is
     called once the record is written, ahead of the reads that refresh it."""
     if delivery.event in READ_EVENTS:
+        trailed = delivery.event == "push" and forced_push(store, delivery, json.loads(delivery.body), now)
         if reads is None:
-            return False
+            return trailed
         refresh(store, reads, delivery, now)
         return True
+    if (fact := FACTS.get(delivery.event)) is not None:
+        return fact(store, delivery, json.loads(delivery.body), now)
     deltas = _ACTIONS.get(delivery.action)
     if delivery.event != "pull_request" or deltas is None:
         return False
