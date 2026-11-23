@@ -163,12 +163,11 @@ def main(argv: list[str] | None = None) -> None:
             hold=hold,
         )
     if args.context == "sweeper":
-        from starpulse.runtime.assembly import github_kinds, prune_steps, runs_kind
-        from starpulse.runtime.wiring import run_adapters
+        from starpulse.runtime.assembly import github_kinds, prune_steps
         from starpulse.sweeper.bin import sweeper_worker
 
         def contexts(log, parser, config):
-            return [runs_kind(log, run_adapters(parser, config)), *github_kinds(config, log)]
+            return github_kinds(config, log)
 
         return sweeper_worker.main(argv, parser, **loader, prune=prune_steps, contexts=contexts, hold=hold)
     if args.context == "search":

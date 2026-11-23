@@ -71,7 +71,7 @@ def start(
     alive: Callable[[int], bool] = process_alive,
 ) -> Callable[[], None]:
     """Take the lease and start the pass loop over `log`, ending when `stop` is set; return its reload. `prune` is the
-    event-log prune as housekeeping steps and `contexts` the kinds of the contexts (`runs`), which the runtime builds as no
+    event-log prune as housekeeping steps and `contexts` the kinds of the contexts (`github`), which the runtime builds as no
     context imports another. Raises `LeaseHeld` while
     another live process holds the lease."""
     lease = acquire(log.engine, LEASE, alive=alive)
