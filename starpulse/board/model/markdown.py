@@ -109,6 +109,7 @@ def needs_attention_reason(text: str) -> str:
 #: The openers of the comments a park writes: the task actor reads the newest one as a request to move the task.
 WAIT_REQUEST = "Wait requested:"
 ASK_REQUEST = "Ask requested:"
+ARCHIVE_REQUEST = "Archive requested:"
 
 _OPERATOR_ANSWER = re.compile(r"(?m)^Operator answer \(\w+:[\w-]+#[\w-]+\): ")
 

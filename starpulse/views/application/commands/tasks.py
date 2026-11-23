@@ -1,13 +1,13 @@
-"""The task records: read, edit, archive, rate, judge, restore, retire and create them."""
+"""The task records: read, edit, archive, judge, restore, retire and create them."""
 
 import contextlib
 import logging
-import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.adapters.native_scan import dependencies
 from starpulse.board.model.board_feed import BoardFeed
+from starpulse.board.model.markdown import ARCHIVE_REQUEST
 from starpulse.board.model import post_merge_checks
 from starpulse.board.model.seam import (
     AGENT,
@@ -30,7 +30,6 @@ from starpulse.contracts.api.dto.requests import (
     CreateSpec,
     EditRequest,
     MissRequest,
-    RatingRequest,
     ReopenRequest,
     RestoreRequest,
     RetiredImportRequest,
@@ -38,7 +37,6 @@ from starpulse.contracts.api.dto.requests import (
     TakeOverRequest,
     VerdictRequest,
 )
-from starpulse.event_log import rating_events
 from starpulse.machine_engine.model.transitions import lane_id
 from starpulse.views.application.commands.guard import (
     EDIT_LOCK,
@@ -171,20 +169,23 @@ def _edited(
 
 
 @with_request(ArchiveRequest, "Archiving a task")
-def archive_task(request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver) -> tuple[int, dict[str, Any]]:
+def archive_task(
+    request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver, edit: TaskEditor
+) -> tuple[int, dict[str, Any]]:
     """Archive the task `request` names, or each of its `tasks`, from whichever column it is in, through `archive`: the
     HTTP status and JSON body. A batch answers 200 with the tasks archived and each refused one's error, so one refusal
     leaves the others archived.
 
     A non-empty `reason` is the writer's to record on the task. The card leaves its column when the board adapter
-    next reports the task archived, not on this answer.
+    next reports the task archived, not on this answer. An agent's archive of an open task is a request: it records an
+    `Archive requested:` comment through `edit` and the task actor archives on it.
     """
     reason, who = request.reason or "", who_of(request)
     if request.task is not None:
-        return _archive_one(feed, archive, request.task, reason, who)
+        return _archive_one(feed, archive, edit, request.task, reason, who)
     archived, refused = [], {}
     for task in request.tasks or ():
-        status, body = _archive_one(feed, archive, task, reason, who)
+        status, body = _archive_one(feed, archive, edit, task, reason, who)
         if status == 200:
             archived.append(task)
         else:
@@ -193,14 +194,19 @@ def archive_task(request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver
 
 
 def _archive_one(
-    feed: BoardFeed, archive: TaskArchiver, task: str, reason: str, who: Who
+    feed: BoardFeed, archive: TaskArchiver, edit: TaskEditor, task: str, reason: str, who: Who
 ) -> tuple[int, dict[str, Any]]:
     """Archive one `task` for `archive_task`: the HTTP status and JSON body a single-task request answers."""
-    if held_task(feed, task) is None:
+    if (agent := held_task(feed, task)) is None:
         if feed.is_archived(task):
             return 200, {"task": task}  # a retry of a write that applied
         return not_held(feed, task)
-    written = record_written(feed, task, who, lambda: archive(task, reason, actor=who.actor))
+    if who.actor == AGENT and agent["state"] != feed.roles.done:
+        written = record_written(
+            feed, task, who, lambda: edit(task, {}, f"{ARCHIVE_REQUEST} {reason.strip()}".strip(), actor=who.actor)
+        )
+    else:
+        written = record_written(feed, task, who, lambda: archive(task, reason, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
@@ -224,26 +230,6 @@ def _unjudged(task: str, current: Mapping[str, Any], check: str) -> str | None:
 def _unnamed(request: VerdictRequest | MissRequest) -> bool:
     """Whether a verdict or miss request leaves its task or check blank."""
     return not (request.task.strip() and request.check.strip())
-
-
-@with_request(RatingRequest, "Recording a rating")
-def record_rating(request: RatingRequest, feed: BoardFeed) -> tuple[int, dict[str, Any]]:
-    """Record `request`'s change of a task's pass/fail rating as one entry of the `task:ratings` stream, and answer the
-    task's rating now with its change count. A change the stream does not take is 503: the control shows
-    "Rating not saved.".
-    """
-    who = who_of(request)
-    reason = (request.reason or "").strip()
-    fields = rating_events.change(request.task, request.verdict, reason, time.time(), *who)
-    rated = feed.rate(fields)
-    if rated is None:
-        return 503, {"error": "rating not saved"}
-    return 200, {
-        "task": request.task,
-        "verdict": request.verdict,
-        "reason": rated["reason"],
-        "changes": rated["changes"],
-    }
 
 
 @with_request(VerdictRequest, "Recording a verdict")

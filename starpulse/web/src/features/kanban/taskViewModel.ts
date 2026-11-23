@@ -236,7 +236,6 @@ export const TIERS: [string, string][] = [["regression", "regression"], ["bug", 
 export const LABEL_FIELDS = { kind: ["execute", "decide", "investigate", "verify"], size: ["1", "2", "3", "5", "8"], area: [] as string[], mode: ["attended", "unattended"] };
 export type LabelField = keyof typeof LABEL_FIELDS;
 const LABEL_FIELD_NAMES = Object.keys(LABEL_FIELDS) as LabelField[];
-const TRIAL = "trial-";
 /** The label rule as the Add label control states it before anything is typed (doc-993 D11). */
 export const LABEL_RULE = "kebab-case · 3 words · 24 chars · no dates or ids";
 
@@ -247,7 +246,7 @@ export function detailFields(labels: string[]): Record<LabelField, string> & { c
   const value = (field: LabelField) => labels.find((label) => fieldOf(label) === field)?.slice(field.length + 1) ?? "";
   return {
     kind: value("kind"), size: value("size"), area: value("area"), mode: value("mode"),
-    chips: labels.filter((label) => !fieldOf(label) && !label.startsWith(TRIAL)),
+    chips: labels.filter((label) => !fieldOf(label)),
   };
 }
 

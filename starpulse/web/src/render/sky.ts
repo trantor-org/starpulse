@@ -4,7 +4,7 @@
 import { stepRings, type StepRing } from "../features/fanout/fanoutModel";
 import { tree, type Tree } from "./levels";
 import { mocked } from "./mockSky";
-import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Rating, Roles, Settled, Snapshot, Writer } from "../api";
+import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Roles, Settled, Snapshot, Writer } from "../api";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -50,8 +50,6 @@ export interface Sky {
   boardUrl: string | null;
   /** The Grafana dashboard of each runs instance that has one, by instance name. */
   dashboards: Record<string, string>;
-  /** The operator's pass/fail verdict on each rated task, by task id; absent for a snapshot without any. */
-  ratings?: Record<string, Rating>;
   /** Which of the Board's States plays which part, as its machine declares them; empty before the snapshot carries any. */
   roles: Roles;
   /** What the board writes beyond moves; absent for a board that only reads. */
@@ -196,7 +194,6 @@ export function merge(raw: Snapshot, since = midnight()): Sky {
     runnable: new Set((snap.domains ?? []).flatMap((d) => d.dags.filter((x) => x.runSafe).map((x) => x.name))),
     boardUrl: snap.boardUrl ?? null,
     dashboards: snap.dashboards ?? {},
-    ratings: snap.ratings ?? {},
     roles: snap.roles ?? {},
     capabilities: snap.capabilities ?? undefined,
     tree: t,

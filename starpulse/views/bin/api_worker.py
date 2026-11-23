@@ -141,7 +141,6 @@ def serve_page(
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store = host.history_store(config, base, feed.machines)
     feed.record_lanes(store, log)
-    feed.record_ratings(log)
     feed.read_lanes(store.lane_rows)
     # the Board writer's projector indexes each task for search; this process only reads the index
     search = SearchIndex.open(log.engine, config.search)

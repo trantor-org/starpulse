@@ -39,7 +39,6 @@ from starpulse.contracts.api.dto.requests import (
     MissRequest,
     MoveRequest,
     ParkRequest,
-    RatingRequest,
     ReopenRequest,
     RestoreRequest,
     RetiredImportRequest,
@@ -70,7 +69,6 @@ from starpulse.contracts.api.dto.results import (
     Moved,
     MovedEach,
     Parked,
-    Rated,
     Reopened,
     Restored,
     Retired,
@@ -152,7 +150,6 @@ class ApiContract(_Api):
         | EditRequest
         | ArchiveRequest
         | VerdictRequest
-        | RatingRequest
         | MissRequest
         | RestoreRequest
         | RetireRequest
@@ -180,7 +177,6 @@ class ApiContract(_Api):
         | Archived
         | ArchivedEach
         | Judged
-        | Rated
         | Restored
         | Retired
         | TakenOver

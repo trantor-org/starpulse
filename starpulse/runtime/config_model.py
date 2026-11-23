@@ -402,10 +402,9 @@ class ConfigFile(_Table):
             "How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the "
             "table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this "
             "resumes at the oldest kept row and records the span it missed in `starpulse_gaps`. The `machine:events` "
-            "and `task:ratings` streams are exempt: the prune never deletes them, because a read-model rebuild refolds "
-            "every machine's tasks from the first and a start refolds every rating from the second. On its first pass "
-            "the sweeper also puts the archived rows of those two streams back at their archived `id`, once. A whole "
-            "number of days."
+            "stream is exempt: the prune never deletes it, because a read-model rebuild refolds every machine's tasks "
+            "from it. On its first pass the sweeper also puts the archived rows of that stream back at their archived "
+            "`id`, once. A whole number of days."
         ),
     )
     event_log_archive_dir: str = Field(

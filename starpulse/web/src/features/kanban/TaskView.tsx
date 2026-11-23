@@ -2,7 +2,6 @@
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
 import { usePhone } from "../../shared/usePhone";
-import { RatingControl } from "./RatingControl";
 import { ciTone, columnsOf, offBoardTask, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
@@ -118,9 +117,6 @@ function SessionRows({ session, assignee, worked, startLane }: { session: Return
 
 /** A run's ISO start in Arizona time, or a dash when the scheduler gave none it can parse. */
 const runStart = (iso: string) => (Number.isNaN(Date.parse(iso)) ? "—" : fmtAt(Date.parse(iso) / 1000));
-
-/** A task carrying a label with this prefix is a deviated sample: its run drew a profile off the matrix, so the operator rates it. */
-const TRIAL = "trial-";
 
 const checkClass = (p: Pull) => (p.merged ? "merged" : p.closed ? "closed" : p.checks === "failing" ? "fail" : p.checks);
 
@@ -618,7 +614,6 @@ export function TaskView(p: TaskViewProps) {
               <div className="row"><LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
               {p.stack && <table className="props"><tbody><tr className="ro"><td>waiting stack</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
             </RailSection>
-            {p.task.labels.some((l) => l.startsWith(TRIAL)) && <RailSection name="Rating"><RatingControl key={p.task.id} task={p.task.id} rating={p.task.rating} now={p.now} trial={p.task.labels.find((l) => l.startsWith(TRIAL)) ?? ""} drew={p.task.profile ?? ""} /></RailSection>}
             <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task, roles))} assignee={p.task.assignee} worked={p.task.lane === roles.working} startLane={startLane(p.task, roles)} /></RailSection>
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
             {!!p.task.runs?.length && (
