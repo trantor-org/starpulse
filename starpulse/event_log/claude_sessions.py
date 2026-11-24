@@ -261,8 +261,8 @@ def _records(sessions: Path) -> list[dict[str, Any]]:
         return taken[1]
     entries = sorted(sessions.glob("*.json"))
     present = set(entries)
-    for gone in [path for path in _PARSED if path.parent == sessions and path not in present]:
-        del _PARSED[gone]
+    for gone in [path for path in list(_PARSED) if path.parent == sessions and path not in present]:
+        _PARSED.pop(gone, None)
     records = [data for data in map(_parsed, entries) if isinstance(data, dict)]
     _SNAPSHOTS[sessions] = (_clock(), records)
     return records
