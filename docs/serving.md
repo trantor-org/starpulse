@@ -819,6 +819,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `take_over_command` (list of text): The command `POST /api/take-over` runs, as an argv: StarPulse appends the task id (`{"task": "TASK-7"}` in the body) and the command asks the task's workflow engine to flip that task's workflow to interactive, so it types nothing more into the task's session. Exit 0: sent (200). Exit 1: the task has no running workflow (409). Any other exit: an error, with the command's stderr. 404 when this is unset. The command is the only place a workflow engine appears.
 - `runs` (list of `[[runs]]` table): One instance of a runs adapter per `[[runs]]` table.
 - `producers` (list of `[[producers]]` table): A system that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents). The Connect `starpulse.v1.CloudEventsIngest` answers 404 until one is declared. A producer writes only the machines and actors listed here.
+- `views` (list of `[[views]]` table): One view per `[[views]]` table: the GraphQL document its page runs at `/graphql`.
 - `repos` (list of `[[repos]]` table): A repository whose merges apply through the parent's pin bump rather than a run of their own.
 - `ci` (`[ci]` table): Draws each task's pull-request CI as a sub-flow of these Board states.
 - `release` (`[release]` table): Releases Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task it depends on is Done (see Release); with no `[release]` table it releases none. The board must edit tasks and draw `waiting` and `ready` lanes, else `serve` refuses to start.
@@ -899,6 +900,11 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `domains` (table of list of text or table of list of text): How the page groups this instance's workflows: each domain is a list of workflow names, or a table of process name to workflow list.
 - `dashboard` (text): The Grafana dashboard that shows this instance's runner; the jobs page links the instance to it.
 - `commit` (`[runs.commit]` table): The run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain. Each key names a parameter; a key left out is a parameter this instance has none of.
+
+#### [[views]]
+
+- `name` (text, required): The view's name, which `GET /api/views/<name>` reads its document by; unique.
+- `query` (text, required): The one GraphQL document the view runs at `/graphql`: a fragment of the fields its card reads and a named query for the first load. Config load parses it and validates it against the task schema (`schemas/tasks.graphql`); the operation names label `/graphql`'s request metrics.
 
 #### [worker_memory.<context>]
 

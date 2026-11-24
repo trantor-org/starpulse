@@ -85,6 +85,7 @@ TAGS = {
     "ingest": "Events and webhooks that feed the board",
     "pulls": "Pull requests",
     "ops": "Health, metrics and the diagnostics of the server",
+    "graphql": "Task reads by a GraphQL query, and the queries views store",
     "pages": "This document and its Swagger page",
 }
 _SEGMENT_TAG = {
@@ -104,6 +105,7 @@ _SEGMENT_TAG = {
     "openapi": "pages",
     "swagger": "pages",
     "metrics": "ops",
+    **dict.fromkeys("graphql views".split(), "graphql"),
 }
 
 

@@ -10,8 +10,9 @@ from sqlalchemy import Engine, delete, insert, or_, select, tuple_
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.tables import pull_requests
+from starpulse.pulls.model.histogram import Timings
 
-__all__ = ["HOLD_WINDOW", "PullStore", "stored_head"]
+__all__ = ["HOLD_WINDOW", "WRITE_METRIC", "PullStore", "stored_head"]
 
 #: The GraphQL names a record is served under, by column.
 _FIELDS = {
@@ -37,6 +38,8 @@ _LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads", "title":
 
 #: How long after its last update a closed or merged pull request stays in memory: about 250 a day, 12 KB each.
 HOLD_WINDOW = timedelta(hours=24)
+WRITE_METRIC = "starpulse_pulls_write_seconds"
+WRITE_PHASES = ("lock", "save", "announce")
 
 #: How many listings of the records only the database holds a store keeps, and the most records one may hold.
 LISTINGS_KEPT = 4
@@ -67,6 +70,9 @@ class PullStore:
         self._holding = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
         self._save_listeners: list[Callable[[list[tuple[str, int]]], None]] = []
+        #: Seconds each write took, by phase: `lock` the first write statement of a save (where a busy database makes it
+        #: wait for the writer lock), `save` the whole transaction, `announce` each announce of saves (`announce_saves`).
+        self.timings = Timings(WRITE_METRIC, "Seconds each pull request store write took, by phase.", WRITE_PHASES)
         require_migrated(engine)
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
         #: The records only the database held that a listing of a repository (or all) in a state found, without their
@@ -119,7 +125,7 @@ class PullStore:
         if not rows:
             return
         with self._saving:
-            with self._engine.begin() as db:
+            with self.timings.time("save"), self._engine.begin() as db:
                 rows = [self._guarded(db, row) for row in rows]
                 rows = [
                     row
@@ -127,11 +133,15 @@ class PullStore:
                     for row in rows
                     if row
                 ]
-                for row in rows:
-                    db.execute(
-                        delete(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
-                    )
                 if rows:
+                    with self.timings.time("lock"):
+                        db.execute(
+                            delete(pull_requests).where(
+                                tuple_(pull_requests.c.repo, pull_requests.c.number).in_(
+                                    [(row["repo"], row["number"]) for row in rows]
+                                )
+                            )
+                        )
                     db.execute(insert(pull_requests), rows)
             keys = [(row["repo"], row["number"]) for row in rows]
             if keys:

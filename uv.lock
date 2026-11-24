@@ -74,6 +74,20 @@ wheels = [
 ]
 
 [[package]]
+name = "ariadne"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "graphql-core" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f1/81/0dd688084f4dcf1a65ab7d77f2ed51d60b9ab753238a83039056008ce421/ariadne-1.1.1.tar.gz", hash = "sha256:72fd197925408520f3b22c718396bb3bdaf6ab5deca1cbd2ebb64be7e5b35358", size = 92476, upload-time = "2026-10-07T11:59:51.497Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/f3/26840f06bd2e31810a478cfda1b72ae8481ec7413ca285cf779cf8a482cf/ariadne-1.1.1-py3-none-any.whl", hash = "sha256:af71765ac085b333545bbf7a08217308e2f9c5db62737fea03b2de958b1b446c", size = 129598, upload-time = "2026-10-07T11:59:49.847Z" },
+]
+
+[[package]]
 name = "attrs"
 version = "26.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -637,6 +651,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/27/4c/49f34af48fa1749481b7b83bf552b277d8c4954499cd3fb238208a47b53c/geventhttpclient-2.6.2-cp315-cp315-win32.whl", hash = "sha256:3d2de310b00ce1cf4d80337729ad4376e857f680bc88c4e36076cb33db76cef3", size = 85369, upload-time = "2026-11-17T15:47:13.344Z" },
     { url = "https://files.pythonhosted.org/packages/bb/d0/3f470883f775bea10056804dcf26f47234fcf28b3dbcb15eae9aa81ec2e2/geventhttpclient-2.6.2-cp315-cp315-win_amd64.whl", hash = "sha256:c81f0944d627f6078f5585582be4803e55ea3a2d90c5d370d8f9885072e358aa", size = 84588, upload-time = "2026-11-17T15:47:14.286Z" },
     { url = "https://files.pythonhosted.org/packages/99/e3/a310ed0c574a83c4058e23304a6ebb506ea06ac6179a88664225759afc29/geventhttpclient-2.6.2-cp315-cp315-win_arm64.whl", hash = "sha256:4afd2cf9659279c383c4eeb59c1e2686d412c13a1427232902a7343674a20604", size = 85608, upload-time = "2026-11-17T15:47:15.223Z" },
+]
+
+[[package]]
+name = "graphql-core"
+version = "3.3.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/11/511b9487dd338a9cd98a8040a1f20feaa99b2f2e4921c049cb9cbbff2870/graphql_core-3.3.2.tar.gz", hash = "sha256:15d6eee7d4364fbc202833bc6bd0d504004d8ae7c0aaf620fa884d8e437622f2", size = 794346, upload-time = "2026-11-06T21:41:54.017Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/c0/dec5c3a96d9e47c7aaaa6a062e065e6c738d67d11a9cda15705592f45409/graphql_core-3.3.2-py3-none-any.whl", hash = "sha256:d83f49ee18d2db89fb575dab6ffefa8aa1bf5f60dff8a6781db6f63420041348", size = 366135, upload-time = "2026-11-06T21:41:52.327Z" },
 ]
 
 [[package]]
@@ -2087,7 +2110,9 @@ version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "ariadne" },
     { name = "connect-python" },
+    { name = "graphql-core" },
     { name = "hypercorn", extra = ["h3"] },
     { name = "jsonschema" },
     { name = "nats-py" },
@@ -2125,7 +2150,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.16" },
+    { name = "ariadne", specifier = ">=1.1.1" },
     { name = "connect-python", specifier = "==0.9.0" },
+    { name = "graphql-core", specifier = ">=3.3.2" },
     { name = "hypercorn", extras = ["h3"], specifier = ">=0.18.0" },
     { name = "jsonschema", specifier = ">=4.25.1" },
     { name = "nats-py", specifier = ">=2.10" },

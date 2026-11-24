@@ -179,6 +179,8 @@ class Config:
     """The session-start service a started task is sent to (`POST <url>/start/TASK-N?harness=&mode=`); none: nothing can be started."""
     level: Level | None = None
     """The `[level]` flow graph above the Board; none when the config has no such table."""
+    views: Mapping[str, str] = field(default_factory=dict)
+    """The GraphQL document each `[[views]]` entry stores, by the view's name."""
     producers: tuple[Producer, ...] = ()
     """The systems that post machine events as CloudEvents, each with its token variable, machines and actors."""
     event_log_retention_days: int = _DEFAULTS.event_log_retention_days
@@ -466,6 +468,7 @@ def load(path: Path | None) -> Config:
         file.session_start_url,
         _level(file.level),
         producers=_producers(file.producers),
+        views={view.name: view.query for view in file.views},
         event_log_retention_days=file.event_log_retention_days,
         event_log_archive_dir=file.event_log_archive_dir,
         repos=_repos(file.repos),

@@ -22,6 +22,7 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecords,
 )
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
+from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
@@ -118,6 +119,8 @@ class ApiContract(_Api):
     machineHistory: MachineHistory
     taskEventHistory: TaskEventHistory
     pulls: Pulls
+    graphqlResponse: GraphqlResponse
+    viewShown: ViewShown
     searchResults: SearchResults
     spend: Spend
     taskSpend: TaskSpend
@@ -161,6 +164,7 @@ class ApiContract(_Api):
         | DocPutRequest
         | WindowRequest
         | SchedulerRequest
+        | GraphqlRequest
     ]
     answers: list[
         Moved

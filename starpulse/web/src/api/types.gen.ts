@@ -44,6 +44,7 @@ export interface ApiContract {
   events: (
     TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | VerdictDelta | LedgersDelta | SchedulerStatus
   )[];
+  graphqlResponse: GraphqlResponse;
   harnesses: Harnesses;
   laneHistory: LaneHistory;
   ledger: LedgerPage;
@@ -79,6 +80,7 @@ export interface ApiContract {
     | DocPutRequest
     | WindowRequest
     | SchedulerRequest
+    | GraphqlRequest
   )[];
   restarting: RestartingEvent;
   retiredTasks: RetiredTasks;
@@ -94,6 +96,7 @@ export interface ApiContract {
   taskRecords: TaskRecords;
   taskSpend: TaskSpend;
   trajectories: Trajectories;
+  viewShown: ViewShown;
   windowState: WindowState;
   [k: string]: unknown;
 }
@@ -622,6 +625,14 @@ export interface SessionActivity {
    * Seconds idle when the snapshot was drawn; present only when idle.
    */
   idle_s?: number | null;
+  /**
+   * The holder session's latest assistant message with text, cut to 2000 characters with an ellipsis; absent when it has not reported.
+   */
+  last_message?: string | null;
+  /**
+   * When `last_message` was written, ISO 8601; present with it.
+   */
+  last_message_at?: string | null;
   /**
    * When the session's last turn was written, ISO 8601; absent when unknown.
    */
@@ -1388,6 +1399,29 @@ export interface SchedulerHarnessSessions {
   [k: string]: unknown;
 }
 /**
+ * `POST /graphql`: the data the query asked for, and the errors it met; a query the schema refuses has errors only.
+ */
+export interface GraphqlResponse {
+  data?: {
+    [k: string]: unknown;
+  } | null;
+  errors?: GraphqlError[] | null;
+  [k: string]: unknown;
+}
+/**
+ * One error a query met, as the GraphQL over HTTP spec names its fields.
+ */
+export interface GraphqlError {
+  locations?:
+    | {
+        [k: string]: number;
+      }[]
+    | null;
+  message: string;
+  path?: (string | number)[] | null;
+  [k: string]: unknown;
+}
+/**
  * `GET /api/harnesses`: the tiers in order and each harness with its models and efforts.
  */
 export interface Harnesses {
@@ -1933,6 +1967,25 @@ export interface SchedulerRequest {
    * The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it.
    */
   sessionCap?: number | null;
+}
+/**
+ * `POST /graphql`: one GraphQL document and the operation of it to run.
+ */
+export interface GraphqlRequest {
+  /**
+   * The operation of the document to run.
+   */
+  operationName?: string | null;
+  /**
+   * The GraphQL document: a fragment and the named queries a view stores.
+   */
+  query: string;
+  /**
+   * The values of the operation's variables.
+   */
+  variables?: {
+    [k: string]: unknown;
+  } | null;
 }
 /**
  * The server was told to stop and will not answer after this: sent to every open stream before it exits.
@@ -2708,6 +2761,14 @@ export interface Variant {
   count: number;
   path: string[];
   share: number;
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/views/<id>`: the one GraphQL document a view stores in `starpulse.toml`.
+ */
+export interface ViewShown {
+  name: string;
+  query: string;
   [k: string]: unknown;
 }
 /**

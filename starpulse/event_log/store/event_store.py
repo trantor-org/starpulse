@@ -168,6 +168,16 @@ class EventStore:
         with self._engine.connect() as db:
             return self._head(db, subject_kind, subject_id)
 
+    def heads(self, subject_kind: str) -> dict[str, int]:
+        """The newest version of every stream of `subject_kind`, in one query."""
+        query = (
+            select(stream_events.c.subject_id, func.max(stream_events.c.version))
+            .where(stream_events.c.subject_kind == subject_kind)
+            .group_by(stream_events.c.subject_id)
+        )
+        with self._engine.connect() as db:
+            return {subject: version for subject, version in db.execute(query)}
+
     @staticmethod
     def _head(db: Connection, subject_kind: str, subject_id: str) -> int:
         query = select(func.coalesce(func.max(stream_events.c.version), 0)).where(

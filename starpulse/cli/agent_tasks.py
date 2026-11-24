@@ -614,7 +614,7 @@ def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
             raise agent_wire.CliError("usage", "--reason says why --plan rewrites the plan; give --plan too")
         changes["planReason"] = args.reason
     checklists = [field for field, (key, _) in _CHECKLISTS.items() if any(_checklist_flags(args, key))]
-    if not changes and not checklists:
+    if not (changes or checklists or (args.comment or "").strip()):
         flags = (
             *(f"--{flag.replace('_', '-')}" for flag in _TASK_EDIT_FIELDS),
             "--append-notes",

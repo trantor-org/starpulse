@@ -17,6 +17,7 @@ from starpulse.board.model.adapter_types import ADAPTER_CONTEXTS
 from starpulse.bridge.reach import parse_reach
 from starpulse.bridge.subjects import token
 from starpulse.bridge.subscriptions import parse_rules
+from starpulse.contracts import task_graphql
 from starpulse.contracts.reads import SLOW_READ_S
 from starpulse.runtime.nats_server import DEFAULT_RESUME
 
@@ -129,6 +130,28 @@ class RunsInstanceFile(_Table):
                         f"under {domain!r}"
                     )
         return self
+
+
+class ViewFile(_Table):
+    """One `[[views]]` table."""
+
+    model_config = ConfigDict(title="[[views]]")
+
+    name: str = Field(min_length=1, pattern=r"^[^/]+$", description="The view's name, which `GET /api/views/<name>` reads its document by; unique.")
+    query: str = Field(
+        description=(
+            "The one GraphQL document the view runs at `/graphql`: a fragment of the fields its card reads and a "
+            "named query for the first load. Config load parses it and validates it against the task schema "
+            "(`schemas/tasks.graphql`); the operation names label `/graphql`'s request metrics."
+        )
+    )
+
+    @field_validator("query")
+    @classmethod
+    def _query_runs(cls, query: str) -> str:
+        if (refused := task_graphql.refusal(query)) is not None:
+            raise ValueError(refused)
+        return query
 
 
 class ProducerFile(_Table):
@@ -537,6 +560,9 @@ class ConfigFile(_Table):
             "until one is declared. A producer writes only the machines and actors listed here."
         ),
     )
+    views: list[ViewFile] = Field(
+        default=[], description="One view per `[[views]]` table: the GraphQL document its page runs at `/graphql`."
+    )
     repos: list[RepoFile] = Field(
         default=[],
         description=("A repository whose merges apply through the parent's pin bump rather than a run of their own."),
@@ -644,6 +670,8 @@ class ConfigFile(_Table):
             raise ValueError(f"repos entry {dup} is configured twice")
         if dup := _repeated([producer.name for producer in self.producers]):
             raise ValueError(f"producer {dup} is configured twice")
+        if dup := _repeated([view.name for view in self.views]):
+            raise ValueError(f"view {dup} is configured twice")
         for at, producer in enumerate(self.producers):
             if shared := next((p for p in self.producers[:at] if p.token_env == producer.token_env), None):
                 raise ValueError(

@@ -22,8 +22,8 @@ BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 
 _registry = CollectorRegistry()
 _durations = Histogram(
     "starpulse_request_duration_seconds",
-    "Seconds an /api read took from arrival to the last byte sent, by route template, query shape and caller",
-    ["route", "params", "shape", "caller"],
+    "Seconds an /api read took from arrival to the last byte sent, by route template, query shape, caller and, for `/graphql`, operation name",
+    ["route", "params", "shape", "caller", "operation"],
     buckets=BUCKETS,
     registry=_registry,
 )
@@ -49,11 +49,14 @@ def _shape(accepted: frozenset[str], query_string: bytes) -> str:
     return ",".join(sorted(names)) if names <= accepted else "other"
 
 
-def observe(route: str, accepted: frozenset[str], query_string: bytes, client: str, seconds: float) -> None:
-    """Observes one read of `route`, whose handler reads the query names `accepted`, sent by `client`."""
+def observe(
+    route: str, accepted: frozenset[str], query_string: bytes, client: str, seconds: float, operation: str = "none"
+) -> None:
+    """Observes one read of `route`, whose handler reads the query names `accepted`, sent by `client`; `operation` is the
+    GraphQL operation a view declares, `other` for any other name, and `none` for a read that is no GraphQL request."""
     caller = client if client in CALLERS else "other"
     params = "present" if query_string else "none"
-    _durations.labels(route, params, _shape(accepted, query_string), caller).observe(seconds)
+    _durations.labels(route, params, _shape(accepted, query_string), caller, operation).observe(seconds)
 
 
 def observe_flows(source: str, seconds: float) -> None:

@@ -614,6 +614,12 @@ export function TaskView(p: TaskViewProps) {
               <div className="row"><LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
               {p.stack && <table className="props"><tbody><tr className="ro"><td>waiting stack</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
             </RailSection>
+            {p.task.sessionActivity?.last_message && p.task.sessionActivity.last_message_at && (
+              <RailSection name="Latest report">
+                <div className="k">{ago(Math.max(0, p.now - Date.parse(p.task.sessionActivity.last_message_at) / 1000))} ago</div>
+                <div className="report">{p.task.sessionActivity.last_message}</div>
+              </RailSection>
+            )}
             <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task, roles))} assignee={p.task.assignee} worked={p.task.lane === roles.working} startLane={startLane(p.task, roles)} /></RailSection>
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
             {!!p.task.runs?.length && (

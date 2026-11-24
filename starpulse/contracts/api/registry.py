@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from starpulse.contracts.api.dto.dag import Runs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
+from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import MachineHistory, TaskEventHistory
 from starpulse.contracts.api.dto.milestones import (
@@ -137,6 +138,7 @@ RESPONSES: dict[str, Any] = {
     "/api/search": SearchResults,
     "/api/search/similar": SearchResults,
     "/api/scheduler": SchedulerStatus,
+    "/api/views/": ViewShown,
 }
 
 #: Each write route's request body.
@@ -163,6 +165,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/docs/{id}": DocPutRequest,
     "/api/history-window": WindowRequest,
     "/api/scheduler": SchedulerRequest,
+    "/graphql": GraphqlRequest,
 }
 
 #: Each list route's request body: a POST to a path a PUT also writes, which `REQUESTS` names.
@@ -220,6 +223,8 @@ BODIES: dict[str, Any] = {
     "doc_create": DocCreated | SkillRefusal | ApiError,
     "doc_put": DocEdited | SkillRefusal | ApiError,
     "doc_archive": DocArchived | SkillRefusal | ApiError,
+    "graphql": GraphqlResponse,
+    "view": ViewShown | ApiError,
     "run": RunStarted | ApiError,
     "ingest": Accepted | ApiError,
 }
@@ -319,7 +324,9 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/pulls"): _read(
         "Pull requests", "pulls", "bodies", "body_contains", "number", "repo", "state", "task"
     ),
+    ("GET", "/api/views/{id}"): _read("The GraphQL document a view stores", "view"),
     ("GET", "/api/openapi"): Op("This document"),
+    ("POST", "/graphql"): _write("Run a GraphQL query over the tasks", "graphql", GraphqlRequest),
     ("GET", "/metrics"): _read("Prometheus metrics", media="text/plain"),
     ("POST", "/intake/grafana"): _write("Ingest a Grafana alert", "ingest", "application/json"),
     ("POST", "/intake/temporal-completion"): Op(

@@ -22,6 +22,7 @@ from starpulse.views.adapters.inbound.api import (
     scheduler,
     snapshot,
     tasks,
+    view_queries,
 )
 from starpulse.views.adapters.inbound.api.table import ApiRoute
 from starpulse.views.adapters.inbound.api.pulls import PullReads
@@ -80,5 +81,6 @@ def api_routes(api: Api) -> list[ApiRoute]:
         *runs.routes(api),
         *scheduler.routes(api),
         *pulls.routes(api),
+        *view_queries.routes,
         *openapi.routes,
     ]

@@ -23,6 +23,11 @@ class SessionActivity(_Api):
     )
     last_turn_at: str | None = Field(default=None, description="When the session's last turn was written, ISO 8601; absent when unknown.")
     idle_s: int | None = Field(default=None, description="Seconds idle when the snapshot was drawn; present only when idle.")
+    last_message: str | None = Field(
+        default=None,
+        description="The holder session's latest assistant message with text, cut to 2000 characters with an ellipsis; absent when it has not reported.",
+    )
+    last_message_at: str | None = Field(default=None, description="When `last_message` was written, ISO 8601; present with it.")
 
 
 class TaskCriterion(_Api):
