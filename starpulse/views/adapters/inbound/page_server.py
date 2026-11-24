@@ -12,6 +12,7 @@ import logging
 import signal
 import socket
 import ssl
+import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -40,6 +41,11 @@ NUDGE_S = 0.05
 
 #: Seconds a stopping server waits for the requests it took, under the 10 s a supervisor allows before it kills a child.
 DRAIN_S = 8.0
+
+#: Seconds a thread keeps the GIL before another that waits can ask for it (the interpreter's default is 5 ms). With 50
+#: request threads and the loop thread contending, a 0.1 ms read waited 69 ms at the median and 528 ms at p95 for the
+#: GIL at 5 ms, and 13 ms and 52 ms at 0.5 ms: the same interval the contexts worker sets for its SQLite threads.
+SWITCH_INTERVAL_S = 0.0005
 
 
 def _survive_cancelled_streams() -> None:
@@ -194,6 +200,7 @@ class PageServer:
         self.join()
 
     def _run(self) -> None:
+        sys.setswitchinterval(SWITCH_INTERVAL_S)
         try:
             asyncio.run(self._serve())
         except BaseException as failure:
