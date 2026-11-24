@@ -227,19 +227,6 @@ def _hours(query: dict[str, list[str]], key: str, default: float) -> float | Non
     return hours if 0 < hours < float("inf") else None
 
 
-def refuses_at_once(telemetry: SignalFoldReader | None, query: dict[str, list[str]], now: float) -> bool:
-    """Whether a telemetry report of the last `hours` answers with a refusal that needs no fold: an `hours`
-    that is no positive number, no telemetry, or a window longer than the history (`_held_folds`)."""
-    window = _hours(query, "hours", _WINDOW_HOURS)
-    if window is None or telemetry is None:
-        return True
-    try:
-        oldest = telemetry.oldest()
-    except Exception:  # the event log's database is unreachable: the fold answers 503
-        return False
-    return window * 3600 > _history_s(oldest, now)
-
-
 def _history_s(oldest: float | None, now: float) -> float:
     """The seconds of history the table holds as of `now`, `oldest` the time of its oldest signal (none: it holds none)."""
     return now - (now if oldest is None else oldest)

@@ -14,7 +14,7 @@ from starpulse.bridge.last_event import last_event_is
 from starpulse.bridge.subjects import subject_for
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
-from starpulse.event_log.start_requests import follow_admitted
+from starpulse.event_log.start_requests import follow_admitted, follow_failed
 from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound.head_reader import GitHubReader
 from starpulse.github.adapters.outbound.rest import connect, pull_mergeable
@@ -99,7 +99,6 @@ def start_delivery(
             pins,
             config.board_repo,
             latest=lambda subject: last_event_is(log.engine, subject),
-            accounts=f"starpulse.{config.bridge.board}.alert.{config.account_room_alert}" if config.account_room_alert else None,
             holds=board.holds,
             read=board.read,
             unfinished=board.unfinished,
@@ -143,6 +142,7 @@ def start_delivery(
             closed=actor.closed,
         )
         follow_admitted(actor.admitted, log, stop)
+        follow_failed(actor.start_failed, log, stop)
     lane_events.follow_entered(board.entered, log, stop)
     projected = None
     if config.pull_requests:

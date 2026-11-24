@@ -41,7 +41,7 @@ from starpulse.views.adapters.inbound.api.answering import answer, on_worker, se
 from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import refused
 from starpulse.views.adapters.outbound import request_durations
-from starpulse.views.application.queries.responses import refuses_at_once, spend_response
+from starpulse.views.application.queries.responses import spend_response
 from starpulse.views.model.encoding import encode
 
 #: The largest document and variables a request may send, in bytes.
@@ -120,15 +120,8 @@ async def _moves(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
 
 
 def _week(api: Any) -> tuple[bytes, int]:
-    """The week's spend report of every task, kept under `spend` when the deployment keeps answers."""
-    services, asked = api.services, {}
-
-    def compute() -> tuple[bytes, int]:
-        return spend_response(services.telemetry, asked, api.feed.keys, api.feed.titled, api.clock(), services.analytics)
-
-    if services.answers is None:
-        return compute()
-    return services.answers.answer("spend", str([]), compute, lambda: refuses_at_once(services.telemetry, asked, api.clock()))
+    """The week's spend report of every task, read from the stored fold rows."""
+    return spend_response(api.services.telemetry, {}, api.feed.keys, api.feed.titled, api.clock(), api.services.analytics)
 
 
 @task.field("spend")

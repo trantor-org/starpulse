@@ -59,7 +59,6 @@ from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.adapters.outbound.storage_metrics import SCRAPE_CACHE_S, cached, docs_exposition, storage_exposition
 from starpulse.views.adapters.outbound.take_over import command_take_over
 from starpulse.views.adapters.outbound.webhook_command import command_webhook
-from starpulse.views.application.queries.answers import Answers
 from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
 
@@ -200,7 +199,6 @@ def serve_page(
         telemetry=signal_folds,
         search=search,
         analytics=config.analytics,
-        answers=Answers(log.engine),
         take_over=command_take_over(config.take_over_command) if config.take_over_command else None,
         webhook=command_webhook(config.webhook_command, os.environ[config.webhook_token_env or ""])
         if config.webhook_command

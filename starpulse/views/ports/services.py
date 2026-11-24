@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 from starpulse.contracts.reads import SLOW_READ_S
 
@@ -17,14 +17,6 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.scheduler.adapters.remote import Remote
     from starpulse.scheduler.adapters.runtime import Runtime
     from starpulse.views.ports.signal_folds import SignalFoldReader
-
-
-class KeptAnswers(Protocol):
-    """The answers of the telemetry analytics kept past a restart (`Answers`)."""
-
-    def answer(
-        self, view: str, query: str, compute: Callable[[], tuple[bytes, int]], refused: Callable[[], bool] = ...
-    ) -> tuple[bytes, int]: ...
 
 
 @dataclass(frozen=True)
@@ -54,8 +46,6 @@ class Services:
     telemetry: SignalFoldReader | None = None
     search: SearchIndex | None = None
     analytics: Analytics | None = None
-    #: Keeps the telemetry analytics' answers past a restart so a read never waits on a fold; None folds per request.
-    answers: KeptAnswers | None = None
     #: Sends the take-over Update to a task's workflow: False when the task has none.
     take_over: Callable[[str], bool] | None = None
     #: Each lane's tools, typed exit tools and bound skill by lane name, from the board policy.

@@ -46,6 +46,7 @@ CONTEXT_ENTRIES = (
     "starpulse.harness_telemetry.adapters.inbound.claude_code",
     # `contexts` imports each of these late, inside a function, which the probe of its load never sees
     "starpulse.board.adapters.lane_metrics",
+    "starpulse.bridge.account_room",
     "starpulse.bridge.worker",
     "starpulse.event_log.claude_sessions",
     "starpulse.event_log.conformance_monitor",

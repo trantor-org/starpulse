@@ -222,6 +222,7 @@ def default_starters(
     def scheduler(own: threading.Event) -> Callable[[], None]:
         from starpulse.runtime.assembly import scheduler_board
         from starpulse.scheduler.bin import scheduler_worker
+        from starpulse.bridge.account_room import account_room
         from starpulse.sessions.adapters.outbound.claude_code_notify import end_with
         from starpulse.sessions.adapters.outbound.session_start import starter
 
@@ -229,6 +230,7 @@ def default_starters(
             config, path, base, log, own, load=load,
             worker_board=lambda *_: scheduler_board(config, base, log, own),
             starter=starter, delivered=own_pull_merged, ender=end_with,
+            rooms=account_room,
         )  # fmt: skip
 
     def runs(own: threading.Event) -> Callable[[], None]:

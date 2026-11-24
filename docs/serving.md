@@ -828,7 +828,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `project` (table): The project's own command line for each step a shipped skill names.
 - `sequences` (table of list of text): The phases a task goes through, in order, keyed by task type (`story`, `bug`), with `default` for a type it does not name. A lifecycle machine link that lists `routes` sends a task to the route its sequence names next.
 - `awaits` (list of text): The lifecycle machines whose unfinished placement of a task ends in an event, so a session that settles meanwhile is not resumed: a link's lens in the phase it runs, or a machine with no link until it ends.
-- `account_room_alert` (text): The name of the alert that fires while no account has room to start a session. The task actor holds a dispatch while that alert's latest event is `firing` and pins it on `resolved`; unset, it never holds one.
+- `account_room_alert` (text): The name of the alert that fires while no account has room to start a session. The scheduler starts nothing while that alert's latest event is `firing` and wakes on `resolved`; unset, it never waits for room.
 - `claude_code` (table): Runs the Claude Code OTLP adapter in the `contexts` child, listening on `host`:`port` (see docs/sources.md).
 - `github` (table): Runs the GitHub intake listener in the `contexts` child: it saves each signed webhook delivery to the `github_inbox` table before it answers (see docs/sources.md).
 - `bridge` (`[bridge]` table): The NATS bridge's server that `serve` supervises unless `enabled = false` (see The NATS server).

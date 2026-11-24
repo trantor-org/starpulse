@@ -61,12 +61,10 @@ SESSION_ENDED = "session-ended"
 SESSION_GONE = "session-gone"
 HELD_KEY = "scheduler.held"
 PAUSES_KEY = "scheduler.harness_pauses"
-#: Seconds a task whose start failed waits before its first retry; each further failure doubles it, up to `START_BACKOFF_MAX`.
 START_BACKOFF = 30.0
-START_BACKOFF_MAX = 30 * 60.0
 #: Seconds the loop waits for an event when it cannot read its deadlines, before it ticks and reads them again.
 DEADLINE_RETRY = 30.0
-BACKOFF_EXPONENT_MAX = 30  # START_BACKOFF * 2**30 is past both caps; a larger exponent overflows a float at 1024
+BACKOFF_EXPONENT_MAX = 30  # START_BACKOFF * 2**30 is past the cap; a larger exponent overflows a float at 1024
 #: Seconds a full session-start limit holds the whole queue back: it refuses every task alike, so no task is skipped alone.
 #: The first refusal waits `START_BACKOFF`; each further one doubles it, up to this cap, and a start that lands resets it.
 SESSIONS_FULL_BACKOFF_MAX = 5 * 60.0
@@ -148,6 +146,7 @@ class Loop:
         merged: Callable[[Mapping[str, Any]], bool] = lambda agent: False,
         clock: Callable[[], float] = time.time,
         quiet_hours: Callable[[], QuietHours | None] = lambda: None,
+        room: Callable[[], bool] = lambda: True,
         log: EventLog | None = None,
         harness: HarnessSetting | None = None,
         transcript: Callable[[str], float | None] = lambda session: None,
@@ -164,6 +163,7 @@ class Loop:
         self._merged = merged
         self._clock = clock
         self._quiet_hours = quiet_hours
+        self._room = room
         self._harness = harness
         self._transcript = transcript
         self._end = end
@@ -178,11 +178,10 @@ class Loop:
         self._skip_logged: str | None = None  # the last reason a tick logged for skipping admission
         self._full: tuple[int, float] = (0, 0.0)  # refusals while the session limit is full, and when to try again
         self._full_counts: tuple[int, int] = (0, 0)  # the live count and limit the last refusal named
-        self._failed: dict[str, tuple[int, float]] = {}  # a task whose start failed: its failures so far, when to retry
         self._events: queue.Queue | None = None
         self._no_profile_logged: set[str] = set()  # the Ready tasks whose no-profile refusal is already logged
         self._blocked = False  # the last pass was refused for capacity: only a capacity event retries it
-        self._refused = False  # a revive or resume want the last grant pass left pending for headroom: the next fresh sample retries it
+        self._refused = False  # a resume or nudge want the last grant pass left pending for headroom: the next fresh sample retries it
         self._sampled_at: float | None = None  # the sample of the last `scheduler` status the loop was offered
         self._restore()
 
@@ -278,7 +277,7 @@ class Loop:
     def wants(self, kind: str, data: Mapping[str, Any]) -> bool:
         """Whether a feed event (or a `wake`) can free or fill capacity: a task entering the eligible lane, a running task's
         own change, a harness session stopping, or the `scheduler` status of a new sample whose next pick would start or while a
-        revive or resume want waits for room.
+        resume or nudge want waits for room.
         Every tool use is a harness move too, so only a stop counts. A tick publishes its status too, over the sample it
         ticked on, so a status wakes the loop once per sample: a start that keeps failing waits for the next sample."""
         if kind == "wake":
@@ -340,7 +339,7 @@ class Loop:
         return self._admit(now)
 
     def _grant(self) -> None:
-        """Admit the revives and resumes the task actor wants, each while the room left fits what it draws. A start
+        """Admit the resumes and nudges the task actor wants, each while the room left fits what it draws. A start
         admitted stays admitted until its want changes; a refused one waits for the next capacity event. The switch and
         quiet hours gate dispatch, not a session the task already holds, so they do not apply."""
         if self._log is None:
@@ -377,6 +376,8 @@ class Loop:
             return "inside quiet hours"
         if paused := self._selected_paused(now):
             return f"{paused} is paused"
+        if not self._room():
+            return "no account has room"
         return None
 
     def run_forever(self, stop: StopEvent) -> None:
@@ -416,11 +417,11 @@ class Loop:
 
     def _next_due(self, now: float) -> float | None:
         """Seconds to the earliest deadline the loop must wake for with no event, or None: the end of a
-        sessions-full wait, a failed start's backoff, a credit pause, or a started session's `STALE_S` without a move
+        sessions-full wait, a credit pause, or a started session's `STALE_S` without a move
         (`_gone` closes its run on that tick; a tool use is no wanted event, so a session that died unclaimed wakes none).
         A move since the deadline was read only makes that tick find the run still at work, and the next call re-reads.
         A stale deadline that fell between two calls is due now when `_gone` would close its run, so the tick is not lost."""
-        due = [at for at in (self._full[1], *(retry for _, retry in self._failed.values())) if at > now]
+        due = [self._full[1]] if self._full[1] > now else []
         due += [row["until"] for row in self._paused.values() if row["until"] > now]
         for task, run in list(self._running.items()):
             if not run.claimed:
@@ -778,7 +779,7 @@ class Loop:
             self._record(now, readings, self._decide(readings, set(), log=False)[1])
             return started
         last: tuple[list[Reading], list[Decision]] | None = None
-        skipped = {task for task, (_, retry_at) in self._failed.items() if retry_at > now}  # still backing off
+        skipped = set(start_requests.failed(self._log)) if self._log is not None else set()  # the task actor parks these
         while readings := self.readings():
             tasks, decisions = self._decide(readings, skipped)
             last = (readings, decisions)
@@ -804,9 +805,9 @@ class Loop:
                 if self._selected_paused(now):
                     break
                 skipped.add(picked.task)
-                self._back_off(picked.task, now)
+                if self._log is not None:
+                    start_requests.fail(self._log, picked.task, str(exc))
                 continue
-            self._failed.pop(picked.task, None)
             self._full = (0, 0.0)
             self._starts[picked.task] = now
             self._running[picked.task] = _Run(
@@ -911,13 +912,6 @@ class Loop:
         self._full = (
             refusals,
             now + min(START_BACKOFF * 2 ** min(refusals - 1, BACKOFF_EXPONENT_MAX), SESSIONS_FULL_BACKOFF_MAX),
-        )
-
-    def _back_off(self, task: str, now: float) -> None:
-        failures = self._failed.get(task, (0, 0.0))[0] + 1
-        self._failed[task] = (
-            failures,
-            now + min(START_BACKOFF * 2 ** min(failures - 1, BACKOFF_EXPONENT_MAX), START_BACKOFF_MAX),
         )
 
     def _selected_paused(self, now: float) -> str | None:

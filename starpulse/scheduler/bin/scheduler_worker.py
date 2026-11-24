@@ -43,11 +43,13 @@ class Scheduler:
         starter: Callable[..., Any],
         delivered: Callable[[EventLog, Mapping[str, Any]], bool],
         ender: Callable[[Sequence[str]], Callable[[str], None] | None],
+        rooms: Callable[..., Callable[[], bool]] = lambda *_: lambda: True,
     ) -> None:
         self._config = config
         self._starter = starter
         self._delivered = delivered
         self._ender = ender
+        self._rooms = rooms
         self._built = (base, board, feed, log)
         self._probe = probe
         self._stop = StopEvent()
@@ -71,6 +73,7 @@ class Scheduler:
             starter=self._starter,
             delivered=self._delivered,
             ender=self._ender,
+            rooms=self._rooms,
         )
         follow_wakes(log, self._wake, stop)
 
@@ -118,6 +121,7 @@ def start(
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
     ender: Callable[[Sequence[str]], Callable[[str], None] | None],
+    rooms: Callable[..., Callable[[], bool]],
 ) -> Callable[[], None]:
     """Start the sampler and the dispatch loop over `log` and return their reload; the threads are daemons that end with
     the process. Raises `ValueError` as `worker_board` does."""
@@ -131,6 +135,7 @@ def start(
         starter=starter,
         delivered=delivered,
         ender=ender,
+        rooms=rooms,
     )
     scheduler.start()
     return lambda: scheduler.reload(path, load)
@@ -147,6 +152,7 @@ def main(
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
     ender: Callable[[Sequence[str]], Callable[[str], None] | None],
+    rooms: Callable[..., Callable[[], bool]],
 ) -> None:
     """Run the Scheduler worker; `runtime` passes the collaborators it builds, as no context imports it."""
     args = parser.parse_args(argv)
@@ -170,6 +176,7 @@ def main(
             starter=starter,
             delivered=delivered,
             ender=ender,
+            rooms=rooms,
         )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
