@@ -90,16 +90,67 @@ type SpendPhase {
   phase_above_norm: Boolean!
 }
 
-"""The open tasks a read found, and the stream position it was read at: a `taskChanges` subscription from it carries each change after the read."""
+"""One finished task of the last day, as the stored board body's `settled` map holds it. `state` is `completed` or the other settled state, `at` when it settled and `created` when it was made (null when the read model does not hold it)."""
+type SettledTask {
+  id: ID!
+  state: String!
+  at: Float
+  created: Float
+  title: String!
+  model: String!
+  milestone: String!
+  labels: [String!]!
+}
+
+"""One milestone's count of tasks completed in the last day."""
+type MilestoneCount {
+  milestone: String!
+  done: Int!
+}
+
+"""One step of a machine task's trail: the state it entered, the event that moved it and when."""
+type TrailStep {
+  state: String!
+  event: String!
+  at: Float!
+  id: String
+}
+
+"""One task of a machine other than the board, as the stored body draws it under `machine`."""
+type MachineTask {
+  machine: String!
+  id: ID!
+  title: String!
+  model: String!
+  "The board task it is tied to, null when none."
+  task: String
+  state: String!
+  steps: Int!
+  active: Float!
+  trail: [TrailStep!]!
+}
+
+"""The open tasks a read found, and the stream position it was read at: a `taskChanges` subscription from it carries each change after the read. `settled`, `milestoneDone`, `archivedToday` and `machineTasks` hold the whole board, never narrowed by the arguments."""
 type TaskList {
   position: Int!
   items: [Task!]!
+  "The finished window: each task settled or created in the last 24 hours."
+  settled: [SettledTask!]!
+  "Each milestone's completed count: its settled tasks plus the completed ones older than the window."
+  milestoneDone: [MilestoneCount!]!
+  "The tasks archived since local midnight."
+  archivedToday: Int!
+  "The tasks of every machine but the board."
+  machineTasks: [MachineTask!]!
 }
 
-"""One task that changed: `task` is its card now, null when the board no longer holds it."""
+"""One task that changed: `task` is its card now, null when the board no longer holds it. `machine` names the machine it moved on (`board` for a board task); `settled` is its settled entry when it is one, and `machineTask` the machine task a move on another machine left."""
 type TaskChange {
   id: ID!
+  machine: String!
   task: Task
+  settled: SettledTask
+  machineTask: MachineTask
 }
 
 """Any JSON value: a ledger row's `runs` and `fails` map workflow names to the page's own shapes."""

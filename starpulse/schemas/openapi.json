@@ -2829,7 +2829,7 @@
     },
     "/graphql": {
       "post": {
-        "summary": "Run a GraphQL query over the tasks and a ledger's occurrences, or follow their changes with a subscription",
+        "summary": "Run a GraphQL query over the tasks (open, settled, per-milestone done counts and every machine's) and a ledger's occurrences, or follow their changes with a subscription",
         "tags": [
           "graphql"
         ],

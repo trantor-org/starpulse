@@ -12,6 +12,7 @@ An `occurrenceChanges` subscription holds one event's ledger: its first `next` e
 each later one the rows that changed. An event no workflow is tied to is answered with a 404.
 """
 
+import asyncio
 import json
 import math
 import time
@@ -46,13 +47,14 @@ from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import refused
 from starpulse.views.adapters.outbound import request_durations
 from starpulse.views.application.queries.responses import PAGE_LIMIT, spend_response
-from starpulse.views.model.encoding import encode
+from starpulse.views.model.encoding import encode, milestone_done, recent_settled
 
 #: The largest document and variables a request may send, in bytes.
 LIMIT = 65536
 
 query = QueryType()
 task = ObjectType("Task")
+task_list = ObjectType("TaskList")
 occurrence = ObjectType("Occurrence")
 
 
@@ -85,6 +87,37 @@ async def _tasks(
         and (milestone is None or agent["milestone"] == milestone)
     ]
     return {"position": position, "items": items}
+
+
+async def _done(parent: dict, info: GraphQLResolveInfo) -> dict:
+    """The snapshot's account of the Done tasks off the board, read once per query however many fields ask."""
+    if "done" not in parent:
+        parent["done"] = asyncio.ensure_future(_read_done(info))
+    return await parent["done"]
+
+
+async def _read_done(info: GraphQLResolveInfo) -> dict:
+    return {**await _worker(info, info.context["feed"].done_fields), "now": info.context["api"].clock()}
+
+
+@task_list.field("settled")
+async def _settled(parent: dict, info: GraphQLResolveInfo) -> list[dict]:
+    return [{"id": task_id, **entry} for task_id, entry in recent_settled(await _done(parent, info)).items()]
+
+
+@task_list.field("milestoneDone")
+async def _milestone_done(parent: dict, info: GraphQLResolveInfo) -> list[dict]:
+    return [{"milestone": name, "done": count} for name, count in milestone_done(await _done(parent, info)).items()]
+
+
+@task_list.field("archivedToday")
+async def _archived_today(parent: dict, info: GraphQLResolveInfo) -> int:
+    return (await _done(parent, info))["archived_today"]
+
+
+@task_list.field("machineTasks")
+async def _machine_tasks(_: dict, info: GraphQLResolveInfo) -> list[dict]:
+    return [{"machine": machine, **agent} for machine, agent in await _worker(info, info.context["feed"].machine_agents)]
 
 
 @query.field("task")
@@ -152,7 +185,7 @@ async def _spend(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
     return [row for row in report["spend"] if row["task"] == agent["id"]]
 
 
-SCHEMA = make_executable_schema(task_graphql.type_defs(), query, task, occurrence)
+SCHEMA = make_executable_schema(task_graphql.type_defs(), query, task, task_list, occurrence)
 
 
 def _failed(request: Request, status: int, message: str) -> Response:
