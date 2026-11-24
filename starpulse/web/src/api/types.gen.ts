@@ -54,7 +54,6 @@ export interface ApiContract {
   machines: Machines;
   milestoneShown: MilestoneShown;
   milestones: Milestones;
-  pulls: Pulls;
   readyReport: ReadyReport;
   requests: (
     | MoveRequest
@@ -1730,55 +1729,6 @@ export interface MilestoneRecord {
  */
 export interface Milestones {
   milestones: MilestoneRecord[];
-  [k: string]: unknown;
-}
-/**
- * `GET /api/pulls`: the stored pull requests matching every filter given, by repository then number.
- */
-export interface Pulls {
-  pulls: PullRecord[];
-  [k: string]: unknown;
-}
-/**
- * One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).
- *
- * `headRefName` and `unresolvedThreads` (the first 100 threads) are null for a record saved before they were kept.
- * `files`, the paths the pull request changes, is sent only when `repo` and `number` name one record, and is null for
- * a record saved before they were kept. `body` is sent only when `repo` and `number` name one record or `bodies=1`
- * asks for it.
- */
-export interface PullRecord {
-  baseRefName: string;
-  body?: string | null;
-  checks: "pass" | "failing" | "pending" | "none";
-  fetchedAt: number;
-  files?: string[] | null;
-  headRefName: string | null;
-  headRefOid: string;
-  isDraft: boolean;
-  mergeSha: string | null;
-  mergeable: string;
-  mergedAt: string | null;
-  number: number;
-  repo: string;
-  requiredChecks: RequiredCheck[];
-  state: "OPEN" | "MERGED" | "CLOSED";
-  threads: number;
-  unresolvedThreads: PullThread[] | null;
-  updatedAt: string;
-  [k: string]: unknown;
-}
-export interface RequiredCheck {
-  name: string;
-  result: "pass" | "failing" | "pending" | "missing";
-  [k: string]: unknown;
-}
-/**
- * An unresolved review thread: its id and the login of its first comment's author, null for a deleted account.
- */
-export interface PullThread {
-  author: string | null;
-  id: string;
   [k: string]: unknown;
 }
 /**

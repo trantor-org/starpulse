@@ -360,21 +360,8 @@ GET /api/snapshot  the document /api/events sends on connect, as one response: w
                    `starpulse snapshot` and `starpulse board|task|machines|machine|doctor|incident` read; a verb
                    that needs a task's description or criteria reads `/api/task/<id>`
 GET /api/runs      {dags, error}: every runs workflow with its latest run, and what a runs instance reported: `starpulse runs list`
-GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_contains=TEXT][&task=TASK-N][&bodies=1]
-                   {pulls}: the pull requests the PR store holds, kept current by the lifecycle events of the tasks that cite
-                   them and by GitHub's webhook deliveries, those matching every filter
-                   given, by repository then number, each {repo, number, state (OPEN, MERGED, CLOSED), isDraft,
-                   mergeable, baseRefName, headRefOid, body (left out unless `bodies=1`, or `repo` and `number` name one pull
-                   request), checks (pass, failing, pending, none: the required
-                   checks at the head commit), requiredChecks [{name, result}], threads (unresolved), headRefName
-                   (the head branch), unresolvedThreads [{id, author}] (each unresolved thread's id and its first
-                   comment's author login, null for a deleted account; the first 100 threads), updatedAt,
-                   mergedAt and mergeSha (ISO 8601 UTC merge time and merge commit; null until merged, and for a
-                   merge stored before they were kept), and fetchedAt (epoch seconds of the last event or read that changed this record)}. `task` lists only the pull requests the
-                   task cites (a read of those rows alone). A `number` that is not an integer, or a `state`
-                   that is none of those, is 400
 GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
-                   names (none without a build); `starpulse_docs{type}`, the open board docs of each type; `starpulse_snapshot_build_seconds_count` and `_sum`, the snapshots the API built and the
+                   names (none without a build); `starpulse_docs{type}`, the open board docs of each type; `starpulse_open_pulls{repo}`, the open pull requests the PR store holds in each repository; `starpulse_snapshot_build_seconds_count` and `_sum`, the snapshots the API built and the
                    seconds they took (0: it serves the stored one); `starpulse_board_lane_unattributed_total`, the board:lanes entries
                    any process appended since this one started that name no actor; `starpulse_machine_conformance_violations_total{machine}` and
                    `starpulse_machine_conformance_events_total{machine}`, the recorded moves of each machine that no
@@ -788,7 +775,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `database_url` (text): The SQLAlchemy URL of the history store; unset, `starpulse-history.sqlite` beside the config. The credentials never live here; they come from the driver's environment, such as `PGPASSWORD`.
 - `event_log_retention_days` (whole number, 1 or more, default `7`): How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept row. The `machine:events` stream is exempt: the prune never deletes it, because a read-model rebuild refolds every machine's tasks from it. On its first pass the sweeper also puts the archived rows of that stream back at their archived `id`, once. A whole number of days.
 - `event_log_archive_dir` (text, default `"starpulse-archive"`): Where the sweeper writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to this file unless absolute.
-- `slow_read_seconds` (number, above 0, default `1.0`): The seconds a `GET /api/pulls` or `GET /api/task/<id>` read may take, from accept to the last byte written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of the same route running when it began, and `busy` and `streams`, the request workers in use (the read itself included) and the streams open when it was accepted. No other route is timed.
+- `slow_read_seconds` (number, above 0, default `1.0`): The seconds a `GET /metrics` or `GET /api/task/<id>` read may take, from accept to the last byte written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of the same route running when it began, and `busy` and `streams`, the request workers in use (the read itself included) and the streams open when it was accepted. No other route is timed.
 - `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds its two worker children to, in megabytes (see Worker processes), set as `[worker_memory.api]` and `[worker_memory.contexts]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `api` 4096/8192, `contexts` 1536/3072, `pulls` 1024/2048.
 - `mode` (`"ic"`, default `"ic"`): `ic`, the one value: one person on one machine.
 - `host` (text, default `"127.0.0.1"`): The address `serve` and `worker api` listen on; the default answers this machine only, and `0.0.0.0` answers the network. The `--host` flag overrides it.
@@ -798,7 +785,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `tls_key` (text): The TLS private key, relative to this file's directory; set with `tls_cert`.
 - `session_start_url` (text): The session-start service a started task is sent to (`POST <url>/start/TASK-N?harness=&mode=`); unset: nothing can be started.
 - `harnesses_file` (text): A file, relative to this one, that declares the tiers and per-harness models.
-- `pull_requests` (true or false, default `true`): `serve` keeps a pull request store, current from the lifecycle events and GitHub's webhook deliveries, that `/api/pulls`, the `ci` trail and `[release]` read. false never updates it: no event is applied, tasks carry no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so one store is kept.
+- `pull_requests` (true or false, default `true`): `serve` keeps a pull request store, current from the lifecycle events and GitHub's webhook deliveries, that the task detail's `prs`, the `pull` query, the `ci` trail and `[release]` read. false never updates it: no event is applied, tasks carry no PR state, and those answer only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so one store is kept.
 - `webhook_command` (list of text): The command `POST /intake/grafana` runs, as an argv, with the request body on stdin once the bearer token `webhook_token_env` names matches. Exit 0: accepted (202). Any other exit or a timeout: 502 with the command's stderr, so the sender retries. 404 when this is unset. Needs `webhook_token_env`.
 - `webhook_token_env` (text): The environment variable holding the bearer token `POST /intake/grafana` requires; the value is the name, never the token.
 - `github_token_env` (text): The name of an environment variable holding a GitHub token. `serve` exports its value as `GITHUB_TOKEN` and `GH_TOKEN` before it starts any worker, so the GitHub reads and the child processes sign in with it; unset, or naming an unset variable, leaves both as they were. The value is the name, never the token.

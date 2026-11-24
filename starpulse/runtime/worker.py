@@ -193,7 +193,6 @@ def main(argv: list[str] | None = None) -> None:
     from starpulse.runtime.delivery_wiring import start_delivery
     from starpulse.runtime.hold import announce_ready, go_event
     from starpulse.runtime.readiness import stamp
-    from starpulse.runtime.stored_pulls import keep_pulls
 
     def started(log):
         if boot := os.environ.get(BOOT_ENV):
@@ -206,7 +205,6 @@ def main(argv: list[str] | None = None) -> None:
         worker_board=worker_board,
         history_store=history_store,
         start_delivery=start_delivery,
-        keep_pulls=keep_pulls,
         hold=hold,
         go=go_event(os.environ),
         prepared=lambda: announce_ready(os.environ),

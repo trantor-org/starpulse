@@ -101,47 +101,6 @@ def history_response(
     return encode("history", body), 200
 
 
-def pulls_response(
-    pulls: PullStore | None, query: dict[str, list[str]], cited: Callable[[str], list[str]] | None = None
-) -> tuple[bytes, int]:
-    """The body and status for `/api/pulls`: the stored pull requests matching every filter given, without their
-    bodies unless `bodies=1` asks or one is named by both `repo` and `number`, which also carries `files`, the paths it
-    changes (null for a record saved before they were kept). `task` names the pull requests that task cites (`cited`
-    gives its links), each read by its key.
-
-    A `number` that is not an integer, or a `state` that is not open, merged or closed, is 400."""
-    state = query.get("state", [""])[0].upper() or None
-    try:
-        number = int(query["number"][0]) if "number" in query else None
-    except ValueError:
-        return _error("pulls takes an integer ?number="), 400
-    if state not in (None, "OPEN", "MERGED", "CLOSED"):
-        return _error("pulls takes ?state= open, merged or closed"), 400
-    repo = query.get("repo", [""])[0] or None
-    task = query.get("task", [""])[0]
-    one = repo is not None and number is not None and not task
-    bodies = one or query.get("bodies", [""])[0] in ("1", "true")
-    needle = query.get("body_contains", [""])[0] or None
-    if not pulls:
-        found = []
-    elif task:
-        links = cited(task) if cited else []
-        found = [
-            record
-            for named, held in _cited(links)
-            if repo in (None, named) and number in (None, held)
-            for record in pulls.find(named, held, state, needle, bodies=bodies)
-        ]
-    else:
-        found = pulls.find(repo, number, state, needle, detailed=one, bodies=bodies)
-    if one:  # one pull request is read whole: its changed files, which a listing leaves out
-        found = [
-            {**{key: value for key, value in record.items() if key != "detail"}, "files": (record["detail"] or {}).get("files")}
-            for record in found
-        ]
-    return encode("pulls", {"pulls": found}), 200
-
-
 #: A GitHub pull request URL, which a task cites in its references: its `owner/repo` and number.
 _PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 
@@ -161,6 +120,13 @@ def cited_pulls(pulls: PullStore | None, references: list[str]) -> list[dict[str
     if not pulls:
         return []
     return _without_bodies(record for repo, number in _cited(references) for record in pulls.find(repo, number))
+
+
+def task_pulls(pulls: PullStore | None, links: list[str]) -> list[dict[str, Any]]:
+    """The stored pull requests `links` cite, whole: each with its body and the paths it changes in `detail`."""
+    if not pulls:
+        return []
+    return [record for repo, number in _cited(links) for record in pulls.find(repo, number, detailed=True, bodies=True)]
 
 
 #: `/api/search`'s default and largest number of hits.

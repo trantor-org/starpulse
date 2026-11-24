@@ -17,14 +17,12 @@ from starpulse.views.adapters.inbound.api import (
     machines,
     milestones,
     openapi,
-    pulls,
     runs,
     snapshot,
     tasks,
     view_queries,
 )
 from starpulse.views.adapters.inbound.api.table import ApiRoute
-from starpulse.views.adapters.inbound.api.pulls import PullReads
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.streams import Streams
 from starpulse.views.adapters.outbound.storage_metrics import cached
@@ -52,13 +50,9 @@ class Api:
     clock: Callable[[], float] = time.time
     build: Callable[[], str | None] = lambda: None
     page_gauge: Callable[[], str] | None = None
-    pull_reads: PullReads = field(init=False)  # made with the seams: it hears the store's saves from the start
-    slow_reads: SlowReads = field(init=False)
     scrape_reads: SlowReads = field(init=False)
 
     def __post_init__(self) -> None:
-        self.pull_reads = PullReads(self.services.pulls, self.feed.cited, lambda: self.snapshots.stored("pulls")[1])
-        self.slow_reads = SlowReads("/api/pulls", self.services.slow_read_s)
         self.scrape_reads = SlowReads("/metrics", self.services.slow_read_s)
 
     @cached_property
@@ -88,7 +82,6 @@ def api_routes(api: Api) -> list[ApiRoute]:
         *docs.routes(api),
         *runs.routes(api),
         *admin.routes(api),
-        *pulls.routes(api),
         *view_queries.routes,
         *openapi.routes,
     ]

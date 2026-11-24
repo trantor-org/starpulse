@@ -442,7 +442,7 @@ class ConfigFile(_Table):
         default=SLOW_READ_S,
         gt=0,
         description=(
-            "The seconds a `GET /api/pulls` or `GET /api/task/<id>` read may take, from accept to the last byte "
+            "The seconds a `GET /metrics` or `GET /api/task/<id>` read may take, from accept to the last byte "
             "written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the "
             "seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of "
             "the same route running when it began, "
@@ -514,8 +514,8 @@ class ConfigFile(_Table):
         default=True,
         description=(
             "`serve` keeps a pull request store, current from the lifecycle events and GitHub's webhook deliveries, "
-            "that `/api/pulls`, the `ci` trail and `[release]` read. false never updates it: no event is applied, "
-            "tasks carry no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so "
+            "that the task detail's `prs`, the `pull` query, the `ci` trail and `[release]` read. false never updates it: no event is applied, "
+            "tasks carry no PR state, and those answer only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so "
             "one store is kept."
         ),
     )

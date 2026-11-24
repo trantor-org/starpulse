@@ -46,7 +46,7 @@ from starpulse.views.adapters.inbound.api.answering import answer, on_worker, se
 from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import refused
 from starpulse.views.adapters.outbound import request_durations
-from starpulse.views.application.queries.responses import PAGE_LIMIT, spend_response
+from starpulse.views.application.queries.responses import PAGE_LIMIT, spend_response, task_pulls
 from starpulse.views.model.encoding import encode, milestone_done, recent_settled
 
 #: The largest document and variables a request may send, in bytes.
@@ -56,6 +56,7 @@ query = QueryType()
 task = ObjectType("Task")
 task_list = ObjectType("TaskList")
 occurrence = ObjectType("Occurrence")
+pull_request = ObjectType("PullRequest")
 
 
 async def _worker(info: GraphQLResolveInfo, call: Any, *args: Any) -> Any:
@@ -139,6 +140,12 @@ def _child(row: dict, _: GraphQLResolveInfo) -> bool:
     return "appliedBy" in row
 
 
+@query.field("pull")
+async def _pull(_: Any, info: GraphQLResolveInfo, repo: str, number: int) -> dict | None:
+    found = await _worker(info, task_pulls, info.context["pulls"], [f"https://github.com/{repo}/pull/{number}"])
+    return found[0] if found else None
+
+
 @task.field("lane")
 def _lane(agent: dict, _: GraphQLResolveInfo) -> str:
     return agent["state"]
@@ -185,7 +192,20 @@ async def _spend(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
     return [row for row in report["spend"] if row["task"] == agent["id"]]
 
 
-SCHEMA = make_executable_schema(task_graphql.type_defs(), query, task, task_list, occurrence)
+@task.field("prs")
+async def _prs(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
+    """The PR store's records of the pull requests the task cites: a lookup by key, no GitHub read."""
+    context = info.context
+    links = await _worker(info, context["feed"].cited, agent["id"])
+    return await _worker(info, task_pulls, context["pulls"], links)
+
+
+@pull_request.field("files")
+def _files(record: dict, _: GraphQLResolveInfo) -> list[str] | None:
+    return (record["detail"] or {}).get("files")
+
+
+SCHEMA = make_executable_schema(task_graphql.type_defs(), query, task, task_list, occurrence, pull_request)
 
 
 def _failed(request: Request, status: int, message: str) -> Response:
@@ -267,7 +287,7 @@ async def _run(request: Request, operation: list[str]) -> Response:
         name = payload.get("operationName")
         declared = {op for document in api.services.views.values() for op in task_graphql.operations(document)}
         operation[:] = [name if isinstance(name, str) and name in declared else "other"]
-    context = {"feed": api.feed, "api": api, "workers": request.app.state.workers}
+    context = {"feed": api.feed, "api": api, "pulls": api.services.pulls, "workers": request.app.state.workers}
     if (found := _subscription(payload)) is not None:
         return await _follow(request, payload, found, context)
     succeeded, result = await graphql(SCHEMA, payload, context_value=context)

@@ -22,7 +22,6 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecords,
 )
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, MachineDetail, Machines
-from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
@@ -128,7 +127,6 @@ RESPONSES: dict[str, Any] = {
     "/api/docs/": DocShown,
     "/api/retired": RetiredTasks,
     "/api/history": LaneHistory | MachineHistory | TaskEventHistory,
-    "/api/pulls": Pulls,
     "/api/search": SearchResults,
     "/api/search/similar": SearchResults,
     "/api/views/": ViewShown,
@@ -176,7 +174,6 @@ BODIES: dict[str, Any] = {
     "machine_retire": MachineRetired | ApiError,
     "done": DonePage | ApiError,
     "history": LaneHistory | MachineHistory | TaskEventHistory | ApiError,
-    "pulls": Pulls | ApiError,
     "search": SearchResults | ApiError,
     "spend": Spend | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
@@ -306,9 +303,6 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/runs/{instance}/{workflow}/rerun"): _write("Rerun a workflow run", "run"),
     ("GET", "/api/admin"): _read("Admin's settings: the scheduler's state, the display and the theme", "admin"),
     ("PUT", "/api/admin"): _write("Change any of Admin's settings, naming only those", "admin", AdminRequest),
-    ("GET", "/api/pulls"): _read(
-        "Pull requests", "pulls", "bodies", "body_contains", "number", "repo", "state", "task"
-    ),
     ("GET", "/api/views/{id}"): _read("The GraphQL document a view stores", "view"),
     ("GET", "/api/openapi"): Op("This document"),
     ("POST", "/graphql"): Op(

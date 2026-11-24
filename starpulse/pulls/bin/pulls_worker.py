@@ -140,7 +140,6 @@ def start(
     worker_board: Callable[..., tuple[Board, BoardFeed]],
     history_store: Callable[[PullsConfig, Path, Mapping[str, dict]], Any],
     start_delivery: Callable[..., tuple[Any, Callable[[], None] | None]],
-    keep_pulls: Callable[[PullStore, EventLog, StopEvent], Callable[[], None]],
     go: threading.Event | None = None,
     prepared: Callable[[], None] | None = None,
 ) -> Callable[[], None]:
@@ -166,9 +165,6 @@ def start(
     # a store that holds records was built by the replays before; a new or wiped one rebuilds from the whole retention.
     # Read before any loop writes a record, `pull_deliveries.start` included.
     resume = bool(store.repos())
-    store_pulls = keep_pulls(store, log, stop)  # the answer `serve` reads: stored soon after the start and each save
-    store_pulls()
-    store.subscribe_saves(lambda keys: store_pulls())
     announce_saves(store, log, stop)  # `serve` holds records in memory and takes each save from the database again
     delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=resume)
     if config.github:  # a delivery writes its record whether or not a task cites the pull request
@@ -189,7 +185,6 @@ def main(
     worker_board: Callable[..., tuple[Board, BoardFeed]],
     history_store: Callable[[PullsConfig, Path, Mapping[str, dict]], Any],
     start_delivery: Callable[..., tuple[Any, Callable[[], None] | None]],
-    keep_pulls: Callable[[PullStore, EventLog, StopEvent], Callable[[], None]],
     hold: Callable[[threading.Event, Callable[[], None]], None],
     go: threading.Event | None = None,
     prepared: Callable[[], None] | None = None,
@@ -219,7 +214,6 @@ def main(
             worker_board=worker_board,
             history_store=history_store,
             start_delivery=start_delivery,
-            keep_pulls=keep_pulls,
             go=go,
             prepared=prepared,
         )

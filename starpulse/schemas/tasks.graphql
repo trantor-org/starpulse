@@ -1,3 +1,46 @@
+type RequiredCheck {
+  name: String!
+  """`pass`, `failing`, `pending` or `missing`."""
+  result: String!
+}
+
+type UnresolvedThread {
+  id: String!
+  """Null for a deleted account."""
+  author: String
+}
+
+"""A pull request the PR store holds, as of `fetchedAt`."""
+type PullRequest {
+  repo: String!
+  number: Int!
+  """`OPEN`, `MERGED` or `CLOSED`."""
+  state: String!
+  isDraft: Boolean!
+  mergeable: String!
+  baseRefName: String!
+  """Null for a record saved before the branch was kept."""
+  headRefName: String
+  headRefOid: String!
+  body: String!
+  """`pass`, `failing`, `pending` or `none`."""
+  checks: String!
+  requiredChecks: [RequiredCheck!]!
+  """Open review threads."""
+  threads: Int!
+  """Each open thread's id and its first comment's author, among the first 100 threads; null for a record saved before they were kept."""
+  unresolvedThreads: [UnresolvedThread!]
+  mergedAt: String
+  """The merge commit, null until merged."""
+  mergeSha: String
+  """GitHub's last update of it, an ISO time."""
+  updatedAt: String
+  """Seconds since the epoch the store last read it."""
+  fetchedAt: Float!
+  """The paths it changes, null for a record saved before they were kept."""
+  files: [String!]
+}
+
 """One open task as a card draws it."""
 type Task {
   id: ID!
@@ -19,6 +62,8 @@ type Task {
   """Seconds since the epoch the task last moved."""
   movedAt: Float!
   description: String!
+  """The pull requests the task cites, as the PR store holds them."""
+  prs: [PullRequest!]!
   """The verdict on each column the task may move to, judged by the board's guards now."""
   moves: [Move!]!
   """
@@ -205,6 +250,8 @@ type Query {
   workflow is tied to `event`.
   """
   occurrences(event: String!, before: Float, limit: Int = 20): OccurrencePage
+  """One pull request the PR store holds, whatever task cites it, or null when it holds none."""
+  pull(repo: String!, number: Int!): PullRequest
 }
 
 type Subscription {

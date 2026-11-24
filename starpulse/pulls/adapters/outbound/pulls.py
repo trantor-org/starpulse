@@ -1,4 +1,4 @@
-"""The pull requests StarPulse keeps in its own store, projected from lifecycle events, and serves at `GET /api/pulls`."""
+"""The pull requests StarPulse keeps in its own store, projected from lifecycle events, and serves through the GraphQL `task.prs` and `pull` queries."""
 
 import threading
 from collections.abc import Callable, Iterable

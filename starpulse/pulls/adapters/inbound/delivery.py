@@ -6,8 +6,7 @@ keeps the store read-only. What the worker projects, and what `serve` must say b
 - the worker keeps its latest projection in the `PROJECTION` worker state; `serve` applies it to its feed (`Projected`)
   when the state's version moves, so snapshots keep drawing pull request state;
 - the worker announces the records of each save on `SAVED_STREAM` (`announce_saves`); `serve` holds records in memory
-  and takes those from the database again (`refresh_on_save`, at a request), so `/api/pulls` never answers from before a save
-  (the worker also stores the unfiltered answer with its gzip, which `serve` sends as it is);
+  and takes those from the database again (`refresh_on_save`, at a request), so a pull request read never answers from before a save;
 - the actor's `/metrics` text is kept in the `METRICS` worker state for `serve` to relay.
 
 Nothing here beats: a stalled worker shows in the sweeper's `readers` kind, an exit in the supervisor.
