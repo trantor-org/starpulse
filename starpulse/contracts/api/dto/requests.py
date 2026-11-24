@@ -317,6 +317,22 @@ class MachineListRequest(_Request):
     """`POST /api/machines`: list the machines the board draws. It takes no field."""
 
 
+class MachineCreateRequest(_Request):
+    """`PUT /api/machines`: create a machine from `definition`, a machine document, when no active machine has its name."""
+
+    definition: dict[str, Any]
+
+
+class MachinePutRequest(_Request):
+    """`PUT /api/machines/{name}`: activate `definition`, a machine document named `name`, over the version `base` (the
+    `hash` of the machine detail the caller read). `policy`, the table rows of the whole board policy, is written and
+    activated with it."""
+
+    definition: dict[str, Any]
+    base: NonBlank
+    policy: dict[str, Any] | None = None
+
+
 class MilestonePutRequest(_Request):
     """`PUT /api/milestones/{id}`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` named, if the milestone
     still reads `base`, the `revision` of the record the caller read."""

@@ -34,8 +34,10 @@ from starpulse.contracts.api.dto.requests import (
     DocListRequest,
     DocPutRequest,
     EditRequest,
-    MilestoneCreateRequest,
+    MachineCreateRequest,
     MachineListRequest,
+    MachinePutRequest,
+    MilestoneCreateRequest,
     MilestoneListRequest,
     MilestonePutRequest,
     MissRequest,
@@ -65,6 +67,8 @@ from starpulse.contracts.api.dto.results import (
     DocEdited,
     Edited,
     Judged,
+    MachineRetired,
+    MachineWritten,
     MilestoneArchived,
     MilestoneCreated,
     MilestoneEdited,
@@ -159,7 +163,9 @@ class ApiContract(_Api):
         | ReviewRequest
         | CreateRequest
         | MilestoneCreateRequest
+        | MachineCreateRequest
         | MachineListRequest
+        | MachinePutRequest
         | MilestoneListRequest
         | MilestonePutRequest
         | DocCreateRequest
@@ -187,6 +193,8 @@ class ApiContract(_Api):
         | Reviewed
         | Created
         | CreatedEach
+        | MachineWritten
+        | MachineRetired
         | MilestoneCreated
         | MilestoneEdited
         | MilestoneArchived

@@ -9,6 +9,7 @@ from starpulse.contracts.reads import SLOW_READ_S
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.contracts.analytics import Analytics
+    from starpulse.event_log.machine_store import MachineStore
     from starpulse.harness_telemetry.model.harnesses import Harnesses
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
@@ -56,6 +57,8 @@ class Services:
     take_over: Callable[[str], bool] | None = None
     #: Each lane's tools, typed exit tools and bound skill by lane name, from the board policy.
     lanes: Callable[[], dict[str, Any]] | None = None
+    #: The machines the store holds, which the machine write routes change; None refuses them.
+    machines: MachineStore | None = None
     slow_read_s: float = SLOW_READ_S
     actor_metrics: Callable[[], str] | None = None
     #: Each configured view's stored GraphQL document by view name.

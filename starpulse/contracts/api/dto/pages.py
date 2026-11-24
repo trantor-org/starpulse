@@ -64,7 +64,8 @@ class Machines(_Api):
 
 class MachineDetail(_Api):
     """`GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with
-    (empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only."""
+    (empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only; `hash` is the
+    version the store runs it under, the `base` of a write, and absent when the store holds none."""
 
     name: str
     type: str | None
@@ -73,6 +74,7 @@ class MachineDetail(_Api):
     submachines: list[Submachine]
     launches: dict[str, Launch]
     lanes: dict[str, LaneSurface] | None = None
+    hash: str | None = None
 
 
 class LaneStep(_Api):

@@ -3358,9 +3358,35 @@
       "title": "Machine",
       "type": "object"
     },
-    "MachineDetail": {
-      "description": "`GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with\n(empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only.",
+    "MachineCreateRequest": {
+      "additionalProperties": false,
+      "description": "`PUT /api/machines`: create a machine from `definition`, a machine document, when no active machine has its name.",
       "properties": {
+        "definition": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "required": [
+        "definition"
+      ],
+      "title": "MachineCreateRequest",
+      "type": "object"
+    },
+    "MachineDetail": {
+      "description": "`GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with\n(empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only; `hash` is the\nversion the store runs it under, the `base` of a write, and absent when the store holds none.",
+      "properties": {
+        "hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "lanes": {
           "anyOf": [
             {
@@ -3573,6 +3599,49 @@
       "title": "MachineListed",
       "type": "object"
     },
+    "MachinePutRequest": {
+      "additionalProperties": false,
+      "description": "`PUT /api/machines/{name}`: activate `definition`, a machine document named `name`, over the version `base` (the\n`hash` of the machine detail the caller read). `policy`, the table rows of the whole board policy, is written and\nactivated with it.",
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "definition": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "definition",
+        "base"
+      ],
+      "title": "MachinePutRequest",
+      "type": "object"
+    },
+    "MachineRetired": {
+      "properties": {
+        "machine": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine"
+      ],
+      "title": "MachineRetired",
+      "type": "object"
+    },
     "MachineState": {
       "properties": {
         "final": {
@@ -3643,6 +3712,23 @@
         "entries"
       ],
       "title": "MachineStrip",
+      "type": "object"
+    },
+    "MachineWritten": {
+      "description": "`PUT /api/machines` and `PUT /api/machines/{name}`: the machine and the `hash` of the version now active.",
+      "properties": {
+        "hash": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "hash"
+      ],
+      "title": "MachineWritten",
       "type": "object"
     },
     "Machines": {
@@ -8600,6 +8686,12 @@
             "$ref": "#/$defs/CreatedEach"
           },
           {
+            "$ref": "#/$defs/MachineWritten"
+          },
+          {
+            "$ref": "#/$defs/MachineRetired"
+          },
+          {
             "$ref": "#/$defs/MilestoneCreated"
           },
           {
@@ -8779,7 +8871,13 @@
             "$ref": "#/$defs/MilestoneCreateRequest"
           },
           {
+            "$ref": "#/$defs/MachineCreateRequest"
+          },
+          {
             "$ref": "#/$defs/MachineListRequest"
+          },
+          {
+            "$ref": "#/$defs/MachinePutRequest"
           },
           {
             "$ref": "#/$defs/MilestoneListRequest"

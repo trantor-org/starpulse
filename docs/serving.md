@@ -476,11 +476,13 @@ included), and one active hash per machine in `starpulse_machine_active`. Nothin
   new version lacks is refused too.
 - Archived Tasks count as live. The live board is still file-based, so only the event-sourced Task streams are remapped.
 
-`sync_definitions` (`starpulse/runtime/machine_sync.py`) activates the Board's `[board] machine` file against the
-live Tasks and each file in `.starpulse/machines/` (the owners' definitions directory). `serve` runs it at start, once the
+`sync_definitions` (`starpulse/runtime/machine_sync.py`) imports the Board's `[board] machine` file against the
+live Tasks and each file in `.starpulse/machines/` (the owners' definitions directory), but only for a machine the store
+has never held a version of: once it has one (retired or not), the store is the source and the file never overwrites it,
+so a machine written through `PUT /api/machines/{name}` survives a restart. To change a stored machine, `PUT` it over the `hash` that `GET /api/machines/{name}` reports; editing its file changes nothing. `serve` runs it at start, once the
 port is bound, in a child process (`python -m starpulse.runtime.machine_sync`, exit 3 on a refusal) so the
 server itself never loads the database stack; a refusal exits `serve` 1. A Board machine that strands live Tasks
-(`StrandedTasks`, exit 4) is the exception at start: the other definition files are still synced, `serve` logs a
+(`StrandedTasks`, exit 4), possible only on its first import, is the exception at start: the other definition files are still synced, `serve` logs a
 warning naming the States and Task ids, and it starts on the version that stays active. It runs again before every reload (`starpulse reload`, `POST /reload`): a refused reload changes
 nothing and the running workers stay on the active version.
 
