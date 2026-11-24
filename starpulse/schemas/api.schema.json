@@ -429,84 +429,6 @@
       "title": "ApiError",
       "type": "object"
     },
-    "ArchiveRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/archive`: archive `task`, or each of `tasks` in one call, recording `reason` when it is not blank.",
-      "properties": {
-        "actor": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "reason": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "session": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "tasks": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "minItems": 1,
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "title": "ArchiveRequest",
-      "type": "object"
-    },
     "Archived": {
       "properties": {
         "task": {
@@ -517,29 +439,6 @@
         "task"
       ],
       "title": "Archived",
-      "type": "object"
-    },
-    "ArchivedEach": {
-      "description": "A batch archive's answer: the tasks it archived, and each refused task with why.",
-      "properties": {
-        "archived": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "refused": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      },
-      "required": [
-        "archived",
-        "refused"
-      ],
-      "title": "ArchivedEach",
       "type": "object"
     },
     "Bottleneck": {
@@ -819,7 +718,7 @@
     },
     "CreateRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped\n`created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.",
+      "description": "`PUT /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped\n`created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.",
       "properties": {
         "acceptanceCriteria": {
           "anyOf": [
@@ -2407,92 +2306,6 @@
         "more"
       ],
       "title": "DonePage",
-      "type": "object"
-    },
-    "EditRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/edit`: change fields of `task`; `base` holds the value each changed field had when the page read it.",
-      "properties": {
-        "actor": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "base": {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        "breakGlass": {
-          "default": false,
-          "type": "boolean"
-        },
-        "changes": {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        "comment": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "request_key": {
-          "anyOf": [
-            {
-              "maxLength": 128,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The client's key for this send: an edit sent again with it answers the first send's answer."
-        },
-        "session": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "base",
-        "changes"
-      ],
-      "title": "EditRequest",
       "type": "object"
     },
     "Edited": {
@@ -5950,57 +5763,6 @@
       "title": "RecentRun",
       "type": "object"
     },
-    "ReopenRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/reopen`: return the Done task `task`, completed or not, to In Progress with `reason` as its comment.",
-      "properties": {
-        "actor": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "reason": {
-          "type": "string"
-        },
-        "session": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "reason"
-      ],
-      "title": "ReopenRequest",
-      "type": "object"
-    },
     "Reopened": {
       "properties": {
         "task": {
@@ -6092,53 +5854,6 @@
         "at"
       ],
       "title": "RestartingEvent",
-      "type": "object"
-    },
-    "RestoreRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged; the writer names who did.",
-      "properties": {
-        "actor": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "session": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task"
-      ],
-      "title": "RestoreRequest",
       "type": "object"
     },
     "Restored": {
@@ -8171,20 +7886,6 @@
       "title": "Submachine",
       "type": "object"
     },
-    "TakeOverRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/take-over`: flip the unattended task `task` to interactive; its workflow types nothing more.",
-      "properties": {
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task"
-      ],
-      "title": "TakeOverRequest",
-      "type": "object"
-    },
     "TakenOver": {
       "properties": {
         "task": {
@@ -9039,9 +8740,6 @@
             "$ref": "#/$defs/Archived"
           },
           {
-            "$ref": "#/$defs/ArchivedEach"
-          },
-          {
             "$ref": "#/$defs/Judged"
           },
           {
@@ -9212,34 +8910,19 @@
             "$ref": "#/$defs/StartRequest"
           },
           {
-            "$ref": "#/$defs/EditRequest"
-          },
-          {
-            "$ref": "#/$defs/ArchiveRequest"
-          },
-          {
             "$ref": "#/$defs/VerdictRequest"
           },
           {
             "$ref": "#/$defs/MissRequest"
           },
           {
-            "$ref": "#/$defs/RestoreRequest"
-          },
-          {
             "$ref": "#/$defs/RetireRequest"
-          },
-          {
-            "$ref": "#/$defs/TakeOverRequest"
           },
           {
             "$ref": "#/$defs/RetiredImportRequest"
           },
           {
             "$ref": "#/$defs/CompleteRequest"
-          },
-          {
-            "$ref": "#/$defs/ReopenRequest"
           },
           {
             "$ref": "#/$defs/DispatchRequest"

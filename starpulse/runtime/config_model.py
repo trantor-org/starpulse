@@ -544,8 +544,8 @@ class ConfigFile(_Table):
         default=None,
         min_length=1,
         description=(
-            'The command `POST /api/take-over` runs, as an argv: StarPulse appends the task id (`{"task": '
-            "\"TASK-7\"}` in the body) and the command asks the task's workflow engine to flip that task's workflow "
+            "The command `PUT /api/tasks/{id}` with `interactive: true` runs, as an argv: StarPulse appends the task id "
+            "and the command asks the task's workflow engine to flip that task's workflow "
             "to interactive, so it types nothing more into the task's session. Exit 0: sent (200). Exit 1: the "
             "task has no running workflow (409). Any other exit: an error, with the command's stderr. 404 when this "
             "is unset. The command is the only place a workflow engine appears."

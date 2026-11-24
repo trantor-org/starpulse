@@ -27,14 +27,12 @@ from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
-    ArchiveRequest,
     CompleteRequest,
     CreateRequest,
     DispatchRequest,
     DocCreateRequest,
     DocListRequest,
     DocPutRequest,
-    EditRequest,
     MachineCreateRequest,
     MachineListRequest,
     MachinePutRequest,
@@ -44,13 +42,10 @@ from starpulse.contracts.api.dto.requests import (
     MissRequest,
     MoveRequest,
     ParkRequest,
-    ReopenRequest,
-    RestoreRequest,
     RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
     StartRequest,
-    TakeOverRequest,
     TaskPutRequest,
     VerdictRequest,
     WindowRequest,
@@ -58,7 +53,6 @@ from starpulse.contracts.api.dto.requests import (
 from starpulse.contracts.api.dto.results import (
     Accepted,
     Archived,
-    ArchivedEach,
     Completed,
     Created,
     CreatedEach,
@@ -144,16 +138,11 @@ class ApiContract(_Api):
     requests: list[
         MoveRequest
         | StartRequest
-        | EditRequest
-        | ArchiveRequest
         | VerdictRequest
         | MissRequest
-        | RestoreRequest
         | RetireRequest
-        | TakeOverRequest
         | RetiredImportRequest
         | CompleteRequest
-        | ReopenRequest
         | DispatchRequest
         | ParkRequest
         | ReviewRequest
@@ -177,7 +166,6 @@ class ApiContract(_Api):
         | MovedEach
         | Edited
         | Archived
-        | ArchivedEach
         | Judged
         | Restored
         | Retired

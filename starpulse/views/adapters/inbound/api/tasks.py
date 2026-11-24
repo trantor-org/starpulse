@@ -7,9 +7,8 @@
   `fields=dependencies`, unpaged.
 - `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), restores
   (`archived: false`) or takes over (`interactive: true`); `DELETE /api/tasks/{id}` archives: the task writes.
-- `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `miss`, `restore`, `take-over`, `retire`,
-  `retired/import`, `dispatch`, `park`, `review`, `complete`, `reopen` and `tasks`: a task's writes by verb, each over
-  the seams it needs.
+- `POST /api/move`, `start`, `verdict`, `miss`, `retire`, `retired/import`, `dispatch`, `park`, `review` and
+  `complete`: a task's writes by verb, each over the seams it needs.
 """
 
 import asyncio
@@ -36,21 +35,16 @@ from starpulse.views.application.commands.moves import (
     start_task,
 )
 from starpulse.views.application.commands.tasks import (
-    archive_task,
     complete_task,
     create_task,
     delete_task,
-    edit_task,
     import_retired,
     record_miss,
     record_verdict,
-    reopen_task,
-    restore_task,
     retire_task,
     retired_list,
     retired_page,
     put_task,
-    take_over_task,
     task_record,
 )
 from starpulse.views.application.queries.responses import cited_pulls
@@ -131,7 +125,7 @@ def routes(api: Api) -> list[ApiRoute]:
     feed, board, services = api.feed, api.board, api.services
     writer, assign = board.writer, board.assign
     read, edit, archive, create = board.read, board.edit, board.archive, board.create
-    restore, complete, reopen = board.restore, board.complete, board.reopen
+    complete = board.complete
 
     def landed(task: str) -> bool:
         _, body = _stored_record(api, task)
@@ -158,27 +152,23 @@ def routes(api: Api) -> list[ApiRoute]:
             lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
             "start",
         ),
-        "/edit": (lambda client, raw: edit_task(client, raw, feed, read, edit, started=started), "edit"),
-        "/archive": (lambda client, raw: archive_task(client, raw, feed, archive, edit), "archive"),
         "/verdict": (lambda client, raw: record_verdict(client, raw, feed, read, edit), "verdict"),
         "/miss": (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
-        "/restore": (lambda client, raw: restore_task(client, raw, feed, restore), "restore"),
-        "/take-over": (lambda client, raw: take_over_task(client, raw, services.take_over, feed), "take_over"),
         "/retire": (lambda client, raw: retire_task(client, raw, board), "retire"),
         "/retired/import": (lambda client, raw: import_retired(client, raw, board), "retired_import"),
         "/dispatch": (lambda client, raw: dispatch_task(client, raw, feed, services.dispatch), "dispatch"),
         "/park": (lambda client, raw: park_task(client, raw, feed, read, edit), "park"),
         "/review": (lambda client, raw: review_task(client, raw, feed, read, edit), "review"),
         "/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
-        "/reopen": (lambda client, raw: reopen_task(client, raw, feed, reopen, landed), "reopen"),
-        "/tasks": (lambda client, raw: create_task(client, raw, create, feed), "create"),
     }
     return [
         ReadRoute("/task/{id:path}", task, timed),
         ReadRoute("/task-records", task_records, params=frozenset({"ids"})),
         ReadRoute("/retired", retired, params=frozenset({"before", "fields", "limit", "milestone", "task"})),
         *(WriteRoute(path, ("POST",), guarded(kind, whole_body(handler))) for path, (handler, kind) in writes.items()),
-        WriteRoute("/tasks", ("PUT",), guarded("create", whole_body(writes["/tasks"][0]))),
+        WriteRoute(
+            "/tasks", ("PUT",), guarded("create", whole_body(lambda client, raw: create_task(client, raw, create, feed)))
+        ),
         WriteRoute(
             "/tasks/{id:path}",
             ("PUT",),

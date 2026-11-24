@@ -196,7 +196,7 @@ class Config:
     github_token_env: str | None = None
     """The environment variable whose value `serve` exports as `GITHUB_TOKEN` and `GH_TOKEN` before any worker starts; unset, both are left as they were."""
     take_over_command: tuple[str, ...] | None = None
-    """The argv `POST /api/take-over` runs with the task id appended (exit 0 sent, 1 no workflow); none: the route answers 404."""
+    """The argv `PUT /api/tasks/{id}` with `interactive: true` runs with the task id appended (exit 0 sent, 1 no workflow); none: the route answers 404."""
     webhook_command: tuple[str, ...] | None = None
     """The argv `POST /intake/grafana` runs with the request body on stdin; none: the route answers 404."""
     webhook_token_env: str | None = None

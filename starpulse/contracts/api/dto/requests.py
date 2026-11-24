@@ -93,7 +93,7 @@ class StartRequest(_Request):
 
 
 class EditRequest(_Writer):
-    """`POST /api/edit`: change fields of `task`; `base` holds the value each changed field had when the page read it."""
+    """An edit: change fields of the task; `base` holds the value each changed field had when the page read it."""
 
     task: str
     base: dict[str, Any]
@@ -137,39 +137,6 @@ class TaskDeleteRequest(_Writer):
     """`DELETE /api/tasks/{id}`: archive the task, recording `reason` when it is not blank; the body is optional."""
 
     reason: str | None = None
-
-
-class ArchiveRequest(_Writer):
-    """`POST /api/archive`: archive `task`, or each of `tasks` in one call, recording `reason` when it is not blank."""
-
-    task: str | None = None
-    tasks: list[NonBlank] | None = Field(None, min_length=1)
-    reason: str | None = None
-
-    @model_validator(mode="after")
-    def _one_target(self) -> ArchiveRequest:
-        if (self.task is None) == (self.tasks is None):
-            raise ValueError("name exactly one of task and tasks")
-        return self
-
-
-class RestoreRequest(_Writer):
-    """`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged; the writer names who did."""
-
-    task: str
-
-
-class ReopenRequest(_Writer):
-    """`POST /api/reopen`: return the Done task `task`, completed or not, to In Progress with `reason` as its comment."""
-
-    task: str
-    reason: NonBlank
-
-
-class TakeOverRequest(_Request):
-    """`POST /api/take-over`: flip the unattended task `task` to interactive; its workflow types nothing more."""
-
-    task: str
 
 
 class RetireRequest(_Request):
@@ -288,7 +255,7 @@ class CreateSpec(_Request):
 
 
 class CreateRequest(_Writer, CreateSpec):
-    """`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
+    """`PUT /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
     `created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.
     """
 
@@ -302,7 +269,7 @@ class CreateRequest(_Writer, CreateSpec):
     )
 
     @model_validator(mode="after")
-    def _one_target(self) -> CreateRequest:
+    def _one_of_title_and_tasks(self) -> CreateRequest:
         if (self.title is None) == (self.tasks is None):
             raise ValueError("name exactly one of title and tasks")
         return self

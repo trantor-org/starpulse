@@ -24,17 +24,13 @@ from starpulse.board.model.seam import (
 from starpulse.contracts.api.dto.requests import (
     CREATE_LISTS,
     CREATE_TEXT,
-    ArchiveRequest,
     CompleteRequest,
     CreateRequest,
     CreateSpec,
     EditRequest,
     MissRequest,
-    ReopenRequest,
-    RestoreRequest,
     RetiredImportRequest,
     RetireRequest,
-    TakeOverRequest,
     TaskDeleteRequest,
     TaskPutRequest,
     VerdictRequest,
@@ -98,22 +94,10 @@ _APPEND_NOTES = "appendNotes"
 _PLAN_REASON = "planReason"
 
 
-@with_request(EditRequest, "Editing a task")
-def edit_task(
-    request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor, *, started: Callable[[str], bool]
-) -> tuple[int, dict[str, Any]]:
-    """Apply the edit `request` names to a task through `edit` in one write: the HTTP status and JSON body.
-
-    A `request_key` that an earlier send of the edit carried answers that send's answer and writes nothing, so a
-    client that timed out sends the same key again without appending its comment a second time.
-    """
-    return _REPLAYS.run(request.request_key, lambda: _edited(request, feed, read, edit, started=started))
-
-
 def _edited(
     request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor, *, started: Callable[[str], bool]
 ) -> tuple[int, dict[str, Any]]:
-    """One edit, as `edit_task` runs it.
+    """One edit, as `put_task` runs it.
 
     `base` holds the value each changed field had when the page read the task. The edit is refused 409 when any
     changed field's current value differs, naming those fields with their current values, so another writer's
@@ -170,35 +154,10 @@ def _edited(
     return 200, {"task": task, "changed": list(dict.fromkeys(changed))}
 
 
-@with_request(ArchiveRequest, "Archiving a task")
-def archive_task(
-    request: ArchiveRequest, feed: BoardFeed, archive: TaskArchiver, edit: TaskEditor
-) -> tuple[int, dict[str, Any]]:
-    """Archive the task `request` names, or each of its `tasks`, from whichever column it is in, through `archive`: the
-    HTTP status and JSON body. A batch answers 200 with the tasks archived and each refused one's error, so one refusal
-    leaves the others archived.
-
-    A non-empty `reason` is the writer's to record on the task. The card leaves its column when the board adapter
-    next reports the task archived, not on this answer. An agent's archive of an open task is a request: it records an
-    `Archive requested:` comment through `edit` and the task actor archives on it.
-    """
-    reason, who = request.reason or "", who_of(request)
-    if request.task is not None:
-        return _archive_one(feed, archive, edit, request.task, reason, who)
-    archived, refused = [], {}
-    for task in request.tasks or ():
-        status, body = _archive_one(feed, archive, edit, task, reason, who)
-        if status == 200:
-            archived.append(task)
-        else:
-            refused[task] = body["error"]
-    return 200, {"archived": archived, "refused": refused}
-
-
 def _archive_one(
     feed: BoardFeed, archive: TaskArchiver, edit: TaskEditor, task: str, reason: str, who: Who
 ) -> tuple[int, dict[str, Any]]:
-    """Archive one `task` for `archive_task`: the HTTP status and JSON body a single-task request answers."""
+    """Archive one `task` for `delete_task`: the HTTP status and JSON body it answers."""
     if (agent := held_task(feed, task)) is None:
         if feed.is_archived(task):
             return 200, {"task": task}  # a retry of a write that applied
@@ -327,34 +286,11 @@ def complete_task(
     return 200, {"task": task}
 
 
-@with_request(RestoreRequest, "Restoring a task")
-def restore_task(request: RestoreRequest, feed: BoardFeed, restore: TaskRestorer) -> tuple[int, dict[str, Any]]:
-    """Return the archived task `request` names to the board's tasks through `restore`: the HTTP status and JSON body.
-
-    The restore places the task in a lane, so its writer is noted on the feed as any other move's is. The writer owns
-    every other refusal (no archived file, the number already open, the name taken), which answers 409 with its reason.
-    """
-    return _restored(request.task, who_of(request), feed, restore)
-
-
 def _restored(task: str, who: Who, feed: BoardFeed, restore: TaskRestorer) -> tuple[int, dict[str, Any]]:
     written = record_written(feed, task, who, lambda: restore(task))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
-
-
-@with_request(ReopenRequest, "Reopening a task")
-def reopen_task(
-    request: ReopenRequest, feed: BoardFeed, reopen: TaskReopener, landed: Callable[[str], bool]
-) -> tuple[int, dict[str, Any]]:
-    """Return the Done task `request` names to In Progress through `reopen`: the HTTP status and JSON body.
-
-    A completed task reads as archived, so the feed holds no row `held_task` would pass; the writer owns every refusal
-    (not Done, the name taken) and `landed` says whether a merged pull request cites the task, which is refused too:
-    its work shipped, so a reopen would deliver it twice. Each refusal answers 409 with its reason. A session's reopen is the task actor's, as a claim's.
-    """
-    return _reopened(request.task, request.reason, who_of(request), feed, reopen, landed)
 
 
 def _reopened(
@@ -367,18 +303,6 @@ def _reopened(
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
-
-
-@with_request(TakeOverRequest, "Taking a task over")
-def take_over_task(
-    request: TakeOverRequest, take_over: Callable[[str], bool] | None, feed: BoardFeed
-) -> tuple[int, dict[str, Any]]:
-    """Flip the unattended task `request` names to interactive through `take_over`: the HTTP status and JSON body.
-
-    The Update carries no payload; the workflow only stops typing into the task's pane. A task with no workflow (an
-    attended one) answers 409. An accepted take-over shows as interactive in the feed's snapshots.
-    """
-    return _taken_over(request.task, take_over, feed)
 
 
 def _taken_over(task: str, take_over: Callable[[str], bool] | None, feed: BoardFeed) -> tuple[int, dict[str, Any]]:
@@ -529,8 +453,8 @@ def put_task(
 ) -> tuple[int, dict[str, Any]]:
     """Write `task` as `PUT /api/tasks/{id}` says: the HTTP status and JSON body of the verb the body names.
 
-    `reopen` reopens the Done task, `archived: false` restores it and `interactive: true` takes it over, each as the
-    verb route of that name does; any other body is an edit over its `base`, answered as `edit_task` answers it.
+    `reopen` reopens the Done task, `archived: false` restores it and `interactive: true` takes it over; any other body
+    is an edit over its `base`.
     """
     who = who_of(request)
     if request.reopen is not None:
@@ -557,5 +481,5 @@ def put_task(
 def delete_task(
     request: TaskDeleteRequest, task: str, feed: BoardFeed, board: Board
 ) -> tuple[int, dict[str, Any]]:
-    """Archive `task` as `DELETE /api/tasks/{id}` says, as `archive_task` archives one task."""
+    """Archive `task` as `DELETE /api/tasks/{id}` says."""
     return _archive_one(feed, board.archive, board.edit, task, request.reason or "", who_of(request))

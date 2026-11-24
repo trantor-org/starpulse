@@ -14,7 +14,7 @@ internal and can change in any release.
   which returns
   `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base;
   `task profile TASK PROFILE`, which returns `{task, profile, changed}`; `task archive TASK... [--reason]`, which archives
-  every key in one `POST /api/archive` and returns `{archived}`, or is refused (exit 1) with `{archived, refused}`
+  every key in one `DELETE /api/tasks/{id}` each and returns `{archived}`, or is refused (exit 1) with `{archived, refused}`
   when any key was refused, the others still archived (an agent's archive of an open task is a request the task actor carries out); `task verdict TASK CHECK pass|miss`, which returns `{task, check, verdict}`, and `task miss TASK CHECK --title`,
   which returns `{task, check, verdict, fix}`, each refused (exit 1) for a check that is undeclared or already judged; `task restore TASK`, which returns `{task}` and is refused (exit 1) for a task that is open, not archived or
   whose file name is taken; `task retire TASK`, which returns `{task}` and is refused (exit 1) for a task that is open;
@@ -140,7 +140,7 @@ A package test pins this list and each module's names, so adding or removing one
 A task carries an optional `type`, a free string the board gives no meaning: `starpulse` ships no built-in names.
 `[board] types` in the config file (the native board's `types` setting) is an optional list of the names it may take.
 With the list declared, a write that sets a type outside it is refused with the list in the reason, whichever writer
-makes it: `starpulse task create` and `task edit`, the page, `/api/tasks` and `/api/edit`; a task whose type is
+makes it: `starpulse task create` and `task edit`, the page, `PUT /api/tasks` and `PUT /api/tasks/{id}`; a task whose type is
 unchanged is not refused, so narrowing the list never blocks an edit to a task already of another type. With no list,
 any non-empty string lands. `starpulse board --type NAME` keeps only the tasks of that type, and each task the board
 reports carries its `type` (empty when it has none).
@@ -166,7 +166,7 @@ naming `guards[N]`.
 
 Release note: guards were `[[board.rules]]`. A config that still has that table is refused at startup with an error naming
 `[[board.guards]]`; rename the table, nothing else changes. Every entry path is judged by the same enforcement point: the
-config file's table, the task write verbs, the page, and `/api/tasks` and `/api/edit`.
+config file's table, the task write verbs, the page, and `PUT /api/tasks` and `PUT /api/tasks/{id}`.
 
 A rule is a table of:
 
@@ -212,7 +212,7 @@ score passes. Each board task also carries the rules' standing verdict as `reada
 `task show` record: empty when its description reads well (or the task is settled), else the first broken rule with
 its line, so a page can badge a description written before the rules without refusing it until its next edit.
 
-A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/edit`, `/api/archive`, `/api/verdict`, `/api/miss`, `PUT /api/tasks` and `PUT /api/tasks/{id}` and `DELETE /api/tasks/{id}`
+A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/verdict`, `/api/miss`, `PUT /api/tasks` and `PUT /api/tasks/{id}` and `DELETE /api/tasks/{id}`
 take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). Every write parses its body through the request model of its route, so a body that is not a JSON object, names a key the route does not take or holds a field of the wrong type is a 400 `invalid request: <field>: <reason>` for its first fault, a key the route does not take before any other. The page names
 `operator`; `starpulse` verbs name `agent`, their session and their harness. A write naming no actor is `agent` when it
 names a session and `anonymous` when it names none, never `operator`, so an unnamed write is not judged as the
