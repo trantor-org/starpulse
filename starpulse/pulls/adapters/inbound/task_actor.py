@@ -209,16 +209,16 @@ def _lint_record(agent: Mapping[str, Any]) -> tuple[Any, ...]:
     return (*(agent.get(field) for field in _LINTED), tuple(agent["labels"]), tuple(agent.get("dependencies", ())))
 
 
-def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], bool]:
+def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], str]:
     """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests, checked criteria,
-    and whether its final summary is recorded. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
+    and a digest of its final summary. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
     return (
         agent["state"],
         tuple(agent.get("dependencies", ())),
         tuple(agent.get("prs", ())),
         ticks,
-        bool((agent.get("final_summary") or "").strip()),
+        hashlib.sha1((agent.get("final_summary") or "").strip().encode(), usedforsecurity=False).hexdigest()[:8],
     )
 
 
@@ -1624,7 +1624,9 @@ class TaskActor:
             comment = f"Dispatched: {session} holds it."
             refusal = self._judged(name, changes, comment) if moving else Written(True, name)
             self._dispatching[name] = session
-            written = refusal if not refusal.ok else self._apply(name, changes, comment, again=lambda: self._redispatch(name, session))
+            written = refusal if not refusal.ok else self._apply(
+                name, changes, comment, again=lambda: self._redispatch(name, session), session=session
+            )
             if not (written.transient and name in self._lock_tries):
                 self._dispatching.pop(name, None)
         if not written.ok:
@@ -2177,13 +2179,19 @@ class TaskActor:
                 logger.exception("task actor: cannot derive %s on its holds", name)
 
     def _apply(
-        self, name: str, changes: Mapping[str, Any], comment: str, over: str = "", again: Callable[[], None] | None = None
+        self,
+        name: str,
+        changes: Mapping[str, Any],
+        comment: str,
+        over: str = "",
+        again: Callable[[], None] | None = None,
+        session: str = "",
     ) -> Written:
         # the board-files pass finds the lane recorded under the actor; no other task's write holds this one up
         with self._feed.recording_of(name):
             written = self._edit_retrying(name, changes, comment, over, again)
             if written.ok and written.lane:
-                self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, "", ""))
+                self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, session, ""))
         return written
 
     def _judged(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
