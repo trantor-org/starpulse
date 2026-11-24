@@ -22,8 +22,6 @@ from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
 from starpulse.machine_engine.model.transitions import lane_id
 
 WRITER = "native-board"
-#: The actor of the Events `starpulse migrate`'s `files_win` appends to bring a History to its file.
-FILES_WIN = "starpulse/files-win"
 #: The writer of Events an editor import appends: the operator's break-glass edit, not a command of the board (D5).
 BREAK_GLASS = "break-glass"
 _break_glass: ContextVar[bool] = ContextVar("break_glass", default=False)
@@ -318,22 +316,6 @@ class TaskHistory:
             events.append(self._new("Archived", {}, OPERATOR))
         store.append(KIND, task, 0, events)
         return True
-
-    def brought_to(self, task: str, held: Record, record: Record) -> bool:
-        """Append the Events that take the `held` record a History replays to `record`, the file's; whether any were needed."""
-        store = self._store
-        events = _events(held, record, "")
-        if store is None or not events:
-            return False
-        store.append(
-            KIND, task, store.head(KIND, task), [self._new(kind, payload, FILES_WIN) for kind, payload in events]
-        )
-        return True
-
-    def edited(self, task: str, payload: dict[str, Any]) -> None:
-        """Append one `FieldsEdited` of `payload` (its `changes` and `meta`) to `task`'s History, by the operator."""
-        if self._store is not None:
-            self._store.append(KIND, task, self._store.head(KIND, task), [self._new("FieldsEdited", payload, OPERATOR)])
 
     def settle(self, task: str, archived: bool) -> bool:
         """Append an `Archived`, or a `Rehydrated`, to `task`'s History when it replays the other way; whether it did."""

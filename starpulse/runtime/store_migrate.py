@@ -4,17 +4,12 @@ Opening a store runs none of this (`HistoryStore` refuses one the chain has not 
 migrated here before `serve` opens it. Besides the schema and the summaries it moves the operator state once kept in
 files (the scheduler switch, the history window, the run ledger) into the store, each once: the file is logged as
 imported and renamed with `RETIRED_SUFFIX`, so a second run finds the schema at the chain's head and nothing to import.
-With `[board] source_labels` set it also appends, to each task's History, the move of its one label matching that regex to
-its `source` (`label_sources`, which first imports a task without History), and a second run finds nothing left to move.
-Each task's History is archived exactly when its file sits in `completed/` or `archive/tasks/` (`settle_archived`), the file winning.
-With `[board] files_win` set it also appends, to each task's History that replays differently from its file, the Events that bring it to the file (`files_win`), and a second run finds nothing left to bring. The steps share one parse of the task files and one replay of each History, so the run reads each once, not once per step. A run ends by storing, under `PARITY_LEDGER`, each task file's and retired row's digest and its History version; the next run parses and replays only the tasks whose digest or version moved or that the ledger lacks (and all of them when a step's source or the `files_win` switch changed), so a run with nothing to change reads no History. The comment reconcile (`comment_parity`) runs once, on the migrate of the live store, and not under a rehearsal's copy. It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
+It prints one JSON line: `store` (the database URL, password hidden). The exit code is 2 for a flag the command does
 not allow, a config that cannot be read, or a board the config does not assemble.
 """
 
 import argparse
 import glob
-import hashlib
-import inspect
 import json
 import logging
 from collections.abc import Mapping, Sequence
@@ -35,8 +30,6 @@ logger = logging.getLogger(__name__)
 RETIRED_SUFFIX = ".imported"
 #: The setting that records the old inbox file carried into the store, so a second run copies nothing.
 INBOX_CARRIED = "github_inbox_carried"
-#: The setting holding, for each task the parity steps checked, the digest of its file and its History version then.
-PARITY_LEDGER = "migrate_parity_ledger"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -72,51 +65,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         fold=True,
         inbox_files=config.github.inbox_files if config.github else None,
     )
-    from starpulse.board.adapters.comment_parity import reconcile_comments  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.board.adapters.files_win import bring_to_files  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.board.adapters.label_sources import move_key_labels  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.board.adapters.meta_backfill import backfill_meta  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.board.adapters.settle_archived import settle_archived  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.board.adapters.task_history import TaskHistory  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.board.adapters.native import _record_of  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.board.adapters.task_parity import Replays, align_claims, pending  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.board.model.markdown import render  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.event_log.readmodel.fold import replay  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.event_log.event_log import EventLog, store_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.runtime.config import rehearsing  # noqa: PLC0415 - import cost, paid only by a run that migrates
-
-    root = base / str(config.board.get("path", "backlog"))
-    engine = store_engine(url)
-    try:
-        # A task whose file and History version match the last run's ledger is skipped; the rest are parsed and replayed once for all the steps, and a step that writes drops what it wrote to.
-        log = EventLog(url, engine=engine)
-        stamp = _stamp(files_win=bool(config.board.get("files_win")), steps=(settle_archived, align_claims, backfill_meta, bring_to_files, reconcile_comments, TaskHistory, replay, render, _record_of))
-        kept = log.setting(PARITY_LEDGER) or {}
-        checked = pending(root, engine, kept.get("tasks", {}) if kept.get("stamp") == stamp else {})
-        due, rows = checked, Replays(engine)
-        settle_archived(root, engine, due.files, rows)
-        if (pattern := config.board.get("source_labels")) and move_key_labels(root, str(pattern), engine):
-            rows.drop()
-        align_claims(due.items, engine, rows)
-        backfill_meta(root, engine, due.items, rows)
-        if reconcile_comments(root, engine, rehearsing=rehearsing()):  # it rewrites files and appends to Histories
-            due = pending(root, engine, {})
-            rows.drop()
-        if config.board.get("files_win"):
-            brought = bring_to_files(due.items, engine, rows)
-            logger.info("migrate: brought %d task Histories to their files", brought)
-        log.set_setting(PARITY_LEDGER, {"stamp": stamp, "tasks": checked.ledger})  # what a step or the reconcile wrote moved its task's version, so that task is checked once more
-    finally:
-        engine.dispose()
     print(json.dumps({"store": make_url(url).render_as_string(hide_password=True)}))
     return 0
-
-
-def _stamp(*, files_win: bool, steps: Sequence[Any]) -> str:
-    """The digest of what the parity steps would do: the source of their modules and the config switch, so a changed step checks every task again."""
-    sources = {inspect.getsourcefile(step) for step in steps}
-    code = b"".join(Path(file).read_bytes() for file in sorted(sources) if file)
-    return hashlib.sha256(code + bytes([files_win])).hexdigest()
 
 
 def maintain(

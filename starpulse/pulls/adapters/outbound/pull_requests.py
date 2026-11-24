@@ -58,13 +58,18 @@ def own_prs(store: PullStore, agent: dict[str, Any]) -> list[str]:
 
 
 def uncited(store: PullStore, agent: dict[str, Any]) -> list[str]:
-    """The open pull requests whose branch or title names the task and that it does not cite."""
-    return [
-        url
-        for record in store.find(state="OPEN", bodies=False)
-        if agent["id"].lower() in _named_tasks(record)
-        and (url := f"https://github.com/{record['repo']}/pull/{record['number']}") not in agent["prs"]
+    """The open pull requests that name the task and that it does not cite: its id in the branch or title, or in the
+    body of one whose branch and title name no task (a body that names a task is a link, not a delivery by itself)."""
+    task_id = agent["id"].lower()
+    mention = re.compile(rf"(?<![\w-]){re.escape(task_id)}(?!\d)")
+    named = [record for record in store.find(state="OPEN", bodies=False) if task_id in _named_tasks(record)]
+    linked = [
+        record
+        for record in store.find(state="OPEN", body_contains=task_id)
+        if not _named_tasks(record) and mention.search(record["body"].lower())
     ]
+    urls = (f"https://github.com/{record['repo']}/pull/{record['number']}" for record in [*named, *linked])
+    return [url for url in urls if url not in agent["prs"]]
 
 
 def landed(store: PullStore, record: dict[str, Any]) -> bool:

@@ -107,8 +107,6 @@ _SETTINGS = {
     "entered_labels",
     "type",
     "path",
-    "source_labels",  # a regex: `starpulse migrate` moves a task's one fully matching label to its `source`, once
-    "files_win",  # a boolean: `starpulse migrate` brings each task's History to its file, once it differs; remove it once the files no longer lead
     "interval",  # retired: a config that still sets it loads, the setting does nothing
     "machine",
     "criteria",  # retired: a config that still sets it loads, the setting does nothing
