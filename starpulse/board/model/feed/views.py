@@ -4,7 +4,7 @@ import queue
 import time
 from typing import TYPE_CHECKING, Any
 
-from starpulse.machine_engine.model.machine_ties import derive, entries
+from starpulse.machine_engine.model.machine_ties import all_entries, derive, entry_inputs, within
 from starpulse.machine_engine.model.snapshot import declared
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -24,6 +24,8 @@ from starpulse.board.model.feed.shared import (
 
 
 class ViewMethods:
+    _entries: tuple[tuple, list[dict]] | None = None  # the machine entries of the inputs `machine_fields` last read
+
     def cold_page(self, before: float | None, limit: int) -> tuple[list[dict], bool]:
         """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
         older ones remain. The page ends after the last stub sharing its final timestamp, so the next page's
@@ -136,7 +138,11 @@ class ViewMethods:
 
     def machine_fields(self, flows: list[dict], derived: dict[str, dict], now: float) -> dict:
         """The snapshot's `machineStrip`: the last 24 hours before `now` of machine entries, counted over every machine."""
-        return {"machineStrip": {"entries": entries(flows, derived, now, LEDGER_WINDOW)}}
+        inputs = entry_inputs(flows, derived)
+        memo = self._entries
+        if memo is None or memo[0] != inputs:
+            self._entries = memo = inputs, all_entries(flows, derived)  # a local, as a build on another thread may store
+        return {"machineStrip": {"entries": within(memo[1], now, LEDGER_WINDOW)}}
 
     def _refresh_ledgers(self) -> None:
         """Rebuild the Ledger page requests read, and send it when it or its strip differs from the one last sent; the

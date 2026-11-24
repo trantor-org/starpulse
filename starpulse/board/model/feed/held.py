@@ -308,6 +308,8 @@ class HeldSnapshot:
         dependents = [other for other, agent in board.items() if task_id in agent.get("dependencies", ())]
         for drawn in (task_id, *dependents):
             agent, milestone = self._feed.drawn_task(drawn)
+            if agent is not None and agent == board.get(drawn):
+                agent = board[drawn]  # as it was: the encoding keeps the JSON of the object it has met
             returned = agent is not None and drawn not in board
             for held, value in ((board, agent), (self._cold, milestone)):
                 if value is None:
@@ -316,8 +318,12 @@ class HeldSnapshot:
                     held[drawn] = value
             if returned:
                 self._place_instances(drawn)
-        self._settled.pop(task_id, None)
-        self._settled |= self._feed.settled(task_id)
+        found = self._feed.settled(task_id)
+        if task_id not in found:
+            self._settled.pop(task_id, None)
+        for key, entry in found.items():
+            if self._settled.get(key) != entry:
+                self._settled[key] = entry
 
     def _place_instances(self, task_id: str) -> None:
         for name, _ in self._heads:

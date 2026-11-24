@@ -11,7 +11,7 @@ Its **parent** is the machine its declared tie enters it from, else the In Progr
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-__all__ = ["STUCK_S", "derive", "entries"]
+__all__ = ["STUCK_S", "all_entries", "derive", "entry_inputs", "within"]
 
 #: A task idle in a working state for longer than this (seconds) is stuck.
 STUCK_S = 7200
@@ -175,10 +175,26 @@ def _activity(machines: Mapping[str, Mapping[str, Any]], names: Sequence[str], n
     }
 
 
-def entries(
-    flows: Sequence[Mapping[str, Any]], derived: Mapping[str, Mapping[str, Any]], now: float, span: float
-) -> list[dict]:
-    """Every machine entry of the last `span` seconds, oldest first: a session starting in a machine other than the
+def _launching_dag(derived: Mapping[str, Any]) -> str | None:
+    return next((t["dag"] for t in derived["ties"] if t["kind"] == "dag"), None)
+
+
+def entry_inputs(flows: Sequence[Mapping[str, Any]], derived: Mapping[str, Mapping[str, Any]]) -> tuple:
+    """What `all_entries` reads of `flows` and `derived`: equal inputs give equal entries, whatever `now` is."""
+    shape = tuple(
+        (name, d["depth"], tuple(d["chain"][:1]), _launching_dag(d))
+        for name, d in derived.items()
+    )
+    return shape, tuple(agent for f in flows if f["name"] in derived for agent in f["agents"])
+
+
+def within(found: list[dict], now: float, span: float) -> list[dict]:
+    """The `found` entries of the last `span` seconds before `now`, oldest first."""
+    return [e for e in found if now - span <= e["at"] <= now]
+
+
+def all_entries(flows: Sequence[Mapping[str, Any]], derived: Mapping[str, Mapping[str, Any]]) -> list[dict]:
+    """Every machine entry, oldest first: a session starting in a machine other than the
     In Progress one, as `{at, machine, row, from, dag}`.
 
     `row` is the machine on the In Progress level it lands on, so an entry into a nested machine counts on the row
@@ -192,11 +208,9 @@ def entries(
     for name, f in machines.items():
         if name == ip:
             continue
-        dag = next((t["dag"] for t in derived[name]["ties"] if t["kind"] == "dag"), None)
+        dag = _launching_dag(derived[name])
         for agent in f["agents"]:
             at = _start(agent)
-            if not now - span <= at <= now:
-                continue
             origin = _entered_from(agent, name, sessions[agent["task"]], ip) if agent.get("task") else None
             found.append(
                 {

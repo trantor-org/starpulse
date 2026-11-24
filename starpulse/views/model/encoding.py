@@ -14,6 +14,7 @@ from starpulse.contracts.api.dto.cue import Pull
 from starpulse.contracts.api.dto.flow import Settled
 from starpulse.contracts.api.dto.task import RawTask
 from starpulse.contracts.api.registry import BODIES, EVENTS
+from starpulse.event_log.lane_events import done_lanes
 
 _ADAPTERS: dict[int, TypeAdapter[Any]] = {}
 
@@ -90,11 +91,19 @@ def _slim_task(task: dict[str, Any]) -> dict[str, Any]:
     return slim
 
 
-def _move_sets(tasks: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def _move_sets(tasks: Iterable[dict[str, Any]], held: _Held | None = None, kept: _Held | None = None) -> dict[str, dict[str, Any]]:
+    """The Board-column verdict sets of `tasks` by name, each task's name kept in `held` while the feed holds the same
+    task object, as it replaces a task it changes."""
+    held, kept = {} if held is None else held, {} if kept is None else kept
     sets = {}
     for task in tasks:
         if moves := task.get("moves"):
-            sets[_move_set_key(moves)] = moves
+            key = ("moves", id(task))
+            entry = held.get(key)
+            if entry is None or entry[0] is not task:
+                entry = (task, _move_set_key(moves))
+            kept[key] = entry
+            sets[entry[1]] = moves
     return sets
 
 
@@ -111,7 +120,8 @@ def recent_settled(data: dict[str, Any]) -> dict[str, Any]:
 
 def milestone_done(data: dict[str, Any]) -> dict[str, int]:
     """Each milestone's completed count: its settled Tasks plus the Done ones a read-model feed counted off the board."""
-    settled = Counter(e["milestone"] for e in data["settled"].values() if e["milestone"] and e["state"] == "completed")
+    done = done_lanes(data["roles"]["done"])
+    settled = Counter(e["milestone"] for e in data["settled"].values() if e["milestone"] and e["state"] in done)
     return dict(settled + Counter(data.get("milestone_done", {})))
 
 
@@ -189,9 +199,10 @@ def slim_snapshot(data: Any) -> Any:
 
 def encode_snapshot(data: Any, held: _Held) -> bytes:
     """`encode("snapshot", slim_snapshot(data))`, the one body the API serves, with the JSON of each board task and
-    machine agent kept in `held` between calls.
+    machine agent, and each task's move-set name, kept in `held` between calls.
 
-    `held` maps `id(object)` to the object and its JSON (an agent under `("machine", id)`, a flow's trail names under
+    `held` maps `id(object)` to the object and its JSON (an agent under `("machine", id)`, a move-set name under
+    `("moves", id)`, a flow's trail names under
     `("names", flow)`): the feed replaces a task, agent or settled entry it changes rather than editing it, so one met
     again encodes the same, and one no longer listed is forgotten. Those are most of the snapshot (the settled day's
     entries alone 3.8 of its 4.9 MB), so a build after one change validates and dumps only what changed and the rest of
@@ -209,7 +220,7 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
     ]
     drawn = {
         **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *bare]}),
-        "move_sets": _move_sets(flows[0]["agents"]),
+        "move_sets": _move_sets(flows[0]["agents"], held, kept),
     }
     recent, drawn["settled"] = drawn["settled"], {}
     settled = _dump_settled(recent, held, kept)
