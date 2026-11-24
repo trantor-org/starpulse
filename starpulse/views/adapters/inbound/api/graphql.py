@@ -1,24 +1,43 @@
-"""`POST /graphql`: the task list and task detail queries over the read model.
+"""`POST /graphql`: the task list and task detail queries over the read model, and the task subscription.
 
 The tracked SDL (`schemas/tasks.graphql`) is bound with Ariadne and run by `ariadne.graphql()` from this endpoint, not
 a mounted ASGI app. A resolver reads the feed on a request worker thread. The request-duration histogram carries the
 operation name when a view's stored document declares it, else `other`.
+
+A list answers with the stream position it was read at. A `taskChanges` subscription from a position is answered with an
+event stream (graphql-sse's distinct connections mode): one `next` event for each task change after it, the document's
+selection run on the change. A position the store no longer holds is answered with a 410 whose error code is `REREAD`.
 """
 
 import json
 import time
+from inspect import isawaitable
 from typing import Any
 
-from anyio import to_thread
+from anyio import from_thread, to_thread
 from ariadne import ObjectType, QueryType, graphql, make_executable_schema
-from graphql import GraphQLError, GraphQLResolveInfo
+from graphql import (
+    DocumentNode,
+    FieldNode,
+    FragmentDefinitionNode,
+    FragmentSpreadNode,
+    GraphQLError,
+    GraphQLResolveInfo,
+    OperationDefinitionNode,
+    OperationType,
+    execute,
+    get_operation_ast,
+    parse,
+    validate,
+)
+from graphql.execution import get_argument_values, get_variable_values
 from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.contracts import task_graphql
 from starpulse.contracts.adapters import Move
 from starpulse.machine_engine.model.transitions import lane_id
-from starpulse.views.adapters.inbound.api.answering import answer, seams
+from starpulse.views.adapters.inbound.api.answering import answer, on_worker, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import refused
 from starpulse.views.adapters.outbound import request_durations
@@ -49,9 +68,10 @@ async def _tasks(
     source: str | None = None,
     lane: str | None = None,
     milestone: str | None = None,
-) -> list[dict]:
+) -> dict:
+    position = info.context["api"].snapshots.position()  # before the read: a change after it is replayed, none is missed
     agents = await _worker(info, info.context["feed"].open_tasks)
-    return [
+    items = [
         agent
         for agent in agents
         if (filter is None or _holds(agent, filter))
@@ -59,6 +79,7 @@ async def _tasks(
         and (lane is None or agent["state"] == lane_id(lane))
         and (milestone is None or agent["milestone"] == milestone)
     ]
+    return {"position": position, "items": items}
 
 
 @query.field("task")
@@ -126,6 +147,61 @@ def _failed(request: Request, status: int, message: str) -> Response:
     return answer(request, encode("graphql", {"errors": [{"message": message}]}), status)
 
 
+def _subscription(payload: Any) -> tuple[DocumentNode, OperationDefinitionNode] | None:
+    """The document and the subscription it runs, when the request names one; anything else is the query path's."""
+    if not (isinstance(payload, dict) and isinstance(payload.get("query"), str)):
+        return None
+    try:
+        document = parse(payload["query"])
+    except GraphQLError:
+        return None
+    operation = get_operation_ast(document, payload.get("operationName"))
+    if operation is None or operation.operation is not OperationType.SUBSCRIPTION:
+        return None
+    return document, operation
+
+
+def _root_field(document: DocumentNode, selection: Any) -> FieldNode:
+    """The one field a subscription selects, behind any fragment spreads and inline fragments around it."""
+    while not isinstance(selection, FieldNode):
+        if isinstance(selection, FragmentSpreadNode):
+            selection = next(d for d in document.definitions if isinstance(d, FragmentDefinitionNode) and d.name.value == selection.name.value)
+        selection = selection.selection_set.selections[0]
+    return selection
+
+
+async def _render(document: DocumentNode, payload: dict, context: dict, change: dict) -> bytes:
+    """One `next` event's body: the document's selection run on `change`."""
+    result = execute(
+        SCHEMA,
+        document,
+        root_value={"taskChanges": change},
+        context_value=context,
+        variable_values=payload.get("variables"),
+        operation_name=payload.get("operationName"),
+    )
+    return encode("graphql", (await result if isawaitable(result) else result).formatted)
+
+
+async def _follow(
+    request: Request, payload: dict, found: tuple[DocumentNode, OperationDefinitionNode], context: dict
+) -> Response:
+    document, operation = found
+    errors = validate(SCHEMA, document)
+    variables = get_variable_values(SCHEMA, operation.variable_definitions or (), payload.get("variables") or {})
+    if isinstance(variables, list):
+        errors += variables
+    if errors:
+        return answer(request, encode("graphql", {"errors": [error.formatted for error in errors]}), 400)
+    field = SCHEMA.subscription_type.fields["taskChanges"]  # type: ignore[union-attr]
+    position = get_argument_values(field, _root_field(document, operation), variables)["from"]  # type: ignore[arg-type]
+
+    def render(change: dict) -> str:
+        return from_thread.run(_render, document, payload, context, change).decode()
+
+    return await on_worker(request, lambda: seams(request).streams.task_changes(request, position, render))
+
+
 async def _run(request: Request, operation: list[str]) -> Response:
     api = seams(request)
     refusal = refused(request)
@@ -143,6 +219,8 @@ async def _run(request: Request, operation: list[str]) -> Response:
         declared = {op for document in api.services.views.values() for op in task_graphql.operations(document)}
         operation[:] = [name if isinstance(name, str) and name in declared else "other"]
     context = {"feed": api.feed, "api": api, "workers": request.app.state.workers}
+    if (found := _subscription(payload)) is not None:
+        return await _follow(request, payload, found, context)
     succeeded, result = await graphql(SCHEMA, payload, context_value=context)
     return answer(request, encode("graphql", result), 200 if succeeded else 400)
 

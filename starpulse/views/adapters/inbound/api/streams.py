@@ -155,6 +155,21 @@ class Streams:
         event = request.path_params["rest"].partition("/")[0]
         return self._admitted(request, lambda: self._ledger(request, event))
 
+    def task_changes(self, request: Request, position: int, render: Callable[[dict], str]) -> Response:
+        """The task changes after stream `position`, each as a `next` event of `render`'s text; a 410 whose error code is
+        `REREAD` when the store no longer holds the deltas after `position`."""
+
+        def open_stream() -> Stream | Response:
+            if (attached := self._snapshots.watch_from(position)) is None:
+                message = f"stream position {position} is no longer held: read the task list again"
+                gone = {"errors": [{"message": message, "extensions": {"code": "REREAD"}}]}
+                return answer(request, encode("graphql", gone), 410)
+            missed, changes = attached
+            frames = self._deltas(missed, changes, lambda name, data: self._task_change(render, name, data))
+            return Stream(frames, lambda: self._snapshots.unsubscribe(changes))
+
+        return self._admitted(request, open_stream)
+
     def _admitted(self, request: Request, open_stream: Callable[[], Stream | Response]) -> Response:
         if not request.scope[PLACE].take():
             return answer(request, _error("too many open streams; retry shortly"), 503, retry_after=_STREAM_RETRY_S)
@@ -190,8 +205,15 @@ class Streams:
         yield _frame("snapshot", first)
         if (build := self._build()) is not None:
             yield _frame("build", build)  # a page holding another build than this one is out of date
+        yield from self._deltas(missed, changes, self._event)
+
+    def _deltas(
+        self, missed: Sequence, changes: queue.Queue, frames: Callable[[str, dict], Iterator[bytes]]
+    ) -> Generator[bytes]:
+        """The frames of each delta in `missed`, then of each that arrives on `changes`, pinging while none does; ends
+        when the log was renumbered."""
         for change in missed:
-            yield from self._event(*change)
+            yield from frames(*change)
         while True:
             try:
                 change = changes.get(timeout=_PING_S)
@@ -202,9 +224,13 @@ class Streams:
                 changes.task_done()
                 return
             try:
-                yield from self._event(*change)
+                yield from frames(*change)
             finally:
                 changes.task_done()  # `Snapshots.announce` waits for the marks of what it queued
+
+    def _task_change(self, render: Callable[[dict], str], name: str, data: dict) -> Iterator[bytes]:
+        if name == "task":
+            yield _frame("next", render({"id": data["id"], "task": self._feed.task(data["id"])}))
 
     def _event(self, name: str, data: dict) -> Iterator[bytes]:
         if name in EVENTS:
