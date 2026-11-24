@@ -103,6 +103,8 @@ LINT_REFUSED = "Release to Ready refused, repair the record to release it:"
 
 
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
+#: The reason of a refusal no guard rule made: a hook, a store error or a raised exception.
+OTHER_REFUSAL = "other"
 PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
 RECOVERY_FINISHED_METRIC = "starpulse_task_actor_recovery_finished"
 MERGED_WAITING_METRIC = "starpulse_task_actor_merged_review_waiting"
@@ -448,7 +450,8 @@ class TaskActor:
         self._refused: dict[str, str] = {}
         self._released_visit: set[str] = set()  # tasks released into the working lane and not yet out of it again
         self._metrics = threading.Lock()
-        self._refusals = 0
+        #: The writes the board refused, by the key of the rule that refused them (`OTHER_REFUSAL` for none).
+        self._refusals: Counter[str] = Counter()
         #: How many writes landed within each bound of `BUCKETS_S`, then how many in all, and their seconds summed.
         self._buckets = [0] * (len(BUCKETS_S) + 1)
         self._sum = 0.0
@@ -483,7 +486,8 @@ class TaskActor:
         """Prometheus text of the writes the board refused, how long a fact took to become a landed write, and whether the
         actor is alive: whether start recovery finished and the merged Review tasks not yet Done."""
         with self._metrics:
-            counts, total, refusals = list(self._buckets), self._sum, self._refusals
+            counts, total = list(self._buckets), self._sum
+            refusals = sorted(self._refusals.items()) or [(OTHER_REFUSAL, 0)]
             timed = sorted(self._derive_seconds.items())
             touches = sorted(self._touches.items())
         held = self._held_counts()
@@ -500,7 +504,7 @@ class TaskActor:
             [
                 f"# HELP {REFUSALS_METRIC} Writes the board refused to the task actor.",
                 f"# TYPE {REFUSALS_METRIC} counter",
-                f"{REFUSALS_METRIC} {refusals}",
+                *(f'{REFUSALS_METRIC}{{reason="{reason}"}} {count}' for reason, count in refusals),
                 f"# HELP {LATENCY_METRIC} Seconds from the task actor observing a fact to its write landing.",
                 f"# TYPE {LATENCY_METRIC} histogram",
                 *samples,
@@ -2026,9 +2030,12 @@ class TaskActor:
         elif not written.lint and target != self._moves.get((source, "ACTOR_FAULT")):
             faulted = self._feed.task(name, lean=True)
             moved = faulted is not None and self._fault(faulted, f"move {source} to {target}", written.output)
-        with self._metrics:
-            self._refusals += 1
+        self._refused_by(written)
         return moved
+
+    def _refused_by(self, written: Written) -> None:
+        with self._metrics:
+            self._refusals[written.rule or OTHER_REFUSAL] += 1
 
     def _is_closed(self, target: str) -> bool:
         roles = self._feed.roles
@@ -2067,8 +2074,7 @@ class TaskActor:
         written = self._apply(name, changes, reason)
         if not written.ok:
             logger.warning("task actor: the fault of %s was not written: %s", name, written.output)
-            with self._metrics:
-                self._refusals += 1
+            self._refused_by(written)
             return False
         if target != lane:
             self._faults.pop(name, None)
@@ -2290,8 +2296,7 @@ class TaskActor:
             written = Written(False, str(error))
         if not written.ok:
             logger.warning("task actor: the hold of %s was not written: %s", name, written.output)
-            with self._metrics:
-                self._refusals += 1
+            self._refused_by(written)
 
     def _arm(self, name: str, agent: dict[str, Any]) -> None:
         """Arm the deadline wait of a task in a lane that waits on `overdue`, when its deadline is still ahead; drop it

@@ -1276,7 +1276,8 @@ A task already in Needs attention keeps its lane and gets both lines ahead of it
 chip on the card of a task whose reason opens so. A fault is written once and never retried on a clock or health event; a
 failed board write of it is logged and counted in `starpulse_task_actor_refusals_total`. `GET /metrics` carries:
 
-- `starpulse_task_actor_refusals_total`: refused writes.
+- `starpulse_task_actor_refusals_total{reason}`: refused writes, one series per guard rule that refused, keyed by the
+  rule's `key` (a slug of its reason), and `other` for a refusal no rule made (a hook, a store error).
 - `starpulse_task_actor_latency_seconds`: a histogram of the seconds from the fact being observed to the write landing.
 - `starpulse_task_actor_projection_seconds`: a histogram of the seconds each projection of the pull request store ran,
   the pin walk included.

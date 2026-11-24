@@ -95,6 +95,8 @@ class Written(NamedTuple):
     """The reasons of the lane rules the write broke and landed anyway, which only an operator's move may; empty for a clean write."""
     version: str = ""
     """What an audit judged the write over, to pass back as `over`; empty for a write that landed."""
+    rule: str = ""
+    """The `key` of the guard rule that refused the write, never its text; empty for a refusal no rule made."""
 
 
 class MoveWriter(Protocol):

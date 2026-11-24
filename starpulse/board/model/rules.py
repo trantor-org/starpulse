@@ -115,6 +115,11 @@ class Rule:
         """Whether the rule judges a move between lanes, its entry or its exit, and no write that holds in every lane."""
         return not (self.always or self.created or self.staying)
 
+    @property
+    def key(self) -> str:
+        """The rule's stable name, a slug of its reason: one per declared rule, so a label made of it stays bounded."""
+        return re.sub(r"[^a-z0-9]+", "_", self.reason.lower()).strip("_")[:64]
+
     def explain(self, record: Record) -> str:
         """The refusal text for `record`: the reason, then what a `readable` or `names_ids` requirement found broken."""
         found = _found(self.require, record)
