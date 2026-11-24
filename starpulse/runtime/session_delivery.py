@@ -58,6 +58,8 @@ INCIDENT_FRESH_S = 6 * 3600
 _FINISHED = frozenset({"done", COMPLETED, ARCHIVED})
 SELF = "self"
 _SEEN_MAX = 256
+#: Suffixes of a holder's wake that mean nothing once its task left In Progress.
+_HOLDER_WAKES = ("holder_resume", "review_refused")
 #: The bundled skill each subject suffix wakes its session into.
 _SKILLS = {".checks.failing": "starpulse:fix-checks"}
 
@@ -154,7 +156,7 @@ def _passed(event: Event, head: Callable[[str, int], str | None] | None) -> bool
 
 def _parked(event: Event, lane_of: Callable[[str], str | None] | None, working: Callable[[], str]) -> bool:
     parts = event.subject.split(".")
-    if lane_of is None or parts[-1:] != ["holder_resume"] or len(parts) < 5:
+    if lane_of is None or parts[-1] not in _HOLDER_WAKES or len(parts) < 5:
         return False
     return lane_of(parts[-2]) not in (working(), "unknown")
 
@@ -191,9 +193,10 @@ def route(
     under its local id. `head` is the
     store's head of a repository's pull request by number, empty or None when it holds none. A consumer's event the
     session already received (the server redelivers one whose ack was lost) is acked with no line, the last
-    `_SEEN_MAX` of each consumer being remembered. `lane_of` is a task's lane now: a `holder_resume` for a task not In
-    Progress (a restart redelivers one whose ack was lost after the task parked) is acked with no line; `working` is
-    the lane the board's machine works a task in, `in_progress` unless it names another."""
+    `_SEEN_MAX` of each consumer being remembered. `lane_of` is a task's lane now: a `holder_resume` or
+    `review_refused` for a task not In Progress (a restart redelivers a resume whose ack was lost after the task
+    parked; a refusal queued behind a busy holder is moot once the repaired task moved to review) is acked with no
+    line; `working` is the lane the board's machine works a task in, `in_progress` unless it names another."""
     seen: dict[str, dict[tuple[str, str], None]] = {}
 
     def registered(name: str) -> Registration | None:

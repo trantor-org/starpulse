@@ -11,7 +11,6 @@ from sqlalchemy import (
     Float,
     Index,
     Integer,
-    LargeBinary,
     MetaData,
     PrimaryKeyConstraint,
     String,
@@ -191,19 +190,6 @@ task_verdicts = Table(
     Column("reason", String, nullable=False),
     Column("occurred_at", Float, nullable=False),
     Index("ix_starpulse_task_verdicts_task", "task", "occurred_at"),
-)
-
-#: Dead: nothing writes or reads it since `/api/task-spend` folds its stored rows per request. It stays declared because
-#: the release before this one still reads it, and a later release drops it.
-analytics_answers = Table(
-    "starpulse_answers",
-    metadata,
-    Column("view", String, primary_key=True),
-    Column("query", String, primary_key=True),
-    Column("body", LargeBinary, nullable=False),
-    Column("status", Integer, nullable=False),
-    Column("folded_at", Float, nullable=False),
-    Index("ix_starpulse_answers_folded_at", "folded_at"),
 )
 
 #: One view's fold of one harness session, as plain JSON: the persisted result the analytics views combine, and no

@@ -56,7 +56,7 @@ STALLED_HELP = "Tasks in the working lane now that had a stall, 5 minutes with n
 REMAINING_METRIC = "starpulse_conformance_replay_remaining_entries"
 REMAINING_HELP = "Entry ids of the board and machine streams past the monitor's cursors up to the heads it found at start, 0 once it has read them."
 IDLE_METRIC = "starpulse_board_in_progress_idle_seconds"
-IDLE_HELP = "Seconds since the last lane move, work event or tool call of a working task whose harness is not active and whose holder no running shell keeps busy, per task."
+IDLE_HELP = "Seconds since the last lane move, work event or tool call of a working task whose holder no running shell keeps busy and whose harness is not active or silent for the stall bound, per task."
 #: Seconds with no lane change and no task event after which a working task is stalled.
 STALL_S = 300.0
 _HARNESS, _COMMAND = "harness", "TOOL_USED"
@@ -358,11 +358,13 @@ class Conformance:
             return {}
         working = self._working_now()
         live = {task: last for task, last in self._active.items() if task in working}
-        idle = {task: last for task, last in live.items() if not (self._harness_active(task) or self._busy(task))}
+        quiet = {task: last for task, last in live.items() if not self._busy(task)}
+        idle = {task: last for task, last in quiet.items() if not self._harness_active(task)}
         return {
             "stalled": sum(task in self._stalled for task in live),
             "due": sorted(last + STALL_S for task, last in live.items() if task not in self._stalled),
             "idle": idle,
+            "idle_due": {task: last for task, last in quiet.items() if task not in idle},
             "active_since": min((last for task, last in live.items() if task not in idle), default=None),
         }
 
@@ -592,7 +594,10 @@ def stalled_exposition(state: Mapping[str, Any], now: float) -> str:
         f"# HELP {IDLE_METRIC} {IDLE_HELP}\n# TYPE {IDLE_METRIC} gauge\n"
         + "".join(
             f'{IDLE_METRIC}{{task="{_escape(task)}"}} {max(now - last, 0.0)}\n'
-            for task, last in state.get("idle", {}).items()
+            for task, last in {
+                **{task: last for task, last in state.get("idle_due", {}).items() if last + STALL_S <= now},
+                **state.get("idle", {}),
+            }.items()
         )
     )
 

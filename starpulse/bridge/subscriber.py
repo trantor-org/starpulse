@@ -3,7 +3,7 @@
 Any move of a task, and any claim that lands (which writes no lane entry when the task is already in the working lane,
 such as a new session adopting it, and names that session as the holder; a refused claim changes nothing), re-reads its holder from the board: every session that took subjects from the task and no longer holds
 it drops them, and the holder gets the subjects its task kind's `claim` rule names, with the `pr_opened` subjects of
-each pull request the task already cites. A pull request opening adds its `pr_opened` subjects to the holder. A holder whose task is in the working lane and in an incident type's reach (`bridge.reach`) also holds `incident.<type>.>`, dropped when the task leaves the lane. A kind with no rules, or a rule with no subject, subscribes the session to nothing.
+each pull request the task already cites. A pull request opening adds its `pr_opened` subjects to the holder, and a session dispatched to a task no other session holds gets the `claim` subjects, since a dispatch to a task already in the working lane writes no lane entry (a lane move drops them if the dispatch is refused). A holder whose task is in the working lane and in an incident type's reach (`bridge.reach`) also holds `incident.<type>.>`, dropped when the task leaves the lane. A kind with no rules, or a rule with no subject, subscribes the session to nothing.
 Both are idempotent, so the bridge replaying an entry after a restart changes nothing. A task in a finished lane has no
 holder though its file keeps the assignee, so its move to one drops the session's subjects; `reconcile` does the same for
 every task a session's subscription holds and the session no longer does, such as those an older release left (a task
@@ -29,6 +29,8 @@ from starpulse.machine_engine.model.transitions import lane_id
 FINISHED = frozenset({"done", COMPLETED, ARCHIVED})
 
 OPENED = "PR_OPENED"
+
+DISPATCHED = "SESSION_DISPATCHED"
 
 
 class Store(Protocol):
@@ -71,6 +73,8 @@ class Subscriber:
             elif entry.stream == MACHINE and entry.fields.get("event") == OPENED and (number := pull_number(entry)):
                 holder, rules, _ = self._holder(self._feed().task(task, lean=True))
                 self._grant(holder, task, expand(self._board, rules.pr_opened, task=task, pr=number))
+            elif entry.stream == MACHINE and entry.fields.get("event") == DISPATCHED:
+                self._dispatched(task, token((entry.fields.get("data") or {}).get("session") or ""))
 
     def change(self, session: str, subjects: list[str], add: bool) -> tuple[bool, list[str]]:
         """Add the explicit `subjects` to `session`'s subscription, or remove them; whether it changed, and its filters."""
@@ -143,6 +147,15 @@ class Subscriber:
             subscription.drop(token(task))
             self._store.put(session, subscription)
         self._grant(holder, task, self._held(task, rules) if holder else [], incidents)
+
+    def _dispatched(self, task: str, session: str) -> None:
+        """A session dispatched to a task adopts it, and one already in the working lane, as at the scheduler's start, gets no
+        lane entry, so this is the only entry that reaches its holder. The read model's lane may lag, so the lane is not
+        checked: a refused dispatch leaves a task out of the working lane, and its next move drops the session. One
+        another session holds is left to that session."""
+        holder, rules, _ = self._holder(self._feed().task(task, lean=True))
+        if session and holder in ("", session):
+            self._grant(session, task, self._held(task, rules))
 
     def _held(self, task: str, rules: Rules) -> list[str]:
         """The `claim` subjects, with the `pr_opened` subjects of each pull request the task already cites: a session

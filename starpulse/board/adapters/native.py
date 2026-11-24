@@ -152,9 +152,11 @@ _PLAN = re.compile(r"<!-- SECTION:PLAN:BEGIN -->(.*?)<!-- SECTION:PLAN:END -->",
 _DONE = re.compile(r"<!-- DOD:BEGIN -->(.*?)<!-- DOD:END -->", re.S)
 _FINAL_SUMMARY = re.compile(r"<!-- SECTION:FINAL_SUMMARY:BEGIN -->(.*?)<!-- SECTION:FINAL_SUMMARY:END -->", re.S)
 _NEEDS_ATTENTION = re.compile(r"<!-- SECTION:NEEDS_ATTENTION:BEGIN -->(.*?)<!-- SECTION:NEEDS_ATTENTION:END -->", re.S)
-_COMMENTS_SECTION = re.compile(r"<!-- COMMENTS:BEGIN -->(.*?)<!-- COMMENTS:END -->", re.S)
-_COMMENT_HEAD = re.compile(r"^created: (\S+ \S+)\n(?:author: (\S+)\n)?---\n", re.M)
-_SESSION_LINK = re.compile(r"^\*\*Session Link:\*\* (?:local \w+ session `([^`]+)`|(\S+))", re.M)
+_COMMENTS_BEGIN = "<!-- COMMENTS:BEGIN -->"
+_COMMENTS_END = "<!-- COMMENTS:END -->"
+_COMMENTS_SECTION = re.compile(f"{_COMMENTS_BEGIN}(.*?){_COMMENTS_END}", re.S)
+_COMMENT_HEAD = re.compile(r"created: (\S+ \S+)\n(?:author: (\S+)\n)?---\n")
+_SESSION_LINK = re.compile(r"\*\*Session Link:\*\* (?:local \w+ session `([^`]+)`|(\S+))")
 _NOTES_SECTION = "\n## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{}\n<!-- SECTION:NOTES:END -->\n"
 
 
@@ -458,11 +460,18 @@ def _items(pattern: re.Pattern[str], body: str) -> list[dict[str, Any]]:
     ]
 
 
+# `^` under `re.M` and a lazy `.*?` each cost tens of milliseconds over a megabyte of comments; a literal-prefixed pattern
+# filtered to line starts is linear and fast.
+def _line_starts(pattern: re.Pattern[str], text: str) -> Iterator[re.Match[str]]:
+    return (m for m in pattern.finditer(text) if m.start() == 0 or text[m.start() - 1] == "\n")
+
+
 def _comments(body: str) -> list[dict[str, str]]:
     """The task's comments as `{created, text}`, oldest first, as `_comment` and the Backlog this workspace runs write them."""
-    found = _COMMENTS_SECTION.search(body)
-    region = found.group(1) if found else ""
-    heads = list(_COMMENT_HEAD.finditer(region))
+    begin = body.find(_COMMENTS_BEGIN)
+    end = body.find(_COMMENTS_END, begin + len(_COMMENTS_BEGIN)) if begin >= 0 else -1
+    region = body[begin + len(_COMMENTS_BEGIN) : end] if end >= 0 else ""
+    heads = list(_line_starts(_COMMENT_HEAD, region))
     ends = [*(head.start() for head in heads[1:]), len(region)]
     return [
         {
@@ -490,7 +499,7 @@ def _session(notes: str, comments: list[dict[str, str]]) -> str:
     A local-session line names its session UUID, not the word `local` that opens it.
     """
     texts = [notes, *(comment["text"] for comment in comments)]
-    links = [local or link for text in texts for local, link in _SESSION_LINK.findall(text)]
+    links = [m[1] or m[2] for text in texts for m in _line_starts(_SESSION_LINK, text)]
     return links[-1] if links else ""
 
 
