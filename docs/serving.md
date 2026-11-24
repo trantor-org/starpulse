@@ -1168,8 +1168,8 @@ re-derived each poll, so a restart onto the new build settles the dependents its
 
 With a `[board.actor]` table, `serve` runs the task actor: an in-process worker that moves a task out of a lane when a
 fact that lane's machine state waits on (`waits`, [Public surface](public-surface.md)) holds, through the board's task
-editor as actor `starpulse/task-actor`. The board must edit tasks, else `serve` refuses to start. The table's keys are `repo` and `owner_source`. `repo` (`owner/name`) names the board's own repository: its pull
-requests read as `PR #N` in a closing comment, every other repository's as its URL. `owner_source` is the `source` prefix of the tasks that own a shared check failure; with it and `repo` set, the `owner_stale` fact (below) reads that repository's `main`.
+editor as actor `starpulse/task-actor`. The board must edit tasks, else `serve` refuses to start. The table's keys are `repo`, `owner_source` and `gitmodules`. `repo` (`owner/name`) names the board's own repository: its pull
+requests read as `PR #N` in a closing comment, every other repository's as its URL. `owner_source` is the `source` prefix of the tasks that own a shared check failure; with it and `repo` set, the `owner_stale` fact (below) reads that repository's `main`. `gitmodules` (a path from beside the config) names the parent's `.gitmodules`: with `repo` set, the actor answers the unfinished work of a task citing pull requests itself, the repositories its Modified Files name (a file under a submodule's path belongs to that submodule, any other to `repo`) with no merged pull request in the store, so a merge spawns no `[board] unfinished` command; that command answers only a task citing none. An actor with no `gitmodules` or no `repo` asks it of every task, and it checks only task branches.
 
 The actor reads the `waits` of the Board machine and the transition each wait's event draws, so it moves only along a
 move the machine declares. For a task in a state with `waits`, the first fact that holds fires its event:

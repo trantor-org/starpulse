@@ -223,6 +223,8 @@ class Config:
     """The `[board.actor]` table is present: `serve` runs the task actor, which moves a task on the facts its lane waits on and replaces the release pass."""
     board_repo: str | None = None
     """`[board.actor] repo`, the `owner/name` the board's own pull requests live in: the actor renders them as a bare `PR #N`."""
+    gitmodules: Path | None = None
+    """`[board.actor] gitmodules`, the parent's `.gitmodules` from beside the config: with `repo`, the actor answers the unfinished work of a task citing pull requests from its Modified Files and the store, never by the board's `unfinished` command; none, or no `repo`: that command answers every task, and now checks only task branches."""
     owner_source: str = ""
     """The `source` prefix of the tasks the actor closes once the board repository's main passes its required checks and no open task waits on them (`[board.actor]` `owner_source`); none: it closes none."""
     search: Search = field(default_factory=Search)
@@ -355,6 +357,11 @@ def discover(path: Path | None) -> Path | None:
     return path
 
 
+def _beside(path: Path | None, name: str | None) -> Path | None:
+    """The file `name` names, from beside the config file; None when it names none."""
+    return path.resolve().parent / name if path and name else None
+
+
 def _tls(file: ConfigFile, path: Path | None) -> tuple[Path, Path] | None:
     """The certificate and key `tls_cert` and `tls_key` name, from beside the config file; the model holds them to both or
     neither. Whether they exist is `serve`'s to check: a client reads the same config and never opens them, and a release
@@ -478,6 +485,7 @@ def load(path: Path | None) -> Config:
         release=_release(file),
         task_actor="actor" in file.board,
         board_repo=file.board.get("actor", {}).get("repo"),
+        gitmodules=_beside(path, file.board.get("actor", {}).get("gitmodules")),
         owner_source=file.board.get("actor", {}).get("owner_source", ""),
         search=_search(file.search),
         sequences=_sequences(file.sequences),

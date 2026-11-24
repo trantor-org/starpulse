@@ -291,6 +291,7 @@ class TaskActor:
         sequences: Mapping[str, Sequence[str]] = MappingProxyType({}),
         awaits: Sequence[str] = (),
         unfinished: Callable[[str], Sequence[str]] = lambda _task: (),
+        submodules: Callable[[], Sequence[tuple[str, str]]] | None = None,
         log: EventLog | None = None,
         main_green: Callable[[], str | None] | None = None,
         owner_source: str = "",
@@ -326,6 +327,9 @@ class TaskActor:
         #: The machines whose unfinished placement of a task holds its settled session (`awaits`).
         self._awaiting = tuple(awaits)
         self._unfinished = unfinished
+        #: The parent's declared `(name, path)` submodules: with them and `board_repo`, a task citing pull requests has its
+        #: unfinished work answered here, never by `unfinished`.
+        self._submodules = submodules
         #: Each non-Board machine's links that exit on a skill machine's state, when there is somewhere to send the exit.
         self._links = _exit_links(feed.machines) if advance else {}
         self._feed = feed

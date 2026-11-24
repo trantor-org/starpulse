@@ -652,10 +652,12 @@ class ConfigFile(_Table):
         if "actor" in board and not isinstance(actor, dict):
             raise ValueError("actor must be a [board.actor] table")
         if actor:
-            unknown = sorted(actor.keys() - {"owner_source", "repo"})
+            unknown = sorted(actor.keys() - {"owner_source", "repo", "gitmodules"})
             if unknown:
-                raise ValueError(f"the [board.actor] table takes only owner_source and repo, not {', '.join(unknown)}")
-            for key in ("owner_source", "repo"):
+                raise ValueError(
+                    f"the [board.actor] table takes only owner_source, repo and gitmodules, not {', '.join(unknown)}"
+                )
+            for key in ("owner_source", "repo", "gitmodules"):
                 if not isinstance(actor.get(key, ""), str):
                     raise ValueError(f"{key} must be text")
         return board
