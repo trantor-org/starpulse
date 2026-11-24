@@ -8,7 +8,8 @@ other:
   attempts were all refused, again after a refused redelivery.
 - For each repository it pages the pull requests updated since a cursor and inserts a `source = 'reconcile'` row for each
   closed pull request and each finished check suite on its head that no row received around the fact reported, which
-  the `events` consumer reads like a delivery. Only an inserted row counts as a correction, as only it is a missed push.
+  the `events` consumer reads like a delivery. Only an inserted row counts as a correction, as only it is a missed push; a
+  fact younger than `SETTLE_S` is inserted but not counted, as its webhook may still be in flight.
 - It also inserts a `reconciled` row, the pull request as the listing shows it, for each one the PR store lacks or holds
   with an older `updatedAt`, which only the `pulls` consumer reads, whether or not a task cites the pull request.
 
@@ -17,6 +18,7 @@ oldest first and their cursor is saved after each one a newer one follows, so a 
 cursor's ETag is saved only after everything its list covers was handled.
 """
 
+import json
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -28,7 +30,7 @@ from starpulse.github.model.delivery import Delivery
 from starpulse.github.model.events import event_id, facts_of
 from starpulse.github.model.github_config import GitHub
 from starpulse.github.model.reconcile import (
-    EARLY_S, LATE_S, LOOKBACK_S, SOURCE, epoch, pull_delivery, redeliveries, suite_delivery, update_delivery,
+    EARLY_S, LATE_S, LOOKBACK_S, SETTLE_S, SOURCE, epoch, pull_delivery, redeliveries, suite_delivery, update_delivery,
 )  # fmt: skip
 from starpulse.github.ports.inbox import Inbox
 
@@ -94,12 +96,18 @@ def _reported(inbox: Inbox, delivery: Delivery, at: str | None) -> bool:
     wanted = {event_id(fact) for fact in facts_of(delivery.event, delivery.body)}
     if not wanted or not at:
         return not wanted
-    held = {
-        event_id(fact)
-        for body in inbox.bodies(delivery, epoch(at) - EARLY_S, epoch(at) + LATE_S)
-        for fact in facts_of(delivery.event, body)
-    }
+    bodies = inbox.bodies(delivery, epoch(at) - EARLY_S, epoch(at) + LATE_S)
+    if delivery.event == "check_suite":  # the checks path finds a suite's pull requests by its head, so a webhook naming none reported it too
+        return any(_suite_id(body) == _suite_id(delivery.body) for body in bodies)
+    held = {event_id(fact) for body in bodies for fact in facts_of(delivery.event, body)}
     return wanted <= held
+
+
+def _suite_id(body: bytes) -> object:
+    try:
+        return json.loads(body)["check_suite"].get("id")
+    except (ValueError, KeyError, AttributeError):
+        return None
 
 
 def _pulls(
@@ -129,7 +137,8 @@ def _pulls(
             ]
         for delivery, at in found:
             if delivery is not None and not _reported(inbox, delivery, at) and inbox.save(delivery, SOURCE):
-                counted.inserted(delivery.event)
+                if not at or epoch(at) < now - SETTLE_S:
+                    counted.inserted(delivery.event)
         if later and epoch(later["updated_at"]) > epoch(pull["updated_at"]):
             cursors.put(name, Cursor(pull["updated_at"], None))
     _advance(cursors, name, first, pulls, "updated_at")
