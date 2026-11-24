@@ -441,16 +441,18 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
     return {"title": args.title, **{k: v for k, v in given.items() if v is not None}}
 
 
+_BY_SOURCE = "query TasksBySource($source: String) { tasks(source: $source) { items { id title lane } } }"
+
+
 def _open_with_source(args: argparse.Namespace, environ: Mapping[str, str], source: str) -> list[dict[str, Any]]:
-    snapshot = agent_wire.flows(args, environ)
-    done = roles_of(snapshot).done
-    return [a for a in board_flow(snapshot)["agents"] if a.get("source") == source and a["state"] != done]
+    base = agent_wire.server_url(args.server, environ)
+    return agent_wire.graphql(base, _BY_SOURCE, {"source": source})["tasks"]["items"]
 
 
 def task_find(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The open tasks filed under `--source`, each with its id, title and state; none is no error."""
     found = _open_with_source(args, environ, args.source)
-    return {"source": args.source, "tasks": [{k: a[k] for k in ("id", "title", "state")} for a in found]}
+    return {"source": args.source, "tasks": [{"id": a["id"], "title": a["title"], "state": a["lane"]} for a in found]}
 
 
 def task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

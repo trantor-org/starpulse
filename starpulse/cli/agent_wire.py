@@ -145,6 +145,15 @@ def whole_snapshot(args: argparse.Namespace, environ: Mapping[str, str]) -> dict
     return _read_document(server_url(args.server, environ), "/api/snapshot?view=full", set(SNAPSHOT_IDENTITY_KEYS), "snapshot")
 
 
+def graphql(base: str, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+    """The `data` of `query` run at `/graphql`; a refusal or a GraphQL error is a `CliError`."""
+    status, reply = post(base, "/graphql", {"query": query, "variables": variables})
+    if status != 200 or "data" not in reply:
+        message = "; ".join(str(e.get("message")) for e in reply.get("errors", [])) or f"answered {status}"
+        raise CliError("unavailable", f"{base} /graphql: {message}")
+    return reply["data"]
+
+
 def post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     return _send("POST", base, path, body)
 
