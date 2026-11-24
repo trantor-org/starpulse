@@ -157,6 +157,18 @@ def archived_since(since: float) -> Select[Any]:
     return select(func.count()).where(tasks.c.archived == true(), tasks.c.updated_at >= since)
 
 
+def settled_done(done: str, since: float, only: str | None = None) -> Select[Any]:
+    """The archived Done Tasks changed at or after `since`, with their meta, in id order: one range of the archive index;
+    `only` limits them to one."""
+    lane = func.lower(func.replace(tasks.c.state, " ", "_"))
+    query = (
+        select(*SUMMARY, tasks.c.meta)
+        .where(tasks.c.archived == true(), tasks.c.updated_at >= since, lane.in_(done_lanes(done)))
+        .order_by(tasks.c.id)
+    )
+    return query if only is None else query.where(tasks.c.id == only)
+
+
 def titled(ids: Collection[str] | None = None) -> Select[Any]:
     """Each Task's id, title, milestone, labels and meta, archived ones included, without the bodies a card draws; `ids`
     limits them to those Tasks, each one a primary-key seek."""

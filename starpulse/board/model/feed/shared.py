@@ -117,6 +117,21 @@ def done_dot(agent: dict) -> dict:
     return {key: agent[key] for key in _DONE_DOT if key in agent}
 
 
+def settled_entry(summary: Mapping[str, Any], defaults: Mapping[str, Mapping[str, str]] = {}) -> dict:
+    """An archived Done task as the snapshot's `settled` carries it: the read model keeps only when it last changed, so
+    that is when it settled, and it has no creation date."""
+    agent = summary_agent(summary, defaults=defaults)
+    return {
+        "state": agent["state"],
+        "at": summary["updated_at"],
+        "created": None,
+        "title": agent["title"],
+        "model": agent["model"],
+        "milestone": agent["milestone"],
+        "labels": agent["labels"],
+    }
+
+
 def read_model_detail(row: Mapping[str, Any], attention: str | None = None) -> dict:
     """The fields a summary leaves out that a Task's record draws: its pull requests, description, criteria,
     Definition of Done items and, in the `attention` lane, the reason its description's Needs attention section gives."""

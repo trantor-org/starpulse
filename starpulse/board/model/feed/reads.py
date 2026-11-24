@@ -110,8 +110,9 @@ class ReadMethods:
                 agent = done_dot(agent)
             elif agent:
                 agent = self._active(agent)
+            settled = self.settled(summary["id"]).get(summary["id"]) if summary["archived"] else None
             self._publish(
-                "task", {"id": summary["id"], "agent": agent, "settled": None, "archived_today": archived_today}
+                "task", {"id": summary["id"], "agent": agent, "settled": settled, "archived_today": archived_today}
             )
         if changed:
             self._followed = changed[-1]["seq"]

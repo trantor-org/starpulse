@@ -17,6 +17,7 @@ from starpulse.board.model.feed.shared import (
     done_dot,
     local_midnight,
     read_model_detail,
+    settled_entry,
     summary_agent,
 )
 
@@ -86,12 +87,17 @@ class ViewMethods:
         """The milestone of each Done Task the board flow leaves out and `milestone_done` counts, by id."""
         return self._read_model.cold_done(self._roles.done, local_midnight(self._clock()))
 
+    def settled(self, only: str | None = None) -> dict[str, dict]:
+        """The Done Tasks archived in the last day as `settled` entries by id; `only` limits them to one Task."""
+        rows = self._read_model.settled_done(self._roles.done, self._clock() - LEDGER_WINDOW, only)
+        return {row["id"]: settled_entry(row, self._default_profiles) for row in rows}
+
     def _done_fields(self) -> dict[str, Any]:
         """The snapshot's account of Done Tasks off the board."""
         since = local_midnight(self._clock())
         counts = self._read_model.milestone_done(self._roles.done, since)
         archived = self._read_model.archived_since(since)
-        return {"settled": {}, "cold_done": [], "milestone_done": counts, "archived_today": archived}
+        return {"settled": self.settled(), "cold_done": [], "milestone_done": counts, "archived_today": archived}
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
         """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""

@@ -119,6 +119,10 @@ class ReadModel:
         with self._reading() as db:
             return db.execute(queries.archived_since(since)).scalar_one()
 
+    def settled_done(self, done: str, since: float, only: str | None = None) -> list[dict[str, Any]]:
+        """The archived Done Tasks changed at or after `since`, with their meta, in id order; `only` limits them to one."""
+        return self._summaries(queries.settled_done(done, since, only))
+
     def ready(self, state: str, done: str, only: str | None = None) -> list[str]:
         """The ids of unarchived Tasks in `state` whose dependencies are all in `done`; `only` limits it to that id."""
         return self._ids(queries.ready(state, done, only))
