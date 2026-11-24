@@ -46,14 +46,6 @@ class Claim(_Api):
     at: float
 
 
-class MachinePage(_Api):
-    """The first page of machines entered from `open`, by name; their bodies are in the snapshot's `flows`."""
-
-    open: str | None
-    machines: list[str]
-    more: bool
-
-
 class MachineEntryFrom(_Api):
     machine: str
     state: str
@@ -85,7 +77,6 @@ class Snapshot(_Api):
     dags: list[DagBody]
     pools: list[Pool] | None = Field(default=None, description="The concurrency pools the DAGs run on.")
     flows: list[FlowSnapshot]
-    machinePage: MachinePage | None = None
     machineStrip: MachineStrip | None = None
     pulls: dict[str, list[Pull]] | None = Field(default=None, description="Each open task's pull requests, by task id.")
     claims: dict[str, Claim] | None = Field(

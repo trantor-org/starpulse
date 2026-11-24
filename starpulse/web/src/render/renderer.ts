@@ -7,7 +7,6 @@
 // Click drills in, right-click steps out (after clearing any zoom), the wheel
 // zooms about the cursor between the level's fit and eight times it, and a drag
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
-import { apiFetch } from "../api/apiFetch";
 import { RunEvents } from "../features/fanout/fanoutModel";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { MACHINE, MUTED, token } from "./palette";
@@ -50,7 +49,6 @@ import { ADMIN_DEFAULTS, type AdminPrefs } from "../features/admin/adminPrefs";
 import { clockHm, stamp } from "../shared/clock";
 import { sizes as ledgerSizes } from "../features/level/machineLedger";
 import { firstOpened, rowMeta } from "../features/level/machineRows";
-import { asked, arrived as pageArrived, failed, nextQuery, paging, reveal, RETRY, wantNext, type Paging } from "../features/level/machinePaging";
 import { dragTo, inputGoal, revealGoal, type ScrollInput } from "../features/level/machineScroll";
 import { tickAt } from "../features/level/machineStrip";
 import { heldBy, sessionsOf, traceSteps } from "../features/level/machineTrace";
@@ -109,7 +107,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let pickedRow: string | null = null, glow: { name: string; t0: number } | null = null;
   const pages: Record<string, number> = {};
   // the machine ledger's loaded pages, and the rows' scroll (the goal the input sets and the position drawn, eased to it)
-  let pg: Paging | null = null, scrollGoal = 0, scrollPos = 0, thumbDrag: { y: number; g0: number } | null = null;
+  let scrollGoal = 0, scrollPos = 0, thumbDrag: { y: number; g0: number } | null = null;
   // what a navigator search result under the pointer stands for, lit while the pointer is off the canvas
   let spotted: Target | null = null, spotNear = false;
   let hover: Hover | null = null, mouse: { ox: number; oy: number; cx: number; cy: number } | null = null;
@@ -149,7 +147,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const ensurePanel = () => { void loadLedgerPanel().then(() => loop.wake()); return ledgerPanel; };
   const mledIO = {
     get S() { return S; }, get scene() { return scene; }, get FW() { return FW; }, get H() { return H; }, get T() { return T; }, get hotEdge() { return hotEdge; },
-    events: () => EVENTS(), hhmm, get scrollPos() { return scrollPos; }, get pg() { return pg; }, get pickedRow() { return pickedRow; }, get lpin() { return lpin; },
+    events: () => EVENTS(), hhmm, get scrollPos() { return scrollPos; }, get pickedRow() { return pickedRow; }, get lpin() { return lpin; },
     get railHover() { return railHover; }, get thumbDrag() { return !!thumbDrag; }, get glow() { return glow; }, set glow(g) { glow = g; },
   };
   const ensureMled = (): MachineLedgerDrawing | null => {
@@ -191,12 +189,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (!S || !W) return;
     const was = fit;
     laidScale = prefs().scale;
-    const mp = S.machinePage;
-    if (mp?.open && pg?.top !== mp.open) pg = paging(mp, (n) => S!.flows[n]?.last ?? 0); // the snapshot names the first page; the pages loaded after it are kept across snapshots
     const held = scene?.top && (overRows() || lpin || pickedRow) ? scene.top.rows.map((r) => r.name) : undefined; // the pointer over the rows, a pinned path or a focused row holds their order
     // a pinned task narrows the rows to the machines it has a session in
     const only = lpin ? { task: lpin.label, machines: heldBy(S.flows, lpin.task, lpin.machines) } : undefined;
-    scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held, paging: pg, only }, level());
+    scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held, only }, level());
     watchLedger(scene.fold?.ledger?.rows === "merge" ? scene.fold.ledger.event : null);
     if (scene.top) {
       scrollGoal = Math.min(scrollGoal, scene.top.max);
@@ -272,7 +268,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     panel.classList.remove("open");
     setHover(null);
     anim = null;
-    pg = null; // a level's machine ledger opens at its first page, newest first
     scrollGoal = scrollPos = 0;
     layout(false);
     if (then) view = then();
@@ -1109,7 +1104,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   });
   // ---- the machine ledger's scroll, the footer that loads older machines, and the 24 h strip along the bottom ----
   let railHover: Rail | null = null, railMoving = false;
-  /** What the rail is under (x, y) of the ledger: the back-to-newest chip, the thumb, a tick of the strip or the footer. */
+  /** What the rail is under (x, y) of the ledger: the back-to-newest chip, the thumb, or a tick of the strip. */
   function railHit(x: number, y: number): Rail | null {
     if (!scene?.top) return null;
     const led = ensureMled();
@@ -1121,7 +1116,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       const t = x < r.sx0 - 4 || x > r.sx1 + 4 ? null : tickAt(led.ticks, x);
       return t ? { kind: "tick", tick: t } : null;
     }
-    return within(r.foot) ? { kind: "foot" } : null;
+    return null;
   }
   /** Move the scroll's goal by an input; false for a key that does not scroll. */
   function scrollBy(input: ScrollInput): boolean {
@@ -1132,46 +1127,22 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     scrollGoal = to;
     return true;
   }
-  /** Scroll the machine's row to the middle of the lane, bringing in the older machines between it and the page held if it is not loaded. */
+  /** Scroll the machine's row to the middle of the lane. */
   function revealRow(name: string) {
-    if (pg) {
-      pg = reveal(pg, S!.flows[name]?.last ?? 0);
-      layout(true);
-    }
     const top = scene!.top!, i = top.rows.findIndex((r) => r.name === name);
     if (i >= 0) scrollGoal = revealGoal(top.rows, i, { h: top.laneBottom - top.laneTop, fs: ledgerSizes(prefs().scale).fs }, top.max);
     loop.wake();
   }
-  /** The next 20 older machines: asked once for a footer in view, and again a few seconds after a failure. */
-  function loadNext() {
-    const p = pg;
-    if (!p?.more || p.busy) return;
-    pg = asked(p);
-    apiFetch(nextQuery(p))
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((b: { machines: { name: string; last: number | null }[]; more: boolean }) => {
-        if (pg?.top !== p.top) return;
-        pg = pageArrived(pg, b.machines, b.more);
-        layout(true);
-        loop.wake();
-      })
-      .catch(() => {
-        if (pg?.top === p.top) pg = failed(pg, Date.now() / 1000);
-        window.setTimeout(() => loop.wake(), RETRY * 1000 + 100);
-      });
-  }
   function railClick(r: Rail) {
     if (r.kind === "chip") scrollGoal = 0;
     else if (r.kind === "tick") revealRow(r.tick.entry.row);
-    else if (r.kind === "foot") loadNext();
     loop.wake();
   }
-  /** One frame of the scroll: ease to the goal, and ask for the next page when the footer is in view. */
+  /** One frame of the scroll: ease to the goal. */
   function scrollStep() {
-    const top = scene!.top!, d = scrollGoal - scrollPos;
+    const d = scrollGoal - scrollPos;
     scrollPos = Math.abs(d) < 0.5 ? scrollGoal : scrollPos + d * 0.3;
     railMoving = scrollPos !== scrollGoal;
-    if (wantNext(pg, top.more > 0 && top.laneTop + top.content - top.foot - scrollPos < top.laneBottom, T)) loadNext();
   }
   let rowsHeld = false;
   const overRows = () => !!(mouse && scene?.top && mouse.oy > scene.top.laneTop && mouse.oy < scene.top.laneBottom);

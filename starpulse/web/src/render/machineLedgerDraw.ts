@@ -4,8 +4,7 @@
 // hit testing.
 import type { MachineEntry, RawTask } from "../api";
 import { glideStarts, sizes as ledgerSizes, slot as ledgerSlot } from "../features/level/machineLedger";
-import { entryAt, entryPath, PAGE, rowLabels } from "../features/level/machineLanes";
-import type { Paging } from "../features/level/machinePaging";
+import { entryAt, entryPath, rowLabels } from "../features/level/machineLanes";
 import { emptyNote, rowMeta, stuckCount } from "../features/level/machineRows";
 import { thumbOf, windowOf, type Thumb } from "../features/level/machineScroll";
 import { stripLabel, stripScale, ticks, viewSpan, type Tick } from "../features/level/machineStrip";
@@ -20,8 +19,8 @@ import { PULSE, glideTime, type Move, type Sky } from "./sky";
 const curveLen = (c: Curve) => sample(c).reduce((a, p, i, ps) => (i ? a + Math.hypot(p.x - ps[i - 1].x, p.y - ps[i - 1].y) : 0), 0);
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
-/** What the scroll rail is under the pointer: the back-to-newest chip, the thumb, a tick of the strip or the footer. */
-export type Rail = { kind: "thumb" } | { kind: "chip" } | { kind: "foot" } | { kind: "tick"; tick: Tick };
+/** What the scroll rail is under the pointer: the back-to-newest chip, the thumb or a tick of the strip. */
+export type Rail = { kind: "thumb" } | { kind: "chip" } | { kind: "tick"; tick: Tick };
 /** What the ledger drew this frame: each task's dot, each state and each name, for the hover, the trace and the names over the veil. */
 type LSpot = Pt & { r: number; color: string; y0: number; y1: number; row?: number };
 type LLabel = { key: string; text: string; x: number; y: number; px: number; ink: number; ga: number; weight: number; hot: boolean; lead?: Pt & { to: number }; y0: number; y1: number };
@@ -39,7 +38,6 @@ export interface LedgerIO {
   events(): Move[];
   hhmm(sec: number): string;
   readonly scrollPos: number;
-  readonly pg: Paging | null;
   /** The row picked out on the top machine's level. */
   readonly pickedRow: string | null;
   /** The machine and session of the pinned task. */
@@ -58,7 +56,7 @@ export interface Ledger {
   rowNames: Map<string, { text: string; x: number; y: number; px: number }>;
   ltasks: Map<string, LTask>;
   /** Where the rail was drawn this frame, in the ledger's pixels, for the hover and the clicks. */
-  railBox: { thumbX: number; laneTop: number; chip: Box | null; foot: Box | null; stripT: number; sx0: number; sx1: number };
+  railBox: { thumbX: number; laneTop: number; chip: Box | null; stripT: number; sx0: number; sx1: number };
   thumb: Thumb | null;
   ticks: Tick[];
   rowTop: Map<string, number>;
@@ -79,7 +77,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   const { text, circle, dot, comet, pulse, flowLine, fitText, arrow, nameWidth, isHot } = d;
   const led: Ledger = {
     tasks: [], labs: [], spots: new Map(), rowNames: new Map(), ltasks: new Map(),
-    railBox: { thumbX: 0, laneTop: 0, chip: null, foot: null, stripT: 0, sx0: 0, sx1: 0 },
+    railBox: { thumbX: 0, laneTop: 0, chip: null, stripT: 0, sx0: 0, sx1: 0 },
     thumb: null, ticks: [], rowTop: new Map(), lane: [], sliding: false,
     drawTop, ltaskOf, pinnedTask, ledgerHas,
   };
@@ -356,7 +354,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
     cx.fillStyle = rgba(MUTED, 0.16);
     cx.fillRect(top.metaX - 10, stripT, top.x1 + 20 - top.metaX, 1);
     led.thumb = thumbOf(top.content, { h: stripT - top.laneTop, fs }, io.scrollPos, top.max);
-    Object.assign(led.railBox, { thumbX: top.x1 + 18, laneTop: top.laneTop, stripT, sx0, sx1, chip: null, foot: null });
+    Object.assign(led.railBox, { thumbX: top.x1 + 18, laneTop: top.laneTop, stripT, sx0, sx1, chip: null });
     if (led.thumb) {
       const t = led.thumb, x = led.railBox.thumbX;
       cx.fillStyle = rgba(MUTED, 0.08);
@@ -365,10 +363,6 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       cx.beginPath();
       cx.roundRect(x - 2, top.laneTop + t.ty, 4, t.th, 2);
       cx.fill();
-    }
-    if (top.more) {
-      const footY = top.laneTop + top.content - top.foot - io.scrollPos;
-      led.railBox.foot = { x0: top.metaX - 10, x1: top.x1 + 20, y0: Math.max(top.laneTop, footY), y1: Math.min(stripT, footY + top.foot) };
     }
     if (io.scrollPos > 8) {
       const label = "↑ back to newest", w = nameWidth(label, sp) + 24 * fs, h = 20 * fs, x0 = (top.x0 + top.x1) / 2 - w / 2, y0 = top.laneTop + 8;
@@ -574,12 +568,6 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
         led.labs.push({ key: `${row.name}:${l.id}`, text: l.text, x: l.x, y: y + l.y + l.h / 2, px: l.px, ink: on ? 0.85 : 0.5, ga: fade, weight: 300, hot: dc.hover?.kind === "rstate" && dc.hover.o.id === l.id && on, y0: top.laneTop, y1: top.laneBottom });
       cx.globalAlpha = 1;
     }
-    if (top.more) {
-      const footY = top.laneTop + top.content - top.foot - io.scrollPos, busy = io.pg?.busy, wait = io.pg?.failedAt != null && !busy;
-      cx.letterSpacing = "0.6px";
-      text(busy ? `loading ${Math.min(PAGE, top.more)} more…` : wait ? `could not load ${Math.min(PAGE, top.more)} more · trying again` : `${top.more} more · scroll to load`, (top.x0 + top.x1) / 2, footY + top.foot / 2, subP, rgba(wait ? OFF : MUTED, 0.7), "center", 300);
-      cx.letterSpacing = "0px";
-    }
     // a row's tie, drawn while the row or the state it is entered from is under the pointer, along the path its sessions take in; it crosses the
     // gap under the top machine, so it clips to the lane's bottom rather than its top
     cx.restore();
@@ -597,7 +585,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
         const al = hot === row.name || io.pickedRow === row.name || (hs && hs.machine === t.machine && hs.id === t.state) ? (i ? 0.45 : 0.9) : 0;
         if (!al) return;
         const col = t.machine === top.machine ? sc.mStates[t.state].color : (a as { color: string }).color, e = entryPath(a, to), len = Math.hypot(to.x - a.x, to.y - a.y) || 1, t0 = Math.min(0.4, (a.r + 2) / len), t1 = 1 - Math.min(0.4, (to.r + 3) / len);
-        flowLine({ x: a.x, y: a.y, color: col }, { x: to.x, y: to.y, color: to.color }, al, 0.5, t.kind === "observed" ? [1.5, 6] : [2, 5]);
+        flowLine({ x: a.x, y: a.y, color: col }, { x: to.x, y: to.y, color: to.color }, al, 0.5, [2, 5]);
         cx.beginPath();
         for (let k = 0; k <= 28; k++) {
           const q = entryAt(e, t0 + ((t1 - t0) * k) / 28);

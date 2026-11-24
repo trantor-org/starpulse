@@ -4,11 +4,7 @@ import queue
 import time
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.model.ledger import (
-    PAGE,
-)
 from starpulse.machine_engine.model.machine_ties import derive, entries
-from starpulse.machine_engine.model.machine_ties import page as machine_page
 from starpulse.machine_engine.model.snapshot import declared
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -121,28 +117,9 @@ class ViewMethods:
         ]
         return flows, derive(flows, now)
 
-    def machine_rows(self, open_: str | None, before: float | None, limit: int) -> dict | None:
-        """`GET /api/machines`: the next `limit` machines entered from `open_` (None: the In Progress machine) with
-        activity older than `before` (None: the newest), `{open, machines, more}`, each machine's `name` and `last`
-        activity, which is all the page pages by (the snapshot holds the bodies); None when `open_` is not a machine
-        here."""
-        _, derived = self._flows(time.time())
-        if open_ is None:
-            open_ = next((n for n, d in derived.items() if d["depth"] == 0), None)
-        elif open_ not in derived:
-            return None
-        names, more = machine_page(derived, open_, before=before, limit=limit)
-        return {"open": open_, "machines": [{"name": n, "last": derived[n]["last"]} for n in names], "more": more}
-
     def machine_fields(self, flows: list[dict], derived: dict[str, dict], now: float) -> dict:
-        """The snapshot's `machinePage` (names of the In Progress machine's first page of rows; their bodies are in
-        `flows`) and `machineStrip` (the last 24 hours before `now` of machine entries, counted over every machine)."""
-        top = next((n for n, d in derived.items() if d["depth"] == 0), None)
-        names, more = machine_page(derived, top, before=None, limit=PAGE)
-        return {
-            "machinePage": {"open": top, "machines": names, "more": more},
-            "machineStrip": {"entries": entries(flows, derived, now, LEDGER_WINDOW)},
-        }
+        """The snapshot's `machineStrip`: the last 24 hours before `now` of machine entries, counted over every machine."""
+        return {"machineStrip": {"entries": entries(flows, derived, now, LEDGER_WINDOW)}}
 
     def _refresh_ledgers(self) -> None:
         """Rebuild the Ledger page requests read, and send it when it or its strip differs from the one last sent; the
@@ -221,7 +198,7 @@ class ViewMethods:
             return self._snapshot(now, modelled)
 
     def _modelled_fields(self, now: float) -> dict[str, Any]:
-        """The snapshot's fields read from a store: the flows, the machine page and strip, and the Done account."""
+        """The snapshot's fields read from a store: the flows, the machine strip and the Done account."""
         flows, derived = self._flows(now)
         return {
             "flows": [{**f, **derived.get(f["name"], {})} for f in flows],

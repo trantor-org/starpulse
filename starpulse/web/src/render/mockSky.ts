@@ -40,9 +40,9 @@ export function mocked(snap: Snapshot): Snapshot {
     const route = [["board", "ready"] as [string, string], ...steps("build"), ...steps("deliver"), ["ci", "running"] as [string, string], ["ci", "passing"] as [string, string], ...steps("review_fix"), ["board", "review"] as [string, string]], n = Math.floor(Date.now() / 1000 / SIM_PERIOD);
     Object.keys(at).forEach((id, i) => (at[id] = route[(n + i * 3) % route.length]));
   }
-  const simTies: Record<string, { kind: "observed"; machine: string; state: string; count: number }> = {
-    "graph-traversal": { kind: "observed", machine: "build", state: "red_proven", count: 2 },
-    ci: { kind: "observed", machine: "deliver", state: "pr_opened", count: 2 },
+  const simTies: Record<string, { machine: string; state: string }> = {
+    "graph-traversal": { machine: "build", state: "red_proven" },
+    ci: { machine: "deliver", state: "pr_opened" },
   };
   // a walking task holds a session in each machine on the way down to its own (In Progress, then the machine that opens it), at the step that opens the next
   const inLinks = snap.flows.find((f) => f.name === "in-progress")?.machine.submachines ?? [];

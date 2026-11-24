@@ -313,6 +313,10 @@ class MilestoneListRequest(_Request):
     """`POST /api/milestones`: list the open milestones. It takes no field."""
 
 
+class MachineListRequest(_Request):
+    """`POST /api/machines`: list the machines the board draws. It takes no field."""
+
+
 class MilestonePutRequest(_Request):
     """`PUT /api/milestones/{id}`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` named, if the milestone
     still reads `base`, the `revision` of the record the caller read."""

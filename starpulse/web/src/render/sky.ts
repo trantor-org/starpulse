@@ -4,7 +4,7 @@
 import { stepRings, type StepRing } from "../features/fanout/fanoutModel";
 import { tree, type Tree } from "./levels";
 import { mocked } from "./mockSky";
-import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Roles, Settled, Snapshot, Writer } from "../api";
+import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Roles, Settled, Snapshot, Writer } from "../api";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -82,7 +82,6 @@ export interface Sky {
   /** The pinned merges the Ledger's newest page leaves out. */
   mergePins: LedgerRow[];
   /** The first page of the machine ledger's rows; null when the server sent none, which shows every machine. */
-  machinePage: MachinePage | null;
   /** The last 24 hours of machine entries, oldest first; empty when the server sent none. */
   machineEntries: MachineEntry[];
   /** The day's arrivals on each starting and terminal Board state: tasks created, or settled there, since local midnight. */
@@ -210,7 +209,6 @@ export function merge(raw: Snapshot, since = midnight()): Sky {
     ledgers: {},
     mergeStrip: snap.mergeStrip ?? null,
     mergePins: snap.mergePins ?? [],
-    machinePage: snap.machinePage ?? null,
     machineEntries: snap.machineStrip?.entries ?? [],
     today: arrivals(board, snap.settled, since),
     error: snap.error,

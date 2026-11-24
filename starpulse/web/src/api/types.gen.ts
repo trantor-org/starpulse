@@ -49,6 +49,7 @@ export interface ApiContract {
   laneHistory: LaneHistory;
   ledger: LedgerPage;
   ledgerChange: LedgerChange;
+  machineDetail: MachineDetail;
   machineHistory: MachineHistory;
   machines: Machines;
   milestoneShown: MilestoneShown;
@@ -73,6 +74,7 @@ export interface ApiContract {
     | ReviewRequest
     | CreateRequest
     | MilestoneCreateRequest
+    | MachineListRequest
     | MilestoneListRequest
     | MilestonePutRequest
     | DocCreateRequest
@@ -1483,31 +1485,21 @@ export interface LedgerChange {
   [k: string]: unknown;
 }
 /**
- * `GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.
+ * `GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with
+ * (empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only.
  */
-export interface MachineHistory {
-  machine: string;
-  path: MachineStep[];
-  steps: number;
-  task: string;
-  [k: string]: unknown;
-}
-export interface MachineStep {
-  at: number;
-  event: string;
-  state: string;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/machines`: the next page of machines entered from `open`, and with `?lanes=1` each lane's surface by lane name.
- */
-export interface Machines {
+export interface MachineDetail {
   lanes?: {
     [k: string]: LaneSurface;
+  } | null;
+  launches: {
+    [k: string]: Launch;
   };
-  machines: MachineRow[];
-  more: boolean;
-  open: string | null;
+  name: string;
+  parents: string[];
+  skill: string;
+  submachines: Submachine[];
+  type: string | null;
   [k: string]: unknown;
 }
 /**
@@ -1532,11 +1524,72 @@ export interface ExitTool {
   [k: string]: unknown;
 }
 /**
- * A machine of `GET /api/machines`: its name and when it last moved, which the page pages by; the snapshot holds the rest.
+ * A runs workflow's launch: the skill it starts and the machine that skill draws, null when it has none.
  */
-export interface MachineRow {
-  last: number | null;
+export interface Launch {
+  machine: string | null;
+  skill: string;
+  [k: string]: unknown;
+}
+/**
+ * Where a Board state opens into another machine, and which Board event each inner final state fires.
+ */
+export interface Submachine {
+  exits: {
+    [k: string]: string;
+  };
+  machine: string;
+  /**
+   * The machine the link opens under: `board`, or the machine whose `state` it hangs off.
+   */
+  parent: string;
+  /**
+   * Inner event to the Board event it fires; empty when the link routes none.
+   */
+  routes?: {
+    [k: string]: string;
+  };
+  /**
+   * The skill a session runs while the inner machine does; empty when the link names none.
+   */
+  skill?: string;
+  state: string;
+  /**
+   * What has to hold for the inner machine to run under `state`; empty when always.
+   */
+  when: string;
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.
+ */
+export interface MachineHistory {
+  machine: string;
+  path: MachineStep[];
+  steps: number;
+  task: string;
+  [k: string]: unknown;
+}
+export interface MachineStep {
+  at: number;
+  event: string;
+  state: string;
+  [k: string]: unknown;
+}
+/**
+ * `POST /api/machines`: every machine the board draws.
+ */
+export interface Machines {
+  machines: MachineListed[];
+  [k: string]: unknown;
+}
+/**
+ * A machine of `POST /api/machines`: its name, its `type` and the machines it is a submachine of.
+ */
+export interface MachineListed {
   name: string;
+  parents: string[];
+  type: string | null;
   [k: string]: unknown;
 }
 /**
@@ -1898,6 +1951,10 @@ export interface MilestoneCreateRequest {
   title: string;
 }
 /**
+ * `POST /api/machines`: list the machines the board draws. It takes no field.
+ */
+export interface MachineListRequest {}
+/**
  * `POST /api/milestones`: list the open milestones. It takes no field.
  */
 export interface MilestoneListRequest {}
@@ -2106,7 +2163,6 @@ export interface Snapshot {
   interactive?: {
     [k: string]: boolean;
   } | null;
-  machinePage?: MachinePage | null;
   machineStrip?: MachineStrip | null;
   /**
    * The pinned merge rows of the last day that the newest page leaves out.
@@ -2263,14 +2319,6 @@ export interface Machine {
   } | null;
   [k: string]: unknown;
 }
-/**
- * A runs workflow's launch: the skill it starts and the machine that skill draws, null when it has none.
- */
-export interface Launch {
-  machine: string | null;
-  skill: string;
-  [k: string]: unknown;
-}
 export interface MachineState {
   final: boolean;
   id: string;
@@ -2280,35 +2328,6 @@ export interface MachineState {
    * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
    */
   role?: string | null;
-  [k: string]: unknown;
-}
-/**
- * Where a Board state opens into another machine, and which Board event each inner final state fires.
- */
-export interface Submachine {
-  exits: {
-    [k: string]: string;
-  };
-  machine: string;
-  /**
-   * The machine the link opens under: `board`, or the machine whose `state` it hangs off.
-   */
-  parent: string;
-  /**
-   * Inner event to the Board event it fires; empty when the link routes none.
-   */
-  routes?: {
-    [k: string]: string;
-  };
-  /**
-   * The skill a session runs while the inner machine does; empty when the link names none.
-   */
-  skill?: string;
-  state: string;
-  /**
-   * What has to hold for the inner machine to run under `state`; empty when always.
-   */
-  when: string;
   [k: string]: unknown;
 }
 export interface Transition {
@@ -2352,29 +2371,17 @@ export interface Stuck {
 /**
  * Where a lifecycle machine is entered from.
  *
- * `declared` is a Submachine on `machine`'s `state`; `observed` is the state the task held on `machine` when its session
- * entered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered
- * through it, null for a launch.
+ * `declared` is a Submachine on `machine`'s `state`; `dag` is a launch by `dag`, which names no machine or state.
  */
 export interface Tie {
-  count: number | null;
   dag: string | null;
-  kind: "declared" | "observed" | "dag";
+  kind: "declared" | "dag";
   machine: string | null;
   state: string | null;
   /**
    * What has to hold for a declared tie to run; empty otherwise.
    */
   when: string;
-  [k: string]: unknown;
-}
-/**
- * The first page of machines entered from `open`, by name; their bodies are in the snapshot's `flows`.
- */
-export interface MachinePage {
-  machines: string[];
-  more: boolean;
-  open: string | null;
   [k: string]: unknown;
 }
 /**

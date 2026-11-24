@@ -3358,6 +3358,69 @@
       "title": "Machine",
       "type": "object"
     },
+    "MachineDetail": {
+      "description": "`GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with\n(empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only.",
+      "properties": {
+        "lanes": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/LaneSurface"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "launches": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Launch"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parents": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "skill": {
+          "type": "string"
+        },
+        "submachines": {
+          "items": {
+            "$ref": "#/$defs/Submachine"
+          },
+          "type": "array"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "parents",
+        "skill",
+        "submachines",
+        "launches"
+      ],
+      "title": "MachineDetail",
+      "type": "object"
+    },
     "MachineEntry": {
       "properties": {
         "at": {
@@ -3472,19 +3535,26 @@
       "title": "MachineHistory",
       "type": "object"
     },
-    "MachinePage": {
-      "description": "The first page of machines entered from `open`, by name; their bodies are in the snapshot's `flows`.",
+    "MachineListRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/machines`: list the machines the board draws. It takes no field.",
+      "properties": {},
+      "title": "MachineListRequest",
+      "type": "object"
+    },
+    "MachineListed": {
+      "description": "A machine of `POST /api/machines`: its name, its `type` and the machines it is a submachine of.",
       "properties": {
-        "machines": {
+        "name": {
+          "type": "string"
+        },
+        "parents": {
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "more": {
-          "type": "boolean"
-        },
-        "open": {
+        "type": {
           "anyOf": [
             {
               "type": "string"
@@ -3496,35 +3566,11 @@
         }
       },
       "required": [
-        "open",
-        "machines",
-        "more"
-      ],
-      "title": "MachinePage",
-      "type": "object"
-    },
-    "MachineRow": {
-      "description": "A machine of `GET /api/machines`: its name and when it last moved, which the page pages by; the snapshot holds the rest.",
-      "properties": {
-        "last": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
         "name",
-        "last"
+        "type",
+        "parents"
       ],
-      "title": "MachineRow",
+      "title": "MachineListed",
       "type": "object"
     },
     "MachineState": {
@@ -3600,38 +3646,17 @@
       "type": "object"
     },
     "Machines": {
-      "description": "`GET /api/machines`: the next page of machines entered from `open`, and with `?lanes=1` each lane's surface by lane name.",
+      "description": "`POST /api/machines`: every machine the board draws.",
       "properties": {
-        "lanes": {
-          "additionalProperties": {
-            "$ref": "#/$defs/LaneSurface"
-          },
-          "type": "object"
-        },
         "machines": {
           "items": {
-            "$ref": "#/$defs/MachineRow"
+            "$ref": "#/$defs/MachineListed"
           },
           "type": "array"
-        },
-        "more": {
-          "type": "boolean"
-        },
-        "open": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
         }
       },
       "required": [
-        "open",
-        "machines",
-        "more"
+        "machines"
       ],
       "title": "Machines",
       "type": "object"
@@ -7108,17 +7133,6 @@
           "default": null,
           "description": "Each task an accepted take-over made interactive, by task id; a task never taken over is absent."
         },
-        "machinePage": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MachinePage"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "machineStrip": {
           "anyOf": [
             {
@@ -8022,18 +8036,8 @@
       "type": "object"
     },
     "Tie": {
-      "description": "Where a lifecycle machine is entered from.\n\n`declared` is a Submachine on `machine`'s `state`; `observed` is the state the task held on `machine` when its session\nentered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered\nthrough it, null for a launch.",
+      "description": "Where a lifecycle machine is entered from.\n\n`declared` is a Submachine on `machine`'s `state`; `dag` is a launch by `dag`, which names no machine or state.",
       "properties": {
-        "count": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "dag": {
           "anyOf": [
             {
@@ -8047,7 +8051,6 @@
         "kind": {
           "enum": [
             "declared",
-            "observed",
             "dag"
           ],
           "type": "string"
@@ -8081,7 +8084,6 @@
         "kind",
         "machine",
         "state",
-        "count",
         "dag",
         "when"
       ],
@@ -8701,6 +8703,9 @@
     "ledgerChange": {
       "$ref": "#/$defs/LedgerChange"
     },
+    "machineDetail": {
+      "$ref": "#/$defs/MachineDetail"
+    },
     "machineHistory": {
       "$ref": "#/$defs/MachineHistory"
     },
@@ -8772,6 +8777,9 @@
           },
           {
             "$ref": "#/$defs/MilestoneCreateRequest"
+          },
+          {
+            "$ref": "#/$defs/MachineListRequest"
           },
           {
             "$ref": "#/$defs/MilestoneListRequest"
@@ -8860,6 +8868,7 @@
     "ledgerChange",
     "donePage",
     "machines",
+    "machineDetail",
     "laneHistory",
     "machineHistory",
     "taskEventHistory",

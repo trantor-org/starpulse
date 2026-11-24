@@ -1,9 +1,8 @@
 """How each lifecycle machine is entered, where it nests, when it was last active and what is stuck in it.
 
 The page draws the In Progress machine across the top and every machine entered from it as a row. A machine's
-**ties** say where it is entered from: *declared* by a `Submachine` on another machine's state, *observed* from the
-trails (the state a task held on the machine it came from when its session entered this one, counted), or a *dag*
-launch. Its **parent** is the machine its leading tie enters it from, else the In Progress machine; **last** and
+**ties** say where it is entered from: *declared* by a `Submachine` on another machine's state, or a *dag* launch.
+Its **parent** is the machine its declared tie enters it from, else the In Progress machine; **last** and
 **stuck** roll up from the machine and every machine nested below it.
 
 `derive` is pure over the snapshot's `flows`, so the same tasks and the same clock always give the same answer.
@@ -12,24 +11,21 @@ launch. Its **parent** is the machine its leading tie enters it from, else the I
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-__all__ = ["STUCK_S", "derive", "entries", "page", "rows"]
+__all__ = ["STUCK_S", "derive", "entries"]
 
 #: A task idle in a working state for longer than this (seconds) is stuck.
 STUCK_S = 7200
 #: How long before a session entered a sibling session of the same task still counts as open (seconds).
 _OPEN_S = 600
-#: A declared tie outranks any count of observed ones.
-_DECLARED = 1_000_000
 
 
 def derive(flows: Sequence[Mapping[str, Any]], now: float) -> dict[str, dict]:
     """Each machine's `ties`, `parent`, `depth`, `chain`, `nested`, `last` and `stuck`, by machine name.
 
     The In Progress machine is the Board's first submachine; with none, no machine nests and every `parent` is None.
-    A tie is `{kind, machine, state, count, dag, when}`: `machine` and `state` name where it enters from (None for a
-    DAG launch, which names `dag` instead), `count` is the sessions entered through it (None for a launch, which
-    the machine events do not count). A machine's ties lead with the declared one, then the most observed, then the
-    launches; the first non-launch tie is the leading one. `chain` is the machines above it outermost first and
+    A tie is `{kind, machine, state, dag, when}`: `machine` and `state` name where it enters from (None for a
+    DAG launch, which names `dag` instead). A machine's ties lead with the declared ones, then the launches; the
+    first declared tie is the leading one. `chain` is the machines above it outermost first and
     `nested` every machine below it; `last` is None for a machine with no task. `stuck` is the task idle longest
     past `STUCK_S` outside a final state, as `{machine, state, since}` with `since` the time of its last move.
     """
@@ -43,7 +39,6 @@ def derive(flows: Sequence[Mapping[str, Any]], now: float) -> dict[str, dict]:
         for link in f["machine"].get("submachines", []):
             if link["machine"] in machines and link["machine"] != ip:
                 ties.add(link["machine"], name, link["state"], "declared", None, link.get("when", ""))
-    _observe(ties, machines, ip)
     for dag, launch in (board.get("launches") or {}).items():
         if child := next((n for n in (launch.get("machine"), launch.get("skill")) if n in machines), None):
             ties.add(child, None, None, "dag", dag)
@@ -86,40 +81,17 @@ class _Ties:
                 "kind": kind,
                 "machine": machine,
                 "state": state,
-                "count": None if kind == "dag" else 0,
                 "dag": dag,
                 "when": when,
             },
         )
 
-    def get(self, child: str, kind: str, machine: str | None, state: str | None) -> dict | None:
-        return self._all.get((child, kind, machine, state, None))
-
     def of(self, child: str) -> list[dict]:
-        found = [(key[0], tie) for key, tie in self._all.items() if key[0] == child]
-        by_rank = sorted((t for _, t in found if t["kind"] != "dag"), key=lambda t: -_rank(t))
-        return [*by_rank, *(t for _, t in found if t["kind"] == "dag")]
+        found = [tie for key, tie in self._all.items() if key[0] == child]
+        return [*(t for t in found if t["kind"] != "dag"), *(t for t in found if t["kind"] == "dag")]
 
     def leading(self, child: str) -> dict | None:
         return next((t for t in self.of(child) if t["kind"] != "dag"), None)
-
-
-def _rank(tie: dict) -> int:
-    return _DECLARED if tie["kind"] == "declared" else tie["count"]
-
-
-def _observe(ties: _Ties, machines: Mapping[str, Mapping[str, Any]], ip: str | None) -> None:
-    """Count each task's session on a machine against the state its task held on the session it was entered from."""
-    sessions = _sessions(machines)
-    for name, f in machines.items():
-        if name == ip:
-            continue
-        for agent in f["agents"]:
-            if not agent.get("task") or not (origin := _entered_from(agent, name, sessions[agent["task"]], ip)):
-                continue
-            machine, state = origin
-            tie = ties.get(name, "declared", machine, state) or ties.add(name, machine, state, "observed", None)
-            tie["count"] += 1
 
 
 def _sessions(machines: Mapping[str, Mapping[str, Any]]) -> dict[str, list[tuple[str, dict]]]:
@@ -201,32 +173,6 @@ def _activity(machines: Mapping[str, Mapping[str, Any]], names: Sequence[str], n
         "last": last,
         "stuck": None if stuck is None else {"machine": stuck[1], "state": stuck[2], "since": stuck[0]},
     }
-
-
-def _activity_of(derived: Mapping[str, Mapping[str, Any]], name: str) -> float:
-    return derived[name]["last"] or 0.0
-
-
-def rows(derived: Mapping[str, Mapping[str, Any]], open_: str | None) -> list[str]:
-    """The machines entered from `open_` (their `parent`), newest rolled-up activity first, then by name; a machine
-    with no task has no activity and comes last."""
-    return sorted((n for n, d in derived.items() if d["parent"] == open_), key=lambda n: (-_activity_of(derived, n), n))
-
-
-def page(
-    derived: Mapping[str, Mapping[str, Any]], open_: str | None, *, before: float | None, limit: int
-) -> tuple[list[str], bool]:
-    """The next `limit` rows of `open_` with activity older than `before` (None: the newest), and whether older remain.
-
-    `before` is the activity of the last row the reader holds (0 for a machine with none). A page ends only between two
-    different activities, so rows sharing the boundary travel together and the next page, which starts strictly older,
-    neither repeats nor skips one; such a page may hold more than `limit`.
-    """
-    live = [n for n in rows(derived, open_) if before is None or _activity_of(derived, n) < before]
-    end = limit
-    while 0 < end < len(live) and _activity_of(derived, live[end]) == _activity_of(derived, live[end - 1]):
-        end += 1
-    return live[:end], end < len(live)
 
 
 def entries(

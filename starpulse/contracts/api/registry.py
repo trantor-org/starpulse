@@ -21,7 +21,7 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecord,
     TaskRecords,
 )
-from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
+from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, MachineDetail, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
@@ -33,6 +33,7 @@ from starpulse.contracts.api.dto.requests import (
     DocListRequest,
     DocPutRequest,
     EditRequest,
+    MachineListRequest,
     MilestoneCreateRequest,
     MilestoneListRequest,
     MilestonePutRequest,
@@ -119,7 +120,7 @@ EVENTS["scheduler"] = SchedulerStatus
 RESPONSES: dict[str, Any] = {
     "/api/snapshot": Snapshot,
     "/api/ledger/": LedgerPage,
-    "/api/machines": Machines,
+    "/api/machines/": MachineDetail,
     "/api/harnesses": Harnesses,
     "/api/history-window": WindowState,
     "/api/doctor": ContractReport,
@@ -170,6 +171,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
 
 #: Each list route's request body: a POST to a path a PUT also writes, which `REQUESTS` names.
 LISTS: dict[str, type[BaseModel]] = {
+    "/api/machines": MachineListRequest,
     "/api/milestones": MilestoneListRequest,
     "/api/docs": DocListRequest,
 }
@@ -181,6 +183,7 @@ BODIES: dict[str, Any] = {
     "ledger": LedgerPage | ApiError,
     "ledger_rows": LedgerChange,
     "machines": Machines | ApiError,
+    "machine": MachineDetail | ApiError,
     "done": DonePage | ApiError,
     "history": LaneHistory | MachineHistory | TaskEventHistory | ApiError,
     "pulls": Pulls | ApiError,
@@ -273,7 +276,8 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/doctor"): _read("The contract report", "doctor"),
     ("GET", "/api/health"): _read("Whether the server is ready", "ready"),
     ("GET", "/api/runs"): _read("The workflow runs", "runs"),
-    ("GET", "/api/machines"): _read("The machines and their lanes", "machines", "before", "lanes", "limit", "open"),
+    ("GET", "/api/machines/{name}"): _read("One machine's declared config", "machine"),
+    ("POST", "/api/machines"): _write("The machines the board draws", "machines", MachineListRequest),
     ("GET", "/api/done"): _read("A page of finished tasks", "done", "before", "limit"),
     ("GET", "/api/search"): _read("Search tasks", "search", "before", "finished_within_days", "label", "limit", "q"),
     ("GET", "/api/search/similar"): _read(

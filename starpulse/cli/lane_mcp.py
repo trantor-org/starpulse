@@ -218,7 +218,7 @@ def main(argv: list[str], stdin: TextIO = sys.stdin, stdout: TextIO = sys.stdout
     base = agent_wire.server_url(None, os.environ)
 
     def lanes() -> dict[str, Any]:
-        _, body = agent_wire.get(base, "/api/machines?lanes=1")
+        _, body = agent_wire.get(base, "/api/machines/board")
         return body.get("lanes", {})
 
     tools = LaneTools(

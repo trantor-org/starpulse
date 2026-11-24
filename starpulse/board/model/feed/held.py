@@ -47,7 +47,6 @@ FOLDS = frozenset({"task", "move", "pulls", "claim", "dags", "ledgers", "snapsho
 #: The change that updates each snapshot key; `build` is a key the writer's whole build holds, which no change moves.
 RULES: dict[str, tuple[str, ...]] = {
     "flows": ("task", "move", "snapshot", "tick"),
-    "machinePage": ("move", "snapshot", "tick"),
     "machineStrip": ("task", "move", "snapshot", "tick"),
     "settled": ("task", "snapshot"),
     "cold_done": ("task", "snapshot"),

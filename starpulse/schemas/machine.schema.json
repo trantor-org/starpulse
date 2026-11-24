@@ -12,6 +12,16 @@
       "type": "string",
       "minLength": 1
     },
+    "type": {
+      "description": "What the machine is: `machine` stands alone, a `phase machine` is a phase a parent's state opens whose exits move the parent, a `sub-machine` is a procedure a parent's state opens that moves nothing there.",
+      "enum": ["machine", "phase machine", "sub-machine"]
+    },
+    "parents": {
+      "description": "The machines whose `submachines` name this one, by file stem. The loader refuses a project where this list and those links disagree.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
     "states": {
       "type": "object",
       "minProperties": 1,

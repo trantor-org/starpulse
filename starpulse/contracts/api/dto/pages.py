@@ -1,4 +1,4 @@
-"""The paged and read routes of the ledgers and the machines view."""
+"""The paged and read routes of the ledgers and the machines."""
 
 from typing import Any
 
@@ -6,6 +6,7 @@ from pydantic import Field
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.ledger import LedgerRow
+from starpulse.contracts.api.dto.machine import Launch, Submachine
 from starpulse.contracts.api.dto.task import RawTask
 
 
@@ -30,13 +31,6 @@ class LedgerChange(_Api):
     rows: list[LedgerRow]
 
 
-class MachineRow(_Api):
-    """A machine of `GET /api/machines`: its name and when it last moved, which the page pages by; the snapshot holds the rest."""
-
-    name: str
-    last: float | None
-
-
 class ExitTool(_Api):
     """A typed exit tool of a lane: the event it fires and the JSON schema of its arguments."""
 
@@ -54,13 +48,31 @@ class LaneSurface(_Api):
     skill: str | None
 
 
-class Machines(_Api):
-    """`GET /api/machines`: the next page of machines entered from `open`, and with `?lanes=1` each lane's surface by lane name."""
+class MachineListed(_Api):
+    """A machine of `POST /api/machines`: its name, its `type` and the machines it is a submachine of."""
 
-    open: str | None
-    machines: list[MachineRow]
-    more: bool
-    lanes: dict[str, LaneSurface] = Field(default_factory=dict)
+    name: str
+    type: str | None
+    parents: list[str]
+
+
+class Machines(_Api):
+    """`POST /api/machines`: every machine the board draws."""
+
+    machines: list[MachineListed]
+
+
+class MachineDetail(_Api):
+    """`GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with
+    (empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only."""
+
+    name: str
+    type: str | None
+    parents: list[str]
+    skill: str
+    submachines: list[Submachine]
+    launches: dict[str, Launch]
+    lanes: dict[str, LaneSurface] | None = None
 
 
 class LaneStep(_Api):
