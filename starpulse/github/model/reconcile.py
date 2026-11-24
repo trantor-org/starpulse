@@ -12,7 +12,7 @@ from typing import Any
 
 from starpulse.github.model.delivery import Delivery
 
-__all__ = ["EARLY_S", "LATE_S", "LOOKBACK_S", "SOURCE", "epoch", "pull_delivery", "redeliveries", "suite_delivery", "update_delivery"]
+__all__ = ["EARLY_S", "LATE_S", "LOOKBACK_S", "SETTLE_S", "SOURCE", "epoch", "pull_delivery", "redeliveries", "suite_delivery", "update_delivery"]
 
 SOURCE = "reconcile"
 #: How far back a read with no cursor reaches: the retention of the inbox's rows.
@@ -21,6 +21,8 @@ LOOKBACK_S = 7 * 86400
 #: before, delivery latency after. A row outside it leaves the fact to be inserted, which the event id collapses.
 EARLY_S = 300
 LATE_S = 900
+#: How long after a fact its webhook may still be in flight: a fact younger than this is saved but not counted as a correction.
+SETTLE_S = 60
 
 
 def epoch(stamp: str) -> float:

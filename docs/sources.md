@@ -224,7 +224,9 @@ either unset the delivery half fails each pass, logged and naming the variable; 
    `reconcile:<repository>:<number>:<head sha>:<suite id>`. Both have `source = 'reconcile'`, are shaped like the webhook body
    that would have reported them, and travel the consumer path above. A `pull_request` row carries the listed pull request
    whole, with `merged` and a top-level `number` added, so the relay reads its closed time and refs as from a webhook.
-   A row for a fact a delivery already reported
+   A suite a `check_suite` webhook for the same suite id already reported counts as reported even when the webhook named no
+   pull request (the checks path finds a suite's pull requests by its head). A row for a fact younger than a minute
+   (`SETTLE_S`) is inserted but not counted, as its webhook may still be in flight. A row for a fact a delivery already reported
    collapses on the event id. A pull request in the list the PR store lacks, or holds with an older `updatedAt`, also
    gets a `pull_request` row with action `reconciled` and `delivery_id` `reconcile:<repository>:<number>:<updated_at>:updated`
    that carries the listed pull request whole; it names no fact, so the `events` consumer skips it, and the `pulls`
