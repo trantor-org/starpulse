@@ -4,19 +4,20 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from typing import Any
 
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
 from starpulse.event_log.wake import StopEvent, save_on_change
 from starpulse.pulls.adapters.outbound.pulls import PullStore
-from starpulse.views.model.encoding import encode
+from starpulse.views.model.encoding import encode_pulls
 
 logger = logging.getLogger(__name__)
 
 #: The view the answer is stored as, which `serve` reads.
 VIEW = "pulls"
-#: How long after a save the answer is stored: the list is ~5 MB to encode (0.6 s), and saves come in bursts, so the
-#: saves of one window share one encode.
+#: How long after a save the answer is stored: the list is ~5 MB, and saves come in bursts, so the
+#: saves of one window share one store.
 STORE_AFTER_S = 3.0
 
 
@@ -27,6 +28,7 @@ def keep_pulls(
     it `debounce_s` after the first call of a window, until `stop`. `serve` sends the one stored before until then."""
     snapshots = SnapshotStore(log.engine, lambda data, held: b"")
     changed = threading.Event()
+    held: dict[Any, tuple[Any, ...]] = {}  # each pull request's JSON, so a store encodes only what changed
 
     def store_list() -> None:
         if stop.is_set():  # the thread's last call, which the process ending has no use for
@@ -34,7 +36,7 @@ def keep_pulls(
         try:
             # the body `pulls_response` makes of a read with no filter
             found = store.find(None, None, None, None, detailed=False, bodies=False)
-            snapshots.put(VIEW, encode("pulls", {"pulls": found}), time.time())
+            snapshots.put(VIEW, encode_pulls(found, held), time.time())
         except Exception:
             logger.warning("pulls: the unfiltered list was not stored", exc_info=True)
             changed.set()  # the window's work is not done: the next window tries again, `debounce_s` later

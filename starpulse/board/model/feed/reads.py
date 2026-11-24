@@ -149,11 +149,11 @@ class ReadMethods:
             self._read_model.position(),
             local_midnight(self._clock()),
         )  # before the build: a change in it rebuilds next
-        if (built := self._built) is not None and built[0] == key:
-            return [self._active(agent) for agent in built[1]]
-        agents = self._hot()
-        self._built = (key, agents)
-        return list(agents)
+        with self._build_lock:  # threads woken by one change build once; the rest read that build
+            if (built := self._built) is None or built[0] < key:
+                self._built = (key, self._hot())
+                return list(self._built[1])
+        return [self._active(agent) for agent in built[1]]
 
     @contextmanager
     def one_read(self) -> Iterator[None]:

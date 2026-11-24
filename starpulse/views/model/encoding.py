@@ -12,6 +12,7 @@ from pydantic import TypeAdapter
 from starpulse.board.model.feed.shared import LIVE_WINDOW_S
 from starpulse.contracts.api.dto.cue import Pull
 from starpulse.contracts.api.dto.flow import Settled
+from starpulse.contracts.api.dto.pulls import PullRecord
 from starpulse.contracts.api.dto.task import RawTask
 from starpulse.contracts.api.registry import BODIES, EVENTS
 
@@ -47,6 +48,25 @@ def _adapter(annotation: Any) -> TypeAdapter[Any]:
 
 
 _Held = dict[Any, tuple[Any, ...]]
+
+
+def encode_pulls(pulls: list[dict[str, Any]], held: _Held) -> bytes:
+    """`encode("pulls", {"pulls": pulls})` with the JSON of each pull request kept in `held` under its repository and
+    number: one equal to the record it was dumped from is not validated and dumped again. A record shares its nested
+    values with the store, which replaces a record it changes."""
+    adapter = _adapter(PullRecord)
+    kept: _Held = {}
+    dumps = []
+    for pull in pulls:
+        key = (pull["repo"], pull["number"])
+        entry = held.get(key)
+        if entry is None or entry[0] != pull:
+            entry = (pull, adapter.dump_json(adapter.validate_python(pull), by_alias=True, exclude_unset=True))
+        kept[key] = entry
+        dumps.append(entry[1])
+    held.clear()
+    held.update(kept)
+    return encode("pulls", {"pulls": []})[:-2] + b",".join(dumps) + b"]}"
 
 
 def _dump_all(
