@@ -54,7 +54,7 @@ from starpulse.views.adapters.inbound.asgi_app import page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.adapters.outbound import skill_cost
-from starpulse.views.adapters.outbound.gc_pauses import PAUSES
+from starpulse.views.adapters.outbound.gc_pauses import PAUSES, bound_full_collections
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.adapters.outbound.storage_metrics import SCRAPE_CACHE_S, cached, docs_exposition, storage_exposition
 from starpulse.views.adapters.outbound.take_over import command_take_over
@@ -225,6 +225,7 @@ def serve_page(
     )
     snapshots = Snapshots(SnapshotStore(log.engine, encode_snapshot), log, stop)
     gc.callbacks.append(PAUSES.callback)
+    bound_full_collections()
     app = page_app(feed, snapshots, host.static, store, window, board, services, caught_up=caught_up)
     try:
         httpd = PageServer(

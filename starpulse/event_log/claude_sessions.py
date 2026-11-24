@@ -9,6 +9,7 @@ means one is running. tmux redraws and the record's `status` say nothing reliabl
 decides.
 """
 
+import functools
 import json
 import os
 import re
@@ -184,18 +185,31 @@ def last_report(root: Path, session: str, *, size: int = TAIL_BYTES) -> dict[str
     return {}
 
 
-def session_activity(root: Path, session: str, *, now: float, tail: int = TAIL_BYTES) -> dict[str, Any] | None:
-    """`{"state": "idle", "last_turn_at", "idle_s"}` after a finished turn, `{"state": "working", "last_turn_at"}`
-    mid-turn, each with the session's `last_report` when it has one; None when `session` names no transcript under
-    `root` or none of its last `tail` bytes is a turn."""
+@functools.lru_cache(maxsize=512)
+def _read_activity(root: Path, session: str, tail: int, mtime_ns: int, size: int) -> dict[str, Any] | None:
+    """The activity of `session` without `idle_s`, keyed by its transcript's mtime and size: unchanged, it is read once."""
     entry = last_turn(root, session, size=tail, ends=True)
     if entry is None:
         return None
-    stamp = entry["timestamp"]
     report = last_report(root, session, size=tail)
-    if _ended(entry):
-        return {"state": "idle", "last_turn_at": stamp, "idle_s": int(now - _seconds(stamp)), **report}
-    return {"state": "working", "last_turn_at": stamp, **report}
+    state = "idle" if _ended(entry) else "working"
+    return {"state": state, "last_turn_at": entry["timestamp"], **report}
+
+
+def session_activity(root: Path, session: str, *, now: float, tail: int = TAIL_BYTES) -> dict[str, Any] | None:
+    """`{"state": "idle", "last_turn_at", "idle_s"}` after a finished turn, `{"state": "working", "last_turn_at"}`
+    mid-turn, each with the session's `last_report` when it has one; None when `session` names no transcript under
+    `root` or none of its last `tail` bytes is a turn. The transcript is read once for each change of its mtime or size."""
+    path = transcript_path(root, session)
+    try:
+        stat = path.stat() if path is not None else None
+    except OSError:
+        stat = None
+    found = _read_activity(root, session, tail, stat.st_mtime_ns, stat.st_size) if stat else None
+    if found is None:
+        return None
+    idle = {"idle_s": int(now - _seconds(found["last_turn_at"]))} if found["state"] == "idle" else {}
+    return {**found, **idle}
 
 
 def sessions_dir(environ: Mapping[str, str]) -> Path:
@@ -203,10 +217,15 @@ def sessions_dir(environ: Mapping[str, str]) -> Path:
     return Path(environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "sessions"
 
 
+@functools.cache
+def _boot_time() -> float:
+    return psutil.boot_time()
+
+
 def _running(record: dict[str, Any]) -> bool:
     """Whether the recorded pid runs with the recorded start time, so a reused pid is not the session."""
     try:
-        started = psutil.Process(int(record["pid"])).create_time() - psutil.boot_time()
+        started = psutil.Process(int(record["pid"])).create_time() - _boot_time()
         return round(started * os.sysconf("SC_CLK_TCK")) == int(record["procStart"])  # `procStart` is in clock ticks
     except psutil.Error, KeyError, ValueError, TypeError:
         return False

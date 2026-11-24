@@ -98,7 +98,8 @@ async def _done(parent: dict, info: GraphQLResolveInfo) -> dict:
 
 
 async def _read_done(info: GraphQLResolveInfo) -> dict:
-    return {**await _worker(info, info.context["feed"].done_fields), "now": info.context["api"].clock()}
+    feed = info.context["feed"]
+    return {**await _worker(info, feed.done_fields), "now": info.context["api"].clock(), "roles": {"done": feed.roles.done}}
 
 
 @task_list.field("settled")

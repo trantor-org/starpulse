@@ -1,8 +1,19 @@
 """The pause each garbage collection costs, as Prometheus metrics; collection itself is Python's own."""
 
+import gc
 import threading
 import time
 from typing import Any
+
+
+FULL_COLLECTION_EVERY = 50_000
+"""Middle-generation collections between full-heap ones: about a day at the live worker's 30 a minute."""
+
+
+def bound_full_collections() -> None:
+    """Make the full-heap collection rare: each stalled every request for 0.4-3.8 s and freed about 850 objects."""
+    young, middle, _ = gc.get_threshold()
+    gc.set_threshold(young, middle, FULL_COLLECTION_EVERY)
 
 
 class GcPauses:
