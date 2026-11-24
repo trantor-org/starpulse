@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { build, Drawn, pickRows, SUN_FIT, SUN_R, sunTexts, tally, routed, curveDist, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
+import { openLedger } from "../api/ledgerStream";
 import { ledgerLevel, type Level } from "./levels";
 import { merge, midnight, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
@@ -1563,6 +1564,26 @@ describe("a fold's level", () => {
       expect([g.view / g.rh, g.view % g.rh]).toEqual([rows.length + 1, 0]);
       expect(g.cells.map((c) => c.dag)).toEqual(l.cols.map((c) => c.dag));
       g.cells.forEach((c, i) => expect([c.gx > l.cols[i].x0, c.tx < l.cols[i].x1, c.room > 0]).toEqual([true, true, true]));
+    });
+
+    it("draw the panel from the rows the occurrenceChanges subscription holds, a pin bump's row keeping its null appliedBy", async () => {
+      const occurrence = (r: LedgerRow) => ({ ...r, sha: r.sha ?? null, pr: null, child: "appliedBy" in r, appliedBy: r.appliedBy ?? null, applies: null });
+      const frame = (change: object) => `event: next\ndata: ${JSON.stringify({ data: { occurrenceChanges: change } })}\n\n`;
+      const held = new TextEncoder().encode(`: ping\n\n${frame({ head: true, more: false, rows: rows.map(occurrence) })}`);
+      const sent: { url: string; body: string }[] = [];
+      const fetcher = async (url: string, init?: RequestInit) => {
+        sent.push({ url, body: String(init?.body) });
+        return new Response(new ReadableStream({ start: (c) => { c.enqueue(held); c.close(); } }));
+      };
+      const got = await new Promise<LedgerRow[]>((resolve) => {
+        const { close } = openLedger("MERGED", { head: (page) => { close(); resolve(page.rows); }, rows: () => {} }, fetcher);
+      });
+
+      const g = merged(got).fold!.ledger!.grid!;
+
+      expect(sent.map((r) => [r.url, JSON.parse(r.body).variables])).toEqual([["/graphql", { event: "MERGED" }]]);
+      expect(got).toEqual(rows);
+      expect(g.view / g.rh).toBe(rows.length + 1);
     });
 
     it("keep the left gutter wide enough for a row's time, task and title before the spine", () => {

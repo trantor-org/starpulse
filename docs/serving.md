@@ -362,15 +362,6 @@ GET /api/snapshot  the document /api/events sends on connect, as one response: w
                    `starpulse snapshot` and `starpulse board|task|machines|machine|doctor|incident` read; a verb
                    that needs a task's description or criteria reads `/api/task/<id>`
 GET /api/runs      {dags, error}: every runs workflow with its latest run, and what a runs instance reported: `starpulse runs list`
-GET /api/ledger/<event>[?before=T][&limit=N]
-                   {rows, more}: one Ledger's next `limit` rows (default 20, at most 100) older than `before` (epoch
-                   seconds, the `at` of the last row held; none: the newest), each as a `LedgerRow`. None is older than
-                   24 hours, `more` says whether older ones remain, and rows sharing the boundary second all come in
-                   one page, so walking `before` neither repeats nor skips a row. A `before` that is not a finite
-                   number, or a `limit` outside 1-100, is 400; an event no workflow is tied to is 404
-GET /api/ledger/<event>/events
-                   SSE for a page with that Ledger open: `page` ({rows, more}, the newest rows) at once, then `rows`
-                   ({rows}, those that are new or differ) as they change. /api/events carries no Ledger row
 GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_contains=TEXT][&task=TASK-N][&bodies=1]
                    {pulls}: the pull requests the PR store holds, kept current by the lifecycle events of the tasks that cite
                    them and by GitHub's webhook deliveries, those matching every filter
@@ -1394,12 +1385,16 @@ step, and the step it is in.
 
 - `MERGED` occurrences are merged pull requests, which carry their tasks, from the last day. Any other event's are tasks
   entering the lane the event reaches within the last day.
-- The snapshot holds no Ledger row. A page opening a Ledger reads `GET /api/ledger/<event>/events`: SSE whose first event,
-  `page`, is `{rows, more}` (the newest 20 rows, and whether older ones remain) and whose later `rows` events are
-  `{rows}`, the rows of that event that are new or differ, so a Ledger no page has open costs no frame. The page asks
-  `GET /api/ledger/<event>?before=<at>&limit=20` for each older page as `{rows, more}`, `before` being the `at` of the last
-  row held. Rows sharing the boundary second come together, so a page can run past `limit` and walking it neither repeats
-  nor skips a row; none is older than 24 hours; an event no workflow is tied to is 404. `mergeStrip` (snapshot, and in the
+- The snapshot holds no Ledger row. A Ledger's rows are `POST /graphql` reads: `occurrences(event, before, limit)` is
+  `{rows, more}`, one page of the next `limit` rows (default 20, at most 100) older than `before` (epoch seconds, the `at`
+  of the last row held; none: the newest), each an `Occurrence` (a `LedgerRow`, `runs` and `fails` as JSON; `child` marks
+  another repository's merge, whose `appliedBy` is the parent merge's key or null until one has). Rows sharing the
+  boundary second come together, so a page can run past `limit` and walking `before` neither repeats nor skips a row;
+  none is older than 24 hours; a `before` that is not finite or a `limit` outside 1-100 is a GraphQL error; an event no
+  workflow is tied to is null. A page with a Ledger open runs `subscription { occurrenceChanges(event) }`: graphql-sse
+  frames whose first `next` is `{head: true, rows, more}`, the newest 20 rows and whether older ones remain, and whose
+  later ones are `{head: false, rows}`, the rows that are new or differ, so a Ledger no page has open costs no frame; an
+  unknown event is 404. `mergeStrip` (snapshot, and in the
   `ledgers` event, which carries nothing else; null with no workflow tied to `MERGED`) counts the whole day without the
   rows: `{since, bucket, buckets}`, 96 buckets of 900 seconds from `since`, each
   `{merges, failed, reruns}`: merges landed, those holding a failed run, and forced reruns started (a run whose

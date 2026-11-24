@@ -123,7 +123,7 @@ class LedgerMethods:
         return {"mergeStrip": view["mergeStrip"], "mergePins": view["mergePins"]}
 
     def ledger_rows(self, event: str, before: float | None, limit: int) -> dict | None:
-        """`GET /api/ledger/<event>`: the next `limit` rows older than `before` (None: the newest), `{rows, more}`, none
+        """The `occurrences` query: the next `limit` rows older than `before` (None: the newest), `{rows, more}`, none
         from beyond `LEDGER_WINDOW`; None when no workflow is tied to `event`."""
         with self._lock:
             return self._ledger_page(event, before, limit)

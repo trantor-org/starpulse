@@ -1,21 +1,12 @@
-"""The paged and read routes of the ledgers and the machines."""
+"""The paged and read routes of the done tasks and the machines."""
 
 from typing import Any
 
 from pydantic import Field
 
 from starpulse.contracts.api._base import _Api
-from starpulse.contracts.api.dto.ledger import LedgerRow
 from starpulse.contracts.api.dto.machine import Launch, Submachine
 from starpulse.contracts.api.dto.task import RawTask
-
-
-class LedgerPage(_Api):
-    """`GET /api/ledger/<event>`, and the first event of `GET /api/ledger/<event>/events`: a Ledger's rows, newest first,
-    and whether older ones remain."""
-
-    rows: list[LedgerRow]
-    more: bool
 
 
 class DonePage(_Api):
@@ -23,12 +14,6 @@ class DonePage(_Api):
 
     tasks: list[RawTask]
     more: bool
-
-
-class LedgerChange(_Api):
-    """A later event of `GET /api/ledger/<event>/events`: the rows that are new or differ; every other row stands."""
-
-    rows: list[LedgerRow]
 
 
 class ExitTool(_Api):

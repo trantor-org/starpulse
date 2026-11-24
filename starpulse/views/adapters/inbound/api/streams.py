@@ -1,4 +1,4 @@
-"""The event streams as Starlette endpoints over frame generators. The snapshot and ledger modules route them."""
+"""The event streams as Starlette endpoints over frame generators. The snapshot module and `/graphql` route them."""
 
 import contextlib
 import functools
@@ -151,10 +151,6 @@ class Streams:
         states = query(request).get("state", [])
         return self._admitted(request, lambda: self._columns("lanes", None, states))
 
-    def ledger_rows(self, request: Request) -> Response:
-        event = request.path_params["rest"].partition("/")[0]
-        return self._admitted(request, lambda: self._ledger(request, event))
-
     def task_changes(self, request: Request, position: int, render: Callable[[dict], str]) -> Response:
         """The task changes after stream `position`, each as a `next` event of `render`'s text; a 410 whose error code is
         `REREAD` when the store no longer holds the deltas after `position`."""
@@ -167,6 +163,18 @@ class Streams:
             missed, changes = attached
             frames = self._deltas(missed, changes, lambda name, data: self._task_change(render, name, data))
             return Stream(frames, lambda: self._snapshots.unsubscribe(changes))
+
+        return self._admitted(request, open_stream)
+
+    def ledger_changes(self, request: Request, event: str, render: Callable[[dict], str]) -> Response:
+        """`event`'s newest rows as the first `next` event (`head`), then one for each change to those rows, each of
+        `render`'s text; a 404 when no workflow is tied to `event`. A page reads this while it has the Ledger open."""
+
+        def open_stream() -> Stream | Response:
+            if (watched := self._feed.watch_ledger(event)) is None:
+                return answer(request, encode("graphql", {"errors": [{"message": f"no ledger for {event}"}]}), 404)
+            rows, more, changes = watched
+            return Stream(self._ledger_frames(render, rows, more, changes), lambda: self._feed.unwatch_ledger(changes))
 
         return self._admitted(request, open_stream)
 
@@ -245,19 +253,13 @@ class Streams:
             self._unmodelled.add(name)
             logger.error("StarPulse: /api/events has no event `%s`; its deltas are skipped", name)
 
-    def _ledger(self, request: Request, event: str) -> Stream | Response:
-        """`event`'s newest rows as a `page` event (`{rows, more}`), then a `rows` event (`{rows}`) each time rows of that
-        Ledger change. A page reads this while it has the Ledger open; the main stream carries no row."""
-        if (watched := self._feed.watch_ledger(event)) is None:
-            return answer(request, _error(f"no ledger for {event}"), 404)
-        rows, more, changes = watched
-        return Stream(self._ledger_frames(rows, more, changes), lambda: self._feed.unwatch_ledger(changes))
-
-    def _ledger_frames(self, rows: list, more: bool, changes: queue.Queue) -> Generator[bytes]:
-        yield _frame("page", encode("ledger", {"rows": rows, "more": more}).decode())
+    def _ledger_frames(
+        self, render: Callable[[dict], str], rows: list, more: bool, changes: queue.Queue
+    ) -> Generator[bytes]:
+        yield _frame("next", render({"head": True, "rows": rows, "more": more}))
         while True:
             try:
-                yield _frame("rows", encode("ledger_rows", changes.get(timeout=_PING_S)).decode())
+                yield _frame("next", render({"head": False, "rows": changes.get(timeout=_PING_S)["rows"], "more": False}))
             except queue.Empty:
                 yield _PING
 

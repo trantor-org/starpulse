@@ -173,7 +173,7 @@ class VerdictDelta(_Api):
 
 class LedgersDelta(_Api):
     """The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open
-    reads `GET /api/ledger/<event>/events`."""
+    reads the `occurrenceChanges` subscription on `POST /graphql`."""
 
     mergeStrip: MergeStrip | None
     mergePins: list[LedgerRow]

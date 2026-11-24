@@ -50,8 +50,6 @@ export interface ApiContract {
   graphqlResponse: GraphqlResponse;
   harnesses: Harnesses;
   laneHistory: LaneHistory;
-  ledger: LedgerPage;
-  ledgerChange: LedgerChange;
   machineDetail: MachineDetail;
   machineHistory: MachineHistory;
   machines: Machines;
@@ -1379,7 +1377,7 @@ export interface VerdictDelta {
 }
 /**
  * The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open
- * reads `GET /api/ledger/<event>/events`.
+ * reads the `occurrenceChanges` subscription on `POST /graphql`.
  */
 export interface LedgersDelta {
   mergePins: LedgerRow[];
@@ -1601,22 +1599,6 @@ export interface LaneStep {
   by?: string | null;
   from: string | null;
   to: string;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/ledger/<event>`, and the first event of `GET /api/ledger/<event>/events`: a Ledger's rows, newest first,
- * and whether older ones remain.
- */
-export interface LedgerPage {
-  more: boolean;
-  rows: LedgerRow[];
-  [k: string]: unknown;
-}
-/**
- * A later event of `GET /api/ledger/<event>/events`: the rows that are new or differ; every other row stands.
- */
-export interface LedgerChange {
-  rows: LedgerRow[];
   [k: string]: unknown;
 }
 /**

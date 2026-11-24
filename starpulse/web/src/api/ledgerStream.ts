@@ -1,6 +1,8 @@
-// The rows of one open Ledger, pushed by /api/ledger/<event>/events: the newest page on every connect, then the rows that change.
+// One Ledger's occurrences over POST /graphql: a page query, and the `occurrenceChanges` subscription the open Ledger holds.
 
 import type { LedgerRow } from ".";
+import { apiFetch } from "./apiFetch";
+import { retryWait } from "./stream";
 
 /** The newest rows of one event's ledger, and whether older ones are left to page. */
 export interface LedgerHead {
@@ -8,18 +10,83 @@ export interface LedgerHead {
   more: boolean;
 }
 
+const ROW = "key at tasks sha pr { repo number url } child appliedBy applies runs fails pinned";
+export const OCCURRENCES = `query($event: String!, $before: Float, $limit: Int) { occurrences(event: $event, before: $before, limit: $limit) { more rows { ${ROW} } } }`;
+const OCCURRENCE_CHANGES = `subscription($event: String!) { occurrenceChanges(event: $event) { head more rows { ${ROW} } } }`;
+
+type Occurrence = Pick<LedgerRow, "key" | "at" | "tasks" | "runs" | "fails" | "pinned"> & {
+  sha: string | null;
+  pr: LedgerRow["pr"];
+  child: boolean;
+  appliedBy: string | null;
+  applies: string[] | null;
+};
+
+/** A row as the page draws it: GraphQL answers a field the row lacks as null, so an unset one is dropped and `appliedBy` stays only on a merge a pin bump applies (null until one has). */
+export function ledgerRow({ child, sha, pr, appliedBy, applies, ...row }: Occurrence): LedgerRow {
+  return { ...row, ...(sha ? { sha } : {}), ...(pr ? { pr } : {}), ...(child ? { appliedBy } : {}), ...(applies ? { applies } : {}) };
+}
+
+/** The `data` of each `next` event in a body, as they complete: `event: next` then `data: {json}`, a blank line ending each; a `: ping` comment is skipped. */
+async function* nextEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let held = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    held += decoder.decode(value, { stream: true });
+    for (let end = held.indexOf("\n\n"); end >= 0; end = held.indexOf("\n\n")) {
+      const lines = held.slice(0, end).split("\n");
+      held = held.slice(end + 2);
+      if (lines.includes("event: next")) yield JSON.parse(lines.find((l) => l.startsWith("data: "))?.slice(6) ?? "null");
+    }
+  }
+}
+
+interface Change {
+  data?: { occurrenceChanges?: { head: boolean; more: boolean; rows: Occurrence[] } };
+}
+
 /**
- * One EventSource on /api/ledger/<event>/events, held while that ledger is open: the server sends its newest page first, then the rows
- * that change. `head` gets the page; `rows` gets the changed rows to fold into whatever the page holds. EventSource reconnects by
- * itself, and the first frame of each connection resends the head.
+ * The subscription for one event's ledger, held while it is open: the server sends its newest page first (`head: true`), then the
+ * rows that change. `head` gets the page; `rows` gets the changed rows to fold into whatever the page holds. A dropped connection is
+ * reopened after `retryWait`, and its first event resends the head; a 4xx (no such ledger, a refused read) is not retried.
  */
 export function openLedger(
   event: string,
   on: { head(page: LedgerHead): void; rows(changed: LedgerRow[]): void },
-  open: (url: string) => EventSource = (url) => new EventSource(url),
+  fetcher: typeof apiFetch = apiFetch,
 ): { close(): void } {
-  const src = open(`/api/ledger/${encodeURIComponent(event)}/events`);
-  src.addEventListener("page", (e) => on.head(JSON.parse((e as MessageEvent).data) as LedgerHead));
-  src.addEventListener("rows", (e) => on.rows((JSON.parse((e as MessageEvent).data) as { rows: LedgerRow[] }).rows));
-  return { close: () => src.close() };
+  const stop = new AbortController();
+  const hold = async (): Promise<boolean> => {
+    const response = await fetcher("/graphql", {
+      method: "POST",
+      body: JSON.stringify({ query: OCCURRENCE_CHANGES, variables: { event } }),
+      signal: stop.signal,
+    });
+    if (response.status >= 400 && response.status < 500) return false;
+    if (response.ok && response.body) {
+      for await (const next of nextEvents(response.body)) {
+        const change = (next as Change | null)?.data?.occurrenceChanges;
+        if (!change) continue;
+        const rows = change.rows.map(ledgerRow);
+        if (change.head) on.head({ rows, more: change.more });
+        else on.rows(rows);
+      }
+    }
+    return true;
+  };
+  void (async () => {
+    for (let attempt = 0; !stop.signal.aborted; attempt++) {
+      try {
+        if (!(await hold())) return;
+        attempt = 0;
+      } catch {
+        // a dropped connection reopens below
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryWait(attempt + 1)));
+    }
+  })();
+  return { close: () => stop.abort() };
 }

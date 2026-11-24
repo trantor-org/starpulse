@@ -27,8 +27,8 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.views.ports.signal_folds import SignalFoldReader
 
 
-#: The most rows `/api/ledger/<event>` serves at once.
-_PAGE_LIMIT = 100
+#: The most rows a paged read serves at once.
+PAGE_LIMIT = 100
 
 
 def _error(message: str) -> bytes:
@@ -42,20 +42,10 @@ def _page_query(query: dict[str, list[str]], noun: str) -> tuple[float | None, i
         limit = int(query["limit"][0]) if "limit" in query else PAGE
     except ValueError:
         return _error(f"{noun} takes a numeric ?before= and an integer ?limit=")
-    if before is not None and not math.isfinite(before) or not 0 < limit <= _PAGE_LIMIT:
-        return _error(f"{noun} takes a finite ?before= and a ?limit= from 1 to {_PAGE_LIMIT}")
+    if before is not None and not math.isfinite(before) or not 0 < limit <= PAGE_LIMIT:
+        return _error(f"{noun} takes a finite ?before= and a ?limit= from 1 to {PAGE_LIMIT}")
     return before, limit
 
-
-def ledger_response(feed: BoardFeed, event: str, query: dict[str, list[str]]) -> tuple[bytes, int]:
-    """The body and status for `/api/ledger/<event>`: that Ledger's next page, older than `before`, at most `limit`
-    long; 404 for an event no workflow is tied to."""
-    asked = _page_query(query, "ledger")
-    if isinstance(asked, bytes):
-        return asked, 400
-    if (found := feed.ledger_rows(event, *asked)) is None:
-        return _error(f"no ledger for {event}"), 404
-    return encode("ledger", found), 200
 
 
 def done_response(feed: BoardFeed, read: TaskReader, query: dict[str, list[str]]) -> tuple[bytes, int]:
