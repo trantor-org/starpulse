@@ -11,6 +11,7 @@ from pydantic import TypeAdapter
 
 from starpulse.board.model.feed.shared import LIVE_WINDOW_S
 from starpulse.contracts.api.dto.cue import Pull
+from starpulse.contracts.api.dto.flow import Settled
 from starpulse.contracts.api.dto.task import RawTask
 from starpulse.contracts.api.registry import BODIES, EVENTS
 
@@ -191,9 +192,10 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
     machine agent kept in `held` between calls.
 
     `held` maps `id(object)` to the object and its JSON (an agent under `("machine", id)`, a flow's trail names under
-    `("names", flow)`): the feed replaces a task or agent it changes rather than editing it, so one met again encodes
-    the same, and one no longer listed is forgotten. Those are most of the snapshot, so a build after one change
-    validates and dumps only what changed and the rest of the document.
+    `("names", flow)`): the feed replaces a task, agent or settled entry it changes rather than editing it, so one met
+    again encodes the same, and one no longer listed is forgotten. Those are most of the snapshot (the settled day's
+    entries alone 3.8 of its 4.9 MB), so a build after one change validates and dumps only what changed and the rest of
+    the document.
     """
     flows = data["flows"]
     if not flows or flows[0]["name"] != "board":
@@ -201,8 +203,6 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
     kept: _Held = {}
     tasks = _dump_all(flows[0]["agents"], RawTask, held, kept, _slim_task)
     machines = [_dump_machine_flow(flow, held, kept) for flow in flows[1:]]
-    held.clear()
-    held.update(kept)
     bare = [
         {**flow, "agents": [], **({"names": names} if names else {})}
         for flow, (names, _) in zip(flows[1:], machines, strict=True)
@@ -211,9 +211,14 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
         **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *bare]}),
         "move_sets": _move_sets(flows[0]["agents"]),
     }
+    recent, drawn["settled"] = drawn["settled"], {}
+    settled = _dump_settled(recent, held, kept)
+    held.clear()
+    held.update(kept)
     body = encode("snapshot", drawn)
     try:
-        return _splice_flows(body, [tasks, *(dumps for _, dumps in machines)], [flow["name"] for flow in flows])
+        body = _splice_flows(body, [tasks, *(dumps for _, dumps in machines)], [flow["name"] for flow in flows])
+        return _splice_settled(body, settled)
     except ValueError:  # the document is not drawn as it was: encode it whole
         return encode("snapshot", slim_snapshot(data))
 
@@ -227,6 +232,28 @@ def _splice_flows(body: bytes, agents: list[list[bytes]], names: list[str]) -> b
         parts += [body[cursor:at], b'"agents":[%s]' % b",".join(drawn)]
         cursor = search = at + len(b'"agents":[]')
     return b"".join(parts) + body[cursor:]
+
+
+def _dump_settled(recent: dict[str, dict[str, Any]], held: _Held, kept: _Held) -> bytes:
+    """The `"id":entry` pairs of the `recent` settled tasks, each kept in `held` under `("settled", id)` while the feed
+    holds the same entry object: it replaces an entry it changes."""
+    adapter = _adapter(Settled)
+    pairs = []
+    for task_id, entry in recent.items():
+        pair = held.get(("settled", task_id))
+        if pair is None or pair[0] is not entry:
+            dump = adapter.dump_json(adapter.validate_python(entry), by_alias=True, exclude_unset=True)
+            pair = (entry, json.dumps(task_id, ensure_ascii=False).encode() + b":" + dump)
+        kept[("settled", task_id)] = pair
+        pairs.append(pair[1])
+    return b",".join(pairs)
+
+
+def _splice_settled(body: bytes, pairs: bytes) -> bytes:
+    """`body` with its empty `"settled":{}` replaced by `pairs`; ValueError unless there is exactly one to replace."""
+    if body.count(b'"settled":{}') != 1:
+        raise ValueError("settled")
+    return body.replace(b'"settled":{}', b'"settled":{%s}' % pairs)
 
 
 def event(name: str, data: Any) -> str:
