@@ -54,7 +54,6 @@ LEADER = "board"
 
 #: The contexts that always run here, in start order; the run Adapters follow them (`adapter_contexts`).
 BACKGROUND_CONTEXTS = (
-    "pulls",
     "scheduler",
     "runs",
     "flow-metrics",
@@ -207,16 +206,6 @@ def default_starters(
         return board_worker.start(
             config, path, base, log, own, load=load, assemble=assemble, history_store=history_store, follow=follow,
             followers=feed_followers(adapters), ready=shared.publish, snapshots=SnapshotStore(log.engine, encode_snapshot), go=go,
-        )  # fmt: skip
-
-    def pulls(own: threading.Event) -> Callable[[], None]:
-        from starpulse.pulls.bin import pulls_worker
-        from starpulse.runtime.delivery_wiring import start_delivery
-        from starpulse.runtime.stored_pulls import keep_pulls
-
-        return pulls_worker.start(
-            config, path, base, log, own, load=load, worker_board=shared, history_store=history_store,
-            start_delivery=start_delivery, keep_pulls=keep_pulls,
         )  # fmt: skip
 
     def scheduler(own: threading.Event) -> Callable[[], None]:
@@ -432,7 +421,7 @@ def default_starters(
         )
 
     known: dict[str, Starter] = {
-        "board": board, "pulls": pulls, "scheduler": scheduler, "runs": runs, "flow-metrics": flow_metrics,
+        "board": board, "scheduler": scheduler, "runs": runs, "flow-metrics": flow_metrics,
         "signal-folds": signal_folds, "lane-metrics": lane_metrics, "conformance": conformance, "search": search, "sweeper": sweeper, "bridge": bridge, "claude-code": claude_code,
         "github": github, "github-events": github_events, **{name: adapter(name) for name in ADAPTER_CONTEXTS},
     }  # fmt: skip

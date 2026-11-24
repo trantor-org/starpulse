@@ -1,4 +1,4 @@
-"""`starpulse_child_cpu_seconds_total{child}`: CPU seconds of the Page API process and of the `contexts` and `conformance` children.
+"""`starpulse_child_cpu_seconds_total{child}`: CPU seconds of the Page API process and of the `contexts`, `pulls` and `conformance` children.
 
 Each of those children keeps its pid and start time once, at start; the Page API reads that process's CPU time at each
 scrape, so no timer samples it and the series is never stale. A child that is gone or replaced under the kept
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 STATE = "contexts.process"
 #: The state each child keeps its process under.
-STATES = {"contexts": STATE, "conformance": "conformance.process"}
+STATES = {"contexts": STATE, "pulls": "pulls.process", "conformance": "conformance.process"}
 NAME = "starpulse_child_cpu_seconds_total"
 
 

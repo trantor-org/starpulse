@@ -34,9 +34,7 @@ _ADAPTER_ENTRY = "starpulse.runs.bin.adapter_worker"
 CONTEXT_ENTRIES = (
     "starpulse.runtime.contexts",
     "starpulse.runtime.wiring",
-    "starpulse.runtime.delivery_wiring",
-    "starpulse.runtime.stored_pulls",
-    "starpulse.pulls.bin.pulls_worker",
+    "starpulse.pulls.adapters.outbound.pulls",
     "starpulse.scheduler.bin.scheduler_worker",
     "starpulse.runs.bin.runs_worker",
     "starpulse.flow_metrics.bin.flow_metrics_worker",
@@ -71,6 +69,16 @@ CONTEXT_ENTRIES = (
     _ADAPTER_ENTRY,
 )
 
+#: The modules `starpulse worker pulls` loads for the Delivery context, which `starpulse.runtime.worker` imports only when
+#: the process runs: a change to any other context replaces no task actor.
+PULLS_ENTRIES = (
+    "starpulse.runtime.assembly",
+    "starpulse.runtime.delivery_wiring",
+    "starpulse.runtime.stored_pulls",
+    "starpulse.pulls.bin.pulls_worker",
+    "starpulse.pulls.adapters.outbound.github",
+)
+
 #: The modules `starpulse worker conformance` loads for its one context, as `CONTEXT_ENTRIES` names the others': a change to
 #: any other context replaces no monitor, which would replay the log it holds the checkpoint of.
 CONFORMANCE_ENTRIES = (
@@ -84,13 +92,14 @@ CONFORMANCE_ENTRIES = (
 )
 
 #: The modules each worker that runs contexts loads late, by its name.
-WORKER_ENTRIES = {"contexts": CONTEXT_ENTRIES, "conformance": CONFORMANCE_ENTRIES}
+WORKER_ENTRIES = {"contexts": CONTEXT_ENTRIES, "pulls": PULLS_ENTRIES, "conformance": CONFORMANCE_ENTRIES}
 
 #: The module each process starts from; its imports are what a change to the installed code can reach it through.
 ENTRIES = {
     SELF: "starpulse.runtime.server",
     "api": "starpulse.views.bin.api_worker",
     "contexts": "starpulse.runtime.worker",
+    "pulls": "starpulse.runtime.worker",
     "conformance": "starpulse.runtime.worker",
     CHILD: "starpulse.runtime.nats_server",
 }
@@ -132,19 +141,19 @@ CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "harnesses_file": _owned_by(),
     "analytics": _owned_by("contexts"),
     "claude_code": _owned_by("contexts"),
-    "github": _owned_by("contexts"),
+    "github": _owned_by("contexts", "pulls"),
     "producers": _owned_by("contexts"),
     "project": _owned_by(),
     "database_url": _CHILDREN,
-    "board": _owned_by("contexts", "conformance"),
+    "board": _owned_by("contexts", "pulls", "conformance"),
     "runs": _owned_by("contexts"),
     "search": _owned_by("contexts"),
-    "release": _owned_by("contexts"),
-    "repos": _owned_by("contexts"),
-    "pull_requests": _owned_by("contexts"),
-    "ci": _owned_by("contexts"),
-    "sequences": _owned_by("contexts"),
-    "awaits": _owned_by("contexts"),
+    "release": _owned_by("pulls"),
+    "repos": _owned_by("pulls"),
+    "pull_requests": _owned_by("pulls"),
+    "ci": _owned_by("pulls"),
+    "sequences": _owned_by("pulls"),
+    "awaits": _owned_by("pulls"),
     "account_room_alert": _owned_by("contexts"),
     "scheduler": _owned_by("contexts"),
     "level": _owned_by(),
@@ -316,7 +325,6 @@ def _blocks(name: str, config: Config, base: Path) -> tuple[object, object]:
             raise ReloadError(f"api: {exc}") from exc
     if name == "contexts":
         restart = (
-            pulls_fixed_blocks(config),
             scheduler_fixed_blocks(config),
             runs_built_blocks(config),
             flow_metrics_built_blocks(config),
@@ -330,7 +338,10 @@ def _blocks(name: str, config: Config, base: Path) -> tuple[object, object]:
             _machine_hash(config, base),
             _policy_hash(config, base),
         )
-        return restart, (pulls_delivery_blocks(config), scheduler_live_blocks(config))
+        return restart, (scheduler_live_blocks(config),)
+    if name == "pulls":
+        restart = (pulls_fixed_blocks(config), _machine_hash(config, base), _policy_hash(config, base))
+        return restart, (pulls_delivery_blocks(config),)
     if name == "conformance":
         return (board_built_blocks(config), _machine_hash(config, base)), ()
     return (), ()

@@ -1,7 +1,7 @@
-"""`serve` as a supervisor of two `starpulse worker` children: `api` (the page) and `contexts` (every background context as a thread).
+"""`serve` as a supervisor of `starpulse worker` children: `api` (the page), `contexts` (every background context but one as a thread), `pulls` (the Delivery context and its task actor) and `conformance`.
 
 A child is started by `spawn` (`spawn_child`: a `subprocess`) with a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with
-`serve`. Past its soft memory limit a child is replaced (the Page API starts its replacement beside it; `contexts` starts its replacement on standby, which prepares read-only and
+`serve`. Past its soft memory limit a child is replaced (the Page API starts its replacement beside it; `contexts` and `pulls` start their replacement on standby, which prepares read-only and
 takes the writer role and leases only once the old one has ended); past its hard
 limit it is killed and restarted. The run adapters a `[[runs]]` instance configures are threads of `contexts`
 (`starpulse.runtime.contexts`), named by `adapter_contexts`.
@@ -34,7 +34,7 @@ from starpulse.event_log.process_exit import ExitWatch
 from starpulse.runs.model import opt_in
 from starpulse.runtime import launch
 from starpulse.runtime.closure import SELF, Reading, ReloadError
-from starpulse.runtime.config import Config, MemoryLimit, runs_adapter
+from starpulse.runtime.config import Config, MemoryLimit, rehearsing, runs_adapter
 from starpulse.runtime.control import Control
 from starpulse.runtime.hold import (
     ADOPT_ENV,
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 _HANGUP = getattr(signal, "SIGHUP", None)
 
 #: The `starpulse worker` children `serve` supervises, in start order.
-WORKER_CONTEXTS = ("api", "contexts", "conformance")
+WORKER_CONTEXTS = ("api", "contexts", "pulls", "conformance")
 
 _MB = 1024 * 1024
 
@@ -67,10 +67,15 @@ def adapter_contexts(config: Config) -> list[str]:
 
 def worker_commands(config_path: Path | None) -> dict[str, list[str]]:
     """The command of each child `serve` supervises (`WORKER_CONTEXTS`): the Page API, the one `contexts` process,
-    which runs the contexts the config names (`starpulse.runtime.contexts.contexts_of`), and the `conformance` process,
-    which runs the monitor alone so its replay holds no GIL the contexts share."""
+    which runs the contexts the config names (`starpulse.runtime.contexts.contexts_of`), the `pulls` process, which runs
+    the Delivery context and its task actor alone so no other context's threads share its GIL, and the `conformance`
+    process, which runs the monitor alone so its replay holds no GIL the contexts share. A rehearsal has no `pulls`."""
     tail = ["--config", str(config_path)] if config_path else []
-    return {context: [launch.interpreter(), "-m", "starpulse", "worker", context, *tail] for context in WORKER_CONTEXTS}
+    return {
+        context: [launch.interpreter(), "-m", "starpulse", "worker", context, *tail]
+        for context in WORKER_CONTEXTS
+        if not (context == "pulls" and rehearsing())  # a rehearsal's task actor would move tasks of the live board
+    }
 
 
 def spawn_child(

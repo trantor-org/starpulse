@@ -141,13 +141,24 @@ def start(
     history_store: Callable[[PullsConfig, Path, Mapping[str, dict]], Any],
     start_delivery: Callable[..., tuple[Any, Callable[[], None] | None]],
     keep_pulls: Callable[[PullStore, EventLog, StopEvent], Callable[[], None]],
+    go: threading.Event | None = None,
+    prepared: Callable[[], None] | None = None,
 ) -> Callable[[], None]:
     """Start the Delivery loops over `log`, each ending when `stop` is set, and return their reload. Raises
-    `ValueError` as `worker_board` and `start_delivery` do."""
+    `ValueError` as `worker_board` and `start_delivery` do. A standby start (`go`) folds its replica read-only, calls
+    `prepared`, and starts no loop and saves no record until `go` is set, so its predecessor's actor has ended first."""
     board, feed = worker_board(config, base, log, stop)
     # the task actor records the lane of each write it makes under its own name; the placements of the Board are `serve`'s
     feed.record_lanes(history_store(config, base, feed.machines), log)
     Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
+    if go is not None:
+        if prepared is not None:
+            prepared()
+        stop.listen(go.set)  # a stop during the wait ends it
+        if not stop.is_set():
+            go.wait()
+        if stop.is_set():
+            return lambda: None
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     store = PullStore(log.engine)
     store.keep_lookups()  # this worker makes every save, so a lookup of an old record stays current until it is saved
@@ -180,6 +191,10 @@ def main(
     start_delivery: Callable[..., tuple[Any, Callable[[], None] | None]],
     keep_pulls: Callable[[PullStore, EventLog, StopEvent], Callable[[], None]],
     hold: Callable[[threading.Event, Callable[[], None]], None],
+    go: threading.Event | None = None,
+    prepared: Callable[[], None] | None = None,
+    kept: Callable[[EventLog], None] | None = None,
+    started: Callable[[EventLog], None] | None = None,
 ) -> None:
     """Run the Delivery worker; `runtime` passes the collaborators it builds, as no context imports it."""
     args = parser.parse_args(argv)
@@ -191,6 +206,8 @@ def main(
     base = args.config.parent if args.config else Path.cwd()
     log = EventLog(database_url(config.database_url, base))
     stop = StopEvent()
+    if kept is not None:
+        kept(log)
     try:
         reload_config = start(
             config,
@@ -203,9 +220,13 @@ def main(
             history_store=history_store,
             start_delivery=start_delivery,
             keep_pulls=keep_pulls,
+            go=go,
+            prepared=prepared,
         )
     except ValueError as exc:
         stop.set()  # `worker_board` may have started its read model follower before the start refused
         parser.exit(1, f"{exc}\n")
+    if started is not None:
+        started(log)  # after a standby's go, so a prepared replacement does not read as the running actor
     hold(stop, reload_config)
     stop.set()  # a hold that returns ends the process; a test's no-op hold leaves the loops to stop here

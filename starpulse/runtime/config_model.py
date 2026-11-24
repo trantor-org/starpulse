@@ -25,13 +25,13 @@ from starpulse.runtime.nats_server import DEFAULT_RESUME
 EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
 
 #: The (soft, hard) memory limit in megabytes of each child `serve` supervises when `worker_memory` does not name one: the
-#: Page API, whose telemetry window grows with the signals it holds, and the one `contexts` worker that runs every
-#: background context as a thread.
-WORKER_MEMORY_MB = {"api": (4096, 8192), "contexts": (1536, 3072)}
+#: Page API, whose telemetry window grows with the signals it holds, the `pulls` worker that runs the task actor beside
+#: its own read-model replica, and the one `contexts` worker that runs every other background context as a thread.
+WORKER_MEMORY_MB = {"api": (4096, 8192), "contexts": (1536, 3072), "pulls": (1024, 2048)}
 
 #: The per-context `[worker_memory]` keys `serve` once took, one for each child it supervised.
 _RETIRED_MEMORY = frozenset(
-    {"pulls", "scheduler", "runs", "flow-metrics", "search", "board", *ADAPTER_CONTEXTS, "temporal"}
+    {"scheduler", "runs", "flow-metrics", "search", "board", *ADAPTER_CONTEXTS, "temporal"}
 )
 
 #: A phase id in a `[sequences]` table: lowercase words joined by `_` or `-`.
