@@ -78,9 +78,9 @@ class SignalFolds:
     """Reads the sessions' stored folds by window, and counts their cost into the skill-cost series."""
 
     def __init__(
-        self, events: EventLog, titled: Callable[[], Mapping[str, Mapping[str, Any]]] | None = None
+        self, events: EventLog, titled: Callable[[set[str]], Mapping[str, Mapping[str, Any]]] | None = None
     ) -> None:
-        self._titled = titled  # the board's tasks; without it nothing is counted
+        self._titled = titled  # the board's tasks, by id; without it nothing is counted
         self._events = events
         self._engine = events.engine
 
@@ -131,7 +131,7 @@ class SignalFolds:
                 )
                 .order_by(signal_folds.c.folded_through)
             ).all()
-        tasks = self._titled()
+        tasks = self._titled({cost["task"] for row in rows for cost in row.result}) if rows else {}
         for row in rows:
             with self._engine.begin() as db:
                 before = db.execute(

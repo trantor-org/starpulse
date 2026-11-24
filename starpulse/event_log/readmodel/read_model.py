@@ -1,5 +1,6 @@
 """The read model's reads: what the page, the agent CLI, search and the Scheduler ask of the Task tables."""
 
+from collections.abc import Collection
 from typing import Any
 
 from sqlalchemy import Engine, Select, func, select, union_all
@@ -33,9 +34,9 @@ class ReadModel:
         """Up to `limit` archived Tasks changed before `before` (None: any time), newest first."""
         return self._summaries(queries.archived(before, limit))
 
-    def titled(self) -> dict[str, dict[str, Any]]:
-        """Every Task's `title`, `labels`, `milestone` and `profile` by id, archived Tasks included; an unset milestone
-        or profile is None."""
+    def titled(self, ids: Collection[str] | None = None) -> dict[str, dict[str, Any]]:
+        """Every Task's `title`, `labels`, `milestone` and `profile` by id, archived Tasks included, or those of `ids`
+        alone; an unset milestone or profile is None."""
         return {
             item["id"]: {
                 "title": item["title"],
@@ -43,7 +44,7 @@ class ReadModel:
                 "milestone": item["milestone"] or None,
                 "profile": (item["meta"] or {}).get("profile") or None,
             }
-            for item in self._summaries(queries.titled())
+            for item in self._summaries(queries.titled(ids))
         }
 
     def with_field(self, name: str, value: object) -> list[str]:
