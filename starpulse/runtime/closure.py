@@ -186,9 +186,14 @@ def restarts_serve(old: Mapping[str, object], new: Mapping[str, object]) -> bool
 
 
 #: Imports each module in `argv[2:]` and prints the directory holding package `argv[1]`, then the file of each module of
-#: the package that is loaded, and of each named one, separated by NUL.
+#: the package that is loaded, and of each named one, separated by NUL. A module after the first that the tree does not
+#: hold is skipped: a running `serve` names its extras from the code it started on, which a merge may have deleted.
 _PROBE = (
-    "import importlib, os, sys; pkg, *entries = sys.argv[1:]; [importlib.import_module(e) for e in entries]; "
+    "import importlib, os, sys; pkg, *entries = sys.argv[1:]; importlib.import_module(entries[0])\n"
+    "for e in entries[1:]:\n"
+    "    try: importlib.import_module(e)\n"
+    "    except ModuleNotFoundError as x:\n"
+    "        if not (x.name and (e == x.name or e.startswith(x.name + '.'))): raise\n"
     "root = os.path.dirname(os.path.dirname(sys.modules[pkg].__file__)); "
     "sys.stdout.write('\\0'.join([root, *sorted(m.__file__ for n, m in sys.modules.items() "
     "if (n == pkg or n.startswith(pkg + '.') or n in entries) and getattr(m, '__file__', None))]))"

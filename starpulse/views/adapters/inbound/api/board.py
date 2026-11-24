@@ -55,7 +55,7 @@ def harnesses(request: Request) -> Response:
 routes: list[ApiRoute] = [
     ReadRoute("/doctor", doctor),
     ReadRoute("/health", ready),
-    ReadRoute("/done", done, params=frozenset({"before", "limit"})),
+    ReadRoute("/done", done, params=frozenset({"before", "limit", "milestone"})),
     ReadRoute("/search", search, params=frozenset({"before", "finished_within_days", "label", "limit", "q"})),
     ReadRoute("/search/similar", similar, params=frozenset({"before", "finished_within_days", "label", "limit", "q"})),
     ReadRoute("/harnesses", harnesses),

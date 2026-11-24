@@ -56,9 +56,9 @@ class ReadModel:
             by_task.get(item.pop("task_id"), []).append(item)
         return [summary | {"criteria": by_task[summary["id"]]} for summary in summaries]
 
-    def archived(self, before: float | None, limit: int) -> list[dict[str, Any]]:
-        """Up to `limit` archived Tasks changed before `before` (None: any time), newest first."""
-        return self._summaries(queries.archived(before, limit))
+    def archived(self, before: float | None, limit: int, milestone: str | None = None) -> list[dict[str, Any]]:
+        """Up to `limit` archived Tasks changed before `before` (None: any time), newest first, of `milestone` when given."""
+        return self._summaries(queries.archived(before, limit, milestone))
 
     def graph(self) -> dict[str, list[str]]:
         """Every Task's dependencies by id, archived Tasks included."""

@@ -591,6 +591,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "milestone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -885,7 +893,7 @@
     },
     "/api/task/{id}": {
       "get": {
-        "summary": "One task",
+        "summary": "One task, by its id or an alias it carries",
         "tags": [
           "tasks"
         ],

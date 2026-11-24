@@ -251,7 +251,7 @@ ROUTES: dict[tuple[str, str], Op] = {
         "Write a machine's next version over the base named, with its policy rows", "machine_put", MachinePutRequest
     ),
     ("DELETE", "/api/machines/{name}"): _write("Retire a machine, keeping every version", "machine_retire"),
-    ("GET", "/api/done"): _read("A page of finished tasks", "done", "before", "limit"),
+    ("GET", "/api/done"): _read("A page of finished tasks", "done", "before", "limit", "milestone"),
     ("GET", "/api/search"): _read("Search tasks", "search", "before", "finished_within_days", "label", "limit", "q"),
     ("GET", "/api/search/similar"): _read(
         "Tasks like a text", "search", "before", "finished_within_days", "label", "limit", "q"
@@ -260,7 +260,7 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/history-window"): _read("How many hours of history the store keeps", "window"),
     ("PUT", "/api/history-window"): _write("Set the history window", "window", WindowRequest),
     ("DELETE", "/api/history-window"): _write("Reset the history window to its default", "window"),
-    ("GET", "/api/task/{id}"): _read("One task", "task"),
+    ("GET", "/api/task/{id}"): _read("One task, by its id or an alias it carries", "task"),
     ("GET", "/api/task-records"): _read("Task records, the ids named when given", "task_records", "ids"),
     ("GET", "/api/retired"): _read("Retired tasks", "retired", "before", "fields", "limit", "milestone", "task"),
     ("POST", "/api/move"): _write("Move tasks to a state", "move", MoveRequest),

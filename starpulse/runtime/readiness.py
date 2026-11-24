@@ -5,7 +5,8 @@ the Start Criteria dating) has started and every other supervised context has st
 in the `ready` worker state under the boot token `serve` handed it (`hold.BOOT_ENV`), so a stamp an earlier `serve` left in
 the store, or one a rehearsal copied from the live store, never counts. A `serve` that re-executes and adopts a
 child the old image started keeps that child's token; it drops the old image's stamps (`forget_starts`) unless it adopts
-the `contexts` child, whose stamps stay true, so the Page API child counts the contexts the new image starts. A server started without `serve` has no token and checks no context.
+the `contexts` child, whose stamps stay true. A re-exec hands over every child, replaced ones included, so it drops none
+unless a child had died before it. A server started without `serve` has no token and checks no context.
 """
 
 from collections.abc import Callable, Sequence

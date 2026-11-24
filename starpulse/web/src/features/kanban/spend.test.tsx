@@ -60,6 +60,23 @@ describe("spend", () => {
     expect(await fetchSpend("TASK-1", retry, 6_000)).toHaveLength(1);
   });
 
+  it("bounds a read that never settles, then reads again and replaces 'Spend unavailable' with the rows", async () => {
+    vi.useFakeTimers();
+    try {
+      const hung = vi.fn(() => new Promise<Response>(() => {}));
+      vi.stubGlobal("fetch", hung);
+      expect(await draw(<SpendRail task="TASK-1" />)).toContain("Reading spend");
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(document.body.textContent).toContain("Spend unavailable");
+      vi.stubGlobal("fetch", answer([phase({})]));
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(document.body.textContent).toContain("Implement");
+      expect(document.body.textContent).not.toContain("Spend unavailable");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("flags a task far above its norm and names each phase with its steps, compactions and models", async () => {
     const text = await draw(<SpendRows rows={[
       phase({ phase: "claim", wte: 150, steps: 1, task_wte: 90_000, norm_wte: 20_000, above_norm: true }),
