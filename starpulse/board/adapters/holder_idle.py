@@ -83,6 +83,7 @@ def follow_holder_idle(
     dispatched: Callable[[str, str], None] = lambda _task, _session: None,
     lease_ended: Callable[[str, str], None] = lambda _task, _session: None,
     unstarted: Callable[[], list[str]] = list,
+    closed: Callable[[], list[str]] = list,
 ) -> threading.Thread:
     """Call `settled` with the task of each session that settles, and `entered` (`settled` when none) with each task
     moved from a parked lane to In Progress, after this call, within the event's own latency; call `ended` with the task
@@ -94,7 +95,8 @@ def follow_holder_idle(
     Once `ready` is set (the actor has indexed its tasks) it also calls `settled` once with each task of `working`
     whose newest harness event before this call, a `SESSION_STOPPED` aside, is a settle (`settled`) or an end (`lease_ended` with the session its entry names, then `ended`):
     its holder settled or died while the actor was down and was not started again since. The cost is one indexed lookup per working task, never a read of
-    the stream. It calls `dispatched` (`lease_ended` first for a dead holder it replaces) with each task of `working` or
+    the stream. A task of `closed` (an open one in a lane that ends its idle session) gets the same `settled` call for a newest settle,
+    which ends its session: the move that closed the lane may have come while the actor was down. It calls `dispatched` (`lease_ended` first for a dead holder it replaces) with each task of `working` or
     `unstarted` whose newest such event is a dispatch: the actor was down for it and pinned no session since. Nothing is called before `ready`, and the live tail's rows wait for it."""
     from starpulse.event_log.event_log import Tail  # the server imports no database stack until a store opens
     from starpulse.event_log.follower_lag import HOLDER_IDLE, Behind
@@ -130,9 +132,9 @@ def follow_holder_idle(
 
         def follow() -> None:
             # a failed pass raises, and `run_on_wake` reads again before any settle is called
-            tasks = working()
-            newest = {task: _newest(log.engine, task, started) or ("", {}) for task in [*tasks, *unstarted()]}
-            for task in [task for task in tasks if newest[task][0] == SETTLED]:
+            tasks, shut = working(), closed()
+            newest = {task: _newest(log.engine, task, started) or ("", {}) for task in [*tasks, *shut, *unstarted()]}
+            for task in [task for task in [*tasks, *shut] if newest[task][0] == SETTLED]:
                 settled(task)
             for task in [task for task in tasks if newest[task][0] == ENDED]:
                 lease_ended(task, str(newest[task][1].get("session") or ""))
