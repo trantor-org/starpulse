@@ -23,7 +23,7 @@ const sky = () => {
       { name: "triaging-cr-reviews", agents: [], machine: machine(["fetch", "reply"]) },
     ],
     dags: [dag("board-scheduler", [["claim", []]]), dag("worktree-reap", [["list", []], ["reap", ["list"]]])],
-    domains: [{ name: "Board", dags: [{ name: "board-scheduler", runSafe: false }, { name: "worktree-reap", runSafe: true }] }],
+    domains: [{ name: "Board", dags: [{ name: "board-scheduler" }, { name: "worktree-reap" }] }],
     settled: {}, error: null, now: 1000,
   };
   const S = merge(snap), moves = new Moves();
@@ -121,7 +121,7 @@ const boardSky = ({ writes = {}, cues = [], launches = [], free = {}, ledgers, m
       { name: "in-progress", agents: [], machine: machine(["worktree_ready", "pr_opened"]) },
     ],
     dags: [...tied, ...loose].map((n) => dag(n, [["run", []]])),
-    domains: [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }, ...Object.entries(free).map(([name, dags]) => ({ name, dags: dags.map((d) => ({ name: d, runSafe: false })) }))],
+    domains: [{ name: "Board", dags: tied.map((name) => ({ name })) }, ...Object.entries(free).map(([name, dags]) => ({ name, dags: dags.map((d) => ({ name: d })) }))],
     cues, mergePins, settled: {}, error: null, now: 1000,
   };
   const S = { ...merge(snap), ledgers: ledgers ?? {} }, moves = new Moves();
@@ -1339,7 +1339,7 @@ const moonSky = (skills = 2, W = 1920, H = 1080, ties: { writes?: Record<string,
       { name: "running-skill-evals", agents: [], machine: machine(["run", "score"]) },
       ...names.map((name, i) => ({ name, agents: [...(i ? [] : [session("PROJ-2", "writing", 980)]), ...extra.filter((_, j) => j % 12 === i).map((t) => session(t, "writing", 980))], machine: machine(["reading", "writing"], { submachines: i % 3 === 0 ? [link("reading", name)] : [] }) })),
     ],
-    dags: tied.map((n) => dag(n, [["run", []]])), domains: [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }], cues, settled: {}, error: null, now: 1000,
+    dags: tied.map((n) => dag(n, [["run", []]])), domains: [{ name: "Board", dags: tied.map((name) => ({ name })) }], cues, settled: {}, error: null, now: 1000,
   };
   const S = merge(snap), moves = new Moves();
   moves.observe(S, 1000);

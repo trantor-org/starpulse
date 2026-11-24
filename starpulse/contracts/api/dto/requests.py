@@ -157,13 +157,6 @@ class RetireRequest(_Request):
     task: str
 
 
-class RetiredImportRequest(_Request):
-    """`POST /api/retired/import`: keep the retired task file `name`, holding `text`, in the history store."""
-
-    name: str
-    text: str
-
-
 class CompleteRequest(_Request):
     """`POST /api/complete`: move the Done task `task` into the board's completed tasks."""
 
@@ -302,6 +295,10 @@ class MilestoneListRequest(_Request):
 
 class MachineListRequest(_Request):
     """`POST /api/machines`: list the machines the board draws. It takes no field."""
+
+
+class JobListRequest(_Request):
+    """`POST /api/jobs`: list the workflows the runs adapters report. It takes no field."""
 
 
 class MachineCreateRequest(_Request):

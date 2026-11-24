@@ -40,7 +40,7 @@ class ViewMethods:
         return rows[:end], len(rows) > end
 
     def run_list(self) -> dict[str, Any]:
-        """`GET /api/runs`: the snapshot's `dags` and `error`, with no board read."""
+        """`POST /api/jobs` and `GET /api/jobs/{name}`: the snapshot's `dags` and `error`, with no board read."""
         with self._lock:
             return {"dags": self._workflows(), "error": self._error()}
 
@@ -248,7 +248,7 @@ class ViewMethods:
             "interactive": dict.fromkeys(self._interactive, True),
             "error": self._error(),
             "reading": self._replaying(),
-            **declared(self._domains, self._runnable(), self._cues, self._processes),
+            **declared(self._domains, self._cues, self._processes),
             "boardUrl": self._board_url,
             "now": now,
         }

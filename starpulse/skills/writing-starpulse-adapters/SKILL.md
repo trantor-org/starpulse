@@ -59,10 +59,9 @@ nothing: 401 for a missing or wrong token, 403 for another producer's `source`, 
 400 for an event its machine does not declare or a malformed one, 413 for an oversize body. 503 means the database is
 unreachable, so retry. A missing entry never means the run failed.
 
-A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`) whose module offers `start(url)` and
-`follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools, startable, cpu)` (a `Dag` lists its running and queued runs in `active`,
-`pools` is the list of concurrency pools, empty when the scheduler has none, and `startable` names the workflows
-`start` can run when it cannot start all of them, such as those a GitHub workflow file marks `workflow_dispatch`, and `cpu` is
+A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`, and `start_url`, the runner's page where a run starts, which the jobs page links) whose module offers
+`follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools, cpu)` (a `Dag` lists its running and queued runs in `active`,
+`pools` is the list of concurrency pools, empty when the scheduler has none, and `cpu` is
 `{"share": 0..1, "cores": N}`, the share of all the host's cores the scheduler's units used since the last reading, or `None`);
 its workflows are drawn as `<name>/<workflow>`. A `Dag` also carries its `schedule` (cron expressions, empty when it is
 started by hand) and `stats` (`runs`, `hours`, `medianSeconds`, `p95Seconds`, `failureShare` over the last seven days;

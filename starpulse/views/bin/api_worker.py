@@ -123,7 +123,7 @@ def serve_page(
     from starpulse.pulls.adapters.outbound.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.views.model.encoding import encode_snapshot  # noqa: PLC0415 - the database stack loads after the config is accepted
 
-    starts, reruns, run_safe, producer_tokens, opted_in = ready
+    producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()
     board_dir = base / str(config.board.get("path", DEFAULT_PATH))
     port = listening.getsockname()[1]
@@ -134,7 +134,7 @@ def serve_page(
         log = EventLog(url)
         # the page is drawn from the Task read model the projector folds, so no task file is read here
         model = ReadModel(log.engine, declared_fields(config.board))
-        board, feed = host.assemble(config, base, args.hours * 3600, run_safe, model)
+        board, feed = host.assemble(config, base, args.hours * 3600, model)
     except (StoreNotMigrated, ValueError) as exc:
         parser.exit(os.EX_CONFIG, f"{exc}\n")  # `serve` stops on this status at the child's first run
     window = HistoryWindow(feed, args.hours, log)
@@ -183,9 +183,6 @@ def serve_page(
     )
     services = Services(
         machines=MachineStore(log.engine),
-        starts=starts,
-        run_safe=run_safe,
-        reruns=reruns,
         harnesses=config.harnesses,
         views=config.views,
         start_session=starter(config.session_start_url),

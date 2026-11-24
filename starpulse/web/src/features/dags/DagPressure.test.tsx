@@ -6,7 +6,7 @@ import { DagPressure } from "./DagPressure";
 import { dagFacts, type DagData } from "./dagsModel";
 import type { Dag } from "../../api";
 
-const dag = (name: string): Dag => ({ name, status: "succeeded", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
+const dag = (name: string): Dag => ({ name, status: "succeeded", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [] });
 const data = (over: Partial<DagData> = {}): DagData => ({
   now: 0, dags: [], domains: [], pools: [], cues: [], flows: [], facts: {}, dashboards: {}, ...over,
 });

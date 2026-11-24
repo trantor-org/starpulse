@@ -18,8 +18,6 @@ class RunsInstance:
     """The adapter module that reads the instance: a name under `starpulse`, or a dotted module path; none: a push-only instance."""
     url: str | None
     """What the adapter reads; none with no type."""
-    run_safe: tuple[str, ...] = ()
-    """The workflows Run now may start; any other answers 404, so none is startable by default."""
     domains: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     """The page's groups of this instance's workflows, in the order it lays them out; a nested domain lists its workflows name-sorted."""
     processes: Mapping[str, tuple[tuple[str, tuple[str, ...]], ...]] = field(default_factory=dict)
@@ -28,6 +26,8 @@ class RunsInstance:
     """The `[runs.commit]` table; none: a run pairs with a merge only by the time it started."""
     dashboard: str | None = None
     """The Grafana dashboard that shows the instance's runner; none: the page links nothing."""
+    start_url: str | None = None
+    """The runner's own start page; none: the instance's jobs have no Run in link."""
 
 
 @dataclass(frozen=True)

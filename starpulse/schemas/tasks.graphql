@@ -237,6 +237,15 @@ type OccurrenceChange {
   more: Boolean!
 }
 
+"""Any JSON value: a job is the `DagBody` of the OpenAPI document."""
+scalar Json
+
+"""The jobs after one change: every job now, each as `POST /api/jobs` lists it, and the error a runs instance reported."""
+type JobChange {
+  jobs: Json!
+  error: String
+}
+
 type Query {
   """
   The open tasks. `filter` keeps those whose id, title or a label holds it (case aside); `source`, `lane` and
@@ -265,4 +274,9 @@ type Subscription {
   tied to `event`.
   """
   occurrenceChanges(event: String!): OccurrenceChange!
+  """
+  Each jobs change after stream position `from`, one `next` event each: the position `POST /api/jobs` answered. A `from`
+  the server no longer holds is answered with HTTP 410 and the error code `REREAD`: read the list again.
+  """
+  jobChanges(from: Int!): JobChange!
 }

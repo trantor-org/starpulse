@@ -20,10 +20,10 @@ vi.mock("../render/renderer", async (original) => ({
 const dagData: DagData = {
   now: 100, facts: {}, dashboards: {},
   dags: [
-    { name: "runs/pr-watch", status: "succeeded", runId: "", startedAt: "", finishedAt: "1970-01-01T00:01:00Z", schedule: [], stats: null, rerun: null, steps: [{ name: "scan", depends: [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] }], pool: "runs/main" },
-    { name: "runs/sweep", status: "not_started", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [{ name: "scan", depends: [], status: "not_started", kind: null, precondition: null, lock: null, last: [] }] },
+    { name: "runs/pr-watch", status: "succeeded", runId: "", startedAt: "", finishedAt: "1970-01-01T00:01:00Z", schedule: [], stats: null, rerun: null, startUrl: "", steps: [{ name: "scan", depends: [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] }], pool: "runs/main" },
+    { name: "runs/sweep", status: "not_started", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [{ name: "scan", depends: [], status: "not_started", kind: null, precondition: null, lock: null, last: [] }] },
   ],
-  domains: [{ name: "Board", dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/sweep", runSafe: false }] }],
+  domains: [{ name: "Board", dags: [{ name: "runs/pr-watch" }, { name: "runs/sweep" }] }],
   pools: [{ name: "runs/main", cap: 2, running: 1, queued: 0 }],
   cues: [],
   flows: [],
@@ -36,13 +36,15 @@ const dagsNode = () => views().find((n) => n.title === "Jobs")!;
 
 beforeEach(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
+  // the Jobs page reads its jobs once and holds the subscription open
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => (url === "/api/jobs" ? Response.json({ position: 1, items: dagData.dags, error: null }) : url === "/graphql" ? new Promise<Response>(() => {}) : new Response("{}", { status: 200 }))));
   localStorage.clear();
   stores.length = 0;
   history.replaceState(null, "", "/?view=constellation");
   host = document.body.appendChild(document.createElement("div"));
   // the views load on demand: have this one loaded, so a mount that opens it draws it at once
   await import("../features/dags/Dags");
+  await (await import("../render/hudViews")).loadHudViews();
   root = createRoot(host);
   performance.mark(BOARD_DRAWN); // a page past its first frame: the navigator is filled
   await act(async () => root.render(<App />));
@@ -116,7 +118,7 @@ describe("the DAGs view's navigator and legend", () => {
     const legend = q("#legend")!.textContent!;
 
     expect(legend).toContain("last run failed");
-    expect(legend).toContain("run-safe");
+    expect(legend).toContain("opens on its runner");
     expect(legend).not.toContain("checks pass");
   });
 });
@@ -147,8 +149,8 @@ describe("a DAG's line in the Recent rail", () => {
     expect(lines().map((l) => l.classList.contains("go"))).toEqual([true, false]);
   });
 
-  it("lights the DAG's row in the DAGs view while hovered, and its click opens the DAG's modal", () => {
-    act(() => dagsNode().click());
+  it("lights the DAG's row in the DAGs view while hovered, and its click opens the DAG's modal", async () => {
+    await act(async () => dagsNode().click());
     const [task, dag] = lines();
 
     expect([task.classList.contains("go"), dag.classList.contains("go")]).toEqual([false, true]);

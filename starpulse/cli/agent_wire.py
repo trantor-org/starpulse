@@ -132,8 +132,11 @@ def get_flows(base: str) -> dict[str, Any]:
 
 
 def get_runs(base: str) -> dict[str, Any]:
-    """The run list the server at `base` answers: every runs workflow with its latest run, and what the adapter reported."""
-    return _read_document(base, "/api/runs", {"dags", "error"}, "run list")
+    """The jobs the server at `base` answers: every runs workflow with its latest run, and what the adapter reported."""
+    status, document = post(base, "/api/jobs", {})
+    if status != 200 or not isinstance(document, dict) or not document.keys() >= {"items", "error"}:
+        raise CliError("unavailable", f"{base} answered {status} for /api/jobs: is it a StarPulse server?")
+    return document
 
 
 def flows(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

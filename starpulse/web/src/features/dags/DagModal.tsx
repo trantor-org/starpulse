@@ -1,9 +1,9 @@
 // A DAG's modal, opened from a row of the DAGs view in the Kanban task modal's frame, as wide as its graph needs: the title with its state dot and
-// declared rerun safety, the full step chart, each step's history, this or the last run, the pool's queue slots, every Board tie with its note, and Run now in the footer.
+// declared rerun safety, the full step chart, each step's history, this or the last run, the pool's queue slots, every Board tie with its note, and the links to its runner (its start page, and its newest run) in the footer.
 import { useEffect, useState, type CSSProperties } from "react";
 import type { RunStatus } from "../../api";
 import { chartBox, LedgerNote, lastLine, Orb, StepHistory, Strip, TieChip, type LedgerGo } from "./DagParts";
-import { ago, jobRuns, refusal, rerunLine, short, ties, type DagData, type Row } from "./dagsModel";
+import { ago, jobRuns, rerunLine, runner, short, ties, type DagData, type Row } from "./dagsModel";
 
 const STATE = (r: Row) => (r.phase === "ok" ? "healthy" : r.phase === "idle" ? "never run" : r.phase === "failed" ? r.d.status : r.phase);
 
@@ -17,8 +17,8 @@ const MAX_WIDTH = 1200, PHONE = 900, PHONE_CHROME = 28;
 /** The width the chart may take before it wraps: the modal at its widest on this viewport, less its frame. */
 const roomFor = (vw: number) => (vw <= PHONE ? vw - PHONE_CHROME : Math.min(vw - 40, MAX_WIDTH) - CHROME);
 
-export function DagModal({ data, r, now, starting, refused, run, close, ledger }: {
-  data: DagData; r: Row; now: number; starting: boolean; refused: string | null; run: () => void; close: () => void; ledger?: LedgerGo;
+export function DagModal({ data, r, now, close, ledger }: {
+  data: DagData; r: Row; now: number; close: () => void; ledger?: LedgerGo;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && close();
@@ -31,8 +31,8 @@ export function DagModal({ data, r, now, starting, refused, run, close, ledger }
     addEventListener("resize", onResize);
     return () => removeEventListener("resize", onResize);
   }, []);
-  const pool = data.pools.find((p) => p.name === r.d.pool), board = ties(data, r.d.name), why = refusal(r, starting), box = chartBox(r, roomFor(vw)), rerun = rerunLine(r.d.rerun), live = r.d.active ?? [];
-  const runs = jobRuns(r.d, now);
+  const pool = data.pools.find((p) => p.name === r.d.pool), board = ties(data, r.d.name), box = chartBox(r, roomFor(vw)), rerun = rerunLine(r.d.rerun), live = r.d.active ?? [];
+  const runs = jobRuns(r.d, now), where = runner(r.d.name), openRun = runs[0]?.url;
   const dashboard = data.dashboards[r.d.name.split("/")[0]];
   return (
     <div id="kbm" onClick={(e) => e.target === e.currentTarget && close()}>
@@ -44,7 +44,6 @@ export function DagModal({ data, r, now, starting, refused, run, close, ledger }
           {rerun && <div className="rerun k">{rerun}</div>}
         </div>
         <div className="tvbody">
-          {refused && <div className="editrefusal"><b>Run refused.</b> {refused}</div>}
           <section className="sec"><div className="sh"><span className="t">Steps</span><span className="n">{r.d.steps.length}</span></div>
             <div className="chart"><Strip r={r} w={box.w} h={box.h} room={box.room} big /></div>
           </section>
@@ -64,7 +63,6 @@ export function DagModal({ data, r, now, starting, refused, run, close, ledger }
             <tr><td>started</td><td>{r.startedAt ? `${new Date(r.startedAt * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} (${ago(now, r.startedAt)})` : "—"}</td></tr>
             <tr><td>run</td><td className="mono">{live[0]?.runId || r.d.runId || "—"}{live.length > 1 ? ` + ${live.length - 1} more` : ""}</td></tr>
             <tr><td>queue</td><td>{pool ? <span className="slots">{Array.from({ length: Math.min(pool.cap, 12) }, (_, i) => <i key={i} className={i < pool.running ? "on" : ""} />)}{pool.cap > 12 && <em>…</em>}<span>{short(pool.name)}: {pool.running} of {pool.cap} running{pool.queued ? `, ${pool.queued} queued` : ""}</span></span> : "no pool"}</td></tr>
-            <tr><td>run now</td><td>{why ? <span className="k">{why}</span> : "run-safe: StarPulse may start it"}</td></tr>
           </tbody></table>
           <section className="sec"><div className="sh"><span className="t">Board</span></div>
             {board.map((t) => (
@@ -73,9 +71,12 @@ export function DagModal({ data, r, now, starting, refused, run, close, ledger }
             {!board.length && <div className="k">No Board tie: this DAG neither moves a task nor is cued by one.</div>}
           </section>
         </div>
-        <div className="tvfoot">
-          <button className="startbtn" disabled={!!why} title={why ?? undefined} onClick={run}>▶ Run now</button>
-        </div>
+        {(r.d.startUrl || openRun) && (
+          <div className="tvfoot">
+            {r.d.startUrl && <a className="startbtn" href={r.d.startUrl} target="_blank" rel="noreferrer" title={`Opens ${where}'s start page in a new tab`}>Run in {where} ↗</a>}
+            {openRun && <a className="ghost" href={openRun} target="_blank" rel="noreferrer" title={`Opens this run on ${where} in a new tab`}>Open run ↗</a>}
+          </div>
+        )}
       </div>
     </div>
   );

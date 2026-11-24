@@ -16,13 +16,14 @@ import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topF
 import { optionalSteps } from "../features/level/ledger";
 import type { DoctorBox, PanelCtx } from "../features/level/ledgerPanel";
 type LedgerPanel = typeof import("../features/level/ledgerPanel");
+/** The runner page of a DAG's failed run, or "" when the snapshot holds no such run. */
+const failedRunUrl = (dags: Dag[], dag: string, runId: string) => dags.find((d) => d.name === dag)?.failed?.find((r) => r.runId === runId)?.url ?? "";
 let ledgerPanel: LedgerPanel | null = null;
 let ledgerPanelP: Promise<LedgerPanel> | undefined;
 const loadLedgerPanel = (): Promise<LedgerPanel> => (ledgerPanelP ??= import("../features/level/ledgerPanel").then((m) => (ledgerPanel = m)));
 import { createContract } from "../features/level/contract";
 import { type Hits } from "../features/level/ledgerRows";
 import { dragMove, dragStart, keyScroll, wheelScroll } from "../features/level/ledgerScroll";
-import { RerunStore } from "../features/level/rerun";
 import { spotIn, type Target } from "../features/level/search";
 import {
   RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
@@ -43,7 +44,7 @@ import { boardTies, hangarLevel, tieLedger, type Ties } from "./dagTies";
 import { pivotTip, tieTip } from "./dagTieTips";
 import type { Dag, Delta, LedgerRow, Machine, RawTask, Snapshot, Writer } from "../api";
 import { fanTip, stepStatus } from "../features/fanout/fanoutModel";
-import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
+import { esc, fanList, queueCell, runner, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
 import { ADMIN_DEFAULTS, type AdminPrefs } from "../features/admin/adminPrefs";
 import { clockHm, stamp } from "../shared/clock";
@@ -802,7 +803,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   });
   // ---- the Ledger: its rows' tips and panel, the doctor's banner, and the merge in focus ----
   const contract = createContract({ onChange: () => loop.wake() });
-  const rerunStore = new RerunStore(undefined, () => [paintMerge(), loop.wake()]);
   /** Where the banner was drawn this frame, and the report it states; none off a merge Ledger or before a report. */
   let doctor: DoctorBox | null = null;
   const heldRows = () => {
@@ -817,8 +817,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     return {
       event: led.event, from: fold.a!.name, to: fold.b!.name, ties: led.cols,
       steps: Object.fromEntries(dags.map((d) => [d, sc.stars[d].glyph.nodes.map((n) => n.name)])),
-      optional: Object.fromEntries(dags.map((d) => [d, optionalSteps(rows, d)])), runnable: S!.runnable,
-      palette: LEDGER_PALETTE, now: T, hm: hhmm, by: (k) => byKey.get(k), task: (id) => taskLink(id, id, S!), rerun: rerunStore.state,
+      optional: Object.fromEntries(dags.map((d) => [d, optionalSteps(rows, d)])),
+      palette: LEDGER_PALETTE, now: T, hm: hhmm, by: (k) => byKey.get(k), task: (id) => taskLink(id, id, S!), runUrl: (dag, runId) => failedRunUrl(S!.dags, dag, runId),
     };
   }
   /** The row whose panel is open, if one is. */
@@ -826,11 +826,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** The merge the Ledger's templates are coloured by: the hovered row, else the open one, else the newest. */
   const focused = () => ensurePanel()?.focusRow(hover?.kind === "lrow" ? hover.o : null, openRow(), heldRows());
   const starOfStep = (n: GNode) => Object.values(scene!.stars).find((s) => s.glyph.nodes.includes(n));
-  /** The merge panel's force-rerun buttons post to the rerun route; the store repaints the panel with the run's refusal. */
-  const wireRerun = () => panel.querySelectorAll<HTMLElement>("[data-rerun]").forEach((b) => void (b.onclick = () => void rerunStore.run(b.dataset.rerun!, T)));
   function openMerge(row: LedgerRow) {
     panel.innerHTML = ensurePanel()?.mergePanel(row, panelCtx()) ?? "";
-    wireRerun();
     openPanel();
     mergeSel = row.key;
   }
@@ -841,7 +838,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const top = panel.scrollTop;
     panel.innerHTML = ensurePanel()?.mergePanel(row, panelCtx()) ?? "";
     panel.querySelector<HTMLElement>(".x")!.onclick = () => closePanel();
-    wireRerun();
     panel.scrollTop = top;
   }
   const SLOT = '<div id="trace-slot"></div>';
@@ -868,7 +864,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       }
       case "dag": {
         const o = h.o, crit = (o.tether?.crit ?? []).map(esc).join("<br>"), l = sky.launches.filter((x) => x.dag === o.name && x.machine).map((x) => x.machine!);
-        return `<div class="k">DAG · ${esc(o.group)} · ${esc(o.active?.some((r) => r.status === "running") ? "running" : o.status)}${o.runnable ? " · runnable" : ""}</div><div class="n">${esc(o.name)}</div>${fanTip(o, S?.pools)}${crit ? `<div class="k">${crit}</div>` : ""}${l.length ? `<div class="k">launches ${l.map(esc).join(", ")}</div>` : ""}${o.steps.length} step${o.steps.length === 1 ? "" : "s"}: ${o.steps.map((s) => esc(s.name)).join(" → ")}${o.finishedAt ? `<div class="k">last run ${hhmm(finished(o.finishedAt))} MST</div>` : ""}`;
+        return `<div class="k">DAG · ${esc(o.group)} · ${esc(o.active?.some((r) => r.status === "running") ? "running" : o.status)}</div><div class="n">${esc(o.name)}</div>${fanTip(o, S?.pools)}${crit ? `<div class="k">${crit}</div>` : ""}${l.length ? `<div class="k">launches ${l.map(esc).join(", ")}</div>` : ""}${o.steps.length} step${o.steps.length === 1 ? "" : "s"}: ${o.steps.map((s) => esc(s.name)).join(" → ")}${o.finishedAt ? `<div class="k">last run ${hhmm(finished(o.finishedAt))} MST</div>` : ""}`;
       }
       case "galaxy":
         return `<div class="k">Board state · click to open</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.today === undefined ? "" : ` · ${h.o.today} today`}${h.o.subs.length ? ` · ${h.o.subs.length} lifecycle machines inside` : ""}`;
@@ -964,7 +960,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       list: fanList(rows, last, (id) => taskLink(id, id, sky)),
     };
   }
-  /** Repaint the open DAG panel's runs; its Run button and note stay as they are. */
+  /** Repaint the open DAG panel's runs; its run link stays as it is. */
   function paintFan() {
     const box = panel.classList.contains("open") ? panel.querySelector<HTMLElement>(".fan") : null, o = box && S?.dagBy[box.dataset.dag ?? ""];
     if (!box || !o) return;
@@ -975,7 +971,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     box.innerHTML = parts.list;
     panel.scrollTop = top;
   }
-  function openDagPanel(o: Dag & { group: string; runnable: boolean }) {
+  function openDagPanel(o: Dag & { group: string }) {
     const sky = S!, span = o.startedAt ? ` · ${hhmm(finished(o.startedAt))}–${o.finishedAt ? hhmm(finished(o.finishedAt)) : "…"} MST` : "", f = fanParts(o, Date.now() / 1000);
     panel.innerHTML = `<span class="x">✕</span><div class="k">DAG · ${esc(o.group)}</div><h2>${esc(o.name)}</h2>
       <table><tr class="fan-q"${f.queue ? "" : " hidden"}><td>Queue</td><td>${f.queue}</td></tr>
@@ -984,16 +980,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       <tr><td>Writes</td><td>${writes(o.name).map(esc).join(", ") || "no Board lane"}</td></tr>
       <tr><td>Launches</td><td>${sky.launches.filter((l) => l.dag === o.name).map((l) => esc(l.skill)).join(", ") || "no agent"}</td></tr>${cueLine(o.name) ? `
       <tr><td>Runs with</td><td>${cueLine(o.name)}</td></tr>` : ""}</table>
-      ${o.active ? `<div class="fan" data-dag="${esc(o.name)}">${f.list}</div>` : ""}<button class="run" ${o.runnable ? "" : "disabled"}>▶ Run now</button>
-      <div class="note">${o.runnable ? "Declared safe to re-run (idempotent)." : "Not declared idempotent, so the page offers no run control."}</div>`;
-    const run = panel.querySelector<HTMLButtonElement>(".run")!, note = panel.querySelector<HTMLElement>(".note")!;
-    // the run then appears through the event stream, like any other
-    run.onclick = async () => {
-      run.disabled = true;
-      note.textContent = "Starting…";
-      note.textContent = await startRun(o.name);
-      run.disabled = false;
-    };
+      ${o.active ? `<div class="fan" data-dag="${esc(o.name)}">${f.list}</div>` : ""}${o.startUrl ? `<a class="run" href="${esc(o.startUrl)}" target="_blank" rel="noreferrer">Run in ${esc(runner(o.name))} ↗</a>` : ""}`;
     openPanel();
   }
   const boardSource = () => ({ flows: [S!.board], cues: S!.cues });
@@ -1088,7 +1075,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   });
   const foldIO = {
     get S() { return S; }, get scene() { return scene; }, get T() { return T; }, get onFold() { return !trans && level().kind === "fold"; }, moves, get hotEdge() { return hotEdge; },
-    contract, rerunStore, hhmm, prefs, heldRows, focused, openRow, wake: () => loop.wake(), get doctor() { return doctor; }, set doctor(v) { doctor = v; },
+    contract, hhmm, prefs, heldRows, focused, openRow, wake: () => loop.wake(), get doctor() { return doctor; }, set doctor(v) { doctor = v; },
   };
   ensureFold = (): FoldDrawing | null => {
     if (foldDrawing) return foldDrawing;

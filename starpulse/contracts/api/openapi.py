@@ -98,7 +98,7 @@ _SEGMENT_TAG = {
     ),
     **dict.fromkeys("snapshot flows machines harnesses history history-window".split(), "board"),
     **dict.fromkeys("events held lanes ledger".split(), "streams"),
-    **dict.fromkeys("run runs admin".split(), "jobs"),
+    **dict.fromkeys("jobs admin".split(), "jobs"),
     "intake": "ingest",
     **dict.fromkeys("doctor health".split(), "ops"),
     "milestones": "milestones",

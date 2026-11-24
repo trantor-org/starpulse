@@ -1,9 +1,8 @@
 """The GitHub Actions adapter: each workflow's job and step graph and latest run, as the `runs` contract's `Dag` records.
 
 `listing` reads one repository (`owner/name`) into those records: a workflow per active workflow file, its jobs (and, for
-a job the latest run took once, that job's steps) as the step graph. `start` and `follow` are what a runs adapter module
-offers the server for one configured instance. `start` dispatches a workflow that declares `workflow_dispatch` and needs
-`GITHUB_TOKEN` or `GH_TOKEN`. `follow` lists the repository, then reads a workflow again when a run entry reports it (`Repository` reads only the
+a job the latest run took once, that job's steps) as the step graph. `follow` is what a runs adapter module
+offers the server for one configured instance. It lists the repository, then reads a workflow again when a run entry reports it (`Repository` reads only the
 workflows whose latest run changed or has not ended).
 """
 
@@ -18,7 +17,7 @@ from urllib.parse import quote
 
 import yaml
 
-from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
+from starpulse.contracts.adapters import RunsSink, RunStatus
 from starpulse.event_log.event_log import EventLog, Tail
 from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound.rest import GitHubError, Transport, connect, get, repo_of
@@ -177,9 +176,9 @@ class Repository:
         self._lock = threading.Lock()
         self._read: dict[str, _Read] = {}
 
-    def __call__(self, only: Collection[str] | None = None) -> tuple[list[dict], list[str]]:
+    def __call__(self, only: Collection[str] | None = None) -> list[dict]:
         """Every active workflow of the repository, or just those files in `only`, named for its file, with its latest
-        run and its job and step graph, and the names of those whose file declares a `workflow_dispatch` trigger."""
+        run and its job and step graph."""
         with self._lock:
             workflows = [
                 w
@@ -198,8 +197,7 @@ class Repository:
                 fresh = self._read
             else:
                 self._read |= fresh
-            dags = list(r.dag for r in fresh.values())
-            return dags, [n for n, r in fresh.items() if declares_dispatch(r.definition)]
+            return [r.dag for r in fresh.values()]
 
     def _latest(self) -> dict[int, dict]:
         """The newest run of each workflow among the repository's latest runs, by workflow id."""
@@ -253,49 +251,9 @@ def _named(workflow: dict) -> str:
     return posixpath.basename(workflow["path"])
 
 
-def listing(transport: Transport, repo: str, only: Collection[str] | None = None) -> tuple[list[dict], list[str]]:
+def listing(transport: Transport, repo: str, only: Collection[str] | None = None) -> list[dict]:
     """`Repository(transport, repo)(only)`: one reading, with nothing remembered from an earlier one."""
     return Repository(transport, repo)(only)
-
-
-def declares_dispatch(definition: dict) -> bool:
-    """Whether the workflow file lists `workflow_dispatch` among its `on:` events, as a name, a list or a mapping."""
-    on = definition.get("on", definition.get(True))  # YAML 1.1 reads an unquoted `on` key as true
-    return isinstance(on, str | list | dict) and (on == "workflow_dispatch" or "workflow_dispatch" in on)
-
-
-def starter(transport: Transport, repo: str) -> Callable[[str], str]:
-    """The adapter's start capability: dispatches a workflow of `repo` on its default branch and returns the run's id.
-
-    A workflow whose file declares no `workflow_dispatch` is refused without asking GitHub to run it. GitHub answers a
-    dispatch with the run's id only when asked to (`return_run_details`); an answer with none gives an empty id.
-    """
-
-    def start(workflow: str) -> str:
-        try:
-            if not declares_dispatch(_definition(transport, repo, f".github/workflows/{workflow}")):
-                raise StartFailedError(f"{workflow} declares no workflow_dispatch trigger")
-            ref = get(transport, f"/repos/{repo}")["default_branch"]
-            status, body = transport(
-                "POST",
-                f"/repos/{repo}/actions/workflows/{quote(workflow, safe='')}/dispatches",
-                {"ref": ref, "return_run_details": True},
-            )
-        except GitHubError as exc:
-            raise StartFailedError(f"no workflow {workflow} in {repo}" if exc.status == 404 else str(exc)) from exc
-        except OSError as exc:
-            raise StartFailedError(f"GitHub unreachable: {exc}") from exc
-        if status not in (200, 204):
-            raise StartFailedError(f"GitHub refused the dispatch (HTTP {status})")
-        return str(body.get("workflow_run_id", ""))
-
-    return start
-
-
-def start(url: str) -> Callable[[str], str] | None:
-    """The start capability of the repository at `url`, or None without a token in `GITHUB_TOKEN` or `GH_TOKEN`."""
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    return starter(connect(token), repo_of(url)) if token else None
 
 
 def _decode(fields: dict) -> tuple[str, float] | None:
@@ -319,7 +277,7 @@ class GitHubRuns:
     def __init__(
         self,
         sink: RunsSink,
-        fetch: Callable[[Collection[str] | None], tuple[list[dict], list[str]]],
+        fetch: Callable[[Collection[str] | None], list[dict]],
         *,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -328,7 +286,6 @@ class GitHubRuns:
         self._clock = clock
         self._lock = threading.RLock()
         self._dags: dict[str, dict] = {}
-        self._startable: set[str] = set()
         #: When the last listing began; an entry stamped before it is already in that listing.
         self._listed_at = 0.0
 
@@ -336,7 +293,7 @@ class GitHubRuns:
         """Read the repository once and hand it to the page; when it cannot be read the last reading stays and the error shows."""
         listed_at = self._clock()
         try:
-            dags, startable = self._fetch(None)
+            dags = self._fetch(None)
         except OSError as exc:
             self._sink.set_dags(None, str(exc))
             return
@@ -351,8 +308,7 @@ class GitHubRuns:
         with self._lock:
             self._listed_at = listed_at
             self._dags = {dag["name"]: dag for dag in dags}
-            self._startable = set(startable)
-            self._sink.set_dags(dags, None, startable=startable)
+            self._sink.set_dags(dags, None)
 
     def handle_entry(self, entry_id: str, fields: dict) -> None:
         """Read the workflow an entry reports again; a malformed entry, one the last listing already holds, or one for a
@@ -363,12 +319,11 @@ class GitHubRuns:
                 return
             name = decoded[0]
             try:
-                dags, startable = self._fetch({name})
+                dags = self._fetch({name})
             except OSError, ValueError, KeyError, TypeError, yaml.YAMLError:
                 return  # the next reconcile corrects it
             self._dags = {n: next((d for d in dags if d["name"] == n), d) for n, d in self._dags.items()}
-            self._startable = (self._startable - {name}) | set(startable)
-            self._sink.set_dags(list(self._dags.values()), None, startable=sorted(self._startable))
+            self._sink.set_dags(list(self._dags.values()), None)
 
 
 #: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.
@@ -378,7 +333,7 @@ WORKER = "github-actions"
 def read(url: str) -> list[dict]:
     """The workflows of the repository at `url`, as the sweeper's `runs` kind compares them with the projection."""
     transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
-    return listing(transport, repo_of(url))[0]
+    return listing(transport, repo_of(url))
 
 
 def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:

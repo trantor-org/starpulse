@@ -169,6 +169,6 @@ def assembled(config: Config, base: Path) -> tuple[Board, BoardFeed, Placed]:
     `starpulse serve` assembles them."""
     board, machines, *_ = declared(config, base)
     placed = Placed(machines, board.keys, declared_fields(config.board))
-    board, feed = assemble(config, base, None, config.qualified_run_safe(), placed.read_model)
+    board, feed = assemble(config, base, None, placed.read_model)
     placed.feed = feed
     return board, feed, placed

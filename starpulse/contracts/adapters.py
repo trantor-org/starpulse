@@ -475,8 +475,6 @@ class RunsSink(Protocol):
     """Where a runs adapter's `follow(url, runs, log)` publishes the workflows and `Pool`s of its one instance, and says when it cannot read them.
 
     `pools` None keeps the last reported and a list replaces them, so an adapter that reports none passes `[]`.
-    `startable`, when the adapter can start only some of its workflows, names those; None keeps the last report, and an
-    adapter that never reports one is read as able to start every workflow.
     """
 
     def set_dags(
@@ -484,7 +482,6 @@ class RunsSink(Protocol):
         dags: list | None,
         error: str | None,
         pools: list | None = None,
-        startable: list[str] | None = None,
     ) -> None: ...
 
 

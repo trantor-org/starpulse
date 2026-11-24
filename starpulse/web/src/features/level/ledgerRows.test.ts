@@ -14,7 +14,7 @@ import type { Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "../../ap
 
 const PALETTE: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185", aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155", waiting: "#c084fc", overdue: "#fb7185" };
 const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
-const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] })) });
+const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] })) });
 const machine = (): Machine => ({
   states: ["review", "done"].map((id, i) => ({ id, name: id, initial: !i, final: !!i })),
   transitions: [{ source: "review", target: "done", event: "MERGED" }],
@@ -60,7 +60,7 @@ function frame(rows: LedgerRow[], over: Partial<RowsFrame> = {}): RowsFrame {
   const snap: Snapshot = {
     graphs: ["board"], flows: [{ name: "board", agents: [], machine: machine() }], cues, settled: {}, error: null, now: 2000,
     dags: [dag("main-follow", ["only"]), dag("apply-on-merge", ["build", "apply"])],
-    domains: [{ name: "Board", dags: [{ name: "main-follow", runSafe: false }, { name: "apply-on-merge", runSafe: false }] }],
+    domains: [{ name: "Board", dags: [{ name: "main-follow" }, { name: "apply-on-merge" }] }],
   };
   const S = { ...merge(snap), ledgers: { MERGED: rows } }, moves = new Moves();
   moves.observe(S, 2000);
@@ -290,14 +290,13 @@ describe("the unresolved band", () => {
     expect(head(r, 955)).toMatchObject({ clipped: true, y: f.led.grid!.top + f.led.grid!.rh / 2 - 8 });
   });
 
-  it("counts the pins past its cap as waiting below, and words a forced rerun in progress", () => {
+  it("counts the pins past its cap as waiting below", () => {
     const g = frame(day([])).led.grid!, rows = day(Array.from({ length: g.cap + 2 }, (_, i) => pin(`p${i}`, 960 + i)));
-    const r = recorder(), f = { ...banded(rows), rerunning: "↻ forced rerun running · 12 s" };
+    const r = recorder(), f = banded(rows);
 
     drawRows(r.ink, f);
 
     expect(r.texts.find((t) => t.s.startsWith("UNRESOLVED"))!.s).toBe(`UNRESOLVED · ${g.cap + 2} failed runs (+2 below)`);
-    expect(r.texts.find((t) => t.s === "↻ forced rerun running · 12 s")).toMatchObject({ y: g.top - 9, clipped: false });
   });
 });
 

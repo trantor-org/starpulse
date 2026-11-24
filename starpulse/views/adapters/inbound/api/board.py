@@ -2,7 +2,6 @@
 
 - `GET /api/doctor`: the contract report.
 - `GET /api/health`: 200 when the server can serve the board, 503 naming each component that is not ready.
-- `GET /api/runs`: every runs workflow with its latest run, and the error a runs instance reported.
 - `GET /api/done`, `/api/search`: the Done lane and a search of the tasks.
 - `GET /api/search/similar`: `/api/search` that waits to embed a new query, for a caller that needs the tasks nearest
   in meaning, not an answer within a budget.
@@ -33,11 +32,6 @@ def ready(request: Request) -> Response:
 
 
 @reading
-def runs(request: Request) -> Response:
-    return answer(request, encode("runs", seams(request).feed.run_list()))
-
-
-@reading
 def done(request: Request) -> Response:
     api = seams(request)
     return answer(request, *done_response(api.feed, api.board.read, query(request)))
@@ -61,7 +55,6 @@ def harnesses(request: Request) -> Response:
 routes: list[ApiRoute] = [
     ReadRoute("/doctor", doctor),
     ReadRoute("/health", ready),
-    ReadRoute("/runs", runs),
     ReadRoute("/done", done, params=frozenset({"before", "limit"})),
     ReadRoute("/search", search, params=frozenset({"before", "finished_within_days", "label", "limit", "q"})),
     ReadRoute("/search/similar", similar, params=frozenset({"before", "finished_within_days", "label", "limit", "q"})),

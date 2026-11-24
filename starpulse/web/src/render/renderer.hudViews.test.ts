@@ -25,8 +25,8 @@ const task = (id: string, state: string): RawTask => ({ id, title: id, state, mo
 const snap = (tasks: RawTask[]): Snapshot => ({
   graphs: ["board"],
   flows: [{ name: "board", agents: tasks, machine: machine(["ready", "in_progress", "review"]) }],
-  dags: [{ name: "temporal/deliver", status: "succeeded", runId: "r1", startedAt: "", finishedAt: "2026-10-11T00:00:00Z", schedule: [], stats: null, rerun: null, steps: [] }],
-  domains: [{ name: "Delivery", dags: [{ name: "temporal/deliver", runSafe: false }] }],
+  dags: [{ name: "temporal/deliver", status: "succeeded", runId: "r1", startedAt: "", finishedAt: "2026-10-11T00:00:00Z", schedule: [], stats: null, rerun: null, startUrl: "", steps: [] }],
+  domains: [{ name: "Delivery", dags: [{ name: "temporal/deliver" }] }],
   cues: [],
   settled: {},
   error: null,
@@ -89,7 +89,7 @@ describe("Kanban and DAGs HUD fields after the first snapshot", () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(hud.get().cards.map((c) => c.id).sort()).toEqual(["TASK-1", "TASK-2"]);
     });
-    expect(hud.get().dagData?.dags.map((d) => d.name)).toEqual(["temporal/deliver"]);
+    expect(hud.get().dagData?.domains.flatMap((d) => d.dags.map((m) => m.name))).toEqual(["temporal/deliver"]);
     r.stop();
   });
 

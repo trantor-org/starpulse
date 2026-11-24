@@ -56,10 +56,6 @@ class Retired(_Api):
     task: str
 
 
-class RetiredImported(_Api):
-    task: str
-
-
 class Completed(_Api):
     task: str
 
@@ -135,10 +131,6 @@ class Started(_Api):
     task: str
     url: str
     at: float
-
-
-class RunStarted(_Api):
-    runId: str
 
 
 class Accepted(_Api):

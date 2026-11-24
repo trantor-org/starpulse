@@ -49,6 +49,8 @@ class Record:
     graph: Callable[[], Mapping[str, Sequence[str]]] = lambda: {}
     #: The board's `default_profiles` (kind, then size, to a profile); the `matrix_profile` primitive reads it.
     matrix: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    #: The lenses whose verdict the task's latest qa round recorded; the `qa_verdict` primitive reads it.
+    qa_lenses: Callable[[str], frozenset[str]] = lambda _task: frozenset()
 
     @property
     def state(self) -> str:
@@ -530,6 +532,14 @@ def _checklist(spec: Mapping[str, Any], where: str) -> Primitive:
     return holds
 
 
+def _qa_verdict(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, {"lens"}, where, "qa_verdict")
+    lens = spec.get("lens")
+    if not isinstance(lens, str) or not lens:
+        raise ValueError(f"{where}: qa_verdict needs `lens`, the qa lens whose verdict the latest round recorded")
+    return lambda record: bool(task := str(record.front.get("id") or "")) and lens in record.qa_lenses(task)
+
+
 def _pulls(record: Record, settle: str | None = None) -> list[Mapping[str, Any] | None]:
     """The stored pull request of each URL in the task's `references`, None for one the store does not hold; `settle`
     names the stored field (`mergeable` or `files`) the lookup corrects from GitHub."""
@@ -710,6 +720,7 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "pull_proof": _pull_proof,
     "matrix_profile": _matrix_profile,
     "readable": _readable,
+    "qa_verdict": _qa_verdict,
     "pulls_ready": _pulls_ready,
     "pulls_failing": _pulls_failing,
     "pulls_clear": _pulls_clear,
@@ -842,8 +853,12 @@ def standing_verdict(
     def unread_pull(repo: str, number: int, _settle: str | None) -> None:
         read.append(f"{repo}#{number}")
 
-    before = Record(front, body, unread, pull_of=unread_pull)
-    after = Record(enter({**front, "status": lane}), body, unread, before, unread_pull)
+    def unread_qa(task: str) -> frozenset[str]:
+        read.append(task)
+        return frozenset()
+
+    before = Record(front, body, unread, pull_of=unread_pull, qa_lenses=unread_qa)
+    after = Record(enter({**front, "status": lane}), body, unread, before, unread_pull, qa_lenses=unread_qa)
     broken = []
     for rule in rules:
         read.clear()

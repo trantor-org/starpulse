@@ -18,7 +18,7 @@ const row = (over: Partial<LedgerRow> = {}): LedgerRow => ({ key: "abc", at: 990
 const ctx = (over: Partial<PanelCtx> = {}): PanelCtx => ({
   event: "MERGED", from: "Review", to: "Done", ties,
   steps: { "main-follow": ["only"], "apply-on-merge": ["build", "apply"], "healthcheck": ["index"] },
-  optional: {}, runnable: new Set(["apply-on-merge", "healthcheck"]), palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" }, now: 2000, hm: (s) => `t${s % 1000}`, by: () => undefined, task: (id) => `<a>${id}</a>`, ...over,
+  optional: {}, runUrl: () => "", palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" }, now: 2000, hm: (s) => `t${s % 1000}`, by: () => undefined, task: (id) => `<a>${id}</a>`, ...over,
 });
 
 describe("failHtml", () => {
@@ -74,39 +74,25 @@ describe("mergePanel", () => {
   });
 });
 
-describe("mergePanel's rerun control", () => {
+describe("mergePanel's Open run link", () => {
   const failing = row({ fails: { "apply-on-merge": fail(), "healthcheck": fail({ step: "index", resolves: "next", resolved: { runId: "n", at: iso(1500) } }) } });
+  const runUrl = (dag: string, runId: string) => (dag === "apply-on-merge" ? `https://runner/${dag}/${runId}` : "");
 
-  it("offers a Force rerun for each DAG whose failure is unresolved, and none for a resolved one", () => {
-    const html = mergePanel(failing, ctx());
+  it("links each unresolved failed run to its runner in a new tab, and none for a resolved one", () => {
+    const html = mergePanel(failing, ctx({ runUrl }));
 
-    expect(html).toContain('<button class="run" data-rerun="apply-on-merge">↻ Force rerun apply-on-merge</button>');
-    expect(html).not.toContain('data-rerun="healthcheck"');
+    expect(html).toContain('<a class="run" href="https://runner/apply-on-merge/r" target="_blank" rel="noreferrer"');
+    expect(html).toContain(">Open run ↗</a>");
+    expect(html.match(/Open run/g)).toHaveLength(1);
   });
 
-  it("offers no Force rerun for a DAG that is not run-safe, since the server would answer 404, and says to rerun it from its runner", () => {
-    const html = mergePanel(failing, ctx({ runnable: new Set(["healthcheck"]) }));
-
-    expect(html).not.toContain("data-rerun");
-    expect(html).toContain("apply-on-merge ✕ apply: unresolved, clears on a forced rerun");
-    expect(html).toContain("apply-on-merge is not run-safe: rerun it from its workflow runner");
+  it("offers none when the runner gave the run no page, and none on a merge no run failed on", () => {
+    expect(mergePanel(failing, ctx())).not.toContain("Open run");
+    expect(mergePanel(row(), ctx({ runUrl }))).not.toContain("Open run");
   });
 
-  it("offers none on a merge no run failed on", () => {
-    expect(mergePanel(row(), ctx())).not.toContain("data-rerun");
-  });
-
-  it("shows a rerun being asked for as busy and disabled", () => {
-    const html = mergePanel(failing, ctx({ rerun: { busy: new Set(["apply-on-merge"]), refused: {} } }));
-
-    expect(html).toContain('<button class="run" data-rerun="apply-on-merge" disabled>↻ Rerunning apply-on-merge…</button>');
-  });
-
-  it("shows the server's refusal under the button, escaped", () => {
-    const html = mergePanel(failing, ctx({ rerun: { busy: new Set(), refused: { "apply-on-merge": "apply-on-merge has no <unresolved> failure" } } }));
-
-    expect(html).toContain('data-rerun="apply-on-merge">↻ Force rerun');
-    expect(html).toContain('<div class="note" style="color:#fb7185">apply-on-merge has no &lt;unresolved&gt; failure</div>');
+  it("offers no button to start anything", () => {
+    expect(mergePanel(failing, ctx({ runUrl }))).not.toContain("<button");
   });
 });
 

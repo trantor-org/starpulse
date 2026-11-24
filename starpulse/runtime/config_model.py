@@ -86,8 +86,8 @@ class RunsInstanceFile(_Table):
     type: str = Field(
         description=(
             "The runs adapter: a module under `starpulse` or the dotted path of "
-            "one an installed package provides. It offers `start(url)` and `follow(url, runs, log)`, and optionally "
-            "`rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which "
+            "one an installed package provides. It offers `follow(url, runs, log)`, and optionally "
+            "`declared_params(url, workflow)`, the parameter names a workflow declares, which "
             "`doctor` reads. See Runs adapters for what a built-in adapter reads and serves."
         ),
     )
@@ -99,7 +99,6 @@ class RunsInstanceFile(_Table):
             "beat is older than 60s)."
         ),
     )
-    run_safe: list[str] = Field(default=[], description="The workflows the page's Run now may start.")
     domains: dict[str, list[str] | dict[str, list[str]]] = Field(
         default={},
         description=(
@@ -110,6 +109,10 @@ class RunsInstanceFile(_Table):
     dashboard: str | None = Field(
         default=None,
         description="The Grafana dashboard that shows this instance's runner; the jobs page links the instance to it.",
+    )
+    start_url: str | None = Field(
+        default=None,
+        description="Where this instance's runner starts a run; the jobs page's Run in <runner> link opens it.",
     )
     commit: CommitFile | None = Field(
         default=None,

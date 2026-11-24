@@ -38,6 +38,8 @@ class Guard:
     graph: Callable[[], Mapping[str, Sequence[str]]] = lambda: {}
     #: The board's `default_profiles` (`rules.Record.matrix`).
     matrix: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    #: The lenses whose verdict a task's latest qa round recorded (`rules.Record.qa_lenses`), none when the board has no store.
+    qa_lenses: Callable[[str], frozenset[str]] = lambda _task: frozenset()
     #: What entering a lane does to the task, whichever writer moves it (`[[board.entry]]`).
     effects: tuple[entry.Effect, ...] = ()
     #: The actors a lane rule they break warns instead of refusing (`warn_actors`); the rules that judge every write still refuse them.
@@ -113,6 +115,7 @@ class Guard:
                 holders=self.holders,
                 graph=self.graph,
                 matrix=self.matrix,
+                qa_lenses=self.qa_lenses,
             )
             verdict = rules.evaluate(self.rules, earlier, after, actor, self.warn_actors)
             if verdict.refused:

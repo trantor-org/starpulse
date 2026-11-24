@@ -4,10 +4,9 @@ page build and the checks made before anything starts."""
 import argparse
 import logging
 import os
-from collections.abc import Callable, Sequence
 from pathlib import Path
 from types import ModuleType
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from starpulse.runs.adapters.inbound.ingest import tokens as ingest_tokens
 from starpulse.runs.model import opt_in
@@ -47,16 +46,6 @@ def run_adapters(parser: argparse.ArgumentParser, config: Config) -> list[tuple[
     return [(instance, _adapter(parser, instance)) for instance in config.runs if instance.type]
 
 
-def run_starts(adapters: Sequence[tuple[RunsInstance, ModuleType]]) -> dict[str, Callable[[str], str]]:
-    """The start capability of each run adapter instance that has one, by instance name."""
-    starts = {}
-    for instance, adapter in adapters:
-        start = adapter.start(instance.url)
-        if start:
-            starts[instance.name] = start
-    return starts
-
-
 def announce(port: int) -> None:
     """Say on the terminal where the view is."""
     print(f"StarPulse on :{port}", flush=True)
@@ -66,9 +55,6 @@ class Prepared(NamedTuple):
     """What the config and the environment settle before anything starts: `serve` fails on it before it spawns a child,
     and the Page API is built from it."""
 
-    starts: dict[str, Callable[[str], str]]
-    reruns: dict[str, Any]
-    run_safe: list[str]
     producer_tokens: dict[str, str]
     opt_in_workers: list[str]
     """The `[[runs]]` instances an adapter's own worker runs (`starpulse.runs.model.opt_in`): `serve` runs none of them itself."""
@@ -94,13 +80,5 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
     if not (STATIC / "index.html").is_file():
         parser.exit(1, f"{STATIC} has no build; run `pnpm --filter @starpulse/web build` first\n")
     adapters = run_adapters(parser, config)
-    starts = run_starts(adapters)
-    # Run now is drawn only for an instance whose adapter can start a run, and only on its run-safe workflows.
-    reruns = {
-        instance.name: rerun
-        for instance, adapter in adapters
-        if (factory := getattr(adapter, "rerun", None)) and (rerun := factory(instance.url))
-    }
-    run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
     opted_in = [instance.name for instance, adapter in adapters if opt_in.worker_of(adapter)]
-    return Prepared(starts, reruns, run_safe, producer_tokens, opted_in)
+    return Prepared(producer_tokens, opted_in)

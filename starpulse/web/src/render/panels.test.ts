@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FanRow, QueueRow } from "../features/fanout/fan";
-import { fanList, queueCell, startRun, taskPanel } from "./panels";
+import { fanList, queueCell, runner, taskPanel } from "./panels";
 import { merge } from "./sky";
 import type { RawTask, Snapshot } from "../api";
 
@@ -68,32 +68,9 @@ describe("the task panel", () => {
   });
 });
 
-describe("Run now", () => {
-  const answer = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
-
-  it("POSTs the DAG to the run endpoint and reports the run id Temporal gave it", async () => {
-    const sent: [string, RequestInit | undefined][] = [];
-    const post = async (url: string, init?: RequestInit) => (sent.push([url, init]), new Response('{"runId":"run-7"}'));
-
-    expect(await startRun("whole-repo-gate", post)).toBe("Started run run-7.");
-    expect(sent).toEqual([["/api/run/whole-repo-gate", { method: "POST" }]]);
-  });
-
-  it("keeps the instance and the workflow as two path segments, each encoded on its own", async () => {
-    const sent: string[] = [];
-    const post = async (url: string) => (sent.push(url), new Response('{"runId":"run-8"}'));
-
-    await startRun("ci/nightly run", post);
-
-    expect(sent).toEqual(["/api/run/ci/nightly%20run"]);
-  });
-
-  it("reports the server's refusal", async () => {
-    expect(await startRun("whole-repo-gate", answer(502, { error: "Temporal refused the start (HTTP 409)" }))).toBe("Not started: Temporal refused the start (HTTP 409)");
-  });
-
-  it("reports a server it cannot reach", async () => {
-    expect(await startRun("whole-repo-gate", async () => Promise.reject(new TypeError("Failed to fetch")))).toBe("Not started: Failed to fetch");
+describe("runner", () => {
+  it("names the runner a DAG's instance prefix points at, and capitalises an unknown one", () => {
+    expect(["temporal/nightly", "github/ci", "woodpecker/push", "dagu/x", "airflow/y"].map(runner)).toEqual(["Temporal", "GitHub", "Woodpecker", "Dagu", "Airflow"]);
   });
 });
 

@@ -17,14 +17,14 @@ from pathlib import Path
 from typing import NamedTuple, Protocol
 
 from starpulse.board.adapters.search import SearchIndex
+from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM, ClaimRefusals
+from starpulse.board.application.queries.machine_tasks import MachineDeltas
+from starpulse.board.application.queries.verdicts import Verdicts
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
 from starpulse.board.model.board_feed import BoardFeed, LaneRecorder
 from starpulse.board.model.board_feed import follow as follow_stream
 from starpulse.board.model.feed.held import HeldSnapshot
 from starpulse.board.model.feed.shared import LIVE_WINDOW_S
-from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM, ClaimRefusals
-from starpulse.board.application.queries.machine_tasks import MachineDeltas
-from starpulse.board.application.queries.verdicts import Verdicts
 from starpulse.board.model.seam import Board
 from starpulse.event_log import verdict_events
 from starpulse.event_log.event_log import EventLog
@@ -94,19 +94,25 @@ def start(
     once the old writer ended, it stores its snapshot as the first delta and folds the log from there, so there is one
     writer at any instant and no rebuild between the two."""
     model = ReadModel(log.engine, declared_fields(config.board))
-    board, feed = assemble(config, base, None, [], model)
-    feed.cap_lanes(LIVE_WINDOW_S)  # the live set: an older lane stays only for an open task, and decoding the rest is the worker's heap
+    board, feed = assemble(config, base, None, model)
+    feed.cap_lanes(
+        LIVE_WINDOW_S
+    )  # the live set: an older lane stays only for an open task, and decoding the rest is the worker's heap
     store = history_store(config, base, feed.machines)
     feed.ready.set()
     feed.record_lanes(store, log)  # the lane each write makes is recorded by `serve`; the Board child places none
     board.attach(log)
     held = HeldSnapshot(feed, store=None if go else snapshots)
     stop.listen(held.retire)  # a stream open tells its page the Board is stale from here until a writer stores again
-    threading.Thread(target=held.run, args=(stop,), name="held-snapshot", daemon=True).start()  # built whole, then folded
+    threading.Thread(
+        target=held.run, args=(stop,), name="held-snapshot", daemon=True
+    ).start()  # built whole, then folded
     MachineDeltas(feed, model).follow(stop, log)  # a context sharing this feed hears each machine row as a `move`
 
     def fold() -> None:
-        search = SearchIndex.open(log.engine, config.search)  # the one fold indexes search, as the API's second fold once did
+        search = SearchIndex.open(
+            log.engine, config.search
+        )  # the one fold indexes search, as the API's second fold once did
         follow(
             Projector(log.engine, EventStore(log.engine), search, log=log, drawn=feed.machines, keys=board.keys),
             feed, stop, log,

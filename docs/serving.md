@@ -359,7 +359,9 @@ GET /api/snapshot  the document /api/events sends on connect, as one response: w
                    `?view=full` and `/api/flows` send this same stored body (gzip once per stored body), which
                    `starpulse snapshot` and `starpulse board|task|machines|machine|doctor|incident` read; a verb
                    that needs a task's description or criteria reads `/api/task/<id>`
-GET /api/runs      {dags, error}: every runs workflow with its latest run, and what a runs instance reported: `starpulse runs list`
+POST /api/jobs     {position, items, error}: every runs workflow as a job with its latest run and its runner's `startUrl` (empty when the instance sets none), and what a runs instance reported; `starpulse runs list` reads it
+GET /api/jobs/<name>  one job as the list holds it; 404 for a name no instance serves
+POST /graphql      `subscription { jobChanges(from: <position>) { jobs error } }` streams the full job list on each change after `position`; a `from` the server no longer holds answers 410, and the page reads the list again
 GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
                    names (none without a build); `starpulse_docs{type}`, the open board docs of each type; `starpulse_open_pulls{repo}`, the open pull requests the PR store holds in each repository; `starpulse_snapshot_build_seconds_count` and `_sum`, the snapshots the API built and the
                    seconds they took (0: it serves the stored one); `starpulse_board_lane_unattributed_total`, the board:lanes entries
@@ -610,7 +612,7 @@ type = "native"
 #   on       = { to = "Done" }                 a write that enters Done (`from = [...]` narrows it to those states)
 #            | { to = "Done", while = true }   ... and a write that leaves the task in Done
 #            | { write = true }                every write, whatever the task's state
-#   require  = one primitive: field, label, section, body, block, dependencies, checklist, readable, retained, no_implied_dependency, pull_proof, matrix_profile, pulls_ready, pulls_failing, pulls_clear, pulls_changed, or all_of, any_of, exactly_one,
+#   require  = one primitive: field, label, section, body, block, dependencies, checklist, readable, retained, no_implied_dependency, pull_proof, matrix_profile, qa_verdict, pulls_ready, pulls_failing, pulls_clear, pulls_changed, or all_of, any_of, exactly_one,
 #              none_of over a list of them
 #   unless_actor = ["temporal/reconciler"]         actors the rule does not judge: operator, agent, <instance>/<workflow>
 # [[board.guards]]
@@ -644,7 +646,7 @@ type = "native"
 name = "temporal"
 type = "temporal"
 url = "http://temporal.example.com:8080"
-run_safe = ["nightly"]                   # the workflows the page's Run now may start
+start_url = "http://temporal.example.com:8080"   # where the page's Run in Temporal ↗ link opens
 domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
 
 [runs.commit]
@@ -867,11 +869,11 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 #### [[runs]]
 
 - `name` (text, required): The instance's name, unique; its workflows are drawn as `<name>/<workflow>`.
-- `type` (text, required): The runs adapter: a module under `starpulse` or the dotted path of one an installed package provides. It offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads. See Runs adapters for what a built-in adapter reads and serves.
+- `type` (text, required): The runs adapter: a module under `starpulse` or the dotted path of one an installed package provides. It offers `follow(url, runs, log)`, and optionally `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads. See Runs adapters for what a built-in adapter reads and serves.
 - `url` (text, required): What the adapter reads. A built-in adapter is an opt-in worker: `serve`'s `contexts` child runs it as a thread, or you run `starpulse worker <adapter> --config <this file>`, and, with it down or not yet started, the page shows this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its beat is older than 60s).
-- `run_safe` (list of text): The workflows the page's Run now may start.
 - `domains` (table of list of text or table of list of text): How the page groups this instance's workflows: each domain is a list of workflow names, or a table of process name to workflow list.
 - `dashboard` (text): The Grafana dashboard that shows this instance's runner; the jobs page links the instance to it.
+- `start_url` (text): Where this instance's runner starts a run; the jobs page's Run in <runner> link opens it.
 - `commit` (`[runs.commit]` table): The run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain. Each key names a parameter; a key left out is a parameter this instance has none of.
 
 #### [[views]]
@@ -1403,12 +1405,8 @@ step, and the step it is in.
   tracked apart from the run drawn for the occurrence, so a green plain retry of the same commit does not clear a
   forced failure. A cue with no `resolves` rule, or an event no cue names, takes `next`. An instance with no `force`
   key never clears a forced failure.
-- `POST /api/runs/<instance>/<workflow>/rerun` starts a run-safe workflow with `force` set to `1` and the `after`,
-  `before` and `task` parameters of its newest open failure, through the runs adapter's optional `rerun(url)` (an
-  adapter that can start a run offers it). It answers `{runId}`; 409 when the instance declares no `force` or the workflow has no open
-  failure; 404 for a workflow outside `run_safe`; 403 off the LAN. A GET answers 405.
 - A pin lasts as long as StarPulse can still read the failed run: the last day of runs (`recent`) and the window of
-  merged pull requests and lane entries. An older failure drops out of the Ledger and cannot be rerun here.
+  merged pull requests and lane entries. An older failure drops out of the Ledger.
 - A `[[repos]]` entry names a repository whose merges apply through the parent's pin bump. Its `MERGED` rows take no run
   and carry `appliedBy`: the `key` of the first later merge in another repository whose submodule pointer at `path`
   contains the merge's commit (read through GitHub), or `null` while no such merge exists. That merge's row lists what it
@@ -1433,7 +1431,7 @@ publishes nothing, so a page keeps a card until it reloads. The page's snapshot 
   `task` delta carries the new number;
 - `settled` keeps the tasks created or settled in the last 24 h, and `milestone_done` (`{milestone: count}`)
   counts every settled completed task by milestone;
-- `/api/snapshot`, `?view=full` and `/api/flows` serve this one stored body: the CLI verbs read `/api/flows`, `/api/runs`,
+- `/api/snapshot`, `?view=full` and `/api/flows` serve this one stored body: the CLI verbs read `/api/flows`, `/api/jobs`,
   `/api/task/<id>` and the routes above, and a verb that needs a task's description or criteria reads `/api/task/<id>`.
 
 `GET /api/done[?before=<entered>][&limit=20]` returns `{tasks, more}`, the next page of cold done tasks, newest done

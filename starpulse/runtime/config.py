@@ -8,7 +8,7 @@ The `[board]` table names the board by `type` (`native` or `machines`); the rest
 board's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.flow_metrics.adapters.outbound.history`).
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a built-in name from
-`board.model.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
+`board.model.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads, where its runner starts a run (`start_url`) and the `domains` that
 group its workflows on the page. A workflow is shown as `<instance>/<workflow>`, so two instances can
 carry the same workflow name.
 
@@ -49,8 +49,8 @@ from starpulse.runtime.config_model import (
     RunsInstanceFile,
     memory_limit,
 )
-from starpulse.scheduler.model.config import Scheduler, SchedulerError, parse_scheduler
 from starpulse.runtime.nats_server import Bridge
+from starpulse.scheduler.model.config import Scheduler, SchedulerError, parse_scheduler
 from starpulse.sweeper.config import Sweeper, SweeperError, parse_sweeper
 
 _DEFAULTS = ConfigFile()
@@ -86,7 +86,7 @@ class Release:
 
 
 def runs_adapter(kind: str) -> ModuleType:
-    """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)`, `declared_params(url, workflow)` and `domains(url)`."""
+    """The runs adapter module `kind` names, which offers `follow(url, runs, log)`, and optionally `declared_params(url, workflow)` and `domains(url)`."""
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
         raise ConfigError(f"no runs adapter of type {kind}")
     try:
@@ -100,8 +100,8 @@ def runs_adapter(kind: str) -> ModuleType:
         raise ConfigError(f"runs adapter {kind} failed to import: {exc}") from exc
     except ImportError as exc:
         raise ConfigError(f"runs adapter {kind} failed to import: {exc}") from exc
-    if not (callable(getattr(module, "start", None)) and callable(getattr(module, "follow", None))):
-        raise ConfigError(f"{kind} is not a runs adapter: it needs start(url) and follow(url, runs, log)")
+    if not callable(getattr(module, "follow", None)):
+        raise ConfigError(f"{kind} is not a runs adapter: it needs follow(url, runs, log)")
     return module
 
 
@@ -112,7 +112,7 @@ def _instance(table: RunsInstanceFile) -> RunsInstance:
         raise ConfigError(f"runs instance {table.name}: {exc}") from exc
     flat, processes = _domains(table.domains)
     commit = CommitKeys(**table.commit.model_dump()) if table.commit is not None else None
-    return RunsInstance(table.name, table.type, table.url, tuple(table.run_safe), flat, processes, commit, table.dashboard)
+    return RunsInstance(table.name, table.type, table.url, flat, processes, commit, table.dashboard, table.start_url)
 
 
 def _domains(
@@ -266,10 +266,6 @@ class Config:
                 qualified = tuple((proc, tuple(f"{instance.name}/{w}" for w in ws)) for proc, ws in packages)
                 merged[domain] = (*merged.get(domain, ()), *qualified)
         return merged
-
-    def qualified_run_safe(self) -> tuple[str, ...]:
-        """Every instance's run-safe workflows as `<instance>/<workflow>`."""
-        return tuple(f"{instance.name}/{w}" for instance in self.runs for w in instance.run_safe)
 
 
 def _scheduler(raw: object) -> Scheduler:

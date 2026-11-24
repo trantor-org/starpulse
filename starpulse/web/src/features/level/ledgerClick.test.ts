@@ -8,7 +8,7 @@ import { bannerOf, ledgerHit, mergePanel, type DoctorBox, type PanelCtx } from "
 import type { ContractReport, Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "../../api";
 
 const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
-const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] })) });
+const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] })) });
 const machine = (): Machine => ({
   states: ["review", "done"].map((id, i) => ({ id, name: id, initial: !i, final: !!i })),
   transitions: [{ source: "review", target: "done", event: "MERGED" }],
@@ -27,7 +27,7 @@ function ledger(rows: LedgerRow[]) {
   const snap: Snapshot = {
     graphs: ["board"], flows: [{ name: "board", agents: [], machine: machine() }], cues, settled: {}, error: null, now: 2000,
     dags: [dag("main-follow", ["only"]), dag("apply-on-merge", ["build", "apply"])],
-    domains: [{ name: "Board", dags: [{ name: "main-follow", runSafe: false }, { name: "apply-on-merge", runSafe: false }] }],
+    domains: [{ name: "Board", dags: [{ name: "main-follow" }, { name: "apply-on-merge" }] }],
   };
   const S = { ...merge(snap), ledgers: { MERGED: rows } }, moves = new Moves();
   moves.observe(S, 2000);
@@ -35,7 +35,7 @@ function ledger(rows: LedgerRow[]) {
   const led = scene.fold!.ledger!, byKey = new Map(rows.map((r) => [r.key, r]));
   const ctx: PanelCtx = {
     event: "MERGED", from: "Review", to: "Done", ties: led.cols, steps: Object.fromEntries(led.cols.map((c) => [c.dag, scene.stars[c.dag].glyph.nodes.map((n) => n.name)])),
-    optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(rows, c.dag)])), runnable: new Set(led.cols.map((c) => c.dag)), palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" },
+    optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(rows, c.dag)])), runUrl: () => "", palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" },
     now: 2000, hm: (s) => `t${s % 1000}`, by: (k) => byKey.get(k), task: (id) => id,
   };
   return { scene, led, ctx, shown: place(take(newScroll(), rows, led.grid!), led.grid!) };

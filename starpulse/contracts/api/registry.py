@@ -7,7 +7,7 @@ from typing import Any, NamedTuple
 from pydantic import BaseModel
 
 from starpulse.contracts.api.dto.admin import AdminState
-from starpulse.contracts.api.dto.dag import Runs
+from starpulse.contracts.api.dto.dag import DagBody, Jobs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
@@ -31,6 +31,7 @@ from starpulse.contracts.api.dto.requests import (
     DocCreateRequest,
     DocListRequest,
     DocPutRequest,
+    JobListRequest,
     MachineCreateRequest,
     MachineListRequest,
     MachinePutRequest,
@@ -39,7 +40,6 @@ from starpulse.contracts.api.dto.requests import (
     MilestonePutRequest,
     MissRequest,
     MoveRequest,
-    RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
     StartRequest,
@@ -69,9 +69,7 @@ from starpulse.contracts.api.dto.results import (
     Reopened,
     Restored,
     Retired,
-    RetiredImported,
     Reviewed,
-    RunStarted,
     Started,
     TakenOver,
 )
@@ -120,7 +118,7 @@ RESPONSES: dict[str, Any] = {
     "/api/doctor": ContractReport,
     "/api/health": ReadyReport,
     "/api/flows": Snapshot,
-    "/api/runs": Runs,
+    "/api/jobs/": DagBody,
     "/api/task/": TaskRecord,
     "/api/task-records": TaskRecords,
     "/api/milestones/": MilestoneShown,
@@ -139,7 +137,6 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/start": StartRequest,
     "/api/miss": MissRequest,
     "/api/retire": RetireRequest,
-    "/api/retired/import": RetiredImportRequest,
     "/api/complete": CompleteRequest,
     "/api/dispatch": DispatchRequest,
     "/api/review": ReviewRequest,
@@ -158,6 +155,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
 
 #: Each list route's request body: a POST to a path a PUT also writes, which `REQUESTS` names.
 LISTS: dict[str, type[BaseModel]] = {
+    "/api/jobs": JobListRequest,
     "/api/machines": MachineListRequest,
     "/api/milestones": MilestoneListRequest,
     "/api/docs": DocListRequest,
@@ -182,7 +180,8 @@ BODIES: dict[str, Any] = {
     "admin": AdminState | ApiError,
     "doctor": ContractReport,
     "ready": ReadyReport,
-    "runs": Runs,
+    "jobs": Jobs | ApiError,
+    "job": DagBody | ApiError,
     "task": TaskRecord | ApiError,
     "task_records": TaskRecords,
     "move": Moved | MovedEach | SkillRefusal | ApiError,
@@ -190,7 +189,6 @@ BODIES: dict[str, Any] = {
     "verdict": Judged | SkillRefusal | ApiError,
     "retire": Retired | SkillRefusal | ApiError,
     "retired": RetiredTasks | ApiError,
-    "retired_import": RetiredImported | SkillRefusal | ApiError,
     "complete": Completed | SkillRefusal | ApiError,
     "dispatch": Dispatched | ApiError,
     "review": Reviewed | SkillRefusal | ApiError,
@@ -209,7 +207,6 @@ BODIES: dict[str, Any] = {
     "doc_archive": DocArchived | SkillRefusal | ApiError,
     "graphql": GraphqlResponse,
     "view": ViewShown | ApiError,
-    "run": RunStarted | ApiError,
     "ingest": Accepted | ApiError,
 }
 
@@ -253,7 +250,7 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/flows"): Op("The flows of the board", Snapshot),
     ("GET", "/api/doctor"): _read("The contract report", "doctor"),
     ("GET", "/api/health"): _read("Whether the server is ready", "ready"),
-    ("GET", "/api/runs"): _read("The workflow runs", "runs"),
+    ("GET", "/api/jobs/{name}"): _read("One job, with its runner's start page", "job"),
     ("GET", "/api/machines/{name}"): _read("One machine's declared config", "machine"),
     ("POST", "/api/machines"): _write("The machines the board draws", "machines", MachineListRequest),
     ("PUT", "/api/machines"): _write("Add a machine to the store", "machine_create", MachineCreateRequest, "201"),
@@ -278,7 +275,6 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/start"): _write("Start a session on a task", "start", StartRequest),
     ("POST", "/api/miss"): _write("Record a miss", "verdict", MissRequest),
     ("POST", "/api/retire"): _write("Retire a task", "retire", RetireRequest),
-    ("POST", "/api/retired/import"): _write("Import retired tasks", "retired_import", RetiredImportRequest),
     ("POST", "/api/dispatch"): _write("Dispatch a session to a task", "dispatch", DispatchRequest, "202"),
     ("POST", "/api/review"): _write("Record a review", "review", ReviewRequest),
     ("POST", "/api/complete"): _write("Complete a task", "complete", CompleteRequest),
@@ -299,8 +295,7 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("DELETE", "/api/docs/{id}"): _write("Archive a doc", "doc_archive"),
     ("POST", "/api/docs"): _write("The docs named, without bodies", "docs", DocListRequest),
     ("PUT", "/api/docs"): _write("Create a doc", "doc_create", DocCreateRequest, "201"),
-    ("POST", "/api/run/{name}"): _write("Run a workflow", "run"),
-    ("POST", "/api/runs/{instance}/{workflow}/rerun"): _write("Rerun a workflow run", "run"),
+    ("POST", "/api/jobs"): _write("The jobs, at a stream position", "jobs", JobListRequest),
     ("GET", "/api/admin"): _read("Admin's settings: the scheduler's state, the display and the theme", "admin"),
     ("PUT", "/api/admin"): _write("Change any of Admin's settings, naming only those", "admin", AdminRequest),
     ("GET", "/api/views/{id}"): _read("The GraphQL document a view stores", "view"),

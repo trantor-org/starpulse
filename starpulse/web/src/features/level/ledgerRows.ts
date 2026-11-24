@@ -62,8 +62,6 @@ export interface RowsFrame {
   scroll: Scroll;
   /** The merges pinned above the rows by an open failure. */
   pins: Pins;
-  /** The words for a forced rerun under way, drawn at the band's right; absent with none. */
-  rerunning?: string;
   /** Each template's step graph, by DAG. */
   glyphs: Record<string, Glyph>;
   ctx: Omit<LineCtx, "optional">;
@@ -144,7 +142,6 @@ function drawBand(ink: Ink, f: RowsFrame, at: (key: string, y: number) => { y: n
   ink.rect({ x0: g.label.x, y0, x1: right, y1 }, rgba(red, 0.05));
   ink.stroke([{ x: led.J.x, y: y0 }, { x: led.J.x, y: y1 }], rgba(red, 0.7), 2);
   ink.text(label, g.label.x, y0 - px(9), px(10), rgba(red, 0.9), "left", 500);
-  if (f.rerunning) ink.text(f.rerunning, right, y0 - px(9), px(10), ACT, "right", 500);
   pins.shown.forEach((row, i) => drawRow(ink, f, row, at(row.key, y0 + g.rh / 2 + i * g.rh), ys));
 }
 

@@ -29,9 +29,8 @@ class InstanceRuns:
         dags: list | None,
         error: str | None,
         pools: list | None = None,
-        startable: list[str] | None = None,
     ) -> None:
-        self._feed.set_dags(self._instance, dags, error, pools, startable)
+        self._feed.set_dags(self._instance, dags, error, pools)
 
 
 class Followed(Protocol):
