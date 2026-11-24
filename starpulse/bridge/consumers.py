@@ -2,8 +2,8 @@
 
 The consumer is named for the session and carries its `Subscription` in metadata, so the server holds the only copy.
 A consumer starts from the newest message of each subject (`LAST_PER_SUBJECT`), so a session that subscribes late is
-given the latest state, except a holder's resume published before the consumer existed (`JetStreamMailbox.fetch`
-acks it unsent). An empty subscription deletes the consumer: an empty filter would mean every subject.
+given the latest state, except a holder's resume or a move published before the consumer existed
+(`JetStreamMailbox.fetch` acks it unsent). An empty subscription deletes the consumer: an empty filter would mean every subject.
 """
 
 import json

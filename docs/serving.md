@@ -6,9 +6,7 @@ Open <http://localhost:8766>. The first serve creates `.starpulse/board/` in the
 names one): a `config.yml`
 holding the project name (that directory's name, the team its tasks are in), the lanes (To Do, In Progress, Done) and an empty `tasks/` directory, one Markdown file per task. The
 Kanban view starts with no tasks: **New task**, at the top right beside the task count, opens a form for its title, description, priority, impact, urgency, labels,
-milestone, assignee, dependencies and acceptance criteria and adds it to the first column, and
-the Admin view's **Tracker** card has **Connect a tracker**, which opens a modal with one collapsible row per tracker (the native board), each expanding to
-numbered setup steps whose commands copy with one click (see [Connect a tracker](#connect-a-tracker)). The `starpulse` verbs, `task create`
+milestone, assignee, dependencies and acceptance criteria and adds it to the first column. The `starpulse` verbs, `task create`
 among them, are written for an agent to run ([the Agent CLI](cli.md)) and work the same typed by hand; the page and the verbs write the
 same board. While a board that can create tasks (the native one) has none, the Star Map says so under the breadcrumb, naming `uvx starpulse task create "My first task"`
 and **New task** as the two ways to add one. StarPulse keeps its event log and history in
@@ -1476,19 +1474,9 @@ stretch, and a click on a tick scrolls to its row. A click on a state of the top
 opens and picks it out; Escape steps back from the card, then the picked row, then the scroll to newest. A click on a task pins it and narrows the rows and the strip to
 the machines it holds a session in (`N machines holding <task>`); closing its card restores every row.
 
-## Connect a tracker
+## First install
 
 `starpulse init [--dir DIR] [--harness claude-code]` scaffolds a first install: `starpulse.toml` (a native `[board]` with
 one `[[board.guards]]` rule, a `[board.actor]` table, a `[scheduler]` table and a `[[producers]]` entry reading `STARPULSE_TOKEN`), `board.yaml`
 (five States, every role declared; a created Task waits in Backlog, which `task dispatch` takes a session from, and the task actor pins it) and the harness's telemetry settings (`.claude/settings.json`). It never writes a
 token, and writes nothing, naming the file on stderr and exiting 1, when any of the files exists.
-
-`starpulse connect` checks that a tracker answers, then writes the `[board]` table of `starpulse.toml` for you, keeping
-every other table and comment. It prints one line saying what it read. A tracker that does not answer writes nothing,
-says why on stderr and exits 1; `--config` names another file, and `starpulse connect <tracker> --help` lists each
-tracker's flags.
-
-```sh
-starpulse connect native --path .starpulse/board --machine board.yaml   # StarPulse's own board; --path and --machine are optional
-# ✓ Read 36 tasks in 5 lanes from .starpulse/board/ · wrote [board] to starpulse.toml
-```

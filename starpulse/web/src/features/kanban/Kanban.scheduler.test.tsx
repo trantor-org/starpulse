@@ -52,11 +52,6 @@ describe("the Kanban toolbar, with scheduler moved to Admin", () => {
     expect(host.querySelector('[aria-label="Autopilot"], .ap, .nx')).toBeNull();
   });
 
-  it("keeps Connect a tracker off the filters row, which lives on the Admin view", () => {
-    expect(host.textContent).not.toContain("Connect a tracker");
-    expect(host.querySelector(".trackerw")).toBeNull();
-  });
-
   it("reads no /api/admin", () => {
     expect(fetched).not.toContain("/api/admin");
   });

@@ -1,7 +1,6 @@
-// The Admin view with the Scheduler, Tracker and Theme cards it hosts: one module, so the page loads them as one chunk when Admin first opens.
+// The Admin view with the Scheduler and Theme cards it hosts: one module, so the page loads them as one chunk when Admin first opens.
 import { useState } from "react";
 import { Admin } from "./features/admin/Admin";
-import { TrackerCard } from "./features/kanban/ConnectTracker";
 import type { AdminStore } from "./features/admin/adminPrefs";
 import type { HistoryWindowStore } from "./features/admin/historyWindow";
 import { ThemeCard } from "./features/admin/theme/ThemeCard";
@@ -14,7 +13,7 @@ export function AdminPage({ store, theme, window }: { store: AdminStore; theme: 
   const [quiet] = useState(() => new QuietHoursStore());
   const [scheduler] = useState(() => new SchedulerStore());
   return (
-    <Admin store={store} window={window} tracker={<TrackerCard />} theme={<ThemeCard theme={theme} />}
+    <Admin store={store} window={window} theme={<ThemeCard theme={theme} />}
       scheduler={(clock) => <SchedulerCard store={scheduler} quiet={quiet} clock={clock} />} />
   );
 }

@@ -2,8 +2,7 @@
 
 `serve` runs the view (`starpulse.runtime.server`), `init` scaffolds a first install (`starpulse.cli.init`),
 `event emit` publishes one CloudEvent to the JetStream ingest (`starpulse.cli.event`), `github requeue|dismiss|restore|purge|retire` settles a dead GitHub
-delivery (`starpulse.cli.github_inbox`), `connect` writes the
-config's `[board]` for a tracker after checking it answers (`starpulse.cli.connect`), `migrate` brings the store to its
+delivery (`starpulse.cli.github_inbox`), `migrate` brings the store to its
 schema (`starpulse.runtime.store_migrate`), `rehearse` starts `serve` on a copy of a store and waits for `/api/health`
 (`starpulse.runtime.rehearse`), `import-history` adds a
 board's earlier lane changes to the store (`starpulse.runtime.history_import`), and `conform` replays the recorded
@@ -29,7 +28,6 @@ def _lazy(module: str) -> Callable[[list[str]], int | None]:
 COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "serve": _lazy("starpulse.runtime.server"),
     "init": _lazy("starpulse.cli.init"),
-    "connect": _lazy("starpulse.cli.connect"),
     "event": _lazy("starpulse.cli.event"),
     "github": _lazy("starpulse.cli.github_inbox"),
     "worker": _lazy("starpulse.runtime.worker"),
