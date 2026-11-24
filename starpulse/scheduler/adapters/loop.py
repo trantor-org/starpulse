@@ -50,7 +50,7 @@ from starpulse.scheduler.model.inputs import STALE_S, points
 from starpulse.scheduler.model.ledger import Ledger, RunRecord
 from starpulse.scheduler.model.quiet_hours import QuietHours
 from starpulse.scheduler.model.sampler import Reading, Sampler
-from starpulse.scheduler.model.start_failure import permanent, session_counts, sessions_full
+from starpulse.scheduler.model.start_failure import permanent, session_counts, sessions_full, transient
 from starpulse.scheduler.model.state import START_COOLDOWN, SchedulerState
 from starpulse.scheduler.model.toggle import Toggle
 from starpulse.scheduler.model.usage_limit import until as usage_until
@@ -805,7 +805,7 @@ class Loop:
                 if self._selected_paused(now):
                     break
                 skipped.add(picked.task)
-                if self._log is not None:
+                if self._log is not None and not transient(str(exc)):
                     start_requests.fail(self._log, picked.task, str(exc))
                 continue
             self._full = (0, 0.0)
