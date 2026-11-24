@@ -23,6 +23,7 @@ from starpulse.pulls.adapters.outbound.main_green import MainGreen
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.adapters.outbound.pull_reads import settle_checks
 from starpulse.pulls.adapters.outbound.pull_requests import PullRequests, coalesced
+from starpulse.pulls.adapters.outbound.unfinished import submodule_paths
 from starpulse.pulls.model.pins import LiveBuild, running_commit
 from starpulse.runtime.config import Config
 from starpulse.sessions.adapters.outbound.claude_code_notify import end_with
@@ -102,6 +103,7 @@ def start_delivery(
             holds=board.holds,
             read=board.read,
             unfinished=board.unfinished,
+            submodules=(lambda: submodule_paths(config.gitmodules)) if config.gitmodules else None,
             unpublished=board.unpublished,
             parked=board.parked,
             released=board.released,

@@ -5,8 +5,10 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from starpulse.board.model.feed.shared import pull_links
 from starpulse.board.model.seam import HELD
-from starpulse.pulls.adapters.outbound.pull_requests import landed
+from starpulse.pulls.adapters.outbound.pull_requests import landed, pull_record
+from starpulse.pulls.adapters.outbound.unfinished import work_left
 from starpulse.pulls.model.task_actor.derivation import Roles
 
 if TYPE_CHECKING:
@@ -62,10 +64,22 @@ class ActorFacts:
 
     def unfinished(self, name: str) -> tuple[str, ...]:
         try:
-            return tuple(self._actor._unfinished(name))
+            answered = self._merged_unfinished(name)
+            return tuple(self._actor._unfinished(name)) if answered is None else answered
         except Exception as error:
             logger.warning("task actor: cannot read the unfinished work of %s: %s", name, error)
             return (f"the board's unfinished work cannot be read: {error}",)
+
+    def _merged_unfinished(self, name: str) -> tuple[str, ...] | None:
+        """The repositories the task modified with no merged pull request when it cites a pull request, else None."""
+        actor = self._actor
+        if actor._submodules is None or not actor._board_repo or not (row := actor._read(name)):
+            return None
+        if not (cited := pull_links(row.get("references") or ())):
+            return None
+        records = [pull_record(actor._store, url) for url in cited]
+        parent = actor._board_repo.rsplit("/", 1)[-1]
+        return tuple(work_left(row.get("modifiedFiles") or (), records, actor._submodules(), parent))
 
     def alive(self, name: str) -> bool | None:
         try:
