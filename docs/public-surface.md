@@ -86,12 +86,14 @@ is public for the names listed here:
 - `starpulse.runtime.write_instance`: `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).
 - `starpulse.runtime.config`: loading the config file and the runs adapter a `type` names.
 - `starpulse.runtime.closure`: `CONFIG_OWNERS` (the processes that read each key) with `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).
+- `starpulse.runtime.machine_files`: `import_definitions(config, base, paths=None)` and `export_definitions(config, base, out)`, which activate machine definitions from files and write the active ones out, for a project that keeps them in its repository.
 - `starpulse.runtime.nats_server`: `DEFAULT_PORT`, the port the bridge's NATS server listens on when `[bridge] port` names none, for a test that must pick another.
 - `starpulse.runtime.placed`: `Placed(machines=None)`, a read model over a temporary database whose `put(task)` places a `BoardTask` and whose `draw(**settings)` returns the `BoardFeed`, for a test that serves or starts a board over placed tasks.
 - `starpulse.runtime.session_delivery`: `line_for(event)`, the line the bridge writes into a holding session for a delivered event, for a consumer that checks what a session reads.
 - `starpulse.bridge.subjects`: `subject_for(board, entry)`, the subject the bridge publishes an event-log entry on, or `None`.
 - `starpulse.bridge.subscriptions`: `parse_rules(table)`, the rules of each task kind from the `[bridge.subscriptions.<kind>]` tables, and `expand(board, templates, **values)`, their full subjects, for a consumer that checks its own subscription rules.
 - `starpulse.bridge.delivery`: `Event`, the delivered event (`subject` and `payload`) that `line_for` renders.
+- `starpulse.bridge.ingest`: `Producer(url, board, token)`, which publishes a CloudEvent to the board's ingest stream, for a tool that sends its events through the queue; `post(event)` returns 201 once the stream holds it, 413 over the payload limit, 0 when the server is unreachable.
 - `starpulse.github.adapters.outbound.queue`: `SqlQueue(engine, consumer)`, the per-consumer queue over the durable GitHub
   inbox, for a consumer outside the package. Method contract: `claim(limit)` returns the due `Entry` list, oldest first;
   `complete(delivery_id)`, `skip(delivery_id, reason)` and `fail(delivery_id, error, fatal=, exhausted=)` settle one

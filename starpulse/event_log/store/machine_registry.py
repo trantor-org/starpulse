@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
-from starpulse.event_log.store.event_store import EventStore, NewEvent, StoredEvent
+from starpulse.event_log.store.event_store import EventStore, NewEvent, StaleVersion, StoredEvent
 from starpulse.event_log.store.tables import machine_active, machine_versions
 from starpulse.machine_engine.adapters.machine_loader import validate
 from starpulse.machine_engine.model.machine_definition import MachineDefinitionError, compile_document
@@ -91,6 +92,8 @@ class MachineRegistry:
                     within(db)
                 return digest
             _check_mapping(name, mapping, document["states"], live)
+            _check_parents(name, document, self._documents(db))
+            self._record(db, name, digest, document, held)
             for task in live:
                 state = lane_id(task.state)
                 if state in mapping and mapping[state] != state:
@@ -102,7 +105,8 @@ class MachineRegistry:
                         definition_hash=digest,
                     )
                     self._store.append("task", task.id, task.version, [remap], connection=db)
-            self._record(db, name, digest, document)
+                elif self._store.head_in(db, "task", task.id) != task.version:
+                    raise StaleVersion(f"{task.id}: its stream moved after it was read at version {task.version}")
             if within is not None:
                 within(db)
         return digest
@@ -130,15 +134,7 @@ class MachineRegistry:
         with self._engine.begin() as db:
             if self._active(db, machine) is None:
                 raise MissingMachine(machine)
-            parents = [
-                name
-                for name, document in db.execute(
-                    select(machine_active.c.machine, machine_versions.c.document).join(
-                        machine_versions, machine_versions.c.hash == machine_active.c.hash
-                    )
-                )
-                if any(link.get("machine") == machine for link in document.get("submachines", ()))
-            ]
+            parents = [name for name, document in self._documents(db).items() if machine in _submachines(document)]
             if parents:
                 raise RefusedRetire(f"{machine}: still a submachine of {', '.join(sorted(parents))}")
             db.execute(delete(machine_active).where(machine_active.c.machine == machine))
@@ -177,22 +173,57 @@ class MachineRegistry:
         )
 
     @staticmethod
+    def _documents(db: Connection) -> dict[str, Mapping[str, Any]]:
+        rows = db.execute(
+            select(machine_active.c.machine, machine_versions.c.document).join(
+                machine_versions, machine_versions.c.hash == machine_active.c.hash
+            )
+        )
+        return {name: document for name, document in rows}
+
+    @staticmethod
     def _active(db: Connection, machine: str) -> str | None:
         return db.execute(select(machine_active.c.hash).where(machine_active.c.machine == machine)).scalar()
 
     @staticmethod
-    def _record(db: Connection, machine: str, digest: str, document: Mapping[str, Any]) -> None:
+    def _record(db: Connection, machine: str, digest: str, document: Mapping[str, Any], held: str | None) -> None:
+        """Make `digest` active in place of `held`, the version the caller read: a write that finds another active raises
+        `StaleBase`. It is the transaction's first write, so a SQLite store holds its write lock for what the caller checks next."""
         now = time.time()
         if db.execute(select(machine_versions.c.hash).where(machine_versions.c.hash == digest)).scalar() is None:
             db.execute(
                 insert(machine_versions).values(hash=digest, machine=machine, document=dict(document), created_at=now)
             )
-        if MachineRegistry._active(db, machine) is None:
-            db.execute(insert(machine_active).values(machine=machine, hash=digest, activated_at=now))
-        else:
-            db.execute(
-                update(machine_active).where(machine_active.c.machine == machine).values(hash=digest, activated_at=now)
+        try:
+            if held is None:
+                db.execute(insert(machine_active).values(machine=machine, hash=digest, activated_at=now))
+                return
+            moved = db.execute(
+                update(machine_active)
+                .where(machine_active.c.machine == machine, machine_active.c.hash == held)
+                .values(hash=digest, activated_at=now)
             )
+        except IntegrityError as error:
+            raise StaleBase(f"{machine}: another version became active after {held} was read") from error
+        if moved.rowcount != 1:
+            raise StaleBase(f"{machine}: the active version is no longer {held}")
+
+
+def _submachines(document: Mapping[str, Any]) -> set[str]:
+    return {link.get("machine") for link in document.get("submachines", ())}
+
+
+def _check_parents(machine: str, document: Mapping[str, Any], active: Mapping[str, Mapping[str, Any]]) -> None:
+    """Refuse a document whose `parents` disagree with the active machines whose `submachines` name it. A declared parent
+    with no active version yet is not held against it, so a first install may import a child before its parent."""
+    declared = set(document.get("parents", ()))
+    linked = {name for name, other in active.items() if name != machine and machine in _submachines(other)}
+    absent = {name for name in declared if name in active and name != machine} - linked
+    unnamed = linked - declared
+    if absent or unnamed:
+        raise MachineDefinitionError(
+            f"{machine}: parents {sorted(declared)} disagree with the active machines whose submachines name it {sorted(linked)}"
+        )
 
 
 def _check_mapping(

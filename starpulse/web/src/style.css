@@ -942,7 +942,7 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #kb .tbtn:disabled { opacity: .5; }
 :is(#kb, #dg) .shown + * { margin-left: 12px; }
 /* Connect a tracker (approved mockup): a modal of collapsible tracker rows whose steps hold copyable commands. */
-#tkm { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: color-mix(in srgb, var(--scrim) 62%, transparent); backdrop-filter: blur(2px); animation: kb-scrim .15s ease-out; }
+#tkm { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: color-mix(in srgb, var(--scrim) 62%, transparent); animation: kb-scrim .15s ease-out; }
 #tkm .modal { position: relative; box-sizing: border-box; width: clamp(680px, 54vw, 1040px); max-width: calc(100vw - 32px); max-height: 86vh; padding: 18px 24px 22px; display: flex; flex-direction: column; gap: 10px; border-radius: 12px; outline: none;
   background: color-mix(in srgb, var(--surface) 98%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); box-shadow: 0 30px 80px color-mix(in srgb, var(--shadow) 60%, transparent); font-size: calc(12.5px * var(--fs)); line-height: 1.6; color: var(--ink); animation: kb-modal .15s ease-out; }
 #tkm .k { color: var(--muted); font-size: calc(11px * var(--fs)); }

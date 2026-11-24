@@ -168,6 +168,10 @@ class EventStore:
         with self._engine.connect() as db:
             return self._head(db, subject_kind, subject_id)
 
+    def head_in(self, db: Connection, subject_kind: str, subject_id: str) -> int:
+        """`head` read inside the caller's transaction `db`."""
+        return self._head(db, subject_kind, subject_id)
+
     def heads(self, subject_kind: str) -> dict[str, int]:
         """The newest version of every stream of `subject_kind`, in one query."""
         query = (

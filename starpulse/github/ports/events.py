@@ -47,6 +47,10 @@ class Queue(Protocol):
         """The deliveries due for an attempt, oldest first; a delivery the consumer has not seen yet is due."""
         ...
 
+    def look(self) -> tuple[int, float | None]:
+        """The newest inbox id and `due_in`, read together."""
+        ...
+
     def due_in(self) -> float | None:
         """Seconds until the earliest pending delivery is due (0 when one is due now), or `None` with none pending."""
         ...

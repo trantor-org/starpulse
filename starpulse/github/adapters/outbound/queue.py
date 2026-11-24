@@ -243,15 +243,21 @@ class SqlQueue:
             for row in rows
         ]
 
+    def look(self) -> tuple[int, float | None]:
+        """The newest inbox id and `due_in`, in one read: a consumer whose last look saw neither move has nothing to claim.
+        A SQLite look takes the write lock first, which waits out a commit the file watch announced before it is visible."""
+        with self._engine.connect() as db:
+            if self._sqlite:
+                db.exec_driver_sql("BEGIN IMMEDIATE")
+            head = db.execute(select(func.coalesce(func.max(inbox.c.id), 0))).scalar_one()
+            earliest = db.execute(
+                select(func.min(state.next_attempt_at)).where(state.consumer == self._consumer, state.status == "pending")
+            ).scalar_one()
+        return head, None if earliest is None else max(0.0, earliest - self._clock())
+
     def due_in(self) -> float | None:
         """Seconds until the earliest pending delivery is due (0 when one is due now), or `None` with none pending."""
-        with self._engine.connect() as db:
-            earliest = db.execute(
-                select(func.min(state.next_attempt_at)).where(
-                    state.consumer == self._consumer, state.status == "pending"
-                )
-            ).scalar_one()
-        return None if earliest is None else max(0.0, earliest - self._clock())
+        return self.look()[1]
 
     @contextmanager
     def batch(self) -> Iterator[None]:

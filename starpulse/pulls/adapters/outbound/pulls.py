@@ -113,7 +113,7 @@ class PullStore:
         """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository
         and number, except one that would take a merged pull request back from MERGED or a closed one back to OPEN
         from before the close (`_takes_back`). An open record's `checks` are its head's rollup (`checks_verdict`),
-        whatever the record says."""
+        whatever the record says. A record the database already holds as it is writes and announces nothing."""
         rows = [
             {
                 **{column: record[name] for column, name in _FIELDS.items()},
@@ -133,6 +133,7 @@ class PullStore:
                     for row in rows
                     if row
                 ]
+                rows = [row for row in rows if not self._same(db, row)]
                 if rows:
                     with self.timings.time("lock"):
                         db.execute(
@@ -161,6 +162,14 @@ class PullStore:
             if record is not None:
                 self.save([record])
             return record is not None
+
+    @staticmethod
+    def _same(db: Any, row: dict[str, Any]) -> bool:
+        """Whether the database already holds `row` as it is: a save of it would change no served field."""
+        stored = db.execute(
+            select(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
+        ).mappings().first()
+        return stored is not None and all(stored[column] == value for column, value in row.items())
 
     @staticmethod
     def _guarded(db: Any, row: dict[str, Any]) -> dict[str, Any] | None:

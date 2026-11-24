@@ -252,7 +252,7 @@ def spend_response(
     telemetry: SignalFoldReader | None,
     query: dict[str, list[str]],
     keys: TaskKeys | None,
-    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    titled: Callable[[set[str]], Mapping[str, Mapping[str, Any]]],
     now: float,
     analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
@@ -266,6 +266,7 @@ def spend_response(
     held = _held_folds(telemetry, window, "spend", now, "spend", ("spend",))
     if isinstance(held, tuple):
         return held
-    report = combine_spend(sorted(held["spend"], key=lambda fold: (fold["harness"], fold["session"])), titled())
+    folds = sorted(held["spend"], key=lambda fold: (fold["harness"], fold["session"]))
+    report = combine_spend(folds, titled({step["task"] for fold in folds for step in fold["steps"]}))
     return encode("spend", {"now": now, "window_s": window * 3600, "spend": report}), 200
 

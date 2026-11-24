@@ -110,10 +110,10 @@ def follow(queue: Queue, stop: Stop, watch: Watch | None, step: Callable[[], Non
     """Call `step` once, then again whenever the inbox commits (`watch`) or a retry of `queue` falls due, until `stop`
     is set. `name` prefixes the log lines of the consumer.
 
-    The watch fires on any write to the store, this consumer's own included; the pass it causes finds nothing due and
-    writes nothing. A pass reads under the write lock, so it waits for a commit the watch announced before it is
-    visible. Without a watch (a Postgres store, or a platform with neither inotify nor kqueue) a pass runs every
-    `FALLBACK_S`, and says so once."""
+    The watch fires on any write to the store, this consumer's own included, so a pass runs only when `queue.look` shows
+    a newer inbox row than the last pass saw, or a delivery due now; any other commit costs that one read. A look reads
+    under the write lock, so it waits for a commit the watch announced before it is visible. Without a watch (a Postgres
+    store, or a platform with neither inotify nor kqueue) a pass runs every `FALLBACK_S`, and says so once."""
     stopped, signal = os.pipe()
 
     def wake() -> None:
@@ -126,17 +126,21 @@ def follow(queue: Queue, stop: Stop, watch: Watch | None, step: Callable[[], Non
         logger.warning("%s: no file watch on the inbox; consuming every %ss", name, FALLBACK_S)
     else:
         selector.register(watch.fileno(), selectors.EVENT_READ)
+    seen = None
     try:
         while not stop.is_set():
             wait = None if watch else FALLBACK_S
             try:
-                step()
-                due = queue.due_in()
+                head, due = queue.look()
+                if head != seen or due == 0:
+                    seen = head  # read before the pass, so a row saved during it runs the next
+                    step()
+                    due = queue.due_in()
                 if due is not None:
                     wait = due if wait is None else min(wait, due)
             except Exception:
                 logger.exception("%s: pass failed", name)
-                wait = RETRY_S
+                seen, wait = None, RETRY_S
             selector.select(wait)
             if watch is not None:
                 watch.drain()
