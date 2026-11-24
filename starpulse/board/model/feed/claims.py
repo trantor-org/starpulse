@@ -4,7 +4,7 @@
 class ClaimMethods:
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
-        prs = {agent["id"]: agent["prs"] for agent in self._hot()}
+        prs = {agent["id"]: agent["prs"] for agent in self.open_tasks()}
         return {task: list(links) for task, links in prs.items() if links}
 
     def set_pulls(self, pulls: dict[str, list[dict]], answers: dict | None = None) -> None:

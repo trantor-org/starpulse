@@ -107,6 +107,7 @@ PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
 RECOVERY_FINISHED_METRIC = "starpulse_task_actor_recovery_finished"
 MERGED_WAITING_METRIC = "starpulse_task_actor_merged_review_waiting"
 DERIVE_METRIC = "starpulse_task_actor_derive_seconds"
+TOUCH_METRIC = "starpulse_task_actor_touches_total"
 HOLDER_RESUME = "HOLDER_RESUME"
 #: The deliver states after its pull request opened.
 _DELIVERED = frozenset({"pr_opened", "ci_green", "pr_ready"})
@@ -126,6 +127,21 @@ _STARTED = "started:"
 _LOCK_WAIT_S = 2.0
 #: Seconds the merged Review tasks count is kept, so a scrape loop never makes the scan over the open tasks a load.
 _WAITING_TTL_S = 5.0
+#: The touch causes that name a source; any other cause names a task or a subject, so its trigger is the source.
+_TOUCH_SOURCES = frozenset(
+    {
+        "record",
+        "holds read",
+        "waiting sweep",
+        "deadline",
+        "phase_resumed",
+        "pull requests projected",
+        "pull request store saved",
+        "merge webhook",
+        "main checks run",
+        "session settled",
+    }
+)
 #: Seconds before a `mergeable` lookup that gave no answer (still computing, or unreachable) is asked again.
 _MERGEABLE_RETRY_S = 30.0
 LATENCY_METRIC = "starpulse_task_actor_latency_seconds"
@@ -416,6 +432,8 @@ class TaskActor:
         self._notifier: threading.Thread | None = None
         #: How long each derivation ran, by the lane the task was in and whether a board hook ran in it.
         self._derive_seconds: dict[tuple[str, bool], Histogram] = {}
+        #: How often each source touched a task, by the lane it was in: a cause named in `_TOUCH_SOURCES`, else its trigger.
+        self._touches: Counter[tuple[str, str]] = Counter()
         #: Tasks whose dependencies are done but wait for a pin bump, and the store revision last read for them.
         self._pin_held: set[str] = set()
         self._store_rev = store.rev
@@ -467,6 +485,7 @@ class TaskActor:
         with self._metrics:
             counts, total, refusals = list(self._buckets), self._sum, self._refusals
             timed = sorted(self._derive_seconds.items())
+            touches = sorted(self._touches.items())
         held = self._held_counts()
         derives = [
             line
@@ -503,6 +522,9 @@ class TaskActor:
                 f"# HELP {DERIVE_METRIC} Seconds each derivation of a task's waits ran, by lane and whether a board hook ran.",
                 f"# TYPE {DERIVE_METRIC} histogram",
                 *derives,
+                f"# HELP {TOUCH_METRIC} Times a source touched a task to derive it, by the lane the task was in.",
+                f"# TYPE {TOUCH_METRIC} counter",
+                *(f'{TOUCH_METRIC}{{lane="{lane}",source="{source}"}} {count}' for (lane, source), count in touches),
                 f"# HELP {RECOVERY_FINISHED_METRIC} 1 once the start recovery derived every open task, else 0.",
                 f"# TYPE {RECOVERY_FINISHED_METRIC} gauge",
                 f"{RECOVERY_FINISHED_METRIC} {int(self.ready.is_set())}",
@@ -681,6 +703,7 @@ class TaskActor:
             self._releasable = releasable
             for name in missed:
                 self._tried.pop(name, None)
+            self._unsettle(missed)  # the sweep exists for a task whose release no fact's change brought
             self.touch([TaskTouched(name, Trigger.ON_ALERT, "waiting sweep") for name in missed])
             ready = self._feed.roles.ready
             released = [
@@ -909,8 +932,9 @@ class TaskActor:
                 events.append(TaskTouched(name, Trigger.ON_EXIT, before[0]))
             if not lane:
                 events.append(TaskTouched(name, Trigger.ON_SUBSTATE_CHANGE, "record"))
-            if before is None:  # a task created: a hold may have waited on it
+            if before is None:  # a task created: a hold may have waited on it, a fact no digest holds
                 events += self._dependency_touched(self._held - {name}, name)
+                self._unsettle(self._held - {name})
             if before is None or before[0] != now[0]:
                 self._tried.pop(name, None)
                 working = self._feed.roles.working
@@ -1076,6 +1100,12 @@ class TaskActor:
         )
         return hashlib.sha1(repr(facts).encode(), usedforsecurity=False).hexdigest()[:16]
 
+    def _unsettle(self, names: Iterable[str]) -> None:
+        """Drop the tasks' settled digests, so the next touch derives each, and the checkpoint keeps none of them."""
+        for name in names:
+            self._derived.pop(name, None)
+        self._derived_moved.set()
+
     def _forget(self, name: str) -> None:
         self._derived.pop(name, None)
         self._derived_moved.set()
@@ -1132,6 +1162,7 @@ class TaskActor:
                 if forget := getattr(self._main_green, "forget", None):  # a stub green has no cache to drop
                     forget()
                 names = [name for name in self._seen if self._reads_main(name)]
+                self._unsettle(names)  # main's health is no fact a digest holds
                 self.touch(self._webhooks(names, "main checks run"), observed)
         except Exception:
             logger.exception("task actor: cannot derive the tasks that read main's health")
@@ -1279,8 +1310,16 @@ class TaskActor:
             return any((record := self._record(url)) and record["state"] == "MERGED" for url in urls)
 
         names = sorted({each.task for each in events}, key=lambda name: (not merged(name), name))
+        with self._metrics:
+            for each in events:
+                lane = self._seen.get(each.task, ("",))[0]
+                self._touches[lane, each.cause if each.cause in _TOUCH_SOURCES else each.trigger.value] += 1
         with self._feed.pinned_rows():
-            return {name for name in names if self._derive(name, observed)}
+            return {name for name in names if not self._waiting_unchanged(name) and self._derive(name, observed)}
+
+    def _waiting_unchanged(self, name: str) -> bool:
+        """Whether a Waiting task's facts digest to what it was last derived on, so touching it again has nothing to derive."""
+        return self._seen.get(name, ("",))[0] == self._feed.roles.waiting and self._unchanged(name)
 
     @staticmethod
     def _webhooks(names: Iterable[str], cause: str) -> list[TaskTouched]:
@@ -1311,7 +1350,8 @@ class TaskActor:
             self._timed_derive(agent["state"], self._hooked, self._clock() - started)
         self._feed.repin()
         self._settle_awaited(name)
-        if self._unsettled or name in self._held or name in self._pin_held:
+        held = name in self._held and agent["state"] != self._feed.roles.waiting  # a Waiting hold is read at its digest
+        if self._unsettled or held or name in self._pin_held:
             self._derived.pop(name, None)  # its hold or failure can end with no fact of the task changing
         else:
             self._derived[name] = digest
@@ -2174,6 +2214,7 @@ class TaskActor:
                     self._reading.discard(name)
                     if not self._noticing_ended:  # a move made after the notices close would miss its hook
                         self._hold_reads[name] = (digest, reasons, failed)
+                        self._unsettle((name,))  # a read someone asked for is derived once, settled facts or not
                         self.touch([TaskTouched(name, Trigger.ON_ALERT, "holds read")])
             except Exception:  # touch derives under the lock and may raise; a dead reader is never restarted
                 logger.exception("task actor: cannot derive %s on its holds", name)
