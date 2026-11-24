@@ -57,11 +57,6 @@ describe("switching views under load", () => {
     expect(block("aside")).not.toContain("backdrop-filter");
   });
 
-  it("draws the Connect a tracker scrim flat: a backdrop blur over the Admin view took its cold click from 21 ms to 278 ms", () => {
-    expect(block("#tkm")).toContain("background:");
-    expect(block("#tkm")).not.toContain("backdrop-filter");
-  });
-
   it("skips the Kanban cards scrolled out of sight, so showing the view styles and paints only what is on screen", () => {
     expect(css).toMatch(/#kb \.card \{[^}]*content-visibility: auto; contain-intrinsic-size: auto \d+px/);
   });

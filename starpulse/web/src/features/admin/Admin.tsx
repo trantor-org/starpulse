@@ -56,11 +56,11 @@ function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" |
 }
 
 /**
- * `scheduler`, `tracker` and `theme` draw the Scheduler, Tracker and Theme cards: each card is its own
+ * `scheduler` and `theme` draw the Scheduler and Theme cards: each card is its own
  * feature, so App hands them in, `scheduler` with the clock it is to show. The left column holds the settings, the right the Preview
  * and the Theme card under it at the same width.
  */
-export function Admin({ store, window: historyWindow, scheduler, tracker, theme }: { store: AdminStore; window: HistoryWindowStore; scheduler: (clock: ClockMode) => ReactNode; tracker?: ReactNode; theme?: ReactNode }) {
+export function Admin({ store, window: historyWindow, scheduler, theme }: { store: AdminStore; window: HistoryWindowStore; scheduler: (clock: ClockMode) => ReactNode; theme?: ReactNode }) {
   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
   const saved = useSyncExternalStore(store.subscribe, store.saved);
   return (
@@ -104,7 +104,6 @@ export function Admin({ store, window: historyWindow, scheduler, tracker, theme 
           </section>
           <ServerCard store={historyWindow} clock={clock} />
           {scheduler(clock)}
-          {tracker}
         </div>
         <div className="col">
           <Preview scale={scale} compact={density === "compact"} motion={motion} />

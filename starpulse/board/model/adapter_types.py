@@ -2,6 +2,8 @@
 
 This module imports nothing, so the config reads the table without importing an adapter. The table sits in the Board's
 model because an engine's name belongs only inside an adapter's own module and the config must not import one.
+
+A new tracker is one adapter module plus one `BUILT_IN` entry here.
 """
 
 #: The board type a config without a `[board]` table names.

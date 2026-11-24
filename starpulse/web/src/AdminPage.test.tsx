@@ -25,13 +25,6 @@ afterEach(() => {
 });
 
 describe("the Admin view", () => {
-  it("hosts Connect a tracker, which left the Kanban's filters row", async () => {
-    await act(async () => root.render(<AdminPage store={new AdminStore()} theme={new ThemeStore()} window={new HistoryWindowStore()} />));
-
-    const card = [...host.querySelectorAll("#admin .card")].find((c) => c.querySelector("h2")?.textContent?.startsWith("Tracker"));
-    expect(card?.textContent).toContain("Connect a tracker");
-  });
-
   it("draws an Autopilot card holding the switch and scheduler's quiet hours, on and in the window's zone, and the Server card holds neither", async () => {
     const status = { enabled: true, harness: "claude", quietHours: { start: "22:00", end: "07:00", timezone: "America/Phoenix" }, sampledAt: null, dimensions: [] };
     vi.stubGlobal("fetch", vi.fn(async (url: string) => (String(url).endsWith("/api/admin") ? new Response(JSON.stringify(status)) : new Response("{}", { status: 503 }))));
@@ -75,7 +68,7 @@ describe("the Admin view", () => {
     const heads = (c: Element) => [...c.querySelectorAll(":scope .card > h2, :scope > div > .card > h2")].map((h) => h.textContent?.split(/\s/)[0]);
     expect(cols).toHaveLength(2);
     expect(heads(cols[0])[0]).toBe("Display");
-    expect(heads(cols[0])).toEqual(expect.arrayContaining(["Server", "Autopilot", "Tracker"]));
+    expect(heads(cols[0])).toEqual(expect.arrayContaining(["Server", "Autopilot"]));
     expect(heads(cols[1])).toEqual(["Preview", "Theme"]);
   });
 

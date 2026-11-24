@@ -25,8 +25,9 @@ from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 logger = logging.getLogger(__name__)
 
 _BATCH = 100
-#: A holder's resume is a one-time wake: the consumer's `LAST_PER_SUBJECT` start replays the last one, however old.
-RESUME = ".holder_resume"
+#: A holder's resume and a move are one-time wakes: the consumer's `LAST_PER_SUBJECT` start replays the last of each,
+#: however old, and a move before the claim is history to the session it then wakes in the lane it left.
+ONE_TIME = (".holder_resume", ".moved")
 _FETCH_TIMEOUT_S = 0.2
 
 
@@ -139,10 +140,10 @@ class JetStreamMailbox:
             pull = await js.pull_subscribe_bind(name, self._stream)
             try:
                 batch = await pull.fetch(_BATCH, timeout=_FETCH_TIMEOUT_S)
-                resumed = any(message.subject.endswith(RESUME) for message in batch)
-                created = (await js.consumer_info(self._stream, name)).created if resumed else None
+                once = any(message.subject.endswith(ONE_TIME) for message in batch)
+                created = (await js.consumer_info(self._stream, name)).created if once else None
                 for message in batch:
-                    if created and message.subject.endswith(RESUME) and message.metadata.timestamp < created:
+                    if created and message.subject.endswith(ONE_TIME) and message.metadata.timestamp < created:
                         await message.ack()
                     else:
                         held.append(message)
