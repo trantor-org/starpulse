@@ -10,12 +10,11 @@ import logging
 import os
 import signal
 import socket
-import subprocess
 import sys
 from _thread import interrupt_main
 from pathlib import Path
 
-from starpulse.runtime import launch, wiring
+from starpulse.runtime import wiring
 from starpulse.runtime.closure import Reader
 from starpulse.runtime.config import Config, rehearsing
 from starpulse.runtime.control import control_file
@@ -24,8 +23,6 @@ from starpulse.runtime.listen import held_socket, inherited_socket, listen, list
 from starpulse.runtime.nats_server import bridge_commands
 from starpulse.runtime.supervisor import Supervisor, worker_commands
 
-logger = logging.getLogger(__name__)
-
 
 def serve_parser() -> argparse.ArgumentParser:
     """The `starpulse serve` command line."""
@@ -33,43 +30,6 @@ def serve_parser() -> argparse.ArgumentParser:
     listen_options(parser)
     parser.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     return parser
-
-
-#: `machine_sync.REFUSED`, which this module cannot import without loading the database stack.
-_ADMISSION_REFUSED = 3
-#: `machine_sync.STRANDED`: the Board machine would strand live Tasks, so the active version stays.
-_ADMISSION_STRANDED = 4
-
-
-class StrandedAdmission(ValueError):
-    """The Board machine file strands live Tasks; the registry kept the active version."""
-
-
-def admit_definitions(args: argparse.Namespace) -> None:
-    """Register the machine files the config now names, so `serve` starts and reloads only on definitions the registry
-    accepts. Runs in a child process: this one never loads the database stack. A ValueError names the States and
-    Tasks a missing mapping strands."""
-    command = [launch.interpreter(), "-m", "starpulse.runtime.machine_sync"]
-    if args.config:
-        command += ["--config", str(args.config)]
-    ran = subprocess.run(command, capture_output=True, text=True, check=False)
-    if ran.returncode == _ADMISSION_STRANDED:
-        raise StrandedAdmission(ran.stderr.strip())
-    if ran.returncode == _ADMISSION_REFUSED:
-        raise ValueError(ran.stderr.strip())
-    if ran.returncode:
-        raise RuntimeError(f"machine definitions could not be registered:\n{ran.stderr.strip()}")
-
-
-def admit_at_start(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    """`admit_definitions` for the start of `serve`: a Board machine that strands live Tasks is a warning naming them,
-    since the registry keeps the active version and the board still reads and serves; any other refusal exits."""
-    try:
-        admit_definitions(args)
-    except StrandedAdmission as exc:
-        logger.warning("board machine not activated, serving the active version: %s", exc)
-    except ValueError as exc:
-        parser.exit(1, f"{exc}\n")
 
 
 def stay_until_stopped() -> None:
@@ -131,7 +91,6 @@ def main(argv: list[str] | None = None) -> None:
     if "api" in commands:  # bound once the config is accepted and before the board, the history or a worker starts
         listening = listening or listen(parser, args)
         commands["api"] += ["--hours", str(args.hours)]
-    admit_at_start(parser, args)
     # the contexts child is handed the github webhook and Claude Code OTLP sockets, which outlive it: a delivery or
     # export posted while it is replaced waits in the backlog
     held: dict[str, dict[str, socket.socket]] = {}
@@ -159,7 +118,6 @@ def main(argv: list[str] | None = None) -> None:
         baseline=reader.at_start,
         control=None if rehearsing() else control_file(args.config),  # a rehearsal must not replace the live endpoint
         limits=config.worker_memory,
-        admit=lambda: admit_definitions(args),
         adopted=adopted or None,
         refuse=refuse,
     )

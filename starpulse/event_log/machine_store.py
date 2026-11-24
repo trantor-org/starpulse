@@ -1,7 +1,7 @@
 """The machines the store holds, written through the API: create, upsert over a base and retire.
 
-Every version stays in `starpulse_machine_versions`; a retired machine only loses its active row. A machine the store
-has a version of is never imported from its file again, so a start-up sync cannot undo a write made here.
+Every version stays in `starpulse_machine_versions`; a retired machine only loses its active row. No start or reload
+reads a definition file: `starpulse machines import` is the one way a file reaches the store.
 """
 
 from collections.abc import Callable, Mapping
@@ -38,8 +38,8 @@ class MachineStore:
     def definition(self, digest: str) -> Mapping[str, Any]:
         return self.registry.definition(digest)
 
-    def imported(self, name: str) -> bool:
-        return self.registry.imported(name)
+    def active_definitions(self) -> dict[str, Mapping[str, Any]]:
+        return self.registry.active_definitions()
 
     def create(self, document: Mapping[str, Any]) -> str:
         """Activate `document` as a machine the store has no active version of; `StaleBase` when the name is taken."""

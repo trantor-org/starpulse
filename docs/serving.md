@@ -471,15 +471,16 @@ included), and one active hash per machine in `starpulse_machine_active`. Nothin
   new version lacks is refused too.
 - Archived Tasks count as live. The live board is still file-based, so only the event-sourced Task streams are remapped.
 
-`sync_definitions` (`starpulse/runtime/machine_sync.py`) imports the Board's `[board] machine` file against the
-live Tasks and each file in `.starpulse/machines/` (the owners' definitions directory), but only for a machine the store
-has never held a version of: once it has one (retired or not), the store is the source and the file never overwrites it,
-so a machine written through `PUT /api/machines/{name}` survives a restart. To change a stored machine, `PUT` it over the `hash` that `GET /api/machines/{name}` reports; editing its file changes nothing. `serve` runs it at start, once the
-port is bound, in a child process (`python -m starpulse.runtime.machine_sync`, exit 3 on a refusal) so the
-server itself never loads the database stack; a refusal exits `serve` 1. A Board machine that strands live Tasks
-(`StrandedTasks`, exit 4), possible only on its first import, is the exception at start: the other definition files are still synced, `serve` logs a
-warning naming the States and Task ids, and it starts on the version that stays active. It runs again before every reload (`starpulse reload`, `POST /reload`): a refused reload changes
-nothing and the running workers stay on the active version.
+`serve` reads no machine file at start or on a reload: the store is the source, and a machine changes only through
+`PUT` and `DELETE /api/machines` (over the `hash` that `GET /api/machines/{name}` reports). The files are an optional
+copy. `starpulse machines import [PATH ...]` (`starpulse/runtime/machine_files.py`) activates the Board's `[board]
+machine` file and each file in `.starpulse/machines/` (or the `PATH`s named) as each machine's active version, the way a
+first install fills an empty store, and makes an imported file the active version over one the store holds. A file the
+registry refuses exits 3 with the reason and leaves the others as they were; a Board machine that strands live Tasks
+(`StrandedTasks`) exits 4 after the other files are in, and the active Board version stays. `starpulse machines export
+[--out DIR]` writes each active machine as `<name>.yaml` (default `.starpulse/machines/`), and an export imported into
+a fresh store gives the same active set. `starpulse policy export [--out FILE]` and `starpulse policy import FILE` do
+the same for the governing policy as one JSON document.
 
 ## Task read model
 

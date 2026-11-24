@@ -40,6 +40,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "import-board": _lazy("starpulse.runtime.board_import"),
     "conform": _lazy("starpulse.runtime.conform"),
     "policy": _lazy("starpulse.runtime.policy"),
+    "machines": _lazy("starpulse.runtime.machine_files"),
     "reload": _lazy("starpulse.runtime.control"),
     "backup": _lazy("starpulse.runtime.backup"),
     "mcp": _lazy("starpulse.cli.lane_mcp"),
