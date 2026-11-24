@@ -42,6 +42,7 @@ import json
 import logging
 import queue
 import re
+import subprocess
 import threading
 import time
 from collections import Counter
@@ -1803,11 +1804,19 @@ class TaskActor:
 
     def _nudge_sent(self, name: str) -> bool:
         """Send the holder's nudge, once: one that fails is the holder's loss, which `_nudge_failed` answers, since a
-        holder whose nudge was lost settles no more and no later settle comes."""
+        holder whose nudge was lost settles no more and no later settle comes; a timeout is wanted again, not lost."""
         if not self._admitted(name, "nudge"):
             return False
         try:
             self._idle(name, "nudge")
+        except subprocess.TimeoutExpired as error:  # the board is restarting: ask the gate again, never park
+            logger.info("task actor: %s settled but its holder's nudge timed out: %s", name, error)
+            if self._log is None:
+                self._nudge_failed(name, error)
+            else:
+                self._unwant(name)
+                start_requests.want(self._log, name, "nudge")
+            return False
         except Exception as error:
             logger.info("task actor: %s settled but its holder was not nudged: %s", name, error)
             self._nudge_failed(name, error)
