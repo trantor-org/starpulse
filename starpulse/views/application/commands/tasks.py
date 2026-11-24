@@ -33,7 +33,6 @@ from starpulse.contracts.api.dto.requests import (
     RetireRequest,
     TaskDeleteRequest,
     TaskPutRequest,
-    VerdictRequest,
 )
 from starpulse.machine_engine.model.transitions import lane_id
 from starpulse.views.application.commands.guard import (
@@ -47,6 +46,7 @@ from starpulse.views.application.commands.guard import (
     who_of,
     with_request,
 )
+from starpulse.views.application.commands.lifecycle import park_task
 from starpulse.views.application.commands.moves import move_refusal, started_refusal
 from starpulse.views.application.commands.replays import Replays
 
@@ -59,10 +59,6 @@ logger = logging.getLogger(__name__)
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
 _REF = "ref:"  # a dependency naming a sibling in the same batch create by its `ref`
-
-
-#: The verdicts a post-merge check takes, as a request spells them and as the comment records them.
-_VERDICTS = {"pass": "PASS", "miss": "MISS"}
 
 
 def task_record(
@@ -189,42 +185,9 @@ def _unjudged(task: str, current: Mapping[str, Any], check: str) -> str | None:
     return None
 
 
-def _unnamed(request: VerdictRequest | MissRequest) -> bool:
-    """Whether a verdict or miss request leaves its task or check blank."""
+def _unnamed(request: MissRequest) -> bool:
+    """Whether a miss request leaves its task or check blank."""
     return not (request.task.strip() and request.check.strip())
-
-
-@with_request(VerdictRequest, "Recording a verdict")
-def record_verdict(
-    request: VerdictRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
-) -> tuple[int, dict[str, Any]]:
-    """Record the verdict `request` names for a post-merge check of a task as a comment on it, through `edit`: the HTTP
-    status and JSON body.
-
-    The check must be declared in the task's `## Post-merge Checks` block and not yet judged: a verdict is final, so a
-    second is refused 409 with the malformed block and the undeclared check. A `miss` names the `fix` task already
-    filed for it (404 when the feed holds none); `/api/miss` files that fix and records the verdict in one call.
-    """
-    task, check, verdict, fix = request.task, request.check, request.verdict, request.fix
-    if _unnamed(request) or verdict not in _VERDICTS:
-        return 400, {"error": 'a verdict needs {"task", "check", "verdict": "pass"|"miss"[, "evidence", "fix"]}'}
-    if verdict == "miss" and not fix:
-        return 400, {"error": "a miss verdict names the task filed to fix it: add its id as fix"}
-    evidence, who = request.evidence or "", who_of(request)
-    if held_task(feed, task) is None:
-        return not_held(feed, task)
-    if verdict == "miss" and held_task(feed, fix) is None:
-        return not_held(feed, fix)
-    with EDIT_LOCK:
-        if (current := read(task)) is None:
-            return 404, {"error": f"{task} has no record to read"}
-        if refusal := _unjudged(task, current, check):
-            return 409, {"error": refusal}
-        comment = post_merge_checks.verdict_comment(check, _VERDICTS[verdict], evidence, fix)
-        written = record_written(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
-    if not written.ok:
-        return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"task": task, "check": check, "verdict": _VERDICTS[verdict], **({"fix": fix} if fix else {})}
 
 
 @with_request(MissRequest, "Recording a miss")
@@ -454,10 +417,12 @@ def put_task(
 ) -> tuple[int, dict[str, Any]]:
     """Write `task` as `PUT /api/tasks/{id}` says: the HTTP status and JSON body of the verb the body names.
 
-    `reopen` reopens the Done task, `archived: false` restores it and `interactive: true` takes it over; any other body
-    is an edit over its `base`.
+    `reopen` reopens the Done task, `archived: false` restores it, `interactive: true` takes it over and `park` parks
+    it; any other body is an edit over its `base`.
     """
     who = who_of(request)
+    if request.park is not None:
+        return park_task(task, request.park, request.comment or "", who, feed, board.read, board.edit)
     if request.reopen is not None:
         return _reopened(task, request.reopen, who, feed, board.reopen, landed)
     if request.archived is not None:

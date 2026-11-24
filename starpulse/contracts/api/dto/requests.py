@@ -108,12 +108,23 @@ class EditRequest(_Writer):
     )
 
 
+class Park(_Request):
+    """Pause the task on exactly one reason, which picks the lane: `untilTask` (tasks that must reach Done, or
+    `TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait;
+    `operator` (what only the operator can do) needs attention."""
+
+    untilTask: list[str] | None = None
+    until: list[str] | None = None
+    operator: str | None = None
+
+
 class TaskPutRequest(_Writer):
-    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore or take it over.
+    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over or park it.
 
     An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the
     body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`
-    (the archived task returns to the board) and `interactive: true` (the unattended task is taken over).
+    (the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`
+    (the held task pauses for the one reason it names, with the `comment` beside it).
     """
 
     base: dict[str, Any] = Field(default_factory=dict)
@@ -124,12 +135,13 @@ class TaskPutRequest(_Writer):
     reopen: NonBlank | None = None
     archived: Literal[False] | None = None
     interactive: Literal[True] | None = None
+    park: Park | None = None
 
     @model_validator(mode="after")
     def _one_write(self) -> TaskPutRequest:
-        named = [name for name in ("reopen", "archived", "interactive") if getattr(self, name) is not None]
-        if len(named) > 1 or (named and (self.changes or self.comment)):
-            raise ValueError("name changes, or exactly one of reopen, archived and interactive")
+        named = [name for name in ("reopen", "archived", "interactive", "park") if getattr(self, name) is not None]
+        if len(named) > 1 or (named and (self.changes or (self.comment and named != ["park"]))):
+            raise ValueError("name changes, or exactly one of reopen, archived, interactive and park")
         return self
 
 
@@ -165,17 +177,6 @@ class DispatchRequest(_Writer):
 
     task: str
     replaces: NonBlank | None = None
-
-
-class ParkRequest(_Writer):
-    """`POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach
-    Done, or `TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait; `operator` (what only the operator can do) needs attention."""
-
-    task: str
-    untilTask: list[str] | None = None
-    until: list[str] | None = None
-    operator: str | None = None
-    comment: str | None = None
 
 
 class ReviewRequest(_Writer):
@@ -273,19 +274,6 @@ class CreateRequest(_Writer, CreateSpec):
         if (self.title is None) == (self.tasks is None):
             raise ValueError("name exactly one of title and tasks")
         return self
-
-
-class VerdictRequest(_Writer):
-    """`POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.
-
-    A `miss` names the task `fix` that repairs it; `evidence` is kept in the verdict's comment.
-    """
-
-    task: str
-    check: str
-    verdict: str
-    evidence: str | None = None
-    fix: str | None = None
 
 
 class MissRequest(_Writer):

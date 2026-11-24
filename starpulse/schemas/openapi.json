@@ -1182,54 +1182,6 @@
         }
       }
     },
-    "/api/verdict": {
-      "post": {
-        "summary": "Record a verdict",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_verdict",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/VerdictRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Judged"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/miss": {
       "post": {
         "summary": "Record a miss",
@@ -1415,54 +1367,6 @@
         }
       }
     },
-    "/api/park": {
-      "post": {
-        "summary": "Park a task",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_park",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ParkRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Parked"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/review": {
       "post": {
         "summary": "Record a review",
@@ -1633,7 +1537,7 @@
     },
     "/api/tasks/{id}": {
       "put": {
-        "summary": "Write a task over the base named, or reopen, restore or take it over",
+        "summary": "Write a task over the base named, or reopen, restore, take it over or park it",
         "tags": [
           "tasks"
         ],
@@ -1676,6 +1580,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/TakenOver"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Parked"
                     }
                   ]
                 }
@@ -6983,46 +6890,10 @@
         "title": "MovedEach",
         "type": "object"
       },
-      "ParkRequest": {
+      "Park": {
         "additionalProperties": false,
-        "description": "`POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach\nDone, or `TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait; `operator` (what only the operator can do) needs attention.",
+        "description": "Pause the task on exactly one reason, which picks the lane: `untilTask` (tasks that must reach Done, or\n`TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait;\n`operator` (what only the operator can do) needs attention.",
         "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          },
           "untilTask": {
             "anyOf": [
               {
@@ -7061,23 +6932,9 @@
               }
             ],
             "default": null
-          },
-          "comment": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
           }
         },
-        "required": [
-          "task"
-        ],
-        "title": "ParkRequest",
+        "title": "Park",
         "type": "object"
       },
       "Parked": {
@@ -10123,7 +9980,7 @@
       },
       "TaskPutRequest": {
         "additionalProperties": false,
-        "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore or take it over.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`\n(the archived task returns to the board) and `interactive: true` (the unattended task is taken over).",
+        "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over or park it.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`\n(the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`\n(the held task pauses for the one reason it names, with the `comment` beside it).",
         "properties": {
           "actor": {
             "anyOf": [
@@ -10222,6 +10079,17 @@
               {
                 "const": true,
                 "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "park": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Park"
               },
               {
                 "type": "null"
@@ -10501,83 +10369,6 @@
           "at"
         ],
         "title": "VerdictDelta",
-        "type": "object"
-      },
-      "VerdictRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.\n\nA `miss` names the task `fix` that repairs it; `evidence` is kept in the verdict's comment.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          },
-          "check": {
-            "type": "string"
-          },
-          "verdict": {
-            "type": "string"
-          },
-          "evidence": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "fix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "required": [
-          "task",
-          "check",
-          "verdict"
-        ],
-        "title": "VerdictRequest",
         "type": "object"
       },
       "ViewShown": {

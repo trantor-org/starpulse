@@ -321,12 +321,12 @@ def _move_each(args: argparse.Namespace, environ: Mapping[str, str], base: str) 
 
 
 def _lifecycle(
-    args: argparse.Namespace, environ: Mapping[str, str], verb: str, fields: dict[str, Any]
+    args: argparse.Namespace, environ: Mapping[str, str], path: str, body: dict[str, Any], *, put: bool = False
 ) -> dict[str, Any]:
-    """Post the lifecycle verb `verb` (`park`, `review`) for the task as the agent: the server's answer, with a
-    refusal as `ok: false` and its reason and skill, or an error when no board writer can answer."""
-    base, path = agent_wire.server_url(args.server, environ), f"/api/{verb}"
-    status, reply = agent_wire.post(base, path, {"task": args.task, **fields, **writer(args, environ)})
+    """Send the lifecycle write `body` to `path` for the task as the agent: the server's answer, with a refusal as
+    `ok: false` and its reason and skill, or an error when no board writer can answer."""
+    base = agent_wire.server_url(args.server, environ)
+    status, reply = (agent_wire.put if put else agent_wire.post)(base, path, {**body, **writer(args, environ)})
     message = reply.get("error") or f"{base} answered {status} for {path}"
     if status == 200:
         return {
@@ -376,21 +376,16 @@ def task_dispatch(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
 
 def task_park(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Park the task on one reason: `--until-task` (`TASK` or `TASK#K`) and `--until` wait, `--operator` needs attention; the server picks the lane."""
-    fields = {
-        "untilTask": args.until_task,
-        "until": list(args.until),
-        "operator": args.operator,
-        "comment": args.comment,
-    }
-    given = {key: value for key, value in fields.items() if value}
-    return _kept(_lifecycle(args, environ, "park", given), LIFECYCLE_KEYS)
+    reasons = {"untilTask": args.until_task, "until": list(args.until), "operator": args.operator}
+    body = {"park": {key: value for key, value in reasons.items() if value}, **({"comment": args.comment} if args.comment else {})}
+    return _kept(_lifecycle(args, environ, f"/api/tasks/{args.task}", body, put=True), LIFECYCLE_KEYS)
 
 
 def task_review(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Move the task to Review with `--ref` references and `--summary`: the configured rules judge the resulting record."""
     fields = {"references": args.ref, "summary": args.summary, "comment": args.comment}
     given = {key: value for key, value in fields.items() if value}
-    return _kept(_lifecycle(args, environ, "review", given), LIFECYCLE_KEYS)
+    return _kept(_lifecycle(args, environ, "/api/review", {"task": args.task, **given}), LIFECYCLE_KEYS)
 
 
 def record_call(
@@ -484,16 +479,6 @@ def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: st
         )
         raise agent_wire.CliError("refused", message, created=created, refused=refused)
     return {"task": created}
-
-
-def task_verdict(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/verdict"
-    body = {"task": args.task, "check": args.check, "verdict": args.verdict, "evidence": args.evidence}
-    if args.fix:
-        body["fix"] = args.fix
-    status, reply = agent_wire.post(base, path, {**body, **writer(args, environ)})
-    judged = record_call(base, path, status, reply, missing=_TASK_MISSING)
-    return {key: judged[key] for key in ("task", "check", "verdict")}
 
 
 def task_miss(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

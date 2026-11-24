@@ -41,13 +41,11 @@ from starpulse.contracts.api.dto.requests import (
     MilestonePutRequest,
     MissRequest,
     MoveRequest,
-    ParkRequest,
     RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
     StartRequest,
     TaskPutRequest,
-    VerdictRequest,
     WindowRequest,
 )
 from starpulse.contracts.api.dto.results import (
@@ -138,13 +136,11 @@ class ApiContract(_Api):
     requests: list[
         MoveRequest
         | StartRequest
-        | VerdictRequest
         | MissRequest
         | RetireRequest
         | RetiredImportRequest
         | CompleteRequest
         | DispatchRequest
-        | ParkRequest
         | ReviewRequest
         | CreateRequest
         | TaskPutRequest

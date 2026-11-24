@@ -11,7 +11,6 @@
     starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops --label security
     starpulse task profile PROJ-45 @agent-standard-high
     starpulse task archive PROJ-45 --reason "superseded"
-    starpulse task verdict PROJ-45 live pass --evidence "up=1"
     starpulse task miss PROJ-45 live --title "Repair live" --evidence "up=0"
     starpulse task restore PROJ-45
     starpulse task retire PROJ-45
@@ -65,9 +64,7 @@ changes is no longer the value the edit was based on: that value is `--base`, th
 earlier, or for a field it leaves out is read from the task at the call. A `--label`, `--dependency`, `--reference`, `--documentation` or
 `--modified-file` given at all replaces that whole list, and a blank value clears a field. `task profile` is an edit of
 the profile alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
-`task verdict` comments the verdict (`pass`, or `miss` with `--fix` naming the task filed for it) of a check the task's
-`## Post-merge Checks` block declares, `--evidence` with it; a verdict is final, so a second, an undeclared check or a
-malformed block is refused (exit 1). `task miss` files the fix task (`--title` and the `task create` detail flags) and
+`task miss` files the fix task (`--title` and the `task create` detail flags) and
 records the MISS verdict naming it in one call, refused part-way leaving neither.
 `task archive` moves a task from any lane to the board's archive, recording `--reason` as a comment when given (an agent's archive of a task not Done records an
 `Archive requested:` comment and lists the task under `requested`, not `archived`), and
@@ -930,20 +927,6 @@ def _parser() -> argparse.ArgumentParser:
     agent_flags.writer_flags(archive)
     archive.add_argument("task", nargs="+", help="each task's key (`PROJ-45`); several archive in one call")
     archive.add_argument("--reason", default="", help="why it is archived, recorded as a comment on the task")
-    verdict = leaf(
-        task_verbs,
-        "verdict",
-        "record a post-merge check's verdict as a comment on its task; a verdict is final",
-        _in_tasks("task_verdict"),
-        ("task", "check", "verdict"),
-        (0, 1, 2, 3, 4),
-    )
-    agent_flags.writer_flags(verdict)
-    verdict.add_argument("task", help="the task whose `## Post-merge Checks` block declares the check")
-    verdict.add_argument("check", help="the check's id")
-    verdict.add_argument("verdict", choices=("pass", "miss"), help="`pass`, or `miss` with --fix")
-    verdict.add_argument("--evidence", default="", help="what the criterion showed, recorded with the verdict")
-    verdict.add_argument("--fix", help="the task already filed to fix a miss (`PROJ-46`); required for `miss`")
     miss = leaf(
         task_verbs,
         "miss",

@@ -6,8 +6,8 @@
   `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
   `fields=dependencies`, unpaged.
 - `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), restores
-  (`archived: false`) or takes over (`interactive: true`); `DELETE /api/tasks/{id}` archives: the task writes.
-- `POST /api/move`, `start`, `verdict`, `miss`, `retire`, `retired/import`, `dispatch`, `park`, `review` and
+  (`archived: false`), takes over (`interactive: true`) or parks (`park`); `DELETE /api/tasks/{id}` archives: the task writes.
+- `POST /api/move`, `start`, `verdict`, `miss`, `retire`, `retired/import`, `dispatch`, `review` and
   `complete`: a task's writes by verb, each over the seams it needs.
 """
 
@@ -27,7 +27,7 @@ from starpulse.views.adapters.inbound.api.answering import answer, client, on_wo
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole, whole_body
-from starpulse.views.application.commands.lifecycle import park_task, review_task
+from starpulse.views.application.commands.lifecycle import review_task
 from starpulse.views.application.commands.moves import (
     dispatch_task,
     move_task,
@@ -40,7 +40,6 @@ from starpulse.views.application.commands.tasks import (
     delete_task,
     import_retired,
     record_miss,
-    record_verdict,
     retire_task,
     retired_list,
     retired_page,
@@ -152,12 +151,10 @@ def routes(api: Api) -> list[ApiRoute]:
             lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
             "start",
         ),
-        "/verdict": (lambda client, raw: record_verdict(client, raw, feed, read, edit), "verdict"),
         "/miss": (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
         "/retire": (lambda client, raw: retire_task(client, raw, board), "retire"),
         "/retired/import": (lambda client, raw: import_retired(client, raw, board), "retired_import"),
         "/dispatch": (lambda client, raw: dispatch_task(client, raw, feed, services.dispatch), "dispatch"),
-        "/park": (lambda client, raw: park_task(client, raw, feed, read, edit), "park"),
         "/review": (lambda client, raw: review_task(client, raw, feed, read, edit), "review"),
         "/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
     }
