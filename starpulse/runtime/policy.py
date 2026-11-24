@@ -3,6 +3,8 @@
     starpulse policy show [--config starpulse.toml]
     starpulse policy revision [--config starpulse.toml] [-m MESSAGE]
     starpulse policy merge [--config starpulse.toml]
+    starpulse policy export [--out FILE] [--config starpulse.toml]
+    starpulse policy import FILE [--config starpulse.toml]
 
 `show` prints one JSON document: `source` (`database` when the store's policy tables hold any policy, else `files`, the
 board machine and `[board]` settings the config names) and the policy's `lanes`, `routes`, `exits`, `watches`, `rules`,
@@ -38,7 +40,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     revision = verbs.add_parser("revision", help="write the migration that brings the store to the declared policy")
     revision.add_argument("-m", "--message", default="", help="the migration's title")
     merge = verbs.add_parser("merge", help="join a forked operator chain's heads at the declared policy")
-    for verb in (show, revision, merge):
+    export = verbs.add_parser("export", help="write the governing policy as a JSON document")
+    export.add_argument("--out", type=Path, help="the file to write (default stdout)")
+    load = verbs.add_parser("import", help="make a JSON policy document the store's active policy")
+    load.add_argument("file", type=Path, help="a document `export` wrote")
+    for verb in (show, revision, merge, export, load):
         verb.add_argument("--config", type=Path, help="the TOML config the server runs with (default starpulse.toml)")
     args = parser.parse_args(argv)
     # The store and the config cost over a second to import: `--help` and a flag error pay none of it.
@@ -64,6 +70,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     if args.verb == "revision":
         return _revision(parser, engine, config.board, base, args.message)
+    if args.verb == "export":
+        return _export(engine, config.board, base, args.out)
+    if args.verb == "import":
+        return _import(parser, engine, args.file)
     return _show(engine, config.board, base)
 
 
@@ -72,6 +82,31 @@ def _show(engine, board, base: Path) -> int:  # noqa: ANN001 - the engine and bo
 
     source, policy = load_policy(engine, board, base)
     print(json.dumps({"source": source, **asdict(policy)}))
+    return 0
+
+
+def _export(engine, board, base: Path, out: Path | None) -> int:  # noqa: ANN001 - the engine and board are typed where they are imported
+    from starpulse.board.adapters.lane_policy import load_policy  # noqa: PLC0415 - import cost, paid only by a run that exports
+    from starpulse.board.model.policy_diff import rows  # noqa: PLC0415 - import cost, paid only by a run that exports
+
+    text = json.dumps(rows(load_policy(engine, board, base)[1]), indent=2)
+    if out is None:
+        print(text)
+    else:
+        out.write_text(text + "\n")
+    return 0
+
+
+def _import(parser: argparse.ArgumentParser, engine, file: Path) -> int:  # noqa: ANN001
+    from starpulse.board.adapters import policy_store  # noqa: PLC0415 - import cost, paid only by a run that imports
+    from starpulse.board.model.policy_diff import policy_of  # noqa: PLC0415 - import cost, paid only by a run that imports
+
+    try:
+        wanted = policy_of(json.loads(file.read_text()))
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        parser.error(f"{file}: not a policy document: {exc}")
+    with engine.begin() as db:
+        print(policy_store.write(db, wanted))
     return 0
 
 

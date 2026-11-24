@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Connection, Engine, delete, exists, insert, select, update
+from sqlalchemy import Connection, Engine, delete, insert, select, update
 
 from starpulse.event_log.store.event_store import EventStore, NewEvent, StoredEvent
 from starpulse.event_log.store.tables import machine_active, machine_versions
@@ -112,10 +112,15 @@ class MachineRegistry:
         with self._engine.connect() as db:
             return self._active(db, machine)
 
-    def imported(self, machine: str) -> bool:
-        """Whether the store has ever held a version of `machine`, retired or not."""
+    def active_definitions(self) -> dict[str, Mapping[str, Any]]:
+        """The definition document each machine with an active version runs."""
         with self._engine.connect() as db:
-            return db.execute(select(exists().where(machine_versions.c.machine == machine))).scalar_one()
+            rows = db.execute(
+                select(machine_active.c.machine, machine_versions.c.document)
+                .join(machine_versions, machine_versions.c.hash == machine_active.c.hash)
+                .order_by(machine_active.c.machine)
+            )
+            return {name: document for name, document in rows}
 
     def retire(self, machine: str) -> None:
         """Drop `machine`'s active version, keeping every version. Raises `MissingMachine` for a name with none, and

@@ -148,13 +148,11 @@ class Supervisor:
         limits: Mapping[str, MemoryLimit] | None = None,
         memory: Callable[[int], int] | None = memory_reader(),
         sample_every: float = 5.0,
-        admit: Callable[[], None] | None = None,
         adopted: Mapping[str, Adopted] | None = None,
         refuse: Callable[[str], None] | None = None,
         standby: Collection[str] = (),
     ) -> None:
         self._standby = frozenset(standby)
-        self._admit = admit
         self._refuse = refuse
         self._refused = False
         self._adopted = dict(adopted or {})
@@ -331,14 +329,6 @@ class Supervisor:
         with ThreadPoolExecutor(len(names)) as pool:
             return dict(zip(names, pool.map(read, names), strict=True))
 
-    def _admitted(self) -> None:
-        if self._admit is None:
-            return
-        try:
-            self._admit()
-        except ValueError as exc:
-            raise ReloadError(str(exc)) from exc
-
     def reload(self) -> dict[str, Any]:
         """Replace each child whose code or database changed since the last reading, tell each whose only change is its
         live config block to re-read it, and keep the rest; report each as "replaced", "reloaded" or "kept".
@@ -350,8 +340,7 @@ class Supervisor:
         as "kept". The report's `reads` is
         "launcher" when the code was read from the release behind the launcher, which a caller that probes code through
         its own interpreter (an older `starpulse reload`) lacks, and so cannot trust a "kept". Raises `ReloadError`,
-        changing nothing, when a reading fails or `admit` refuses the definitions the config now names."""
-        self._admitted()
+        changing nothing, when a reading fails."""
         after = self._readings()
         with self._lock:
             if self._halt.is_set():

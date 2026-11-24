@@ -346,6 +346,14 @@ the policy then comes from the board machine (`states`, `events`, `writers`) and
 (a `lanes` row is `{name, role, position, skill}`). The exit code is 0 once printed, 1 for a store not at the schema head
 (run `starpulse migrate`) and 2 for a flag the command does not allow or a config that cannot be read.
 
+## Exporting and importing machines and policy
+
+The store is the source of the machines and the policy; files are an optional copy. None of these verbs reads a server.
+
+- `starpulse machines import [PATH ...] [--config starpulse.toml]` activates each `PATH` (default the Board's `[board] machine` file and each file in `.starpulse/machines/`) as its machine's active version and prints `<name> <hash>` per machine. A first install runs it after `starpulse migrate`. Exit 3: the registry refused a file (reason on stderr; the files before it stay in, those after it are not read). Exit 4: the Board machine would strand live Tasks; the other files are in and the active Board version stays.
+- `starpulse machines export [--out DIR] [--config starpulse.toml]` writes each active machine as `<name>.yaml` under `DIR` (default `.starpulse/machines/`) and prints one path per line. Importing the export into a fresh store gives the same active set.
+- `starpulse policy export [--out FILE]` writes the governing policy (the store's, else the files') as one JSON document, to stdout by default; `starpulse policy import FILE` makes it the store's active policy and prints its hash. Exit 2: the file is not a policy document.
+
 ## Revising the board policy
 
 `starpulse policy revision [--config starpulse.toml] [-m MESSAGE]` writes the data migration that brings the store to the
