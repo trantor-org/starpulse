@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse.board.adapters.native_scan import dependencies
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import ARCHIVE_REQUEST
+from starpulse.board.model.markdown import ARCHIVE_REQUEST, MOVE_REQUEST
 from starpulse.board.model import post_merge_checks
 from starpulse.board.model.seam import (
     AGENT,
+    OPERATOR,
     TASK_ACTOR,
     Board,
     TaskArchiver,
@@ -90,6 +91,11 @@ _APPEND_NOTES = "appendNotes"
 _PLAN_REASON = "planReason"
 
 
+def _spelled(field: str, value: Any) -> Any:
+    """`value` as the edit compares it: a status is its lane, however the page or the board spells it."""
+    return lane_id(value) if field == "status" and isinstance(value, str) else value
+
+
 def _edited(
     request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor, *, started: Callable[[str], bool]
 ) -> tuple[int, dict[str, Any]]:
@@ -127,13 +133,16 @@ def _edited(
                 return 400, {"error": f"{field} is not an editable field of {task}"}
             if field not in base:
                 return 400, {"error": f"the edit has no base for {field}"}
-        if stale := [field for field in fields if current[field] != base[field]]:
+        if stale := [field for field in fields if _spelled(field, current[field]) != _spelled(field, base[field])]:
             return 409, {
                 "error": f"{task} changed since it was opened: {', '.join(stale)}",
                 "stale": stale,
                 "current": {field: current[field] for field in stale},
             }
         todo = {field: value for field, value in fields.items() if value != current[field]}
+        if who.actor == OPERATOR and lane != agent["state"]:  # the task actor makes the operator's move from the request
+            todo.pop("status", None)
+            comment = f"{MOVE_REQUEST} {lane}. {comment.strip()}".strip()
         if _APPEND_NOTES in changes:
             todo[_APPEND_NOTES] = changes[_APPEND_NOTES]
         if _PLAN_REASON in changes and "plan" in todo:

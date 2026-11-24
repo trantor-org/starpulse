@@ -162,7 +162,7 @@ _YIELD_S = 2.0
 #: derived under, so a start derives only the tasks that changed since.
 CHECKPOINT = "pulls.task_actor_checkpoint"
 #: Bumped when a fact function reads something new or reads it differently: a checkpoint of another revision is unread.
-_FACTS_REVISION = 6
+_FACTS_REVISION = 7
 #: Seconds between two saves of the checkpoint while the actor runs.
 #: Seconds after a task's derived facts change before the checkpoint is saved.
 _CHECKPOINT_DEBOUNCE_S = 10.0
@@ -184,7 +184,7 @@ _ASKS = (
 )
 
 #: The facts a comment alone raises, which the view does not show.
-_COMMENTED = frozenset(("operator_pushback", "wait_requested", "ask_requested", "archive_requested"))
+_COMMENTED = frozenset(("operator_pushback", "wait_requested", "ask_requested", "archive_requested", "move_requested"))
 
 #: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
 _ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")
@@ -251,8 +251,10 @@ def _rules_digest(
 
 
 def moves_of(machine: Mapping[str, Any]) -> dict[tuple[str, str], str]:
-    """`{(lane, event): target lane}` for the transitions of a drawn machine (`snapshot.describe`)."""
-    return {(move["source"], move["event"]): move["target"] for move in machine["transitions"]}
+    """`{(lane, event): target lane}` for the transitions of a drawn machine (`snapshot.describe`), and the same moves
+    under `(lane, "<event>:<target>")`, which tells an event that leads to several lanes which one a request names."""
+    moves = {(move["source"], move["event"]): move["target"] for move in machine["transitions"]}
+    return moves | {(move["source"], f"{move['event']}:{move['target']}"): move["target"] for move in machine["transitions"]}
 
 
 #: How many of a hold's reasons its comment lists; the rest are counted.
@@ -1392,6 +1394,8 @@ class TaskActor:
             if held is None:
                 continue
             evidence, comment = held
+            if fact == "move_requested":
+                target = self._moves.get((agent["state"], f"{event}:{derivation.requested_lane(evidence)}"))
             if target is None or (self._is_closed(target) and event != "ARCHIVE"):
                 return self._fault(agent, f"move {event}", self._no_move(agent["state"], event, target))
             sent = (agent["state"], event, evidence, digest)
