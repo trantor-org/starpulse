@@ -1366,7 +1366,9 @@ class TaskActor:
     def _derive_waits(self, name: str, agent: dict[str, Any], observed: float, digest: str) -> bool:
         """Write the first move the task's lane waits on whose fact holds, and say whether one was written. A move already
         tried on these facts (`digest`), or one the board refuses, leaves the next fact its turn: a Waiting task whose
-        return to Review is refused still reaches Ready, and a move skipped is tried again once the facts digest changes."""
+        return to Review is refused still reaches Ready, and a move skipped is tried again once the facts digest changes. A
+        transient refusal ends the pass instead: its facts are stale, so a later fact (a closed pull request's ask) must
+        not win over the change that raced it (an archive request)."""
         self.derivations[name] += 1
         self._arm(name, agent)
         if agent["state"] in self._sweep_lanes and (reasons := self._stuck(agent)):
@@ -1409,6 +1411,8 @@ class TaskActor:
             merged = derivation.merged_at(self._port, agent) if fact in _MERGE_FACTS else None
             if self._write(name, target, comment, observed, source=agent["state"], stale=changes, merged=merged):
                 return True
+            if self._tried.get(name) != sent:
+                return False  # the file changed under a transient refusal: the next pass judges it anew, no later fact
         if agent["state"] == self._feed.roles.working:
             self._log_unready(agent)
         return False
