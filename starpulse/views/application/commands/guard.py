@@ -34,7 +34,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
 logger = logging.getLogger(__name__)
 
 
-#: Who may press Run now, loopback and the RFC 1918 ranges as (octets, prefix): the page is never
+#: Who may write, loopback and the RFC 1918 ranges as (octets, prefix): the page is never
 #: exposed to the internet, so a LAN browser needs no token (the React/Vite ADR).
 _LAN = (
     ipaddress.ip_network("::1"),

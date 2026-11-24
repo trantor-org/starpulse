@@ -189,7 +189,8 @@ class RunsAdapterKit(_AdapterKit):
         feed.runs("kit").set_dags(dags, None, pools)
         snapshot = feed.snapshot()
         assert snapshot["dags"] == [
-            {**dag, "name": f"kit/{dag['name']}"} | ({"pool": f"kit/{dag['pool']}"} if dag.get("pool") else {})
+            {**dag, "name": f"kit/{dag['name']}", "startUrl": ""}
+            | ({"pool": f"kit/{dag['pool']}"} if dag.get("pool") else {})
             for dag in dags
         ]
         assert snapshot["pools"] == [{**pool, "name": f"kit/{pool['name']}"} for pool in pools]

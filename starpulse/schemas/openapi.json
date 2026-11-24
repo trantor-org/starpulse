@@ -318,20 +318,40 @@
         }
       }
     },
-    "/api/runs": {
+    "/api/jobs/{name}": {
       "get": {
-        "summary": "The workflow runs",
+        "summary": "One job, with its runner's start page",
         "tags": [
           "jobs"
         ],
-        "operationId": "get_api_runs",
+        "operationId": "get_api_jobs_name",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "The answer",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Runs"
+                  "$ref": "#/components/schemas/DagBody"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -1274,54 +1294,6 @@
         }
       }
     },
-    "/api/retired/import": {
-      "post": {
-        "summary": "Import retired tasks",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_retired_import",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RetiredImportRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RetiredImported"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/dispatch": {
       "post": {
         "summary": "Dispatch a session to a task",
@@ -2114,79 +2086,30 @@
         }
       }
     },
-    "/api/run/{name}": {
+    "/api/jobs": {
       "post": {
-        "summary": "Run a workflow",
+        "summary": "The jobs, at a stream position",
         "tags": [
           "jobs"
         ],
-        "operationId": "post_api_run_name",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
+        "operationId": "post_api_jobs",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobListRequest"
+              }
             }
           }
-        ],
+        },
         "responses": {
           "200": {
             "description": "The answer",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunStarted"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/runs/{instance}/{workflow}/rerun": {
-      "post": {
-        "summary": "Rerun a workflow run",
-        "tags": [
-          "jobs"
-        ],
-        "operationId": "post_api_runs_instance_workflow_rerun",
-        "parameters": [
-          {
-            "name": "instance",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "workflow",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunStarted"
+                  "$ref": "#/components/schemas/Jobs"
                 }
               }
             }
@@ -4001,6 +3924,10 @@
           "runId": {
             "type": "string"
           },
+          "startUrl": {
+            "description": "The runner's own start page for the workflow; empty when its runner has none.",
+            "type": "string"
+          },
           "startedAt": {
             "type": "string"
           },
@@ -4104,6 +4031,7 @@
           "name",
           "status",
           "runId",
+          "startUrl",
           "startedAt",
           "finishedAt",
           "steps",
@@ -4645,7 +4573,7 @@
         "type": "object"
       },
       "Domain": {
-        "description": "A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured.",
+        "description": "A domain's DAGs; `processes` package them when configured.",
         "properties": {
           "name": {
             "type": "string"
@@ -4674,14 +4602,10 @@
         "properties": {
           "name": {
             "type": "string"
-          },
-          "runSafe": {
-            "type": "boolean"
           }
         },
         "required": [
-          "name",
-          "runSafe"
+          "name"
         ],
         "title": "DomainDag",
         "type": "object"
@@ -5205,6 +5129,44 @@
           "states"
         ],
         "title": "HeldSkill",
+        "type": "object"
+      },
+      "JobListRequest": {
+        "additionalProperties": false,
+        "description": "`POST /api/jobs`: list the workflows the runs adapters report. It takes no field.",
+        "properties": {},
+        "title": "JobListRequest",
+        "type": "object"
+      },
+      "Jobs": {
+        "description": "`POST /api/jobs`: every runs workflow as the snapshot lists it, and the error a runs instance reported, with the\nstream position the list was read at: a `jobChanges` subscription from it carries every change after.",
+        "properties": {
+          "position": {
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DagBody"
+            },
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "position",
+          "items",
+          "error"
+        ],
+        "title": "Jobs",
         "type": "object"
       },
       "Judged": {
@@ -7867,36 +7829,6 @@
         "title": "RetiredDependencies",
         "type": "object"
       },
-      "RetiredImportRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/retired/import`: keep the retired task file `name`, holding `text`, in the history store.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "text"
-        ],
-        "title": "RetiredImportRequest",
-        "type": "object"
-      },
-      "RetiredImported": {
-        "properties": {
-          "task": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "title": "RetiredImported",
-        "type": "object"
-      },
       "RetiredTask": {
         "description": "A retired task as the board's history store keeps it: its id, its file name and the file's text, byte-for-byte.",
         "properties": {
@@ -8204,18 +8136,6 @@
         "title": "RuleBreak",
         "type": "object"
       },
-      "RunStarted": {
-        "properties": {
-          "runId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "runId"
-        ],
-        "title": "RunStarted",
-        "type": "object"
-      },
       "RunStats": {
         "additionalProperties": false,
         "description": "A DAG's runs over the last seven days.",
@@ -8274,33 +8194,6 @@
           "failureShare"
         ],
         "title": "RunStats",
-        "type": "object"
-      },
-      "Runs": {
-        "description": "`GET /api/runs`: every runs workflow as the snapshot lists it, and the error a runs instance reported.",
-        "properties": {
-          "dags": {
-            "items": {
-              "$ref": "#/components/schemas/DagBody"
-            },
-            "type": "array"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "dags",
-          "error"
-        ],
-        "title": "Runs",
         "type": "object"
       },
       "SavedBg": {

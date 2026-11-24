@@ -2,7 +2,7 @@
 // the right rail (recent moves on top, the legend at the bottom), and the
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
-import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/viewPrefs";
 import { AdminStore } from "./features/admin/adminPrefs";
 import { applyTheme } from "./features/admin/theme/apply";
@@ -14,6 +14,9 @@ import { Crumb } from "./features/level/Crumb";
 import { DagLegend } from "./features/dags/DagLegend";
 import { FeedLines, linesThatFit, Queues } from "./features/fanout/Fanout";
 import { DagPressure } from "./features/dags/DagPressure";
+import type { DagData } from "./features/dags/dagsModel";
+import { useJobs } from "./features/dags/useJobs";
+import { withJobs } from "./render/hudViews";
 import { Kept, revealKept } from "./shared/Kept";
 import { SearchClear } from "./shared/SearchClear";
 import { useScrollRest } from "./shared/scrollRest";
@@ -75,6 +78,11 @@ export function App() {
   // the Star Map is desktop-only: a phone width shows the Kanban in its place, and widening the page returns to what was chosen
   const phone = usePhone();
   const view = shownView(chosen, phone);
+  // the Jobs page reads its jobs once the first time it opens, then follows them while the page stays open
+  const [jobsSeen, setJobsSeen] = useState(view === "jobs");
+  if (view === "jobs" && !jobsSeen) setJobsSeen(true);
+  const { jobs } = useJobs(jobsSeen);
+  const jobsData = useMemo(() => (jobs && hud.dagData && withJobs ? withJobs(hud.dagData, jobs) : null), [jobs, hud.dagData]);
   const pendingView = useRef(0), moved = useRef(false);
   const commitView = useCallback((next: ViewName, url: string) => {
     cancelAnimationFrame(pendingView.current);
@@ -178,7 +186,7 @@ export function App() {
   return (
     <>
       {!held && <canvas ref={canvas} id="c" />}
-      <Navigator shell={shell} hud={hud} view={view} phone={phone} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
+      <Navigator shell={shell} hud={hud} jobsData={jobsData} view={view} phone={phone} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
       {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && hud.capabilities?.create && (
@@ -194,7 +202,7 @@ export function App() {
             spot={spotted} note={setWhy} opening={opening} records={held?.records} />
         </Suspense>
       </Kept>
-      <Kept name="jobs" on={view === "jobs"}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
+      <Kept name="jobs" on={view === "jobs"}><Suspense fallback={null}><Dags data={jobsData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
       <Kept name="admin" on={view === "admin"}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} /></Suspense></Kept>
       <Rail shown={shell} legend={!drill} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "jobs" ? !!l.dag : view === "constellation" && !!l.task)}
@@ -270,8 +278,8 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
   );
 }
 
-function NavigatorBody({ hud, view, phone, slot, dgSlot, outlineSlot, drillSlot, choose, open, spot, selectTask }: {
-  hud: HudState; view: ViewName; phone: boolean; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
+function NavigatorBody({ hud, jobsData, view, phone, slot, dgSlot, outlineSlot, drillSlot, choose, open, spot, selectTask }: {
+  hud: HudState; jobsData: DagData | null; view: ViewName; phone: boolean; slot: (el: HTMLElement | null) => void; dgSlot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
   /** While the drill-in is open, the section its In Progress task list draws in, in place of the view's own lower sections. */
   drillSlot?: ((el: HTMLElement | null) => void) | null;
@@ -361,7 +369,7 @@ function NavigatorBody({ hud, view, phone, slot, dgSlot, outlineSlot, drillSlot,
       )}
       {drillSlot && <section className="away drill-tasks" ref={drillSlot} />}
       {!drillSlot && view === "kanban" && <section className="away outline" ref={outlineSlot} />}
-      {!drillSlot && view === "jobs" && <><Queues pools={hud.pools} /><DagPressure data={hud.dagData} /></>}
+      {!drillSlot && view === "jobs" && <><Queues pools={hud.pools} /><DagPressure data={jobsData} /></>}
       {!drillSlot && view === "constellation" && (body ?<section className="away matches">{body}</section> : <Leaderboard tasks={hud.cards} roles={hud.roles} now={now} open={selectTask} />)}
       <section className="views admin-sec">
         <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>

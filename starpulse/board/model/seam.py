@@ -37,7 +37,6 @@ __all__ = [
     "MilestoneReader",
     "MoveWriter",
     "OPERATOR",
-    "RetiredImporter",
     "RetiredProjector",
     "RetiredReader",
     "TaskArchiver",
@@ -151,10 +150,6 @@ RetiredProjector = Callable[[Callable[[str], Any], str, str], list[tuple[str, An
 #: cursor `before` ("" for the first page) at most `limit` long, and the cursor of the page that follows, None on the
 #: last. A `before` that is no cursor raises `ValueError`.
 RetiredPager = Callable[[int, str], tuple[list[Mapping[str, str]], str | None]]
-#: Keep the file `name` with `text`, retired elsewhere, among the retired tasks; a successful `Written.output` is the
-#: task's id. Text that names no task id, a name that is no plain file name, a task on the board, or a task retired with
-#: other text is refused; the same task with the same text is accepted again.
-RetiredImporter = Callable[[str, str], Written]
 #: Move a Done task out of the lanes into the board's completed tasks; one that is not Done, is already completed or has
 #: no file is refused. A completed task is still read and edited.
 TaskCompleter = Callable[[str], Written]
@@ -253,8 +248,6 @@ class Board:
     """Reads the retired tasks through a projection of each text."""
     retired_page: RetiredPager
     """Reads the retired tasks a page at a time, newest first."""
-    import_retired: RetiredImporter
-    """Keeps a task retired elsewhere among the retired tasks."""
     files: Callable[[], Iterable[tuple[str, list[str]]]]
     """Lists each open task file's id and the aliases it answers to."""
     done_files: Callable[[], Iterable[tuple[str, list[str]]]]

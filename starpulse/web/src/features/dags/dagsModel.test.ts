@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, dagData, dagFacts, filterRows, jobRuns, order, panes, place, places, refusal, rows, runHours, runNote, stepLabels, ties, type DagData } from "./dagsModel";
+import { FRESH, LABEL_MAX, bigPlace, captions, chartHeight, dagData, dagFacts, filterRows, jobRuns, order, panes, place, places, rows, runner, withJobs, runHours, runNote, stepLabels, ties, type DagData } from "./dagsModel";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
-  name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [step("a"), step("b", ["a"])], ...over,
+  name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [step("a"), step("b", ["a"])], ...over,
 });
 
 const board: Machine = {
@@ -33,8 +33,8 @@ const data: DagData = {
     dag("runs/stray", "succeeded"),
   ],
   domains: [
-    { name: "Board", dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/triage", runSafe: false }, { name: "runs/sweeper", runSafe: false }] },
-    { name: "Ops", dags: [{ name: "runs/backup", runSafe: false }, { name: "runs/deploy", runSafe: true }, { name: "runs/lost", runSafe: false }] },
+    { name: "Board", dags: [{ name: "runs/pr-watch" }, { name: "runs/triage" }, { name: "runs/sweeper" }] },
+    { name: "Ops", dags: [{ name: "runs/backup" }, { name: "runs/deploy" }, { name: "runs/lost" }] },
   ],
   pools: [],
   cues: [{ dag: "runs/sweeper", event: "task_ready", state: "ready", on: "a push to main" }],
@@ -62,11 +62,11 @@ describe("a DAG's row", () => {
     expect(byName("runs/triage").steps).toEqual({ scan: "succeeded", fix: "failed" });
   });
 
-  it("takes its domain and run-safe flag from the snapshot's domains, and puts a DAG in none under Other", () => {
-    expect(byName("runs/pr-watch")).toMatchObject({ domain: "Board", runSafe: true });
-    expect(byName("runs/triage")).toMatchObject({ domain: "Board", runSafe: false });
-    expect(byName("runs/deploy")).toMatchObject({ domain: "Ops", runSafe: true });
-    expect(byName("runs/stray")).toMatchObject({ domain: "Other", runSafe: false });
+  it("takes its domain from the snapshot's domains, and puts a DAG in none under Other", () => {
+    expect(byName("runs/pr-watch")).toMatchObject({ domain: "Board" });
+    expect(byName("runs/triage")).toMatchObject({ domain: "Board" });
+    expect(byName("runs/deploy")).toMatchObject({ domain: "Ops" });
+    expect(byName("runs/stray")).toMatchObject({ domain: "Other" });
   });
 });
 
@@ -74,10 +74,10 @@ const nested: DagData = {
   ...data,
   domains: [{
     name: "Board",
-    dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/triage", runSafe: false }, { name: "runs/sweeper", runSafe: false }],
+    dags: [{ name: "runs/pr-watch" }, { name: "runs/triage" }, { name: "runs/sweeper" }],
     processes: [
-      { name: "Watch", dags: [{ name: "runs/pr-watch", runSafe: true }] },
-      { name: "Triage", dags: [{ name: "runs/triage", runSafe: false }] },
+      { name: "Watch", dags: [{ name: "runs/pr-watch" }] },
+      { name: "Triage", dags: [{ name: "runs/triage" }] },
     ],
   }],
 };
@@ -100,14 +100,14 @@ describe("a DAG's process", () => {
 
   it("survives the snapshot's reading by the view", () => {
     const sky = {
-      now: 5, dags: data.dags, pools: [], cues: [], flows: {}, runnable: new Set(["runs/pr-watch"]),
+      now: 5, dags: data.dags, pools: [], cues: [], flows: {},
       groups: [{ name: "Board", dags: ["runs/pr-watch", "runs/triage"], processes: [{ name: "Watch", dags: ["runs/pr-watch"] }, { name: "Triage", dags: ["runs/triage"] }] }, { name: "Ops", dags: ["runs/backup"] }],
     } as unknown as Parameters<typeof dagData>[0];
 
     expect(dagData(sky).domains).toEqual([
-      { name: "Board", dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/triage", runSafe: false }],
-        processes: [{ name: "Watch", dags: [{ name: "runs/pr-watch", runSafe: true }] }, { name: "Triage", dags: [{ name: "runs/triage", runSafe: false }] }] },
-      { name: "Ops", dags: [{ name: "runs/backup", runSafe: false }] },
+      { name: "Board", dags: [{ name: "runs/pr-watch" }, { name: "runs/triage" }],
+        processes: [{ name: "Watch", dags: [{ name: "runs/pr-watch" }] }, { name: "Triage", dags: [{ name: "runs/triage" }] }] },
+      { name: "Ops", dags: [{ name: "runs/backup" }] },
     ]);
   });
 });
@@ -287,28 +287,31 @@ describe("the modal's step chart", () => {
   });
 });
 
-describe("why Run now is refused", () => {
-  const row = (name: string) => rows(data).find((r) => r.d.name === name)!;
-  it("names a running or queued DAG, a DAG that is not run-safe and a run being started, and is silent for a run-safe idle DAG", () => {
-    expect(refusal(row("runs/deploy"))).toBe("Already running");
-    expect(refusal(row("runs/backup"))).toBe("Already queued");
-    expect(refusal(row("runs/triage"))).toMatch(/^Not run-safe/);
-    expect(refusal(row("runs/pr-watch"), true)).toBe("Starting…");
-    expect(refusal(row("runs/pr-watch"))).toBeNull();
+describe("the runner a job runs on", () => {
+  it("names the runner from the job's instance prefix", () => {
+    expect([runner("temporal/nightly"), runner("woodpecker/push"), runner("github/ci"), runner("runs/x")]).toEqual(["Temporal", "Woodpecker", "GitHub", "Runs"]);
+  });
+
+  it("puts the jobs read into the snapshot's data with each job's facts, keeping the snapshot's domains", () => {
+    const read = withJobs({ ...data, dags: [] }, [dag("temporal/nightly", "succeeded")]);
+    expect(read.dags.map((d) => d.name)).toEqual(["temporal/nightly"]);
+    expect(Object.keys(read.facts)).toEqual(["temporal/nightly"]);
+    expect(read.domains).toBe(data.domains);
   });
 });
 
 describe("the page's snapshot as the DAGs view reads it", () => {
-  it("carries the DAGs, their domains with the run-safe flag, the pools, the cues and each machine", () => {
+  it("carries no jobs, the domains with their members, the pools, the cues and each machine", () => {
     const sky = {
       now: 5, dags: data.dags, pools: [{ name: "runs/main", cap: 2, running: 1, queued: 0 }], cues: data.cues,
-      groups: [{ name: "Board", dags: ["runs/pr-watch", "runs/triage"] }], runnable: new Set(["runs/pr-watch"]),
+      groups: [{ name: "Board", dags: ["runs/pr-watch", "runs/triage"] }],
       flows: { board: { name: "board", machine: board, agents: [{ id: "T-1" }] } },
     } as unknown as Parameters<typeof dagData>[0];
     const read = dagData(sky);
 
     expect(read.now).toBe(5);
-    expect(read.domains).toEqual([{ name: "Board", dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/triage", runSafe: false }] }]);
+    expect(read.dags).toEqual([]);
+    expect(read.domains).toEqual([{ name: "Board", dags: [{ name: "runs/pr-watch" }, { name: "runs/triage" }] }]);
     expect(read.flows).toEqual([{ name: "board", machine: board }]);
     expect(read.pools).toEqual(sky.pools);
     expect(read.cues).toBe(data.cues);
@@ -319,9 +322,8 @@ describe("the page's snapshot as the DAGs view reads it", () => {
     const rerun = { key: "pr", repeats: null, step: null };
     const ran = dag("runs/ran", "succeeded", { schedule: ["0 * * * *", "30 6 * * 1"], stats, rerun });
     const never = dag("runs/never", "not_started");
-    const sky = { now: 5, dags: [ran, never], pools: [], cues: [], groups: [], runnable: new Set(), flows: {} } as unknown as Parameters<typeof dagData>[0];
 
-    expect(dagData(sky).facts).toEqual({
+    expect(withJobs({ ...data, dags: [] }, [ran, never]).facts).toEqual({
       "runs/ran": { schedule: "0 * * * *, 30 6 * * 1", ...stats, rerun },
       "runs/never": { schedule: "manual", runs: null, hours: null, medianSeconds: null, p95Seconds: null, failureShare: null, rerun: null },
     });

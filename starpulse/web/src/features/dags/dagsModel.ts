@@ -1,6 +1,7 @@
 // What the DAGs view knows about a DAG, apart from how it draws it: its phase, domain and Board ties, the order and filters of
 // the catalog, and where a step sits in its constellation. The page's snapshot reaches it as one DagData, read from the Sky.
 import { BOARD_COLOR } from "../../render/scene";
+import { runner } from "../../render/panels";
 import type { Sky } from "../../render/sky";
 import type { ActiveRun, Cue, Dag, DagStep, Domain, Machine, Pool, RecentRun, Rerun, RunStatus } from "../../api";
 
@@ -69,9 +70,9 @@ export const dagFacts = (d: Dag): DagFacts => ({
 
 /** The snapshot's DAG data as the HUD holds it; a machine's tasks stay behind, so a task move does not redraw the view. */
 export const dagData = (sky: Sky): DagData => ({
-  dags: sky.dags,
+  dags: [],
   domains: sky.groups.map((g) => {
-    const member = (name: string) => ({ name, runSafe: sky.runnable.has(name) });
+    const member = (name: string) => ({ name });
     return { name: g.name, dags: g.dags.map(member), ...(g.processes && { processes: g.processes.map((p) => ({ name: p.name, dags: p.dags.map(member) })) }) };
   }),
   pools: sky.pools,
@@ -79,9 +80,13 @@ export const dagData = (sky: Sky): DagData => ({
   cues: sky.cues,
   flows: Object.values(sky.flows).map((f) => ({ name: f.name, machine: f.machine })),
   now: sky.now,
-  facts: Object.fromEntries(sky.dags.map((d) => [d.name, dagFacts(d)])),
+  facts: {},
 });
 
+/** The page's DAG data with the jobs `/api/jobs` and its changes carry: the board stream holds no job. */
+export const withJobs = (data: DagData, jobs: Dag[]): DagData => ({ ...data, dags: jobs, facts: Object.fromEntries(jobs.map((d) => [d.name, dagFacts(d)])) });
+
+export { runner };
 export type Phase = "running" | "queued" | "failed" | "idle" | "ok";
 export const short = (n: string) => n.replace(/^[^/]+\//, "");
 
@@ -96,7 +101,6 @@ export const group = (p: Phase): Exclude<Phase, "queued"> => (p === "queued" ? "
 export interface Row {
   d: Dag;
   domain: string;
-  runSafe: boolean;
   /** The process package of its domain it belongs to; `Other` when the domain packages processes but omits it, null when the domain has none. */
   process: string | null;
   /** Snapshot membership rank: domain order, then process package order, then list order; Other-domain DAGs sort after by name. */
@@ -117,30 +121,30 @@ const iso = (s: string) => (s ? Date.parse(s) / 1000 : 0);
 const made = new WeakMap<Dag, Row>();
 
 export function rows(data: DagData): Row[] {
-  const home: Record<string, { domain: string; runSafe: boolean; process: string | null; ord: number }> = {};
+  const home: Record<string, { domain: string; process: string | null; ord: number }> = {};
   let ord = 0;
   for (const dom of data.domains) {
     if (dom.processes?.length) {
       for (const p of dom.processes) {
-        for (const x of p.dags) home[x.name] = { domain: dom.name, runSafe: x.runSafe, process: p.name, ord: ord++ };
+        for (const x of p.dags) home[x.name] = { domain: dom.name, process: p.name, ord: ord++ };
       }
       for (const x of dom.dags) {
-        if (!(x.name in home)) home[x.name] = { domain: dom.name, runSafe: x.runSafe, process: "Other", ord: ord++ };
+        if (!(x.name in home)) home[x.name] = { domain: dom.name, process: "Other", ord: ord++ };
       }
     } else {
-      for (const x of dom.dags) home[x.name] = { domain: dom.name, runSafe: x.runSafe, process: null, ord: ord++ };
+      for (const x of dom.dags) home[x.name] = { domain: dom.name, process: null, ord: ord++ };
     }
   }
   return data.dags.map((d) => {
-    const spot = home[d.name], domain = spot?.domain ?? "Other", runSafe = spot?.runSafe ?? false, process = spot?.process ?? null;
+    const spot = home[d.name], domain = spot?.domain ?? "Other", process = spot?.process ?? null;
     const rank = spot?.ord ?? 1e9;
     const had = made.get(d);
-    if (had && had.domain === domain && had.runSafe === runSafe && had.process === process && had.ord === rank) return had;
+    if (had && had.domain === domain && had.process === process && had.ord === rank) return had;
     const run = d.active?.[0];
     const phase: Phase = run || d.status === "running" ? "running" : d.status === "queued" ? "queued"
       : d.status === "failed" || d.status === "aborted" ? "failed" : d.status === "not_started" ? "idle" : "ok";
     const row: Row = {
-      d, domain, runSafe, process, ord: rank, phase,
+      d, domain, process, ord: rank, phase,
       steps: Object.fromEntries(d.steps.map((x) => [x.name, run?.steps[x.name] ?? x.status])),
       startedAt: iso(run?.startedAt ?? d.startedAt), finishedAt: iso(d.finishedAt), step: run?.step ?? "",
     };
@@ -336,8 +340,3 @@ export const rerunLine = (x: Rerun | null) => (!x ? null : x.key ? `once per ${x
 /** What a step's line adds to its history: the precondition that may skip it, the lock it takes, and the repeat the DAG declares at it. */
 export const stepNote = (s: DagStep, x: Rerun | null) =>
   [s.precondition && `when ${s.precondition}`, s.lock && `lock ${s.lock}`, x?.repeats && x.step === s.name && `repeats · ${x.repeats}`].filter(Boolean).join(" · ");
-
-/** Why Run now is refused for a DAG, or null when it may start. Only a run-safe DAG has the button; the modal shows it disabled with this reason. */
-export const refusal = (r: Row, starting = false): string | null =>
-  r.phase === "running" ? "Already running" : r.phase === "queued" ? "Already queued" : !r.runSafe ? "Not run-safe: this DAG changes live state, so StarPulse will not start it. Run it from its workflow runner."
-    : starting ? "Starting…" : null;

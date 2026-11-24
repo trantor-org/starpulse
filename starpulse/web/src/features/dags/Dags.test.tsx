@@ -21,7 +21,7 @@ vi.mock("./DagParts", async (orig) => {
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null, precondition: null, lock: null, last: [] });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
-  name, status, runId: "", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, rerun: null, steps: [step("scan"), step("fix", ["scan"])], pool: "runs/main", ...over,
+  name, status, runId: "", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, rerun: null, startUrl: "", steps: [step("scan"), step("fix", ["scan"])], pool: "runs/main", ...over,
 });
 const board: Machine = {
   states: [{ id: "ready", name: "Ready", initial: false, final: false }, { id: "review", name: "Review", initial: false, final: false }],
@@ -31,14 +31,14 @@ const board: Machine = {
 const data: DagData = {
   now: 3600, facts: {}, dashboards: {},
   dags: [
-    dag("runs/pr-watch", "succeeded"),
+    dag("runs/pr-watch", "succeeded", { startUrl: "http://runner.test/pr-watch" }),
     dag("runs/triage", "failed", { steps: [step("scan"), step("fix", ["scan"], "failed")] }),
-    dag("runs/deploy", "succeeded", { active: [{ runId: "r1", status: "running", startedAt: "1970-01-01T00:55:00Z", step: "fix", stepStartedAt: "", steps: { scan: "succeeded", fix: "running" } }] }),
+    dag("runs/deploy", "succeeded", { startUrl: "http://runner.test/deploy", active: [{ runId: "r1", status: "running", startedAt: "1970-01-01T00:55:00Z", step: "fix", stepStartedAt: "", steps: { scan: "succeeded", fix: "running" } }] }),
     dag("runs/never", "not_started"),
   ],
   domains: [
-    { name: "Board", dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/triage", runSafe: false }] },
-    { name: "Ops", dags: [{ name: "runs/deploy", runSafe: true }, { name: "runs/never", runSafe: false }] },
+    { name: "Board", dags: [{ name: "runs/pr-watch" }, { name: "runs/triage" }] },
+    { name: "Ops", dags: [{ name: "runs/deploy" }, { name: "runs/never" }] },
   ],
   pools: [{ name: "runs/main", cap: 2, running: 1, queued: 0 }],
   cues: [],
@@ -46,8 +46,7 @@ const data: DagData = {
 };
 
 let host: HTMLDivElement, root: Root, slot: HTMLDivElement;
-const post = vi.fn();
-const draw = async (d: DagData | null = data) => { await act(async () => root.render(<Dags data={d} post={post} filterSlot={slot} />)); };
+const draw = async (d: DagData | null = data) => { await act(async () => root.render(<Dags data={d} filterSlot={slot} />)); };
 // the navigator's filter slot sits outside the view
 const filterBox = () => slot.querySelector<HTMLInputElement>("#dgq")!;
 const q = <T extends Element>(sel: string) => host.querySelector<T>(sel)!;
@@ -64,7 +63,6 @@ const chip = (label: string) => all(".fchip").find((c) => c.textContent!.startsW
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  post.mockReset();
   // The view ticks its clock each second; a frozen interval keeps a slow run from aging the fixture's elapsed times.
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
   localStorage.clear();
@@ -94,7 +92,7 @@ describe("the DAGs view's panes", () => {
 
   it("puts a queued DAG last in Processing, below the one that began first", async () => {
     const queued = dag("runs/waiting", "queued");
-    await draw({ ...data, dags: [...data.dags, queued], domains: [{ name: "Ops", dags: [...data.domains[1].dags, { name: queued.name, runSafe: false }] }, data.domains[0]] });
+    await draw({ ...data, dags: [...data.dags, queued], domains: [{ name: "Ops", dags: [...data.domains[1].dags, { name: queued.name }] }, data.domains[0]] });
 
     expect(paneOf("processing")).toEqual(["deploy", "waiting"]);
   });
@@ -270,7 +268,7 @@ describe("the DAGs view's filters", () => {
   });
 
   it("draws no search where there is no slot to hold it", async () => {
-    await act(async () => root.render(<Dags data={data} post={post} />));
+    await act(async () => root.render(<Dags data={data} />));
 
     expect(document.querySelector("#dgq")).toBeNull();
   });
@@ -287,35 +285,23 @@ describe("the DAGs view's filters", () => {
   });
 });
 
-describe("Run now", () => {
-  it("draws the ▶ edge strip on a run-safe row only", async () => {
-    await draw();
-    const has = (n: string) => !!all("#stage .drow").find((r) => r.querySelector(".nm")!.textContent === n)!.querySelector("button.play.edge");
+describe("Run in <runner> ↗", () => {
+  const link = (n: string) => rowOf(n).querySelector<HTMLAnchorElement>("a.runin.edge");
 
-    expect(has("pr-watch")).toBe(true);
-    expect(has("deploy")).toBe(true);
-    expect(has("triage")).toBe(false);
-    expect(has("never")).toBe(false);
+  it("is a link to the runner's start page on a row whose runner has one, and absent from the others", async () => {
+    await draw();
+
+    expect([link("pr-watch")?.textContent, link("pr-watch")?.getAttribute("href"), link("pr-watch")?.getAttribute("target")]).toEqual(["Run in Runs ↗", "http://runner.test/pr-watch", "_blank"]);
+    expect(link("deploy")).not.toBeNull();
+    expect(link("triage")).toBeNull();
+    expect(link("never")).toBeNull();
   });
 
-  it("disables ▶ on a DAG already running, and POSTs /api/run/<instance>/<workflow> from the others", async () => {
-    post.mockResolvedValue(new Response(JSON.stringify({ runId: "r9" }), { status: 200 }));
+  it("does not open the job modal", async () => {
     await draw();
-    const play = (n: string) => all("#stage .drow").find((r) => r.querySelector(".nm")!.textContent === n)!.querySelector<HTMLButtonElement>("button.play.edge")!;
+    await click(link("pr-watch")!);
 
-    expect(play("deploy").disabled).toBe(true);
-    await click(play("pr-watch"));
-
-    expect(post).toHaveBeenCalledWith("/api/run/runs/pr-watch", { method: "POST" });
-    expect(q(".dtoast").textContent).toBe("pr-watch: Started run r9.");
-  });
-
-  it("shows a refusal's error in the toast", async () => {
-    post.mockResolvedValue(new Response(JSON.stringify({ error: "pool runs/main is full" }), { status: 409 }));
-    await draw();
-    await click(all("button.play.edge")[0]);
-
-    expect(q(".dtoast").textContent).toContain("Not started: pool runs/main is full");
+    expect(host.querySelector("#kbm")).toBeNull();
   });
 });
 
@@ -337,7 +323,7 @@ describe("a row's step strip for a wide fan", () => {
     const fan = (n: number) => Array.from({ length: n }, (_, i) => step(`apply_${i}`, ["classify"]));
     for (const width of [10, 3]) {
       const steps = [step("validate"), step("classify", ["validate"]), ...fan(width), step("verify", fan(width).map((s) => s.name))];
-      await draw({ ...data, dags: [dag("runs/apply", "succeeded", { steps })], domains: [{ name: "Ops", dags: [{ name: "runs/apply", runSafe: false }] }] });
+      await draw({ ...data, dags: [dag("runs/apply", "succeeded", { steps })], domains: [{ name: "Ops", dags: [{ name: "runs/apply" }] }] });
       const rings = all("svg.dstrip g.step circle.ring").map((c) => ({ x: +c.getAttribute("cx")!, y: +c.getAttribute("cy")!, r: +c.getAttribute("r")! }));
       expect(rings).toHaveLength(steps.length);
       for (const [i, a] of rings.entries()) for (const b of rings.slice(i + 1)) expect(Math.hypot(a.x - b.x, a.y - b.y), `${width}-wide fan`).toBeGreaterThanOrEqual(a.r + b.r + 1);

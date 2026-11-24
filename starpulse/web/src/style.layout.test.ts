@@ -93,6 +93,11 @@ describe("the Jobs view at a larger text size", () => {
     expect(css).toContain("svg.dstrip:not(.big) { height: calc(20px * var(--fs)); }");
     expect(css).toMatch(/\.orb \{[^}]*width: calc\(20px \* var\(--fs\)\); height: calc\(20px \* var\(--fs\)\)/);
   });
+
+  it("caps the runner link at a third of the row and lets its label wrap, so a name keeps its room on a phone at 150%", () => {
+    expect(css).toContain("--lw: min(calc(132px * var(--fs)), 34%)");
+    expect(/#dg a\.runin\.edge \{[^}]*white-space: nowrap/.test(css)).toBe(false);
+  });
 });
 
 describe("the Jobs view at rest", () => {

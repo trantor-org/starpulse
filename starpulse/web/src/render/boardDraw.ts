@@ -433,7 +433,6 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
           cx.stroke();
           text(fan.text, bx + bw / 2, by + 0.5 / dc.K, 10.5 / dc.K, bc, "center", 500);
         }
-        if (s.runnable) circle(s.x, s.y, s.br, rgba(token("ink"), 0.35), 1, [2, 3]);
         for (const age of dagRings(io.moves.flare[s.name], io.T)) pulse(s.x, s.y, s.br, age, ACT, 38); // each run ending rings its DAG
       }
     }

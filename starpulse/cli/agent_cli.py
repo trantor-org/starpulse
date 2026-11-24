@@ -15,7 +15,6 @@
     starpulse task restore PROJ-45
     starpulse task retire PROJ-45
     starpulse task retired PROJ-45
-    starpulse task import-retired "retired/PROJ-3 - Old.md"
     starpulse task cold-done
     starpulse task complete PROJ-45
     starpulse task checkpoint-ac PROJ-45 2 "pytest exits 0"
@@ -31,7 +30,6 @@
     starpulse doc archive <doc>
     starpulse doc restore <doc> --folder specs
     starpulse runs list
-    starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
     starpulse doctor
     starpulse skills install --claude
@@ -56,8 +54,7 @@ token on every request.
 verbs, generated from the parser below, so a verb added here is listed with its arguments, output keys and exit codes.
 `watch` is the one verb that writes more than one document: it holds the server's event stream open and writes one JSON
 line, `{"event": "task|move|pulls|claim|dags", "data": {...}}`, per change that `--machine` and `--task` leave in, until
-it is interrupted (exit 0) or the server ends the stream (an error line, exit 3). `runs start` calls the server's Run
-now path, so its LAN and `run_safe` guards apply to the agent as they do to the page.
+it is interrupted (exit 0) or the server ends the stream (an error line, exit 3).
 `task create`, `task edit` and `task profile` write a task through the server's create and edit routes, as the Kanban page
 does. `task edit` sends every field given in one write, which the server refuses whole (exit 1) when any field it
 changes is no longer the value the edit was based on: that value is `--base`, the JSON object of values the caller read
@@ -72,8 +69,7 @@ records the MISS verdict naming it in one call, refused part-way leaving neither
 file name is taken (exit 1), and returns a retired task the same way;
 `task retire` takes a finished task (Done, completed or archived) off the board into the server's history store, kept
 byte-for-byte, refusing an open task or a number kept with other text (exit 1); `task retired` reads every retired task,
-or the one named, each with its file name and text; `task import-retired` keeps each retired task file a client held in
-the history store, accepting the same file again, so a run a refusal stopped (exit 1) can be given the same files again;
+or the one named, each with its file name and text;
 `task complete` moves a Done task to the board's completed tasks and refuses one that is not Done (exit 1);
 `task checkpoint-ac` checks one Acceptance Criterion and records its evidence as the comment `Verified AC #N: <evidence>`
 in one write, refusing a criterion the task lacks (exit 1) without writing. A board that cannot do one answers exit 3.
@@ -251,30 +247,10 @@ def _runs(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
                 "started_at": dag["startedAt"],
                 "finished_at": dag["finishedAt"],
             }
-            for dag in listing["dags"]
+            for dag in listing["items"]
         ],
         "error": listing["error"],
     }
-
-
-def _run_start(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Start a workflow through the server's Run now path: its run id, or why the server's guards refused it."""
-    base = agent_wire.server_url(args.server, environ)
-    if "/" not in args.workflow:
-        raise agent_wire.CliError(
-            "usage", f"name the workflow as <instance>/<workflow>, as `runs list` shows it: {args.workflow}"
-        )
-    path = f"/api/run/{urllib.parse.quote(args.workflow, safe='/')}"
-    status, reply = agent_wire.post(base, path, {})
-    message = reply.get("error") or f"{base} answered {status} for {path}: is it a StarPulse server?"
-    if status == 200 and "runId" in reply:
-        return {"workflow": args.workflow, "run_id": reply["runId"]}
-    if status == 403:
-        raise agent_wire.CliError("refused", message)
-    if status == 404 and "error" in reply:
-        # The server gives both 404s as text only: an instance with no start, else a workflow outside its `run_safe`.
-        raise agent_wire.CliError("unavailable" if message.startswith("no adapter can start") else "not_found", message)
-    raise agent_wire.CliError("unavailable", f"{base}: {message}")
 
 
 def _frames(base: str) -> Iterator[tuple[str, Any]]:
@@ -979,15 +955,6 @@ def _parser() -> argparse.ArgumentParser:
         ("tasks",),
         (0, 3),
     )
-    import_retired = leaf(
-        task_verbs,
-        "import-retired",
-        "keep retired task files a client held in the history store; the same file again is accepted",
-        _in_tasks("task_import_retired"),
-        ("tasks",),
-        (0, 1, 2, 3),
-    )
-    import_retired.add_argument("files", nargs="+", help="each retired task's file (`retired/PROJ-3 - Old.md`)")
     complete = leaf(
         task_verbs,
         "complete",
@@ -1220,15 +1187,6 @@ def _parser() -> argparse.ArgumentParser:
         ("runs", "error"),
         (0, 2, 3),
     )
-    start = leaf(
-        runs_verbs,
-        "start",
-        "start a run-safe workflow through the server's Run now path and return its run id",
-        _run_start,
-        ("workflow", "run_id"),
-        (0, 1, 2, 3, 4),
-    )
-    start.add_argument("workflow", help="the workflow as `runs list` names it (`prod/nightly`)")
     watch = leaf(
         verbs,
         "watch",

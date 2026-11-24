@@ -15,9 +15,9 @@ The `starpulse.board.Board` the server holds says:
 - a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may list the
   `writers` the machine declares per event), an `assign` for assignee changes, a `read`, `edit` and `archive` for the
   full task record and guarded edits and archives, a `restore(task)` that returns an archived or retired task's file to
-  the board's tasks unchanged (`PUT /api/tasks/{id}` with `archived: false`), a `retire(task)`, `retired(task)` and `import_retired(name, text)`
+  the board's tasks unchanged (`PUT /api/tasks/{id}` with `archived: false`), a `retire(task)` and `retired(task)`
   that keep a finished task's file in the history store instead (`POST /api/retire`,
-  `GET /api/retired[?task=<id>][&fields=dependencies]`, `POST /api/retired/import`), a `complete(task)` that moves a
+  `GET /api/retired[?task=<id>][&fields=dependencies]`), a `complete(task)` that moves a
   Done task out of the lanes (to `completed/`, where `read` and `edit` still find it), and a `create(title, details)`
   that makes a task whole, in one write, in the board's starting lane or the lane a `status` detail names, with the
   details the page filled (description, priority, impact, urgency, labels, milestone, assignee, dependencies,

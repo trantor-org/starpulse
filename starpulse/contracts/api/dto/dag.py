@@ -13,6 +13,7 @@ class DagBody(_Api):
     status: RunStatus
     raw: str | None = Field(default=None, description="The engine's own status when it differs from `status`.")
     runId: str
+    startUrl: str = Field(description="The runner's own start page for the workflow; empty when its runner has none.")
     startedAt: str
     finishedAt: str
     steps: list[Step]
@@ -37,16 +38,17 @@ class DagBody(_Api):
     pool: str | None = Field(default=None, description="The name of the pool the workflow runs on; empty when none.")
 
 
-class Runs(_Api):
-    """`GET /api/runs`: every runs workflow as the snapshot lists it, and the error a runs instance reported."""
+class Jobs(_Api):
+    """`POST /api/jobs`: every runs workflow as the snapshot lists it, and the error a runs instance reported, with the
+    stream position the list was read at: a `jobChanges` subscription from it carries every change after."""
 
-    dags: list[DagBody]
+    position: int
+    items: list[DagBody]
     error: str | None
 
 
 class DomainDag(_Api):
     name: str
-    runSafe: bool
 
 
 class DomainProcess(_Api):
@@ -57,7 +59,7 @@ class DomainProcess(_Api):
 
 
 class Domain(_Api):
-    """A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured."""
+    """A domain's DAGs; `processes` package them when configured."""
 
     name: str
     dags: list[DomainDag]

@@ -154,15 +154,24 @@ class Streams:
     def task_changes(self, request: Request, position: int, render: Callable[[dict], str]) -> Response:
         """The task changes after stream `position`, each as a `next` event of `render`'s text; a 410 whose error code is
         `REREAD` when the store no longer holds the deltas after `position`."""
+        return self._changes(
+            request, position, "the task list", lambda name, data: self._task_change(render, name, data)
+        )
 
+    def job_changes(self, request: Request, position: int, render: Callable[[dict], str]) -> Response:
+        """`task_changes` for the jobs: a `next` event of `render`'s text for each change of the workflows."""
+        return self._changes(request, position, "the jobs", lambda name, data: self._job_change(render, name, data))
+
+    def _changes(
+        self, request: Request, position: int, what: str, frames: Callable[[str, dict], Iterator[bytes]]
+    ) -> Response:
         def open_stream() -> Stream | Response:
             if (attached := self._snapshots.watch_from(position)) is None:
-                message = f"stream position {position} is no longer held: read the task list again"
+                message = f"stream position {position} is no longer held: read {what} again"
                 gone = {"errors": [{"message": message, "extensions": {"code": "REREAD"}}]}
                 return answer(request, encode("graphql", gone), 410)
             missed, changes = attached
-            frames = self._deltas(missed, changes, lambda name, data: self._task_change(render, name, data))
-            return Stream(frames, lambda: self._snapshots.unsubscribe(changes))
+            return Stream(self._deltas(missed, changes, frames), lambda: self._snapshots.unsubscribe(changes))
 
         return self._admitted(request, open_stream)
 
@@ -243,6 +252,11 @@ class Streams:
             yield _frame("next", render({**change, "settled": settled and {"id": data["id"], **settled}}))
         elif name == "move":
             yield _frame("next", render({"id": data["id"], "machine": data["machine"], "machineTask": data["agent"]}))
+
+    @staticmethod
+    def _job_change(render: Callable[[dict], str], name: str, data: dict) -> Iterator[bytes]:
+        if name == "dags":
+            yield _frame("next", render({"jobs": data["dags"], "error": data["error"]}))
 
     def _event(self, name: str, data: dict) -> Iterator[bytes]:
         if name in EVENTS:

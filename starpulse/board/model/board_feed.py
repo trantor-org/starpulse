@@ -8,7 +8,7 @@ the event log (`machine_tasks`), and each runs adapter instance's workflows from
 import queue
 import threading
 import time
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.commit_keys import CommitKeys
@@ -66,10 +66,10 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
     falls between the two. A machine's task whose latest move is older than `window_s` seconds
     (None: never) is left out of a snapshot. `board_url` is the tracker's address the page links tasks
     to (None: no links). `machines` are the machines the page draws, the Board's as `board` (None: a Board of
-    Backlog.md's default statuses alone), and `cues` the board adapter's workflow cues. `domains` and `run_safe`
-    are the config's, each workflow as `<instance>/<workflow>`. `source` names what the Board is read from, for the
+    Backlog.md's default statuses alone), and `cues` the board adapter's workflow cues. `domains`
+    is the config's, each workflow as `<instance>/<workflow>`. `source` names what the Board is read from, for the
     page to show until the board adapter has read it. `commit` is each runs instance's `[runs.commit]` keys, by instance
-    name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain. `dashboards` is each instance's Grafana dashboard URL, by instance name.
+    name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain. `dashboards` is each instance's Grafana dashboard URL, by instance name. `start_urls` is each instance's runner start page, by instance name: each of its jobs carries it.
     """
 
     def __init__(
@@ -80,12 +80,12 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         board_url: str | None = None,
         machines: Mapping[str, dict] | None = None,
         domains: Mapping[str, Sequence[str]] | None = None,
-        run_safe: Collection[str] = (),
         cues: Sequence[dict] = (),
         source: str = "the board",
         capabilities: Mapping[str, bool] | None = None,
         commit: Mapping[str, CommitKeys] | None = None,
         dashboards: Mapping[str, str] | None = None,
+        start_urls: Mapping[str, str] | None = None,
         processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
         clock: Callable[[], float] = time.time,
         roles: StateRoles | None = None,
@@ -127,7 +127,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._keys = keys
         self._domains = domains or {}
         self._processes = processes or {}
-        self._run_safe = run_safe
         self._cues = cues
         self._source = source
         self._drawn = machines if machines is not None else {"board": board_machine(DEFAULT_STATUSES)}
@@ -142,6 +141,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._board_url = board_url
         self._commit = commit or {}
         self._dashboards = dashboards or {}
+        self._start_urls = start_urls or {}
         self._ties = self._tied_to_events(cues)
         qualify = qualifier(self._domains)
         #: How a failure of each workflow a machine event cues resolves, by `(event, workflow)`; any other resolves on its next success.
@@ -170,8 +170,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._aliases: dict[str, str] = {}
         self._dags: dict[str, list] = {}
         self._pools: dict[str, list] = {}
-        #: The workflows each instance's adapter reported it can start; an instance not here can start all it has.
-        self._startable: dict[str, frozenset[str]] = {}
         self._runs_errors: dict[str, str] = {}
         self._pulls: dict[str, list[dict]] = {}
         #: What the pull request projection kept (`PullRequests.answers`), saved so a restart reads warm.

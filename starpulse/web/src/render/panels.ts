@@ -1,5 +1,4 @@
 // The click panel's content. The renderer owns when it opens; it floats over the level and never refits it.
-import { apiFetch } from "../api/apiFetch";
 import { queryString } from "../shared/nav";
 import type { FanRow, QueueRow } from "../features/fanout/fan";
 import type { Sky } from "./sky";
@@ -7,20 +6,12 @@ import type { RawTask } from "../api";
 
 export const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-const NOT_STARTED = "Not started: ";
-/** The reason a `startRun` line gives for a run that did not start, or null when it started. */
-export const refused = (line: string) => (line.startsWith(NOT_STARTED) ? line.slice(NOT_STARTED.length) : null);
-
-/** Start a run-safe DAG through the server's run endpoint: the line the panel shows once it answers. */
-export async function startRun(dag: string, post: (url: string, init?: RequestInit) => Promise<Response> = apiFetch): Promise<string> {
-  try {
-    const resp = await post(`/api/run/${dag.split("/").map(encodeURIComponent).join("/")}`, { method: "POST" });
-    const body = await resp.json();
-    return resp.ok ? `Started run ${body.runId}.` : `${NOT_STARTED}${body.error}`;
-  } catch (e) {
-    return `${NOT_STARTED}${e instanceof Error ? e.message : String(e)}`;
-  }
-}
+const RUNNERS: Record<string, string> = { temporal: "Temporal", github: "GitHub", woodpecker: "Woodpecker" };
+/** The runner a DAG name's instance prefix names, as the `Run in …` links say it. */
+export const runner = (name: string) => {
+  const instance = name.split("/")[0];
+  return RUNNERS[instance] ?? instance.charAt(0).toUpperCase() + instance.slice(1);
+};
 
 const link = (href: string, text: string) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(text)}</a>`;
 

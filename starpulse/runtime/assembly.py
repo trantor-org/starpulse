@@ -4,7 +4,7 @@ import functools
 import logging
 import os
 import time
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -143,13 +143,11 @@ def assemble(
     config: Config,
     base: Path,
     window_s: float | None,
-    run_safe: Collection[str],
     read_model: ReadModel,
 ) -> tuple[Board, BoardFeed]:
     """The board the config's `[board]` adapter builds, and the feed that draws it from `read_model`; `base` is the config's directory.
 
-    A task whose latest move on a machine is older than `window_s` seconds (None: never) is not drawn there, and Run
-    now is drawn on the `run_safe` workflows.
+    A task whose latest move on a machine is older than `window_s` seconds (None: never) is not drawn there.
     """
     board, machines, domains, rows = declared(config, base)
     qualify = qualifier(domains)
@@ -163,12 +161,12 @@ def assemble(
         roles=board.roles,
         domains=domains,
         processes=config.qualified_processes(),
-        run_safe=run_safe,
         cues=board.cues(qualify),
         source=board.source,
         capabilities={"edit": native_board, "archive": native_board, "create": native_board},
         commit={instance.name: instance.commit for instance in config.runs if instance.commit},
         dashboards={instance.name: instance.dashboard for instance in config.runs if instance.dashboard},
+        start_urls={instance.name: instance.start_url for instance in config.runs if instance.start_url},
         standing=board.standing,
         readable=board.readable,
         activity=_holder_activity(config),
@@ -202,7 +200,7 @@ def scheduler_board(config: Config, base: Path, log: EventLog, stop: StopEvent) 
 def _read_model_board(config: Config, base: Path, log: EventLog) -> tuple[Board, BoardFeed, ReadModel]:
     """The assembled board and feed over the read model, attached to `log` and ready, with no follower started."""
     model = ReadModel(log.engine, declared_fields(config.board))
-    board, feed = assemble(config, base, None, [], model)
+    board, feed = assemble(config, base, None, model)
     # The read model folds only History events, so this worker's writes (the task actor's moves) must append them.
     board.attach(log)
     feed.ready.set()

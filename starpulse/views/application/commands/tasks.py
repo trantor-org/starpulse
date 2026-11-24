@@ -30,7 +30,6 @@ from starpulse.contracts.api.dto.requests import (
     CreateSpec,
     EditRequest,
     MissRequest,
-    RetiredImportRequest,
     RetireRequest,
     TaskDeleteRequest,
     TaskPutRequest,
@@ -332,18 +331,6 @@ def retired_page(board: Board, limit: str, before: str) -> tuple[int, dict[str, 
     except ValueError:
         return 400, {"error": f"retired takes a ?limit= from 1 to {RETIRED_PAGE_LIMIT} and the ?before= of a previous page's next"}
     return 200, {"tasks": rows, "next": following}
-
-
-@with_request(RetiredImportRequest, "Importing a retired task")
-def import_retired(request: RetiredImportRequest, board: Board) -> tuple[int, dict[str, Any]]:
-    """Keep the retired task file `request` holds, {name, text}, in the board's history store through its
-    `import_retired`: the HTTP status and JSON body, which holds the task's id. The same file again is accepted; the
-    writer's refusal (no id, a task on the board, other text under the kept number) answers 409."""
-    name, text = request.name, request.text
-    written = board.import_retired(name, text)
-    if not written.ok:
-        return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"task": written.output}
 
 
 def _create_details(request: CreateSpec) -> dict[str, Any]:

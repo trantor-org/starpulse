@@ -2,8 +2,8 @@
 
 `starpulse worker runs` and each adapter's own worker run the adapters, so `serve` never sees what they report directly. A `Publisher` stands in the
 adapters' sink: it keeps what each instance last reported as its own entry of one worker state, which another process's
-`Publisher` never overwrites, and `serve` applies that state to its feed (`Projected`) as the page's workflows, pools and
-startable workflows when its version moves. A new `serve` or worker process reads the state, so neither restart blanks
+`Publisher` never overwrites, and `serve` applies that state to its feed (`Projected`) as the page's workflows and pools
+when its version moves. A new `serve` or worker process reads the state, so neither restart blanks
 the page.
 """
 
@@ -50,17 +50,15 @@ class Publisher:
         dags: list | None,
         error: str | None,
         pools: list | None,
-        startable: list | None,
     ) -> None:
-        """Merge a report into the instance's kept one (None keeps the last dags, pools and startable) and write it
+        """Merge a report into the instance's kept one (None keeps the last dags and pools) and write it
         when it changed. A log that cannot be written is tried again on the next report."""
         with self._lock:
-            last = self._kept.get(instance, {"dags": [], "pools": [], "startable": None})
+            last = self._kept.get(instance, {"dags": [], "pools": []})
             kept = {
                 "dags": last["dags"] if dags is None else dags,
                 "error": error,
                 "pools": last["pools"] if pools is None else pools,
-                "startable": last["startable"] if startable is None else sorted(startable),
             }
             if kept != last:
                 try:
@@ -96,9 +94,8 @@ class _Sink:
         dags: list | None,
         error: str | None,
         pools: list | None = None,
-        startable: list[str] | None = None,
     ) -> None:
-        self._publisher.report(self._instance, dags, error, pools, startable)
+        self._publisher.report(self._instance, dags, error, pools)
 
 
 class Projected:
@@ -145,10 +142,9 @@ class Projected:
                     self._current(instance, report["dags"]),
                     report.get("error") or down,
                     report.get("pools"),
-                    report.get("startable"),
                 )
         for instance in self._watched.keys() - reports.keys():
-            self._feed.set_dags(instance, [], self._down(instance), None, None)
+            self._feed.set_dags(instance, [], self._down(instance), None)
 
     def _current(self, instance: str, dags: list) -> list:
         """The kept workflows, or none when they predate the contract: a body the page's model refuses is a 500 on

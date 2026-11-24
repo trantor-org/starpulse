@@ -7,7 +7,7 @@ import { Dags } from "./Dags";
 import type { Dag, Machine } from "../../api";
 
 const dag = (name: string): Dag => ({
-  name, status: "succeeded", runId: "", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, rerun: null, pool: "runs/main",
+  name, status: "succeeded", runId: "", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, rerun: null, startUrl: "", pool: "runs/main",
   steps: [{ name: "scan", depends: [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] }],
 });
 const state = (id: string, name: string) => ({ id, name, initial: false, final: false });
@@ -21,7 +21,7 @@ const board: Machine = {
 const data: DagData = {
   now: 3600, facts: {}, dashboards: {},
   dags: [dag("runs/pr-watch"), dag("runs/sweeper"), dag("runs/triage"), dag("runs/cued")],
-  domains: [{ name: "Board", dags: ["runs/pr-watch", "runs/sweeper", "runs/triage", "runs/cued"].map((name) => ({ name, runSafe: false })) }],
+  domains: [{ name: "Board", dags: ["runs/pr-watch", "runs/sweeper", "runs/triage", "runs/cued"].map((name) => ({ name })) }],
   pools: [{ name: "runs/main", cap: 2, running: 0, queued: 0 }],
   cues: [{ dag: "runs/pr-watch", event: "task_ready", state: "ready", on: "a push to main" }, { dag: "runs/cued", event: "ghost", state: "ready", on: "never" }],
   flows: [{ name: "board", machine: board }],

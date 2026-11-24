@@ -264,11 +264,6 @@ def read(url: str) -> list[dict]:
     return Poller(Unreported(), get, url).listing()
 
 
-def start(url: str) -> None:
-    """No start capability: the page never triggers a pipeline, so a workflow has no Run now."""
-    return
-
-
 def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:
     """Show the pipelines of the repository at `url` on `runs`: listed once now, then again for each `runs:resync` entry
     naming the instance (`follow_resync`), which a commit status Woodpecker posts writes (`runs.adapters.inbound.status_resync`)."""

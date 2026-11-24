@@ -12,7 +12,6 @@ import { begin, ease as easeScroll, fail, newScroll, place, receive, take, wants
 import { fetchLedger } from "../features/level/ledgerPage";
 import { inView } from "../features/level/ledgerStrip";
 import { drawStrip } from "../features/level/ledgerStripDraw";
-import { rerunLine, type RerunStore } from "../features/level/rerun";
 import type { AdminPrefs } from "../features/admin/adminPrefs";
 import { token } from "./palette";
 import { ACT, DAG_COLOR, LABEL, MUTED, easeO, rgba, type Drawing, type DrawCtx } from "./draw";
@@ -32,7 +31,6 @@ export interface FoldIO {
   readonly moves: Moves;
   readonly hotEdge: Set<string>;
   readonly contract: Contract;
-  readonly rerunStore: RerunStore;
   hhmm(sec: number): string;
   prefs(): AdminPrefs;
   heldRows(): readonly LedgerRow[];
@@ -272,7 +270,7 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
       scrollHits = drawRows(rowInk, {
         led, glyphs: Object.fromEntries(led.cols.map((c) => [c.dag, sc.stars[c.dag].glyph])), ctx: { event: led.event, now: io.T, hm: io.hhmm, by: (k) => byKey.get(k) },
         optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(scroll.rows, c.dag)])), px: labPx, palette: LEDGER_PALETTE, clock: dc.clock, age, scroll: scroll,
-        lit: dc.hover?.kind === "lrow" ? dc.hover.o.key : io.openRow()?.key, pins: pins, rerunning: rerunLine(io.rerunStore.state.started, io.S?.dags ?? [], io.T),
+        lit: dc.hover?.kind === "lrow" ? dc.hover.o.key : io.openRow()?.key, pins: pins,
         title: (id) => io.S?.settled[id]?.title ?? io.S?.board.agents.find((a) => a.id === id)?.title ?? (io.S ? titles.of(id) : undefined),
       });
       if (io.S?.mergeStrip) {

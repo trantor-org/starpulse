@@ -5,7 +5,7 @@ board adapter (`starpulse.board.model.seam`); this module holds the shape of eac
 """
 
 import dataclasses
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 __all__ = ["Qualify", "describe", "is_workflow", "qualifier", "writers"]
@@ -78,19 +78,17 @@ def is_workflow(actor: str) -> bool:
 
 def declared(
     domains: Mapping[str, Sequence[str]] | None = None,
-    run_safe: Collection[str] = (),
     cues: Sequence[dict] = (),
     processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
 ) -> dict:
-    """The workflow relationships the page draws: the board adapter's cues, and the config's domains with each
-    workflow flagged when `run_safe` holds it.
+    """The workflow relationships the page draws: the board adapter's cues, and the config's domains.
 
-    `domains` and `run_safe` name workflows as `<instance>/<workflow>`, and so does each cue's `dag`.
+    `domains` names workflows as `<instance>/<workflow>`, and so does each cue's `dag`.
     """
     procs = processes or {}
 
     def dags_of(names: Sequence[str]) -> list[dict]:
-        return [{"name": dag, "runSafe": dag in run_safe} for dag in names]
+        return [{"name": dag} for dag in names]
 
     return {
         "cues": list(cues),

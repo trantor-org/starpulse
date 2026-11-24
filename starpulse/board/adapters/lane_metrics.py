@@ -54,6 +54,12 @@ def start(feed: Any, board: Any, log: EventLog, stop: StopEvent, vectors: Callab
     keep()
 
 
+def held_busy(board: Any) -> Callable[[str], bool]:
+    """Whether a task is held busy: a running shell holds its settled session, or the task actor awaits an event (a CI
+    result, a merge) that wakes it, so a quiet session there is no idle one."""
+    return lambda task: bool({"busy", "awaited"} & ((board.read(task) or {}).get("actorMemory") or {}).keys())
+
+
 def monitor(
     feed: Any,
     board: Any,
@@ -78,7 +84,7 @@ def monitor(
         sessions=sessions,
         done=feed.roles.done,
         types=types,
-        busy=lambda task: "busy" in ((board.read(task) or {}).get("actorMemory") or {}),
+        busy=held_busy(board),
     )
     written: tuple[str, dict[str, Any]] | None = None
     guard = threading.Lock()  # a thread reads each stream

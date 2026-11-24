@@ -7,7 +7,7 @@
   `fields=dependencies`, unpaged.
 - `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), restores
   (`archived: false`), takes over (`interactive: true`) or parks (`park`); `DELETE /api/tasks/{id}` archives: the task writes.
-- `POST /api/move`, `start`, `verdict`, `miss`, `retire`, `retired/import`, `dispatch`, `review` and
+- `POST /api/move`, `start`, `verdict`, `miss`, `retire`, `dispatch`, `review` and
   `complete`: a task's writes by verb, each over the seams it needs.
 """
 
@@ -38,7 +38,6 @@ from starpulse.views.application.commands.tasks import (
     complete_task,
     create_task,
     delete_task,
-    import_retired,
     record_miss,
     retire_task,
     retired_list,
@@ -153,7 +152,6 @@ def routes(api: Api) -> list[ApiRoute]:
         ),
         "/miss": (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
         "/retire": (lambda client, raw: retire_task(client, raw, board), "retire"),
-        "/retired/import": (lambda client, raw: import_retired(client, raw, board), "retired_import"),
         "/dispatch": (lambda client, raw: dispatch_task(client, raw, feed, services.dispatch), "dispatch"),
         "/review": (lambda client, raw: review_task(client, raw, feed, read, edit), "review"),
         "/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),

@@ -1,6 +1,6 @@
 """The collaborators a deployment may leave unconfigured, which the request handler's routes read from one place."""
 
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -23,12 +23,6 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
 class Services:
     """What the routes use beside the Board: each field None (or empty) leaves its routes unconfigured."""
 
-    starts: Mapping[str, Callable[[str], str]] = field(default_factory=dict)
-    """What starts each workflow run, by qualified name."""
-    run_safe: Collection[str] = frozenset()
-    """The workflows the config marks run-safe, the only ones a run or rerun may name."""
-    reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None
-    """What reruns a workflow run, by qualified name."""
     harnesses: Harnesses | None = None
     start_session: Callable[..., str] | None = None
     """Starts a task's session in the harness the page picked."""

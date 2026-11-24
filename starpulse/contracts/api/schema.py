@@ -8,7 +8,7 @@ from pydantic.json_schema import GenerateJsonSchema
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.admin import AdminState
-from starpulse.contracts.api.dto.dag import Runs
+from starpulse.contracts.api.dto.dag import DagBody, Jobs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.health import MachineHistory, TaskEventHistory
@@ -32,6 +32,7 @@ from starpulse.contracts.api.dto.requests import (
     DocCreateRequest,
     DocListRequest,
     DocPutRequest,
+    JobListRequest,
     MachineCreateRequest,
     MachineListRequest,
     MachinePutRequest,
@@ -40,7 +41,6 @@ from starpulse.contracts.api.dto.requests import (
     MilestonePutRequest,
     MissRequest,
     MoveRequest,
-    RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
     StartRequest,
@@ -70,9 +70,7 @@ from starpulse.contracts.api.dto.results import (
     Reopened,
     Restored,
     Retired,
-    RetiredImported,
     Reviewed,
-    RunStarted,
     Started,
     TakenOver,
 )
@@ -123,7 +121,8 @@ class ApiContract(_Api):
     adminState: AdminState
     contractReport: ContractReport
     readyReport: ReadyReport
-    runs: Runs
+    jobs: Jobs
+    job: DagBody
     taskRecord: TaskRecord
     taskRecords: TaskRecords
     milestones: Milestones
@@ -136,7 +135,6 @@ class ApiContract(_Api):
         | StartRequest
         | MissRequest
         | RetireRequest
-        | RetiredImportRequest
         | CompleteRequest
         | DispatchRequest
         | ReviewRequest
@@ -144,6 +142,7 @@ class ApiContract(_Api):
         | TaskPutRequest
         | MilestoneCreateRequest
         | MachineCreateRequest
+        | JobListRequest
         | MachineListRequest
         | MachinePutRequest
         | MilestoneListRequest
@@ -164,7 +163,6 @@ class ApiContract(_Api):
         | Restored
         | Retired
         | TakenOver
-        | RetiredImported
         | Completed
         | Reopened
         | Dispatched
@@ -181,7 +179,6 @@ class ApiContract(_Api):
         | DocEdited
         | DocArchived
         | Started
-        | RunStarted
         | Accepted
         | ApiError
         | SkillRefusal

@@ -54,7 +54,6 @@ export interface Star extends Dag, Pt {
   glyph: Glyph;
   br: number;
   group: string;
-  runnable: boolean;
   tether?: Tether;
 }
 /** Anything tasks orbit: a Board state, a state level's sun, or a lifecycle machine. */
@@ -774,7 +773,7 @@ export const turnPage = (pager: Pager) => (pager.page + pager.d + pager.pages) %
 /** How far either side of the ring's bottom its two pager nodes sit: clear of each other's orbit, and of the lowest machine rows. */
 const pagerDx = (ring: number, orbit: number) => Math.max(0.3 * ring, orbit + 3);
 
-const stub = (name: string): Dag => ({ name, status: "not_started", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
+const stub = (name: string): Dag => ({ name, status: "not_started", runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [] });
 
 /** Lay a level out for a W x H canvas. */
 export function build(ctx: Ctx, l: Level): Scene {
@@ -797,7 +796,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   const labelOf = (name: string) => (bareCount.get(bare(name)) === 1 ? bare(name) : name);
   const star = (name: string, x: number, y: number): Star => {
     const d = dagBy[name] || stub(name), g = glyph(d);
-    return { ...d, label: labelOf(name), x, y, glyph: g, br: g.br, group: S.dagGroup[name] || "", runnable: S.runnable.has(name) };
+    return { ...d, label: labelOf(name), x, y, glyph: g, br: g.br, group: S.dagGroup[name] || "" };
   };
   // lay DAG glyphs side by side, centred on cx, so wide step graphs never overlap their neighbours
   const row = (names: string[], cx: number, y: number, gap = 26) => {

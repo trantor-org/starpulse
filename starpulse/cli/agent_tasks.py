@@ -704,18 +704,6 @@ def task_cold_done(args: argparse.Namespace, environ: Mapping[str, str]) -> dict
     return {"tasks": list(_cold_done(agent_wire.server_url(args.server, environ)))}
 
 
-def task_import_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/retired/import"
-    files = [Path(file) for file in args.files]
-    if unreadable := [str(file) for file in files if not file.is_file()]:
-        raise agent_wire.CliError("usage", f"no such file: {', '.join(unreadable)}")
-    tasks = []
-    for file in files:  # the bytes as kept: read_text would turn a CRLF file's line ends into LF
-        status, reply = agent_wire.post(base, path, {"name": file.name, "text": file.read_bytes().decode()})
-        tasks.append(record_call(base, path, status, reply, noun="retired task")["task"])
-    return {"tasks": tasks}
-
-
 def task_complete(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = agent_wire.server_url(args.server, environ), "/api/complete"
     status, reply = agent_wire.post(base, path, {"task": args.task})

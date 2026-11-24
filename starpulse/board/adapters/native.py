@@ -31,7 +31,7 @@ import yaml
 from sqlalchemy import and_, delete, func, insert, or_, select
 from sqlalchemy.engine import Engine
 
-from starpulse.board.adapters import native_docs, native_milestones
+from starpulse.board.adapters import native_docs, native_milestones, qa_verdicts
 from starpulse.board.adapters.holder_idle import UNREACHABLE_EXIT, HolderUnreachable
 from starpulse.board.adapters.native_lookup import _SETTLED_NS, _aliases, _find, _stamp
 from starpulse.board.adapters.native_scan import (
@@ -67,7 +67,6 @@ from starpulse.board.model.seam import (
     TASK_ACTOR,
     Board,
     MoveWriter,
-    RetiredImporter,
     RetiredReader,
     TaskArchiver,
     TaskCompleter,
@@ -1394,24 +1393,6 @@ def _retired_reader(retired: _Retired) -> RetiredReader:
     return read
 
 
-def _importer(root: Path, retired: _Retired) -> RetiredImporter:
-    """A board writer that keeps a task file another client retired, `name` and `text`, among `retired`."""
-
-    def import_retired(name: str, text: str, /) -> Written:
-        if Path(name).name != name or not name.endswith(".md"):
-            return Written(False, f"{name!r} is not a plain task file name")
-        frontmatter, _ = _split(text)
-        if not (task := str(frontmatter.get("id") or "").strip() if isinstance(frontmatter, dict) else ""):
-            return Written(False, f"{name} names no task id in its front matter")
-        if _find(root, task, _RETIRABLE) is not None:
-            return Written(False, f"{task} is on the board")
-        if refused := retired.keep(task, name, text):
-            return Written(False, refused)
-        return Written(True, task)
-
-    return import_retired
-
-
 def _restorer(
     root: Path,
     retired: _Retired,
@@ -1910,6 +1891,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         warn_actors=_warn_actors(settings),
         graph=lambda: view.graph() if view.attached else files_graph(),
         matrix=profile_matrix(rows),
+        qa_lenses=qa_verdicts.lenses_of(lambda: retired.engine, base),
     )
 
     def assign(task: str, profile: str, /, actor: str = OPERATOR) -> Written:
@@ -1952,7 +1934,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "retired": _retired_reader(retired),
             "retired_projected": retired.projected,
             "retired_page": retired.page,
-            "import_retired": _importer(root, retired),
             "read_doc": native_docs.reader(root),
             "create_doc": native_docs.creator(root),
             "edit_doc": native_docs.editor(root),

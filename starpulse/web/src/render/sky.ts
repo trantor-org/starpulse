@@ -46,7 +46,6 @@ export interface Sky {
   cues: Cue[];
   groups: Group[];
   dagGroup: Record<string, string>;
-  runnable: Set<string>;
   boardUrl: string | null;
   /** The Grafana dashboard of each runs instance that has one, by instance name. */
   dashboards: Record<string, string>;
@@ -190,7 +189,6 @@ export function merge(raw: Snapshot, since = midnight()): Sky {
     cues: snap.cues ?? [],
     groups,
     dagGroup: Object.fromEntries(groups.flatMap((g) => g.dags.map((d) => [d, g.name]))),
-    runnable: new Set((snap.domains ?? []).flatMap((d) => d.dags.filter((x) => x.runSafe).map((x) => x.name))),
     boardUrl: snap.boardUrl ?? null,
     dashboards: snap.dashboards ?? {},
     roles: snap.roles ?? {},

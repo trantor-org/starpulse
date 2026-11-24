@@ -1607,6 +1607,10 @@
           },
           "type": "array"
         },
+        "startUrl": {
+          "description": "The runner's own start page for the workflow; empty when its runner has none.",
+          "type": "string"
+        },
         "startedAt": {
           "type": "string"
         },
@@ -1644,6 +1648,7 @@
         "name",
         "status",
         "runId",
+        "startUrl",
         "startedAt",
         "finishedAt",
         "steps",
@@ -2232,7 +2237,7 @@
       "type": "object"
     },
     "Domain": {
-      "description": "A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured.",
+      "description": "A domain's DAGs; `processes` package them when configured.",
       "properties": {
         "dags": {
           "items": {
@@ -2261,14 +2266,10 @@
       "properties": {
         "name": {
           "type": "string"
-        },
-        "runSafe": {
-          "type": "boolean"
         }
       },
       "required": [
-        "name",
-        "runSafe"
+        "name"
       ],
       "title": "DomainDag",
       "type": "object"
@@ -2927,6 +2928,44 @@
         "states"
       ],
       "title": "HeldSkill",
+      "type": "object"
+    },
+    "JobListRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/jobs`: list the workflows the runs adapters report. It takes no field.",
+      "properties": {},
+      "title": "JobListRequest",
+      "type": "object"
+    },
+    "Jobs": {
+      "description": "`POST /api/jobs`: every runs workflow as the snapshot lists it, and the error a runs instance reported, with the\nstream position the list was read at: a `jobChanges` subscription from it carries every change after.",
+      "properties": {
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/DagBody"
+          },
+          "type": "array"
+        },
+        "position": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "position",
+        "items",
+        "error"
+      ],
+      "title": "Jobs",
       "type": "object"
     },
     "Judged": {
@@ -5664,36 +5703,6 @@
       "title": "RetiredDependencies",
       "type": "object"
     },
-    "RetiredImportRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/retired/import`: keep the retired task file `name`, holding `text`, in the history store.",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "text"
-      ],
-      "title": "RetiredImportRequest",
-      "type": "object"
-    },
-    "RetiredImported": {
-      "properties": {
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task"
-      ],
-      "title": "RetiredImported",
-      "type": "object"
-    },
     "RetiredTask": {
       "description": "A retired task as the board's history store keeps it: its id, its file name and the file's text, byte-for-byte.",
       "properties": {
@@ -6074,18 +6083,6 @@
       "title": "RunLoop",
       "type": "object"
     },
-    "RunStarted": {
-      "properties": {
-        "runId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "runId"
-      ],
-      "title": "RunStarted",
-      "type": "object"
-    },
     "RunStats": {
       "additionalProperties": false,
       "description": "A DAG's runs over the last seven days.",
@@ -6144,33 +6141,6 @@
         "failureShare"
       ],
       "title": "RunStats",
-      "type": "object"
-    },
-    "Runs": {
-      "description": "`GET /api/runs`: every runs workflow as the snapshot lists it, and the error a runs instance reported.",
-      "properties": {
-        "dags": {
-          "items": {
-            "$ref": "#/$defs/DagBody"
-          },
-          "type": "array"
-        },
-        "error": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "dags",
-        "error"
-      ],
-      "title": "Runs",
       "type": "object"
     },
     "SavedBg": {
@@ -8436,9 +8406,6 @@
             "$ref": "#/$defs/TakenOver"
           },
           {
-            "$ref": "#/$defs/RetiredImported"
-          },
-          {
             "$ref": "#/$defs/Completed"
           },
           {
@@ -8485,9 +8452,6 @@
           },
           {
             "$ref": "#/$defs/Started"
-          },
-          {
-            "$ref": "#/$defs/RunStarted"
           },
           {
             "$ref": "#/$defs/Accepted"
@@ -8560,6 +8524,12 @@
     "harnesses": {
       "$ref": "#/$defs/Harnesses"
     },
+    "job": {
+      "$ref": "#/$defs/DagBody"
+    },
+    "jobs": {
+      "$ref": "#/$defs/Jobs"
+    },
     "laneHistory": {
       "$ref": "#/$defs/LaneHistory"
     },
@@ -8597,9 +8567,6 @@
             "$ref": "#/$defs/RetireRequest"
           },
           {
-            "$ref": "#/$defs/RetiredImportRequest"
-          },
-          {
             "$ref": "#/$defs/CompleteRequest"
           },
           {
@@ -8619,6 +8586,9 @@
           },
           {
             "$ref": "#/$defs/MachineCreateRequest"
+          },
+          {
+            "$ref": "#/$defs/JobListRequest"
           },
           {
             "$ref": "#/$defs/MachineListRequest"
@@ -8659,9 +8629,6 @@
     },
     "retiredTasks": {
       "$ref": "#/$defs/RetiredTasks"
-    },
-    "runs": {
-      "$ref": "#/$defs/Runs"
     },
     "searchResults": {
       "$ref": "#/$defs/SearchResults"
@@ -8716,7 +8683,8 @@
     "adminState",
     "contractReport",
     "readyReport",
-    "runs",
+    "jobs",
+    "job",
     "taskRecord",
     "taskRecords",
     "milestones",

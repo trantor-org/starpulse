@@ -5,8 +5,8 @@
 the `runs` contract's `Dag` records: a running execution is an `ActiveRun` with the activity it is on, that activity's
 attempt and the failure its last attempt ended in; a closed one is a `RecentRun`, and a failed one carries the activity
 it failed on, that activity's attempt and the failure. A closed execution never changes, so its history is read once.
-`read` feeds the sweeper's `runs` kind; a start reaches the page as a `StepStarted` event its starter posts, a close as a completion callback (`POST /intake/temporal-completion`), and each asks `follow` to list the server again. `start` is None, so a workflow
-has no Run now: these workflows start from the Board's lifecycle, not from the page.
+`read` feeds the sweeper's `runs` kind; a start reaches the page as a `StepStarted` event its starter posts, a close as a completion callback (`POST /intake/temporal-completion`), and each asks `follow` to list the server again. A workflow
+is not started from the page: these workflows start from the Board's lifecycle.
 """
 
 import base64
@@ -312,11 +312,6 @@ def _failure_of(events: list[dict]) -> dict:
 def read(url: str) -> list[dict]:
     """The workflows of the server at `url`, as the sweeper's `runs` kind compares them with the projection."""
     return Poller(Unreported(), get, url).listing(datetime.now(UTC))
-
-
-def start(url: str) -> None:
-    """No start capability: these workflows start from the Board's lifecycle, so a workflow has no Run now."""
-    return
 
 
 def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = None) -> None:

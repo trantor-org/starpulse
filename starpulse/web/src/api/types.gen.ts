@@ -14,7 +14,6 @@ export interface ApiContract {
     | Restored
     | Retired
     | TakenOver
-    | RetiredImported
     | Completed
     | Reopened
     | Dispatched
@@ -31,7 +30,6 @@ export interface ApiContract {
     | DocEdited
     | DocArchived
     | Started
-    | RunStarted
     | Accepted
     | ApiError
     | SkillRefusal
@@ -48,6 +46,8 @@ export interface ApiContract {
   )[];
   graphqlResponse: GraphqlResponse;
   harnesses: Harnesses;
+  job: DagBody;
+  jobs: Jobs;
   laneHistory: LaneHistory;
   machineDetail: MachineDetail;
   machineHistory: MachineHistory;
@@ -60,7 +60,6 @@ export interface ApiContract {
     | StartRequest
     | MissRequest
     | RetireRequest
-    | RetiredImportRequest
     | CompleteRequest
     | DispatchRequest
     | ReviewRequest
@@ -68,6 +67,7 @@ export interface ApiContract {
     | TaskPutRequest
     | MilestoneCreateRequest
     | MachineCreateRequest
+    | JobListRequest
     | MachineListRequest
     | MachinePutRequest
     | MilestoneListRequest
@@ -81,7 +81,6 @@ export interface ApiContract {
   )[];
   restarting: RestartingEvent;
   retiredTasks: RetiredTasks;
-  runs: Runs;
   searchResults: SearchResults;
   snapshot: Snapshot;
   spend: Spend;
@@ -419,10 +418,6 @@ export interface TakenOver {
   task: string;
   [k: string]: unknown;
 }
-export interface RetiredImported {
-  task: string;
-  [k: string]: unknown;
-}
 export interface Completed {
   task: string;
   [k: string]: unknown;
@@ -514,10 +509,6 @@ export interface Started {
   at: number;
   task: string;
   url: string;
-  [k: string]: unknown;
-}
-export interface RunStarted {
-  runId: string;
   [k: string]: unknown;
 }
 export interface Accepted {
@@ -1028,6 +1019,10 @@ export interface DagBody {
    * The cron expressions that start the workflow; empty when it runs only when asked for.
    */
   schedule: string[];
+  /**
+   * The runner's own start page for the workflow; empty when its runner has none.
+   */
+  startUrl: string;
   startedAt: string;
   /**
    * The workflow's runs over the last seven days; None when it never ran or they are unknown.
@@ -1571,6 +1566,16 @@ export interface HarnessTier {
   [k: string]: unknown;
 }
 /**
+ * `POST /api/jobs`: every runs workflow as the snapshot lists it, and the error a runs instance reported, with the
+ * stream position the list was read at: a `jobChanges` subscription from it carries every change after.
+ */
+export interface Jobs {
+  error: string | null;
+  items: DagBody[];
+  position: number;
+  [k: string]: unknown;
+}
+/**
  * `GET /api/history?task=`: a task's lane changes, oldest first, and how many times its plan was revised after work began.
  */
 export interface LaneHistory {
@@ -1831,13 +1836,6 @@ export interface RetireRequest {
   task: string;
 }
 /**
- * `POST /api/retired/import`: keep the retired task file `name`, holding `text`, in the history store.
- */
-export interface RetiredImportRequest {
-  name: string;
-  text: string;
-}
-/**
  * `POST /api/complete`: move the Done task `task` into the board's completed tasks.
  */
 export interface CompleteRequest {
@@ -1963,6 +1961,10 @@ export interface MachineCreateRequest {
     [k: string]: unknown;
   };
 }
+/**
+ * `POST /api/jobs`: list the workflows the runs adapters report. It takes no field.
+ */
+export interface JobListRequest {}
 /**
  * `POST /api/machines`: list the machines the board draws. It takes no field.
  */
@@ -2122,14 +2124,6 @@ export interface RetiredDependencies {
   [k: string]: unknown;
 }
 /**
- * `GET /api/runs`: every runs workflow as the snapshot lists it, and the error a runs instance reported.
- */
-export interface Runs {
-  dags: DagBody[];
-  error: string | null;
-  [k: string]: unknown;
-}
-/**
  * `GET /api/search?q=&limit=&label=&finished_within_days=&before=`: the tasks holding every word of `q`, best
  * match first, each carrying every `label`, with `finished_within_days` open or finished within that many days, and
  * with `before` (a task key) of its prefix and created before it. `GET /api/search/similar` takes the same query and
@@ -2279,7 +2273,7 @@ export interface Cue {
   [k: string]: unknown;
 }
 /**
- * A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured.
+ * A domain's DAGs; `processes` package them when configured.
  */
 export interface Domain {
   dags: DomainDag[];
@@ -2289,7 +2283,6 @@ export interface Domain {
 }
 export interface DomainDag {
   name: string;
-  runSafe: boolean;
   [k: string]: unknown;
 }
 /**

@@ -20,8 +20,6 @@ export interface PanelCtx {
   steps: Record<string, readonly string[]>;
   /** The steps each DAG applies only sometimes, by DAG. */
   optional: Record<string, ReadonlySet<string>>;
-  /** The DAGs the server will start: the run-safe ones. A forced rerun of any other answers 404. */
-  runnable: ReadonlySet<string>;
   /** Colours by run state, and `waiting`. */
   palette: Record<string, string>;
   /** Epoch seconds the page draws at. */
@@ -30,8 +28,8 @@ export interface PanelCtx {
   by: (key: string) => LedgerRow | undefined;
   /** A task's link, as HTML. */
   task: (id: string) => string;
-  /** The forced reruns being asked for, and the refusals the server gave; none until the viewer asks for one. */
-  rerun?: { busy: ReadonlySet<string>; refused: Readonly<Record<string, string>> };
+  /** The page of a DAG's run on its runner, or "" when the runner gives none. */
+  runUrl: (dag: string, runId: string) => string;
 }
 
 export interface Banner {
@@ -57,17 +55,13 @@ export function failHtml(row: LedgerRow, ctx: PanelCtx, cls: string): string {
   }).join("");
 }
 
-/** A Force rerun button for each run-safe DAG whose failure on `row` is unresolved, disabled while its request is out, with the server's refusal under it; any other DAG gets the way to rerun it instead. */
-export function rerunHtml(row: LedgerRow, ctx: PanelCtx): string {
+/** An Open run link for each DAG whose failure on `row` is unresolved and whose failed run has a page on its runner, where the viewer reruns it. */
+export function openRunHtml(row: LedgerRow, ctx: PanelCtx): string {
   return ctx.ties.flatMap((tie) => {
-    if (!row.fails[tie.dag] || row.fails[tie.dag].resolved) return [];
-    if (!ctx.runnable.has(tie.dag)) return [`<div class="note">${esc(tie.dag)} is not run-safe: rerun it from its workflow runner</div>`];
-    const dag = esc(tie.dag), busy = ctx.rerun?.busy.has(tie.dag), refusal = ctx.rerun?.refused[tie.dag];
-    const button = busy ? `<button class="run" data-rerun="${dag}" disabled>↻ Rerunning ${dag}…</button>` : `<button class="run" data-rerun="${dag}">↻ Force rerun ${dag}</button>`;
-    return [button + (refusal ? `<div class="note" style="color:${ctx.palette.failed}">${esc(refusal)}</div>` : "")];
+    const f = row.fails[tie.dag], url = f && !f.resolved ? ctx.runUrl(tie.dag, f.runId) : "";
+    return url ? [`<a class="run" href="${esc(url)}" target="_blank" rel="noreferrer" title="Opens the failed run of ${esc(tie.dag)} on its runner in a new tab, where you rerun it">Open run ↗</a>`] : [];
   }).join("");
 }
-
 
 const pairing = (row: LedgerRow, run: LedgerRun) => {
   if (markOf(run) === "keyed") return `<div class="k">paired by commit: AFTER=${esc(sha7(row))}</div>`;
@@ -103,7 +97,7 @@ export function mergePanel(row: LedgerRow, ctx: PanelCtx): string {
   return `<span class="x">✕</span><div class="k">${row.applies?.length ? "pin bump" : `merge to ${esc(repo)}`} · ${esc(ctx.hm(row.at))}</div><h2>${who}</h2>
     <table><tr><td>Commit</td><td>${esc(repo)} #${row.pr?.number ?? "?"} · ${esc(sha7(row))}</td></tr>
     <tr><td>Board</td><td>${board}</td></tr>${other}${ctx.ties.map((t) => tieRow(row, t, ctx)).join("")}</table>
-    ${failHtml(row, ctx, "note")}${rerunHtml(row, ctx)}`;
+    ${failHtml(row, ctx, "note")}${openRunHtml(row, ctx)}`;
 }
 
 const MARK = { pass: "✓", warn: "⚠", fail: "✕" } as const;

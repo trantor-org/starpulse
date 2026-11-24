@@ -8,7 +8,7 @@ import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded", kind?: string): DagStep => ({ name, depends, status, kind: kind ?? null, precondition: null, lock: null, last: [] });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
-  name, status, runId: "run-abc", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, rerun: null, steps: [step("scan"), step("fix", ["scan"], "succeeded", "agent")], pool: "runs/main", ...over,
+  name, status, runId: "run-abc", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, rerun: null, startUrl: "", steps: [step("scan"), step("fix", ["scan"], "succeeded", "agent")], pool: "runs/main", ...over,
 });
 const board: Machine = {
   states: [{ id: "ready", name: "Ready", initial: false, final: false }, { id: "review", name: "Review", initial: false, final: false }],
@@ -19,15 +19,15 @@ const fan = Array.from({ length: 8 }, (_, i) => step(`check-${i}`, ["clone"]));
 const data: DagData = {
   now: 3600, facts: {}, dashboards: {},
   dags: [
-    dag("runs/pr-watch", "succeeded"),
+    dag("runs/pr-watch", "succeeded", { startUrl: "http://runner.test/pr-watch" }),
     dag("runs/triage", "failed", { steps: [step("scan"), step("fix", ["scan"], "failed")] }),
-    dag("runs/deploy", "succeeded", { runId: "", active: [{ runId: "r1", status: "running", startedAt: "1970-01-01T00:55:00Z", step: "fix", stepStartedAt: "", steps: { scan: "succeeded", fix: "running" } }] }),
+    dag("runs/deploy", "succeeded", { runId: "", startUrl: "http://runner.test/deploy", active: [{ runId: "r1", url: "http://runner.test/run/r1", status: "running", startedAt: "1970-01-01T00:55:00Z", step: "fix", stepStartedAt: "", steps: { scan: "succeeded", fix: "running" } }] }),
     dag("runs/never", "not_started", { runId: "", startedAt: "", finishedAt: "", pool: "" }),
     dag("runs/fanout", "succeeded", { steps: [step("clone"), ...fan, step("report", fan.map((s) => s.name))] }),
   ],
   domains: [
-    { name: "Board", dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/triage", runSafe: false }, { name: "runs/fanout", runSafe: true }] },
-    { name: "Ops", dags: [{ name: "runs/deploy", runSafe: true }, { name: "runs/never", runSafe: false }] },
+    { name: "Board", dags: [{ name: "runs/pr-watch" }, { name: "runs/triage" }, { name: "runs/fanout" }] },
+    { name: "Ops", dags: [{ name: "runs/deploy" }, { name: "runs/never" }] },
   ],
   pools: [{ name: "runs/main", cap: 2, running: 1, queued: 0 }],
   cues: [{ dag: "runs/pr-watch", event: "task_ready", state: "ready", on: "a push to main" }],
@@ -35,8 +35,7 @@ const data: DagData = {
 };
 
 let host: HTMLDivElement, root: Root;
-const post = vi.fn();
-const draw = async () => { await act(async () => root.render(<Dags data={data} post={post} />)); };
+const draw = async () => { await act(async () => root.render(<Dags data={data} />)); };
 const q = <T extends Element>(sel: string) => host.querySelector<T>(sel)!;
 const all = (sel: string) => [...host.querySelectorAll<HTMLElement>(sel)];
 const row = (n: string) => all("#stage .drow").find((r) => r.querySelector(".nm")!.textContent === n)!;
@@ -46,7 +45,6 @@ const cells = () => Object.fromEntries(all(".dgm table tr").map((tr) => [tr.chil
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  post.mockReset();
   // The view ticks its clock each second; a frozen interval keeps a slow run from aging the fixture's elapsed times.
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   host = document.body.appendChild(document.createElement("div"));
@@ -108,7 +106,7 @@ describe("opening a DAG's modal", () => {
     expect(xs.size).toBe(2);
   });
 
-  it("tabulates this or the last run, when it started, its run id, the pool's queue slots and Run now", async () => {
+  it("tabulates this or the last run, when it started, its run id, the pool's queue slots", async () => {
     await draw();
     await click(row("pr-watch"));
 
@@ -117,13 +115,11 @@ describe("opening a DAG's modal", () => {
     expect(cells().run).toBe("run-abc");
     expect(all(".dgm .slots i").map((i) => i.className)).toEqual(["on", ""]);
     expect(q(".dgm .slots span").textContent).toBe("main: 1 of 2 running");
-    expect(cells()["run now"]).toBe("run-safe: StarPulse may start it");
 
     await key(document, "Escape");
     await click(row("deploy"));
     expect(cells()["this run"]).toBe("fix · 5m 0s");
     expect(cells().run).toBe("r1");
-    expect(cells()["run now"]).toBe("Already running");
 
     await key(document, "Escape");
     await click(row("never"));
@@ -148,55 +144,38 @@ describe("the runner's dashboard in the modal's head", () => {
   const link = () => host.querySelector<HTMLAnchorElement>(".dgm .tvhead a");
 
   it("links the workflow's runs instance to its Grafana dashboard, and only when the instance has one", async () => {
-    await act(async () => root.render(<Dags data={{ ...data, dashboards: { runs: "http://grafana/d/runs" } }} post={post} />));
+    await act(async () => root.render(<Dags data={{ ...data, dashboards: { runs: "http://grafana/d/runs" } }} />));
     await click(row("pr-watch"));
     expect([link()?.textContent, link()?.getAttribute("href")]).toEqual(["runner dashboard ↗", "http://grafana/d/runs"]);
     await key(document, "Escape");
 
-    await act(async () => root.render(<Dags data={{ ...data, dashboards: { other: "http://grafana/d/other" } }} post={post} />));
+    await act(async () => root.render(<Dags data={{ ...data, dashboards: { other: "http://grafana/d/other" } }} />));
     await click(row("pr-watch"));
     expect(link()).toBeNull();
   });
 });
 
-describe("Run now in the modal's footer", () => {
-  it("POSTs /api/run/<instance>/<workflow> for a run-safe DAG", async () => {
-    post.mockResolvedValue(new Response(JSON.stringify({ runId: "r9" }), { status: 200 }));
-    await draw();
-    await click(row("pr-watch"));
-    const go = q<HTMLButtonElement>(".dgm .tvfoot .startbtn");
+describe("the modal's footer links to the runner", () => {
+  const foot = () => all(".dgm .tvfoot a").map((a) => [a.textContent, a.getAttribute("href")]);
 
-    expect(go.textContent).toBe("▶ Run now");
-    expect(go.disabled).toBe(false);
-    await click(go);
-    expect(post).toHaveBeenCalledWith("/api/run/runs/pr-watch", { method: "POST" });
-    expect(host.querySelector(".dgm .editrefusal")).toBeNull();
+  it("has only Run in <runner> for a job that never ran", async () => {
+    await act(async () => root.render(<Dags data={{ ...data, dags: data.dags.map((d) => (d.name === "runs/never" ? { ...d, startUrl: "http://runner.test/never" } : d)) }} />));
+    await click(row("never"));
+    expect(foot()).toEqual([["Run in Runs ↗", "http://runner.test/never"]]);
+    expect(all(".dgm .tvfoot button")).toEqual([]);
   });
 
-  it("is disabled with its reason on a running DAG and on one that is not run-safe", async () => {
+  it("adds Open run for a job with a run on its runner", async () => {
     await draw();
     await click(row("deploy"));
-    expect(q<HTMLButtonElement>(".dgm .tvfoot .startbtn").disabled).toBe(true);
-    expect(q(".dgm .tvfoot .startbtn").getAttribute("title")).toBe("Already running");
-
-    await key(document, "Escape");
-    await click(row("triage"));
-    expect(q<HTMLButtonElement>(".dgm .tvfoot .startbtn").disabled).toBe(true);
-    expect(cells()["run now"]).toMatch(/^Not run-safe/);
-    await click(q(".dgm .tvfoot .startbtn"));
-    expect(post).not.toHaveBeenCalled();
+    expect(foot()).toEqual([["Run in Runs ↗", "http://runner.test/deploy"], ["Open run ↗", "http://runner.test/run/r1"]]);
+    expect(all(".dgm .tvfoot a").map((a) => a.getAttribute("target"))).toEqual(["_blank", "_blank"]);
   });
 
-  it("shows a refusal in the modal's refusal box, and clears it on the next open", async () => {
-    post.mockResolvedValue(new Response(JSON.stringify({ error: "pool runs/main is full" }), { status: 409 }));
+  it("has no footer for a job whose runner has no start page and no run to open", async () => {
     await draw();
-    await click(row("pr-watch"));
-    await click(q(".dgm .tvfoot .startbtn"));
-
-    expect(q(".dgm .editrefusal").textContent).toBe("Run refused. pool runs/main is full");
-    await key(document, "Escape");
-    await click(row("pr-watch"));
-    expect(host.querySelector(".dgm .editrefusal")).toBeNull();
+    await click(row("never"));
+    expect(host.querySelector(".dgm .tvfoot")).toBeNull();
   });
 });
 
@@ -214,10 +193,9 @@ describe("closing the modal", () => {
     expect(host.querySelector("#kbm")).toBeNull();
   });
 
-  it("does not open from the ▶ strip's click", async () => {
-    post.mockResolvedValue(new Response(JSON.stringify({ runId: "r9" }), { status: 200 }));
+  it("does not open from the row's Run in link", async () => {
     await draw();
-    await click(row("pr-watch").querySelector("button.play.edge")!);
+    await click(row("pr-watch").querySelector("a.runin.edge")!);
 
     expect(host.querySelector("#kbm")).toBeNull();
   });
@@ -228,7 +206,7 @@ describe("a DAG modal's step history and rerun safety", () => {
     const d = data.dags.find((x) => x.name === name)!;
     return { ...data, dags: data.dags.map((x) => (x === d ? { ...x, steps, ...over } : x)) };
   };
-  const drawWith = async (d: DagData, name: string) => { await act(async () => root.render(<Dags data={d} post={post} />)); await click(row(name)); };
+  const drawWith = async (d: DagData, name: string) => { await act(async () => root.render(<Dags data={d} />)); await click(row(name)); };
   const hist = () => all(".dgm .hist li");
   const marks = (li: Element) => [...li.querySelectorAll<HTMLElement>(".runs i")].map((i) => i.className);
 

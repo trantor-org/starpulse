@@ -14,7 +14,7 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
       const free = { Ops: ["a", "b", "c", "d", "e", "f"].map((x) => `temporal/ops-${x}`), Docs: ["a", "b", "c", "d"].map((x) => `temporal/docs-${x}`) }, tied = Object.values(writes).flat();
       board.machine.writers = Object.fromEntries(Object.entries(writes).map(([e, ns]) => [e, ns.map((actor) => ({ actor, trigger: "temporal" }))]));
       snap.dags = [...tied, ...Object.values(free).flat()].map((d) => dag(d, [["run", []]]));
-      snap.domains = [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }, ...Object.entries(free).map(([name, ds]) => ({ name, dags: ds.map((d) => ({ name: d, runSafe: false })) }))];
+      snap.domains = [{ name: "Board", dags: tied.map((name) => ({ name })) }, ...Object.entries(free).map(([name, ds]) => ({ name, dags: ds.map((d) => ({ name: d })) }))];
     }
     board.agents = OPEN.flatMap((state) => Array.from({ length: tasks }, (_, i) => ({ id: `${state}-${i}`, title: "t", state, model: "", labels: [] })));
     board.machine.submachines = OPEN.flatMap((state) => Array.from({ length: n }, (_, i) => {

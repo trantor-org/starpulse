@@ -3,7 +3,7 @@ import { pivotTip, tieStatus, tieTip, type TipSky } from "./dagTieTips";
 import type { Anchor, Orbiter } from "./dagTies";
 import type { Dag } from "../api";
 
-const dag = (name: string, status: Dag["status"]): Dag => ({ name, status, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
+const dag = (name: string, status: Dag["status"]): Dag => ({ name, status, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [] });
 const sky = {
   dagBy: { "temporal/main-follow": { ...dag("temporal/main-follow", "running"), finishedAt: "2026-10-07T16:12:00Z" }, "temporal/apply-on-merge": dag("temporal/apply-on-merge", "failed"), "temporal/backlog-sweep": dag("temporal/backlog-sweep", "succeeded") },
   cues: [{ dag: "temporal/apply-on-merge", event: "MERGED", on: "each merge", resolves: "forced", state: "done" }],

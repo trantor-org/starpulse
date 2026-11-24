@@ -248,8 +248,8 @@ corrections, since a redelivery is GitHub pushing the delivery again, the recove
 A cron line, a systemd unit, an engine that can only send webhooks (Cronicle, Rundeck, a GitHub `workflow_run` relay) or
 a producer on another host reports a run as a Step CloudEvent to the same ingest that takes machine events
 ([Post machine events as CloudEvents](#post-machine-events-as-cloudevents)). Declare it as a `[[producers]]` entry; a
-producer that only reports runs leaves out `machines` and `actors`, needs no adapter, pulls nothing and has no Run now (so no
-`run_safe`):
+producer that only reports runs leaves out `machines` and `actors`, needs no adapter, pulls nothing and starts nothing (set `start_url` on its
+`[[runs]]` instance for the page's `Run in <runner> ↗` link):
 
 ```toml
 [[producers]]
@@ -369,7 +369,7 @@ latest run's jobs alone and cannot be started.
 name = "gh"
 type = "github_actions"
 url = "https://github.com/trantor-org/starpulse"   # or `owner/name`
-run_safe = ["ui-preview.yml"]
+start_url = "https://github.com/trantor-org/starpulse/actions"   # the page's Run in GitHub ↗ link
 ```
 
 - **Adapter worker.** `serve` starts it as a child for each instance that names this adapter (`starpulse worker github-actions --config <this file>`). It
@@ -378,8 +378,7 @@ run_safe = ["ui-preview.yml"]
 - **Credentials** come from the environment: `GITHUB_TOKEN` or `GH_TOKEN` (read and `actions: write` on the repository),
   and `GITHUB_API_URL` for GitHub Enterprise Server. Without a token the repository is still read, at GitHub's lower
   unauthenticated rate limit, and nothing starts.
-- **Run now** dispatches the workflow on the default branch (`workflow_dispatch`) and answers its run id. It is drawn
-  only on a `run_safe` workflow whose file declares `workflow_dispatch`; any other workflow is refused.
+- **Starting.** StarPulse starts nothing: the page's `Run in GitHub ↗` link opens `start_url`, and a run is started there.
 - **Events.** The repository is read every 60 s: the workflow list and the repository's latest runs, two calls however
   many workflows it has, and a workflow again only when it is new, its file or latest run changed, or its latest run has
   not ended (its jobs move without the run moving). A quiet repository costs about 120 calls an hour. A `workflow_run`
@@ -416,8 +415,8 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
   subscribes (the system manager has other subscribers, the user manager none), so each monitor also holds that
   subscription on a socket of its own for as long as it runs. Each `gdbus` child ends with the stream that reads it
   (terminated when the stream closes, SIGTERM from the kernel when its parent thread dies), so a restart leaves none
-  behind. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
-  so the adapter offers no start. `systemctl` and `gdbus` (`libglib2.0-bin`) must run on the host that serves StarPulse.
+  behind. The adapter reads no event-log entries. It starts nothing: starting a root unit needs a polkit grant,
+  and a timer has no runner page, so `start_url` stays unset. `systemctl` and `gdbus` (`libglib2.0-bin`) must run on the host that serves StarPulse.
 
 ## Temporal workflows
 
@@ -444,7 +443,7 @@ url = "http://temporal.internal:8233"
 - **Polling.** The server pushes no change, so the adapter lists it every 15 s: three listings, and one describe for each
   running execution, plus one history read for each workflow's drawn execution (a closed one is read once). A server it cannot reach shows as the instance's error, with the last reading kept.
 - **Adapter worker.** `serve` starts it as a child for each instance that names this adapter (`starpulse worker
-  temporal --config <this file>`). There is no Run now: these workflows start from the Board's lifecycle.
+  temporal --config <this file>`). These workflows start from the Board's lifecycle and from the Temporal UI that `start_url` names.
 
 ### Temporal graph mapping
 
@@ -498,7 +497,7 @@ url = "http://ci.internal:8004/acme/app"
   also reads its config once, for the workflows' `depends_on`). A server it cannot reach shows as the instance's error, with the last reading kept, and the other
   instances keep drawing.
 - **Adapter worker.** `serve` starts it as a child for each instance that names this adapter (`starpulse worker
-  woodpecker --config <this file>`). It is read-only: there is no Run now, and nothing triggers, cancels or retries a
+  woodpecker --config <this file>`). It is read-only: nothing triggers, cancels or retries a
   pipeline.
 
 ### Woodpecker graph mapping

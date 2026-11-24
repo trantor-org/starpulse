@@ -28,7 +28,7 @@ const CUES: Cue[] = [
 ];
 const LAUNCH_ONLY = ["temporal/nightly-audit", "temporal/weekly-code-audit"], UNTIED = ["temporal/orphan-report"];
 
-const dag = (name: string, status: Dag["status"] = "succeeded"): Dag => ({ name, status, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [] });
+const dag = (name: string, status: Dag["status"] = "succeeded"): Dag => ({ name, status, runId: "r", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [] });
 const machine: Machine = {
   states: STATES.map((id, i) => ({ id, name: id, initial: i === 0, final: ["done", "completed", "archived"].includes(id) })),
   transitions: TRANSITIONS.map(([source, target, event]) => ({ source, target, event })),

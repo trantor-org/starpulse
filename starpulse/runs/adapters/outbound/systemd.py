@@ -5,8 +5,7 @@
 `systemctl show` into the `runs` contract's `Dag` records. `follow` reads the allowlist once, then re-reads only the timer
 whose unit systemd reports as changed (a D-Bus `PropertiesChanged` signal, watched through one `gdbus monitor` per
 manager, with `Manager.Subscribe` held beside it, which systemd needs before it sends them); a monitor that exits is started again and its timers read again. A `runs:resync` entry naming the instance
-reads them all again. `start` is None, since starting a root unit needs a
-polkit grant, so a timer has no Run now.
+reads them all again. A timer has no runner start page.
 """
 
 import os
@@ -167,11 +166,6 @@ def systemctl(args: list[str]) -> str:
     if done.returncode:
         raise OSError(f"systemctl {' '.join(args)} failed: {done.stderr.strip() or done.returncode}")
     return done.stdout
-
-
-def start(url: str) -> None:
-    """No start capability: starting a system timer's service needs a polkit grant, so a timer has no Run now."""
-    return
 
 
 #: The worker that runs this adapter (`starpulse.runs.model.opt_in`): `serve` supervises it as a child.

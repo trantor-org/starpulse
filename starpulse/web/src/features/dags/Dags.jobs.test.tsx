@@ -7,7 +7,7 @@ import { Dags } from "./Dags";
 import type { Dag, RunStatus } from "../../api";
 
 const job = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
-  name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [], ...over,
+  name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [], ...over,
 });
 const data: DagData = {
   now: 3600, facts: {}, dashboards: {}, cues: [], flows: [], pools: [], domains: [],
@@ -33,7 +33,7 @@ const data: DagData = {
 };
 
 let host: HTMLDivElement, root: Root;
-const draw = async () => { await act(async () => root.render(<Dags data={data} post={vi.fn()} />)); };
+const draw = async () => { await act(async () => root.render(<Dags data={data} />)); };
 const row = (n: string) => [...host.querySelectorAll<HTMLElement>("#stage .drow")].find((r) => r.dataset.dag === n)!;
 
 beforeEach(() => {
@@ -92,7 +92,7 @@ describe("a Woodpecker job in the Jobs view", () => {
   });
 
   it("still draws the other jobs when a source reports no jobs", async () => {
-    await act(async () => root.render(<Dags data={{ ...data, dags: data.dags.filter((d) => !d.name.startsWith("woodpecker/")) }} post={vi.fn()} />));
+    await act(async () => root.render(<Dags data={{ ...data, dags: data.dags.filter((d) => !d.name.startsWith("woodpecker/")) }} />));
     expect(row("temporal/task_lifecycle")).toBeDefined();
     expect(row("woodpecker/pull_request")).toBeUndefined();
   });

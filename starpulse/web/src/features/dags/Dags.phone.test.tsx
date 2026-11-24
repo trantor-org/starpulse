@@ -6,9 +6,9 @@ import type { Dag } from "../../api";
 import type { DagData } from "./dagsModel";
 import { Dags } from "./Dags";
 
-const dag = (name: string, status: Dag["status"] = "succeeded"): Dag => ({ name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [{ name: "scan", depends: [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] }], pool: "" });
+const dag = (name: string, status: Dag["status"] = "succeeded"): Dag => ({ name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [{ name: "scan", depends: [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] }], pool: "" });
 const dags = [dag("runs/job-0", "running"), dag("runs/job-1"), dag("runs/job-2")];
-const data: DagData = { now: 3600, facts: {}, dashboards: {}, dags, domains: [{ name: "Ops", dags: dags.map((d) => ({ name: d.name, runSafe: false })) }], pools: [], cues: [], flows: [] };
+const data: DagData = { now: 3600, facts: {}, dashboards: {}, dags, domains: [{ name: "Ops", dags: dags.map((d) => ({ name: d.name })) }], pools: [], cues: [], flows: [] };
 
 let host: HTMLDivElement, root: Root;
 const phone = (narrow: boolean) => vi.stubGlobal("matchMedia", (query: string) => ({ matches: narrow && query === "(max-width: 900px)", addEventListener() {}, removeEventListener() {} }));
@@ -75,7 +75,7 @@ describe("the DAGs view's panes by width", () => {
     widths(1024, 484);
     await draw();
     expect(compact()).toBe(true);
-    widths(1024, 900);
+    widths(1024, 1000);
     await act(async () => window.dispatchEvent(new Event("resize")));
     await act(async () => void document.documentElement.style.setProperty("--fs", "1.01"));
     expect(compact()).toBe(false);
