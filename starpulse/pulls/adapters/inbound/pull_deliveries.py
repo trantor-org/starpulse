@@ -134,6 +134,13 @@ def _outdated(record: Record, pull: Mapping[str, Any]) -> bool:
     return bool(closed) and epoch(pull["updated_at"]) <= epoch(closed)
 
 
+def _branch(delivery: Delivery) -> tuple[str, str]:
+    try:
+        return delivery.repository, json.loads(delivery.body)["ref"]
+    except (ValueError, KeyError, TypeError):
+        return delivery.repository, delivery.delivery_id  # `refresh` fails it alone
+
+
 def _main_checked(delivery: Delivery) -> bool:
     """Whether the delivery reports a finished workflow run or check suite on the repository's default branch."""
     if delivery.event not in ("workflow_run", "check_suite") or delivery.action != "completed":
@@ -227,12 +234,18 @@ def consume(
 
 def consume_reads(queue: Queue, store: PullStore, reads: PullReads, clock: Callable[[], float] = time.time) -> None:
     """Make the reads each `READ_EVENTS` delivery due now names, once, then return: a pull request action with no read is
-    skipped, one GitHub refuses, or one read ahead of its record's write, is retried and then dead."""
+    skipped, one GitHub refuses, or one read ahead of its record's write, is retried and then dead. A push reads the branch
+    as GitHub holds it now, so only the newest push of a branch in the claim reads: a merge burst costs one compare per open
+    pull request, not one per merge."""
     entries = queue.claim()
+    newest = {_branch(entry.delivery): entry.delivery.delivery_id for entry in entries if entry.delivery.event == "push"}
     with queue.batch():
         for entry in entries:
             if entry.delivery.event == "pull_request" and entry.delivery.action not in PULL_READS:
                 queue.skip(entry.delivery.delivery_id, "no-read")
+                continue
+            if entry.delivery.event == "push" and newest[_branch(entry.delivery)] != entry.delivery.delivery_id:
+                queue.complete(entry.delivery.delivery_id)
                 continue
             try:
                 refresh(store, reads, entry.delivery, clock())

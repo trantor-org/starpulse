@@ -1472,8 +1472,8 @@ class TaskActor:
                     count = 0
                     # kept even when `confirm` finds the holder busy
                     self._memory.keep(name, resumes=self._memory.tally(progress, 0))
-        if answered:
-            return
+        if answered and not opened:
+            return  # the answer ends a decide task whose criteria are all met; one left is execute work to resume
         if opened:
             self._nudge(name, opened, ticks, wait_ended)
         else:

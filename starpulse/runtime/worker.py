@@ -52,11 +52,12 @@ def worker_parser() -> argparse.ArgumentParser:
 
 def _readiness(log: Any, feed: Any, config: Any) -> Callable[[], dict[str, Any]]:
     """The reader of `/api/health` over the contexts `config` makes `serve` supervise and the boot token it handed them."""
-    from starpulse.runtime.contexts import contexts_of  # noqa: PLC0415 - only the api worker pays for it
+    from starpulse.runtime.config import rehearsing  # noqa: PLC0415 - only the api worker pays for it
+    from starpulse.runtime.contexts import contexts_of  # noqa: PLC0415
     from starpulse.runtime.hold import BOOT_ENV  # noqa: PLC0415
     from starpulse.runtime.readiness import readiness  # noqa: PLC0415
 
-    return readiness(log, feed, contexts_of(config), os.environ.get(BOOT_ENV))
+    return readiness(log, feed, [*contexts_of(config), *([] if rehearsing() else ["pulls"])], os.environ.get(BOOT_ENV))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -93,7 +94,7 @@ def main(argv: list[str] | None = None) -> None:
         return api_worker.main(argv, parser, host=host)
     from starpulse.runtime.assembly import history_store, own_pull_merged, scheduler_board, worker_board
     from starpulse.runtime.config import discover, load
-    from starpulse.runtime.hold import hold
+    from starpulse.runtime.hold import BOOT_ENV, hold
 
     # each context's bin reads its section of the root config, which only the runtime loads
     loader = {"discover": discover, "load": load}
@@ -187,9 +188,16 @@ def main(argv: list[str] | None = None) -> None:
             argv, parser, **loader, assemble=assemble, history_store=history_store, follow=follow,
             followers=lambda parser, config: feed_followers(run_adapters(parser, config)), hold=hold,
         )  # fmt: skip
+    from starpulse.event_log.child_cpu import keep_process
     from starpulse.pulls.bin import pulls_worker
     from starpulse.runtime.delivery_wiring import start_delivery
+    from starpulse.runtime.hold import announce_ready, go_event
+    from starpulse.runtime.readiness import stamp
     from starpulse.runtime.stored_pulls import keep_pulls
+
+    def started(log):
+        if boot := os.environ.get(BOOT_ENV):
+            stamp(log, "pulls", boot)
 
     return pulls_worker.main(
         argv,
@@ -200,4 +208,8 @@ def main(argv: list[str] | None = None) -> None:
         start_delivery=start_delivery,
         keep_pulls=keep_pulls,
         hold=hold,
+        go=go_event(os.environ),
+        prepared=lambda: announce_ready(os.environ),
+        kept=lambda log: keep_process(log, "pulls"),
+        started=started,
     )
