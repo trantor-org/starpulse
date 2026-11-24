@@ -118,7 +118,7 @@ class Guard:
             if verdict.refused:
                 found = (verdict.refused, *verdict.also) if earlier is None else (verdict.refused,)
                 reasons.extend(rule.explain(after) for rule in found)
-                return Written(False, "\n".join(reasons), verdict.refused.skill, lint=True)
+                return Written(False, "\n".join(reasons), verdict.refused.skill, lint=True, rule=verdict.refused.key)
             warnings = tuple(rule.explain(after) for rule in verdict.warned)
         if reasons:
             return Written(False, reasons[0])
@@ -128,7 +128,13 @@ class Guard:
                 self.rules, frontmatter, body, self.ready, TASK_ACTOR, lambda moved: self.entered(moved, frontmatter)
             )
             if released:  # the task actor would never release it: a Waiting task nothing can ready is a stuck one
-                return Written(False, released.explain(rules.Record(frontmatter, body)), released.skill, lint=True)
+                return Written(
+                    False,
+                    released.explain(rules.Record(frontmatter, body)),
+                    released.skill,
+                    lint=True,
+                    rule=released.key,
+                )
         if self.validate is not None and (reason := self.validate(path, before, text)):
             return Written(False, reason, lint=True)
         return Written(True, warnings=warnings)
