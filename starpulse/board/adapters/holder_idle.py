@@ -103,8 +103,9 @@ def follow_holder_idle(
     Once `ready` is set (the actor has indexed its tasks) it also calls `settled` once with each task of `working`
     whose newest harness event before this call, a `SESSION_STOPPED` aside, is a settle (`settled`) or an end (`lease_ended` with the session its entry names, then `ended`):
     its holder settled or died while the actor was down and was not started again since. The cost is one indexed lookup per working task, never a read of
-    the stream. A task of `closed` (an open one in a lane that ends its idle session) gets the same `settled` call for a newest settle,
-    which ends its session: the move that closed the lane may have come while the actor was down. It calls `dispatched` (`lease_ended` first for a dead holder it replaces) with each task of `working` or
+    the stream. A task of `closed` (an open one in a lane that ends its idle session) gets the same `settled` call for any newest
+    event but an end, which ends its session once idle: the move that closed the lane may have come while the actor was down, or its end
+    been lost at a stop. It calls `dispatched` (`lease_ended` first for a dead holder it replaces) with each task of `working` or
     `unstarted` whose newest such event is a dispatch: the actor was down for it and pinned no session since. Nothing is called before `ready`, and the live tail's rows wait for it."""
     from starpulse.event_log.event_log import Tail  # the server imports no database stack until a store opens
     from starpulse.event_log.follower_lag import HOLDER_IDLE, Behind
@@ -142,8 +143,10 @@ def follow_holder_idle(
             # a failed pass raises, and `run_on_wake` reads again before any settle is called
             tasks, shut = working(), closed()
             newest = {task: _newest(log.engine, task, started) or ("", {}) for task in [*tasks, *shut, *unstarted()]}
-            for task in [task for task in [*tasks, *shut] if newest[task][0] == SETTLED]:
+            for task in [task for task in tasks if newest[task][0] == SETTLED]:
                 settled(task)
+            for task in [task for task in shut if newest[task][0] not in ("", ENDED)]:
+                settled(task)  # the reaper ends only an idle session, so a turn running now is left alone
             for task in [task for task in tasks if newest[task][0] == ENDED]:
                 lease_ended(task, str(newest[task][1].get("session") or ""))
                 ended(task)

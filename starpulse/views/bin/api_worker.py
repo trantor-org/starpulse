@@ -17,6 +17,7 @@ import os
 import socket
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -150,6 +151,8 @@ def serve_page(
     feed.ready.set()
     # no follower runs in this process: what the workers keep in the log is applied when a request reads it (`CaughtUp`)
     caught_up = CaughtUp(log)
+    # the Ledger a pull or run update changes is rebuilt here, so the request that applies the update never waits on it
+    feed.build_ledgers_on(ThreadPoolExecutor(1, thread_name_prefix="ledger"))
     # `starpulse worker board` keeps the claim refusals and verdicts as the deltas a stream replays
     saved_after = log.head() or 0  # before the store loads: a save between the two is announced past it
     pulls = PullStore(log.engine)

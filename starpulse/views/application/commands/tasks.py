@@ -68,8 +68,10 @@ def task_record(
 
     The record is keyed by the task's editable fields, which the snapshot's small entry does not carry; the page
     opens it with this and sends it back as the `base` of an edit. Reading is not LAN-limited, like the snapshot. An
-    archived task is read through `read_archived`, its body `archived`, so a closed task stays readable.
+    archived task is read through `read_archived`, its body `archived`, so a closed task stays readable. An alias
+    answers with the task that carries it, never an archived ghost bearing the alias as its id.
     """
+    task = feed.current_id(task)
     held, archived, entered = feed.placement(task)
     if not (held or archived) and not feed.wait_replayed(0) and feed.wait_replayed(REPLAY_WAIT_S):
         held, archived, entered = feed.placement(task)

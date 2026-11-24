@@ -339,10 +339,11 @@ class Supervisor:
         live config block to re-read it, and keep the rest; report each as "replaced", "reloaded" or "kept".
 
         When `serve`'s own code changed the Page API is replaced first, beside the old one on the shared socket, from the
-        release now behind the launcher; every other child whose code or config changed is ended, and `supervisor`
-        reports "re-executed": the caller sends that report, then calls `reexec`, and the next image adopts the Page API
-        and each child whose own code and config did not change, which stays running across the exec and is reported
-        as "kept". The report's `reads` is
+        release now behind the launcher; every other child whose code or config changed is replaced the same way (beside
+        the old one where it can run so), and `supervisor` reports "re-executed": the caller sends that report, then
+        calls `reexec`, and the next image adopts the Page API and every other child, which stays running across the
+        exec, so no child starts cold and no context's ready stamp is dropped. A child whose code and config did not
+        change is reported as "kept", the rest as "replaced". The report's `reads` is
         "launcher" when the code was read from the release behind the launcher, which a caller that probes code through
         its own interpreter (an older `starpulse reload`) lacks, and so cannot trust a "kept". Raises `ReloadError`,
         changing nothing, when a reading fails."""
@@ -384,16 +385,15 @@ class Supervisor:
 
     def _hand_over(self, name: str, child: _Child, now: Reading) -> str:
         """Before a re-exec, keep a running child whose own code and config are unchanged for the next image to adopt
-        (`reexec`), and end any other: its code is not the next release's."""
+        (`reexec`), and replace any other from the release behind the launcher, beside the old one where it can run
+        so, then hand the new one over too: the next image starts no child, so no context's stamp is ever dropped."""
         before = self._seen.get(name)
         alive = child.proc is not None and child.proc.poll() is None
+        self._handed.add(name)
         if alive and before is not None and before.same_code(now) and before.restart == now.restart:
             if _stdin_fd(child.proc) is not None:
-                self._handed.add(name)
                 return self._keep(name, child, before, now)
-        if child.proc is not None:
-            self._end([child.proc])
-        return "replaced"
+        return self._replace(name, child)
 
     def _replace(self, name: str, child: _Child) -> str:
         old = child.proc

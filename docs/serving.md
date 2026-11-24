@@ -391,10 +391,11 @@ GET /api/machines/{name}
                    its first parent link runs it with (empty when none names one). The Board's carries `lanes` too: each
                    lane's `tools`, `exits` and `skill`, read from the policy on each request (empty with no policy). An
                    unknown name is 404
-GET /api/done[?before=T][&limit=N]
+GET /api/done[?before=T][&limit=N][&milestone=M]
                    {tasks, more}: the next `limit` done tasks (default 20, at most 100) past their hot day,
                    newest done first, each {id, title, state, model, labels, milestone, type, entered} read from the
-                   board on request. `before` is the `entered` of the last one held (epoch seconds; none: the newest).
+                   board on request. `before` is the `entered` of the last one held (epoch seconds; none: the newest). `milestone`
+                   keeps the tasks of that milestone, filtered in the read model, so `board --milestone` pages only that milestone.
                    A board that cannot read a task is 404, a bad `before` or `limit` 400
 POST /graphql      a Task's history is four fields of the Task detail: `lanePath` [{at, from, to, by}], `machinePath(machine)`
                    {path [{at, event, state}], steps}, `planRevisions` and `events(since)` [{at, machine, event, from, to}].
@@ -1435,9 +1436,9 @@ publishes nothing, so a page keeps a card until it reloads. The page's snapshot 
 - `/api/snapshot`, `?view=full` and `/api/flows` serve this one stored body: the CLI verbs read `/api/flows`, `/api/jobs`,
   `/api/task/<id>` and the routes above, and a verb that needs a task's description or criteria reads `/api/task/<id>`.
 
-`GET /api/done[?before=<entered>][&limit=20]` returns `{tasks, more}`, the next page of cold done tasks, newest done
+`GET /api/done[?before=<entered>][&limit=20][&milestone=<id>]` returns `{tasks, more}`, the next page of cold done tasks, newest done
 first, each `{id, title, state, model, labels, milestone, type, entered}`, its card fields from the read model when the feed has one (no board file is opened), else read from the board on request. `before` is
-the `entered` of the last task held; `limit` is 1-100. A board that cannot read a task answers 404. A cold task has no
+the `entered` of the last task held; `limit` is 1-100; `milestone` keeps that milestone's tasks. A board that cannot read a task answers 404. A cold task has no
 `moves`, so moving it is a 409; `task show` and the held stream read it whole through its record.
 
 ## Machine rows

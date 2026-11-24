@@ -1,7 +1,9 @@
 """Feed views: the snapshot, its deltas and subscribers."""
 
+import logging
 import queue
 import time
+from concurrent.futures import Executor
 from typing import TYPE_CHECKING, Any
 
 from starpulse.machine_engine.model.machine_ties import all_entries, derive, entry_inputs, within
@@ -22,17 +24,19 @@ from starpulse.board.model.feed.shared import (
     summary_agent,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class ViewMethods:
     _entries: tuple[tuple, list[dict]] | None = None  # the machine entries of the inputs `machine_fields` last read
 
-    def cold_page(self, before: float | None, limit: int) -> tuple[list[dict], bool]:
+    def cold_page(self, before: float | None, limit: int, milestone: str | None = None) -> tuple[list[dict], bool]:
         """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
-        older ones remain. The page ends after the last stub sharing its final timestamp, so the next page's
-        `entered < before` skips none."""
+        older ones remain, of `milestone` alone when given. The page ends after the last stub sharing its final
+        timestamp, so the next page's `entered < before` skips none."""
         size = limit + 1
         while True:
-            rows = [_cold_stub(item) for item in self._read_model.archived(before, size)]
+            rows = [_cold_stub(item) for item in self._read_model.archived(before, size, milestone)]
             if len(rows) < size or rows[-1]["entered"] != rows[limit - 1]["entered"]:
                 break
             size *= 2
@@ -144,6 +148,11 @@ class ViewMethods:
             self._entries = memo = inputs, all_entries(flows, derived)  # a local, as a build on another thread may store
         return {"machineStrip": {"entries": within(memo[1], now, LEDGER_WINDOW)}}
 
+    def build_ledgers_on(self, worker: Executor) -> None:
+        """Rebuild the Ledger on `worker` from now on, so the thread that applied the update returns at once; updates that
+        arrive while a build waits for the worker share the one build, which reads the latest."""
+        self._ledger_worker = worker
+
     def _refresh_ledgers(self) -> None:
         """Rebuild the Ledger page requests read, and send it when it or its strip differs from the one last sent; the
         caller does not hold the lock.
@@ -154,6 +163,20 @@ class ViewMethods:
         """
         if not self._ties:
             return
+        if self._ledger_worker is None:
+            self._build_ledgers()
+        elif not self._ledger_queued.is_set():  # two racing callers may queue two builds, never none
+            self._ledger_queued.set()
+            self._ledger_worker.submit(self._build_queued)
+
+    def _build_queued(self) -> None:
+        self._ledger_queued.clear()  # before the build reads, so an update during it queues the next
+        try:
+            self._build_ledgers()
+        except Exception:
+            logger.warning("feed: the Ledger was not rebuilt", exc_info=True)
+
+    def _build_ledgers(self) -> None:
         with self._building:
             with self._lock:
                 pulls, recent, since = self._pulls, self._recent_runs(), self._clock() - LEDGER_WINDOW

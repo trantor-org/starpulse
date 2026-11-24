@@ -14,16 +14,24 @@ const SPEND_FIELDS =
 
 const cached = new Map<string, { at: number; ttl: number; answer: Promise<SpendPhase[] | null> }>();
 
-/** One task's phases over the last week; `null` when the read is refused, times out or answers something else, kept for a few seconds only. */
+/** A read the server has not answered by then is abandoned: a stalled server would otherwise leave the rail on "Reading spend…" for good. */
+const READ_TIMEOUT_MS = 15_000;
+
+/** One task's phases over the last week; `null` when the read is refused, unanswered after `READ_TIMEOUT_MS` (the request is aborted) or answers something else, kept for a few seconds only. */
 export function fetchSpend(task: string, fetcher: typeof apiFetch = apiFetch, now: number = Date.now()): Promise<SpendPhase[] | null> {
   const kept = cached.get(task);
   if (kept && now - kept.at < kept.ttl) return kept.answer;
   const answer = (async (): Promise<SpendPhase[] | null> => {
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<null>((resolve) => { timer = setTimeout(() => { abort.abort(); resolve(null); }, READ_TIMEOUT_MS); });
     try {
-      const found = await taskQuery<{ spend: SpendPhase[] | null }>(task, `spend { ${SPEND_FIELDS} }`, fetcher);
+      const found = await Promise.race([taskQuery<{ spend: SpendPhase[] | null }>(task, `spend { ${SPEND_FIELDS} }`, fetcher, abort.signal), timedOut]);
       return Array.isArray(found?.spend) ? found.spend : null;
     } catch {
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   })();
   const entry = { at: now, ttl: TTL_MS, answer };
@@ -73,14 +81,20 @@ export function SpendRows({ rows }: { rows: SpendPhase[] }) {
   </div>;
 }
 
-/** The task's spend, read once per minute per task; "Reading spend…" until the read answers, "Spend unavailable" when it fails. */
+/** The task's spend, read once per minute per task; "Reading spend…" until the read answers, "Spend unavailable" when it fails, read again after `FAILED_TTL_MS` until it answers. */
 export function SpendRail({ task }: { task: string }) {
   const [rows, setRows] = useState<SpendPhase[] | null | "unavailable">(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
-    void fetchSpend(task).then((all) => { if (live) setRows(all === null ? "unavailable" : phasesOf(all, task)); });
-    return () => { live = false; };
-  }, [task]);
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    void fetchSpend(task).then((all) => {
+      if (!live) return;
+      setRows(all === null ? "unavailable" : phasesOf(all, task));
+      if (all === null) retry = setTimeout(() => setAttempt((n) => n + 1), FAILED_TTL_MS);
+    });
+    return () => { live = false; clearTimeout(retry); };
+  }, [task, attempt]);
   if (rows === null) return <span className="none" role="status">Reading spend…</span>;
   return rows === "unavailable" ? <span className="none" role="status">Spend unavailable</span> : <SpendRows rows={rows} />;
 }

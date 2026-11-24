@@ -9,6 +9,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import Executor
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.commit_keys import CommitKeys
@@ -163,6 +164,9 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self.revised = threading.Event()
         #: Held for a whole Ledger build, which runs outside `_lock`, so builds never overlap; taken before `_lock`, never under it.
         self._building = threading.Lock()
+        #: Where a Ledger rebuild runs when not on the thread that applied the update (`build_ledgers_on`), and whether one waits there.
+        self._ledger_worker: Executor | None = None
+        self._ledger_queued = threading.Event()
         self._window_s = window_s
         #: How far back the snapshot's machine lanes read when no `window_s` narrows them (an open Task's lane stays); None: no cap.
         self._lane_cap_s: float | None = None

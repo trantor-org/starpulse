@@ -51,7 +51,7 @@ def done_response(feed: BoardFeed, read: TaskReader, query: dict[str, list[str]]
     asked = _page_query(query, "done")
     if isinstance(asked, bytes):
         return asked, 400
-    stubs, more = feed.cold_page(*asked)
+    stubs, more = feed.cold_page(*asked, query["milestone"][0] if "milestone" in query else None)
     tasks = []
     for stub in stubs:
         record = stub["record"] if "record" in stub else (read(stub["id"]) or {})

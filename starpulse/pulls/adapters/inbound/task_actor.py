@@ -1357,6 +1357,7 @@ class TaskActor:
         except Exception as error:
             moved = self._fault(agent, "derive", error)
         finally:
+            self._hold_reads.pop(name, None)  # each derivation takes a read of its own
             self._timed_derive(agent["state"], self._hooked, self._clock() - started)
         self._feed.repin()
         self._settle_awaited(name)
@@ -2214,12 +2215,12 @@ class TaskActor:
     def _holds_of(self, name: str) -> tuple[str, ...] | None:
         """The reasons the board withholds the task's `deps_done`, as its hook printed them for the task's present facts;
         None while that read runs off the lock, whose result derives the task again. Each derivation takes a read of its
-        own, as the hook reads more than the facts digest."""
+        own, as the hook reads more than the facts digest, and every hold fact of that derivation shares it."""
         agent = self._feed.task(name, lean=True)
         if self._holds is _no_holds or agent is None:
             return self._read_holds(name)[0]
         digest = self._digest(agent)
-        found = self._hold_reads.pop(name, None)
+        found = self._hold_reads.get(name)  # kept to the derivation's end: its other hold facts read the same result
         if found and found[0] == digest:
             self._unsettled |= found[2]
             return found[1]
