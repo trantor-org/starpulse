@@ -833,11 +833,12 @@ class TaskActor:
         for done, name in enumerate(swept, 1):
             if stop is not None and stop.is_set():
                 break  # a stopped actor closes its notices: an exit made after would miss its hook
-            self._yield()
-            with self._lock:
-                if stop is not None and stop.is_set():
-                    break
-                self._exit_phase(name)
+            if self._exit_owed(name):  # a task owing none waited, live, behind the changes the lock served instead
+                self._yield()
+                with self._lock:
+                    if stop is not None and stop.is_set():
+                        break
+                    self._exit_phase(name)
             report(done, len(swept))
 
     def _watch(self, name: str, agent: dict[str, Any]) -> bool:
@@ -963,9 +964,8 @@ class TaskActor:
         skill advances nothing."""
         exited = self._memory.of(task).get("exited") or {}
         for parent, links in self._links.items():
-            phase = self._phase(parent, task)
-            event = self._exit_event(links, phase, task) if phase else None
-            if phase and event and exited.get(parent) != (sent := [phase["state"], phase["steps"], event]):
+            if due := self._exit_due(parent, links, task, exited):
+                phase, event, sent = due
                 exited[parent] = sent
                 target = self._moves.get((phase["state"], event)) if parent == BOARD else None
                 if target:  # the Board's lane is the task's status: the exit is that write, not an event beside it
@@ -979,6 +979,21 @@ class TaskActor:
                 else:
                     self._advance(parent, task, event)  # a refused or lost send leaves no marker: the exit goes again
                     self._memory.keep(task, exited=exited)
+
+    def _exit_owed(self, task: str) -> bool:
+        """Whether `task` owes a phase exit, read without the lock: the sweep takes the lock only for a task that does."""
+        exited = self._memory.of(task).get("exited") or {}
+        return any(self._exit_due(parent, links, task, exited) for parent, links in self._links.items())
+
+    def _exit_due(
+        self, parent: str, links: Sequence[Mapping[str, Any]], task: str, exited: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], str, list[Any]] | None:
+        """The phase `task` is in under `parent`, its exit event and the marker that exit leaves, when it is not sent yet."""
+        phase = self._phase(parent, task)
+        event = self._exit_event(links, phase, task) if phase else None
+        if phase and event and exited.get(parent) != (sent := [phase["state"], phase["steps"], event]):
+            return phase, event, sent
+        return None
 
     def _phase(self, parent: str, task: str) -> dict[str, Any] | None:
         """The phase `task` is in under lifecycle machine `parent`: the machine's placement, or the Board's lane, whose
@@ -1254,8 +1269,11 @@ class TaskActor:
         it moved the task to another lane."""
         self._feed.repin()
         agent = self._feed.task(name, lean=True)
-        if agent is None or (name in self._seen and self._seen[name][0] != agent["state"]):
-            return False  # a lane change not yet handled: its change event derives, after it sets any send-back hold
+        if agent is None:
+            return False
+        if name in self._seen and self._seen[name][0] != agent["state"]:
+            self._changed({"id": name, "agent": agent})  # its change event, still queued behind the lock's other work
+            return False
         digest = self._digest(agent)
         self._hooked = self._unsettled = False
         started = self._clock()
