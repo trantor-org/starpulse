@@ -85,6 +85,7 @@ class HeldSnapshot:
         self._heads: list[tuple[str, Any]] = []
         self._lanes: dict[str, dict[str, dict]] = {}
         self._cold: dict[str, str] = {}
+        self._settled: dict[str, dict] = {}
         self._day = 0.0
         self._stale = False
         self._folding = False  # whether `run` takes the queue
@@ -100,6 +101,7 @@ class HeldSnapshot:
         snapshot = self._feed.snapshot()
         self._heads = [(flow["name"], flow["machine"]) for flow in snapshot["flows"]]
         self._lanes = {flow["name"]: {agent["id"]: agent for agent in flow["agents"]} for flow in snapshot["flows"]}
+        self._settled = dict(snapshot["settled"])
         self._day = local_midnight(self._clock())
         self.snapshot = snapshot
         self._stale = False
@@ -297,6 +299,8 @@ class HeldSnapshot:
                     held.pop(drawn, None)
                 else:
                     held[drawn] = value
+        self._settled.pop(task_id, None)
+        self._settled |= self._feed.settled(task_id)
 
     def _publish(self, archived_today: int | None, fields: dict[str, Any]) -> None:
         now = self._clock()
@@ -309,6 +313,7 @@ class HeldSnapshot:
             **self.snapshot,
             "flows": [{**flow, **derived.get(flow["name"], {})} for flow in flows],
             **self._feed.machine_fields(flows, derived, now),
+            "settled": dict(self._settled),
             "milestone_done": dict(sorted(Counter(self._cold.values()).items())),
             "archived_today": self.snapshot["archived_today"] if archived_today is None else archived_today,
             "interactive": self._feed.interactive(),
