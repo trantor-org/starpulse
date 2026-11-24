@@ -280,94 +280,6 @@
         }
       }
     },
-    "/api/ledger/{rest}/events": {
-      "get": {
-        "summary": "Stream a ledger's rows as they land",
-        "tags": [
-          "streams"
-        ],
-        "operationId": "get_api_ledger_rest_events",
-        "parameters": [
-          {
-            "name": "rest",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/LedgerChange"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ledger/{rest}": {
-      "get": {
-        "summary": "A page of a ledger",
-        "tags": [
-          "streams"
-        ],
-        "operationId": "get_api_ledger_rest",
-        "parameters": [
-          {
-            "name": "rest",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "before",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LedgerPage"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/doctor": {
       "get": {
         "summary": "The contract report",
@@ -2917,7 +2829,7 @@
     },
     "/graphql": {
       "post": {
-        "summary": "Run a GraphQL query over the tasks, or follow their changes with a subscription",
+        "summary": "Run a GraphQL query over the tasks and a ledger's occurrences, or follow their changes with a subscription",
         "tags": [
           "graphql"
         ],
@@ -2944,6 +2856,16 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "An `occurrenceChanges` subscription for an event no workflow is tied to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphqlResponse"
                 }
               }
             }
@@ -6109,22 +6031,6 @@
         "title": "Launch",
         "type": "object"
       },
-      "LedgerChange": {
-        "description": "A later event of `GET /api/ledger/<event>/events`: the rows that are new or differ; every other row stands.",
-        "properties": {
-          "rows": {
-            "items": {
-              "$ref": "#/components/schemas/LedgerRow"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "rows"
-        ],
-        "title": "LedgerChange",
-        "type": "object"
-      },
       "LedgerFail": {
         "description": "A failed run of a cue the merge row holds open: the step it stopped at, and how the failure clears.",
         "properties": {
@@ -6174,26 +6080,6 @@
           "resolved"
         ],
         "title": "LedgerFail",
-        "type": "object"
-      },
-      "LedgerPage": {
-        "description": "`GET /api/ledger/<event>`, and the first event of `GET /api/ledger/<event>/events`: a Ledger's rows, newest first,\nand whether older ones remain.",
-        "properties": {
-          "rows": {
-            "items": {
-              "$ref": "#/components/schemas/LedgerRow"
-            },
-            "type": "array"
-          },
-          "more": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "rows",
-          "more"
-        ],
-        "title": "LedgerPage",
         "type": "object"
       },
       "LedgerPull": {
@@ -6398,7 +6284,7 @@
         "type": "object"
       },
       "LedgersDelta": {
-        "description": "The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open\nreads `GET /api/ledger/<event>/events`.",
+        "description": "The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open\nreads the `occurrenceChanges` subscription on `POST /graphql`.",
         "properties": {
           "mergeStrip": {
             "anyOf": [

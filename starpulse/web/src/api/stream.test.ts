@@ -924,29 +924,43 @@ describe("the page's sources", () => {
 
 describe("openLedger", () => {
   const row = (key: string, at: number): LedgerRow => ({ key, at, tasks: [key], runs: {}, fails: {}, pinned: false });
+  const occurrence = (r: LedgerRow) => ({ ...r, sha: null, pr: null, child: false, appliedBy: null, applies: null });
+  const frame = (change: object) => `event: next\ndata: ${JSON.stringify({ data: { occurrenceChanges: change } })}\n\n`;
+  const body = (...chunks: string[]) => new Response(new ReadableStream({ start: (c) => { for (const k of chunks) c.enqueue(new TextEncoder().encode(k)); c.close(); } }));
 
-  beforeEach(() => {
-    FakeSource.made = [];
-  });
-
-  it("opens the one event's stream, hands over its head, then each changed row batch", () => {
+  it("posts the one event's subscription, hands over its head, then each changed row batch, across split chunks and pings", async () => {
     const heads: unknown[] = [];
     const changed: LedgerRow[][] = [];
+    const sent: RequestInit[] = [];
+    const head = frame({ head: true, more: true, rows: [occurrence(row("a", 2))] });
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      sent.push(init ?? {});
+      return body(": ping\n\n", head.slice(0, 20), head.slice(20), frame({ head: false, more: false, rows: [occurrence(row("b", 3))] }));
+    });
+    const done = new Promise<void>((resolve) => {
+      const { close } = openLedger("MERGED", { head: (page) => heads.push(page), rows: (rows) => { changed.push(rows); close(); resolve(); } }, fetcher);
+    });
 
-    openLedger("MERGED", { head: (page) => heads.push(page), rows: (rows) => changed.push(rows) }, open);
-    last().send("page", { rows: [row("a", 2)], more: true });
-    last().send("rows", { rows: [row("b", 3)] });
+    await done;
 
-    expect(FakeSource.made.map((f) => f.url)).toEqual(["/api/ledger/MERGED/events"]);
+    expect(fetcher.mock.calls[0][0]).toBe("/graphql");
+    expect(JSON.parse(String(sent[0].body)).variables).toEqual({ event: "MERGED" });
     expect(heads).toEqual([{ rows: [row("a", 2)], more: true }]);
     expect(changed).toEqual([[row("b", 3)]]);
   });
 
-  it("closes its source", () => {
-    const { close } = openLedger("MERGED", { head: () => {}, rows: () => {} }, open);
+  it("does not reopen after a 4xx, and aborts its request when closed", async () => {
+    const refused = vi.fn(async () => new Response("{}", { status: 404 }));
+    openLedger("NONE", { head: () => {}, rows: () => {} }, refused);
+    await vi.waitFor(() => expect(refused).toHaveBeenCalledTimes(1));
 
+    let signal: AbortSignal | undefined;
+    const open = vi.fn((_url: string, init?: RequestInit) => { signal = init?.signal ?? undefined; return new Promise<Response>(() => {}); });
+    const { close } = openLedger("MERGED", { head: () => {}, rows: () => {} }, open);
+    await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1));
     close();
 
-    expect(last().readyState).toBe(2);
+    expect(signal?.aborted).toBe(true);
+    expect(refused).toHaveBeenCalledTimes(1);
   });
 });

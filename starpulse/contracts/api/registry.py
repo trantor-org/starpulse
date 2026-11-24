@@ -21,7 +21,7 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecord,
     TaskRecords,
 )
-from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, MachineDetail, Machines
+from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, MachineDetail, Machines
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
@@ -120,10 +120,9 @@ EVENTS: dict[str, type[BaseModel]] = {
 }
 EVENTS["scheduler"] = SchedulerStatus
 
-#: Each GET route's `200` body, by path; `/api/task/<id>` and `/api/ledger/<event>` by their prefix.
+#: Each GET route's `200` body, by path; `/api/task/<id>` by its prefix.
 RESPONSES: dict[str, Any] = {
     "/api/snapshot": Snapshot,
-    "/api/ledger/": LedgerPage,
     "/api/machines/": MachineDetail,
     "/api/harnesses": Harnesses,
     "/api/history-window": WindowState,
@@ -185,8 +184,6 @@ LISTS: dict[str, type[BaseModel]] = {
 BODIES: dict[str, Any] = {
     "error": ApiError,
     "snapshot": Snapshot,
-    "ledger": LedgerPage | ApiError,
-    "ledger_rows": LedgerChange,
     "machines": Machines | ApiError,
     "machine": MachineDetail | ApiError,
     "machine_create": MachineWritten | ApiError,
@@ -278,10 +275,6 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/events/body/{key}"): Op("A stored snapshot body by its key", BODIES["snapshot"] | ApiError),
     ("GET", "/api/snapshot"): _read("The board snapshot", "snapshot", "view"),
     ("GET", "/api/flows"): Op("The flows of the board", Snapshot),
-    ("GET", "/api/ledger/{rest}/events"): Op(
-        "Stream a ledger's rows as they land", BODIES["ledger_rows"], media=_STREAM
-    ),
-    ("GET", "/api/ledger/{rest}"): _read("A page of a ledger", "ledger", "before", "limit"),
     ("GET", "/api/doctor"): _read("The contract report", "doctor"),
     ("GET", "/api/health"): _read("Whether the server is ready", "ready"),
     ("GET", "/api/runs"): _read("The workflow runs", "runs"),
@@ -348,11 +341,12 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/views/{id}"): _read("The GraphQL document a view stores", "view"),
     ("GET", "/api/openapi"): Op("This document"),
     ("POST", "/graphql"): Op(
-        "Run a GraphQL query over the tasks, or follow their changes with a subscription",
+        "Run a GraphQL query over the tasks and a ledger's occurrences, or follow their changes with a subscription",
         BODIES["graphql"],
         GraphqlRequest,
         extra=(
-            ("200", _STREAM, "A `taskChanges` subscription: one `next` event, holding a GraphQL result, for each task change after `from`"),
+            ("200", _STREAM, "A `taskChanges` subscription: one `next` event, holding a GraphQL result, for each task change after `from`; an `occurrenceChanges` subscription: the ledger's newest page first (`head`), then one for each change to its rows"),
+            ("404", "application/json", "An `occurrenceChanges` subscription for an event no workflow is tied to"),
             ("410", "application/json", "The `from` position is no longer held: the error code is `REREAD`, and the client reads the task list again"),
         ),
     ),

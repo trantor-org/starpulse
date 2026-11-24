@@ -1,4 +1,4 @@
-"""`POST /graphql`: the task list and task detail queries over the read model, and the task subscription.
+"""`POST /graphql`: the task list and task detail queries over the read model, the ledger's occurrences, and the subscriptions.
 
 The tracked SDL (`schemas/tasks.graphql`) is bound with Ariadne and run by `ariadne.graphql()` from this endpoint, not
 a mounted ASGI app. A resolver reads the feed on a request worker thread. The request-duration histogram carries the
@@ -7,9 +7,13 @@ operation name when a view's stored document declares it, else `other`.
 A list answers with the stream position it was read at. A `taskChanges` subscription from a position is answered with an
 event stream (graphql-sse's distinct connections mode): one `next` event for each task change after it, the document's
 selection run on the change. A position the store no longer holds is answered with a 410 whose error code is `REREAD`.
+
+An `occurrenceChanges` subscription holds one event's ledger: its first `next` event is the newest page (`head: true`),
+each later one the rows that changed. An event no workflow is tied to is answered with a 404.
 """
 
 import json
+import math
 import time
 from inspect import isawaitable
 from typing import Any
@@ -41,7 +45,7 @@ from starpulse.views.adapters.inbound.api.answering import answer, on_worker, se
 from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import refused
 from starpulse.views.adapters.outbound import request_durations
-from starpulse.views.application.queries.responses import spend_response
+from starpulse.views.application.queries.responses import PAGE_LIMIT, spend_response
 from starpulse.views.model.encoding import encode
 
 #: The largest document and variables a request may send, in bytes.
@@ -49,6 +53,7 @@ LIMIT = 65536
 
 query = QueryType()
 task = ObjectType("Task")
+occurrence = ObjectType("Occurrence")
 
 
 async def _worker(info: GraphQLResolveInfo, call: Any, *args: Any) -> Any:
@@ -85,6 +90,20 @@ async def _tasks(
 @query.field("task")
 async def _task(_: Any, info: GraphQLResolveInfo, id: str) -> dict | None:  # noqa: A002 - the schema's argument name
     return await _worker(info, info.context["feed"].task, id)
+
+
+@query.field("occurrences")
+async def _occurrences(
+    _: Any, info: GraphQLResolveInfo, event: str, before: float | None = None, limit: int = 20
+) -> dict | None:
+    if before is not None and not math.isfinite(before) or not 0 < limit <= PAGE_LIMIT:
+        raise GraphQLError(f"occurrences takes a finite before and a limit from 1 to {PAGE_LIMIT}")
+    return await _worker(info, info.context["feed"].ledger_rows, event, before, limit)
+
+
+@occurrence.field("child")
+def _child(row: dict, _: GraphQLResolveInfo) -> bool:
+    return "appliedBy" in row
 
 
 @task.field("lane")
@@ -133,7 +152,7 @@ async def _spend(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
     return [row for row in report["spend"] if row["task"] == agent["id"]]
 
 
-SCHEMA = make_executable_schema(task_graphql.type_defs(), query, task)
+SCHEMA = make_executable_schema(task_graphql.type_defs(), query, task, occurrence)
 
 
 def _failed(request: Request, status: int, message: str) -> Response:
@@ -163,12 +182,12 @@ def _root_field(document: DocumentNode, selection: Any) -> FieldNode:
     return selection
 
 
-async def _render(document: DocumentNode, payload: dict, context: dict, change: dict) -> bytes:
-    """One `next` event's body: the document's selection run on `change`."""
+async def _render(document: DocumentNode, payload: dict, context: dict, name: str, change: dict) -> bytes:
+    """One `next` event's body: the document's selection run on `change`, the value of subscription field `name`."""
     result = execute(
         SCHEMA,
         document,
-        root_value={"taskChanges": change},
+        root_value={name: change},
         context_value=context,
         variable_values=payload.get("variables"),
         operation_name=payload.get("operationName"),
@@ -186,13 +205,17 @@ async def _follow(
         errors += variables
     if errors:
         return answer(request, encode("graphql", {"errors": [error.formatted for error in errors]}), 400)
-    field = SCHEMA.subscription_type.fields["taskChanges"]  # type: ignore[union-attr]
-    position = get_argument_values(field, _root_field(document, operation), variables)["from"]  # type: ignore[arg-type]
+    selected = _root_field(document, operation)
+    name = selected.name.value
+    args = get_argument_values(SCHEMA.subscription_type.fields[name], selected, variables)  # type: ignore[union-attr,arg-type]
 
     def render(change: dict) -> str:
-        return from_thread.run(_render, document, payload, context, change).decode()
+        return from_thread.run(_render, document, payload, context, name, change).decode()
 
-    return await on_worker(request, lambda: seams(request).streams.task_changes(request, position, render))
+    streams = seams(request).streams
+    if name == "occurrenceChanges":
+        return await on_worker(request, lambda: streams.ledger_changes(request, args["event"], render))
+    return await on_worker(request, lambda: streams.task_changes(request, args["from"], render))
 
 
 async def _run(request: Request, operation: list[str]) -> Response:

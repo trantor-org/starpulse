@@ -102,6 +102,45 @@ type TaskChange {
   task: Task
 }
 
+"""Any JSON value: a ledger row's `runs` and `fails` map workflow names to the page's own shapes."""
+scalar JSON
+
+"""The pull request a merge came from."""
+type OccurrencePull {
+  repo: String!
+  number: Int!
+  url: String!
+}
+
+"""One occurrence of a ledger's event: the merge (or event) and what each workflow did with it."""
+type Occurrence {
+  key: String!
+  at: Float!
+  tasks: [String!]!
+  sha: String
+  pr: OccurrencePull
+  """The merge is in a repository the parent pins: `appliedBy` is the parent merge whose pin bump applied it, null until one has."""
+  child: Boolean!
+  appliedBy: String
+  applies: [String!]
+  runs: JSON!
+  fails: JSON!
+  pinned: Boolean!
+}
+
+"""A page of a ledger's occurrences, newest first, and whether older ones remain inside the 24-hour window."""
+type OccurrencePage {
+  rows: [Occurrence!]!
+  more: Boolean!
+}
+
+"""One `occurrenceChanges` event: the newest page when `head` (the first event of a connection), then only the rows that changed."""
+type OccurrenceChange {
+  head: Boolean!
+  rows: [Occurrence!]!
+  more: Boolean!
+}
+
 type Query {
   """
   The open tasks. `filter` keeps those whose id, title or a label holds it (case aside); `source`, `lane` and
@@ -110,6 +149,11 @@ type Query {
   tasks(filter: String, source: String, lane: String, milestone: String): TaskList!
   """One open task, or null when the board holds none by that id."""
   task(id: ID!): Task
+  """
+  An event's ledger, `limit` occurrences (1 to 100, default 20) older than `before` (null: the newest), or null when no
+  workflow is tied to `event`.
+  """
+  occurrences(event: String!, before: Float, limit: Int = 20): OccurrencePage
 }
 
 type Subscription {
@@ -118,4 +162,9 @@ type Subscription {
   with HTTP 410 and the error code `REREAD`: read the list again.
   """
   taskChanges(from: Int!): TaskChange!
+  """
+  An event's newest page as the first event (`head`), then one event for each change to its rows. A 404 when no workflow is
+  tied to `event`.
+  """
+  occurrenceChanges(event: String!): OccurrenceChange!
 }

@@ -14,7 +14,6 @@ from starpulse.views.adapters.inbound.api import (
     board,
     docs,
     history,
-    ledger,
     machines,
     milestones,
     openapi,
@@ -78,10 +77,9 @@ class Api:
 
 def api_routes(api: Api) -> list[ApiRoute]:
     """Every route under `/api`, a resource at a time. Within a resource a more specific path comes before the one
-    that also matches it: a ledger's stream before the ledger's read."""
+    that also matches it."""
     return [
         *snapshot.routes(api),
-        *ledger.routes(api),
         *board.routes,
         *history.routes(api),
         *tasks.routes(api),
