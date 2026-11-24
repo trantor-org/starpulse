@@ -66,6 +66,9 @@ def _answers(op: Op) -> dict[str, Any]:
     answers: dict[str, Any] = {
         status: {"description": "The answer", "content": {op.media: {"schema": schema}}} for status in op.status
     }
+    for status, media, description in op.extra:
+        answer = answers.setdefault(status, {"description": description, "content": {}})
+        answer["content"][media] = {"schema": {"type": "string"} if media == "text/event-stream" else schema}
     if failed:  # each refusal extends `ApiError`, so a rich body also matches it: `anyOf`, never `oneOf`
         answers["4XX"] = {
             "description": "A refusal",

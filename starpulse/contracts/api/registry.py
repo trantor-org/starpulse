@@ -244,8 +244,8 @@ BODIES: dict[str, Any] = {
 class Op(NamedTuple):
     """One method of one route: what it does, the model of the request body (a media type for a body no model
     describes), the models of its answer and its query names; `media` is the type of the answer, `headers` the request
-    headers the route requires, `required` the query names it requires and `status` the codes the handler answers
-    success with."""
+    headers the route requires, `required` the query names it requires, `status` the codes the handler answers
+    success with, and `extra` the answers beside those, each a status, a media type and what the answer means."""
 
     summary: str
     body: Any = None
@@ -255,6 +255,7 @@ class Op(NamedTuple):
     headers: tuple[str, ...] = ()
     required: tuple[str, ...] = ()
     status: tuple[str, ...] = ("200",)
+    extra: tuple[tuple[str, str, str], ...] = ()
 
 
 def _read(summary: str, kind: str | None = None, *query: str, media: str = "application/json") -> Op:
@@ -346,7 +347,15 @@ ROUTES: dict[tuple[str, str], Op] = {
     ),
     ("GET", "/api/views/{id}"): _read("The GraphQL document a view stores", "view"),
     ("GET", "/api/openapi"): Op("This document"),
-    ("POST", "/graphql"): _write("Run a GraphQL query over the tasks", "graphql", GraphqlRequest),
+    ("POST", "/graphql"): Op(
+        "Run a GraphQL query over the tasks, or follow their changes with a subscription",
+        BODIES["graphql"],
+        GraphqlRequest,
+        extra=(
+            ("200", _STREAM, "A `taskChanges` subscription: one `next` event, holding a GraphQL result, for each task change after `from`"),
+            ("410", "application/json", "The `from` position is no longer held: the error code is `REREAD`, and the client reads the task list again"),
+        ),
+    ),
     ("GET", "/metrics"): _read("Prometheus metrics", media="text/plain"),
     ("POST", "/intake/grafana"): _write("Ingest a Grafana alert", "ingest", "application/json"),
     ("POST", "/intake/temporal-completion"): Op(

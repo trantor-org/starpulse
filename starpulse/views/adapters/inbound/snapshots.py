@@ -119,6 +119,10 @@ class Snapshots:
             for stream in self._streams:
                 stream.put((kind, data))
 
+    def position(self) -> int:
+        """The sequence of the newest stored delta: a read made after this call reflects every change up to it."""
+        return self._store.head()
+
     def watch_from(self, seq: int) -> tuple[list[tuple[str, dict]], queue.Queue] | None:
         """The deltas after `seq`, and the queue of every delta after those; None when the store no longer holds them
         all, and the caller reads a fresh snapshot."""

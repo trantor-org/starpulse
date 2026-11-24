@@ -21,6 +21,7 @@ class GraphqlError(_Api):
     message: str
     locations: list[dict[str, int]] | None = None
     path: list[str | int] | None = None
+    extensions: dict[str, Any] | None = Field(None, description="Machine-readable detail; `code` is `REREAD` for a lost stream position.")
 
 
 class GraphqlResponse(_Api):

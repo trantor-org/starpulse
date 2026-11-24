@@ -90,12 +90,32 @@ type SpendPhase {
   phase_above_norm: Boolean!
 }
 
+"""The open tasks a read found, and the stream position it was read at: a `taskChanges` subscription from it carries each change after the read."""
+type TaskList {
+  position: Int!
+  items: [Task!]!
+}
+
+"""One task that changed: `task` is its card now, null when the board no longer holds it."""
+type TaskChange {
+  id: ID!
+  task: Task
+}
+
 type Query {
   """
   The open tasks. `filter` keeps those whose id, title or a label holds it (case aside); `source`, `lane` and
   `milestone` keep those equal to it.
   """
-  tasks(filter: String, source: String, lane: String, milestone: String): [Task!]!
+  tasks(filter: String, source: String, lane: String, milestone: String): TaskList!
   """One open task, or null when the board holds none by that id."""
   task(id: ID!): Task
+}
+
+type Subscription {
+  """
+  Each task change after stream position `from`, one `next` event each. A `from` the server no longer holds is answered
+  with HTTP 410 and the error code `REREAD`: read the list again.
+  """
+  taskChanges(from: Int!): TaskChange!
 }

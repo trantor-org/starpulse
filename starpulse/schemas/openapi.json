@@ -2917,7 +2917,7 @@
     },
     "/graphql": {
       "post": {
-        "summary": "Run a GraphQL query over the tasks",
+        "summary": "Run a GraphQL query over the tasks, or follow their changes with a subscription",
         "tags": [
           "graphql"
         ],
@@ -2935,6 +2935,21 @@
         "responses": {
           "200": {
             "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphqlResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The `from` position is no longer held: the error code is `REREAD`, and the client reads the task list again",
             "content": {
               "application/json": {
                 "schema": {
@@ -5674,6 +5689,19 @@
               }
             ],
             "default": null
+          },
+          "extensions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Machine-readable detail; `code` is `REREAD` for a lost stream position."
           }
         },
         "required": [

@@ -2802,6 +2802,19 @@
     "GraphqlError": {
       "description": "One error a query met, as the GraphQL over HTTP spec names its fields.",
       "properties": {
+        "extensions": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Machine-readable detail; `code` is `REREAD` for a lost stream position."
+        },
         "locations": {
           "anyOf": [
             {

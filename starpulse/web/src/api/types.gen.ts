@@ -1543,6 +1543,12 @@ export interface GraphqlResponse {
  * One error a query met, as the GraphQL over HTTP spec names its fields.
  */
 export interface GraphqlError {
+  /**
+   * Machine-readable detail; `code` is `REREAD` for a lost stream position.
+   */
+  extensions?: {
+    [k: string]: unknown;
+  } | null;
   locations?:
     | {
         [k: string]: number;
