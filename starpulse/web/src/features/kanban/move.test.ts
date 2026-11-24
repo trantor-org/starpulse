@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
-import { MoveStore, codeParts, place, postMove, targets, type Post, type Reply } from "./move";
+import { MoveStore, codeParts, fetchStanding, place, postMove, targets, type Post, type Reply } from "./move";
 
 const OK = { allowed: true, reason: "", skill: "" };
 const GUARD = { allowed: false, reason: "a checked criterion opening `Operator approved the render:` is not recorded", skill: "designing-ui" };
@@ -366,5 +366,24 @@ describe("a drop judged by the board's standing guards", () => {
     await vi.waitFor(() => expect(post).toHaveBeenCalled());
 
     expect(standing).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the standing read", () => {
+  const reply = (body: unknown, ok = true) => vi.fn(async () => ({ ok, json: async () => body }) as unknown as Response);
+
+  it("asks the task's moves over /graphql and keys each by its column, its actors by name", async () => {
+    const moves = [{ to: "review", writers: ["agent"], ...GUARD, warnings: [], actors: [{ actor: "agent", ...OK, warnings: [] }] }];
+    const fetcher = reply({ data: { task: { moves } } });
+    const { to: _to, actors: _actors, ...rest } = moves[0];
+    expect(await fetchStanding("TASK-1", fetcher)).toEqual({ review: { ...rest, actors: { agent: { ...OK, warnings: [] } } } });
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/graphql");
+    expect(JSON.parse(init.body as string).variables).toEqual({ id: "TASK-1" });
+  });
+
+  it("is null when the read fails or the query errs", async () => {
+    expect(await fetchStanding("TASK-1", reply({}, false))).toBeNull();
+    expect(await fetchStanding("TASK-1", reply({ data: { task: null }, errors: [{ message: "x" }] }))).toBeNull();
   });
 });

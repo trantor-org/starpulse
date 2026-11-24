@@ -90,8 +90,8 @@ describe("postComment", () => {
     });
 
     expect(ok).toBe(true);
-    expect(sent?.url).toBe("/api/edit");
-    expect(sent?.body).toMatchObject({ task: "TASK-1", base: { title: "T" }, changes: { title: "T" }, comment: "looks good" });
+    expect(sent?.url).toBe("/api/tasks/TASK-1");
+    expect(sent?.body).toMatchObject({ base: { title: "T" }, changes: { title: "T" }, comment: "looks good" });
   });
 
   it("reports a refused or unreachable write as not posted", async () => {
@@ -121,11 +121,10 @@ describe("saving an edited task", () => {
     const result = await saveTask("TASK-9", base, draft, {}, fetcher);
 
     expect(fetcher).toHaveBeenCalledOnce();
-    expect(fetcher).toHaveBeenCalledWith("/api/edit", {
-      method: "POST",
+    expect(fetcher).toHaveBeenCalledWith("/api/tasks/TASK-9", {
+      method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        task: "TASK-9",
         base: { title: "T", labels: ["needs-review"] },
         changes: { title: "New title", labels: ["ui", "needs-review"] },
         comment: "",
@@ -223,7 +222,7 @@ describe("toggling a checkbox without an editor", () => {
     await saveSection("TASK-9", "definitionOfDone", open, toggleItem(open, "definitionOfDone", 1, true), {}, fetcher);
 
     const body = JSON.parse((fetcher.mock.calls[0] as unknown as [string, { body: string }])[1].body);
-    expect(body).toEqual({ task: "TASK-9", base: { definitionOfDone: open.definitionOfDone }, changes: { definitionOfDone: [{ n: 1, text: "done item", checked: true }] }, comment: "", actor: "operator" });
+    expect(body).toEqual({ base: { definitionOfDone: open.definitionOfDone }, changes: { definitionOfDone: [{ n: 1, text: "done item", checked: true }] }, comment: "", actor: "operator" });
   });
 
   it("asks for evidence before writing a newly checked acceptance criterion", async () => {

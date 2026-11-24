@@ -1,6 +1,6 @@
 """The scheduler's runtime: its switch, its capacity sampler and its dispatch loop, wired to the board and the harness events.
 
-`build` assembles them from the `[scheduler]` policy; `Runtime.status` is what `GET /api/scheduler` answers and the
+`build` assembles them from the `[scheduler]` policy; `Runtime.status` is what `GET /api/admin` answers and the
 capacity strip draws. The loop (`loop.Loop`) admits, starts and settles; the sampler's crossings and the switch turning
 on wake it.
 """

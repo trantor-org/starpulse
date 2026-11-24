@@ -27,7 +27,7 @@ describe("creating a task", () => {
 
     expect(await postCreate(FULL, fetcher)).toEqual({ ok: true, task: "TASK-1" });
     expect(sent!.url).toBe("/api/tasks");
-    expect(sent!.init?.method).toBe("POST");
+    expect(sent!.init?.method).toBe("PUT");
     expect(JSON.parse(String(sent!.init?.body))).toEqual(createBody(FULL));
   });
 

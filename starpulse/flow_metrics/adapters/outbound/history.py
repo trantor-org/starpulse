@@ -94,13 +94,6 @@ def _last_lane(db: Connection, task: str, source_name: str | None) -> str | None
     return db.execute(query).scalar()
 
 
-def entered(engine: Engine, task: str, status: str) -> bool:
-    """Whether the history holds any move of the task into `status`."""
-    c = _lane_changes.c
-    with engine.connect() as db:
-        return db.execute(select(c.id).where(c.task == task, c.new_status == status).limit(1)).first() is not None
-
-
 def _holds_move(db: Connection, task: str, source_name: str | None, status: str, at: float) -> bool:
     """Whether the history holds the task's move into `status` at `at`: a second writer of the move adds nothing."""
     c = _lane_changes.c
@@ -192,10 +185,6 @@ class HistoryStore:
     def checkpoints(self) -> Checkpoints:
         """How far each reader of the log got, so a restart resumes after the last entry it recorded."""
         return Checkpoints(self.engine)
-
-    def entered(self, task: str, status: str) -> bool:
-        """Whether the task ever entered `status`, which the history of its lane changes answers."""
-        return entered(self.engine, task, status)
 
     def record_machine(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
         """Write one machine event; one the store already holds is a no-op.

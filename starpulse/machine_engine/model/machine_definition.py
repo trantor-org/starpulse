@@ -76,13 +76,10 @@ WAIT_FACTS = (
     "pr_unfinished_dead",
     "deps_done",
     "deps_done_with_pr",
-    "deps_done_started",
     "deps_unresolved",
     "criteria_met",
-    "criteria_met_started",
     "owner_stale",
     "overdue",
-    "started_work",
 )
 #: Words that open a sentence, never a command: an agent trigger of a final event opening with one is prose no mapper matches.
 PROSE_HEADS = frozenset(

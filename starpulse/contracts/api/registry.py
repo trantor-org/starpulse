@@ -6,6 +6,7 @@ from typing import Any, NamedTuple
 
 from pydantic import BaseModel
 
+from starpulse.contracts.api.dto.admin import AdminState
 from starpulse.contracts.api.dto.dag import Runs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
@@ -17,7 +18,6 @@ from starpulse.contracts.api.dto.milestones import (
     Milestones,
     MilestoneShown,
     RetiredTasks,
-    TaskMoves,
     TaskRecord,
     TaskRecords,
 )
@@ -25,6 +25,7 @@ from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChang
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
+    AdminRequest,
     ArchiveRequest,
     CompleteRequest,
     CreateRequest,
@@ -47,9 +48,9 @@ from starpulse.contracts.api.dto.requests import (
     RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
-    SchedulerRequest,
     StartRequest,
     TakeOverRequest,
+    TaskPutRequest,
     VerdictRequest,
     WindowRequest,
 )
@@ -101,7 +102,6 @@ from starpulse.contracts.api.dto.snapshot import (
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import (
     Spend,
-    TaskSpend,
 )
 
 #: Each `/api/events` event name and the model of its `data`.
@@ -132,8 +132,6 @@ RESPONSES: dict[str, Any] = {
     "/api/flows": Snapshot,
     "/api/runs": Runs,
     "/api/task/": TaskRecord,
-    "/api/moves/": TaskMoves,
-    "/api/task-spend/": TaskSpend,
     "/api/task-records": TaskRecords,
     "/api/milestones/": MilestoneShown,
     "/api/docs/": DocShown,
@@ -142,8 +140,8 @@ RESPONSES: dict[str, Any] = {
     "/api/pulls": Pulls,
     "/api/search": SearchResults,
     "/api/search/similar": SearchResults,
-    "/api/scheduler": SchedulerStatus,
     "/api/views/": ViewShown,
+    "/api/admin": AdminState,
 }
 
 #: Each write route's request body.
@@ -166,13 +164,14 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/tasks": CreateRequest,
     "/api/machines": MachineCreateRequest,
     "/api/machines/{name}": MachinePutRequest,
+    "/api/tasks/{id}": TaskPutRequest,
     "/api/milestones": MilestoneCreateRequest,
     "/api/milestones/{id}": MilestonePutRequest,
     "/api/docs": DocCreateRequest,
     "/api/docs/{id}": DocPutRequest,
     "/api/history-window": WindowRequest,
-    "/api/scheduler": SchedulerRequest,
     "/graphql": GraphqlRequest,
+    "/api/admin": AdminRequest,
 }
 
 #: Each list route's request body: a POST to a path a PUT also writes, which `REQUESTS` names.
@@ -198,16 +197,14 @@ BODIES: dict[str, Any] = {
     "pulls": Pulls | ApiError,
     "search": SearchResults | ApiError,
     "spend": Spend | ApiError | WindowTooLong,
-    "taskSpend": TaskSpend | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
     "harnesses": Harnesses,
     "window": WindowState | ApiError,
-    "scheduler": SchedulerStatus | ApiError,
+    "admin": AdminState | ApiError,
     "doctor": ContractReport,
     "ready": ReadyReport,
     "runs": Runs,
     "task": TaskRecord | ApiError,
-    "moves": TaskMoves | ApiError,
     "task_records": TaskRecords,
     "move": Moved | MovedEach | SkillRefusal | ApiError,
     "start": Started | SkillRefusal | ApiError,
@@ -225,6 +222,8 @@ BODIES: dict[str, Any] = {
     "park": Parked | SkillRefusal | ApiError,
     "review": Reviewed | SkillRefusal | ApiError,
     "create": Created | CreatedEach | SkillRefusal | ApiError,
+    "task_put": Edited | StaleEdit | Restored | Reopened | TakenOver | SkillRefusal | ApiError,
+    "task_delete": Archived | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,
     "milestone": MilestoneShown | ApiError,
     "milestone_create": MilestoneCreated | SkillRefusal | ApiError,
@@ -302,9 +301,7 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/history-window"): _read("How many hours of history the store keeps", "window"),
     ("PUT", "/api/history-window"): _write("Set the history window", "window", WindowRequest),
     ("DELETE", "/api/history-window"): _write("Reset the history window to its default", "window"),
-    ("GET", "/api/task-spend/{id}"): _read("One task's spend", "taskSpend", "hours"),
     ("GET", "/api/task/{id}"): _read("One task", "task"),
-    ("GET", "/api/moves/{id}"): _read("One task's moves", "moves"),
     ("GET", "/api/task-records"): _read("Task records, the ids named when given", "task_records", "ids"),
     ("GET", "/api/retired"): _read("Retired tasks", "retired", "before", "fields", "limit", "milestone", "task"),
     ("POST", "/api/move"): _write("Move tasks to a state", "move", MoveRequest),
@@ -323,6 +320,11 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/complete"): _write("Complete a task", "complete", CompleteRequest),
     ("POST", "/api/reopen"): _write("Reopen a task", "reopen", ReopenRequest),
     ("POST", "/api/tasks"): _write("Create tasks", "create", CreateRequest, "201", "200"),
+    ("PUT", "/api/tasks"): _write("Create tasks", "create", CreateRequest, "201", "200"),
+    ("PUT", "/api/tasks/{id}"): _write(
+        "Write a task over the base named, or reopen, restore or take it over", "task_put", TaskPutRequest
+    ),
+    ("DELETE", "/api/tasks/{id}"): _write("Archive a task, recording the `reason` its optional body names", "task_delete"),
     ("GET", "/api/milestones/{id}"): _read("One milestone, archived or open", "milestone"),
     ("PUT", "/api/milestones/{id}"): _write(
         "Write a milestone over the revision named", "milestone_put", MilestonePutRequest
@@ -337,8 +339,8 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("PUT", "/api/docs"): _write("Create a doc", "doc_create", DocCreateRequest, "201"),
     ("POST", "/api/run/{name}"): _write("Run a workflow", "run"),
     ("POST", "/api/runs/{instance}/{workflow}/rerun"): _write("Rerun a workflow run", "run"),
-    ("GET", "/api/scheduler"): _read("The scheduler's state", "scheduler"),
-    ("PUT", "/api/scheduler"): _write("Switch the scheduler on or off", "scheduler", SchedulerRequest),
+    ("GET", "/api/admin"): _read("Admin's settings: the scheduler's state, the display and the theme", "admin"),
+    ("PUT", "/api/admin"): _write("Change any of Admin's settings, naming only those", "admin", AdminRequest),
     ("GET", "/api/pulls"): _read(
         "Pull requests", "pulls", "bodies", "body_contains", "number", "repo", "state", "task"
     ),

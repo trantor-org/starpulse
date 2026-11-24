@@ -7,6 +7,7 @@ from typing import Any
 from pydantic.json_schema import GenerateJsonSchema
 
 from starpulse.contracts.api._base import _Api
+from starpulse.contracts.api.dto.admin import AdminState
 from starpulse.contracts.api.dto.dag import Runs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
@@ -17,7 +18,6 @@ from starpulse.contracts.api.dto.milestones import (
     Milestones,
     MilestoneShown,
     RetiredTasks,
-    TaskMoves,
     TaskRecord,
     TaskRecords,
 )
@@ -26,6 +26,7 @@ from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse,
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
+    AdminRequest,
     ArchiveRequest,
     CompleteRequest,
     CreateRequest,
@@ -48,9 +49,9 @@ from starpulse.contracts.api.dto.requests import (
     RetiredImportRequest,
     RetireRequest,
     ReviewRequest,
-    SchedulerRequest,
     StartRequest,
     TakeOverRequest,
+    TaskPutRequest,
     VerdictRequest,
     WindowRequest,
 )
@@ -102,7 +103,6 @@ from starpulse.contracts.api.dto.snapshot import (
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import (
     Spend,
-    TaskSpend,
 )
 
 
@@ -129,16 +129,14 @@ class ApiContract(_Api):
     viewShown: ViewShown
     searchResults: SearchResults
     spend: Spend
-    taskSpend: TaskSpend
     trajectories: Trajectories
     harnesses: Harnesses
     windowState: WindowState
-    schedulerStatus: SchedulerStatus
+    adminState: AdminState
     contractReport: ContractReport
     readyReport: ReadyReport
     runs: Runs
     taskRecord: TaskRecord
-    taskMoves: TaskMoves
     taskRecords: TaskRecords
     milestones: Milestones
     milestoneShown: MilestoneShown
@@ -162,6 +160,7 @@ class ApiContract(_Api):
         | ParkRequest
         | ReviewRequest
         | CreateRequest
+        | TaskPutRequest
         | MilestoneCreateRequest
         | MachineCreateRequest
         | MachineListRequest
@@ -172,8 +171,8 @@ class ApiContract(_Api):
         | DocListRequest
         | DocPutRequest
         | WindowRequest
-        | SchedulerRequest
         | GraphqlRequest
+        | AdminRequest
     ]
     answers: list[
         Moved

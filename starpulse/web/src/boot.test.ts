@@ -75,7 +75,7 @@ describe("the page's boot", () => {
     const held = boot(vi.fn());
 
     expect(made.calls.length).toBe(started + 1);
-    expect(asked).toEqual(["/api/task/TASK-9"]);
+    expect(asked).toEqual(["/api/admin", "/api/task/TASK-9"]);
     expect(held.records.fresh("TASK-9")).toBeDefined();
   });
 
@@ -89,17 +89,17 @@ describe("the page's boot", () => {
     const held = boot(vi.fn());
 
     expect(await held.records.fresh("TASK-9")!.read).toEqual({ title: "early" });
-    expect(fetched).not.toHaveBeenCalled();
+    expect(fetched.mock.calls.map(([url]) => url)).toEqual(["/api/admin"]);
   });
 
-  it("reads no record when the address names no task", async () => {
+  it("reads the settings every device shares once, and no record when the address names no task", async () => {
     const fetched = vi.fn();
     vi.stubGlobal("fetch", fetched);
     const { boot } = await import("./boot");
 
     boot(vi.fn());
 
-    expect(fetched).not.toHaveBeenCalled();
+    expect(fetched.mock.calls.map(([url]) => url)).toEqual(["/api/admin"]);
   });
 
   it("marks in the frame the renderer first draws, then mounts the page a frame behind it", async () => {
@@ -189,7 +189,7 @@ describe("the page's boot", () => {
 
   it.each([
     ["an address naming it", () => history.replaceState(null, "", "/?view=constellation")],
-    ["a saved Opens on", () => { history.replaceState(null, "", "/"); localStorage.setItem("fv.admin.prefs", JSON.stringify({ view: "constellation" })); }],
+    ["a bare address while Opens on is the Star Map", () => history.replaceState(null, "", "/")],
   ])("draws no Star Map at phone width for %s, and hides it until the page widens", async (_name, address) => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-width: 900px)" }));
     address();

@@ -35,6 +35,8 @@ from starpulse.contracts.api.dto.requests import (
     RetiredImportRequest,
     RetireRequest,
     TakeOverRequest,
+    TaskDeleteRequest,
+    TaskPutRequest,
     VerdictRequest,
 )
 from starpulse.machine_engine.model.transitions import lane_id
@@ -332,7 +334,10 @@ def restore_task(request: RestoreRequest, feed: BoardFeed, restore: TaskRestorer
     The restore places the task in a lane, so its writer is noted on the feed as any other move's is. The writer owns
     every other refusal (no archived file, the number already open, the name taken), which answers 409 with its reason.
     """
-    task, who = request.task, who_of(request)
+    return _restored(request.task, who_of(request), feed, restore)
+
+
+def _restored(task: str, who: Who, feed: BoardFeed, restore: TaskRestorer) -> tuple[int, dict[str, Any]]:
     written = record_written(feed, task, who, lambda: restore(task))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
@@ -349,11 +354,16 @@ def reopen_task(
     (not Done, the name taken) and `landed` says whether a merged pull request cites the task, which is refused too:
     its work shipped, so a reopen would deliver it twice. Each refusal answers 409 with its reason. A session's reopen is the task actor's, as a claim's.
     """
-    task, who = request.task, who_of(request)
+    return _reopened(request.task, request.reason, who_of(request), feed, reopen, landed)
+
+
+def _reopened(
+    task: str, reason: str, who: Who, feed: BoardFeed, reopen: TaskReopener, landed: Callable[[str], bool]
+) -> tuple[int, dict[str, Any]]:
     if landed(task):
         return 409, {"error": f"{task} has a merged pull request: its work shipped"}
     who = who._replace(actor=TASK_ACTOR) if who.actor == AGENT else who
-    written = record_written(feed, task, who, lambda: reopen(task, request.reason, actor=who.actor))
+    written = record_written(feed, task, who, lambda: reopen(task, reason, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
@@ -368,7 +378,10 @@ def take_over_task(
     The Update carries no payload; the workflow only stops typing into the task's pane. A task with no workflow (an
     attended one) answers 409. An accepted take-over shows as interactive in the feed's snapshots.
     """
-    task = request.task
+    return _taken_over(request.task, take_over, feed)
+
+
+def _taken_over(task: str, take_over: Callable[[str], bool] | None, feed: BoardFeed) -> tuple[int, dict[str, Any]]:
     if take_over is None:
         return 404, {"error": "this instance runs no task workflows"}
     if not take_over(task):
@@ -501,3 +514,48 @@ def _created(request: CreateRequest, create: TaskCreator, feed: BoardFeed | None
             siblings[spec.ref] = body["task"]
         results.append(body)
     return 200, {"results": results}
+
+
+@with_request(TaskPutRequest, "Writing a task")
+def put_task(
+    request: TaskPutRequest,
+    task: str,
+    feed: BoardFeed,
+    board: Board,
+    take_over: Callable[[str], bool] | None,
+    landed: Callable[[str], bool],
+    *,
+    started: Callable[[str], bool],
+) -> tuple[int, dict[str, Any]]:
+    """Write `task` as `PUT /api/tasks/{id}` says: the HTTP status and JSON body of the verb the body names.
+
+    `reopen` reopens the Done task, `archived: false` restores it and `interactive: true` takes it over, each as the
+    verb route of that name does; any other body is an edit over its `base`, answered as `edit_task` answers it.
+    """
+    who = who_of(request)
+    if request.reopen is not None:
+        return _reopened(task, request.reopen, who, feed, board.reopen, landed)
+    if request.archived is not None:
+        return _restored(task, who, feed, board.restore)
+    if request.interactive is not None:
+        return _taken_over(task, take_over, feed)
+    edit = EditRequest(
+        task=task,
+        base=request.base,
+        changes=request.changes,
+        comment=request.comment,
+        breakGlass=request.break_glass,
+        request_key=request.request_key,
+        actor=request.actor,
+        session=request.session,
+        harness=request.harness,
+    )
+    return _REPLAYS.run(request.request_key, lambda: _edited(edit, feed, board.read, board.edit, started=started))
+
+
+@with_request(TaskDeleteRequest, "Archiving a task")
+def delete_task(
+    request: TaskDeleteRequest, task: str, feed: BoardFeed, board: Board
+) -> tuple[int, dict[str, Any]]:
+    """Archive `task` as `DELETE /api/tasks/{id}` says, as `archive_task` archives one task."""
+    return _archive_one(feed, board.archive, board.edit, task, request.reason or "", who_of(request))

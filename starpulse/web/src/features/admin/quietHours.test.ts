@@ -3,7 +3,7 @@ import { QuietHoursStore, type Window } from "./quietHours";
 
 const NIGHT: Window = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
 
-/** A server that keeps the window as `PUT /api/scheduler` does: a window or null, with an unreadable one refused. */
+/** A server that keeps the window as `PUT /api/admin` does: a window or null, with an unreadable one refused. */
 function server(opts: { window?: Window | null; status?: number } = {}) {
   let window = opts.window ?? null;
   const sent: unknown[] = [];

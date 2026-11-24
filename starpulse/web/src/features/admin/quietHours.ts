@@ -1,5 +1,5 @@
 // The Scheduler card's quiet hours: the daily window in which scheduler starts no task, kept by the server with the switch
-// (`PUT /api/scheduler {"quietHours": ...}`). The server validates it; this store only asks, and shows what the server answered.
+// (`PUT /api/admin {"quietHours": ...}`). The server validates it; this store only asks, and shows what the server answered.
 import { apiFetch } from "../../api/apiFetch";
 import { ROUTE } from "../scheduler/scheduler";
 

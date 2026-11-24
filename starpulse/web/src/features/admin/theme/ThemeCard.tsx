@@ -1,6 +1,7 @@
-// The Admin's Theme card: a color pack and a background for this browser, each a tile that applies on click, with the built-in
+// The Admin's Theme card: a color pack and a background for every device, each a tile that applies on click, with the built-in
 // packs, the ones imported here, and the dialogs that import a base16 or base24 scheme or make a background from one color.
 import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Outcome } from "../Outcome";
 import { BgDialog } from "./BgDialog";
 import { ImportDialog } from "./ImportDialog";
 import { Ramp, Swatches } from "./parts";
@@ -25,7 +26,7 @@ function RenameField({ name, done }: { name: string; done: (v: string | null) =>
   );
 }
 
-/** A tile for a pack or background this browser imported, with its Rename field and its in-page Delete confirmation. */
+/** A tile for a pack or background an operator imported, with its Rename field and its in-page Delete confirmation. */
 function Own({ name, rename, remove, children }: { name: string; rename: (v: string) => void; remove: () => void; children: (title: ReactNode) => ReactNode }) {
   const [mode, setMode] = useState<"rename" | "delete" | null>(null);
   const renamed = (v: string | null) => {
@@ -72,11 +73,12 @@ function BgTile({ name, n, on, choose, title }: { name: string; n: Neutrals; on:
 
 export function ThemeCard({ theme }: { theme: ThemeStore }) {
   const prefs = useSyncExternalStore(theme.subscribe, theme.get);
+  const saved = useSyncExternalStore(theme.subscribe, theme.saved);
   const [dialog, setDialog] = useState<"pack" | "bg" | null>(null);
   const n = theme.bgOf(prefs.bg);
   return (
     <section className="card thm">
-      <h2>Theme <span className="c">kept on this device only</span></h2>
+      <h2>Theme <span className="c">shared by every device</span></h2>
       <div className="row wide">
         <div><div className="lb">Color pack</div><div className="hint">The status colors: passing, running, failing and the rest. Each swatch row is drawn on your background.</div></div>
         <div className="tiles packs">
@@ -101,6 +103,7 @@ export function ThemeCard({ theme }: { theme: ThemeStore }) {
           <button type="button" className="tile add" onClick={() => setDialog("bg")}><span className="plus">+</span>Add background<span className="src">from one color or a scheme</span></button>
         </div>
       </div>
+      <Outcome saved={saved} />
       {dialog === "pack" && <ImportDialog theme={theme} close={() => setDialog(null)} />}
       {dialog === "bg" && <BgDialog theme={theme} close={() => setDialog(null)} />}
     </section>

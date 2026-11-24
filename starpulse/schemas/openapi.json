@@ -13,7 +13,7 @@
   "tags": [
     {
       "name": "tasks",
-      "description": "One task, its moves and spend, and every write that moves or edits tasks"
+      "description": "One task and every write that moves or edits tasks"
     },
     {
       "name": "board",
@@ -33,7 +33,7 @@
     },
     {
       "name": "jobs",
-      "description": "Workflows, their runs and the scheduler"
+      "description": "Workflows, their runs, and Admin's settings (the scheduler, display and theme)"
     },
     {
       "name": "ingest",
@@ -1022,62 +1022,6 @@
         }
       }
     },
-    "/api/task-spend/{id}": {
-      "get": {
-        "summary": "One task's spend",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "get_api_task_spend_id",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "hours",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskSpend"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/WindowTooLong"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/task/{id}": {
       "get": {
         "summary": "One task",
@@ -1102,47 +1046,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskRecord"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/moves/{id}": {
-      "get": {
-        "summary": "One task's moves",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "get_api_moves_id",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskMoves"
                 }
               }
             }
@@ -2057,6 +1960,196 @@
             }
           }
         }
+      },
+      "put": {
+        "summary": "Create tasks",
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "put_api_tasks",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Created"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CreatedEach"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Created"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CreatedEach"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}": {
+      "put": {
+        "summary": "Write a task over the base named, or reopen, restore or take it over",
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "put_api_tasks_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Edited"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Restored"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Reopened"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TakenOver"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StaleEdit"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Archive a task, recording the `reason` its optional body names",
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "delete_api_tasks_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Archived"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/milestones/{id}": {
@@ -2609,20 +2702,20 @@
         }
       }
     },
-    "/api/scheduler": {
+    "/api/admin": {
       "get": {
-        "summary": "The scheduler's state",
+        "summary": "Admin's settings: the scheduler's state, the display and the theme",
         "tags": [
           "jobs"
         ],
-        "operationId": "get_api_scheduler",
+        "operationId": "get_api_admin",
         "responses": {
           "200": {
             "description": "The answer",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SchedulerStatus"
+                  "$ref": "#/components/schemas/AdminState"
                 }
               }
             }
@@ -2640,17 +2733,17 @@
         }
       },
       "put": {
-        "summary": "Switch the scheduler on or off",
+        "summary": "Change any of Admin's settings, naming only those",
         "tags": [
           "jobs"
         ],
-        "operationId": "put_api_scheduler",
+        "operationId": "put_api_admin",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SchedulerRequest"
+                "$ref": "#/components/schemas/AdminRequest"
               }
             }
           }
@@ -2661,7 +2754,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SchedulerStatus"
+                  "$ref": "#/components/schemas/AdminState"
                 }
               }
             }
@@ -3157,6 +3250,259 @@
           "steps"
         ],
         "title": "ActiveRun",
+        "type": "object"
+      },
+      "AdminRequest": {
+        "additionalProperties": false,
+        "description": "`PUT /api/admin`: any of the scheduler's settings, a patch of the display choices and/or a whole theme; a field\nleft out keeps its value.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "quietHours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuietHours"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "sessionCap": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it."
+          },
+          "cpuLimit": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "exclusiveMinimum": 0,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The cpu limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it."
+          },
+          "memoryLimit": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "exclusiveMinimum": 0,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The memory limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it."
+          },
+          "display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayPatch"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Theme"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "AdminRequest",
+        "type": "object"
+      },
+      "AdminState": {
+        "description": "Admin's settings in one answer: the scheduler's status, then the display and theme choices.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "harness": {
+            "description": "The harness the loop starts sessions on; defaults to claude.",
+            "type": "string"
+          },
+          "quietHours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuietHours"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Null when no window holds admission back."
+          },
+          "sessionCap": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchedulerSessionCap"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Absent before the scheduler worker has reported one."
+          },
+          "capacityLimits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchedulerCapacityLimits"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Absent before the scheduler worker has reported them."
+          },
+          "sampledAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dimensions": {
+            "items": {
+              "$ref": "#/components/schemas/SchedulerDimension"
+            },
+            "type": "array"
+          },
+          "inFlight": {
+            "description": "Every live session holding an In Progress task, oldest first; `url` is empty for one the loop did not start.",
+            "items": {
+              "$ref": "#/components/schemas/SchedulerSession"
+            },
+            "type": "array"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchedulerNext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Null when no task in the eligible lane is workable."
+          },
+          "pauses": {
+            "description": "Harnesses whose admission is paused until `until`. Absent when none are paused.",
+            "items": {
+              "$ref": "#/components/schemas/SchedulerPause"
+            },
+            "type": "array"
+          },
+          "sessionsByHarness": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SchedulerHarnessSessions"
+            },
+            "description": "Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.",
+            "type": "object"
+          },
+          "blockedBy": {
+            "description": "Every gate holding admission back now, each with its use and limit; empty when none does.",
+            "items": {
+              "$ref": "#/components/schemas/SchedulerBlock"
+            },
+            "type": "array"
+          },
+          "gateHistory": {
+            "description": "The latest kept rows of gate readings and block reasons, oldest first, kept by the scheduler itself.",
+            "items": {
+              "$ref": "#/components/schemas/SchedulerGateRow"
+            },
+            "type": "array"
+          },
+          "needsOperator": {
+            "description": "The `kind-decide` tasks in the eligible lane, which the scheduler never starts: the operator decides.",
+            "items": {
+              "$ref": "#/components/schemas/SchedulerOperatorTask"
+            },
+            "type": "array"
+          },
+          "display": {
+            "$ref": "#/components/schemas/Display"
+          },
+          "theme": {
+            "$ref": "#/components/schemas/Theme"
+          }
+        },
+        "required": [
+          "enabled",
+          "harness",
+          "sampledAt",
+          "dimensions",
+          "display",
+          "theme"
+        ],
+        "title": "AdminState",
         "type": "object"
       },
       "ApiError": {
@@ -4531,6 +4877,130 @@
           "session"
         ],
         "title": "Dispatched",
+        "type": "object"
+      },
+      "Display": {
+        "description": "How every device draws the page; a field left out of a write keeps its value.",
+        "properties": {
+          "scale": {
+            "default": 100,
+            "description": "The font size in percent of the design size, in steps of 5.",
+            "maximum": 150,
+            "minimum": 85,
+            "multipleOf": 5,
+            "type": "integer"
+          },
+          "motion": {
+            "default": true,
+            "description": "Off stills CSS animation and transitions and slows the Star Map's frame loop.",
+            "type": "boolean"
+          },
+          "view": {
+            "default": "constellation",
+            "description": "The view an address with no `view` parameter opens.",
+            "enum": [
+              "constellation",
+              "kanban"
+            ],
+            "type": "string"
+          },
+          "density": {
+            "default": "comfortable",
+            "enum": [
+              "comfortable",
+              "compact"
+            ],
+            "type": "string"
+          },
+          "clock": {
+            "default": "24",
+            "enum": [
+              "24",
+              "12"
+            ],
+            "type": "string"
+          }
+        },
+        "title": "Display",
+        "type": "object"
+      },
+      "DisplayPatch": {
+        "additionalProperties": false,
+        "description": "The display choices a write changes; a field left out keeps its value.",
+        "properties": {
+          "scale": {
+            "anyOf": [
+              {
+                "description": "The font size in percent of the design size, in steps of 5.",
+                "maximum": 150,
+                "minimum": 85,
+                "multipleOf": 5,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "motion": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "view": {
+            "anyOf": [
+              {
+                "enum": [
+                  "constellation",
+                  "kanban"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "density": {
+            "anyOf": [
+              {
+                "enum": [
+                  "comfortable",
+                  "compact"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "clock": {
+            "anyOf": [
+              {
+                "enum": [
+                  "24",
+                  "12"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "DisplayPatch",
         "type": "object"
       },
       "DocArchived": {
@@ -8945,6 +9415,46 @@
         "title": "Runs",
         "type": "object"
       },
+      "SavedBg": {
+        "description": "A background an operator imported; `n` is the page's own neutrals shape.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "n": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "n"
+        ],
+        "title": "SavedBg",
+        "type": "object"
+      },
+      "SavedPack": {
+        "description": "A color pack an operator imported; `pack` is the page's own pack shape.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "pack": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "pack"
+        ],
+        "title": "SavedPack",
+        "type": "object"
+      },
       "SchedulerBlock": {
         "description": "One gate holding admission back: a capacity dimension the top task overfits, or `start-limit`, the session-start\nservice refusing every start because its live-session limit is full.",
         "properties": {
@@ -9173,103 +9683,6 @@
           "reason"
         ],
         "title": "SchedulerPause",
-        "type": "object"
-      },
-      "SchedulerRequest": {
-        "additionalProperties": false,
-        "description": "`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours, the\nselected harness's session cap and/or the cpu and memory limits.",
-        "properties": {
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "quietHours": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuietHours"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "sessionCap": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it."
-          },
-          "cpuLimit": {
-            "anyOf": [
-              {
-                "anyOf": [
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "number"
-                  }
-                ],
-                "exclusiveMinimum": 0,
-                "maximum": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "The cpu limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it."
-          },
-          "memoryLimit": {
-            "anyOf": [
-              {
-                "anyOf": [
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "number"
-                  }
-                ],
-                "exclusiveMinimum": 0,
-                "maximum": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "The memory limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it."
-          }
-        },
-        "title": "SchedulerRequest",
         "type": "object"
       },
       "SchedulerSession": {
@@ -9958,160 +10371,6 @@
         "title": "Snapshot",
         "type": "object"
       },
-      "SpendPhase": {
-        "description": "One phase of one task: the tokens its steps burned, and the task's total against its cell's norm.",
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "phase": {
-            "description": "`claim`, `implement`, `qa`, `deliver` or `review_fix`; see `docs/sources.md`.",
-            "type": "string"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The task's `kind-*` label, without the prefix; null when it has none."
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The task's `size-*` label; null when it has none."
-          },
-          "steps": {
-            "description": "Model requests, a subagent's included.",
-            "type": "integer"
-          },
-          "side_steps": {
-            "description": "The subagents' share of `steps`.",
-            "type": "integer"
-          },
-          "input": {
-            "type": "integer"
-          },
-          "output": {
-            "type": "integer"
-          },
-          "cache_read": {
-            "type": "integer"
-          },
-          "cache_write": {
-            "type": "integer"
-          },
-          "wte": {
-            "description": "Uncached input + 1.25 x cache write + 0.1 x cache read + 5 x output.",
-            "type": "number"
-          },
-          "peak_context": {
-            "description": "The most input, cache-read and cache-write tokens one request held.",
-            "type": "integer"
-          },
-          "compactions": {
-            "description": "The compactions that fell in the phase.",
-            "type": "integer"
-          },
-          "models": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "profile": {
-            "default": "",
-            "description": "`<model>-<effort>` of the phase's first main-thread step, each `unknown` when unrecorded.",
-            "type": "string"
-          },
-          "first_at": {
-            "type": "number"
-          },
-          "last_at": {
-            "type": "number"
-          },
-          "task_wte": {
-            "description": "`wte` summed over the task's phases.",
-            "type": "number"
-          },
-          "norm_wte": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The sum of `phase_norm_wte` over the task's phases; null when any is null."
-          },
-          "above_norm": {
-            "description": "`task_wte` is over three times `norm_wte`.",
-            "type": "boolean"
-          },
-          "phase_norm_wte": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The median `wte` of this phase over the tasks of the task's kind, size and `profile` that ran it, or of its kind and size when that profile has under five; null under five."
-          },
-          "norm_profile": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The `profile` of the cell `phase_norm_wte` came from, or `mixed` for the kind and size cell pooling every profile; null when there is no norm."
-          },
-          "phase_above_norm": {
-            "description": "`wte` is over three times `phase_norm_wte`.",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "task",
-          "phase",
-          "kind",
-          "size",
-          "steps",
-          "side_steps",
-          "input",
-          "output",
-          "cache_read",
-          "cache_write",
-          "wte",
-          "peak_context",
-          "compactions",
-          "models",
-          "first_at",
-          "last_at",
-          "task_wte",
-          "norm_wte",
-          "above_norm",
-          "phase_norm_wte",
-          "norm_profile",
-          "phase_above_norm"
-        ],
-        "title": "SpendPhase",
-        "type": "object"
-      },
       "StaleEdit": {
         "description": "An edit refused because a field changed since the page read it: those fields with their current values.",
         "properties": {
@@ -10555,25 +10814,116 @@
         "title": "TaskEventHistory",
         "type": "object"
       },
-      "TaskMoves": {
-        "description": "`GET /api/moves/<id>`: the verdict on each column one open task may move to, judged by the board's guards now.",
+      "TaskPutRequest": {
+        "additionalProperties": false,
+        "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore or take it over.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`\n(the archived task returns to the board) and `interactive: true` (the unattended task is taken over).",
         "properties": {
-          "task": {
-            "type": "string"
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
-          "moves": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/Move"
-            },
-            "description": "The verdict on each Board column, by state id, with the warnings an actor the guards warn instead of refuse would meet. A snapshot's `move_sets` leave these unjudged.",
+          "session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "base": {
+            "additionalProperties": true,
             "type": "object"
+          },
+          "changes": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "breakGlass": {
+            "default": false,
+            "type": "boolean"
+          },
+          "request_key": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "reopen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "archived": {
+            "anyOf": [
+              {
+                "const": false,
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "interactive": {
+            "anyOf": [
+              {
+                "const": true,
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
-        "required": [
-          "task",
-          "moves"
-        ],
-        "title": "TaskMoves",
+        "title": "TaskPutRequest",
         "type": "object"
       },
       "TaskRecord": {
@@ -10660,32 +11010,33 @@
         "title": "TaskRun",
         "type": "object"
       },
-      "TaskSpend": {
-        "description": "`GET /api/task-spend/{id}`: one task's tokens by phase over the window, the rows `Spend` holds for it.",
+      "Theme": {
+        "description": "The color pack and background every device draws in, built in or imported; a write replaces the whole theme.",
         "properties": {
-          "now": {
-            "type": "number"
+          "pack": {
+            "default": "starpulse",
+            "description": "The id of a built-in pack or of one in `packs`.",
+            "type": "string"
           },
-          "window_s": {
-            "type": "number"
+          "bg": {
+            "default": "slate",
+            "description": "The id of the built-in background or of one in `bgs`.",
+            "type": "string"
           },
-          "spend": {
+          "packs": {
             "items": {
-              "$ref": "#/components/schemas/SpendPhase"
+              "$ref": "#/components/schemas/SavedPack"
             },
             "type": "array"
           },
-          "task": {
-            "type": "string"
+          "bgs": {
+            "items": {
+              "$ref": "#/components/schemas/SavedBg"
+            },
+            "type": "array"
           }
         },
-        "required": [
-          "now",
-          "window_s",
-          "spend",
-          "task"
-        ],
-        "title": "TaskSpend",
+        "title": "Theme",
         "type": "object"
       },
       "Tie": {
@@ -10972,23 +11323,6 @@
           "overridden"
         ],
         "title": "WindowState",
-        "type": "object"
-      },
-      "WindowTooLong": {
-        "description": "A level or telemetry window longer than its history, with the history's length.",
-        "properties": {
-          "error": {
-            "type": "string"
-          },
-          "history_s": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "error",
-          "history_s"
-        ],
-        "title": "WindowTooLong",
         "type": "object"
       },
       "Writer": {

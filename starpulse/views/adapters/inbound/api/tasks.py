@@ -1,14 +1,15 @@
 """Tasks: a task's record and every write that changes one, and the retired tasks.
 
 - `GET /api/task/{id}`: a task's record, with the pull requests it cites; a read that takes long is logged.
-- `GET /api/moves/{id}`: the verdict on each column one open task may move to, judged by the guards for each actor.
 - `GET /api/task-records?ids=A,B`: the records of the tasks named, in one read; a task the board cannot read is left out.
 - `GET /api/retired`: one page of the retired tasks, newest first, at most `limit` after the `before` cursor, with
   `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
   `fields=dependencies`, unpaged.
+- `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), restores
+  (`archived: false`) or takes over (`interactive: true`); `DELETE /api/tasks/{id}` archives: the task writes.
 - `POST /api/move`, `start`, `edit`, `archive`, `verdict`, `miss`, `restore`, `take-over`, `retire`,
-  `retired/import`, `dispatch`, `park`, `review`, `complete`, `reopen` and `tasks`: a task's writes, each over the
-  seams it needs.
+  `retired/import`, `dispatch`, `park`, `review`, `complete`, `reopen` and `tasks`: a task's writes by verb, each over
+  the seams it needs.
 """
 
 import asyncio
@@ -20,12 +21,13 @@ from typing import TYPE_CHECKING, Any
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
+from starpulse.board.adapters.holder_idle import started as started_by
 from starpulse.contracts.api.dto.milestones import RetiredTask
 from starpulse.contracts.api.dto.requests import StartRequest
-from starpulse.views.adapters.inbound.api.answering import answer, on_worker, query, reading, seams
+from starpulse.views.adapters.inbound.api.answering import answer, client, on_worker, query, reading, seams
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
-from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole_body
+from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole, whole_body
 from starpulse.views.application.commands.lifecycle import park_task, review_task
 from starpulse.views.application.commands.moves import (
     dispatch_task,
@@ -37,6 +39,7 @@ from starpulse.views.application.commands.tasks import (
     archive_task,
     complete_task,
     create_task,
+    delete_task,
     edit_task,
     import_retired,
     record_miss,
@@ -46,6 +49,7 @@ from starpulse.views.application.commands.tasks import (
     retire_task,
     retired_list,
     retired_page,
+    put_task,
     take_over_task,
     task_record,
 )
@@ -67,19 +71,6 @@ def _stored_record(api: Api, name: str) -> tuple[int, dict[str, Any]]:
 def _stored_task(request: Request) -> Response:
     status, body = _stored_record(seams(request), request.path_params["id"])
     return answer(request, encode("task", body), status)
-
-
-def _stored_moves(request: Request) -> Response:
-    name = request.path_params["id"]
-    found = seams(request).feed.task(name)
-    if found is None:
-        return answer(request, encode("moves", {"error": f"{name} is not an open task on the board"}), 404)
-    return answer(request, encode("moves", {"task": name, "moves": found["moves"]}))
-
-
-async def moves(request: Request) -> Response:
-    """One open task's moves judged by the guards: the snapshot leaves these unjudged, as judging all of them costs seconds."""
-    return await on_worker(request, lambda: _stored_moves(request))
 
 
 async def task(request: Request) -> Response:
@@ -159,7 +150,7 @@ def routes(api: Api) -> list[ApiRoute]:
     # Every write route, by path: the handler over the seams it needs and the kind of body it answers
     # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.
     def started(task: str) -> bool:
-        return api.history.entered(task, feed.roles.working)
+        return started_by(api.history.engine, task)
 
     writes: dict[str, tuple[TaskWrite, str]] = {
         "/move": (lambda client, raw: move_task(client, raw, feed, writer, start, started=started), "move"),
@@ -184,8 +175,35 @@ def routes(api: Api) -> list[ApiRoute]:
     }
     return [
         ReadRoute("/task/{id:path}", task, timed),
-        ReadRoute("/moves/{id:path}", moves),
         ReadRoute("/task-records", task_records, params=frozenset({"ids"})),
         ReadRoute("/retired", retired, params=frozenset({"before", "fields", "limit", "milestone", "task"})),
         *(WriteRoute(path, ("POST",), guarded(kind, whole_body(handler))) for path, (handler, kind) in writes.items()),
+        WriteRoute("/tasks", ("PUT",), guarded("create", whole_body(writes["/tasks"][0]))),
+        WriteRoute(
+            "/tasks/{id:path}",
+            ("PUT",),
+            guarded(
+                "task_put",
+                lambda request: put_task(
+                    client(request),
+                    whole(request),
+                    request.path_params["id"],
+                    feed,
+                    board,
+                    services.take_over,
+                    landed,
+                    started=started,
+                ),
+            ),
+        ),
+        WriteRoute(
+            "/tasks/{id:path}",
+            ("DELETE",),
+            guarded(
+                "task_delete",
+                lambda request: delete_task(
+                    client(request), whole(request) or b"{}", request.path_params["id"], feed, board
+                ),
+            ),
+        ),
     ]

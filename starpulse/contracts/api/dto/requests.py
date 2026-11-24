@@ -14,6 +14,7 @@ from pydantic import (
 )
 
 from starpulse.contracts.api._base import _Request
+from starpulse.contracts.api.dto.admin import Clock, Density, OpensOn, Scale, Theme
 from starpulse.contracts.api.dto.scheduler import QuietHours
 from starpulse.contracts.tiers import TIERS
 
@@ -105,6 +106,37 @@ class EditRequest(_Writer):
         max_length=128,
         description="The client's key for this send: an edit sent again with it answers the first send's answer.",
     )
+
+
+class TaskPutRequest(_Writer):
+    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore or take it over.
+
+    An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the
+    body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`
+    (the archived task returns to the board) and `interactive: true` (the unattended task is taken over).
+    """
+
+    base: dict[str, Any] = Field(default_factory=dict)
+    changes: dict[str, Any] = Field(default_factory=dict)
+    comment: str | None = None
+    break_glass: bool = Field(False, alias="breakGlass")
+    request_key: str | None = Field(None, min_length=1, max_length=128)
+    reopen: NonBlank | None = None
+    archived: Literal[False] | None = None
+    interactive: Literal[True] | None = None
+
+    @model_validator(mode="after")
+    def _one_write(self) -> TaskPutRequest:
+        named = [name for name in ("reopen", "archived", "interactive") if getattr(self, name) is not None]
+        if len(named) > 1 or (named and (self.changes or self.comment)):
+            raise ValueError("name changes, or exactly one of reopen, archived and interactive")
+        return self
+
+
+class TaskDeleteRequest(_Writer):
+    """`DELETE /api/tasks/{id}`: archive the task, recording `reason` when it is not blank; the body is optional."""
+
+    reason: str | None = None
 
 
 class ArchiveRequest(_Writer):
@@ -380,8 +412,8 @@ class WindowRequest(_Request):
 
 
 class SchedulerRequest(_Request):
-    """`PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours, the
-    selected harness's session cap and/or the cpu and memory limits."""
+    """The scheduler's part of `PUT /api/admin`: whether the scheduler admits tasks, which harness it starts on, its quiet
+    hours, the selected harness's session cap and/or the cpu and memory limits."""
 
     enabled: bool | None = None
     harness: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None = None
@@ -403,3 +435,21 @@ class SchedulerRequest(_Request):
         le=100,
         description="The memory limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it.",
     )
+
+
+class DisplayPatch(_Request):
+    """The display choices a write changes; a field left out keeps its value."""
+
+    scale: Scale | None = None
+    motion: bool | None = None
+    view: OpensOn | None = None
+    density: Density | None = None
+    clock: Clock | None = None
+
+
+class AdminRequest(SchedulerRequest):
+    """`PUT /api/admin`: any of the scheduler's settings, a patch of the display choices and/or a whole theme; a field
+    left out keeps its value."""
+
+    display: DisplayPatch | None = None
+    theme: Theme | None = None

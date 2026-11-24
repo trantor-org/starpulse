@@ -176,7 +176,7 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
 
 
 def settle_checks(store: PullStore, reader: GitHubReader, record: dict[str, Any], now: float) -> None:
-    """Store the checks of `record`'s head, read from GitHub when the record holds none, as GitHub reads them now: each required check's result and the rollup."""
+    """Store the checks of `record`'s head, read from GitHub when the record has no rollup, as GitHub reads them now: each required check's result and the rollup."""
     head = record["headRefOid"] or reader.head(record["repo"], record["number"])
     required = reader.required(record["repo"], record["baseRefName"])
     results = reader.results(record["repo"], head)

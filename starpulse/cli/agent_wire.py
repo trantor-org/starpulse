@@ -153,8 +153,8 @@ def put(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]
     return _send("PUT", base, path, body)
 
 
-def delete(base: str, path: str) -> tuple[int, dict[str, Any]]:
-    return _send("DELETE", base, path, None)
+def delete(base: str, path: str, body: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+    return _send("DELETE", base, path, body)
 
 
 def _send(method: str, base: str, path: str, body: dict[str, Any] | None) -> tuple[int, dict[str, Any]]:
@@ -187,8 +187,8 @@ def _send(method: str, base: str, path: str, body: dict[str, Any] | None) -> tup
         raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
 
 
-def post_keyed(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    """`post` of a create `body` under a fresh `request_key`, sent again with that key while the server is unavailable.
+def put_keyed(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """`put` of a create `body` under a fresh `request_key`, sent again with that key while the server is unavailable.
 
     A send that timed out may have applied, so only a repeat under its key is safe: the server answers it with the
     first send's answer. The last send's `CliError` is raised after `KEYED_SENDS` sends.
@@ -196,7 +196,7 @@ def post_keyed(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[st
     keyed = {**body, "request_key": uuid.uuid4().hex}
     for send in range(1, KEYED_SENDS + 1):
         try:
-            return post(base, path, keyed)
+            return put(base, path, keyed)
         except CliError as unavailable:
             if unavailable.code != "unavailable" or send == KEYED_SENDS:
                 raise

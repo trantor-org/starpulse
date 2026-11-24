@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BgDialog } from "./BgDialog";
-import { THEME_KEY, ThemeStore } from "./themeStore";
-import { button, click, get, memory, mount, type } from "./testKit";
+import { ThemeStore } from "./themeStore";
+import { button, click, get, server, mount, type } from "./testKit";
 
 const TOMORROW_NIGHT = `scheme: "Tomorrow Night"
 base00: "1d1f21"
@@ -26,10 +26,10 @@ let view: ReturnType<typeof mount>;
 afterEach(() => view.unmount());
 
 function open() {
-  const storage = memory(), apply = vi.fn(), close = vi.fn();
-  const theme = new ThemeStore(apply, storage);
+  const kept = server(), apply = vi.fn(), close = vi.fn();
+  const theme = new ThemeStore(apply, kept.fetcher);
   view = mount(<BgDialog theme={theme} close={close} />);
-  return { storage, apply, close, theme, hex: (v: string) => type(get("input[aria-label='Surface hex']"), v) };
+  return { kept, apply, close, theme, hex: (v: string) => type(get("input[aria-label='Surface hex']"), v) };
 }
 
 describe("BgDialog", () => {
@@ -54,14 +54,14 @@ describe("BgDialog", () => {
   });
 
   it("refuses #5a6b8c as too light and saves nothing", () => {
-    const { hex, theme, storage, close } = open();
+    const { hex, theme, kept, close } = open();
     hex("#5a6b8c");
     expect(get("[role=alert]").textContent).toContain("Backgrounds are dark only");
     const add = button("Add and apply");
     expect(add.disabled).toBe(true);
     click(add);
     expect(theme.get().bgs).toEqual([]);
-    expect(storage.data.has(THEME_KEY)).toBe(false);
+    expect(kept.puts).toEqual([]);
     expect(close).not.toHaveBeenCalled();
   });
 

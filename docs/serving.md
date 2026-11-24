@@ -325,7 +325,7 @@ Every HTTP endpoint `starpulse serve` answers, with its payload and refusals. Th
 `GET /api/openapi` and drawn at `GET /swagger` (Swagger UI from a pinned jsDelivr release, so the page needs internet); the implementation of a pull request row is `PullRequests._row`.
 
 ```text
-Every write (POST /api/..., PUT /api/scheduler, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
+Every write (POST /api/..., PUT /api/admin, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
 no `Origin` or this server's own (else 403), so a web page on another site cannot write through the operator's browser.
 It listens on --host, 127.0.0.1 by default.
 
@@ -425,11 +425,6 @@ GET /api/history?task=TASK-N[&machine=NAME]
                    and an unknown `machine` 404. The machine events are copied from their stream as they
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
                    the config), so the path outlives the stream's trim. A trim past entries the copy never read leaves it resuming at the oldest kept row
-GET /api/task-spend/{id}[?hours=N]
-                   one task's spend by phase over the last `hours`, default 168, as `{task, now, window_s, spend}`:
-                   each is a phase row of the report in docs/sources.md, `spend` empty for a task with no spend in
-                   the window. It filters the week answer the server keeps under `spend`. An `hours` that is no positive
-                   number, or a window longer than the folded history, is 400 with `history_s`
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
 Connect `starpulse.v1.CloudEventsIngest` Publish and PublishBatch on this port (docs/sources.md)
                    post machine events and runs as CloudEvents 1.0, with `authorization: Bearer <token>` of a `[[producers]]`
@@ -531,7 +526,7 @@ budget and the board to its soft memory limit.
 The native board appends every Task write to the Task's `task` stream (`board/task_history.py`) first and renders the
 task file after. A verb reads its base from the History, appends with a compare-and-set at the head it read, and writes the
 file only once the append lands; one wrapper around the board's `writer`, `assign`, `edit`, `archive`, `restore`,
-`complete`, `retire` and `create` covers every entry path: the `starpulse task` verbs, `/api/tasks`, `/api/edit`, the page, the
+`complete`, `retire` and `create` covers every entry path: the `starpulse task` verbs, `PUT /api/tasks`, `PUT /api/tasks/{id}`, `/api/edit`, the page, the
 Scheduler and the task actor, which all call those verbs.
 
 - The Events are the intent the History's replay and the verb's result show: `TaskCreated`, `FieldsEdited` (own columns and `meta`),
@@ -632,7 +627,7 @@ type = "native"
 # and the page; nothing is written. A board with no rules accepts every write it accepted before. A move by an actor
 # the board's `warn_actors = ["operator"]` setting lists that breaks a lane rule (`to`, `from`) lands instead, and the
 # answer's `warnings` lists the rule's reason; a write rule (`write = true`, `create`) still refuses that actor. The
-# page reads the same rules beforehand from `GET /api/moves/<id>`, as `warnings` (`reason`, `skill`) on that actor's
+# page reads the same rules beforehand from the task's `moves` in `POST /graphql`, as `warnings` (`reason`, `skill`) on that actor's
 # verdict (the stream's snapshot leaves its moves unguarded), so the kanban asks the operator to confirm before it posts
 # the move.
 #   on       = { to = "Done" }                 a write that enters Done (`from = [...]` narrows it to those states)
@@ -922,7 +917,7 @@ an unreadable store or a malformed value reads as off. `[scheduler] state_dir` (
 state files. The toggle file of that older name (`TOGGLE_FILE` in `scheduler/model/toggle.py`) beside the config or in `state_dir` is imported once by `starpulse migrate`, keeping its modification
 time as the row's `updated_at` (a row the store already holds wins), then renamed to the same name plus `.imported`.
 
-`GET /api/scheduler` answers any address:
+`GET /api/admin` answers any address:
 
 ```json
 {
@@ -937,11 +932,21 @@ time as the row's `updated_at` (a row the store already holds wins), then rename
   "sessionsByHarness": {"claude": {"use": 1.0, "limit": 3.0}, "other": {"use": 0.0, "limit": 2.0}},
   "needsOperator": [{"task": "TASK-3", "title": "Choose the store"}],
   "blockedBy": [{"name": "cpu", "use": 95.0, "limit": 80.0}, {"name": "start-limit", "use": 48, "limit": 48, "count": 3}],
-  "gateHistory": [{"at": 1788307200.5, "dimensions": [{"name": "cpu", "use": 95.0, "limit": 80.0}], "blockedBy": [{"name": "cpu", "use": 95.0, "limit": 80.0}]}]
+  "gateHistory": [{"at": 1788307200.5, "dimensions": [{"name": "cpu", "use": 95.0, "limit": 80.0}], "blockedBy": [{"name": "cpu", "use": 95.0, "limit": 80.0}]}],
+  "display": {"scale": 100, "motion": true, "view": "constellation", "density": "comfortable", "clock": "24"},
+  "theme": {"pack": "starpulse", "bg": "slate", "packs": [], "bgs": []}
 }
 ```
 
-`harness` is the harness the loop starts sessions on (default `claude`); `PUT /api/scheduler` with `{"harness": "<name>"}` selects another.
+`display` and `theme` are the choices every device draws the page in, held in the `admin.display` row of the
+history store's settings, so they survive a restart and a new browser starts on them. A row never written reads as the defaults above.
+`display` holds `scale` (font size in percent, 85 to 150 in steps of 5), `motion`, `view` (what a bare address opens:
+`constellation` or `kanban`), `density` (`comfortable` or `compact`) and `clock` (`24` or `12`). `theme` holds `pack` and `bg`, the ids
+of the chosen color pack and background (built in, or one in `packs` or `bgs`), and the imported `packs` and `bgs`. A `PUT` with
+`{"display": {"clock": "12"}}` changes only the fields it names; a `theme` in a `PUT` replaces the whole theme. An unknown value is a 400
+and changes nothing. `/api/scheduler` is gone: it answers 404.
+
+`harness` is the harness the loop starts sessions on (default `claude`); `PUT /api/admin` with `{"harness": "<name>"}` selects another.
 `quietHours` is the daily window in which the loop admits nothing, or `null` for none (see Quiet hours below).
 `dimensions` lists `cpu`, `memory`, `sessions` and `review` in that order, each as its use against its limit; the
 `sessions` meter follows the selected harness's cap: an Admin override if one is saved (see Session cap below), else
@@ -988,7 +993,7 @@ harness lands in `pauses` and blocks admission for that harness only.
   last. A row is added when the blocking gates change, or five minutes after the last row; the log keeps 100.
   It is the loop's own record and needs no Prometheus.
 
-`PUT /api/scheduler` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
+`PUT /api/admin` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
 `{"quietHours": {"start": "HH:MM", "end": "HH:MM", "timezone": "<IANA zone>"}}` or `{"quietHours": null}` sets or clears
 the quiet hours; `{"sessionCap": <whole number above zero>}` or `{"sessionCap": null}` sets or clears the selected
 harness's session cap; `{"cpuLimit": <percent above 0, up to 100>}` or `{"memoryLimit": <percent>}` sets, and `null` clears, that
@@ -1011,7 +1016,7 @@ scheduler control.
 ### Session cap
 
 The Scheduler card's **Session cap** row sets the selected harness's cap from StarPulse Admin, over `starpulse.toml`.
-`PUT /api/scheduler {"sessionCap": 12}` keeps 12 for that harness in the history store (setting
+`PUT /api/admin {"sessionCap": 12}` keeps 12 for that harness in the history store (setting
 `scheduler.session_caps`, one value per harness); `{"sessionCap": null}` clears it, and the config's cap applies again.
 Anything but a whole number above zero is a 400 that changes the stored cap not at all. The admission loop reads the
 override on every pass and a save wakes it, so a new cap takes effect with no restart; sessions already running past a
@@ -1022,7 +1027,7 @@ sampler's full/free log lines still read the configured limit.
 ### Capacity limits
 
 The Scheduler card's **CPU limit** and **Memory limit** rows set the two host limits from StarPulse Admin, over
-`[scheduler.limits]` in `starpulse.toml`. `PUT /api/scheduler {"cpuLimit": 95, "memoryLimit": 70}` keeps both in the
+`[scheduler.limits]` in `starpulse.toml`. `PUT /api/admin {"cpuLimit": 95, "memoryLimit": 70}` keeps both in the
 history store (setting `scheduler.capacity_limits`, one percent per dimension); `null` clears one, and the config's limit
 applies again. Anything but a number above 0 and up to 100 is a 400 that changes neither stored limit. The sampler reads
 the limit on every call and a save wakes the loop, so the next admission pass judges cpu and memory against the new limit
@@ -1088,7 +1093,7 @@ do not fit together are never both started in one pass. A run holds its capacity
 `in_progress`; until the harness reports the session active the loop adds that demand to the sampler's readings itself.
 A start that fails (`StartFailedError`) is logged and its task skipped for a backoff of 30 seconds that doubles with
 each further failure, up to 30 minutes, unless the refusal names a usage or credit limit: admission for that harness then
-pauses until the reset clock the message names (or five hours when it names none), `GET /api/scheduler` lists it under
+pauses until the reset clock the message names (or five hours when it names none), `GET /api/admin` lists it under
 `pauses`, and the next pick `waits` with `reason` `<harness> usage limit`. A refusal that names a missing binary
 (`the starpulse binary is missing: <path>`, `needs <binary> on PATH`) fails again until the host changes, so it halts
 admission for that harness for an hour after the first occurrence: one `ERROR` journal line names the refusal and path, `pauses`
@@ -1113,7 +1118,7 @@ The scheduler never moves a task for an idle session. The sampler period (60 sec
 runs and never admits.
 
 The runs in flight, each task's last start time and the last capacity sample live in `starpulse_worker_state`
-(`scheduler.inflight`, `scheduler.starts`, `scheduler.sample`), so a restart restores them: `GET /api/scheduler` still
+(`scheduler.inflight`, `scheduler.starts`, `scheduler.sample`), so a restart restores them: `GET /api/admin` still
 lists the sessions, the loop still settles and records them, and a task it already started is not started again. A restart
 logs `StarPulse scheduler: restored N in-flight`. A start still inside 15 minutes (`START_COOLDOWN`) is not admitted
 even when the in-flight row is missing, so a restart that lost that row does not send a second `started`.
@@ -1206,8 +1211,6 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   return a task that has a delivery to another lane than the one a task without one returns to.
 - `deps_unresolved`: a dependency is not Done.
 - `owner_stale`: the task's `source` starts with `[board.actor] owner_source`, no open task lists it in `dependencies`, and `repo`'s `main` passes every required check (`MainGreen`: the head commit's required checks roll up to passed; a pass is cached per commit, any other read is retried after 60 seconds, and a failed read reads as not green). A red or pending `main` closes nothing, because the check logs do not say which failure signature `main` still hits. A Ready state maps it to `CLOSE`, and the closing note names the green commit.
-- `started_work`: the task ever entered the working lane, as the history's lane changes record (`TaskActor(started=)`). A
-  Ready state maps it to a move to Needs attention, after its merge facts, since Ready holds only new work.
 - `pr_unfinished_alive` and `pr_unfinished_dead`: a cited pull request is open and a draft, conflicting or failing a
   required check (a check still running is neither), and the board's `alive` command exits 0 (alive) or not (dead). A
   state maps them to different moves, so a Review task goes to its live holder and otherwise to Needs attention.

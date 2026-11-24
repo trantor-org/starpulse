@@ -1,10 +1,15 @@
-"""The settings a page puts: the history window and the scheduler's admission."""
+"""The settings a page puts: the history window, the scheduler's admission and Admin's display and theme."""
 
 import logging
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
+
+from starpulse.board.adapters.display_settings import DisplaySettings
 from starpulse.board.adapters.history_window import HistoryWindow
+from starpulse.contracts.api.dto.admin import Display, Theme
 from starpulse.contracts.api.dto.requests import (
+    AdminRequest,
     SchedulerRequest,
     WindowRequest,
 )
@@ -38,19 +43,17 @@ def history_window(source: str, method: str, raw: bytes, window: HistoryWindow) 
     return 200, window.state()
 
 
-_SCHEDULER_USAGE = (
-    'the scheduler takes {"enabled": true|false}, {"harness": "<name>"} and/or '
+_ADMIN_USAGE = (
+    'admin takes {"enabled": true|false}, {"harness": "<name>"} and/or '
     '{"quietHours": {"start", "end", "timezone"}|null} and/or {"sessionCap": <whole number above zero>|null} and/or '
-    '{"cpuLimit": <percent above 0, at most 100>|null} and/or {"memoryLimit": <percent above 0, at most 100>|null}'
+    '{"cpuLimit": <percent above 0, at most 100>|null} and/or {"memoryLimit": <percent above 0, at most 100>|null} and/or '
+    '{"display": {"scale", "motion", "view", "density", "clock"}} and/or {"theme": {"pack", "bg", "packs", "bgs"}}'
 )
 _LIMIT_FIELDS = {"cpuLimit": "cpu", "memoryLimit": "memory"}
 
 
-@with_request(SchedulerRequest, "The scheduler switch")
-def _put_scheduler(request: SchedulerRequest, runtime: Runtime | Remote) -> tuple[int, dict[str, Any]]:
+def _set_scheduler(request: SchedulerRequest, runtime: Runtime | Remote) -> tuple[int, dict[str, Any]] | None:
     named = request.model_fields_set
-    if not named or ("enabled" in named and request.enabled is None):
-        return 400, {"error": _SCHEDULER_USAGE}
     try:  # the request model has refused every other bad value, so only a quiet-hours window can fail here, first
         if "quietHours" in named:
             quiet = request.quietHours
@@ -65,22 +68,56 @@ def _put_scheduler(request: SchedulerRequest, runtime: Runtime | Remote) -> tupl
         return 400, {"error": str(exc)}
     if request.enabled is not None:
         runtime.set_enabled(request.enabled)
-    return 200, runtime.served_status()
+    return None
 
 
-def scheduler(source: str, method: str, raw: bytes, runtime: Runtime | Remote | None) -> tuple[int, dict[str, Any]]:
-    """Read (`GET`) whether the scheduler admits tasks, which harness it starts on, its quiet hours, the selected
-    harness's session cap, the cpu and memory limits and each capacity dimension's use against its limit, or set
-    (`PUT {"enabled": bool}`, `PUT {"harness": "<name>"}`, `PUT {"quietHours": {...} | null}`,
-    `PUT {"sessionCap": N | null}`, `PUT {"cpuLimit": P | null}`, `PUT {"memoryLimit": P | null}`, or any combination)
-    those settings, for a browser at `source`.
+_NAMED_VALUES = ("enabled", "display", "theme")
 
-    Settings are kept in the store the scheduler reads, so a PUT takes effect at the next admission and survives a
-    restart. A read answers any address, as every read does; a write answers only loopback and RFC 1918. A body with
-    anything wrong changes nothing.
+
+def _kept(store: DisplaySettings) -> tuple[Display, Theme]:
+    kept = store.read()
+
+    def one[M: Display | Theme](model: type[M]) -> M:
+        try:
+            return model.model_validate(kept.get(model.__name__.lower(), {}))
+        except ValidationError as exc:  # fail closed: a value the models refuse is no choice made
+            logger.warning("admin settings: kept %s is invalid: %s", model.__name__.lower(), exc)
+            return model()
+
+    return one(Display), one(Theme)
+
+
+def _state(runtime: Runtime | Remote, store: DisplaySettings) -> dict[str, Any]:
+    display, theme = _kept(store)
+    return {**runtime.served_status(), "display": display.model_dump(), "theme": theme.model_dump()}
+
+
+@with_request(AdminRequest, "Admin's settings")
+def _put_admin(request: AdminRequest, runtime: Runtime | Remote, store: DisplaySettings) -> tuple[int, dict[str, Any]]:
+    named = request.model_fields_set
+    if not named or any(getattr(request, field) is None for field in _NAMED_VALUES if field in named):
+        return 400, {"error": _ADMIN_USAGE}
+    if refusal := _set_scheduler(request, runtime):
+        return refusal
+    if "display" in named or "theme" in named:
+        display, theme = _kept(store)
+        if request.display is not None:
+            display = display.model_copy(update=request.display.model_dump(exclude_none=True))
+        store.write({"display": display.model_dump(), "theme": (request.theme or theme).model_dump()})
+    return 200, _state(runtime, store)
+
+
+def admin(
+    source: str, method: str, raw: bytes, runtime: Runtime | Remote | None, store: DisplaySettings | None
+) -> tuple[int, dict[str, Any]]:
+    """Read (`GET`) the scheduler's state with the display and theme every device shares, or set (`PUT`) any of the
+    scheduler's settings (`scheduler`'s body), `{"display": {...}}` with only the fields that change and/or
+    `{"theme": {...}}` whole, for a browser at `source`.
+
+    A read answers any address; a write answers only loopback and RFC 1918. A body with anything wrong changes nothing.
     """
-    if runtime is None:
-        return 404, {"error": "this instance runs no scheduler"}
+    if runtime is None or store is None:
+        return 404, {"error": "this instance runs no scheduler" if runtime is None else "this instance keeps no display settings"}
     if method == "PUT":
-        return _put_scheduler(source, raw, runtime)
-    return 200, runtime.served_status()
+        return _put_admin(source, raw, runtime, store)
+    return 200, _state(runtime, store)

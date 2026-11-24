@@ -75,7 +75,7 @@ export function App() {
   // the Star Map is desktop-only: a phone width shows the Kanban in its place, and widening the page returns to what was chosen
   const phone = usePhone();
   const view = shownView(chosen, phone);
-  const pendingView = useRef(0);
+  const pendingView = useRef(0), moved = useRef(false);
   const commitView = useCallback((next: ViewName, url: string) => {
     cancelAnimationFrame(pendingView.current);
     let frames = REVEAL_SETTLE_FRAMES;
@@ -106,6 +106,7 @@ export function App() {
   }, []);
   // the view lives in the address, so a reload or a shared link opens the same one
   const choose = useCallback((target: ViewName) => {
+    moved.current = true;
     const v = shownView(target, onPhone());
     const url = `${location.pathname}${viewSearch(location.search, v, admin.get().view)}`;
     cancelAnimationFrame(pendingView.current);
@@ -117,6 +118,15 @@ export function App() {
     commitView(v, url);
   }, [admin, commitView, reveal]);
   useEffect(() => () => cancelAnimationFrame(pendingView.current), []);
+  // the server's "Opens on" arrives after the first frame: a bare address follows it unless a view was chosen meanwhile
+  useEffect(() => {
+    const first = chosen;
+    void admin.loaded.then(() => {
+      const bare = new URLSearchParams(location.search).get("view") === null && !retired(location.pathname, location.hash);
+      if (bare && !moved.current && admin.get().view !== first) choose(admin.get().view);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, against the view the page opened on
+  }, []);
   const [drill, setDrill] = useState(() => new URLSearchParams(location.search).get("drill"));
   const openDrill = useCallback((id: string) => {
     const q = new URLSearchParams(location.search);

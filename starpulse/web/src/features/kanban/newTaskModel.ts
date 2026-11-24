@@ -40,7 +40,7 @@ export function createBody(draft: NewTaskDraft): Record<string, string | string[
 export async function postCreate(draft: NewTaskDraft, fetcher: typeof apiFetch = apiFetch): Promise<CreateResult> {
   let response: Response;
   try {
-    response = await fetcher("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(createBody(draft)) });
+    response = await fetcher("/api/tasks", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(createBody(draft)) });
   } catch {
     return { ok: false, reason: "The task writer could not be reached; the task was not created.", skill: "" };
   }

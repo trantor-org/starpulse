@@ -140,7 +140,7 @@ describe("the phone-width view bar", () => {
 describe("phone width disables the Star Map", () => {
   it.each([
     ["an address naming it", () => history.replaceState(null, "", "/?view=constellation")],
-    ["a saved Opens on", () => { history.replaceState(null, "", "/"); localStorage.setItem("fv.admin.prefs", JSON.stringify({ view: "constellation" })); }],
+    ["a bare address while Opens on is the Star Map", () => history.replaceState(null, "", "/")],
     ["a retired per-graph address", () => history.replaceState(null, "", "/board")],
   ])("opens the Kanban for %s and never shows the Star Map view", async (_name, address) => {
     address();

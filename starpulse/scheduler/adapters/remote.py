@@ -1,7 +1,7 @@
 """The scheduler's seam with `serve`: the status out, the settings and wakes across, all through the event log.
 
 The scheduler worker (`starpulse worker scheduler`) runs the sampler and the dispatch loop; `serve` keeps the page and the
-`/api/scheduler` route. Both read the operator's settings (the switch, the harness, quiet hours) from the one store, so
+`/api/admin` route. Both read the operator's settings (the switch, the harness, quiet hours) from the one store, so
 `serve` writes them directly and only has to wake the worker:
 
 - the worker keeps the status it computes in the `STATUS` worker state; `serve` republishes it to its feed
