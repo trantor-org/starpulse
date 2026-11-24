@@ -61,6 +61,21 @@ def _stranded_checks(pulls: PullStore) -> Callable[[dict[str, Any]], None] | Non
     return lambda record: settle_checks(pulls, reader, record, time.time())
 
 
+def archiving(board: Board) -> tuple[Callable[..., Any], Callable[..., Any]]:
+    """`board.edit` and `board.judge`, but a status write of `archived` goes through the board's archiver, which the field
+    edit refuses, and is judged as no field change."""
+
+    def edit(name: str, changes: Any, comment: str = "", /, actor: str = "", over: str = "") -> Any:
+        if changes.get("status") == "archived":
+            return board.archive(name, comment, actor)
+        return board.edit(name, changes, comment, actor=actor, over=over)
+
+    def judge(name: str, changes: Any, comment: str = "", /, *args: Any, **kwargs: Any) -> Any:
+        return board.judge(name, {} if changes.get("status") == "archived" else changes, comment, *args, **kwargs)
+
+    return edit, judge
+
+
 def start_delivery(
     config: Config,
     board: Board,
@@ -88,13 +103,14 @@ def start_delivery(
     if config.task_actor:
         if config.board_type != "native":
             raise ValueError("[board.actor] needs a board that edits tasks")
+        edit, judge = archiving(board)
         actor = TaskActor(
             feed,
             pulls,
-            board.edit,
+            edit,
             board.waits,
             moves_of(feed.machines["board"]),
-            board.judge,
+            judge,
             config.repos,
             config.release.settle if config.release else None,
             pins,
