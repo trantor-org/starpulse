@@ -2008,7 +2008,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         return land
 
     recorded = {
-        "writer": completing(history.recorded(made.writer)),
+        "writer": completing(history.recorded(made.writer, moves=True)),
         "assign": history.recorded(made.assign),
         "edit": completing_edit(history.recorded(made.edit, unstarted=_unstarted(made.roles))),
         "archive": history.recorded(made.archive),

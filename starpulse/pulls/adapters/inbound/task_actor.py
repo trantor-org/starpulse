@@ -50,7 +50,7 @@ from contextlib import contextmanager
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.adapters.holder_idle import HARNESS_MACHINE, HolderUnreachable
+from starpulse.board.adapters.holder_idle import DISPATCHED, HARNESS_MACHINE, HolderUnreachable
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
@@ -118,6 +118,10 @@ _NUDGES = 3
 _PROGRESS_S = 30.0
 #: Seconds before a pull request GitHub could not yet answer for (`mergeable` gave None) is asked again.
 _MERGEABLE_RETRY_S = 30.0
+#: Seconds a resumed session has to report its start; a healthy dispatch reports within seconds.
+_START_BOUND_S = 300.0
+#: The prefix of the deadline key that checks a resume's start, apart from a task's own overdue deadline.
+_STARTED = "started:"
 #: Seconds the exposition waits for the actor lock before it leaves out the series that need it.
 _LOCK_WAIT_S = 2.0
 #: Seconds the merged Review tasks count is kept, so a scrape loop never makes the scan over the open tasks a load.
@@ -562,7 +566,7 @@ class TaskActor:
             threading.Thread(
                 target=self._keep_checkpoint, args=(stop,), name="task-actor-checkpoint", daemon=True
             ).start()
-        if self._timed_lanes:
+        if self._timed_lanes or self._idle is not None:
             self._deadlines.start(stop, thread_name="task-actor-deadlines")
         return thread
 
@@ -641,8 +645,29 @@ class TaskActor:
 
     def _derive_overdue(self, name: str) -> None:
         """Derive a task again at its own deadline, so a Waiting task goes overdue with no event to wake it."""
+        if name.startswith(_STARTED):
+            self._resume_unstarted(name.removeprefix(_STARTED))
+            return
         with self._lock:
             self.touch([TaskTouched(name, Trigger.ON_ALERT, "deadline")])
+
+    def _resume_unstarted(self, name: str) -> None:
+        """The bound on a resume's start fell: a harness trail still ending on the dispatch means its session never
+        started, so the task moves to Needs attention naming the dispatch."""
+        with self._lock:
+            agent = self._feed.task(name, lean=True)
+            placed = self._feed.machine_task(HARNESS_MACHINE, name)
+            last = ((placed or {}).get("trail") or [{}])[-1]
+            if agent is None or agent["state"] != self._feed.roles.working or last.get("event") != DISPATCHED:
+                return
+            session = (last.get("data") or {}).get("session", "")
+            self._attend(
+                name,
+                f"its resume dispatched session {session} but no start was reported within {_START_BOUND_S:.0f} s",
+                "resume never started",
+                "Start one by hand or rescope?",
+                ("start a session on it by hand", "rescope the task"),
+            )
 
     def reconcile_waiting(self) -> tuple[int, int]:
         """The sweeper's `waiting` pass: (the tasks in the lanes that wait on `deps_done`, those it released). A task whose
@@ -1573,6 +1598,7 @@ class TaskActor:
         self._unwant(name)
         with self._lock:
             self._memory.count(name, key, count + 1)
+        self._deadlines.arm(_STARTED + name, self._wall() + _START_BOUND_S)
 
     def dispatched(self, name: str, session: str) -> None:
         """A session was dispatched to `name`: pin it as the task's holder, and move a Ready task, or a Needs attention one

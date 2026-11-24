@@ -151,6 +151,7 @@ def start(
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     store = PullStore(log.engine)
     store.keep_lookups()  # this worker makes every save, so a lookup of an old record stays current until it is saved
+    store.keep_listings()  # and so does the list of the old ones: the stored unfiltered list reads them once
     # a store that holds records was built by the replays before; a new or wiped one rebuilds from the whole retention.
     # Read before any loop writes a record, `pull_deliveries.start` included.
     resume = bool(store.repos())

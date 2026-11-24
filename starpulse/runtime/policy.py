@@ -99,10 +99,15 @@ def _export(engine, board, base: Path, out: Path | None) -> int:  # noqa: ANN001
 
 def _import(parser: argparse.ArgumentParser, engine, file: Path) -> int:  # noqa: ANN001
     from starpulse.board.adapters import policy_store  # noqa: PLC0415 - import cost, paid only by a run that imports
-    from starpulse.board.model.policy_diff import policy_of  # noqa: PLC0415 - import cost, paid only by a run that imports
+    from starpulse.board.model.policy import Policy  # noqa: PLC0415 - import cost, paid only by a run that imports
+    from starpulse.board.model.policy_diff import policy_of, rows  # noqa: PLC0415 - import cost, paid only by a run that imports
 
     try:
-        wanted = policy_of(json.loads(file.read_text()))
+        held = json.loads(file.read_text())
+        missing = [table for table in rows(Policy()) if table not in held]
+        if missing:
+            parser.error(f"{file}: not a policy document: missing tables {', '.join(missing)}")
+        wanted = policy_of(held)
     except (OSError, ValueError, TypeError, AttributeError) as exc:
         parser.error(f"{file}: not a policy document: {exc}")
     with engine.begin() as db:
