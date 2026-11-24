@@ -17,10 +17,15 @@ def account_room(
     if alert is None:
         return lambda: True
     prefix = f"starpulse.{board}.alert.{alert}"
+    state: dict[str, bool] = {}
 
-    def resolved(subject: str) -> None:
-        if subject == f"{prefix}.resolved":
+    def seen(subject: str) -> None:
+        if subject == f"{prefix}.firing":
+            state["firing"] = True
+        elif subject == f"{prefix}.resolved":
+            state["firing"] = False
             wake()
 
-    follow_until_events(resolved, lambda entry: subject_for(board, entry), log, stop)
-    return lambda: not last_event_is(log.engine, f"{prefix}.firing")
+    follow_until_events(seen, lambda entry: subject_for(board, entry), log, stop)
+    state.setdefault("firing", last_event_is(log.engine, f"{prefix}.firing"))
+    return lambda: not state["firing"]
