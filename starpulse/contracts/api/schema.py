@@ -23,7 +23,6 @@ from starpulse.contracts.api.dto.milestones import (
 )
 from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, MachineDetail, Machines
 from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
-from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
@@ -114,7 +113,6 @@ class ApiContract(_Api):
     laneHistory: LaneHistory
     machineHistory: MachineHistory
     taskEventHistory: TaskEventHistory
-    pulls: Pulls
     graphqlResponse: GraphqlResponse
     viewShown: ViewShown
     searchResults: SearchResults

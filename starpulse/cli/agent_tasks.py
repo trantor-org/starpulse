@@ -744,18 +744,26 @@ def task_checkpoint_ac(args: argparse.Namespace, environ: Mapping[str, str]) -> 
 _CITED_PULL = re.compile(r"(?:https://github\.com/)?([^/\s#]+/[^/\s#]+)(?:#|/pull/)(\d+)/?")
 
 
+_PULL = (
+    "query($repo: String!, $number: Int!) { pull(repo: $repo, number: $number) { repo number state isDraft mergeable "
+    "baseRefName headRefName headRefOid body checks requiredChecks { name result } threads unresolvedThreads { id author } updatedAt mergedAt mergeSha "
+    "fetchedAt files } }"
+)
+
+
 def pull_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The stored record of one pull request, with the paths it changes, from the server's PR store: no GitHub read."""
     cited = _CITED_PULL.fullmatch(args.pull)
     if not cited:
         raise agent_wire.CliError("usage", f"{args.pull!r} is no pull request: write `owner/name#N` or its GitHub URL")
-    query = urllib.parse.urlencode({"repo": cited[1], "number": cited[2]})
-    base, path = agent_wire.server_url(args.server, environ), f"/api/pulls?{query}"
-    status, reply = agent_wire.get(base, path)
-    found = record_call(base, path, status, reply, noun="pull request")["pulls"]
+    base, path = agent_wire.server_url(args.server, environ), "/graphql"
+    status, reply = agent_wire.post(
+        base, path, {"query": _PULL, "variables": {"repo": cited[1], "number": int(cited[2])}}
+    )
+    found = record_call(base, path, status, reply, noun="pull request")["data"]["pull"]
     if not found:
         raise agent_wire.CliError("not_found", f"the store holds no pull request {cited[1]}#{cited[2]}")
-    return found[0]
+    return found
 
 
 def _quoted(collection: str, ident: str) -> str:

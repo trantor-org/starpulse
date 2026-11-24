@@ -13,6 +13,7 @@ from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRo
 from starpulse.views.adapters.outbound import request_durations
 from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound.process_metrics import process_gauges
+from starpulse.views.adapters.outbound.pull_metrics import open_pulls_exposition
 
 if TYPE_CHECKING:  # annotation only: routing imports this module lazily
     from starpulse.views.adapters.inbound.api.routing import Api
@@ -37,6 +38,7 @@ def render(api: Api) -> str:
     )
     return (
         "".join(gauge() for gauge in gauges if gauge)
+        + (open_pulls_exposition(services.pulls) if services.pulls else "")
         + process_gauges()
         + PAUSES.exposition()
         + request_durations.exposition()

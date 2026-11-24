@@ -74,7 +74,6 @@ CONTEXT_ENTRIES = (
 PULLS_ENTRIES = (
     "starpulse.runtime.assembly",
     "starpulse.runtime.delivery_wiring",
-    "starpulse.runtime.stored_pulls",
     "starpulse.pulls.bin.pulls_worker",
     "starpulse.pulls.adapters.outbound.github",
 )

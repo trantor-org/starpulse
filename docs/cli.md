@@ -266,24 +266,22 @@ With the config's `pull_requests` not false, the pulls context (a thread of the 
 `starpulse_pull_requests`) as a projection of the lifecycle events, and polls GitHub for nothing. A task's `machine:events` entry (`PR_OPENED`, `PR_READY`, `PUSHED`, `CHECKS_PASSED`, `CHECKS_FAILED`,
 `CONFLICTED`, `MERGEABLE`, `THREADS_CHANGED`, `PR_MERGED`, `PR_CLOSED`) lands on the pull requests the Board says the task cites, and a completed `ci:jobs` entry sets the head commit and its job's result on the
 record of the pull request it names. An entry applied twice leaves the record as once did, so the log may be replayed from any point: a start on a store that holds records replays only the entries appended after the cursor the replay keeps in the `pulls.cursor` worker state, a start on a new or wiped store replays every entry the log retains, and a second reader per stream, taken before the replay, hands over each entry appended meanwhile, so a `PR_MERGED` published during a restart is applied without waiting for the replay to end. A close names its pull request in the entry's `repository` and `pr` fields and applies to that one alone, none once the store holds it closed; a close that names none applies only when the task cites a single open pull request.
-A pull request no task's events name enters the store from a webhook delivery, which also sets its head branch, base, merge commit and changed files. No endpoint reads a pull request from GitHub on request: `POST /api/pulls/refresh` and the `refresh_token_env` setting are gone, and a config that sets the key is refused.
+A pull request no task's events name enters the store from a webhook delivery, which also sets its head branch, base, merge commit and changed files. No endpoint reads a pull request from GitHub on request: the `refresh_token_env` setting is gone, and a config that sets the key is refused.
 
-`GET /api/pulls[?repo=owner/name][&number=N][&state=OPEN|MERGED|CLOSED][&body_contains=text]` serves the store,
-`{pulls: [...]}`, ordered by repository then number. Each record holds `repo`, `number`, `state`, `isDraft`,
-`mergeable`, `baseRefName`, `headRefOid`, `body`, `checks` (`pass`, `failing`, `pending` or `none`), `requiredChecks`
-(`{name, result}`), `threads` (open review threads), `headRefName` (the head branch), `unresolvedThreads`
-(`{id, author}`: each open thread's id and its first comment's author login, `null` for a deleted account, among the
-first 100 threads), `updatedAt` and `fetchedAt` (epoch seconds of the last event or read that changed the record). `headRefName` and `unresolvedThreads` are
-`null` for a record saved before they were kept; its reader asks GitHub. A query naming both `repo` and `number` also
-serves each record's `files` (the changed paths, first 100; `null` for a record saved before they were kept); a listing
-leaves `files` out. A `number` that is not an integer or an unknown `state` answers 400.
+The store is read through GraphQL at `POST /graphql`, never from GitHub: `task(id) { prs { ... } }` serves the records of the pull
+requests a task cites, and `pull(repo, number) { ... }` serves one record whatever task cites it, `null` when the store holds none.
+Each record holds `repo`, `number`, `state`, `isDraft`, `mergeable`, `baseRefName`, `headRefOid`, `body`, `checks` (`pass`,
+`failing`, `pending` or `none`), `requiredChecks` (`{name, result}`), `threads` (open review threads), `headRefName` (the head
+branch), `unresolvedThreads` (`{id, author}`: each open thread's id and its first comment's author login, `null` for a deleted
+account, among the first 100 threads), `updatedAt` and `fetchedAt` (epoch seconds of the last event or read that changed the
+record), and `files` (the changed paths, first 100; `null` for a record saved before they were kept).
 
 `GET /metrics` serves Prometheus text:
 `starpulse_page_build_info{build="<id>"} 1` names the page build the server holds, the id its `build` event sends, so
 a rebuild moves the series; a server whose `static/` holds no build serves none. The same route carries the server
 process's own metrics, `process_resident_memory_bytes`, the `process_cpu_seconds_total` counter,
 `process_threads`, `process_open_fds` and `process_start_time_seconds`; the last changes on every restart, so a growth rule can tell one
-process lifetime from the next. A host with no `/proc` serves only `process_threads`.
+process lifetime from the next. A host with no `/proc` serves only `process_threads`. `starpulse_open_pulls{repo}` counts the open pull requests the PR store holds in each repository.
 
 `waiting_on` is the dependencies neither in the `done` lane (hot, cold or retired) nor settled as completed. `criteria` and `pause_reason` come
 from `BoardTask.acceptance_criteria` with `acceptance_checked`, and `BoardTask.pause_reason`; an adapter that sets none
