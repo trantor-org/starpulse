@@ -370,6 +370,7 @@ def default_starters(
                 sessions_dir(os.environ),
                 config.bridge.quiet_moves,
                 lambda repo, number: stored_head(log.engine, repo, number),
+                lane_of,
             ),
             forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ)),
             config.bridge.incidents,

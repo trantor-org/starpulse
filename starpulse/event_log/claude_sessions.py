@@ -53,6 +53,8 @@ BRIDGE_FIELD = re.compile(r'"bridgeSessionId"\s*:\s*"([^"]+)"')
 NAME_FIELD = re.compile(r'"agentName"\s*:\s*"([^"]+)"')
 HEAD_BYTES = 16 * 1024
 TAIL_BYTES = 64 * 1024
+MESSAGE_CHARS = 2000
+"""How much of a holder's latest report `session_activity` carries before an ellipsis."""
 MISS_TTL_S = 30.0
 """How long a session with no transcript stays unlooked-for: each lookup globs every transcript-project directory."""
 SNAPSHOT_TTL_S = 1.0
@@ -163,16 +165,37 @@ def transcript_written(root: Path) -> Callable[[str], float | None]:
     return written
 
 
+def last_report(root: Path, session: str, *, size: int = TAIL_BYTES) -> dict[str, str]:
+    """`{"last_message", "last_message_at"}` of the newest assistant entry of `session`'s transcript that holds text,
+    the text cut to `MESSAGE_CHARS`; empty when none of its last `size` bytes holds one."""
+    path = transcript_path(root, session)
+    for line in reversed(_tail(path, size) if path is not None else []):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict) or entry.get("type") != "assistant" or not entry.get("timestamp"):
+            continue
+        parts = ((entry.get("message") or {}).get("content")) or []
+        text = "\n".join(p["text"] for p in parts if isinstance(p, dict) and p.get("type") == "text" and p.get("text"))
+        if text.strip():
+            cut = text if len(text) <= MESSAGE_CHARS else text[:MESSAGE_CHARS] + "…"
+            return {"last_message": cut, "last_message_at": entry["timestamp"]}
+    return {}
+
+
 def session_activity(root: Path, session: str, *, now: float, tail: int = TAIL_BYTES) -> dict[str, Any] | None:
     """`{"state": "idle", "last_turn_at", "idle_s"}` after a finished turn, `{"state": "working", "last_turn_at"}`
-    mid-turn; None when `session` names no transcript under `root` or none of its last `tail` bytes is a turn."""
+    mid-turn, each with the session's `last_report` when it has one; None when `session` names no transcript under
+    `root` or none of its last `tail` bytes is a turn."""
     entry = last_turn(root, session, size=tail, ends=True)
     if entry is None:
         return None
     stamp = entry["timestamp"]
+    report = last_report(root, session, size=tail)
     if _ended(entry):
-        return {"state": "idle", "last_turn_at": stamp, "idle_s": int(now - _seconds(stamp))}
-    return {"state": "working", "last_turn_at": stamp}
+        return {"state": "idle", "last_turn_at": stamp, "idle_s": int(now - _seconds(stamp)), **report}
+    return {"state": "working", "last_turn_at": stamp, **report}
 
 
 def sessions_dir(environ: Mapping[str, str]) -> Path:

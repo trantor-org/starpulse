@@ -127,6 +127,7 @@ def _owned_by(*contexts: str) -> tuple[str, ...]:
 #: a restart of `serve` applies. The Page API swaps hot behind the shared socket, so it is listed beside every owner.
 CONFIG_OWNERS: dict[str, tuple[str, ...]] = {
     "tracker_url": _owned_by(),
+    "views": _owned_by(),
     "harnesses_file": _owned_by(),
     "analytics": _owned_by("contexts"),
     "claude_code": _owned_by("contexts"),

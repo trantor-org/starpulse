@@ -47,4 +47,16 @@ describe("a working card's session activity", () => {
     expect(sess("TASK-3")?.textContent).toBe("session unknown");
     expect(sess("TASK-4")).toBeNull();
   });
+
+  it("draws the holder's latest report on the card, whatever the session is doing, and nothing when it has none", () => {
+    mount([
+      card("TASK-1", "in_progress", "@agent-a", { sessionActivity: { state: "working", last_turn_at: turn(5), last_message: "deploy still failing", last_message_at: turn(60) } }),
+      card("TASK-2", "in_progress", "@agent-b", { sessionActivity: { state: "working", last_turn_at: turn(5) } }),
+    ]);
+    const report = (id: string) => host.querySelector<HTMLElement>(`.card[data-id=${id}] .sreport`);
+
+    expect(report("TASK-1")?.textContent).toBe("deploy still failing");
+    expect(report("TASK-1")?.title).toContain("deploy still failing");
+    expect(report("TASK-2")).toBeNull();
+  });
 });

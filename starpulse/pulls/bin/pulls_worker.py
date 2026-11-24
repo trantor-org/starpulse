@@ -85,7 +85,7 @@ class Delivery:
             self._resume = True  # a reload resumes after this replay's cursor
         self._actor = actor
         if actor:
-            keep_metrics(log, actor.exposition, stop, actor.turned)
+            keep_metrics(log, lambda: actor.exposition() + pulls.timings.exposition(), stop, actor.turned)
 
     def stop(self) -> None:
         self._stop.set()
@@ -157,7 +157,7 @@ def start(
     store_pulls = keep_pulls(store, log, stop)  # the answer `serve` reads: stored soon after the start and each save
     store_pulls()
     store.subscribe_saves(lambda keys: store_pulls())
-    announce_saves(store, log)  # `serve` holds records in memory and takes each save from the database again
+    announce_saves(store, log, stop)  # `serve` holds records in memory and takes each save from the database again
     delivery = Delivery(config, board, feed, log, store, pins, start_delivery, resume=resume)
     if config.github:  # a delivery writes its record whether or not a task cites the pull request
         pull_deliveries.start(config, log.engine, stop, store, open_watch, delivery.merge_received, delivery.main_checked)

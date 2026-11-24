@@ -90,9 +90,41 @@ class Projected:
         return thread
 
 
-def announce_saves(store: PullStore, log: EventLog) -> None:
-    """Announce the keys of each save `store` makes on `SAVED_STREAM`, for the serving store to refresh."""
-    store.subscribe_saves(lambda keys: log.publish(SAVED_STREAM, {"keys": json.dumps(keys)}))
+def announce_saves(store: PullStore, log: EventLog, stop: StopEvent) -> threading.Thread:
+    """Announce the keys of each save `store` makes on `SAVED_STREAM`, for the serving store to refresh, on a thread until
+    `stop`. A save only queues its keys, so a slow announce never holds up the write that follows; the saves made while
+    one announce runs share the next, whose keys keep the order of their saves (`serve` reads each record again, so
+    one announce of a key stands for every save of it before)."""
+    pending: dict[tuple[str, int], None] = {}
+    lock = threading.Lock()
+    saved = threading.Event()
+
+    def queue(keys: list[tuple[str, int]]) -> None:
+        with lock:
+            pending.update(dict.fromkeys(keys))
+        saved.set()
+
+    def run() -> None:
+        stop.listen(saved.set)
+        try:
+            while True:
+                saved.wait()
+                saved.clear()
+                with lock:
+                    keys = list(pending)
+                    pending.clear()
+                if keys:
+                    with store.timings.time("announce"):
+                        log.publish(SAVED_STREAM, {"keys": json.dumps(keys)})
+                if stop.is_set() and not pending:
+                    return
+        finally:
+            stop.unlisten(saved.set)
+
+    store.subscribe_saves(queue)
+    thread = threading.Thread(target=run, name="pull-saves-announced", daemon=True)
+    thread.start()
+    return thread
 
 
 def refresh_on_save(store: PullStore) -> Callable[[Entry], None]:

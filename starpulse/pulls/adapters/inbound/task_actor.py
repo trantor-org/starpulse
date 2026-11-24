@@ -72,6 +72,7 @@ from starpulse.pulls.adapters.inbound.task_facts import ActorFacts
 from starpulse.pulls.adapters.inbound.task_memory import TaskMemory
 from starpulse.pulls.adapters.inbound.unblock import PinGate
 from starpulse.pulls.adapters.outbound.pull_requests import own_prs, pull_record, uncited
+from starpulse.pulls.model.histogram import Histogram
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
 from starpulse.pulls.model.task_actor import TaskTouched, Trigger, derivation
 from starpulse.pulls.model.task_actor.derivation import (
@@ -247,41 +248,6 @@ def _hold_comment(prefix: str, reasons: Sequence[str]) -> str:
     return f"{text}."[:COMMENT_CAP]
 
 
-class _Histogram:
-    """Seconds observed from any thread, as the cumulative buckets of a Prometheus histogram."""
-
-    def __init__(self, bounds: Sequence[float]) -> None:
-        self._bounds = bounds
-        self._lock = threading.Lock()
-        self._counts = [0] * (len(bounds) + 1)
-        self._sum = 0.0
-
-    def observe(self, seconds: float) -> None:
-        at = next((i for i, bound in enumerate(self._bounds) if seconds <= bound), len(self._bounds))
-        with self._lock:
-            for i in range(at, len(self._counts)):
-                self._counts[i] += 1
-            self._sum += seconds
-
-    def lines(self, name: str, help_text: str) -> list[str]:
-        return [f"# HELP {name} {help_text}", f"# TYPE {name} histogram", *self.samples(name)]
-
-    def samples(self, name: str, labels: str = "") -> list[str]:
-        """The histogram's sample lines, each carrying `labels` (`lane="ready",hook="false"`) when given."""
-        with self._lock:
-            counts, total = list(self._counts), self._sum
-        head, tail = (f"{labels},", f"{{{labels}}}") if labels else ("", "")
-        buckets = [
-            f'{name}_bucket{{{head}le="{bound:g}"}} {count}' for bound, count in zip(self._bounds, counts, strict=False)
-        ]
-        return [
-            *buckets,
-            f'{name}_bucket{{{head}le="+Inf"}} {counts[-1]}',
-            f"{name}_sum{tail} {total:g}",
-            f"{name}_count{tail} {counts[-1]}",
-        ]
-
-
 class TaskActor:
     """Moves each open task whose lane waits on a fact that holds, once per change of that fact.
 
@@ -452,7 +418,7 @@ class TaskActor:
         self._noticing = threading.Lock()
         self._notifier: threading.Thread | None = None
         #: How long each derivation ran, by the lane the task was in and whether a board hook ran in it.
-        self._derive_seconds: dict[tuple[str, bool], _Histogram] = {}
+        self._derive_seconds: dict[tuple[str, bool], Histogram] = {}
         #: Tasks whose dependencies are done but wait for a pin bump, and the store revision last read for them.
         self._pin_held: set[str] = set()
         self._store_rev = store.rev
@@ -472,11 +438,11 @@ class TaskActor:
         self._buckets = [0] * (len(BUCKETS_S) + 1)
         self._sum = 0.0
         #: How long each projection of the pull request store ran, and how long a store save waited for the actor.
-        self._projection = _Histogram(SLOW_BUCKETS_S)
-        self._handoff = _Histogram(SLOW_BUCKETS_S)
+        self._projection = Histogram(SLOW_BUCKETS_S)
+        self._handoff = Histogram(SLOW_BUCKETS_S)
         #: Seconds from a pull request's merge to the write that moved the task citing it.
-        self._merge_move = _Histogram(SLOW_BUCKETS_S)
-        self._receipt_done = _Histogram(BUCKETS_S)
+        self._merge_move = Histogram(SLOW_BUCKETS_S)
+        self._receipt_done = Histogram(BUCKETS_S)
         #: The wall time the merge webhook `merge_received` derives was received at; None outside it.
         self._received: float | None = None
         #: How many store saves, task or move changes and projections wait for the lock or hold it; start recovery takes
@@ -1323,7 +1289,7 @@ class TaskActor:
 
     def _timed_derive(self, lane: str, hooked: bool, seconds: float) -> None:
         with self._metrics:
-            histogram = self._derive_seconds.setdefault((lane, hooked), _Histogram(SLOW_BUCKETS_S))
+            histogram = self._derive_seconds.setdefault((lane, hooked), Histogram(SLOW_BUCKETS_S))
         histogram.observe(seconds)
 
     def _derive_waits(self, name: str, agent: dict[str, Any], observed: float, digest: str) -> bool:

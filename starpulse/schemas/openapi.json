@@ -48,6 +48,10 @@
       "description": "Health, metrics and the diagnostics of the server"
     },
     {
+      "name": "graphql",
+      "description": "Task reads by a GraphQL query, and the queries views store"
+    },
+    {
       "name": "pages",
       "description": "This document and its Swagger page"
     }
@@ -2612,6 +2616,47 @@
         }
       }
     },
+    "/api/views/{id}": {
+      "get": {
+        "summary": "The GraphQL document a view stores",
+        "tags": [
+          "graphql"
+        ],
+        "operationId": "get_api_views_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewShown"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/openapi": {
       "get": {
         "summary": "This document",
@@ -2626,6 +2671,37 @@
               "application/json": {
                 "schema": {
                   "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/graphql": {
+      "post": {
+        "summary": "Run a GraphQL query over the tasks",
+        "tags": [
+          "graphql"
+        ],
+        "operationId": "post_graphql",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphqlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphqlResponse"
                 }
               }
             }
@@ -4939,6 +5015,130 @@
           "agents"
         ],
         "title": "FlowSnapshot",
+        "type": "object"
+      },
+      "GraphqlError": {
+        "description": "One error a query met, as the GraphQL over HTTP spec names its fields.",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "locations": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "path": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "GraphqlError",
+        "type": "object"
+      },
+      "GraphqlRequest": {
+        "additionalProperties": false,
+        "description": "`POST /graphql`: one GraphQL document and the operation of it to run.",
+        "properties": {
+          "query": {
+            "description": "The GraphQL document: a fragment and the named queries a view stores.",
+            "type": "string"
+          },
+          "operationName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The operation of the document to run."
+          },
+          "variables": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The values of the operation's variables."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "GraphqlRequest",
+        "type": "object"
+      },
+      "GraphqlResponse": {
+        "description": "`POST /graphql`: the data the query asked for, and the errors it met; a query the schema refuses has errors only.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GraphqlError"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "GraphqlResponse",
         "type": "object"
       },
       "HarnessBody": {
@@ -9094,6 +9294,30 @@
             ],
             "default": null,
             "description": "Seconds idle when the snapshot was drawn; present only when idle."
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The holder session's latest assistant message with text, cut to 2000 characters with an ellipsis; absent when it has not reported."
+          },
+          "last_message_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "When `last_message` was written, ISO 8601; present with it."
           }
         },
         "required": [
@@ -10464,6 +10688,23 @@
           "verdict"
         ],
         "title": "VerdictRequest",
+        "type": "object"
+      },
+      "ViewShown": {
+        "description": "`GET /api/views/<id>`: the one GraphQL document a view stores in `starpulse.toml`.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "query"
+        ],
+        "title": "ViewShown",
         "type": "object"
       },
       "WindowRequest": {

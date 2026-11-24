@@ -1,0 +1,32 @@
+"""One open task as a card draws it."""
+type Task {
+  id: ID!
+  title: String!
+  """The lane the task is in: its state, lower-cased, spaces as `_`."""
+  lane: String!
+  profile: String
+  impact: String!
+  urgency: String!
+  tier: String!
+  """Where the task came from: the `source` its creation recorded, empty for none."""
+  source: String!
+  assignee: String
+  labels: [String!]!
+  milestone: String!
+  type: String!
+  dependencies: [String!]!
+  workable: Boolean!
+  """Seconds since the epoch the task last moved."""
+  movedAt: Float!
+  description: String!
+}
+
+type Query {
+  """
+  The open tasks. `filter` keeps those whose id, title or a label holds it (case aside); `source`, `lane` and
+  `milestone` keep those equal to it.
+  """
+  tasks(filter: String, source: String, lane: String, milestone: String): [Task!]!
+  """One open task, or null when the board holds none by that id."""
+  task(id: ID!): Task
+}

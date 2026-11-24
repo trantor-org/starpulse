@@ -123,7 +123,7 @@ def _edited(
     that can only name a field to comment on sends the one it leaves as it is.
     """
     task, base, changes, comment = request.task, request.base, request.changes, request.comment or ""
-    if not changes:
+    if not changes and not comment.strip():
         return 400, {
             "error": 'an edit needs {"task": "TASK-N", "base": {...}, "changes": {...}, "comment": "<optional>"}'
         }

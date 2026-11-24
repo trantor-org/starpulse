@@ -5,8 +5,10 @@ A task's file and its replayed row are compared through `markdown.render`, plus 
 meta (start criteria by their authored fields only), the assignee, the comments' text and whether the task is archived."""
 
 import difflib
-from collections.abc import Iterable, Iterator, Mapping
+import hashlib
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -20,7 +22,7 @@ from starpulse.board.model.markdown import render
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore
 
-__all__ = ["Filed", "Parity", "Replays", "align_claims", "check", "filed", "import_missing", "scanned"]
+__all__ = ["Filed", "Parity", "Pending", "Replays", "align_claims", "check", "filed", "import_missing", "pending", "scanned"]
 
 Record = Mapping[str, Any]
 _SHOWN = 6
@@ -46,25 +48,77 @@ class Parity:
         return not (self.missing or self.differing)
 
 
+def _in_folder(stem: str, archived: bool, text: str) -> Filed:
+    record = _record_of(text)
+    return Filed(record["id"] or stem, record, archived)
+
+
+def _retired(task: str, text: str) -> Filed:
+    return Filed(task, _record_of(text), True)
+
+
 def scanned(root: Path) -> Iterator[Filed]:
     """Every open, completed and archived task file under `root`."""
     for folder, settled in _FOLDERS:
         for path in sorted((root / folder).glob("*.md")):
-            record = _record_of(path.read_text())
-            yield Filed(record["id"] or path.stem, record, settled is not None)
+            yield _in_folder(path.stem, settled is not None, path.read_text())
 
 
-def filed(root: Path, engine: Engine, scan: Iterable[Filed] | None = None) -> Iterator[Filed]:
-    """Every open, completed and archived task file under `root` (`scan`, when the caller already read them), then every retired task of the store whose id no file holds."""
+def filed(root: Path, engine: Engine) -> Iterator[Filed]:
+    """Every open, completed and archived task file under `root`, then every retired task of the store whose id no file holds."""
     held: set[str] = set()
-    for item in scanned(root) if scan is None else scan:
+    for item in scanned(root):
         held.add(item.task)
         yield item
     retired = _Retired()
     retired.engine = engine
     for task, text in retired.pairs():
         if task not in held:  # a file holding the id outranks an old row of another task
-            yield Filed(task, _record_of(text), True)
+            yield _retired(task, text)
+
+
+class Pending(NamedTuple):
+    """The tasks a migrate must check, and the ledger it leaves: `{key: [digest, task, version]}`, the file (or retired
+    row) text's digest and the task's History version when it was read."""
+
+    files: list[Filed]
+    retired: list[Filed]
+    ledger: dict[str, list[Any]]
+
+    @property
+    def items(self) -> list[Filed]:
+        return [*self.files, *self.retired]
+
+
+def pending(root: Path, engine: Engine, checked: Mapping[str, Sequence[Any]]) -> Pending:
+    """The files under `root` and the retired tasks of the store that `checked` (a former run's ledger) does not vouch for: a
+    task whose text and History version both match its entry is in parity, so it is neither parsed nor replayed."""
+    versions = EventStore(engine).heads(KIND)
+    files: list[Filed] = []
+    retired: list[Filed] = []
+    ledger: dict[str, list[Any]] = {}
+    held: set[str] = set()
+
+    def keep(key: str, text: str, make: Callable[[str], Filed], out: list[Filed]) -> None:
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        if (old := checked.get(key)) and old[0] == digest and versions.get(old[1], 0) == old[2]:
+            held.add(old[1])
+            ledger[key] = list(old)
+            return
+        item = make(text)
+        held.add(item.task)
+        ledger[key] = [digest, item.task, versions.get(item.task, 0)]
+        out.append(item)
+
+    for folder, settled in _FOLDERS:
+        for path in sorted((root / folder).glob("*.md")):
+            keep(f"{folder}/{path.name}", path.read_text(), partial(_in_folder, path.stem, settled is not None), files)
+    store = _Retired()
+    store.engine = engine
+    for task, text in store.pairs():
+        if task not in held:  # a file holding the id outranks an old row of another task
+            keep(f"retired/{task}", text, partial(_retired, task), retired)
+    return Pending(files, retired, ledger)
 
 
 class Replays:

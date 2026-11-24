@@ -35,7 +35,7 @@ from starpulse.event_log.caught_up import CaughtUp
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
-from starpulse.views.adapters.inbound.api import intake, metrics
+from starpulse.views.adapters.inbound.api import graphql, intake, metrics
 from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, WORKERS
 from starpulse.views.adapters.inbound.api.openapi import swagger
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
@@ -525,4 +525,4 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), [*metrics.routes, *intake.routes], static, feed.machines.keys(), grpc, api, caught_up)
+    return PageApp(api_routes(api), [*metrics.routes, *graphql.routes, *intake.routes], static, feed.machines.keys(), grpc, api, caught_up)

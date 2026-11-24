@@ -58,6 +58,8 @@ class Services:
     lanes: Callable[[], dict[str, Any]] | None = None
     slow_read_s: float = SLOW_READ_S
     actor_metrics: Callable[[], str] | None = None
+    #: Each configured view's stored GraphQL document by view name.
+    views: Mapping[str, str] = field(default_factory=dict)
     lane_metrics: Callable[[], str] | None = None
     autopilot_metrics: Callable[[], str] | None = None
     storage_metrics: Callable[[], str] | None = None

@@ -185,6 +185,7 @@ def serve_page(
         run_safe=run_safe,
         reruns=reruns,
         harnesses=config.harnesses,
+        views=config.views,
         start_session=starter(config.session_start_url),
         dispatch=dispatcher(log),
         events=cloudevents,

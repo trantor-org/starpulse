@@ -147,6 +147,13 @@ def _passed(event: Event, head: Callable[[str, int], str | None] | None) -> bool
     return bool(stored) and stored != judged
 
 
+def _parked(event: Event, lane_of: Callable[[str], str | None] | None) -> bool:
+    parts = event.subject.split(".")
+    if lane_of is None or parts[-1:] != ["holder_resume"] or len(parts) < 5:
+        return False
+    return lane_of(parts[-2]) not in ("in_progress", "unknown")
+
+
 def _seen_key(event: Event) -> tuple[str, str] | None:
     try:
         return event.subject, str(json.loads(event.body)["event_id"])
@@ -171,13 +178,15 @@ def route(
     sessions: Path,
     quiet: Mapping[str, Collection[str]] | None = None,
     head: Callable[[str, int], str | None] | None = None,
+    lane_of: Callable[[str], str | None] | None = None,
 ) -> Route:
     """A session with no registration has no route, so its events stay on its consumer. A consumer named for a
     claude.ai URL holder is the running session whose record in `sessions` carries that bridge id, which registered
     under its local id. `head` is the
     store's head of a repository's pull request by number, empty or None when it holds none. A consumer's event the
     session already received (the server redelivers one whose ack was lost) is acked with no line, the last
-    `_SEEN_MAX` of each consumer being remembered."""
+    `_SEEN_MAX` of each consumer being remembered. `lane_of` is a task's lane now: a `holder_resume` for a task not In
+    Progress (a restart redelivers one whose ack was lost after the task parked) is acked with no line."""
     seen: dict[str, dict[tuple[str, str], None]] = {}
 
     def registered(name: str) -> Registration | None:
@@ -200,6 +209,7 @@ def route(
                 if _seen_key(event) not in received
                 and not _stale(event)
                 and not _passed(event, head)
+                and not _parked(event, lane_of)
                 and not _quieted(event, quiet or {}, own, sessions)
             ]
             lines = [line_for(event) for event in sent]

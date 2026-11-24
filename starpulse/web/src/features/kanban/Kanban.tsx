@@ -189,6 +189,7 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
             : <span className="who sess unknown" title="No running session with a transcript holds this task.">session unknown</span>)}
         </div>
       )}
+      {task.sessionActivity?.last_message && <div className="sreport" title={task.sessionActivity.last_message}>{task.sessionActivity.last_message}</div>}
       {playing && (
         // a full-height strip on the card's right edge, so a near miss lands on the card and opens the task
         <button className="play edge" title={guard || "Start a session"} aria-label={`Start ${task.id}`} disabled={!startable(task, roles)}

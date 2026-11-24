@@ -59,7 +59,7 @@ export interface KanbanTask {
   /** The claim the sweeper released from the task, which left it unheld; absent or null when none ended the claim. */
   release?: ClaimRelease | null;
   /** What the holder session is doing, from the snapshot; absent unless the task is held and working. */
-  sessionActivity?: { state: "working" | "idle" | "unknown"; last_turn_at?: string | null } | null;
+  sessionActivity?: { state: "working" | "idle" | "unknown"; last_turn_at?: string | null; last_message?: string | null; last_message_at?: string | null } | null;
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
   moves: Record<string, Move>;
   /** When the task entered its column, epoch seconds; 0 when the server gave no time. */
