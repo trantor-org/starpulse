@@ -8,7 +8,6 @@ SNAPSHOT_KEYS = (
     "pulls",
     "mergeStrip",
     "mergePins",
-    "machinePage",
     "machineStrip",
     "claims",
     "settled",
@@ -28,7 +27,7 @@ SNAPSHOT_KEYS = (
 )
 
 # What makes a document a StarPulse snapshot; any other key may come or go between releases.
-SNAPSHOT_IDENTITY_KEYS = ("graphs", "flows", "machinePage", "now")
+SNAPSHOT_IDENTITY_KEYS = ("graphs", "flows", "machineStrip", "now")
 
 
 TASK_KEYS = (

@@ -5,9 +5,9 @@ const view = { h: 400, fs: 1 };
 const rows = (n: number, h = 100) => Array.from({ length: n }, () => ({ h }));
 
 describe("the machine ledger's scroll", () => {
-  it("holds the rows and, when older machines remain, a footer, and scrolls only past the view", () => {
-    expect(laneContent(rows(3), 0, view)).toEqual({ content: 300, max: 0 });
-    expect(laneContent(rows(10), 34, view)).toEqual({ content: 1034, max: 634 });
+  it("holds the rows and scrolls only past the view", () => {
+    expect(laneContent(rows(3), view)).toEqual({ content: 300, max: 0 });
+    expect(laneContent(rows(10), view)).toEqual({ content: 1000, max: 600 });
   });
 
   it("moves by the wheel in pixels or lines, and stays inside the rows", () => {

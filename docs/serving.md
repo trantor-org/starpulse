@@ -405,17 +405,16 @@ GET /api/health     {ready, components}: 200 when the event log is at the schema
                    context this `serve` supervises has started, else 503 naming each component (`store`, `board`, `writer`,
                    `contexts`) that is not, each {ready, detail}; reads no task and writes nothing. `starpulse doctor` and
                    `starpulse rehearse` read it
-GET /api/machines[?open=NAME][&before=T][&limit=N][&lanes=1]
-                   {open, machines, more}: the next `limit` machines (default 20, at most 100) entered from the machine
-                   `open` (default the In Progress machine), newest activity first, each as `{name, last}` (the snapshot
-                   `flows` already holds the body and derivation). `before` is the `last` of the last machine held (epoch
-                   seconds; none: the newest; a machine with no task counts as 0), machines sharing the boundary activity all come in
-                   one page, so walking `before` neither repeats nor skips one. An `open` that is not a machine here is
-                   404, a `before` that is not a finite number or a `limit` outside 1-100 is 400. `lanes=1` adds a top-level `lanes` map
-                   (each lane's `tools`, `exits` and `skill`, read from the policy on each such request); no page asks for it, so
-                   the body leaves it out by default
+POST /api/machines
+                   {machines}: every machine the board draws, each `{name, type, parents}`; the body takes no field.
+                   `type` is `machine`, `phase machine` or `sub-machine`, `parents` the machines whose submachines name it
+GET /api/machines/{name}
+                   One machine's declared config: `{name, type, parents, skill, submachines, launches}`. `skill` is the one
+                   its first parent link runs it with (empty when none names one). The Board's carries `lanes` too: each
+                   lane's `tools`, `exits` and `skill`, read from the policy on each request (empty with no policy). An
+                   unknown name is 404
 GET /api/done[?before=T][&limit=N]
-                   {tasks, more}: the next `limit` done tasks (default and most as `/api/machines`) past their hot day,
+                   {tasks, more}: the next `limit` done tasks (default 20, at most 100) past their hot day,
                    newest done first, each {id, title, state, model, labels, milestone, type, entered} read from the
                    board on request. `before` is the `entered` of the last one held (epoch seconds; none: the newest).
                    A board that cannot read a task is 404, a bad `before` or `limit` 400
@@ -1458,12 +1457,11 @@ the `entered` of the last task held; `limit` is 1-100. A board that cannot read 
 
 The machines entered from an open machine (the In Progress one at the top) are its rows, newest activity first: a row is
 as recent as the newest task of the machine and every machine nested below it, ties break by name, and a machine with no
-task comes last. The snapshot's `flows` carries every machine; `machinePage` (`{open, machines, more}`) names the In
-Progress machine's first 20 rows. `GET /api/machines?open=<machine>&before=<last>&limit=20` returns the next page of any
-level as `{open, machines, more}`, each machine as `{name, last}` (the snapshot's `flows` already holds its body, so the
-page pages by these two fields). `open` defaults to the In Progress machine, `before` is the `last` of the last row held (0 for a machine with no task), and `limit` runs 1 to 100.
-Rows sharing the boundary activity come together, so a page can run past `limit` and walking it neither repeats nor skips
-a machine. An unknown `open` is 404; a `before` that is not a finite number or a `limit` out of range is 400.
+task comes last. The snapshot's `flows` carries every machine and its ties, so the page draws every row from it and
+pages nothing. A machine's **ties** are declared (a `submachines` link on another machine's state) or a DAG launch; a
+machine is nested only where a file declares it. Each machine file declares its `type` and `parents`, and the loader
+refuses a file whose `parents` differ from the machines whose `submachines` name it. `POST /api/machines` and
+`GET /api/machines/{name}` show that config.
 
 `machineStrip` (`{entries}`) lists every machine entry of the 24 hours before the snapshot's `now`, without the rows, oldest first, as
 `{at, machine, row, from, dag}`: `row` is the machine on the In Progress level the entry lands on, so an entry into a
@@ -1471,8 +1469,7 @@ nested machine counts on the row above it; `from` is the `{machine, state}` the 
 when no earlier session is known); `dag` is the workflow that launched a session with no task.
 
 The page scrolls the rows under the fixed top by the wheel, Page Up and Page Down, the arrow keys, Home and End and a
-draggable thumb, with `↑ back to newest` once scrolled; the rows are drawn only while in view. As the footer comes
-into view it loads the next 20 older machines from `/api/machines`. The 24 h strip under the rows draws a tick per
+draggable thumb, with `↑ back to newest` once scrolled; the rows are drawn only while in view. The 24 h strip under the rows draws a tick per
 entry, coloured by the state it was entered from (amber for a workflow launch), shades the rows in view as one
 stretch, and a click on a tick scrolls to its row. A click on a state of the top scrolls to the first machine it
 opens and picks it out; Escape steps back from the card, then the picked row, then the scroll to newest. A click on a task pins it and narrows the rows and the strip to

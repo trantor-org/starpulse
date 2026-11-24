@@ -30,7 +30,7 @@ function paint(flow: string, extra: (S: LedgerIO["S"]) => Partial<LedgerIO> = ()
   const { cx, seen } = paintLog();
   const dc = { cx, K: 1, ZS: 1, clock: 1, scale: 100, hover: null } as DrawCtx;
   const io: LedgerIO = {
-    S, scene, FW: 1920, H: 1080, T, hotEdge: new Set<string>(), events: () => [], hhmm: () => "00:00", scrollPos: 0, pg: null, pickedRow: null,
+    S, scene, FW: 1920, H: 1080, T, hotEdge: new Set<string>(), events: () => [], hhmm: () => "00:00", scrollPos: 0, pickedRow: null,
     lpin: null, railHover: null, thumbDrag: false, glow: null, ...extra(S),
   };
   machineLedger(dc, drawing(dc), io).drawTop();

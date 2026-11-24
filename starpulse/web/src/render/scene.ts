@@ -8,7 +8,6 @@ import { ledgerTop, sizes as ledgerSizes, type LedgerTop } from "../features/lev
 import { nestsOf } from "../features/level/machineChain";
 import { laneRows, type LaneNode, type LaneRow } from "../features/level/machineLanes";
 import { laneContent } from "../features/level/machineScroll";
-import { shownRows, type Paging } from "../features/level/machinePaging";
 import { rankRows } from "../features/level/machineRows";
 import { ledgerOf, type Ledger, type Tie } from "../features/level/ledger";
 import type { Viewport } from "../features/level/ledgerScroll";
@@ -368,15 +367,13 @@ export interface MachineTop extends LedgerTop {
   rows: RowView[];
   laneTop: number;
   laneBottom: number;
-  /** Every machine entered from this one, those below the loaded page among them; `more` of them are not loaded yet. */
+  /** Every machine entered from this one. */
   total: number;
-  /** Every machine entered from this one, in the order the rows run (those not loaded last). */
+  /** Every machine entered from this one, in the order the rows run. */
   ranked: string[];
-  more: number;
   /** The pinned task the rows are narrowed to, when one is. */
   task?: string;
-  /** The height of the footer that closes the loaded rows while older machines remain, and how tall rows and footer are together and how far they scroll. */
-  foot: number;
+  /** How tall the rows are together and how far they scroll. */
   content: number;
   max: number;
 }
@@ -414,8 +411,6 @@ export interface Ctx {
   chrome?: { avoid: { x0: number; y0: number; x1: number; y1: number }[]; inset: number };
   /** The order the page is holding its machine ledger rows in while the pointer is over them: the rows keep it, and a new machine goes last. */
   held?: string[];
-  /** How much of the top's machine ledger is loaded: the rows below its boundary are left for the footer to bring in. */
-  paging?: Paging | null;
   /** A pinned task and the machines it has a session in: the ledger shows only those rows, every one the snapshot holds, with no footer. */
   only?: { task: string; machines: readonly string[] };
 }
@@ -1315,14 +1310,13 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const { fs } = ledgerSizes(ctx.scale ?? 100), laneTop = top.hdrB + 6, laneBottom = H - 50 * fs;
     const kids = S.tree.children[name] ?? [], phases = new Set(kids.map((c) => (kids.find((k) => k.state === c.state && k.machine === c.state) ?? kids.find((k) => k.state === c.state))!.machine));
     const only = ctx.only, ranked = rankRows(S.flows, name, ctx.held).filter((m) => !only || only.machines.includes(m));
-    const order = shownRows(ranked, (m) => S.flows[m].last ?? 0, !only && ctx.paging?.top === name ? ctx.paging : null), machines = order.map((m) => ({ name: m, states: S.flows[m].machine.states, transitions: S.flows[m].machine.transitions, tasks: tasksOf(S.flows[m]), nested: nestsOf(S.flows, m), phase: phases.has(m) }));
+    const machines = ranked.map((m) => ({ name: m, states: S.flows[m].machine.states, transitions: S.flows[m].machine.transitions, tasks: tasksOf(S.flows[m]), nested: nestsOf(S.flows, m), phase: phases.has(m) }));
     const lane = laneRows(machines, { x0: top.x0, x1: top.xEnd }, { scale: ctx.scale ?? 100, laneH: laneBottom - laneTop, total: ranked.length, measure: frame.measure });
     const rows = lane.rows.map((r): RowView => {
       const st = S.flows[r.name].machine.states;
       return { ...r, kind: phases.has(r.name) ? "phase" : kids.some((k) => k.machine === r.name) ? "sub" : undefined, init: (st.find((x) => x.initial) ?? st[0]).id, nodes: r.nodes.map((n) => ({ ...n, color: RAMP[Math.round(n.u * (RAMP.length - 1))] })) };
     });
-    const more = ranked.length - rows.length, foot = more ? 34 * fs : 0;
-    scene.top = { ...top, machine: name, entered, rows, laneTop, laneBottom, total: ranked.length, ranked, more, foot, task: only?.task, ...laneContent(rows, foot, { h: laneBottom - laneTop, fs }) };
+    scene.top = { ...top, machine: name, entered, rows, laneTop, laneBottom, total: ranked.length, ranked, task: only?.task, ...laneContent(rows, { h: laneBottom - laneTop, fs }) };
     for (const n of top.nodes) scene.mStates[n.id] = { id: n.id, name: n.name, final: n.final, initial: n.initial, machine: name, n: n.n, x: n.x, y: n.y, loops: loopsOf(flow, n.id), color: RAMP[Math.round(n.u * (RAMP.length - 1))] };
     scene.mEdges = flow.machine.transitions.map((t) => {
       const a = scene.mStates[t.source], b = scene.mStates[t.target];

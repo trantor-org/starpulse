@@ -20,9 +20,9 @@ const LINE = 18;
 /** A thumb is never shorter than this. */
 const MIN_THUMB = 24;
 
-/** How tall the rows and the footer (when older machines remain) are together, and how far they scroll. */
-export function laneContent(rows: readonly { h: number }[], foot: number, view: View): { content: number; max: number } {
-  const content = rows.reduce((a, r) => a + r.h, 0) + foot;
+/** How tall the rows are together, and how far they scroll. */
+export function laneContent(rows: readonly { h: number }[], view: View): { content: number; max: number } {
+  const content = rows.reduce((a, r) => a + r.h, 0);
   return { content, max: Math.max(0, content - view.h) };
 }
 

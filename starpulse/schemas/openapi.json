@@ -431,47 +431,64 @@
         }
       }
     },
-    "/api/machines": {
+    "/api/machines/{name}": {
       "get": {
-        "summary": "The machines and their lanes",
+        "summary": "One machine's declared config",
         "tags": [
           "board"
         ],
-        "operationId": "get_api_machines",
+        "operationId": "get_api_machines_name",
         "parameters": [
           {
-            "name": "before",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "lanes",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "open",
-            "in": "query",
-            "required": false,
+            "name": "name",
+            "in": "path",
+            "required": true,
             "schema": {
               "type": "string"
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineDetail"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/machines": {
+      "post": {
+        "summary": "The machines the board draws",
+        "tags": [
+          "board"
+        ],
+        "operationId": "post_api_machines",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineListRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "The answer",
@@ -5924,6 +5941,69 @@
         "title": "Machine",
         "type": "object"
       },
+      "MachineDetail": {
+        "description": "`GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with\n(empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "submachines": {
+            "items": {
+              "$ref": "#/components/schemas/Submachine"
+            },
+            "type": "array"
+          },
+          "launches": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Launch"
+            },
+            "type": "object"
+          },
+          "lanes": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/LaneSurface"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "parents",
+          "skill",
+          "submachines",
+          "launches"
+        ],
+        "title": "MachineDetail",
+        "type": "object"
+      },
       "MachineEntry": {
         "properties": {
           "at": {
@@ -6038,10 +6118,20 @@
         "title": "MachineHistory",
         "type": "object"
       },
-      "MachinePage": {
-        "description": "The first page of machines entered from `open`, by name; their bodies are in the snapshot's `flows`.",
+      "MachineListRequest": {
+        "additionalProperties": false,
+        "description": "`POST /api/machines`: list the machines the board draws. It takes no field.",
+        "properties": {},
+        "title": "MachineListRequest",
+        "type": "object"
+      },
+      "MachineListed": {
+        "description": "A machine of `POST /api/machines`: its name, its `type` and the machines it is a submachine of.",
         "properties": {
-          "open": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
             "anyOf": [
               {
                 "type": "string"
@@ -6051,46 +6141,19 @@
               }
             ]
           },
-          "machines": {
+          "parents": {
             "items": {
               "type": "string"
             },
             "type": "array"
-          },
-          "more": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "open",
-          "machines",
-          "more"
-        ],
-        "title": "MachinePage",
-        "type": "object"
-      },
-      "MachineRow": {
-        "description": "A machine of `GET /api/machines`: its name and when it last moved, which the page pages by; the snapshot holds the rest.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "last": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [
           "name",
-          "last"
+          "type",
+          "parents"
         ],
-        "title": "MachineRow",
+        "title": "MachineListed",
         "type": "object"
       },
       "MachineState": {
@@ -6166,38 +6229,17 @@
         "type": "object"
       },
       "Machines": {
-        "description": "`GET /api/machines`: the next page of machines entered from `open`, and with `?lanes=1` each lane's surface by lane name.",
+        "description": "`POST /api/machines`: every machine the board draws.",
         "properties": {
-          "open": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "machines": {
             "items": {
-              "$ref": "#/components/schemas/MachineRow"
+              "$ref": "#/components/schemas/MachineListed"
             },
             "type": "array"
-          },
-          "more": {
-            "type": "boolean"
-          },
-          "lanes": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/LaneSurface"
-            },
-            "type": "object"
           }
         },
         "required": [
-          "open",
-          "machines",
-          "more"
+          "machines"
         ],
         "title": "Machines",
         "type": "object"
@@ -9491,17 +9533,6 @@
             },
             "type": "array"
           },
-          "machinePage": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MachinePage"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
           "machineStrip": {
             "anyOf": [
               {
@@ -10445,12 +10476,11 @@
         "type": "object"
       },
       "Tie": {
-        "description": "Where a lifecycle machine is entered from.\n\n`declared` is a Submachine on `machine`'s `state`; `observed` is the state the task held on `machine` when its session\nentered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered\nthrough it, null for a launch.",
+        "description": "Where a lifecycle machine is entered from.\n\n`declared` is a Submachine on `machine`'s `state`; `dag` is a launch by `dag`, which names no machine or state.",
         "properties": {
           "kind": {
             "enum": [
               "declared",
-              "observed",
               "dag"
             ],
             "type": "string"
@@ -10469,16 +10499,6 @@
             "anyOf": [
               {
                 "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "count": {
-            "anyOf": [
-              {
-                "type": "integer"
               },
               {
                 "type": "null"
@@ -10504,7 +10524,6 @@
           "kind",
           "machine",
           "state",
-          "count",
           "dag",
           "when"
         ],

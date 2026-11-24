@@ -3,7 +3,7 @@ import { age, firstOpened, rankRows, rowMeta, stuckCount } from "./machineRows";
 import type { FlowSnapshot, Stuck, Tie } from "../../api";
 
 const NOW = 1_800_000_000;
-const tie = (kind: Tie["kind"], machine: string | null, state: string | null, count: number | null, dag: string | null = null, when = ""): Tie => ({ kind, machine, state, count, dag, when });
+const tie = (kind: Tie["kind"], machine: string | null, state: string | null, dag: string | null = null, when = ""): Tie => ({ kind, machine, state, dag, when });
 /** A lifecycle machine with the fields the server derives for it (TASK-3116). */
 function flow(name: string, o: { parent?: string | null; last?: number | null; stuck?: Stuck | null; ties?: Tie[]; nested?: string[]; states?: string[] } = {}): FlowSnapshot {
   const ids = o.states ?? ["a", "b", "c"];
@@ -55,10 +55,10 @@ describe("the machine ledger's rows", () => {
 describe("a row's meta column", () => {
   const states = ["start", "worktree_ready", "pr_opened"];
   const flows = world(
-    flow("authoring-skills", { ties: [tie("declared", "in-progress", "worktree_ready", null, null, "a skill changes")], nested: ["running-skill-evals"], states: ["drafted", "tested"] }),
-    flow("running-skill-evals", { parent: "authoring-skills", ties: [tie("observed", "authoring-skills", "tested", 4)], last: NOW - 120 }),
-    flow("triaging-cr-reviews", { ties: [tie("observed", "in-progress", "pr_opened", 7), tie("observed", "in-progress", "start", 2)] }),
-    flow("healthcheck", { ties: [tie("dag", null, null, null, "healthcheck"), tie("dag", null, null, null, "apply-on-merge")] }),
+    flow("authoring-skills", { ties: [tie("declared", "in-progress", "worktree_ready", null, "a skill changes")], nested: ["running-skill-evals"], states: ["drafted", "tested"] }),
+    flow("running-skill-evals", { parent: "authoring-skills", ties: [tie("declared", "authoring-skills", "tested")], last: NOW - 120 }),
+    flow("triaging-cr-reviews", { ties: [tie("declared", "in-progress", "pr_opened"), tie("declared", "in-progress", "start")] }),
+    flow("healthcheck", { ties: [tie("dag", null, null, "healthcheck"), tie("dag", null, null, "apply-on-merge")] }),
     flow("lonely", {}),
   );
   flows["in-progress"] = flow("in-progress", { parent: null, states });
@@ -68,12 +68,12 @@ describe("a row's meta column", () => {
   it("names a declared tie, its state and that it is declared", () => {
     expect(meta("authoring-skills").tie).toEqual({ text: "from Worktree ready · declared", machine: "in-progress", state: "worktree_ready", kind: "declared" });
   });
-  it("names an observed tie with its count, from the leading tie only", () => {
-    expect(meta("triaging-cr-reviews").tie).toEqual({ text: "from Pr opened · ×7", machine: "in-progress", state: "pr_opened", kind: "observed" });
+  it("names the leading tie only", () => {
+    expect(meta("triaging-cr-reviews").tie).toEqual({ text: "from Pr opened · declared", machine: "in-progress", state: "pr_opened", kind: "declared" });
   });
   it("names the row it is entered from when that is not the top machine", () => {
-    expect(meta("running-skill-evals", "in-progress").tie.text).toBe("on authoring-skills › Tested · ×4");
-    expect(meta("running-skill-evals", "authoring-skills").tie.text).toBe("from Tested · ×4");
+    expect(meta("running-skill-evals", "in-progress").tie.text).toBe("on authoring-skills › Tested · declared");
+    expect(meta("running-skill-evals", "authoring-skills").tie.text).toBe("from Tested · declared");
   });
   it("names a DAG launch with a star and every DAG, and no state", () => {
     expect(meta("healthcheck").tie).toEqual({ text: "✦ healthcheck, apply-on-merge", machine: null, state: null, kind: "dag" });
@@ -136,10 +136,10 @@ describe("a row's status line", () => {
 
   it("name the first row a top state opens, in the order the rows run, and none for a state no machine is entered from", () => {
     const flows = world(
-      flow("late", { last: NOW - 900, ties: [tie("observed", "in-progress", "pr_opened", 3)] }),
-      flow("soon", { last: NOW - 10, ties: [tie("declared", "in-progress", "pr_opened", null)] }),
-      flow("other", { last: NOW, ties: [tie("observed", "in-progress", "working", 1)] }),
-      flow("launched", { last: NOW - 5, ties: [tie("dag", null, null, null, "nightly")] }),
+      flow("late", { last: NOW - 900, ties: [tie("declared", "in-progress", "pr_opened")] }),
+      flow("soon", { last: NOW - 10, ties: [tie("declared", "in-progress", "pr_opened")] }),
+      flow("other", { last: NOW, ties: [tie("declared", "in-progress", "working")] }),
+      flow("launched", { last: NOW - 5, ties: [tie("dag", null, null, "nightly")] }),
     );
     const rows = rankRows(flows, "in-progress");
     expect(firstOpened(flows, rows, "in-progress", "pr_opened")).toBe("soon");

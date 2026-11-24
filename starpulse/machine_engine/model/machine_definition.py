@@ -55,7 +55,7 @@ __all__ = [
 ]
 
 #: The top-level keys that only change how the page draws a machine.
-DRAWING = ("tiers", "main_line", "rests", "submachines", "launches", "next")
+DRAWING = ("type", "parents", "tiers", "main_line", "rests", "submachines", "launches", "next")
 #: The fact kinds a lane's watch may name: what the task actor derives from a task's pull request, dependencies and criteria.
 WAIT_FACTS = (
     "pr_terminal",

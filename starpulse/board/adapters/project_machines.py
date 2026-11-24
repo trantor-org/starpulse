@@ -72,11 +72,24 @@ def draw(flows: Mapping[str, Compiled], qualify: Qualify, workflows: Collection[
                 for dag, launch in declared["launches"].items()
             }
         body["next"] = declared.get("next")
+        for key in ("type", "parents"):
+            if key in declared:
+                body[key] = declared[key]
         if name == "board":
             every = writers(compiled.machine)
             body["writers"] = every
             body["dagActors"] = sorted({w["actor"] for ws in every.values() for w in ws if is_workflow(w["actor"])})
+    _agree(flows, drawn)
     return drawn
+
+
+def _agree(flows: Mapping[str, Compiled], drawn: Mapping[str, dict]) -> None:
+    """Refuse a machine whose declared `parents` differ from the machines whose `submachines` name it."""
+    for name, compiled in flows.items():
+        linked = sorted(parent for parent, body in drawn.items() if any(l["machine"] == name for l in body.get("submachines", ())))
+        declared = sorted(compiled.drawing.get("parents", ()))
+        if declared != linked:
+            raise ValueError(f"{name}: parents {declared} disagree with the machines whose submachines name it {linked}")
 
 
 def _known(name: str, key: str, states: set[str], named: Iterable[str]) -> None:

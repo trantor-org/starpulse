@@ -24,15 +24,12 @@ class Settled(_Api):
 class Tie(_Api):
     """Where a lifecycle machine is entered from.
 
-    `declared` is a Submachine on `machine`'s `state`; `observed` is the state the task held on `machine` when its session
-    entered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered
-    through it, null for a launch.
+    `declared` is a Submachine on `machine`'s `state`; `dag` is a launch by `dag`, which names no machine or state.
     """
 
-    kind: Literal["declared", "observed", "dag"]
+    kind: Literal["declared", "dag"]
     machine: str | None
     state: str | None
-    count: int | None
     dag: str | None
     when: str = Field(description="What has to hold for a declared tie to run; empty otherwise.")
 

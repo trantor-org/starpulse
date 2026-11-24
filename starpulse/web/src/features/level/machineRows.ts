@@ -17,8 +17,8 @@ export function rankRows(flows: Record<string, FlowSnapshot>, top: string, held?
 export interface RowMeta {
   /** The name line's end: a chevron; the band under the row shows the machines entered from it (machineChain.ts). */
   end: string;
-  /** Where the machine is entered from: the line's text, the state it is entered from (the dot's colour), and how the page learned of it. */
-  tie: { text: string; machine: string | null; state: string | null; kind: "declared" | "observed" | "dag" | "none" };
+  /** Where the machine is entered from: the line's text, the state it is entered from (the dot's colour), and whether a Submachine declares it or a DAG launches it. */
+  tie: { text: string; machine: string | null; state: string | null; kind: "declared" | "dag" | "none" };
   /** What its tasks are doing, whether a task here or nested below is stuck, and whether the machine has been quiet over an hour. */
   status: { text: string; stuck: boolean; idle: boolean };
   /** The states and tasks it holds. */
@@ -60,7 +60,7 @@ export function rowMeta(flows: Record<string, FlowSnapshot>, name: string, top: 
   let tie: RowMeta["tie"] = { text: "no tie this hour", machine: null, state: null, kind: "none" };
   if (lead && lead.kind !== "dag" && lead.machine && lead.state) {
     const from = lead.machine === top ? `from ${stateName(flows, lead.machine, lead.state)}` : `on ${lead.machine} › ${stateName(flows, lead.machine, lead.state)}`;
-    tie = { text: `${from} · ${lead.kind === "declared" ? "declared" : `×${lead.count}`}`, machine: lead.machine, state: lead.state, kind: lead.kind };
+    tie = { text: `${from} · declared`, machine: lead.machine, state: lead.state, kind: lead.kind };
   } else if (dags.length) tie = { text: `✦ ${dags.join(", ")}`, machine: null, state: null, kind: "dag" };
   return {
     end: "›",

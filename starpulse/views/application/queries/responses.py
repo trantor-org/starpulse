@@ -28,7 +28,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.views.ports.signal_folds import SignalFoldReader
 
 
-#: The most rows `/api/ledger/<event>` and `/api/machines` serve at once.
+#: The most rows `/api/ledger/<event>` serves at once.
 _PAGE_LIMIT = 100
 
 
@@ -57,21 +57,6 @@ def ledger_response(feed: BoardFeed, event: str, query: dict[str, list[str]]) ->
     if (found := feed.ledger_rows(event, *asked)) is None:
         return _error(f"no ledger for {event}"), 404
     return encode("ledger", found), 200
-
-
-def machines_response(
-    feed: BoardFeed, query: dict[str, list[str]], lanes: Callable[[], dict[str, Any]] | None = None
-) -> tuple[bytes, int]:
-    """The body and status for `/api/machines`: the next page of machines entered from `open`, older than `before`,
-    and, only when `?lanes=1` is asked, each lane's surface (`lanes`: none when it is not configured); no page reads them."""
-    asked = _page_query(query, "machines")
-    if isinstance(asked, bytes):
-        return asked, 400
-    open_ = query["open"][0] if "open" in query else None
-    found = feed.machine_rows(open_, *asked)
-    if found is None:
-        return _error(f"{open_} is not a machine here"), 404
-    return encode("machines", {**found, "lanes": lanes() if lanes else {}} if "lanes" in query else found), 200
 
 
 def done_response(feed: BoardFeed, read: TaskReader, query: dict[str, list[str]]) -> tuple[bytes, int]:

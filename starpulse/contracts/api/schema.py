@@ -21,7 +21,7 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecord,
     TaskRecords,
 )
-from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, Machines
+from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, LedgerChange, LedgerPage, MachineDetail, Machines
 from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
 from starpulse.contracts.api.dto.pulls import Pulls
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
@@ -35,6 +35,7 @@ from starpulse.contracts.api.dto.requests import (
     DocPutRequest,
     EditRequest,
     MilestoneCreateRequest,
+    MachineListRequest,
     MilestoneListRequest,
     MilestonePutRequest,
     MissRequest,
@@ -115,6 +116,7 @@ class ApiContract(_Api):
     ledgerChange: LedgerChange
     donePage: DonePage
     machines: Machines
+    machineDetail: MachineDetail
     laneHistory: LaneHistory
     machineHistory: MachineHistory
     taskEventHistory: TaskEventHistory
@@ -157,6 +159,7 @@ class ApiContract(_Api):
         | ReviewRequest
         | CreateRequest
         | MilestoneCreateRequest
+        | MachineListRequest
         | MilestoneListRequest
         | MilestonePutRequest
         | DocCreateRequest
