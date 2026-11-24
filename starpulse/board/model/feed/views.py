@@ -93,19 +93,29 @@ class ViewMethods:
         rows = self._read_model.settled_done(self._roles.done, self._clock() - LEDGER_WINDOW, only)
         return {row["id"]: settled_entry(row, self._default_profiles) for row in rows}
 
-    def _done_fields(self) -> dict[str, Any]:
+    def done_fields(self) -> dict[str, Any]:
         """The snapshot's account of Done Tasks off the board."""
         now = self._clock()
         counts = self._read_model.milestone_done(self._roles.done, now - LIVE_WINDOW_S)
         archived = self._read_model.archived_since(local_midnight(now))
         return {"settled": self.settled(), "cold_done": [], "milestone_done": counts, "archived_today": archived}
 
-    def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
-        """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
+    def _machine_lanes(self, now: float) -> dict[str, list[dict]]:
+        """The tasks of each drawn machine but the board, as the page draws them."""
         reach = self._window_s if self._window_s is not None else self._lane_cap_s
         since = now - reach if reach is not None else None
         keep_open = self._roles.done if self._window_s is None else None
         lanes = self._read_model.machine_lanes(since, keep_open, self._clock() - LIVE_WINDOW_S)
+        return {name: [{**a, "model": a["model"] or ""} for a in agents] for name, agents in lanes.items()}
+
+    def machine_agents(self) -> list[tuple[str, dict]]:
+        """Every task of a machine but the board as the snapshot draws it, with its machine's name."""
+        lanes = self._machine_lanes(self._clock())
+        return [(name, agent) for name in self._drawn if name != "board" for agent in lanes.get(name, [])]
+
+    def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
+        """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
+        lanes = self._machine_lanes(now)
         flows = [
             {
                 "name": "board",
@@ -116,7 +126,7 @@ class ViewMethods:
                 {
                     "name": name,
                     "machine": self._drawn[name],
-                    "agents": [{**a, "model": a["model"] or ""} for a in lanes.get(name, [])],
+                    "agents": lanes.get(name, []),
                 }
                 for name in self._drawn
                 if name != "board"
@@ -210,7 +220,7 @@ class ViewMethods:
         return {
             "flows": [{**f, **derived.get(f["name"], {})} for f in flows],
             **self.machine_fields(flows, derived, now),
-            **self._done_fields(),
+            **self.done_fields(),
         }
 
     def ledger_marks(self) -> dict:

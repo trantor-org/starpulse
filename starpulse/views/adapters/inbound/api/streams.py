@@ -238,7 +238,11 @@ class Streams:
 
     def _task_change(self, render: Callable[[dict], str], name: str, data: dict) -> Iterator[bytes]:
         if name == "task":
-            yield _frame("next", render({"id": data["id"], "task": self._feed.task(data["id"])}))
+            settled = data.get("settled")
+            change = {"id": data["id"], "machine": "board", "task": self._feed.task(data["id"])}
+            yield _frame("next", render({**change, "settled": settled and {"id": data["id"], **settled}}))
+        elif name == "move":
+            yield _frame("next", render({"id": data["id"], "machine": data["machine"], "machineTask": data["agent"]}))
 
     def _event(self, name: str, data: dict) -> Iterator[bytes]:
         if name in EVENTS:

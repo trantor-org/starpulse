@@ -341,11 +341,11 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/views/{id}"): _read("The GraphQL document a view stores", "view"),
     ("GET", "/api/openapi"): Op("This document"),
     ("POST", "/graphql"): Op(
-        "Run a GraphQL query over the tasks and a ledger's occurrences, or follow their changes with a subscription",
+        "Run a GraphQL query over the tasks (open, settled, per-milestone done counts and every machine's) and a ledger's occurrences, or follow their changes with a subscription",
         BODIES["graphql"],
         GraphqlRequest,
         extra=(
-            ("200", _STREAM, "A `taskChanges` subscription: one `next` event, holding a GraphQL result, for each task change after `from`; an `occurrenceChanges` subscription: the ledger's newest page first (`head`), then one for each change to its rows"),
+            ("200", _STREAM, "A `taskChanges` subscription: one `next` event, holding a GraphQL result, for each task change after `from`, a move on a machine other than the board included; an `occurrenceChanges` subscription: the ledger's newest page first (`head`), then one for each change to its rows"),
             ("404", "application/json", "An `occurrenceChanges` subscription for an event no workflow is tied to"),
             ("410", "application/json", "The `from` position is no longer held: the error code is `REREAD`, and the client reads the task list again"),
         ),

@@ -118,7 +118,7 @@ def _move_sets(tasks: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return sets
 
 
-def _recent_settled(data: dict[str, Any]) -> dict[str, Any]:
+def recent_settled(data: dict[str, Any]) -> dict[str, Any]:
     """The tasks created or settled in the 24 hours before the snapshot, the window the writer holds: the page draws
     the day's arrivals from them, and a page's local midnight is never further back."""
     since = data["now"] - LIVE_WINDOW_S
@@ -129,7 +129,7 @@ def _recent_settled(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _milestone_done(data: dict[str, Any]) -> dict[str, int]:
+def milestone_done(data: dict[str, Any]) -> dict[str, int]:
     """Each milestone's completed count: its settled Tasks plus the Done ones a read-model feed counted off the board."""
     settled = Counter(e["milestone"] for e in data["settled"].values() if e["milestone"] and e["state"] == "completed")
     return dict(settled + Counter(data.get("milestone_done", {})))
@@ -196,7 +196,7 @@ def slim_snapshot(data: Any) -> Any:
     stream reads the whole of `data`, never this."""
     flows = data["flows"]
     board = flows[0] if flows and flows[0]["name"] == "board" else None
-    drawn = {**data, "milestone_done": _milestone_done(data), "settled": _recent_settled(data)}
+    drawn = {**data, "milestone_done": milestone_done(data), "settled": recent_settled(data)}
     drawn.pop("cold_done", None)
     if data.get("pulls"):
         drawn["pulls"] = _drawn_pulls(data["pulls"])
