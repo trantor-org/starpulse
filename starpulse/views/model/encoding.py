@@ -45,7 +45,7 @@ def _adapter(annotation: Any) -> TypeAdapter[Any]:
     return adapter
 
 
-_Held = dict[int, tuple[Any, bytes]]
+_Held = dict[Any, tuple[Any, ...]]
 
 
 def _dump_all(
@@ -116,23 +116,43 @@ def _milestone_done(data: dict[str, Any]) -> dict[str, int]:
     return dict(settled + Counter(data.get("milestone_done", {})))
 
 
+def _trail_points(agent: dict[str, Any], names: dict[str, int]) -> dict[str, Any]:
+    """`agent` with its trail as `[state, event, dt]` points indexing `names`, which takes each name it meets: `dt` is the
+    milliseconds since the step before it, the epoch for the first, so a step's time is the same whichever steps the
+    trail's cap left before it. A step's `id` follows as a fourth member; its `data` is not sent."""
+    before = 0
+    points = []
+    for step in agent.get("trail") or ():
+        at = round(step["at"] * 1000)
+        point = [names.setdefault(step["state"], len(names)), names.setdefault(step["event"], len(names)), at - before]
+        points.append(point + [step["id"]] if step.get("id") is not None else point)
+        before = at
+    return {**agent, "trail": points} if points else agent
+
+
 def _interned(agents: Iterable[dict[str, Any]]) -> tuple[list[str], list[dict[str, Any]]]:
-    """The state and event names of the `agents`' trails, each once, and the agents with each trail as `[state, event, dt]`
-    points indexing them: `dt` is the milliseconds since the step before it, the epoch for the first, so a step's time
-    is the same whichever steps the trail's cap left before it. A step's `id` follows as a fourth member; its `data`
-    is not sent."""
+    """The state and event names of the `agents`' trails, each once, and the agents with each trail drawn by `_trail_points`."""
     names: dict[str, int] = {}
-    drawn = []
-    for agent in agents:
-        before = 0
-        points = []
-        for step in agent.get("trail") or ():
-            at = round(step["at"] * 1000)
-            point = [names.setdefault(step["state"], len(names)), names.setdefault(step["event"], len(names)), at - before]
-            points.append(point + [step["id"]] if step.get("id") is not None else point)
-            before = at
-        drawn.append({**agent, "trail": points} if points else agent)
+    drawn = [_trail_points(agent, names) for agent in agents]
     return list(names), drawn
+
+
+def _dump_machine_flow(flow: dict[str, Any], held: _Held, kept: _Held) -> tuple[list[str], list[bytes]]:
+    """The flow's trail names and the JSON of each of its agents as `_trail_points` and `RawTask` draw them. A flow keeps
+    its names in `held` and only adds to them, so an agent's JSON stays while its object does: the feed replaces an
+    agent it moves, and a move dumps that one agent. A name no agent uses any more stays listed until the writer restarts."""
+    adapter = _adapter(RawTask)
+    names: dict[str, int] = (held.get(("names", flow["name"])) or ({},))[0]
+    kept[("names", flow["name"])] = (names,)
+    dumps = []
+    for agent in flow["agents"]:
+        entry = held.get(("machine", id(agent)))
+        if entry is None or entry[0] is not agent or entry[1] is not names:
+            dump = adapter.dump_json(adapter.validate_python(_trail_points(agent, names)), by_alias=True, exclude_unset=True)
+            entry = (agent, names, dump)
+        kept[("machine", id(agent))] = entry
+        dumps.append(entry[2])
+    return list(names), dumps
 
 
 def _drawn_flow(flow: dict[str, Any]) -> dict[str, Any]:
@@ -169,35 +189,46 @@ def slim_snapshot(data: Any) -> Any:
 
 
 def encode_snapshot(data: Any, held: _Held) -> bytes:
-    """`encode("snapshot", slim_snapshot(data))`, the one body the API serves, with the JSON of each board task kept in
-    `held` between calls.
+    """`encode("snapshot", slim_snapshot(data))`, the one body the API serves, with the JSON of each board task and
+    machine agent kept in `held` between calls.
 
-    `held` maps `id(object)` to the object and its JSON: the feed replaces a task it changes rather than
-    editing it, so one met again encodes the same, and one no longer listed is forgotten. Those are most of the
-    snapshot, so a build after one change validates and dumps only what changed and the rest of the document.
+    `held` maps `id(object)` to the object and its JSON (an agent under `("machine", id)`, a flow's trail names under
+    `("names", flow)`): the feed replaces a task or agent it changes rather than editing it, so one met again encodes
+    the same, and one no longer listed is forgotten. Those are most of the snapshot, so a build after one change
+    validates and dumps only what changed and the rest of the document.
     """
     flows = data["flows"]
     if not flows or flows[0]["name"] != "board":
         return encode("snapshot", slim_snapshot(data))
     kept: _Held = {}
     tasks = _dump_all(flows[0]["agents"], RawTask, held, kept, _slim_task)
+    machines = [_dump_machine_flow(flow, held, kept) for flow in flows[1:]]
     held.clear()
     held.update(kept)
+    bare = [
+        {**flow, "agents": [], **({"names": names} if names else {})}
+        for flow, (names, _) in zip(flows[1:], machines, strict=True)
+    ]
     drawn = {
-        **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *flows[1:]]}),
+        **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *bare]}),
         "move_sets": _move_sets(flows[0]["agents"]),
     }
     body = encode("snapshot", drawn)
     try:
-        return _splice(body, b'"agents":[]', b'"agents":[%s]' % b",".join(tasks), after=b'"flows":[{"name":"board"')
+        return _splice_flows(body, [tasks, *(dumps for _, dumps in machines)], [flow["name"] for flow in flows])
     except ValueError:  # the document is not drawn as it was: encode it whole
         return encode("snapshot", slim_snapshot(data))
 
 
-def _splice(body: bytes, marker: bytes, drawn: bytes, after: bytes = b"") -> bytes:
-    """`body` with the first `marker` past the first `after` replaced by `drawn`; ValueError when either is absent."""
-    at = body.index(marker, body.index(after))
-    return body[:at] + drawn + body[at + len(marker) :]
+def _splice_flows(body: bytes, agents: list[list[bytes]], names: list[str]) -> bytes:
+    """`body` with each flow's empty `"agents":[]` replaced by its drawn agents, the flows taken in order; ValueError when
+    one is absent."""
+    parts, cursor, search = [], 0, body.index(b'"flows":[')
+    for drawn, name in zip(agents, names, strict=True):
+        at = body.index(b'"agents":[]', body.index(b'{"name":%s' % json.dumps(name, ensure_ascii=False).encode(), search))
+        parts += [body[cursor:at], b'"agents":[%s]' % b",".join(drawn)]
+        cursor = search = at + len(b'"agents":[]')
+    return b"".join(parts) + body[cursor:]
 
 
 def event(name: str, data: Any) -> str:
