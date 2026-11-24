@@ -4,6 +4,7 @@
 predicate the partial indexes carry, so the cost of a read follows the live board, not the whole History.
 """
 
+from collections.abc import Collection
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, String, and_, cast, column, exists, false, func, or_, select, true
@@ -156,9 +157,11 @@ def archived_since(since: float) -> Select[Any]:
     return select(func.count()).where(tasks.c.archived == true(), tasks.c.updated_at >= since)
 
 
-def titled() -> Select[Any]:
-    """Each Task's id, title, milestone, labels and meta, archived ones included, without the bodies a card draws."""
-    return select(tasks.c.id, tasks.c.title, tasks.c.milestone, tasks.c.labels, tasks.c.meta)
+def titled(ids: Collection[str] | None = None) -> Select[Any]:
+    """Each Task's id, title, milestone, labels and meta, archived ones included, without the bodies a card draws; `ids`
+    limits them to those Tasks, each one a primary-key seek."""
+    query = select(tasks.c.id, tasks.c.title, tasks.c.milestone, tasks.c.labels, tasks.c.meta)
+    return query if ids is None else query.where(tasks.c.id.in_(ids))
 
 
 def position() -> Select[Any]:

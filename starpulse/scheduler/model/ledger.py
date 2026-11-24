@@ -40,7 +40,7 @@ class Ledger:
 
     def __init__(self, log: EventLog) -> None:
         self.log = log
-        self._kept: tuple[int | None, dict[tuple[str, int], tuple[int, dict[str, float]]]] = (None, {})
+        self._kept: dict[tuple[str, int], tuple[int | None, int, int, dict[str, float]]] = {}
 
     def record(self, run: RunRecord) -> None:
         """Keep `run`, stamped now. Raises when the store cannot be written."""
@@ -73,19 +73,17 @@ class Ledger:
         return mean if count and count >= min_runs else None
 
     def _mean(self, tier: str, points: int) -> tuple[int, dict[str, float]]:
-        """How many runs of `tier` and `points` the store holds and the mean of their peaks."""
+        """How many runs of `tier` and `points` the store holds and the mean of their peaks, adding only the runs
+        recorded since the last ask to the sums it kept."""
+        c = scheduler_runs.c
         with self.log.engine.connect() as db:
-            stamp = db.execute(select(func.max(scheduler_runs.c.id))).scalar()
-            if self._kept[0] != stamp:
-                self._kept = (stamp, {})
-            kept = self._kept[1]
-            if (tier, points) not in kept:
-                query = select(scheduler_runs.c.peak).where(
-                    scheduler_runs.c.tier == tier, scheduler_runs.c.points == points
-                )
-                peaks = list(db.execute(query).scalars())
-                kept[tier, points] = (
-                    len(peaks),
-                    {n: sum(p[n] for p in peaks) / len(peaks) for n in peaks[0]} if peaks else {},
-                )
-            return kept[tier, points]
+            stamp = db.execute(select(func.max(c.id))).scalar()
+            seen, last, count, sums = self._kept.get((tier, points), (None, 0, 0, {}))
+            if seen != stamp:
+                newer = select(c.id, c.peak).where(c.tier == tier, c.points == points, c.id > last).order_by(c.id)
+                for run_id, peak in db.execute(newer):
+                    sums = sums or dict.fromkeys(peak, 0.0)
+                    sums = {n: total + peak[n] for n, total in sums.items()}
+                    last, count = run_id, count + 1
+                self._kept[tier, points] = (stamp, last, count, sums)
+        return count, {n: total / count for n, total in sums.items()}

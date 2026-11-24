@@ -1,7 +1,7 @@
 """Feed reads: a task, its moves and the machine tasks the page shows."""
 
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
@@ -184,11 +184,11 @@ class ReadMethods:
             return False, False, None
         return not row["archived"], bool(row["archived"]), row["updated_at"]
 
-    def titled(self) -> dict[str, dict]:
+    def titled(self, ids: Collection[str] | None = None) -> dict[str, dict]:
         """Every Board task's `title`, `labels`, `milestone` and `profile`, open, cold or settled, by id; a settled task
         saved before its labels were kept has none, and a cold done task has them from the scan after a restart. With a
-        read model's query answers, archived Tasks included."""
-        return self._read_model.titled()
+        read model's query answers, archived Tasks included; `ids` limits them to those tasks."""
+        return self._read_model.titled(ids)
 
     def machine_tasks(self, flow: str, since: float | None = None) -> list[dict]:
         """Every task as `flow`'s machine last placed it within the window, and at or after `since` when given, as the

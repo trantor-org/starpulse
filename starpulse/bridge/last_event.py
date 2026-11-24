@@ -1,11 +1,13 @@
 """Whether an event subject's latest event already happened: the one the task actor reads when a task parks on it.
 
-The log is read first, since the history recorder copies an entry after it is appended and a park in that gap would
-miss it; the history holds the events the log has pruned."""
+The log is read first, but only past the history recorder's cursor: the recorder copies an entry after it is appended
+and a park in that gap would miss it, while every entry before the cursor is in the history, which also holds the
+events the log has pruned."""
 
 from sqlalchemy import Engine, func, select
 
 from starpulse.bridge.subjects import token
+from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.events import STREAM
 from starpulse.event_log.opening import last_machine_event
 from starpulse.event_log.tables import events, machine_events
@@ -31,9 +33,15 @@ def _stored_run(engine: Engine, entity: str, run: str) -> str:
 
 
 def _logged(engine: Engine, entity: str, run: str) -> str | None:
-    """The newest event `entity` appended to the log for the run whose subject token is `run`; None when it holds none."""
+    """The newest event `entity` appended to the log, past the recorder's cursor, for the run whose subject token is
+    `run`; None when it holds none."""
     c = events.c
-    newest = select(c.fields).where(c.stream == STREAM, c.fields["machine"].as_string() == entity).order_by(c.id.desc())
+    copied = Checkpoints(engine).load(STREAM)[0] or 0
+    newest = (
+        select(c.fields)
+        .where(c.stream == STREAM, c.id > copied, c.fields["machine"].as_string() == entity)
+        .order_by(c.id.desc())
+    )
     with engine.connect() as db:
         return next((f["event"] for f in db.execute(newest).scalars() if f.get("run") is not None and token(f["run"]) == run), None)
 
