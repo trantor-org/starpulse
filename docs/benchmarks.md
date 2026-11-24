@@ -71,7 +71,7 @@ It only reads: it opens task modals and closes them, and switches views, but nev
 Chrome (`--channel chrome`), so Playwright's own browser download is not needed. It prints one row per surface with
 its sample count, p50, p95 and budget, marks a row over budget `OVER`, and lists every `/api` request the page made
 that no row times. It exits 1 on either, so a new page request is measured before it can pass. A route that needs a
-record (`/api/task/<id>`) reads the first one the server's snapshot or listing holds; a route the server does not
+record (`/api/task/<id>`) reads the first one the task query (`POST /graphql`) lists; the task list and the task detail are timed as `/graphql tasks` and `/graphql task` rows; a route the server does not
 serve reports its status in the row's note. Wall-clock times on a busy host carry its load: run it more than once
 before reading one slow row as a regression.
 
@@ -169,7 +169,7 @@ uv run --group bench locust -f bench/load.py --host http://127.0.0.1:8766
 
 `page_latency.py` times one viewer; this times the same budget under a crowd. Each Locust user is one open page: it
 holds `/api/events?snapshot=ref` open, reads the snapshot body its first event names, then reads a random `/api` route
-from `page_latency.py`'s `READS` every 0.5 to 2 seconds. The first viewer probes every route once (the `discovery`
+from `page_latency.py`'s `READS` and `GRAPHQL` (a POST to `/graphql`) every 0.5 to 2 seconds. The first viewer probes every route once (the `discovery`
 row, not judged) and skips one that does not answer 200, as a server with no milestones, docs or scheduler does not; the
 viewers that spawn meanwhile wait for its answer. Every judged read, the body row (`/api/events/body/<id>`) and the
 `/api` routes alike, asks for gzip and leaves the body compressed: a viewer's browser inflates it on the viewer's
