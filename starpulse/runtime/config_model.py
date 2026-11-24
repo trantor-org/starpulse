@@ -620,8 +620,8 @@ class ConfigFile(_Table):
     account_room_alert: str | None = Field(
         default=None,
         description=(
-            "The name of the alert that fires while no account has room to start a session. The task actor holds a "
-            "dispatch while that alert's latest event is `firing` and pins it on `resolved`; unset, it never holds one."
+            "The name of the alert that fires while no account has room to start a session. The scheduler starts "
+            "nothing while that alert's latest event is `firing` and wakes on `resolved`; unset, it never waits for room."
         ),
     )
     claude_code: dict[str, Any] | None = Field(

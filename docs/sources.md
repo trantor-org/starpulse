@@ -83,15 +83,6 @@ it was and whether to count it, and a third holds a command:
   `[heredoc length=<bytes> sha256=<hex>]` before the function sees it, and a function that raises keeps no command. No
   exit status is stored, because the export carries none; `ok` is the result's `success` and `seconds` its duration.
 
-## Kept answers
-
-The task detail's `spend` field filters one week answer, the server's own combine over the stored `spend` rows, kept in the
-`starpulse_answers` table under the key `spend`. A kept body older than five minutes is returned at once and
-recomputed in the background, so an answer is at most one recompute and five minutes behind the stored rows, and a
-restarted `serve` answers from the saved rows before it has read a signal. Only the first read of a key the instance
-has never answered waits, and readers of it share one. A query that only refuses (a window longer than the folded history) runs at once. A refusal (400, 501, 503) is returned and never
-kept; a failed recompute keeps the older body and is tried again after five minutes.
-
 ## Report each task's spend by phase
 
 The `spend` field of a task in `POST /graphql` (168 hours) is one row per phase of

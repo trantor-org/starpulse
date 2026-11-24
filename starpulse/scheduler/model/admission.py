@@ -184,7 +184,7 @@ def decide(
     `no_profile_logged`, kept by the caller across passes, holds the tasks already logged and is trimmed to the ones still
     refused, so a task that gains a profile and loses it logs again.
 
-    A task of `starting` (a revive or a resume the task actor wants sent, with the time it asked) is decided whatever its
+    A task of `starting` (a resume or a nudge the task actor wants sent, with the time it asked) is decided whatever its
     lane: it holds its session slot already, so it draws no session, and the room it needs is the rest of its demand. It
     ranks ahead of Ready work, first come first served by that time.
     """

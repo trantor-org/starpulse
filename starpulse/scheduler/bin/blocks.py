@@ -9,6 +9,7 @@ if TYPE_CHECKING:
 
 
 class _Bridge(Protocol):
+    board: str
     end: Sequence[str]
 
 
@@ -21,6 +22,7 @@ class SchedulerConfig(Protocol):
     scheduler: Scheduler
     session_start_url: str | None
     bridge: _Bridge
+    account_room_alert: str | None
 
 
 def scheduler_fixed_blocks(config: SchedulerConfig) -> tuple:
@@ -30,4 +32,4 @@ def scheduler_fixed_blocks(config: SchedulerConfig) -> tuple:
 
 def scheduler_live_blocks(config: SchedulerConfig) -> tuple:
     """What of `config` the runtime is built from; a change to anything else needs no rebuild."""
-    return (config.scheduler, config.session_start_url)
+    return (config.scheduler, config.session_start_url, config.account_room_alert)

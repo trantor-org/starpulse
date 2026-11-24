@@ -231,7 +231,7 @@ class Config:
     """The phases a task of each type goes through (`[sequences]`), with `default` for an unnamed type; no table: none."""
     awaits: tuple[str, ...] = ()
     account_room_alert: str | None = None
-    """The alert whose `firing` event holds a dispatch until its `resolved` (`account_room_alert`); none named: none held."""
+    """The alert whose `firing` event stops the scheduler starting a task until its `resolved` (`account_room_alert`); none named: none waits."""
     """The machines whose unfinished placement of a task holds its settled session (`awaits`); none named: none."""
     project: Project = field(default_factory=Project)
     """The project's own command line for each step a shipped skill names (`[project.commands]`); no table: none is mapped."""

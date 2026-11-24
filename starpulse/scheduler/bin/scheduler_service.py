@@ -35,12 +35,13 @@ def start_scheduler(
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
     ender: Callable[[Sequence[str]], Callable[[str], None] | None],
+    rooms: Callable[..., Callable[[], bool]] = lambda *_: lambda: True,
     clock: Callable[[], float] = time.time,
 ) -> Runtime:
     """The scheduler's runtime with its sampler and dispatch loop running on daemon threads until `stop` is set.
 
     The loop admits from the lane `[scheduler] lane` names (else the board's initial lane), starts a session through
-    `session_start_url` (else the built-in tmux starter in `base`). `runtime` passes `starter`, `delivered` and `ender`, as no context imports them.
+    `session_start_url` (else the built-in tmux starter in `base`). `runtime` passes `starter`, `delivered`, `ender` and `rooms` (the check that an account has room, which wakes the loop when room frees), as no context imports them.
     """
 
     def claim(task: str, comment: str) -> Written:
@@ -51,6 +52,12 @@ def start_scheduler(
 
     initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
     lane = config.scheduler.eligible_lane(initial)
+
+    started: list[Runtime] = []
+
+    def wake() -> None:
+        if started and started[0].loop is not None:
+            started[0].loop.wake()
 
     runtime = build_scheduler(
         config.scheduler,
@@ -64,7 +71,9 @@ def start_scheduler(
         clock=clock,
         transcript=transcript_written(Path(DEFAULT_TRANSCRIPTS).expanduser()),
         end=ender(config.bridge.end) or (lambda task: None),
+        room=rooms(log, config.bridge.board, config.account_room_alert, wake, stop),
     )
+    started.append(runtime)
     runtime.wire_status(publish or feed.publish)
     pressure = threading.Event()
     watch(stop, pressure)

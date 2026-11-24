@@ -187,6 +187,7 @@ def build(
     lane: str = "",
     transcript: Callable[[str], float | None] = lambda session: None,
     end: Callable[[str], None] = lambda task: None,
+    room: Callable[[], bool] = lambda: True,
 ) -> Runtime:
     """The switch kept in `log`'s store and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
 
@@ -248,5 +249,6 @@ def build(
             harness=harness,
             transcript=transcript,
             end=end,
+            room=room,
         )
     return Runtime(toggle, sampler, quiet_hours, harness, policy, session_caps, capacity_limits, loop, reading=feed.one_read)

@@ -110,12 +110,10 @@ DERIVE_METRIC = "starpulse_task_actor_derive_seconds"
 HOLDER_RESUME = "HOLDER_RESUME"
 #: The deliver states after its pull request opened.
 _DELIVERED = frozenset({"pr_opened", "ci_green", "pr_ready"})
-#: Resumes or revives a fault with no progress between gets before the next one moves the task to Needs attention.
+#: Nudges or resumes a fault with no progress between gets before the next one moves the task to Needs attention.
 _ONE_TRY = 1
 #: Nudges an idle holder with an open criterion gets before the next idle moves its task to Needs attention.
 _NUDGES = 3
-#: Settles in a row whose resume failed before the task moves to Needs attention.
-_FAILED_RESUMES = 3
 #: Seconds between two progress lines of the start recovery.
 _PROGRESS_S = 30.0
 #: Seconds before a pull request GitHub could not yet answer for (`mergeable` gave None) is asked again.
@@ -255,8 +253,7 @@ class TaskActor:
     pin-bump rule (`unblock.PinGate`): a dependency in a pinned repository is merged on the parent's pin bump.
     `judge` is what the board's rules say of a move (`Board.judge`): the board writer lets every move of the actor
     land, so the actor reads a refusal there first and skips a move the rules hold back.
-    `latest` says whether an event subject's last event already happened (None: none has), `accounts` is the subject
-    prefix of the alert that fires while every Claude account is full (None: room is never lacking), and `holds` the reasons the board withholds a task's `deps_done` (`Board.holds`). `read` is the
+    `latest` says whether an event subject's last event already happened (None: none has), and `holds` the reasons the board withholds a task's `deps_done` (`Board.holds`). `read` is the
     board's task reader (`Board.read`).
     `unfinished` is the work a task whose pull requests merged still has (`Board.unfinished`). `main_green` is the SHA of main's latest passed Validate (None: none passed, or no source),
     and `owner_source` the `source` prefix of the tasks that pass closes while nothing waits on them (empty: none).
@@ -277,7 +274,6 @@ class TaskActor:
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         latest: Callable[[str], bool] | None = None,
-        accounts: str | None = None,
         unpublished: Callable[[str], str | None] = lambda _subject: None,
         holds: Callable[[str], Sequence[str]] = _no_holds,
         parked: Callable[[str], None] = _ignore,
@@ -351,9 +347,6 @@ class TaskActor:
         self._releasable: set[str] = set()
         self._dates: dict[str, tuple[str, ...]] = {}
         self._latest = latest
-        self._accounts = accounts
-        #: The dispatches held back while no account has room, each task's latest session, pinned on the room event.
-        self._roomless: dict[str, str] = {}
         self._unpublished = unpublished
         self._publisher: dict[str, tuple[str | None, float]] = {}
         self._holds = holds
@@ -681,11 +674,6 @@ class TaskActor:
                 for agent in tasks:
                     if agent["state"] == self._feed.roles.working and self._awaits(agent):
                         self._memory.keep(agent["id"], awaited=True)
-            for agent in tasks:
-                if (
-                    agent["state"] == self._feed.roles.attention
-                ):  # found there: no lane event comes for a move made while down
-                    self._revive_unheld(agent["id"])
             open_ids = {agent["id"] for agent in tasks}
             self._derived = {name: digest for name, digest in self._derived.items() if name in open_ids}
             self._derived_moved.set()
@@ -831,13 +819,7 @@ class TaskActor:
         self._heard.pop(name, None)
 
     def event_seen(self, subject: str) -> None:
-        """Derive the Waiting tasks parked on `subject` again: the first event on a subject they wait on releases them,
-        and the room event pins the dispatches held back for want of an account."""
-        if self._accounts is not None and subject == f"{self._accounts}.resolved":
-            with self._lock:  # one hold with the drain, so a `session_ended` never lands between the take and the dispatch
-                held, self._roomless = self._roomless, {}
-                for name, session in held.items():
-                    self.dispatched(name, session)
+        """Derive the Waiting tasks parked on `subject` again: the first event on a subject they wait on releases them."""
         with self._lock:
             names = sorted(self._until.get(subject, ()))
             for name in names:
@@ -1402,20 +1384,20 @@ class TaskActor:
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
         """A session settled. A holder whose task has an open criterion (neither checked nor struck through) is nudged by
         `_nudge`, pull request or not. Any other In Progress task, a no-pull-request one included, whose holder is not busy (`confirm`) and that no event is awaited on
-        has work left, so the `idle` hook resumes the same session with its phase machine's next step; the task stays In
+        has work left, so the `idle` hook nudges the same session with its phase machine's next step; the task stays In
         Progress and no clock runs. A settle an awaited event held runs again from the derivation that finds the wait
         ended, as the session that settled may never settle again, unless its holder is at work by then (a lens's end woke it): that
-        holder settles anew. The one resume is the only one: a settle after it with no progress (a phase or
+        holder settles anew. The one nudge is the only one: a settle after it with no progress (a phase or
         submachine event, a new head) moves the task to Needs attention with its session kept and its profile unchanged,
-        except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never resumed: it moves to Needs attention at once when no lifecycle rule
-        takes it (a reopened task's earlier merge), freeing its session slot. A task citing none of its own while an open pull request names it (the `_unlinked` substate) is left as it is, neither resumed nor sent to Needs attention: deliver cites the pull request, and that write re-derives the task. A `confirm` that
+        except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never nudged: it moves to Needs attention at once when no lifecycle rule
+        takes it (a reopened task's earlier merge), freeing its session slot. A task citing none of its own while an open pull request names it (the `_unlinked` substate) is left as it is, neither nudged nor sent to Needs attention: deliver cites the pull request, and that write re-derives the task. A `confirm` that
         raises (the holder is busy) holds the task: the next move of a machine other than the harness settles it again, and the
-        session's own activity ends the hold. A `resume` that fails is sent again at once until `_FAILED_RESUMES` fail, when the
-        task moves to Needs attention, as a holder whose resume was lost settles no more; a holder no session can reach is
-        revived as `holder_ended` revives one, and parks when no session can be reopened."""
+        session's own activity ends the hold. A `nudge` that fails moves the task to Needs attention with the reason, as a
+        holder whose nudge was lost settles no more; a holder no session can reach is resumed once as `holder_ended`
+        resumes one."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
-            self._memory.keep(name, awaited=None, revive_held=None, unreachable=None, busy=None)
+            self._memory.keep(name, awaited=None, resume_held=None, unreachable=None, busy=None)
             if agent is None or agent["state"] != self._feed.roles.working:
                 self._memory.keep(name, resumes=None)
                 self._unwant(name)
@@ -1466,21 +1448,13 @@ class TaskActor:
         if opened:
             self._nudge(name, opened, ticks, wait_ended)
         else:
-            self._resume(name, progress, count)
+            self._nudge_step(name, progress, count)
 
     def lane_entered(self, name: str, lane: str) -> None:
         """A task entered `lane`: its holder's session ends when the lane is one of `end_lanes`, which the reaper does once
-        the session is idle; a session busy now is ended by `holder_settled` when it settles. A task entering Needs attention
-        by any writer with no live holder gets one started (`_revive_unheld`), so its ask shows as needs you."""
+        the session is idle; a session busy now is ended by `holder_settled` when it settles."""
         if lane in self._end_lanes:
             self._end_session(name)
-        if lane == self._feed.roles.attention:
-            self._revive_unheld(name)
-
-    def _revive_unheld(self, name: str) -> None:
-        """Start a session on a task in Needs attention that has no live holder: a hibernated or never-started holder gets no
-        end event, so the revive is its start."""
-        self._queue(lambda: None if self._holder_alive(name) else self.holder_ended(name))
 
     def _end_closed(self, name: str) -> None:
         """A holder of `name` settled or ended while the task sits in a closed lane: end its session."""
@@ -1511,18 +1485,20 @@ class TaskActor:
         self.holder_settled(name)
 
     def holder_ended(self, name: str, wait_ended: bool = False, unreachable: bool = False) -> None:
-        """A session's process ended. A task in Needs attention, whose session the operator's answer waits on, is revived
-        once whatever work is left, and stays there, a failed revive included. A holder whose task still has work (an open criterion, or a pull request of its own
-        not yet ended) is revived once by the `idle` hook's `revive` verdict, which reopens the session in place and moves the
-        claim to it; the task stays In Progress. The next loss with no progress (a criterion checked, a phase or head
-        change) moves the task to Needs attention with its session kept, as does a revive that fails, naming why. An awaited event holds the revival until it ends. A
-        task with no work left is the settle's (`holder_settled`), and a held revival whose holder is at work again by the time the
-        wait ends is dropped. A settle's resume that reached no session (`unreachable`) revives a task with no work left
-        too: the settle has no one to resume, and no later event comes."""
+        """A task has no live session. A task in Needs attention, whose session the operator's answer waits on, is resumed
+        once whatever work is left, and stays there, a failed resume included. A holder whose task still has work (an open
+        criterion, or a pull request of its own not yet ended) is resumed once by the `idle` hook's `resume` verdict,
+        the session-start service's one start (a transcript to reopen is resumed, none starts fresh), which moves the
+        claim to the session; the task stays In Progress. The next loss with no progress (a criterion checked, a phase or
+        head change) moves the task to Needs attention with its session kept, as does a resume that fails, naming why.
+        An awaited event holds the resume until it ends. A task with no work left is the settle's (`holder_settled`),
+        and a held resume whose holder is at work again by the time the wait ends is dropped. A nudge that reached no
+        session (`unreachable`) resumes a task with no work left too: the settle has no one to nudge, and no later event
+        comes."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
-            unreachable = unreachable or self._memory.has(name, "unreachable")  # a deferred revive keeps its reason
-            self._memory.keep(name, revive_held=None, unreachable=None)
+            unreachable = unreachable or self._memory.has(name, "unreachable")  # a deferred resume keeps its reason
+            self._memory.keep(name, resume_held=None, unreachable=None)
             roles = self._feed.roles
             parked = agent is not None and agent["state"] == roles.attention
             if agent is None or agent["state"] not in (roles.working, roles.attention):
@@ -1547,9 +1523,9 @@ class TaskActor:
                 ):
                     return
                 if self._awaits(agent):
-                    self._memory.keep(name, awaited=True, revive_held=True, unreachable=True if unreachable else None)
+                    self._memory.keep(name, awaited=True, resume_held=True, unreachable=True if unreachable else None)
                     return
-            held = ("parked", self._progress(agent))  # the one revive a task gets in Needs attention, counted apart
+            held = ("parked", self._progress(agent))  # the one resume a task gets in Needs attention, counted apart
             key = (
                 held
                 if parked
@@ -1564,28 +1540,28 @@ class TaskActor:
                 self._memory.keep(name, resumes=None)
                 self._attend(
                     name,
-                    "its session ended again after its one revive with no progress",
+                    "its session ended again after its one resume with no progress",
                     "keeps ending",
                     "Which?",
                 )
                 return
-        if not self._admitted(name, "revive"):
+        if not self._admitted(name, "resume"):
             if unreachable:
                 with self._lock:
                     self._memory.keep(name, unreachable=True)
             return
         try:
-            self._idle(name, "revive")
+            self._idle(name, "resume")
         except Exception as error:
             self._unwant(name)
-            logger.warning("task actor: %s's session ended and could not be revived: %s", name, error)
+            logger.warning("task actor: %s has no live session and could not be resumed: %s", name, error)
             with self._lock:
                 now = self._feed.task(name, lean=True)
                 if now and now["state"] == self._feed.roles.working:  # a parked task is already with the operator
                     self._attend(
                         name,
                         f"no session can start for it: {error}",
-                        "could not be revived",
+                        "could not be resumed",
                         "Start one by hand or rescope?",
                         ("start a session on it by hand", "rescope the task"),
                     )
@@ -1601,10 +1577,6 @@ class TaskActor:
         from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a session is named
 
         with self._lock:
-            if self._accounts is not None and self._latest is not None and self._latest(f"{self._accounts}.firing"):
-                self._roomless[name] = session
-                return
-            self._roomless.pop(name, None)
             agent = self._feed.task(name, lean=True)
             roles = self._feed.roles
             if agent is None or not session or agent["state"] not in (roles.ready, roles.attention, roles.working):
@@ -1641,8 +1613,6 @@ class TaskActor:
         from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a session is named
 
         with self._lock:
-            if self._roomless.get(name) == session:
-                del self._roomless[name]
             if self._dispatching.get(name) == session:
                 del self._dispatching[name]
             holder = str((self._read(name) or {}).get("assignee") or "")
@@ -1651,6 +1621,24 @@ class TaskActor:
             written = self._apply(name, {"assignee": ""}, "", again=lambda: self.session_ended(name, session))
         if not written.ok:
             logger.warning("task actor: the lease of %s on %s was not ended: %s", session, name, written.output)
+
+    def start_failed(self) -> None:
+        """The scheduler could not start a Ready task: park it in Needs attention with the reason, then take the failure
+        back. A task that left Ready meanwhile keeps its lane."""
+        if self._log is None:
+            return
+        for name, reason in start_requests.failed(self._log).items():
+            with self._lock:
+                agent = self._feed.task(name, lean=True)
+                if agent is not None and agent["state"] == self._feed.roles.ready:
+                    self._attend(
+                        name,
+                        reason,
+                        "could not be started",
+                        "Start a session on it?",
+                        ("start it by hand", "rescope the task"),
+                    )
+            start_requests.forgive(self._log, name)
 
     def _admitted(self, name: str, verb: str) -> bool:
         """Whether the scheduler's admission gate lets `name`'s `verb` start now. A start it has not yet admitted is kept as
@@ -1665,7 +1653,7 @@ class TaskActor:
             start_requests.withdraw(self._log, name)
 
     def admitted(self) -> None:
-        """The gate admitted a start: send each wanted one it has admitted, the revive from `holder_ended` and the resume
+        """The gate admitted a start: send each wanted one it has admitted, the resume from `holder_ended` and the nudge
         from `holder_settled`, which derive again whether it is still needed. An admission that sends nothing (the work
         is gone) is spent, so its want goes."""
         if self._log is None:
@@ -1677,14 +1665,14 @@ class TaskActor:
     def _start_admitted(self, name: str, row: dict[str, Any]) -> None:
         if self._log is None or start_requests.wanted(self._log).get(name) != row:
             return  # withdrawn or replaced while the admission was queued: it no longer asks for this start
-        if row["verb"] == "revive":
+        if row["verb"] == "resume":
             self.holder_ended(name)
         else:
             self.holder_settled(name)
         if start_requests.wanted(self._log).get(name) == row:
             self._unwant(name)
 
-    def _resume(self, name: str, progress: tuple[Any, ...], count: int) -> None:
+    def _nudge_step(self, name: str, progress: tuple[Any, ...], count: int) -> None:
         if not self._confirmed(name):
             return
         refusal = self._refused.get(name)
@@ -1695,13 +1683,13 @@ class TaskActor:
                 now = self._feed.task(name, lean=True)
                 if now and now["state"] == self._feed.roles.working:
                     self._memory.keep(name, resumes=None)
-                    self._attend(name, "it settled idle again after its one resume with no progress")
+                    self._attend(name, "it settled idle again after its one nudge with no progress")
             return
         if refusal:
             latest = (self._comments({"id": name}) or [""])[-1].strip()
             if latest != refusal:
-                self._apply(name, {}, refusal)  # the resume reads the latest comment: make the refusal the latest
-        if not self._resume_sent(name):
+                self._apply(name, {}, refusal)  # the nudge reads the latest comment: make the refusal the latest
+        if not self._nudge_sent(name):
             return
         with self._lock:
             self._memory.keep(name, resumes=self._memory.tally(progress, _ONE_TRY))
@@ -1709,10 +1697,6 @@ class TaskActor:
     def _session_active(self, name: str) -> bool:
         placed = self._feed.machine_task(HARNESS_MACHINE, name)
         return bool(placed) and placed["state"] == "active"
-
-    def _holder_alive(self, name: str) -> bool:
-        placed = self._feed.machine_task(HARNESS_MACHINE, name)
-        return bool(placed) and placed["state"] != "ended"
 
     def _confirmed(self, name: str) -> bool:
         try:
@@ -1725,25 +1709,22 @@ class TaskActor:
         with self._lock:
             return not self._session_active(name)  # a settle read after the session woke again: its next settle comes
 
-    def _resume_sent(self, name: str) -> bool:
-        """Send the holder's resume. One that fails is sent again at once, no clock, until `_resume_failed` parks the
-        task: a holder whose resume was lost settles no more, so no later settle comes to send it."""
-        if not self._admitted(name, "resume"):
+    def _nudge_sent(self, name: str) -> bool:
+        """Send the holder's nudge, once: one that fails is the holder's loss, which `_nudge_failed` answers, since a
+        holder whose nudge was lost settles no more and no later settle comes."""
+        if not self._admitted(name, "nudge"):
             return False
-        failed = 0
-        while True:
-            try:
-                self._idle(name, "resume")
-                self._unwant(name)
-                return True
-            except Exception as error:
-                logger.info("task actor: %s settled but its holder was not resume: %s", name, error)
-                failed += 1
-                if not self._resume_failed(name, error, failed):
-                    return False
+        try:
+            self._idle(name, "nudge")
+        except Exception as error:
+            logger.info("task actor: %s settled but its holder was not nudged: %s", name, error)
+            self._nudge_failed(name, error)
+            return False
+        self._unwant(name)
+        return True
 
     def _nudge(self, name: str, opened: list[tuple[int, str]], ticks: tuple[bool, ...], wait_ended: bool) -> None:
-        """Resume an idle holder whose criteria are open; its hook's message names them. The `_NUDGES + 1`th idle with no
+        """Nudge an idle holder whose criteria are open; its hook's message names them. The `_NUDGES + 1`th idle with no
         criterion checked or struck through in between moves the task to Needs attention with them as the question. A holder
         still busy (`confirm` raises) settles again and costs no nudge, and the wake of an ended wait restarts the count."""
         if not self._confirmed(name):
@@ -1762,28 +1743,22 @@ class TaskActor:
                     ask=f"Open: {listing}. Which will you resolve, strike through or rescope?",
                 )
                 return
-        if not self._resume_sent(name):
+        if not self._nudge_sent(name):
             return
         with self._lock:
             self._memory.count(name, ticks, count + 1)
 
-    def _resume_failed(self, name: str, error: Exception, failed: int) -> bool:
-        """Whether the resume is sent again: a holder no session can reach is revived as `holder_ended` revives one, which
-        parks the task only when no session can start; any other failure does on the `_FAILED_RESUMES`th in a row; a task
-        no longer In Progress needs none."""
+    def _nudge_failed(self, name: str, error: Exception) -> None:
+        """A holder no session can reach is resumed once, as `holder_ended` resumes one, which parks the task only when no
+        session can start; any other failure parks it with the reason; a task no longer In Progress needs neither."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
             if agent is None or agent["state"] != self._feed.roles.working:
-                return False
+                return
             if not isinstance(error, HolderUnreachable):
-                if failed < _FAILED_RESUMES:
-                    return True
-                self._attend(
-                    name, f"its holder's resume failed {failed} times in a row: {error}", "could not be resumed"
-                )
-                return False
+                self._attend(name, f"its holder's nudge failed: {error}", "could not be nudged")
+                return
         self.holder_ended(name, unreachable=True)
-        return False
 
     def _attend(
         self,
@@ -1828,7 +1803,7 @@ class TaskActor:
             self._memory.keep(name, awaited=None)
         elif not self._awaits(agent):
             self._memory.keep(name, awaited=None)
-            if "revive_held" in memory:
+            if "resume_held" in memory:
                 self._queue(lambda: self.holder_ended(name, wait_ended=True))
             else:
                 self._queue(lambda: self.holder_settled(name, wait_ended=True))
@@ -1952,7 +1927,7 @@ class TaskActor:
                     self._returned,
                     name,
                     "was sent back but its holder was not told",
-                    on_failure=lambda: self._return_unwoken(name),
+                    on_failure=lambda: self.holder_ended(name, unreachable=True),
                 )
             if target == roles.done:
                 self._notice(self._closed, name, "was closed but the board was not told")
@@ -2066,15 +2041,6 @@ class TaskActor:
         """Publish `event` on the task's topic, which the holder's consumer carries (`task.<id>.review_refused`)."""
         if self._log is not None:
             machine_events.publish(IN_PROGRESS, event, actor=ACTOR, task=name, data={"reason": reason}, log=self._log)
-
-    def _return_unwoken(self, name: str) -> None:
-        """A send-back whose holder no wake reached revives the task as `_resume_failed` does, unless the holder has
-        since moved it."""
-        with self._lock:
-            agent = self._feed.task(name, lean=True)
-            if agent is None or agent["state"] != self._feed.roles.working:
-                return
-        self.holder_ended(name, unreachable=True)
 
     def _attend_unstarted(self, name: str) -> None:
         with self._lock:

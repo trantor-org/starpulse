@@ -190,8 +190,8 @@ task_verdicts = Table(
     Index("ix_starpulse_task_verdicts_task", "task", "occurred_at"),
 )
 
-#: The telemetry analytics' answers, one row per view and query: a read answers from its row, and a restart serves the
-#: rows saved before any fold (`views/application/queries/answers.py`).
+#: Dead: nothing writes or reads it since `/api/task-spend` folds its stored rows per request. It stays declared because
+#: the release before this one still reads it, and a later release drops it.
 analytics_answers = Table(
     "starpulse_answers",
     metadata,
