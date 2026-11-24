@@ -1302,7 +1302,7 @@ class TaskActor:
             if held is None:
                 continue
             evidence, comment = held
-            if target is None or self._is_closed(target):
+            if target is None or (self._is_closed(target) and event != "ARCHIVE"):
                 return self._fault(agent, f"move {event}", self._no_move(agent["state"], event, target))
             sent = (agent["state"], event, evidence, digest)
             if self._tried.get(name) == sent:
