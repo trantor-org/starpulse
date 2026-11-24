@@ -116,7 +116,8 @@ scheduler_runs = Table(
 
 #: The native board's retired tasks: a finished task's file taken off the board, so its reads and numbering scan fewer
 #: files, kept whole by its front matter `id` (`task`) under its file `name`, to be restored as that file. `retired_at`
-#: is the epoch second it was retired or imported. Event-log pruning never touches it.
+#: is the epoch second it was retired or imported and `milestone` the front matter's, null for a task with none. Event-log
+#: pruning never touches it.
 retired_tasks = Table(
     "starpulse_retired_tasks",
     metadata,
@@ -124,7 +125,9 @@ retired_tasks = Table(
     Column("name", String, nullable=False),
     Column("text", Text, nullable=False),
     Column("retired_at", Float, nullable=False),
+    Column("milestone", String),
     Index("ix_starpulse_retired_tasks_retired_at", "retired_at"),  # the change poll's count and max read this alone
+    Index("ix_starpulse_retired_tasks_milestone", "milestone", "task"),  # a milestone's tasks, by id
 )
 
 #: Each pull request the PR store read from GitHub, one row per (repository, number), replaced by each read of an open

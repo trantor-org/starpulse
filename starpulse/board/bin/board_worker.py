@@ -16,12 +16,12 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import NamedTuple, Protocol
 
-from starpulse.board.adapters.history_window import MAX_HOURS
 from starpulse.board.adapters.search import SearchIndex
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
 from starpulse.board.model.board_feed import BoardFeed, LaneRecorder
 from starpulse.board.model.board_feed import follow as follow_stream
 from starpulse.board.model.feed.held import HeldSnapshot
+from starpulse.board.model.feed.shared import LIVE_WINDOW_S
 from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM, ClaimRefusals
 from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.board.application.queries.verdicts import Verdicts
@@ -95,7 +95,7 @@ def start(
     writer at any instant and no rebuild between the two."""
     model = ReadModel(log.engine, declared_fields(config.board))
     board, feed = assemble(config, base, None, [], model)
-    feed.cap_lanes(MAX_HOURS * 3600)  # the widest window a page can ask for; an older lane stays only for an open task, and decoding the rest is the worker's heap
+    feed.cap_lanes(LIVE_WINDOW_S)  # the live set: an older lane stays only for an open task, and decoding the rest is the worker's heap
     store = history_store(config, base, feed.machines)
     feed.ready.set()
     feed.record_lanes(store, log)  # the lane each write makes is recorded by `serve`; the Board child places none

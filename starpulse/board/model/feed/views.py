@@ -15,6 +15,7 @@ from starpulse.board.model.feed.shared import (
     LEDGER_WINDOW,
     _cold_stub,
     done_dot,
+    LIVE_WINDOW_S,
     local_midnight,
     read_model_detail,
     settled_entry,
@@ -50,7 +51,7 @@ class ViewMethods:
 
     def _hot(self) -> list[dict]:
         """The live Tasks of the read model as agents, queried on each call; `open_tasks` keeps the last build until a task changes."""
-        summaries = self._read_model.snapshot(self._roles.done, local_midnight(self._clock()))
+        summaries = self._read_model.snapshot(self._roles.done, self._clock() - LIVE_WINDOW_S)
         ready = {
             task_id
             for state in {summary["state"] for summary in summaries}
@@ -75,7 +76,7 @@ class ViewMethods:
     def drawn_task(self, task_id: str) -> tuple[dict | None, str | None]:
         """The agent a whole build draws on the board flow for the Task (a Done one as its dot), None when the Task is
         not live; and the milestone the build counts it in off the board, None when it counts in none."""
-        done, since = self._roles.done, local_midnight(self._clock())
+        done, since = self._roles.done, self._clock() - LIVE_WINDOW_S
         found = self._read_model.snapshot(done, since, task_id)
         if not found:
             return None, self._read_model.cold_done(done, since, task_id).get(task_id)
@@ -85,7 +86,7 @@ class ViewMethods:
 
     def cold_done(self) -> dict[str, str]:
         """The milestone of each Done Task the board flow leaves out and `milestone_done` counts, by id."""
-        return self._read_model.cold_done(self._roles.done, local_midnight(self._clock()))
+        return self._read_model.cold_done(self._roles.done, self._clock() - LIVE_WINDOW_S)
 
     def settled(self, only: str | None = None) -> dict[str, dict]:
         """The Done Tasks archived in the last day as `settled` entries by id; `only` limits them to one Task."""
@@ -94,9 +95,9 @@ class ViewMethods:
 
     def _done_fields(self) -> dict[str, Any]:
         """The snapshot's account of Done Tasks off the board."""
-        since = local_midnight(self._clock())
-        counts = self._read_model.milestone_done(self._roles.done, since)
-        archived = self._read_model.archived_since(since)
+        now = self._clock()
+        counts = self._read_model.milestone_done(self._roles.done, now - LIVE_WINDOW_S)
+        archived = self._read_model.archived_since(local_midnight(now))
         return {"settled": self.settled(), "cold_done": [], "milestone_done": counts, "archived_today": archived}
 
     def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
@@ -104,7 +105,7 @@ class ViewMethods:
         reach = self._window_s if self._window_s is not None else self._lane_cap_s
         since = now - reach if reach is not None else None
         keep_open = self._roles.done if self._window_s is None else None
-        lanes = self._read_model.machine_lanes(since, keep_open)
+        lanes = self._read_model.machine_lanes(since, keep_open, self._clock() - LIVE_WINDOW_S)
         flows = [
             {
                 "name": "board",

@@ -3,7 +3,7 @@ path by its convention.
 """
 
 from contextlib import AbstractContextManager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -14,10 +14,11 @@ from starpulse.views.adapters.outbound import request_durations
 from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound.process_metrics import process_gauges
 
+if TYPE_CHECKING:  # annotation only: routing imports this module lazily
+    from starpulse.views.adapters.inbound.api.routing import Api
 
-@reading
-def prometheus(request: Request) -> Response:
-    api = seams(request)
+
+def render(api: Api) -> str:
     services = api.services
     gauges = (
         services.actor_metrics,
@@ -34,12 +35,17 @@ def prometheus(request: Request) -> Response:
         api.snapshots.metrics,
         api.page_gauge,
     )
-    text = (
+    return (
         "".join(gauge() for gauge in gauges if gauge)
         + process_gauges()
         + PAUSES.exposition()
         + request_durations.exposition()
     )
+
+
+@reading
+def prometheus(request: Request) -> Response:
+    text = seams(request).exposition()
     return answer(request, text.encode(), content_type="text/plain; version=0.0.4; charset=utf-8")
 
 

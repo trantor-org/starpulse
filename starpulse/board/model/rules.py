@@ -778,10 +778,12 @@ def load(declared: object) -> tuple[Rule, ...]:
 
 
 class Verdict(NamedTuple):
-    """What the rules say of one write: the rule that `refused` it, else the `warned` rules it broke and still lands."""
+    """What the rules say of one write: the rule that `refused` it with the `also` rules it broke, else the `warned` rules
+    it broke and still lands."""
 
     refused: Rule | None = None
     warned: tuple[Rule, ...] = ()
+    also: tuple[Rule, ...] = ()
 
 
 def evaluate(
@@ -798,12 +800,10 @@ def evaluate(
 
 def _split_broken(broken: list[Rule], actor: str, warned_actors: frozenset[str]) -> Verdict:
     """The `broken` rules as `actor` meets them: the first refuses, or for a warned actor the first that holds on every
-    write refuses and the rules of lane entry or exit are warned."""
-    if actor not in warned_actors:
-        return Verdict(next(iter(broken), None))
-    return Verdict(
-        next((rule for rule in broken if not rule.moves), None), tuple(rule for rule in broken if rule.moves)
-    )
+    write refuses and the rules of lane entry or exit are warned. The refusing rules after the first are `also`."""
+    refusing = broken if actor not in warned_actors else [rule for rule in broken if not rule.moves]
+    warned = () if actor not in warned_actors else tuple(rule for rule in broken if rule.moves)
+    return Verdict(next(iter(refusing), None), warned, tuple(refusing[1:]))
 
 
 def refusal(rules: tuple[Rule, ...], before: Record | None, after: Record, actor: str) -> Rule | None:

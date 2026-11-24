@@ -34,7 +34,7 @@ CARD = (*SUMMARY, tasks.c.description, tasks.c.final_summary, tasks.c.dependenci
 
 
 def live(done: str, since: float) -> ColumnElement[bool]:
-    """The live Tasks: unarchived, and either outside the done lanes or changed at or after `since` (local midnight).
+    """The live Tasks: unarchived, and either outside the done lanes or changed at or after `since`.
 
     The partial index `ix_starpulse_tasks_live_set` on `(archived, state, updated_at)` serves it, so a Done Task
     changed before `since` costs the read nothing.
@@ -48,10 +48,9 @@ def held_states() -> Select[Any]:
     return select(tasks.c.state).where(tasks.c.archived == false()).distinct()
 
 
-def open_ids(done: str) -> Select[Any]:
-    """The ids of unarchived Tasks outside the done lanes."""
-    lane = func.lower(func.replace(tasks.c.state, " ", "_"))
-    return select(tasks.c.id).where(tasks.c.archived == false(), lane.not_in(done_lanes(done)))
+def live_ids(done: str, since: float) -> Select[Any]:
+    """The ids of the live Tasks (`live`)."""
+    return select(tasks.c.id).where(live(done, since))
 
 
 def held_done(done: str) -> Select[Any]:

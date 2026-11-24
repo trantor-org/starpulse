@@ -160,15 +160,17 @@ def follow_events(
     from starpulse.event_log.event_log import Tail  # noqa: PLC0415 -- the event log opens the database stack
 
     class Kept(Tail):
-        """A replay that writes its cursor before each poll: every entry up to it has been handed over."""
+        """A replay that writes its cursor after each batch: every entry up to it has been handed over."""
 
         kept: int | None = None
 
-        def poll(self) -> list[Entry]:
+        def run(self, handle: Callable[[Entry], None], stop: StopEvent) -> None:
+            super().run(handle, stop, after_batch=self._keep)
+
+        def _keep(self) -> None:
             if self.cursor != self.kept:
                 log.put_state_entry(CURSOR, self.stream, self.cursor)
                 self.kept = self.cursor
-            return super().poll()
 
     def run(stream: str, handle: Callable[[Entry], None], lock: threading.Lock, tail: Tail) -> None:
         feed.wait_replayed()

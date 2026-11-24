@@ -1169,14 +1169,12 @@ class _Retired:
                 .limit(_RETIRED_PAGE)
             )
             if task:
-                query = query.where(func.lower(retired_tasks.c.task) == task.lower())
-            if milestone:  # the text search narrows the rows; the front matter decides
-                query = query.where(retired_tasks.c.text.contains(milestone))
+                query = query.where(retired_tasks.c.task.in_({task, task.upper(), task.lower()}))
+            if milestone:
+                query = query.where(retired_tasks.c.milestone == milestone)
             with self.engine.connect() as db:
                 page = [dict(row._mapping) for row in db.execute(query)]
-            for row in page:
-                if not milestone or str(_split_record(row["text"])[0].get("milestone") or "").strip() == milestone:
-                    yield row
+            yield from page
             if len(page) < _RETIRED_PAGE:
                 return
             after = page[-1]["task"]
@@ -1316,10 +1314,15 @@ class _Retired:
             return "the board keeps no retired tasks until it starts"
         with self.engine.begin() as db:
             held = db.execute(
-                select(retired_tasks.c.text).where(func.lower(retired_tasks.c.task) == task.lower())
+                select(retired_tasks.c.text).where(retired_tasks.c.task.in_({task, task.upper(), task.lower()}))
             ).scalar()
             if held is None:
-                db.execute(insert(retired_tasks).values(task=task, name=name, text=text, retired_at=time.time()))
+                milestone = str(_split_record(text)[0].get("milestone") or "").strip() or None
+                db.execute(
+                    insert(retired_tasks).values(
+                        task=task, name=name, text=text, retired_at=time.time(), milestone=milestone
+                    )
+                )
         return None if held in (None, text) else f"{task} is already retired with other text"
 
     def take(self, task: str, directory: Path) -> Written | None:

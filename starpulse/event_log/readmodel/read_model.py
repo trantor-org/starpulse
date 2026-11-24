@@ -153,13 +153,16 @@ class ReadModel:
         with self._reading() as db:
             return db.execute(statement).scalar()
 
-    def machine_lanes(self, since: float | None = None, keep_open: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    def machine_lanes(
+        self, since: float | None = None, keep_open: str | None = None, live_since: float | None = None
+    ) -> dict[str, list[dict[str, Any]]]:
         """Every machine's agents placed at or after `since`, keyed by machine; a machine with none is absent.
 
-        `keep_open` is the Board's done lane: an agent placed earlier stays while its Task is unarchived and not done.
+        `keep_open` is the Board's done lane: an agent placed earlier stays while its Task is live (`queries.live`):
+        unarchived and not done, or done at or after `live_since`.
         """
         lanes: dict[str, list[dict[str, Any]]] = {}
-        for machine, agent, _ in self._machine_rows(None, since, keep_open):
+        for machine, agent, _ in self._machine_rows(None, since, keep_open, live_since):
             lanes.setdefault(machine, []).append(agent)
         return lanes
 
@@ -180,7 +183,7 @@ class ReadModel:
             return db.execute(select(func.max(machine_tasks.c.seq))).scalar() or 0
 
     def _machine_rows(
-        self, machine: str | None, since: float | None, keep_open: str | None = None
+        self, machine: str | None, since: float | None, keep_open: str | None = None, live_since: float | None = None
     ) -> list[tuple[str, dict[str, Any], int]]:
         mt = machine_tasks.c
         statement = select(mt.machine, mt.task, mt.agent, mt.seq)
@@ -190,10 +193,12 @@ class ReadModel:
             statement = statement.order_by(mt.machine, mt.task)
         elif keep_open is None:
             statement = statement.where(mt.active_at >= since)
+        elif live_since is None:
+            raise ValueError("keep_open needs live_since, the start of the live window")
         else:
-            open_ids = queries.open_ids(keep_open)
+            live = queries.live_ids(keep_open, live_since)
             statement = union_all(
-                statement.where(mt.task.in_(open_ids)), statement.where(mt.active_at >= since, mt.task.not_in(open_ids))
+                statement.where(mt.task.in_(live)), statement.where(mt.active_at >= since, mt.task.not_in(live))
             )
         with self._reading() as db:
             found = [tuple(row) for row in db.execute(statement).all()]

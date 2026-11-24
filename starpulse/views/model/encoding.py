@@ -3,13 +3,13 @@
 import json
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
-from datetime import datetime, timedelta
 from hashlib import blake2b
 from itertools import batched
 from typing import Any
 
 from pydantic import TypeAdapter
 
+from starpulse.board.model.feed.shared import LIVE_WINDOW_S
 from starpulse.contracts.api.dto.cue import Pull
 from starpulse.contracts.api.dto.task import RawTask
 from starpulse.contracts.api.registry import BODIES, EVENTS
@@ -98,11 +98,9 @@ def _move_sets(tasks: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 
 def _recent_settled(data: dict[str, Any]) -> dict[str, Any]:
-    """The tasks created or settled since the start of the day before the snapshot's local day: the page draws the
-    day's arrivals from them, and the extra day covers a page whose midnight falls earlier than the server's."""
-    since = (
-        datetime.fromtimestamp(data["now"]).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
-    ).timestamp()
+    """The tasks created or settled in the 24 hours before the snapshot, the window the writer holds: the page draws
+    the day's arrivals from them, and a page's local midnight is never further back."""
+    since = data["now"] - LIVE_WINDOW_S
     return {
         task_id: entry
         for task_id, entry in data["settled"].items()

@@ -22,7 +22,7 @@ from collections import Counter
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.model.feed.shared import local_midnight
+from starpulse.board.model.feed.shared import LIVE_WINDOW_S, local_midnight
 from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
 from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.machine_ties import derive
@@ -280,27 +280,49 @@ class HeldSnapshot:
             fields.update(self._feed.ledger_marks())
 
     def _age(self) -> None:
-        """Drop the machine tasks the window has moved past, as a whole build reads only those placed inside it."""
+        """Drop what the window has moved past, as a whole build reads only what is inside it: a Done task whose finish
+        is older than the live window (a cold count keeps its milestone), and a machine instance placed before the
+        window whose task is not on the board, so an instance leaves with its task."""
+        now = self._clock()
         window = self._feed.window_s
-        if window is not None:
-            since = self._clock() - window
-            for name, _ in self._heads:
-                if name != "board":
-                    self._lanes[name] = {key: agent for key, agent in self._lanes[name].items() if agent["active"] >= since}
+        board, since = self._lanes["board"], now - LIVE_WINDOW_S
+        done = self._feed.roles.done
+        for key, agent in list(board.items()):
+            if agent["state"] == done and agent["entered"] < since:
+                del board[key]
+                if agent["milestone"]:
+                    self._cold[key] = agent["milestone"]
+        kept = since if window is None else now - window
+        for name, _ in self._heads:
+            if name != "board":
+                self._lanes[name] = {
+                    key: agent
+                    for key, agent in self._lanes[name].items()
+                    if agent["active"] >= kept or (window is None and key in board)
+                }
 
     def _task(self, task_id: str) -> None:
-        """Draw the Task again, and each Board Task that depends on it (whose workable flag and moves rest on it)."""
+        """Draw the Task again, and each Board Task that depends on it (whose workable flag and moves rest on it). A Task
+        new to the board, or back on it after the aging, has its machine instances read again, as the aging dropped them."""
         board = self._lanes["board"]
         dependents = [other for other, agent in board.items() if task_id in agent.get("dependencies", ())]
         for drawn in (task_id, *dependents):
             agent, milestone = self._feed.drawn_task(drawn)
+            returned = agent is not None and drawn not in board
             for held, value in ((board, agent), (self._cold, milestone)):
                 if value is None:
                     held.pop(drawn, None)
                 else:
                     held[drawn] = value
+            if returned:
+                self._place_instances(drawn)
         self._settled.pop(task_id, None)
         self._settled |= self._feed.settled(task_id)
+
+    def _place_instances(self, task_id: str) -> None:
+        for name, _ in self._heads:
+            if name != "board" and (placed := self._feed.machine_task(name, task_id)):
+                self._lanes[name].setdefault(task_id, {**placed, "model": placed["model"] or ""})
 
     def _publish(self, archived_today: int | None, fields: dict[str, Any]) -> None:
         now = self._clock()

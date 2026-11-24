@@ -3,8 +3,8 @@
     starpulse init                        # Claude Code, in the current directory
     starpulse init --dir demo --harness claude-code
 
-Writes `starpulse.toml` (a native `[board]`, a `[scheduler]` table and a `[[producers]]`
-entry whose token is read from `STARPULSE_TOKEN`), `board.yaml` (a four-State machine with every role declared), `.starpulse/board/config.yml` (the board's lanes, the
+Writes `starpulse.toml` (a native `[board]` and `[board.actor]`, which pins a dispatched session to its Task, a `[scheduler]` table and a `[[producers]]`
+entry whose token is read from `STARPULSE_TOKEN`), `board.yaml` (a five-State machine with every role declared; a created Task waits in Backlog, which a session is dispatched from), `.starpulse/board/config.yml` (the board's lanes, the
 machine's States), an empty `tasks/` and the harness's telemetry export settings (`.claude/settings.json` for Claude Code, so its sessions reach the OTLP receiver
 and link to the Tasks they claim). It writes nothing when any of them exists, says which on stderr and exits 1; it
 never writes a token.
@@ -21,6 +21,8 @@ type = "native"
 path = ".starpulse/board"
 machine = "board.yaml"
 
+[board.actor]
+
 [scheduler]
 
 # The producer that posts machine events and runs; set STARPULSE_TOKEN in the server's environment.
@@ -32,11 +34,13 @@ token_env = "STARPULSE_TOKEN"
 MACHINE = """\
 name: board
 states:
-  backlog: {initial: true}
+  new: {initial: true}
+  backlog: {role: waiting_on_person}
   in_progress: {role: resting}
   review: {role: waiting_on_person}
   done: {final: true}
 events:
+  CREATE: [{from: new, to: backlog}]
   START: [{from: backlog, to: in_progress}]
   REVIEW: [{from: in_progress, to: review}]
   REWORK: [{from: review, to: in_progress}]

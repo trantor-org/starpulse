@@ -9,7 +9,7 @@ its family refolds under its own stamp.
 import time
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import Connection, Engine, select
+from sqlalchemy import Connection, Engine, func, or_, select
 from sqlalchemy.dialects import sqlite
 
 from starpulse.event_log.tables import checkpoints
@@ -50,6 +50,11 @@ class Checkpoints:
         insert = sqlite.insert(checkpoints).values(**values)
         conn.execute(
             insert.on_conflict_do_update(
-                index_elements=["name"], set_={key: insert.excluded[key] for key in values if key != "name"}
+                index_elements=["name"],
+                set_={key: insert.excluded[key] for key in values if key != "name"},
+                where=or_(
+                    checkpoints.c.position != insert.excluded.position,
+                    func.json(checkpoints.c.state).is_not(func.json(insert.excluded.state)),
+                ),
             )
         )
