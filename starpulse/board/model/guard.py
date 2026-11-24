@@ -98,8 +98,11 @@ class Guard:
         task actor meets no rule: it reads them as facts first (`audit` judges its write by them, to be read, never landed)."""
         kind = str(frontmatter.get("type") or "")
         was = str(earlier.front.get("type") or "") if earlier else ""  # a write that leaves the type alone is not refused for it
+        reasons: list[str] = []
         if self.types and kind and kind != was and kind not in self.types:
-            return Written(False, f"type {kind!r} is not one of this board's types: {', '.join(self.types)}")
+            reasons.append(f"type {kind!r} is not one of this board's types: {', '.join(self.types)}")
+            if earlier is not None:
+                return Written(False, reasons[0])
         warnings: tuple[str, ...] = ()
         if self.rules and (audit or actor != TASK_ACTOR):
             after = rules.Record(
@@ -113,8 +116,12 @@ class Guard:
             )
             verdict = rules.evaluate(self.rules, earlier, after, actor, self.warn_actors)
             if verdict.refused:
-                return Written(False, verdict.refused.explain(after), verdict.refused.skill, lint=True)
+                found = (verdict.refused, *verdict.also) if earlier is None else (verdict.refused,)
+                reasons.extend(rule.explain(after) for rule in found)
+                return Written(False, "\n".join(reasons), verdict.refused.skill, lint=True)
             warnings = tuple(rule.explain(after) for rule in verdict.warned)
+        if reasons:
+            return Written(False, reasons[0])
         staying = lane_id(str(frontmatter.get("status") or "")) == self.waiting
         if self.waiting and self.ready and staying and actor != TASK_ACTOR:
             released = rules.standing_refusal(

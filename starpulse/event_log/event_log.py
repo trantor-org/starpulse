@@ -35,7 +35,7 @@ from itertools import batched
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from sqlalchemy import Engine, String, bindparam, create_engine, delete, event, func, select, type_coerce
+from sqlalchemy import ColumnElement, Engine, String, bindparam, create_engine, delete, event, func, literal, select, type_coerce
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import SQLAlchemyError
@@ -144,12 +144,15 @@ def _watch_commits(
                 connection.execute("ROLLBACK")
             current = connection.execute("PRAGMA data_version").fetchone()[0]
             # after a failed check a commit may have landed before this baseline read: wake the readers once
+            if not healthy or version is None or current != version:
+                _read_head(connection, owner)
             if not healthy or (version is not None and current != version):
                 owner._wake()
             version, healthy = current, True
         except sqlite3.Error as exc:  # the file is locked or gone: wake the readers to look, and look again later
             logger.debug("EventLog: data_version check failed: %s", exc)
             if healthy:
+                owner._forget_head()
                 owner._wake()
             connection, version, healthy = None, None, False
         del owner
@@ -166,6 +169,14 @@ def _watch_commits(
     os.close(ended)
     if watch is not None:
         watch.close()
+
+
+def _read_head(connection: sqlite3.Connection, log: EventLog) -> None:
+    """Keep the events head on `log`, one read for every follower; a store without the table yet leaves it unknown."""
+    try:
+        log._observe_head(connection.execute(f"SELECT max(id) FROM {events.name}").fetchone()[0] or 0)
+    except sqlite3.OperationalError:
+        log._forget_head()
 
 
 def _sqlite_wal(dbapi_connection: Any) -> None:
@@ -235,6 +246,8 @@ class EventLog:
         self._lock = threading.Lock()
         self._appended = threading.Condition()
         self._appends = 0
+        self._head: int | None = None  # the newest event id seen (0 for none), None while unknown
+        self._head_moved = threading.Condition()
         self._watching = False
         self._unwatch: Callable[[], object] | None = None
 
@@ -322,14 +335,17 @@ class EventLog:
     def _upsert_state(self, name: str, first: Any, replacement: Any) -> None:
         now = time.time()
         upsert = sqlite.insert(worker_state).values(name=name, state=first, version=1, updated_at=now)
+        new = replacement if isinstance(replacement, ColumnElement) else literal(replacement, worker_state.c.state.type)
         with self.engine.begin() as db:
-            db.execute(
+            written = db.execute(
                 upsert.on_conflict_do_update(
                     index_elements=[worker_state.c.name],
                     set_={"state": replacement, "version": worker_state.c.version + 1, "updated_at": now},
+                    where=func.json(worker_state.c.state).is_not(func.json(new)),
                 )
-            )
-        self._wake()
+            ).rowcount
+        if written:  # a write that changes nothing raises no version and wakes no follower
+            self._wake()
 
     def delete_state(self, name: str) -> None:
         """Drop `name`'s row, so it reads as unkept again. Raises on a database error."""
@@ -386,12 +402,51 @@ class EventLog:
         except Exception as exc:  # fail open, see module docstring
             logger.warning("EventLog: append to %s failed (event dropped): %s", stream, exc)
             return None
+        if cursor is not None:
+            self._observe_head(cursor)
         self._wake()
         return cursor
 
     def committed(self) -> None:
         """Wake the readers of this process after a transaction of the store inserted an event row (`insert_event`)."""
+        try:
+            self._observe_head(self.head() or 0)
+        except Exception:  # the followers read the head themselves
+            self._forget_head()
         self._wake()
+
+    def _observe_head(self, head: int) -> None:
+        with self._head_moved:
+            if self._head is None or head > self._head:
+                self._head = head
+                self._head_moved.notify_all()
+
+    def _forget_head(self) -> None:
+        with self._head_moved:
+            self._head = None
+            self._head_moved.notify_all()
+
+    def known_head(self) -> int | None:
+        """The newest event id the commit watch has seen (0 for none), None while it is unknown. Starts the watch first,
+        so a commit after this read moves the head."""
+        self._watch()
+        return self._head
+
+    def wait_for_head(self, cursor: int | None, stop: StopEvent) -> None:
+        """Return when the newest event id seen is not `cursor` (or is unknown) or `stop` is set; no timer ends it. A
+        commit that appended no event wakes nothing here."""
+        self._watch()
+        stop.listen(self._notify_head)
+        try:
+            with self._head_moved:
+                while self._head == (cursor or 0) and not stop.is_set():
+                    self._head_moved.wait()
+        finally:
+            stop.unlisten(self._notify_head)
+
+    def _notify_head(self) -> None:
+        with self._head_moved:
+            self._head_moved.notify_all()
 
     @property
     def appends(self) -> int:
@@ -601,10 +656,13 @@ class Tail:
 
     def _rows(self, *columns: Any) -> Sequence[Any]:
         engine = self.log.engine
+        head = self.log.known_head()
         with engine.connect() as db:
-            head = db.scalar(_HEAD)
+            if head is None:  # the watch has not read it yet: one query, which every later poll skips
+                head = db.scalar(_HEAD) or 0
+                self.log._observe_head(head)
             cursor = self.cursor
-            if head is None or head == cursor:  # idle: the one query above is the whole poll
+            if head == (cursor or 0):  # idle: no query ran
                 return []
             rows = db.execute(
                 select(*columns)
@@ -651,7 +709,7 @@ class Tail:
         after_batch: Callable[[], None] | None = None,
     ) -> None:
         """Read until `stop` is set, passing each entry to `handle`, then calling `after_batch` once per batch that held
-        an entry. Between reads an idle tail waits for an append (`EventLog.wait_for_append`), which no timer ends.
+        an entry. Between reads an idle tail waits for the events head to move (`EventLog.wait_for_head`), which no timer ends.
 
         A read that fails (the database went away) is retried after `RETRY_DELAY`, then after twice that for each further
         failure up to `MAX_POLL_BACKOFF`. The outage logs one warning, without a trace, and one line when a poll
@@ -663,7 +721,6 @@ class Tail:
         """
         delay = 0.0  # the wait after the last failed poll; 0 while polls succeed
         while not stop.is_set():
-            seen = self.log.appends  # before the poll, so an append during it still ends the wait below
             try:
                 entries = self.poll()
             except Exception as exc:  # the database is unreachable or locked; the next poll retries
@@ -694,7 +751,7 @@ class Tail:
                 # adr-exempt: retry
                 stop.wait(RETRY_DELAY)
             elif len(entries) < self.batch:
-                self.log.wait_for_append(seen, stop)
+                self.log.wait_for_head(self.cursor, stop)
 
 
 def _archive(directory: Path, rows: Sequence[Any]) -> None:

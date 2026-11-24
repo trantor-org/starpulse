@@ -500,7 +500,7 @@ row in that transaction, in lane `archived` when the row is archived and not Don
 - Partial indexes `WHERE archived = 0` (`ix_starpulse_tasks_live_{id,state,milestone,assignee}`) keep the live set small
   whatever the archive holds. `ix_starpulse_tasks_seq` serves the delta read.
 - `ReadModel(engine, declared)` is the query surface: `task(id)`, `snapshot(done, since)` (the live set: unarchived Tasks
-  outside the done lanes, or in one and changed at or after `since`, local midnight; partial index
+  outside the done lanes, or in one and changed at or after `since` (`LIVE_WINDOW_S`, 24 h before now); partial index
   `ix_starpulse_tasks_live_set` on `(archived, state, updated_at)`, migration 0043), `held_states()`, `with_field(name, value)`,
   `ready(state, done)` (live Tasks in `state` whose every dependency is in `done`; a dependency with no row blocks) and
   `since(seq, limit)` (the delta: rows changed after a cursor, archived included). Each statement is a SQLAlchemy `Select`
@@ -510,7 +510,7 @@ row in that transaction, in lane `archived` when the row is archived and not Don
 - Only `readmodel` reads `readmodel.tables` (the `readmodel-table-private` import contract).
 
 `BoardFeed(read_model=ReadModel(engine))` serves the page from it: the reader switch, with no bridge between the two
-paths. The feed holds no Task: each `snapshot()` queries the live set, so a Task Done before local midnight is off the
+paths. The feed holds no Task: each `snapshot()` queries the live set, so a Task Done more than 24 h ago is off the
 Board and read only by id; `task`, `held` and `is_done` are single-row reads, `is_resident` is always false,
 `cold_page` pages `archived`, and the snapshot carries no archived Task. The Scheduler's
 `open_tasks` and the write guards go through the same reads. `follow_read_model()` publishes the Tasks changed since it last
@@ -1434,7 +1434,7 @@ step, and the step it is in.
 
 ## Cold done tasks
 
-A task is hot until local midnight after it enters `done`, then cold: the board feed holds only its `id`, `state` and
+A task is hot for 24 h after it enters `done`, then cold: the board feed holds only its `id`, `state` and
 `entered` time, and `GET /api/snapshot` omits it. A hot task keeps its record in `flows`; a lane change out of `done`
 (a reopen) reloads the cold task from its board file onto its new lane within that one change, and cooling itself
 publishes nothing, so a page keeps a card until it reloads. The page's snapshot (`/api/snapshot`) is slim:
@@ -1449,7 +1449,7 @@ publishes nothing, so a page keeps a card until it reloads. The page's snapshot 
   the flow's. A step's `data` is not sent (`_interned` in `views/model/encoding.py`);
 - `archived_today` counts the tasks archived since local midnight (one range of the archive index, `archived_since`); an archived
   `task` delta carries the new number;
-- `settled` keeps the tasks created or settled since the start of the day before local midnight, and `milestone_done` (`{milestone: count}`)
+- `settled` keeps the tasks created or settled in the last 24 h, and `milestone_done` (`{milestone: count}`)
   counts every settled completed task by milestone;
 - `/api/snapshot`, `?view=full` and `/api/flows` serve this one stored body: the CLI verbs read `/api/flows`, `/api/runs`,
   `/api/task/<id>` and the routes above, and a verb that needs a task's description or criteria reads `/api/task/<id>`.
@@ -1484,8 +1484,8 @@ the machines it holds a session in (`N machines holding <task>`); closing its ca
 ## Connect a tracker
 
 `starpulse init [--dir DIR] [--harness claude-code]` scaffolds a first install: `starpulse.toml` (a native `[board]` with
-one `[[board.guards]]` rule, a `[scheduler]` table and a `[[producers]]` entry reading `STARPULSE_TOKEN`), `board.yaml`
-(four States, every role declared) and the harness's telemetry settings (`.claude/settings.json`). It never writes a
+one `[[board.guards]]` rule, a `[board.actor]` table, a `[scheduler]` table and a `[[producers]]` entry reading `STARPULSE_TOKEN`), `board.yaml`
+(five States, every role declared; a created Task waits in Backlog, which `task dispatch` takes a session from, and the task actor pins it) and the harness's telemetry settings (`.claude/settings.json`). It never writes a
 token, and writes nothing, naming the file on stderr and exiting 1, when any of the files exists.
 
 `starpulse connect` checks that a tracker answers, then writes the `[board]` table of `starpulse.toml` for you, keeping

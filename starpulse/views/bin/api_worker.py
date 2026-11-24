@@ -205,6 +205,7 @@ def serve_page(
         else None,
         lanes=lambda: lane_surfaces(log.engine, config.board, base),
         slow_read_s=config.slow_read_seconds,
+        scrape_cache_s=SCRAPE_CACHE_S,
         actor_metrics=actor_metrics,
         # the lane followers run in `starpulse worker contexts` and `conformance`; this process relays the metrics they keep
         lane_metrics=lane_metrics_of(log),

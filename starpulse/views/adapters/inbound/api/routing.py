@@ -6,7 +6,7 @@
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from functools import cached_property
+from functools import cached_property, partial
 from typing import TYPE_CHECKING
 
 from starpulse.views.adapters.inbound.api import (
@@ -28,6 +28,7 @@ from starpulse.views.adapters.inbound.api.table import ApiRoute
 from starpulse.views.adapters.inbound.api.pulls import PullReads
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.streams import Streams
+from starpulse.views.adapters.outbound.storage_metrics import cached
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.history_window import HistoryWindow
@@ -60,6 +61,15 @@ class Api:
         self.pull_reads = PullReads(self.services.pulls, self.feed.cited, lambda: self.snapshots.stored("pulls")[1])
         self.slow_reads = SlowReads("/api/pulls", self.services.slow_read_s)
         self.scrape_reads = SlowReads("/metrics", self.services.slow_read_s)
+
+    @cached_property
+    def exposition(self) -> Callable[[], str]:
+        """The `/metrics` page: one render per `scrape_cache_s`, else one per scrape."""
+        from starpulse.views.adapters.inbound.api.metrics import render  # metrics imports this module's seams
+
+        read = partial(render, self)
+        span = self.services.scrape_cache_s
+        return cached(read, span) if span else read
 
     @cached_property
     def streams(self) -> Streams:

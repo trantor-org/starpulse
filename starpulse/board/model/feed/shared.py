@@ -56,6 +56,10 @@ def local_midnight(at: float) -> float:
     return datetime.fromtimestamp(at).astimezone().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
+#: How long a Done Task stays in the snapshot, with its jobs and machine instances, after it finishes.
+LIVE_WINDOW_S = 24 * 3600
+
+
 def read_model_lane_moves(machine: dict) -> dict[str, dict[str, dict]]:
     """The Board machine's moves out of each lane, as dumps a read-model agent carries, keyed by source lane id."""
     writers = {

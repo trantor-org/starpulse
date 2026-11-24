@@ -53,6 +53,8 @@ class Services:
     #: The machines the store holds, which the machine write routes change; None refuses them.
     machines: MachineStore | None = None
     slow_read_s: float = SLOW_READ_S
+    #: Seconds a rendered `/metrics` page is served again; 0 renders each scrape.
+    scrape_cache_s: float = 0.0
     actor_metrics: Callable[[], str] | None = None
     #: Each configured view's stored GraphQL document by view name.
     views: Mapping[str, str] = field(default_factory=dict)

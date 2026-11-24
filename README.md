@@ -94,7 +94,7 @@ starpulse serve                                 # open http://localhost:8766
 starpulse task create "First task"
 ```
 
-`init` writes a board machine with its roles declared, an example `[[board.guards]]` rule, a `[scheduler]` table and
+`init` writes a board machine with its roles declared, an example `[[board.guards]]` rule, a `[board.actor]` table, a `[scheduler]` table and
 Claude Code telemetry export settings (`--harness`, `--dir` to change them). It never overwrites an existing file.
 `starpulse doctor` checks the config, the server and each adapter.
 
