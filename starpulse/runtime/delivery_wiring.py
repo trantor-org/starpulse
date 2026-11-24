@@ -1,8 +1,9 @@
 """The Delivery context's start, from the collaborators `starpulse worker pulls` and `contexts` hand it."""
 
 import os
+import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from starpulse.board.adapters.holder_idle import follow_holder_idle
 from starpulse.board.adapters.until_events import follow_until_events
@@ -20,6 +21,7 @@ from starpulse.github.adapters.outbound.rest import connect, pull_mergeable
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR, TaskActor, moves_of
 from starpulse.pulls.adapters.outbound.main_green import MainGreen
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
+from starpulse.pulls.adapters.outbound.pull_reads import settle_checks
 from starpulse.pulls.adapters.outbound.pull_requests import PullRequests, coalesced
 from starpulse.pulls.model.pins import LiveBuild, running_commit
 from starpulse.runtime.config import Config
@@ -48,6 +50,14 @@ def _main_green(config: Config, pins: GitHub) -> MainGreen | None:
         return None
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     return MainGreen(config.board_repo, pins.head, GitHubReader(connect(token)))
+
+
+def _stranded_checks(pulls: PullStore) -> Callable[[dict[str, Any]], None] | None:
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        return None
+    reader = GitHubReader(connect(token))
+    return lambda record: settle_checks(pulls, reader, record, time.time())
 
 
 def start_delivery(
@@ -109,6 +119,7 @@ def start_delivery(
             main_green=_main_green(config, pins),
             owner_source=config.owner_source,
             mergeable=lambda repo, number: pull_mergeable(repo, number, _MERGEABLE_TIMEOUT),
+            checks=_stranded_checks(pulls),
             advance=lambda machine, task, event: machine_events.publish(
                 machine, event, actor=ACTOR, task=task, log=log
             ),
@@ -131,6 +142,7 @@ def start_delivery(
             dispatched=actor.dispatched,
             lease_ended=actor.session_ended,
             unstarted=actor.unstarted,
+            closed=actor.closed,
         )
         follow_admitted(actor.admitted, log, stop)
     lane_events.follow_entered(board.entered, log, stop)

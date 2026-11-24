@@ -7,7 +7,7 @@ each pull request the task already cites. A pull request opening adds its `pr_op
 Both are idempotent, so the bridge replaying an entry after a restart changes nothing. A task in a finished lane has no
 holder though its file keeps the assignee, so its move to one drops the session's subjects; `reconcile` does the same for
 every task a session's subscription holds and the session no longer does, such as those an older release left (a task
-the read model does not return is skipped, never read as unheld), and grants
+the read model does not return, or shows open with no holder, is skipped, never read as unheld: a restart's read model may not have folded the claim, and a move drops a released holder), and grants
 each holder the `claim` subjects now named, so a claim list that grew reaches a session that claimed before. The entry's own lane says the task finished: the
 read model the holder is read from is projected on another tail and may not have folded the move yet, so a move into
 an open lane the read model's row does not show yet drops no session: a lagging row would read the holder as gone. After each
@@ -96,7 +96,7 @@ class Subscriber:
         return token(agent.get("assignee") or ""), self._rules.get(next(iter(kinds), ""), Rules()), incidents
 
     def reconcile(self) -> None:
-        """Drop each task's subjects from every session that does not hold the task now, and give each holder the
+        """Drop each task's subjects from every session that does not hold the task now (an open task showing no holder is left, as the claim may not be folded), and give each holder the
         `claim` subjects its kind names now, so a claim list that grew since the session claimed reaches it; a holder
         whose task only another session held gets them too."""
         with self._lock:
@@ -108,6 +108,8 @@ class Subscriber:
                     if (row := self._feed().task(origin, lean=True)) is None:
                         continue
                     holder, rules, incidents = self._holder(row)
+                    if not holder and row.get("state") not in FINISHED:
+                        continue  # may not have folded the claim: a move drops it, never a restart
                     if holder != session:
                         if holder and origin not in unheld and origin not in sessions.get(holder, Subscription()).origins:
                             unheld[origin] = (holder, self._held(origin, rules), incidents)

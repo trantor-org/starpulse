@@ -12,14 +12,15 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from starpulse.github.adapters.outbound.cursors import Cursor, SqlCursors
+from starpulse.github.adapters.outbound.head_reader import GitHubReader
 from starpulse.github.adapters.outbound.rest import Client, GitHubError, Reply
-from starpulse.github.model.checks import required_of
+from starpulse.github.model.checks import required_of, rollup
 from starpulse.github.model.delivery import Delivery
-from starpulse.pulls.adapters.outbound.pull_events import bare_detail
+from starpulse.pulls.adapters.outbound.pull_events import REPORT_RESULTS, bare_detail
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.pulls.model.required import with_missing
 
-__all__ = ["PULL_READS", "READ_EVENTS", "PullReads", "refresh"]
+__all__ = ["PULL_READS", "READ_EVENTS", "PullReads", "refresh", "settle_checks"]
 
 #: The deliveries that name a read; a `pull_request` one reads only for an action in `PULL_READS`.
 READ_EVENTS = frozenset({"push", "repository_ruleset", "pull_request"})
@@ -169,3 +170,14 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
             for open_pull in opened:
                 if open_pull["baseRefName"] == base:
                     _requiring(store, open_pull, contexts, now)
+
+
+def settle_checks(store: PullStore, reader: GitHubReader, record: dict[str, Any], now: float) -> None:
+    """Store the checks of `record`'s head as GitHub reads them now: each required check's result and the rollup."""
+    head = record["headRefOid"]
+    required = reader.required(record["repo"], record["baseRefName"])
+    results = reader.results(record["repo"], head)
+    posted = [{"name": name, "result": REPORT_RESULTS[results[name]]} for name in sorted(required) if name in results]
+    checks = sorted(with_missing(posted, (check["name"] for check in posted), required), key=lambda check: check["name"])
+    state = rollup(required, results)
+    _amend(store, record, lambda _: {"requiredChecks": checks, "rollup": {"sha": head, "state": state, "at": now}})

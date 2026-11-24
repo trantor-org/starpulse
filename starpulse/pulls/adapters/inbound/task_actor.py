@@ -335,8 +335,13 @@ class TaskActor:
         owner_source: str = "",
         started: Callable[[str], bool] = lambda _task: False,
         mergeable: Callable[[str, int], str | None] = lambda _repo, _number: None,
+        checks: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._main_green = main_green
+        #: Reads a stored open pull request's head checks live and stores them; once per head, for a record that holds
+        #: no rollup, which only an event lost before it was stored leaves.
+        self._checks = checks
+        self._checked: set[tuple[str, str]] = set()
         #: GitHub's answer now whether a pull request merges; a push that clears a conflict sends no event for it.
         self._mergeable = mergeable
         #: Per pull request, the stored record's version, what `mergeable` answered for it and when: an answer is read once,
@@ -1173,6 +1178,11 @@ class TaskActor:
 
     def _record(self, url: str) -> dict[str, Any] | None:
         record = pull_record(self._store, url)
+        if record and self._checks and self._unrolled(record) and (url, record["headRefOid"]) not in self._checked:
+            self._checked.add((url, record["headRefOid"]))
+            threading.Thread(
+                target=self._settle_checks, args=(url, record, self._checks), name="task-actor-checks", daemon=True
+            ).start()
         if record and record["state"] == "OPEN" and record["mergeable"] != "MERGEABLE":
             version = (record["headRefOid"], record["fetchedAt"])
             settled = self._settled.get(url, ((), None, 0.0))
@@ -1184,6 +1194,27 @@ class TaskActor:
             if settled[1] == "MERGEABLE":
                 return {**record, "mergeable": "MERGEABLE"}
         return record
+
+    @staticmethod
+    def _unrolled(record: dict[str, Any]) -> bool:
+        return record["state"] == "OPEN" and not record["isDraft"] and record["rollup"] is None and not record["requiredChecks"]
+
+    def _settle_checks(self, url: str, record: dict[str, Any], read: Callable[[dict[str, Any]], None]) -> None:
+        try:
+            read(record)
+        except Exception as error:  # the head stays pending, read again only when its record is rebuilt
+            logger.warning("task actor: cannot read the checks of %s: %s", url, error)
+        self._hand_in(url, "checks read")
+
+    def _hand_in(self, url: str, why: str, settle: Callable[[], None] = lambda: None) -> None:
+        """Run `settle` and derive the tasks citing `url` once a read made off the lock has its answer."""
+        try:
+            with self._pressing(), self._lock:
+                settle()
+                self._pull_states[url] = self._pull_state(url)
+                self.touch(self._webhooks(sorted(self._by_pr.get(url, ())), why))
+        except Exception:  # touch derives under the lock and may raise
+            logger.exception("task actor: cannot derive the tasks of %s on its %s", url, why)
 
     def _read_mergeable(self, url: str, version: tuple[str, str], repo: str, number: int) -> None:
         """Read GitHub's answer for the pull request on a thread of its own, so the lock never waits on the network; its
@@ -1201,14 +1232,12 @@ class TaskActor:
         except Exception as error:  # a read that fails leaves the stored answer to stand, as a read that says nothing does
             logger.warning("task actor: cannot read whether %s merges: %s", url, error)
             answer = None
-        try:
-            with self._pressing(), self._lock:
-                self._reading_pulls.discard((url, version))
-                self._settled[url] = (version, answer, self._clock())
-                self._pull_states[url] = self._pull_state(url)
-                self.touch(self._webhooks(sorted(self._by_pr.get(url, ())), "mergeable read"))
-        except Exception:  # touch derives under the lock and may raise
-            logger.exception("task actor: cannot derive the tasks of %s on its mergeable read", url)
+
+        def settle() -> None:
+            self._reading_pulls.discard((url, version))
+            self._settled[url] = (version, answer, self._clock())
+
+        self._hand_in(url, "mergeable read", settle)
 
     def _own_prs(self, agent: dict[str, Any]) -> list[str]:
         return own_prs(self._store, agent)
@@ -1365,6 +1394,15 @@ class TaskActor:
         with self._lock:
             return [
                 agent["id"] for agent in self._feed.open_tasks() if agent["state"] in (roles.working, roles.attention)
+            ]
+
+    def closed(self) -> list[str]:
+        """The open tasks in an `end_lanes` lane but Ready, whose holders `follow_holder_idle` checks for a settle while down,
+        so a move into the lane that the actor missed still ends the session."""
+        ready = self._feed.roles.ready
+        with self._lock:
+            return [
+                agent["id"] for agent in self._feed.open_tasks() if agent["state"] in self._end_lanes and agent["state"] != ready
             ]
 
     def unstarted(self) -> list[str]:
