@@ -24,6 +24,7 @@ import threading
 import urllib.request
 from collections import OrderedDict
 from collections.abc import Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -168,6 +169,8 @@ _QUERY_ATTEMPTS = 2
 #: Query vectors kept (least recently used out first), and background fills in flight at once: a search never embeds
 #: its own query, so a repeat finds the vector held and a burst of new queries cannot pile on the endpoint.
 _QUERY_VECTORS = 256
+_SCAN_THREADS = 4
+_SCAN_POOL = ThreadPoolExecutor(_SCAN_THREADS, thread_name_prefix="search-scan")
 _FILLING_MAX = 4
 #: Seconds `keep_embedding` waits after a failed pass before the next.
 _RETRY = 60.0
@@ -215,6 +218,16 @@ def _row(task_id: str) -> int:
     """The index's rowid for a task: 56 bits of its id's hash, so a collision between two tasks of a board is a
     one-in-ten-billion event."""
     return int.from_bytes(hashlib.blake2b(task_id.encode(), digest_size=7).digest(), "big")
+
+
+def _scan(matrix: np.ndarray, query: np.ndarray) -> list[Future[np.ndarray]]:
+    # einsum, not `@`: a matrix-vector product through BLAS fans out over every core, which on a busy host costs far more
+    # than the 20 MB it reads. The scan is memory-bound and releases the GIL, so a few threads read it side by side while
+    # the caller runs its ranked query.
+    step = max(1, -(-len(matrix) // _SCAN_THREADS))
+    return [
+        _SCAN_POOL.submit(np.einsum, "ij,j->i", matrix[at : at + step], query) for at in range(0, max(len(matrix), 1), step)
+    ]
 
 
 def _unit(vectors: np.ndarray) -> np.ndarray:
@@ -429,9 +442,7 @@ class SearchIndex:
         task = ", task" if before else ""
         if vector is not None:
             near = self._near_vectors(len(vector))
-            # einsum, not `@`: a matrix-vector product through BLAS fans out over every core, which on a busy host costs
-            # far more than the 20 MB it reads.
-            similarities = np.einsum("ij,j->i", near.matrix, _unit(np.array(vector, dtype=np.float32)))
+            scan = _scan(near.matrix, _unit(np.array(vector, dtype=np.float32)))
         with self._engine.connect() as connection:
             if vector is None:
                 rows = connection.execute(
@@ -443,6 +454,7 @@ class SearchIndex:
                 {"query": match, "limit": max(limit, _POOL), **narrowing},
             )
             hits = [dict(row._mapping) for row in rows]
+            similarities = np.concatenate([part.result() for part in scan])
             # a hit's similarity is read from the held unit vectors, never from its stored blob: reading fifty
             # four-kilobyte blobs and summing each in Python cost more than the product over every task
             lexical = {hit["task"] for hit in hits}
