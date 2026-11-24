@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from starpulse.contracts.reads import SLOW_READ_S
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
+    from starpulse.board.adapters.display_settings import DisplaySettings
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.contracts.analytics import Analytics
     from starpulse.event_log.machine_store import MachineStore
@@ -45,6 +46,8 @@ class Services:
     webhook: Callable[[str | None, bytes], tuple[int, dict]] | None = None
     """Answers one `POST /intake/grafana`: `(authorization, body)` to `(status, JSON body)`."""
     scheduler: Runtime | Remote | None = None
+    display: DisplaySettings | None = None
+    """The display and theme choices Admin keeps for every device."""
     contract: Callable[[], dict[str, Any]] | None = None
     ready: Callable[[], dict[str, Any]] | None = None
     pulls: PullStore | None = None

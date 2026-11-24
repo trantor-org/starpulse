@@ -130,7 +130,7 @@ class Placed:
         if events := placed_events(task, replay(stream) if stream else None):
             self.events.append(KIND, task.id, len(stream), [_new(kind, payload) for kind, payload in events], at=task.observed_at)
         if self.feed is not None:
-            for alias in task.aliases:  # the read model holds none: the board's files name them
+            for alias in task.aliases:  # a scanned task names them: the read model holds them as meta `aliases`
                 self.feed.alias(alias, task.id)
         self.fold()
 

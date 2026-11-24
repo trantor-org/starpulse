@@ -1,12 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import { ADMIN_DEFAULTS, ADMIN_KEY, AdminStore, applyScale, clampScale, labelPx, loadAdmin, saveAdmin } from "./adminPrefs";
-import type { PrefStorage } from "../../shared/nav";
+import { ADMIN_DEFAULTS, AdminStore, applyScale, clampScale, labelPx, loadAdmin } from "./adminPrefs";
 
-const memory = (): PrefStorage & { data: Map<string, string> } => {
-  const data = new Map<string, string>();
-  return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
+/** A server that answers each GET with `held` and each PUT with `put`. */
+const server = (held: unknown = {}, put: { ok: boolean; status?: number; body?: unknown } = { ok: true }) => {
+  const calls: { method: string; body?: unknown }[] = [];
+  const fetcher = vi.fn(async (_url: string, init?: { method?: string; body?: string }) => {
+    const method = init?.method ?? "GET";
+    calls.push({ method, body: init?.body ? JSON.parse(init.body) : undefined });
+    if (method === "GET") return new Response(JSON.stringify({ display: held }));
+    return new Response(JSON.stringify(put.body ?? {}), { status: put.ok ? 200 : (put.status ?? 400) });
+  });
+  return { fetcher: fetcher as never, calls };
 };
-const off: PrefStorage = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 const root = () => {
   const vars = new Map<string, string>(), classes = new Set<string>();
   return {
@@ -16,39 +22,19 @@ const root = () => {
   };
 };
 
-describe("the font size kept for this browser", () => {
-  it("falls back to 100 % when nothing, garbage or a denied storage is there", () => {
-    const bad = memory();
-    bad.data.set(ADMIN_KEY, "{not json");
-    const wrongType = memory();
-    wrongType.data.set(ADMIN_KEY, JSON.stringify({ scale: "big" }));
-
-    expect(loadAdmin(memory())).toEqual(ADMIN_DEFAULTS);
-    expect(loadAdmin(bad)).toEqual(ADMIN_DEFAULTS);
-    expect(loadAdmin(wrongType)).toEqual(ADMIN_DEFAULTS);
-    expect(loadAdmin(off)).toEqual(ADMIN_DEFAULTS);
+describe("the font size every device shares", () => {
+  it("falls back to 100 % when the server holds nothing, garbage or the wrong type", () => {
+    expect(loadAdmin(undefined)).toEqual(ADMIN_DEFAULTS);
     expect(loadAdmin(null)).toEqual(ADMIN_DEFAULTS);
-  });
-
-  it("reads back what it wrote under fv.admin.prefs", () => {
-    const storage = memory();
-    saveAdmin(storage, { ...ADMIN_DEFAULTS, scale: 130 });
-
-    expect(JSON.parse(storage.data.get("fv.admin.prefs")!)).toEqual({ ...ADMIN_DEFAULTS, scale: 130 });
-    expect(loadAdmin(storage)).toEqual({ ...ADMIN_DEFAULTS, scale: 130 });
-  });
-
-  it("keeps the session's choice when storage is denied on write", () => {
-    expect(() => saveAdmin(off, ADMIN_DEFAULTS)).not.toThrow();
+    expect(loadAdmin("{not json")).toEqual(ADMIN_DEFAULTS);
+    expect(loadAdmin({ scale: "big" })).toEqual(ADMIN_DEFAULTS);
   });
 
   it("holds the scale to 85-150 % in steps of 5", () => {
     expect([0, 84, 85, 100, 132, 133, 150, 151, 999].map(clampScale)).toEqual([85, 85, 85, 100, 130, 135, 150, 150, 150]);
     expect([NaN, Infinity, "130", null, undefined].map(clampScale)).toEqual([100, 100, 100, 100, 100]);
-    // a stored out-of-range value cannot break the page
-    const storage = memory();
-    storage.data.set(ADMIN_KEY, JSON.stringify({ scale: 400 }));
-    expect(loadAdmin(storage)).toEqual({ ...ADMIN_DEFAULTS, scale: 150 });
+    // a held out-of-range value cannot break the page
+    expect(loadAdmin({ scale: 400 })).toEqual({ ...ADMIN_DEFAULTS, scale: 150 });
   });
 });
 
@@ -67,53 +53,54 @@ describe("the scale reaching the page", () => {
     expect(labelPx(12.5, 2, 130)).toBeCloseTo(8.125);
   });
 
-  it("applies the stored scale at start, then each change to the variable, the storage and the listeners", () => {
-    const storage = memory(), r = root(), seen = vi.fn();
-    saveAdmin(storage, { ...ADMIN_DEFAULTS, scale: 115 });
-    const store = new AdminStore(storage, r);
+  it("starts on the defaults, adopts what the server holds, and sends only the field a change names", async () => {
+    const r = root(), seen = vi.fn(), { fetcher, calls } = server();
+    const store = new AdminStore(r, fetcher);
     store.subscribe(seen);
+    expect(store.get()).toEqual(ADMIN_DEFAULTS);
+
+    store.adopt({ display: { scale: 115 } });
+    await store.loaded;
     expect(store.get().scale).toBe(115);
     expect(r.vars.get("--fs")).toBe("1.15");
+    expect(calls).toEqual([]);
 
     store.setScale(150);
-    expect(store.get().scale).toBe(150);
+    await settle();
     expect(r.vars.get("--fs")).toBe("1.5");
-    expect(loadAdmin(storage)).toEqual({ ...ADMIN_DEFAULTS, scale: 150 });
-    expect(seen).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([{ method: "PUT", body: { display: { scale: 150 } } }]);
 
     store.setScale(9000);
     expect(store.get().scale).toBe(150);
   });
 
-  it("resets this browser to 100 % and forgets the stored choice", () => {
-    const storage = memory(), r = root();
-    const store = new AdminStore(storage, r);
-    store.setScale(130);
+  it("resets every setting to the defaults and keeps them for every device", async () => {
+    const r = root(), { fetcher, calls } = server();
+    const store = new AdminStore(r, fetcher);
+    store.adopt({ display: { scale: 130, motion: false } });
 
     store.reset();
-    expect(store.get().scale).toBe(100);
+    await settle();
+    expect(store.get()).toEqual(ADMIN_DEFAULTS);
     expect(r.vars.get("--fs")).toBe("1");
-    expect(loadAdmin(storage)).toEqual(ADMIN_DEFAULTS);
+    expect(r.classes.has("still")).toBe(false);
+    expect(calls).toEqual([{ method: "PUT", body: { display: { scale: 100, motion: true } } }]);
   });
 });
 
-describe("the motion, opening view, card density and clock kept for this browser", () => {
+describe("the motion, opening view, card density and clock every device shares", () => {
   it("defaults to motion on, the Star Map, comfortable cards and a 24-hour clock", () => {
     expect(ADMIN_DEFAULTS).toEqual({ scale: 100, motion: true, view: "constellation", density: "comfortable", clock: "24" });
   });
 
-  it("reads each setting back from storage and ignores a value it does not know", () => {
-    const good = memory(), bad = memory();
-    good.data.set(ADMIN_KEY, JSON.stringify({ scale: 115, motion: false, view: "kanban", density: "compact", clock: "12" }));
-    bad.data.set(ADMIN_KEY, JSON.stringify({ motion: "no", view: "admin", density: "tiny", clock: 12 }));
-
-    expect(loadAdmin(good)).toEqual({ scale: 115, motion: false, view: "kanban", density: "compact", clock: "12" });
-    expect(loadAdmin(bad)).toEqual(ADMIN_DEFAULTS);
+  it("reads each setting back from the server and ignores a value it does not know", () => {
+    expect(loadAdmin({ scale: 115, motion: false, view: "kanban", density: "compact", clock: "12" })).toEqual({ scale: 115, motion: false, view: "kanban", density: "compact", clock: "12" });
+    expect(loadAdmin({ motion: "no", view: "admin", density: "tiny", clock: 12 })).toEqual(ADMIN_DEFAULTS);
   });
 
-  it("persists each setter, tells the listeners once, and keeps the other settings", () => {
-    const storage = memory(), r = root(), seen = vi.fn();
-    const store = new AdminStore(storage, r);
+  it("sends each setter's field alone, tells the listeners once per change, and says Saved", async () => {
+    const r = root(), seen = vi.fn(), { fetcher, calls } = server();
+    const store = new AdminStore(r, fetcher);
     store.subscribe(seen);
 
     store.setMotion(false);
@@ -121,16 +108,17 @@ describe("the motion, opening view, card density and clock kept for this browser
     store.setDensity("compact");
     store.setClock("12");
     store.setClock("12");
+    await settle();
 
     expect(store.get()).toEqual({ scale: 100, motion: false, view: "kanban", density: "compact", clock: "12" });
-    expect(loadAdmin(storage)).toEqual(store.get());
-    expect(seen).toHaveBeenCalledTimes(4);
+    expect(calls.map((c) => c.body)).toEqual([{ display: { motion: false } }, { display: { view: "kanban" } }, { display: { density: "compact" } }, { display: { clock: "12" } }]);
+    expect(store.saved()).toEqual({ kind: "saved" });
   });
 
   it("stills the page with the `still` class while motion is off, at start and on each change", () => {
-    const storage = memory(), r = root();
-    saveAdmin(storage, { ...ADMIN_DEFAULTS, motion: false });
-    const store = new AdminStore(storage, r);
+    const r = root(), { fetcher } = server();
+    const store = new AdminStore(r, fetcher);
+    store.adopt({ display: { motion: false } });
     expect(r.classes.has("still")).toBe(true);
 
     store.setMotion(true);
@@ -139,19 +127,25 @@ describe("the motion, opening view, card density and clock kept for this browser
     expect(r.classes.has("still")).toBe(true);
   });
 
-  it("resets every setting, not only the font size", () => {
-    const storage = memory(), r = root();
-    const store = new AdminStore(storage, r);
-    store.setScale(130);
-    store.setMotion(false);
-    store.setView("kanban");
-    store.setDensity("compact");
-    store.setClock("12");
+  it("names the server's reason when it refuses, and draws what the server holds", async () => {
+    const r = root(), { fetcher } = server({ scale: 100 }, { ok: false, body: { error: "scale must be 85 to 150" } });
+    const store = new AdminStore(r, fetcher);
 
-    store.reset();
-    expect(store.get()).toEqual(ADMIN_DEFAULTS);
-    expect(loadAdmin(storage)).toEqual(ADMIN_DEFAULTS);
-    expect(r.classes.has("still")).toBe(false);
+    store.setScale(130);
+    expect(store.get().scale).toBe(130);
+    await settle();
+
+    expect(store.saved()).toEqual({ kind: "refused", reason: "scale must be 85 to 150" });
+    expect(store.get().scale).toBe(100);
     expect(r.vars.get("--fs")).toBe("1");
+  });
+
+  it("says the server did not answer when the request fails", async () => {
+    const store = new AdminStore(root(), (async () => { throw new Error("offline"); }) as never);
+
+    store.setClock("12");
+    await settle();
+
+    expect(store.saved()).toEqual({ kind: "refused", reason: "the server did not answer" });
   });
 });

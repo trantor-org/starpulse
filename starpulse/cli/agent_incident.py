@@ -123,7 +123,7 @@ def _create_and_dispatch(args: argparse.Namespace, environ: Mapping[str, str], s
         "source": source,
         **writer(args, environ),
     }
-    status, reply = agent_wire.post(base, path, body)
+    status, reply = agent_wire.put(base, path, body)
     task = record_call(base, path, status, reply, ok=(201,))["task"]
     _dispatch(args, environ, task)
     return task

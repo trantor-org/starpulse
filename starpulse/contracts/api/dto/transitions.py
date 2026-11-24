@@ -49,9 +49,3 @@ class Spend(_Api):
     now: float
     window_s: float
     spend: list[SpendPhase]
-
-
-class TaskSpend(Spend):
-    """`GET /api/task-spend/{id}`: one task's tokens by phase over the window, the rows `Spend` holds for it."""
-
-    task: str

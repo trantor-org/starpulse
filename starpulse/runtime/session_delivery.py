@@ -26,6 +26,7 @@ store holds a different head for that pull request: a push already answered it, 
 replay would otherwise wake the session to re-check a resolved conflict. A head the store does not know sends the line.
 """
 
+import hashlib
 import json
 import logging
 import re
@@ -62,7 +63,11 @@ _SKILLS = {".checks.failing": "starpulse:fix-checks"}
 
 
 def _value(value: object) -> str:
-    return _UNSAFE.sub(" ", str(value)).strip()[:_VALUE_MAX]
+    """A value cut to `_VALUE_MAX` ends with a digest of the whole, so two long values sharing a head read differently."""
+    text = _UNSAFE.sub(" ", str(value)).strip()
+    if len(text) <= _VALUE_MAX:
+        return text
+    return f"{text[:_VALUE_MAX]}~{hashlib.sha256(text.encode()).hexdigest()[:6]}"
 
 
 def _incident(event: Event) -> dict | None:

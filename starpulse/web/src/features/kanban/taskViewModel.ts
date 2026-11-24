@@ -136,13 +136,13 @@ export function taskActivity(task: KanbanTask, comments: TaskComment[]): { activ
   };
 }
 
-/** Post a comment through the edit endpoint. A comment writes no field, so the request names the title as it stands and changes nothing. */
+/** Put a comment through the task's write route. A comment writes no field, so the request names the title as it stands and changes nothing. */
 export async function postComment(task: string, base: TaskRecord, text: string, fetcher: typeof apiFetch = apiFetch): Promise<boolean> {
   try {
-    const response = await fetcher("/api/edit", {
-      method: "POST",
+    const response = await fetcher(`/api/tasks/${encodeURIComponent(task)}`, {
+      method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ task, base: { title: base.title }, changes: { title: base.title }, comment: text.trim(), actor: PAGE_ACTOR }),
+      body: JSON.stringify({ base: { title: base.title }, changes: { title: base.title }, comment: text.trim(), actor: PAGE_ACTOR }),
     });
     return response.ok;
   } catch {
@@ -170,10 +170,10 @@ export async function saveTask(
   const comment = checked.map((n) => `AC #${n}: ${evidence[n].trim()}`).join("\n");
   let response: Response;
   try {
-    response = await fetcher("/api/edit", {
-      method: "POST",
+    response = await fetcher(`/api/tasks/${encodeURIComponent(task)}`, {
+      method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ task, base: diff.base, changes, comment, actor: PAGE_ACTOR }),
+      body: JSON.stringify({ base: diff.base, changes, comment, actor: PAGE_ACTOR }),
     });
   } catch {
     return { ok: false, reason: "The task writer could not be reached.", skill: "", fields: diff.fields, record: draft };

@@ -87,8 +87,8 @@ describe("the task view's Activity and Comments sections", () => {
     await act(async () => { q<HTMLButtonElement>(host, "#comments .compose button")!.click(); });
 
     const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
-    expect(fetcher.mock.calls[0][0]).toBe("/api/edit");
-    expect(body).toMatchObject({ task: task.id, comment: "ship it", changes: { title: record.title }, base: { title: record.title } });
+    expect(fetcher.mock.calls[0][0]).toBe(`/api/tasks/${task.id}`);
+    expect(body).toMatchObject({ comment: "ship it", changes: { title: record.title }, base: { title: record.title } });
   });
 
   it("comment draws the task's comments under Comments, never under Activity, and checkpoint evidence never under Comments", () => {

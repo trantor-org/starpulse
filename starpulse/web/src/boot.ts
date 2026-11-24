@@ -2,6 +2,7 @@
 // asides, the crumb, the tip and the panel), so this starts the renderer against them from the entry chunk; the React page, a chunk
 // of its own, mounts after that frame and adopts what is held here.
 import { AdminStore } from "./features/admin/adminPrefs";
+import { readSettings } from "./features/admin/adminSettings";
 import { applyTheme } from "./features/admin/theme/apply";
 import { ThemeStore } from "./features/admin/theme/themeStore";
 import { linkedTask } from "./features/kanban/kanbanPrefs";
@@ -39,8 +40,13 @@ const frameOf = <T extends HTMLElement>(id: string) => document.getElementById(i
  *  A page that opens on another view than the Star Map mounts at once and has `preload` fetch that view's chunk, beside the snapshot. */
 export function boot(mount: () => void, preload?: (view: ViewName) => void): Booted {
   const canvas = frameOf<HTMLCanvasElement>("c"), tip = frameOf<HTMLDivElement>("tip"), panel = frameOf<HTMLDivElement>("panel");
-  // the saved theme goes on :root here, before the first paint
+  // the built-in theme goes on :root here, before the first paint; the server's choices follow as soon as it answers
   const admin = new AdminStore(), store = new HudStore(), theme = new ThemeStore(applyTheme);
+  void readSettings().then((held) => {
+    if (!held) return;
+    admin.adopt(held);
+    theme.adopt(held);
+  });
   // a task the address names has its record read already, by index.html's head; failing that it is read now, not when its modal mounts
   // behind the snapshot and the page's other fetches
   const records = new RecordCache(), linked = linkedTask(location.search);

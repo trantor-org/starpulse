@@ -19,6 +19,75 @@ type Task {
   """Seconds since the epoch the task last moved."""
   movedAt: Float!
   description: String!
+  """The verdict on each column the task may move to, judged by the board's guards now."""
+  moves: [Move!]!
+  """
+  The task's tokens by phase over the last week, none for a task that spent nothing in it; null, with an error, when
+  the telemetry cannot be read.
+  """
+  spend: [SpendPhase!]
+}
+
+"""One board rule a move breaks: what it needs and the skill that produces it."""
+type RuleBreak {
+  reason: String!
+  skill: String!
+}
+
+"""What a guard says to one actor about a move."""
+type ActorVerdict {
+  actor: String!
+  allowed: Boolean!
+  reason: String!
+  skill: String!
+  warnings: [RuleBreak!]!
+}
+
+"""The verdict on moving a task to one column: allowed, or guarded by a declared rule."""
+type Move {
+  """The column's state id."""
+  to: String!
+  allowed: Boolean!
+  reason: String!
+  skill: String!
+  """The actors the machine declares for the event behind the move; empty when any actor may make it."""
+  writers: [String!]!
+  """The verdict for an actor a guard treats apart from the rest; any other actor meets the move's own."""
+  actors: [ActorVerdict!]!
+  warnings: [RuleBreak!]!
+}
+
+
+"""One phase of one task: the tokens its steps burned, and the task's total against its cell's norm. Field names match the REST `SpendPhase`."""
+type SpendPhase {
+  task: String!
+  """`claim`, `implement`, `qa`, `deliver` or `review_fix`."""
+  phase: String!
+  kind: String
+  size: Int
+  steps: Int!
+  side_steps: Int!
+  input: Int!
+  output: Int!
+  cache_read: Int!
+  cache_write: Int!
+  """Uncached input + 1.25 x cache write + 0.1 x cache read + 5 x output."""
+  wte: Float!
+  peak_context: Int!
+  compactions: Int!
+  models: [String!]!
+  profile: String!
+  first_at: Float!
+  last_at: Float!
+  """`wte` summed over the task's phases."""
+  task_wte: Float!
+  norm_wte: Float
+  """`task_wte` is over three times `norm_wte`."""
+  above_norm: Boolean!
+  phase_norm_wte: Float
+  norm_profile: String
+  """`wte` is over three times `phase_norm_wte`."""
+  phase_above_norm: Boolean!
 }
 
 type Query {

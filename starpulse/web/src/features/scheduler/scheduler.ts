@@ -1,9 +1,9 @@
-// The Admin view's Scheduler card: the global switch, the harness it starts on, and what the admission loop sees, read from /api/scheduler.
+// The Admin view's Scheduler card: the global switch, the harness it starts on, and what the admission loop sees, read from /api/admin.
 // Off stops admission only: sessions already running keep running, and the card says how many.
 import { apiFetch } from "../../api/apiFetch";
 import type { SchedulerDimension, SchedulerStatus } from "../../api";
 
-export const ROUTE = "/api/scheduler";
+export const ROUTE = "/api/admin";
 export const HARNESSES_ROUTE = "/api/harnesses";
 
 /** One capacity dimension as the card draws it: what is in use against the limit admission holds it under. `detail` is the meter's tooltip. */

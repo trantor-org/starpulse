@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api/apiFetch";
-import type { SpendPhase, TaskSpend } from "../../api";
+import { taskQuery } from "../../api/taskQuery";
+import type { SpendPhase } from "../../api";
 
 /** How long the page keeps a task's spend answer: the report folds a week of model requests, so the drawer asks once a minute at most per task. */
 const TTL_MS = 60_000;
 /** A failed read is asked again after this, so a blip does not read as a minute of nothing. */
 const FAILED_TTL_MS = 5_000;
+
+/** Every field of a `SpendPhase` the rail draws or totals. */
+const SPEND_FIELDS =
+  "task phase kind size steps side_steps input output cache_read cache_write wte peak_context compactions models profile first_at last_at task_wte norm_wte above_norm phase_norm_wte norm_profile phase_above_norm";
 
 const cached = new Map<string, { at: number; ttl: number; answer: Promise<SpendPhase[] | null> }>();
 
@@ -15,10 +20,8 @@ export function fetchSpend(task: string, fetcher: typeof apiFetch = apiFetch, no
   if (kept && now - kept.at < kept.ttl) return kept.answer;
   const answer = (async (): Promise<SpendPhase[] | null> => {
     try {
-      const response = await fetcher(`/api/task-spend/${encodeURIComponent(task)}`);
-      if (!response.ok) return null;
-      const body: Partial<TaskSpend> | null = await response.json().catch(() => null);
-      return Array.isArray(body?.spend) ? body.spend : null;
+      const found = await taskQuery<{ spend: SpendPhase[] | null }>(task, `spend { ${SPEND_FIELDS} }`, fetcher);
+      return Array.isArray(found?.spend) ? found.spend : null;
     } catch {
       return null;
     }

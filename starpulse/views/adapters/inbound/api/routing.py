@@ -10,7 +10,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 
 from starpulse.views.adapters.inbound.api import (
-    analytics,
+    admin,
     board,
     docs,
     history,
@@ -20,7 +20,6 @@ from starpulse.views.adapters.inbound.api import (
     openapi,
     pulls,
     runs,
-    scheduler,
     snapshot,
     tasks,
     view_queries,
@@ -75,13 +74,12 @@ def api_routes(api: Api) -> list[ApiRoute]:
         *ledger.routes(api),
         *board.routes,
         *history.routes(api),
-        *analytics.routes,
         *tasks.routes(api),
         *machines.routes(api),
         *milestones.routes(api),
         *docs.routes(api),
         *runs.routes(api),
-        *scheduler.routes(api),
+        *admin.routes(api),
         *pulls.routes(api),
         *view_queries.routes,
         *openapi.routes,

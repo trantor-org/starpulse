@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [react()],
   build: { outDir: "../static", emptyOutDir: true },
   // `pnpm --filter @starpulse/web dev` reads a running starpulse.runtime.server's snapshot.
-  server: { proxy: { "/api": "http://127.0.0.1:8766" } },
+  server: { proxy: { "/api": "http://127.0.0.1:8766", "/graphql": "http://127.0.0.1:8766" } },
   // The stylesheet is read for real so a test can hold its scrolling rules (`src/shared/scroll.test.ts`).
   // A cold CI runner transforms every module on the first test of a file, which can pass the 5 s default, and a busy host stretches a test several times over.
   // Test files share four worker threads, each file in its own VM context: 46 CPU-seconds a run against 99 for a process per file on

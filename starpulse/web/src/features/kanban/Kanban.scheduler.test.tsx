@@ -57,7 +57,7 @@ describe("the Kanban toolbar, with scheduler moved to Admin", () => {
     expect(host.querySelector(".trackerw")).toBeNull();
   });
 
-  it("reads no /api/scheduler", () => {
-    expect(fetched).not.toContain("/api/scheduler");
+  it("reads no /api/admin", () => {
+    expect(fetched).not.toContain("/api/admin");
   });
 });

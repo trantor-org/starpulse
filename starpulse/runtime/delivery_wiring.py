@@ -78,7 +78,6 @@ def start_delivery(
     The actor records the lane of each write it makes on `feed` (`BoardFeed.record_written`); `after_project` runs
     after each set of pull request rows reaches the feed. Raises `ValueError` naming a table the board cannot serve.
     """
-    from starpulse.flow_metrics.adapters.outbound.history import entered  # noqa: PLC0415 - the database stack loads when a store does
     from starpulse.pulls.application.commands.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
 
     # a config can turn the store off, and a task then carries no PR state
@@ -101,7 +100,6 @@ def start_delivery(
             config.board_repo,
             latest=lambda subject: last_event_is(log.engine, subject),
             accounts=f"starpulse.{config.bridge.board}.alert.{config.account_room_alert}" if config.account_room_alert else None,
-            started=lambda task: entered(log.engine, task, feed.roles.working),
             holds=board.holds,
             read=board.read,
             unfinished=board.unfinished,

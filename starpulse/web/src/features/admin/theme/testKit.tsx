@@ -1,14 +1,19 @@
-// Shared jsdom helpers for the Theme card's tests: a mounted tree, typing into a controlled field, and an in-memory localStorage.
+// Shared jsdom helpers for the Theme card's tests: a mounted tree, typing into a controlled field, and a fake server.
+import type { ThemePrefs } from "./themeStore";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { PrefStorage } from "../../../shared/nav";
-import { THEME_KEY } from "./themeStore";
 
-export const memory = (): PrefStorage & { data: Map<string, string> } => {
-  const data = new Map<string, string>();
-  return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
+/** A fake server for the Theme card's tests: `puts` holds each body written to /api/admin, in order. */
+export const server = () => {
+  const puts: { theme?: unknown }[] = [];
+  const fetcher = (async (_url: string, init?: { method?: string; body?: string }) => {
+    if (init?.method === "PUT") puts.push(JSON.parse(init.body!));
+    return new Response("{}");
+  }) as never;
+  return { fetcher, puts };
 };
-export const saved = (s: ReturnType<typeof memory>) => JSON.parse(s.data.get(THEME_KEY) ?? "null");
+/** The theme the last write kept. */
+export const saved = (s: ReturnType<typeof server>) => (s.puts.at(-1)?.theme ?? null) as ThemePrefs;
 
 export function mount(ui: ReactNode) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

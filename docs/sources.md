@@ -56,7 +56,7 @@ What the server keeps of a session is three folds, advanced as each batch of its
 - `cost`: one row per task and skill of those steps: the steps, a subagent's, the wasted ones, the seconds and the
   peak context.
 - `spend`: the captured, non-auxiliary steps that belong to a task, with whether each edits, each task's first claim
-  time and its compactions; `/api/task-spend/{id}` combines them.
+  time and its compactions; the task detail's `spend` field combines them.
 
 A turn is the signals that share a Claude Code `prompt.id`. A prompt is labelled `injected` when its opening
 matches an `injected_openings` prefix and `human` otherwise; with an `[analytics.labeller]` configured, a `human`
@@ -85,20 +85,19 @@ it was and whether to count it, and a third holds a command:
 
 ## Kept answers
 
-`/api/task-spend/{id}` filters one week answer, the server's own combine over the stored `spend` rows, kept in the
+The task detail's `spend` field filters one week answer, the server's own combine over the stored `spend` rows, kept in the
 `starpulse_answers` table under the key `spend`. A kept body older than five minutes is returned at once and
 recomputed in the background, so an answer is at most one recompute and five minutes behind the stored rows, and a
 restarted `serve` answers from the saved rows before it has read a signal. Only the first read of a key the instance
-has never answered waits, and readers of it share one. A query that only refuses (an `hours` that is no positive
-number, or a window longer than the folded history) runs at once. A refusal (400, 501, 503) is returned and never
+has never answered waits, and readers of it share one. A query that only refuses (a window longer than the folded history) runs at once. A refusal (400, 501, 503) is returned and never
 kept; a failed recompute keeps the older body and is tried again after five minutes.
 
 ## Report each task's spend by phase
 
-`GET /api/task-spend/{id}[?hours=N]` (168 hours by default) is `{task, now, window_s, spend}`: one row per phase of
+The `spend` field of a task in `POST /graphql` (168 hours) is one row per phase of
 that task over its model requests, a subagent's counted to its task, an uncaptured session left out, by the phase's first
-step; `spend` is empty for a task with no spend in the window. A window that is no positive number, or longer than the
-folded history, is 400 with `history_s`. Its columns:
+step; it is empty for a task with no spend in the window, and null with an error when the window is longer than the
+folded history or the instance receives no telemetry. Its columns:
 
 - `task`, `kind`, `size`: the task and its board labels `kind-<kind>` and `size-<n>`, null when it has none.
 - `phase`: `claim`, `implement`, `qa`, `deliver` or `review_fix`. The skills `qa`, `deliver`, `review-fix` and

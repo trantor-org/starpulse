@@ -76,12 +76,12 @@ def _answers(op: Op) -> dict[str, Any]:
 
 #: The tag of each route by the first segment of its path after `/api`, and what the tag groups.
 TAGS = {
-    "tasks": "One task, its moves and spend, and every write that moves or edits tasks",
+    "tasks": "One task and every write that moves or edits tasks",
     "board": "The board snapshot, its flows, machines, harnesses and history",
     "streams": "Server-sent streams of the board, its columns and ledgers",
     "milestones": "Milestones",
     "docs": "Docs",
-    "jobs": "Workflows, their runs and the scheduler",
+    "jobs": "Workflows, their runs, and Admin's settings (the scheduler, display and theme)",
     "ingest": "Events and webhooks that feed the board",
     "pulls": "Pull requests",
     "ops": "Health, metrics and the diagnostics of the server",
@@ -90,13 +90,13 @@ TAGS = {
 }
 _SEGMENT_TAG = {
     **dict.fromkeys(
-        "task task-spend task-diff task-cost-to-go tasks task-records moves move start edit archive verdict rating "
+        "task task-diff task-cost-to-go tasks task-records move start edit archive verdict rating "
         "miss restore take-over retire retired dispatch park review complete reopen done search".split(),
         "tasks",
     ),
     **dict.fromkeys("snapshot flows machines harnesses history history-window".split(), "board"),
     **dict.fromkeys("events held lanes ledger".split(), "streams"),
-    **dict.fromkeys("run runs scheduler".split(), "jobs"),
+    **dict.fromkeys("run runs admin".split(), "jobs"),
     "intake": "ingest",
     **dict.fromkeys("doctor health".split(), "ops"),
     "milestones": "milestones",

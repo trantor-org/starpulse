@@ -161,7 +161,6 @@ _ASKS = (
     "ask_requested",
     "pr_unfinished_dead",
     "pr_merged_unfinished",
-    "started_work",
 )
 
 #: The facts a comment alone raises, which the view does not show.
@@ -299,7 +298,6 @@ class TaskActor:
         log: EventLog | None = None,
         main_green: Callable[[], str | None] | None = None,
         owner_source: str = "",
-        started: Callable[[str], bool] = lambda _task: False,
         mergeable: Callable[[str, int], str | None] = lambda _repo, _number: None,
         checks: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
@@ -319,8 +317,6 @@ class TaskActor:
         self._lock_tries: dict[str, int] = {}
         #: The session whose dispatch to a task is mid-write, so its retry runs only while that session still holds it.
         self._dispatching: dict[str, str] = {}
-        #: Whether a task ever entered the working lane, given its id, which the history of its lane changes answers.
-        self._started = started
         self._owner_source = owner_source
         self._read = read
         self._idle = idle
@@ -377,9 +373,7 @@ class TaskActor:
         #: The lanes that wait on their tasks' dependencies, whose derivation flags a wait nothing ends.
         self._sweep_lanes = {lane for lane, facts in waits.items() if "deps_done" in facts}
         #: The lanes that wait on a task's Start Criteria.
-        self._gated_lanes = {
-            lane for lane, facts in waits.items() if {"criteria_met", "criteria_met_started"} & facts.keys()
-        }
+        self._gated_lanes = {lane for lane, facts in waits.items() if "criteria_met" in facts}
         #: The event subjects each gated task waits on, and for each subject the tasks waiting on it.
         self._gates: dict[str, tuple[str, ...]] = {}
         self._until: dict[str, set[str]] = {}
@@ -1176,7 +1170,6 @@ class TaskActor:
         return (
             record["state"] == "OPEN"
             and not record["isDraft"]
-            and not record["requiredChecks"]
             and (record["rollup"] is None or not record["headRefOid"])
         )
 
@@ -1478,9 +1471,8 @@ class TaskActor:
     def lane_entered(self, name: str, lane: str) -> None:
         """A task entered `lane`: its holder's session ends when the lane is one of `end_lanes`, which the reaper does once
         the session is idle; a session busy now is ended by `holder_settled` when it settles. A task entering Needs attention
-        by any writer with no live holder gets one started (`_revive_unheld`), so its ask shows as needs you. Started work
-        entering Ready keeps its session: `started_work` moves it on to Needs attention, where the session is its ask."""
-        if lane in self._end_lanes and not (lane == self._feed.roles.ready and self._started(name)):
+        by any writer with no live holder gets one started (`_revive_unheld`), so its ask shows as needs you."""
+        if lane in self._end_lanes:
             self._end_session(name)
         if lane == self._feed.roles.attention:
             self._revive_unheld(name)

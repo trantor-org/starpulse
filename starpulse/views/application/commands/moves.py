@@ -65,7 +65,7 @@ def move_task(
     The operator's move of one unheld task into the working state also starts a session through `start`, on the
     task's own profile: the answer names its `url`, or the `startError` that kept it from starting. A batch move starts none.
 
-    A task `started` (it ever entered the working state) is refused a move into Ready, whoever asks: Ready holds only new work.
+    A task `started` (a session was dispatched to it) is refused a move into Ready, whoever asks: Ready holds only new work.
     """
     who = who_of(request)
     if request.task is not None:
@@ -122,7 +122,7 @@ def column_status(column: str) -> str:
 def started_refusal(
     feed: BoardFeed, task: str, column: str, started: Callable[[str], bool]
 ) -> tuple[int, dict[str, str]] | None:
-    """The 409 for a move of a task that ever entered the working state into Ready, which holds only new work, else None."""
+    """The 409 for a move into Ready, which holds only new work, of a task a session was dispatched to, else None."""
     if column == feed.roles.ready and started(task):
         return 409, {
             "error": f"{task} was started, and Ready holds only new work: move it to In Progress or Needs attention"

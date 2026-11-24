@@ -74,7 +74,7 @@ class QuietHoursSetting:
             return None
 
     def state(self) -> dict[str, Any] | None:
-        """The window as `GET /api/scheduler` serves it, or None."""
+        """The window as `GET /api/admin` serves it, or None."""
         quiet = self.get()
         return None if quiet is None else asdict(quiet)
 

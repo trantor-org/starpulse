@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { ImportDialog } from "./ImportDialog";
 import { build, fromBase16 } from "./scheme";
-import { THEME_KEY, ThemeStore } from "./themeStore";
-import { button, click, get, key, memory, mount, saved, type } from "./testKit";
+import { ThemeStore } from "./themeStore";
+import { button, click, get, key, server, mount, saved, type } from "./testKit";
 
 const scheme = (b0 = "1d1f21", b0e = "b294bb") => `scheme: "Tomorrow Night"
 author: "Chris Kempson"
@@ -34,15 +34,15 @@ let view: ReturnType<typeof mount>;
 afterEach(() => view.unmount());
 
 function open() {
-  const storage = memory(), apply = vi.fn(), close = vi.fn();
-  const theme = new ThemeStore(apply, storage);
+  const kept = server(), apply = vi.fn(), close = vi.fn();
+  const theme = new ThemeStore(apply, kept.fetcher);
   view = mount(<ImportDialog theme={theme} close={close} />);
-  return { storage, apply, close, theme, paste: (text: string) => type(get("textarea[aria-label='Scheme YAML']"), text) };
+  return { kept, apply, close, theme, paste: (text: string) => type(get("textarea[aria-label='Scheme YAML']"), text) };
 }
 
 describe("ImportDialog", () => {
   it("imports Tomorrow Night with its background, applies it and closes", () => {
-    const { paste, theme, storage, apply, close } = open();
+    const { paste, theme, kept, apply, close } = open();
     paste(scheme());
     expect(get("[role=dialog]").textContent).toContain("DEMO-12");
     click(button("Import and apply"));
@@ -51,14 +51,14 @@ describe("ImportDialog", () => {
     expect(s.pack).toBe(s.packs[0].id);
     expect(s.bgs).toHaveLength(1);
     expect(s.bg).toBe(s.bgs[0].id);
-    expect(saved(storage).packs[0].pack.src.label).toBe("Imported · Chris Kempson");
+    expect(saved(kept).packs[0].pack.src?.label).toBe("Imported · Chris Kempson");
     const want = build(s.packs[0].pack, fromBase16(scheme()).bg).t;
     expect(apply.mock.lastCall![0]).toEqual(want);
     expect(close).toHaveBeenCalled();
   });
 
   it("refuses a scheme whose closest pair is under .035 apart, names the pair and saves nothing", () => {
-    const { paste, theme, storage, close } = open();
+    const { paste, theme, kept, close } = open();
     paste(REFUSED);
     const alert = get("[role=alert]");
     expect(alert.textContent).toContain("Not imported");
@@ -68,7 +68,7 @@ describe("ImportDialog", () => {
     expect(go.disabled).toBe(true);
     click(go);
     expect(theme.get().packs).toEqual([]);
-    expect(storage.data.has(THEME_KEY)).toBe(false);
+    expect(kept.puts).toEqual([]);
     expect(close).not.toHaveBeenCalled();
   });
 
@@ -84,13 +84,13 @@ describe("ImportDialog", () => {
   });
 
   it("says Not read for invalid YAML and saves nothing", () => {
-    const { paste, theme, storage } = open();
+    const { paste, theme, kept } = open();
     paste("base00: [unclosed\n  : : {");
     expect(get("[role=alert]").textContent).toContain("Not read");
     expect(get("[role=alert]").textContent).toMatch(/Not a base16 or base24 scheme/);
     expect(button("Import and apply").disabled).toBe(true);
     expect(theme.get().packs).toEqual([]);
-    expect(storage.data.has(THEME_KEY)).toBe(false);
+    expect(kept.puts).toEqual([]);
   });
 
   it("keeps Import off until there is text", () => {

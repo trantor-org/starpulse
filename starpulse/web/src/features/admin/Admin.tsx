@@ -1,8 +1,9 @@
-// The Admin view: this browser's settings in a main-area view like the Kanban. Font size, Motion, Opens on, Kanban cards and Clock; the
+// The Admin view: the settings every device shares, in a main-area view like the Kanban. Font size, Motion, Opens on, Kanban cards and Clock; the
 // Preview card draws a small Star Map and a Kanban card at the chosen scale, density and motion, with the Theme card under it, so the choice
 // is judged before leaving the view.
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { SCALE, type AdminStore } from "./adminPrefs";
+import { Outcome } from "./Outcome";
 import { clockHm, type ClockMode } from "../../shared/clock";
 import { CHIPS, type HistoryWindowStore } from "./historyWindow";
 import { Preview } from "./theme/Preview";
@@ -61,13 +62,14 @@ function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" |
  */
 export function Admin({ store, window: historyWindow, scheduler, tracker, theme }: { store: AdminStore; window: HistoryWindowStore; scheduler: (clock: ClockMode) => ReactNode; tracker?: ReactNode; theme?: ReactNode }) {
   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
+  const saved = useSyncExternalStore(store.subscribe, store.saved);
   return (
     <div id="admin">
-      <header><span className="title">Admin</span><span className="count">settings for this browser and for the StarPulse server</span></header>
+      <header><span className="title">Admin</span><span className="count">settings shared by every device, and the StarPulse server</span></header>
       <div className="grid">
         <div className="col">
           <section className="card">
-            <h2>This browser <span className="c">kept on this device only</span></h2>
+            <h2>Display <span className="c">shared by every device</span></h2>
             <div className="row">
               <div><div className="lb">Font size</div><div className="hint">Panels, Kanban cards and Star Map labels</div></div>
               <div>
@@ -97,7 +99,8 @@ export function Admin({ store, window: historyWindow, scheduler, tracker, theme 
               <div><div className="lb">Clock</div><div className="hint">Navigator time, Recent feed, panels and tooltips, now {sample(clock)} MST</div></div>
               <Seg label="Clock" value={clock} options={[["24", "24-hour"], ["12", "12-hour"]]} onPick={(v) => store.setClock(v)} />
             </div>
-            <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>
+            <Outcome saved={saved} />
+            <div className="foot">{saved.kind === "idle" && "Changes save for every device as you make them."}<button type="button" className="btn" onClick={() => store.reset()}>Reset to defaults</button></div>
           </section>
           <ServerCard store={historyWindow} clock={clock} />
           {scheduler(clock)}

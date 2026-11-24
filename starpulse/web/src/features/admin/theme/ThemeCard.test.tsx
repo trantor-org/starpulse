@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThemeCard } from "./ThemeCard";
 import { BUILTIN, SLATE, type Pack } from "./scheme";
 import { ThemeStore } from "./themeStore";
-import { button, click, get, key, memory, mount, saved, type } from "./testKit";
+import { button, click, get, key, server, mount, saved, type } from "./testKit";
 
 const mine: Pack = { ...BUILTIN.nord, name: "Mine", src: { label: "Imported" } };
 
@@ -11,12 +11,12 @@ let view: ReturnType<typeof mount>;
 afterEach(() => view.unmount());
 
 function open() {
-  const storage = memory(), apply = vi.fn();
-  const theme = new ThemeStore(apply, storage);
+  const kept = server(), apply = vi.fn();
+  const theme = new ThemeStore(apply, kept.fetcher);
   theme.addPack(mine, { ...SLATE, surface: "#2a1f3d" });
   view = mount(<ThemeCard theme={theme} />);
   const own = (name: string) => [...document.querySelectorAll<HTMLElement>(".own")].find((o) => o.textContent?.includes(name))!;
-  return { storage, apply, theme, own };
+  return { kept, apply, theme, own };
 }
 
 describe("ThemeCard uploads", () => {
@@ -28,7 +28,7 @@ describe("ThemeCard uploads", () => {
   });
 
   it("draws a vibe line only for a pack that has one", () => {
-    const theme = new ThemeStore(vi.fn(), memory());
+    const theme = new ThemeStore(vi.fn(), server().fetcher);
     theme.addPack({ ...mine, vibe: undefined });
     view = mount(<ThemeCard theme={theme} />);
     expect(document.querySelectorAll(".own")).toHaveLength(1);
@@ -47,42 +47,42 @@ describe("ThemeCard uploads", () => {
   });
 
   it("renames a tile in sp.theme and on the page", () => {
-    const { own, storage } = open();
+    const { own, kept } = open();
     click(button("Rename", own("Mine")));
     const field = get<HTMLInputElement>("input.ren");
     type(field, "Dusk");
     key(field, "Enter");
-    expect(saved(storage).packs[0].pack.name).toBe("Dusk");
-    expect(saved(storage).bgs[0].name).toBe("Mine");
+    expect(saved(kept).packs[0].pack.name).toBe("Dusk");
+    expect(saved(kept).bgs[0].name).toBe("Mine");
     expect(document.querySelector("input.ren")).toBeNull();
     expect(own("Dusk")).toBeTruthy();
   });
 
   it("renames a background", () => {
-    const { storage } = open();
+    const { kept } = open();
     click(button("Rename", get(".bgs .own")));
     const field = get<HTMLInputElement>("input.ren");
     type(field, "Plum");
     key(field, "Enter");
-    expect(saved(storage).bgs[0].name).toBe("Plum");
+    expect(saved(kept).bgs[0].name).toBe("Plum");
   });
 
   it("keeps the name on Escape", () => {
-    const { own, storage } = open();
+    const { own, kept } = open();
     click(button("Rename", own("Mine")));
     const field = get<HTMLInputElement>("input.ren");
     type(field, "Dusk");
     key(field, "Escape");
-    expect(saved(storage).packs[0].pack.name).toBe("Mine");
+    expect(saved(kept).packs[0].pack.name).toBe("Mine");
   });
 
   it("keeps the name when the new one is blank", () => {
-    const { own, storage } = open();
+    const { own, kept } = open();
     click(button("Rename", own("Mine")));
     const field = get<HTMLInputElement>("input.ren");
     type(field, "   ");
     key(field, "Enter");
-    expect(saved(storage).packs[0].pack.name).toBe("Mine");
+    expect(saved(kept).packs[0].pack.name).toBe("Mine");
   });
 
   it("asks before deleting, and Keep leaves it", () => {
@@ -96,20 +96,20 @@ describe("ThemeCard uploads", () => {
   });
 
   it("falls back to StarPulse when the active scheme is deleted", () => {
-    const { own, theme, storage } = open();
+    const { own, theme, kept } = open();
     expect(theme.get().pack).not.toBe("starpulse");
     click(button("Delete", own("Mine")));
     click(button("Delete", get("[role=group]")));
     expect(theme.get().pack).toBe("starpulse");
-    expect(saved(storage)).toMatchObject({ pack: "starpulse", packs: [] });
+    expect(saved(kept)).toMatchObject({ pack: "starpulse", packs: [] });
     expect(document.querySelectorAll(".own")).toHaveLength(1);
   });
 
   it("falls back to Slate when the active background is deleted", () => {
-    const { theme, storage } = open();
+    const { theme, kept } = open();
     click(button("Delete", get(".bgs .own")));
     click(button("Delete", get("[role=group]")));
     expect(theme.get().bg).toBe("slate");
-    expect(saved(storage)).toMatchObject({ bg: "slate", bgs: [] });
+    expect(saved(kept)).toMatchObject({ bg: "slate", bgs: [] });
   });
 });

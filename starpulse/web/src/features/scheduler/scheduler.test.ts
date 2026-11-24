@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { SchedulerStore, level, type Dimension } from "./scheduler";
 
-/** What `GET /api/scheduler` answers today: the switch, harness, when the sampler last read, and each dimension's use against its limit. */
+/** What `GET /api/admin` answers today: the switch, harness, when the sampler last read, and each dimension's use against its limit. */
 const STATUS = {
   enabled: true,
   harness: "claude",
@@ -108,7 +108,7 @@ describe("the Autopilot card's store", () => {
 
     await store.setHarness("other");
 
-    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ harness: "other" }) });
+    expect(fetcher).toHaveBeenLastCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ harness: "other" }) });
     expect(store.get().current?.harness).toBe("other");
     expect(store.get().phase).toEqual({ kind: "idle" });
   });
@@ -184,7 +184,7 @@ describe("the Autopilot card's store", () => {
 
     await store.setOn(false);
 
-    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ enabled: false }) });
+    expect(fetcher).toHaveBeenLastCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ enabled: false }) });
     expect(store.get().current?.on).toBe(false);
     expect(store.get().phase).toEqual({ kind: "idle" });
   });
@@ -246,11 +246,11 @@ describe("the Autopilot card's store", () => {
     await store.load();
 
     await store.setLimit(name, 62.5);
-    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ [field]: 62.5 }) });
+    expect(fetcher).toHaveBeenLastCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ [field]: 62.5 }) });
     expect(store.get().current!.capacityLimits![name]).toMatchObject({ limit: 62.5, source: "admin" });
 
     await store.setLimit(name, null);
-    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ [field]: null }) });
+    expect(fetcher).toHaveBeenLastCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ [field]: null }) });
     expect(store.get().current!.capacityLimits![name].source).toBe("starpulse.toml");
   });
 
@@ -287,11 +287,11 @@ describe("the Autopilot card's store", () => {
     await store.load();
 
     await store.setSessionCap(7);
-    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ sessionCap: 7 }) });
+    expect(fetcher).toHaveBeenLastCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ sessionCap: 7 }) });
     expect(store.get().current!.sessionCap).toEqual({ harness: "claude", limit: 7, source: "admin", configLimit: 4 });
 
     await store.setSessionCap(null);
-    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ sessionCap: null }) });
+    expect(fetcher).toHaveBeenLastCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ sessionCap: null }) });
     expect(store.get().current!.sessionCap!.source).toBe("starpulse.toml");
   });
 

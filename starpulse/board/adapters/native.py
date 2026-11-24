@@ -53,6 +53,7 @@ from starpulse.board.adapters.native_scan import (
     _profile as _profile_of,
 )
 from starpulse.board.adapters.task_history import KIND, TaskHistory, appended, revises_plan
+from starpulse.board.adapters.task_view import TaskView
 from starpulse.board.model import criteria, entry, rules, write_steps
 from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.guard import Guard, Validate
@@ -385,7 +386,7 @@ def _land(
             if before is not None and path.read_text() != before:
                 return _STALE
             try:
-                _commit(path, text, actor, created=before is None)
+                _commit(path, text, actor, before)
             except StaleVersion:
                 return _STALE
             os.replace(scratch, path)
@@ -401,10 +402,11 @@ def _identity(path: Path, text: str | None = None) -> tuple[str, dict]:
     return str(record["id"] or path.stem), record
 
 
-def _commit(path: Path, text: str, actor: str, *, created: bool = False) -> None:
-    """Append to the History of the task a file `text` is about to render the Events that take it there."""
+def _commit(path: Path, text: str, actor: str, before: str | None) -> None:
+    """Append to the History of the task a file `text` is about to replace `before` with the Events that write is: what it
+    changed in the file, so a hand edit the file held already is never imported."""
     task, record = _identity(path, text)
-    appended(task, record, actor, created=created)
+    appended(task, record, actor, created=before is None, before=None if before is None else _record_of(before))
 
 
 def _update(
@@ -585,6 +587,7 @@ def _record_of(text: str) -> dict[str, Any]:
         "assignee": assignee_of(frontmatter),
         "session": assignee_of(frontmatter) or _session(notes, comments),
         "createdBy": str(frontmatter.get("created_by") or ""),
+        "aliases": _aliases(frontmatter),
         "acceptanceCriteria": _items(_CRITERIA, body),
         "definitionOfDone": _items(_DONE, body),
     }
@@ -764,6 +767,83 @@ def _apply(task: str, frontmatter: dict, body: str, changes: Mapping[str, Any], 
         if not _set_front(frontmatter, field, value, spelled):
             body = _set_body(task, body, field, value)
     return body
+
+
+def _said(meta: Mapping[str, Any], key: str) -> str:
+    return str(meta.get(key) or "")
+
+
+def _record_from(row: Mapping[str, Any], spelled: Mapping[str, str]) -> dict[str, Any]:
+    """The record `_record_of` draws from a task's file, drawn from its History's replayed `row`: a status is spelled as the
+    board spells it, and a comment as the Backlog this workspace runs stamps it."""
+    meta = row["meta"]
+    comments = [
+        {
+            "created": item.get("created") or (f"{datetime.fromtimestamp(item['at']):%Y-%m-%d %H:%M}" if item["at"] else ""),
+            "text": item["text"],
+            **({"author": item["actor"]} if item.get("actor") else {}),
+        }
+        for item in row["comments"]
+    ]
+    items = {kind: [{key: item[key] for key in ("n", "text", "checked")} for item in row["criteria"] if item["kind"] == kind] for kind in ("ac", "dod")}
+    description = row["description"]
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "type": row["type"],
+        "status": spelled.get(lane_id(row["state"]), row["state"]),
+        "profile": _said(meta, "profile"),
+        "priority": row["priority"],
+        "impact": _said(meta, "impact"),
+        "urgency": _said(meta, "urgency"),
+        "tier": _said(meta, "tier"),
+        "labels": list(row["labels"]),
+        "milestone": row["milestone"],
+        "source": _said(meta, "source"),
+        "follows": _said(meta, "follows"),
+        "dependencies": list(row["dependencies"]),
+        "dependencyNeeds": list(meta.get("dependencyNeeds") or []),
+        "actorMemory": dict(meta.get("actorMemory") or {}),
+        "references": list(row["references"]),
+        "documentation": list(row["documentation"]),
+        "modifiedFiles": list(row["modified_files"]),
+        "description": description,
+        "start_criteria": criteria.authored(description),
+        "plan": row["plan"],
+        "notes": row["notes"],
+        "finalSummary": row["final_summary"],
+        "needsAttention": _said(meta, "needsAttention"),
+        "comments": comments,
+        "assignee": row["assignee"],
+        "session": row["assignee"] or _session(row["notes"], comments),
+        "createdBy": _said(meta, "createdBy"),
+        "aliases": list(meta.get("aliases") or []),
+        "acceptanceCriteria": items["ac"],
+        "definitionOfDone": items["dod"],
+    }
+
+
+def _file_of(record: Mapping[str, Any]) -> tuple[dict, str]:
+    """The front matter and body a task file would hold for `record`, as the board rules read a file."""
+    frontmatter: dict[str, Any] = {"id": record["id"]}
+    spelled = {lane_id(record["status"]): record["status"]}
+    for field in (*_SCALARS, "profile", "status", "actorMemory", *_LISTS):
+        if record.get(field):
+            _set_front(frontmatter, field, record[field], spelled)
+    frontmatter |= {
+        key: record[field] for key, field in (("created_by", "createdBy"), ("aliases", "aliases")) if record.get(field)
+    }
+    body = ""
+    for field in _TEXT_SECTIONS:
+        if record.get(field):
+            body = _set_text(body, field, record[field])
+    for field, (marker, heading, _) in _CHECKLISTS.items():
+        if record.get(field):
+            lines = "".join(f"- [{'x' if item['checked'] else ' '}] #{item['n']} {item['text']}\n" for item in record[field])
+            body = _marked(body, marker, heading, "\n" + lines)
+    for item in record["comments"]:
+        body = _comment(body, item["text"], item.get("author") or OPERATOR)
+    return frontmatter, body
 
 
 _DOC_ID = re.compile(r"doc-\d+")
@@ -1780,7 +1860,7 @@ def _probe(command: object, base: Path) -> Callable[[str], bool]:
 def board(settings: Mapping[str, Any], base: Path) -> Board:
     """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, as the project named for `base`'s directory, kept current by a directory watch.
 
-    Moves, profile changes, creates, edits and archives write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
+    Moves, profile changes, creates, edits and archives write the task files and append to the task's History, and once a log is attached `read` returns a task's record from that History, never from its file. Any lane reaches any other unless `machine` names a
     machine file, whose transitions and `writers` then decide which moves are offered, and to whom.
     """
     if unknown := sorted(settings.keys() - _SETTINGS):
@@ -1808,15 +1888,17 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         migrations = document.get("migrations", {})
         labelled = {name: spec["label"] for name, spec in document.get("states", {}).items() if spec.get("label")}
     retired = _Retired()
+    view = TaskView()
+    files_graph = _graph(root)
     guard = Guard(
         rules.load(guards_of(rows)),
         _hook(settings.get("validate")),
-        _state_of(root, retired),
+        _state_from(view, _state_of(root, retired)),
         pull_of=_pull_of(retired),
         types=_types(settings),
         effects=entry.load(settings.get("entry"), profile_matrix(rows)),
         warn_actors=_warn_actors(settings),
-        graph=_graph(root),
+        graph=lambda: view.graph() if view.attached else files_graph(),
         matrix=profile_matrix(rows),
     )
 
@@ -1829,13 +1911,16 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
     def surfaces(config: BacklogConfig, roles: StateRoles) -> dict[str, Any]:
         ready = next((status for status in config.statuses if lane_id(status) == roles.ready), "")
+        spelled = {lane_id(status): status for status in config.statuses}
         gate = replace(guard, waiting=roles.waiting, ready=ready, holders=_holders(root, roles.done))
         return {
             "writer": _writer(root, config.statuses, roles, gate),
             "assign": assign,
             "create": _creator(root, config, retired, gate, file_name, link),
-            "read": _reader(root, roles.done),
-            "read_archived": _archived_reader(root, retired, roles.done),
+            "read": _served(view, spelled, roles.done, _reader(root, roles.done), archived=False),
+            "read_archived": _served(
+                view, spelled, roles.done, _archived_reader(root, retired, roles.done), archived=True
+            ),
             "holds": _holds(settings.get("holds"), base, root, settings.get("holds_labels")),
             "unfinished": _holds(settings.get("unfinished"), base),
             "unpublished": _reason(_holds(settings.get("unpublished"), base)),
@@ -1891,6 +1976,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             _uncompleted(root, settings.get("complete_keep_labels"), lambda task: history.settle(task, False))
             for done_task in _done_in_tasks(root, made.roles.done):
                 complete(done_task)  # a Done file left in `tasks/` before a move completed it on landing
+        view.attach(log.engine)
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)
@@ -1930,17 +2016,23 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "complete": complete,
         "retire": history.recorded(made.retire),
         "create": history.recorded(made.create),
-        "files": lambda: [(task, _aliases(frontmatter)) for task, frontmatter in _open_tasks(root, made.roles.done)],
-        "done_files": lambda: [
-            (task, _aliases(frontmatter)) for task, frontmatter in _done_tasks(root, made.roles.done)
-        ],
+        "files": lambda: (
+            view.listed()
+            if view.attached
+            else [(task, _aliases(frontmatter)) for task, frontmatter in _open_tasks(root, made.roles.done)]
+        ),
+        "done_files": lambda: (
+            []
+            if view.attached
+            else [(task, _aliases(frontmatter)) for task, frontmatter in _done_tasks(root, made.roles.done)]
+        ),
     }
     final = Board(
         **{
             **vars(made),
             "start": start,
             "attach": attach,
-            "standing": _standing(root, guard),
+            "standing": _standing(root, guard, view),
             "readable": guard.readable,
             **recorded,
         }
@@ -1952,12 +2044,14 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 _STANDING_KEPT = 512
 
 
-def _standing(root: Path, guard: Guard) -> Callable[[str, str], dict[str, Any] | None]:
-    """The board rules' verdict on moving the task `task` to `lane` as its file stands now, or None for a task with no
-    file or no refusing rule.
+def _standing(root: Path, guard: Guard, view: TaskView) -> Callable[[str, str], dict[str, Any] | None]:
+    """The board rules' verdict on moving the task `task` to `lane` as its History stands now, or as its file stands before
+    a log is attached, or None for a task with no History or file or no refusing rule.
 
-    A task's file is parsed once and each lane judged once while the file stands, the verdicts shared by every reader
-    thread: judging the rules costs tens of milliseconds, the file's read and parse under one."""
+    A task is read once and each lane judged once while it stands, the verdicts shared by every reader thread: judging
+    the rules costs tens of milliseconds, the read and parse under one."""
+
+    versions: dict[str, tuple[int, dict, str, dict[str, dict[str, Any] | None]]] = {}
 
     judged: dict[str, tuple[Path, tuple[int, int], dict, str, dict[str, dict[str, Any] | None]]] = {}
     judging = threading.Lock()
@@ -1969,7 +2063,23 @@ def _standing(root: Path, guard: Guard) -> Callable[[str, str], dict[str, Any] |
         except OSError:
             return None
 
+    def judged_row(task: str, lane: str) -> dict[str, Any] | None:
+        if (row := view.row(task)) is None:
+            return None
+        with judging:
+            held = versions.get(row["id"])
+            if held is None or held[0] != row["version"]:
+                front, body = _file_of(_record_from(row, {}))
+                held = versions[row["id"]] = (row["version"], front, body, {})
+                if len(versions) > _STANDING_KEPT:
+                    del versions[next(iter(versions))]
+            if lane not in held[3]:
+                held[3][lane] = guard.standing(held[1], held[2], lane)
+            return held[3][lane]
+
     def standing(task: str, lane: str) -> dict[str, Any] | None:
+        if view.attached:
+            return judged_row(task, lane)
         if (held := current(task)) is not None and lane in held[4]:
             return held[4][lane]
         with judging:
@@ -1989,3 +2099,35 @@ def _standing(root: Path, guard: Guard) -> Callable[[str, str], dict[str, Any] |
             return held[4][lane]
 
     return standing
+
+
+def _state_from(view: TaskView, files: Callable[[str], str | None]) -> Callable[[str], str | None]:
+    """A lookup of the state (its lane id) of a task's History once a log is attached, else of its file."""
+
+    def state(task: str) -> str | None:
+        if not view.attached:
+            return files(task)
+        return None if (row := view.row(task)) is None else lane_id(str(row["state"]).strip())
+
+    return state
+
+
+def _served(
+    view: TaskView, spelled: Mapping[str, str], done: str | None, files: TaskReader, *, archived: bool
+) -> TaskReader:
+    """A board reader of a task's History record once a log is attached, else of `files`; the archived reader answers any
+    task, the live one an unarchived task or an archived Done one, which the board kept readable in `completed/`.
+    A Done or archived task has nothing left to start."""
+
+    def read(task: str, /) -> dict[str, Any] | None:
+        if not view.attached:
+            return files(task)
+        if (row := view.row(task)) is None:
+            return None
+        finished = lane_id(str(row["state"])) == done
+        if not archived and row["archived"] and not finished:
+            return None
+        record = _record_from(row, spelled)
+        return {**record, "start_criteria": [] if archived or finished else record["start_criteria"]}
+
+    return read

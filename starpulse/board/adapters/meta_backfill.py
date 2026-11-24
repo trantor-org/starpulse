@@ -1,5 +1,5 @@
 """The one-time backfill of task meta the files carry and the History lacks, run by `starpulse migrate`: one
-`FieldsEdited` per task recording the file's `needsAttention`, `source`, `profile` and authored start criteria. The file
+`FieldsEdited` per task recording the file's `needsAttention`, `source`, `profile`, authored start criteria, `follows`, `dependencyNeeds`, `actorMemory`, `createdBy` and `aliases`, and the comment stamps an import left unrecorded. The file
 wins, bar an empty `source`, which only a History-side label move leaves; a start criterion differing only by an evaluator's status fields counts as agreeing. A task without History is
 first imported. The task file is not rewritten."""
 
@@ -17,7 +17,26 @@ __all__ = ["backfill_meta"]
 
 logger = logging.getLogger(__name__)
 
-_KEYS = ("needsAttention", "source", "profile", "start_criteria")
+_KEYS = (
+    "needsAttention",
+    "source",
+    "profile",
+    "start_criteria",
+    "follows",
+    "dependencyNeeds",
+    "actorMemory",
+    "createdBy",
+    "aliases",
+)
+
+
+def _stamped(held: list[dict], file: list[dict]) -> list[dict] | None:
+    """The History's comments with the file's `created` stamps, when some lack one and the two agree on every text."""
+    if len(held) != len(file) or any(a["text"] != b.get("text") for a, b in zip(held, file, strict=True)):
+        return None
+    if all(item.get("created") for item in held):
+        return None
+    return [{**item, "created": item.get("created") or mine.get("created", "")} for item, mine in zip(held, file, strict=True)]
 
 
 def backfill_meta(
@@ -36,9 +55,10 @@ def backfill_meta(
         file = item.record
         # an empty `source` is a key label `move_key_labels` moved in the History only
         changes = {key: file.get(key) or None for key in _KEYS if (file.get(key) or None) != (held.get(key) or None) and (key != "source" or file.get(key))}
-        if changes:
-            history.edited(item.task, {"meta": changes})
+        stamped = _stamped(rows.row(item.task)["comments"], list(file.get("comments") or []))
+        if changes or stamped:
+            history.edited(item.task, {"meta": changes, **({"changes": {"comments": stamped}} if stamped else {})})
             rows.drop(item.task)
-            logger.info("migrate: %s meta recorded: %s", item.task, ", ".join(changes))
+            logger.info("migrate: %s meta recorded: %s", item.task, ", ".join([*changes, *(["comments"] if stamped else [])]))
             edited += 1
     return edited

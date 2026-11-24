@@ -1,9 +1,9 @@
-// The theme this browser draws: a color pack and a background, each built in or imported, kept in localStorage like the Admin's other
-// choices. Every change rebuilds the tokens and hands them to `apply`, which redraws the page in them.
-import { browserStorage, type PrefStorage } from "../../../shared/nav";
+// The theme every device draws: a color pack and a background, each built in or imported, kept by the server (`theme` of /api/admin).
+// Every change rebuilds the tokens and hands them to `apply`, which redraws the page in them.
+import { apiFetch } from "../../../api/apiFetch";
+import { readSettings, writeSettings, type Saved, type Settings } from "../adminSettings";
 import { BUILTIN, SLATE, build, type Neutrals, type Pack } from "./scheme";
 
-export const THEME_KEY = "sp.theme";
 export interface SavedPack { id: string; pack: Pack }
 export interface SavedBg { id: string; name: string; n: Neutrals }
 export interface ThemePrefs { pack: string; bg: string; packs: SavedPack[]; bgs: SavedBg[] }
@@ -13,40 +13,30 @@ export type Tokens = Record<string, string>;
 const list = <T>(v: unknown, ok: (x: Record<string, unknown>) => boolean) =>
   (Array.isArray(v) ? v.filter((x) => typeof x === "object" && x !== null && ok(x)) : []) as T[];
 
-export function loadTheme(storage: PrefStorage | null): ThemePrefs {
-  try {
-    const raw: unknown = JSON.parse(storage?.getItem(THEME_KEY) ?? "null");
-    const r = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-    const packs = list<SavedPack>(r.packs, (x) => typeof x.id === "string" && typeof x.pack === "object");
-    const bgs = list<SavedBg>(r.bgs, (x) => typeof x.id === "string" && typeof x.n === "object");
-    const pack = typeof r.pack === "string" && (BUILTIN[r.pack] || packs.some((p) => p.id === r.pack)) ? r.pack : THEME_DEFAULTS.pack;
-    const bg = typeof r.bg === "string" && bgs.some((b) => b.id === r.bg) ? r.bg : THEME_DEFAULTS.bg;
-    return { pack, bg, packs, bgs };
-  } catch {
-    return THEME_DEFAULTS;
-  }
-}
-
-export function saveTheme(storage: PrefStorage | null, p: ThemePrefs): void {
-  try {
-    storage?.setItem(THEME_KEY, JSON.stringify(p));
-  } catch {
-    // storage is off: the theme lasts the session
-  }
+export function loadTheme(raw: unknown): ThemePrefs {
+  const r = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const packs = list<SavedPack>(r.packs, (x) => typeof x.id === "string" && typeof x.pack === "object");
+  const bgs = list<SavedBg>(r.bgs, (x) => typeof x.id === "string" && typeof x.n === "object");
+  const pack = typeof r.pack === "string" && (BUILTIN[r.pack] || packs.some((p) => p.id === r.pack)) ? r.pack : THEME_DEFAULTS.pack;
+  const bg = typeof r.bg === "string" && bgs.some((b) => b.id === r.bg) ? r.bg : THEME_DEFAULTS.bg;
+  return { pack, bg, packs, bgs };
 }
 
 const newId = () => `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 export class ThemeStore {
-  private prefs: ThemePrefs;
+  private prefs: ThemePrefs = THEME_DEFAULTS;
+  private outcome: Saved = { kind: "idle" };
   private listeners = new Set<() => void>();
 
-  constructor(private apply: (t: Tokens) => void = () => {}, private storage: PrefStorage | null = browserStorage()) {
-    this.prefs = loadTheme(storage);
+  /** Starts on the built-in theme; `adopt` brings the server's in once it arrives. */
+  constructor(private apply: (t: Tokens) => void = () => {}, private fetcher: typeof apiFetch = apiFetch) {
     apply(this.tokens());
   }
 
   get = () => this.prefs;
+  /** How the last change ended. */
+  saved = () => this.outcome;
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -55,6 +45,16 @@ export class ThemeStore {
   packOf = (id: string): Pack => BUILTIN[id] ?? this.prefs.packs.find((p) => p.id === id)?.pack ?? BUILTIN.starpulse;
   bgOf = (id: string): Neutrals => this.prefs.bgs.find((b) => b.id === id)?.n ?? SLATE;
   tokens = (): Tokens => build(this.packOf(this.prefs.pack), this.bgOf(this.prefs.bg)).t;
+
+  adopt = (settings: Settings) => this.set(loadTheme(settings.theme), false);
+  private keep = async (theme: ThemePrefs) => {
+    this.outcome = await writeSettings(this.fetcher, { theme });
+    if (this.outcome.kind === "refused") {
+      const held = await readSettings(this.fetcher);
+      if (held) this.set(loadTheme(held.theme), false);
+    }
+    for (const fn of this.listeners) fn();
+  };
 
   choosePack = (pack: string) => this.set({ ...this.prefs, pack });
   chooseBg = (bg: string) => this.set({ ...this.prefs, bg });
@@ -79,11 +79,12 @@ export class ThemeStore {
   deleteBg = (id: string) =>
     this.set({ ...this.prefs, bgs: this.prefs.bgs.filter((b) => b.id !== id), bg: this.prefs.bg === id ? THEME_DEFAULTS.bg : this.prefs.bg });
 
-  private set(next: ThemePrefs) {
-    const redraw = next.pack !== this.prefs.pack || next.bg !== this.prefs.bg;
+  /** Draws `next` at once and, when `keep`, sends the whole theme; a refused write draws what the server holds. */
+  private set(next: ThemePrefs, keep = true) {
+    const redraw = !keep || next.pack !== this.prefs.pack || next.bg !== this.prefs.bg;
     this.prefs = next;
-    saveTheme(this.storage, next);
     if (redraw) this.apply(this.tokens());
     for (const fn of this.listeners) fn();
+    if (keep) void this.keep(next);
   }
 }

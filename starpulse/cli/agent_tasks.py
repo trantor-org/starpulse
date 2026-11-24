@@ -464,7 +464,7 @@ def task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
         raise agent_wire.CliError("usage", "name the task's title, or --batch FILE for several")
     if args.source and (held := _open_with_source(args, environ, args.source)):
         return {"task": held[0]["id"], "existing": True}
-    status, reply = agent_wire.post_keyed(base, path, {**_created_task(args), **writer(args, environ)})
+    status, reply = agent_wire.put_keyed(base, path, {**_created_task(args), **writer(args, environ)})
     return {"task": record_call(base, path, status, reply, ok=(201,))["task"]}
 
 
@@ -472,7 +472,7 @@ def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: st
     """The batch create of the JSON list `args.batch` names (`-` for stdin) for `task_create`."""
     text = sys.stdin.read() if args.batch == "-" else Path(args.batch).read_text()
     specs = json.loads(text)
-    status, reply = agent_wire.post_keyed(base, path, {"tasks": specs, **writer(args, environ)})
+    status, reply = agent_wire.put_keyed(base, path, {"tasks": specs, **writer(args, environ)})
     results = record_call(base, path, status, reply)["results"]
     created = [result["task"] for result in results if "task" in result]
     refused = {str(position): result["error"] for position, result in enumerate(results, 1) if "error" in result}
@@ -510,7 +510,7 @@ def _task_edit_call(
     *,
     break_glass: bool = False,
 ) -> list[str]:
-    """Send `changes` to `/api/edit` as one write and return the fields that changed; `break_glass` makes it the operator's.
+    """Send `changes` to `PUT /api/tasks/{id}` as one write and return the fields that changed; `break_glass` makes it the operator's.
 
     `base_record` is what the caller read the task as; without one the task is read now, so the edit is refused only
     for a field another writer changes between that read and this write.
@@ -520,9 +520,10 @@ def _task_edit_call(
         current = _read_record(args, environ)
         base_record = {field: current.get(field) for field in changes}
     who = {"actor": OPERATOR, "breakGlass": True} if break_glass else writer(args, environ)
-    body = {"task": args.task, "base": base_record, "changes": changes, "comment": comment, **who}
-    status, reply = agent_wire.post(base, "/api/edit", body)
-    return record_call(base, "/api/edit", status, reply, missing=_TASK_MISSING)["changed"]
+    body = {"base": base_record, "changes": changes, "comment": comment, **who}
+    path = f"/api/tasks/{args.task}"
+    status, reply = agent_wire.put(base, path, body)
+    return record_call(base, path, status, reply, missing=_TASK_MISSING)["changed"]
 
 
 def _read_document(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -650,15 +651,21 @@ def task_assign(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
 
 
 def task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Archive one task, or several in one batch write: the keys archived, or a refusal naming them and each refused
+    """Archive one task, or several, one `DELETE` each: the keys archived, or a refusal naming them and each refused
     key's reason when any key was refused."""
-    base, path = agent_wire.server_url(args.server, environ), "/api/archive"
-    target = {"task": args.task[0]} if len(args.task) == 1 else {"tasks": args.task}
-    status, reply = agent_wire.post(base, path, {**target, "reason": args.reason, **writer(args, environ)})
-    answer = record_call(base, path, status, reply, missing=_TASK_MISSING)
-    if "task" in answer:
-        return {"archived": [answer["task"]]}
-    archived, refused = answer["archived"], answer["refused"]
+    base, body = agent_wire.server_url(args.server, environ), {"reason": args.reason, **writer(args, environ)}
+    if len(args.task) == 1:
+        path = f"/api/tasks/{args.task[0]}"
+        status, reply = agent_wire.delete(base, path, body)
+        return {"archived": [record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]]}
+    archived, refused = [], {}
+    for task in args.task:
+        path = f"/api/tasks/{task}"
+        status, reply = agent_wire.delete(base, path, body)
+        try:
+            archived.append(record_call(base, path, status, reply, missing=_TASK_MISSING)["task"])
+        except agent_wire.CliError as error:
+            refused[task] = str(error)
     if refused:
         message = f"{len(refused)} of {len(args.task)} tasks refused: {', '.join(refused)}"
         raise agent_wire.CliError("refused", message, archived=archived, refused=refused)
@@ -666,14 +673,14 @@ def task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
 
 
 def task_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/restore"
-    status, reply = agent_wire.post(base, path, {"task": args.task, **writer(args, environ)})
+    base, path = agent_wire.server_url(args.server, environ), f"/api/tasks/{args.task}"
+    status, reply = agent_wire.put(base, path, {"archived": False, **writer(args, environ)})
     return {"task": record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 
 def task_reopen(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/reopen"
-    status, reply = agent_wire.post(base, path, {"task": args.task, "reason": args.reason, **writer(args, environ)})
+    base, path = agent_wire.server_url(args.server, environ), f"/api/tasks/{args.task}"
+    status, reply = agent_wire.put(base, path, {"reopen": args.reason, **writer(args, environ)})
     return {"task": record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 

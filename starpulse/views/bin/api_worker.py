@@ -20,6 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from starpulse.board.adapters.display_settings import DisplaySettings
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.adapters.holder_idle import dispatcher
 from starpulse.board.adapters.lane_metrics import metrics_of as lane_metrics_of
@@ -192,6 +193,7 @@ def serve_page(
         dispatch=dispatcher(log),
         events=cloudevents,
         scheduler=Remote(log),
+        display=DisplaySettings(log),
         contract=lambda: host.contract(feed.contract_inputs(), config, host.probes),
         ready=host.readiness(log, feed, config),
         pulls=pulls,

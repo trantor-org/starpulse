@@ -10,7 +10,12 @@ const phase = (over: Partial<SpendPhase>): SpendPhase => ({
   peak_context: 0, compactions: 0, models: ["claude-sonnet-5-5"], first_at: 0, last_at: 0, kind: "execute", size: 3,
   task_wte: 2500, norm_wte: null, above_norm: false, phase_norm_wte: null, norm_profile: null, phase_above_norm: false, ...over,
 });
-const answer = (spend: SpendPhase[]) => vi.fn(async () => ({ ok: true, json: async () => ({ spend }) }) as unknown as Response);
+const answer = (spend: SpendPhase[]) => vi.fn(async () => ({ ok: true, json: async () => ({ data: { task: { spend } } }) }) as unknown as Response);
+
+const asked = (fetcher: ReturnType<typeof answer>) => fetcher.mock.calls.map(([url, init]: unknown[]) => {
+  expect(url).toBe("/graphql");
+  return JSON.parse((init as RequestInit).body as string).variables.id;
+});
 
 const mounted: { root: ReturnType<typeof createRoot>; host: HTMLElement }[] = [];
 /** The text the element draws once React has run its effects. */
@@ -43,9 +48,9 @@ describe("spend", () => {
     await fetchSpend("TASK-1", fetcher, 0);
     await fetchSpend("TASK-1", fetcher, 30_000);
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher).toHaveBeenCalledWith("/api/task-spend/TASK-1");
+    expect(asked(fetcher)).toEqual(["TASK-1"]);
     await fetchSpend("TASK-2", fetcher, 30_000);
-    expect(fetcher).toHaveBeenCalledWith("/api/task-spend/TASK-2");
+    expect(asked(fetcher)).toEqual(["TASK-1", "TASK-2"]);
     forgetSpend();
     expect(await fetchSpend("TASK-1", vi.fn(async () => ({ ok: false }) as Response), 0)).toBeNull();
     forgetSpend();

@@ -1,10 +1,11 @@
-// The Admin view's per-browser choices, kept in localStorage like the Kanban's and the navigator's fold. Font size is one scale that
+// The Admin view's display choices, which the server keeps for every device (`display` of /api/admin). Font size is one scale that
 // every CSS font size multiplies through `--fs` and the renderer applies to its canvas labels; Motion, Opens on, Kanban cards and Clock
-// follow it under the same key.
+// follow it.
+import { apiFetch } from "../../api/apiFetch";
 import type { ClockMode } from "../../shared/clock";
-import { browserStorage, type PrefStorage, type ViewName } from "../../shared/nav";
+import type { ViewName } from "../../shared/nav";
+import { readSettings, writeSettings, type Saved, type Settings } from "./adminSettings";
 
-export const ADMIN_KEY = "fv.admin.prefs";
 /** The font size range in percent; the slider steps by `step` and the tick buttons jump to `ticks`. */
 export const SCALE = { min: 85, max: 150, step: 5, def: 100, ticks: [85, 100, 115, 130, 150] } as const;
 
@@ -35,29 +36,16 @@ export function clampScale(v: unknown): number {
   return Math.min(SCALE.max, Math.max(SCALE.min, snapped));
 }
 
-/** What the last visit kept; absent, unreadable or unknown values give the defaults. */
-export function loadAdmin(storage: PrefStorage | null): AdminPrefs {
-  try {
-    const raw: unknown = JSON.parse(storage?.getItem(ADMIN_KEY) ?? "null");
-    const r = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-    return {
-      scale: clampScale(r.scale),
-      motion: typeof r.motion === "boolean" ? r.motion : ADMIN_DEFAULTS.motion,
-      view: oneOf(r.view, ["constellation", "kanban"], ADMIN_DEFAULTS.view),
-      density: oneOf(r.density, ["comfortable", "compact"], ADMIN_DEFAULTS.density),
-      clock: oneOf(r.clock, ["24", "12"], ADMIN_DEFAULTS.clock),
-    };
-  } catch {
-    return ADMIN_DEFAULTS;
-  }
-}
-
-export function saveAdmin(storage: PrefStorage | null, p: AdminPrefs): void {
-  try {
-    storage?.setItem(ADMIN_KEY, JSON.stringify(p));
-  } catch {
-    // storage is off: the choice lasts the session
-  }
+/** What the server kept; absent, unreadable or unknown values give the defaults. */
+export function loadAdmin(raw: unknown): AdminPrefs {
+  const r = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  return {
+    scale: clampScale(r.scale),
+    motion: typeof r.motion === "boolean" ? r.motion : ADMIN_DEFAULTS.motion,
+    view: oneOf(r.view, ["constellation", "kanban"], ADMIN_DEFAULTS.view),
+    density: oneOf(r.density, ["comfortable", "compact"], ADMIN_DEFAULTS.density),
+    clock: oneOf(r.clock, ["24", "12"], ADMIN_DEFAULTS.clock),
+  };
 }
 
 /** Publish the scale as `--fs`, the factor style.css multiplies every font size by. */
@@ -70,20 +58,37 @@ export const applyMotion = (motion: boolean, root: StyleRoot): void => void root
 export const labelPx = (size: number, k: number, scale: number): number => (size * scale) / 100 / k;
 
 export class AdminStore {
-  private prefs: AdminPrefs;
+  private prefs: AdminPrefs = ADMIN_DEFAULTS;
+  private outcome: Saved = { kind: "idle" };
   private listeners = new Set<() => void>();
+  private loadedIn!: () => void;
+  /** Settles when the server's choices have been adopted, so the page can open the view they name. */
+  readonly loaded = new Promise<void>((resolve) => (this.loadedIn = resolve));
 
-  constructor(private storage: PrefStorage | null = browserStorage(), private root: StyleRoot = document.documentElement) {
-    this.prefs = loadAdmin(storage);
-    applyScale(this.prefs.scale, root);
-    applyMotion(this.prefs.motion, root);
+  /** Starts on the defaults; `adopt` brings the server's choices in once they arrive. */
+  constructor(private root: StyleRoot = document.documentElement, private fetcher: typeof apiFetch = apiFetch) {
+    this.show(this.prefs);
   }
 
   get = () => this.prefs;
+  /** How the last change ended. */
+  saved = () => this.outcome;
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   };
+  adopt(settings: Settings) {
+    this.set(loadAdmin(settings.display), false);
+    this.loadedIn();
+  }
+  private async keep(patch: Settings) {
+    this.outcome = await writeSettings(this.fetcher, patch);
+    if (this.outcome.kind === "refused") {
+      const held = await readSettings(this.fetcher);
+      if (held) this.set(loadAdmin(held.display), false);
+    }
+    for (const fn of this.listeners) fn();
+  }
   setScale(v: number) {
     this.set({ ...this.prefs, scale: clampScale(v) });
   }
@@ -102,12 +107,17 @@ export class AdminStore {
   reset() {
     this.set(ADMIN_DEFAULTS);
   }
-  private set(next: AdminPrefs) {
-    if ((Object.keys(next) as (keyof AdminPrefs)[]).every((k) => next[k] === this.prefs[k])) return;
+  private show(p: AdminPrefs) {
+    applyScale(p.scale, this.root);
+    applyMotion(p.motion, this.root);
+  }
+  /** Draws `next` at once and, when `keep`, sends only the fields that changed; a refused write draws what the server holds. */
+  private set(next: AdminPrefs, keep = true) {
+    const changed = (Object.keys(next) as (keyof AdminPrefs)[]).filter((k) => next[k] !== this.prefs[k]);
+    if (!changed.length) return;
     this.prefs = next;
-    applyScale(next.scale, this.root);
-    applyMotion(next.motion, this.root);
-    saveAdmin(this.storage, next);
+    this.show(next);
     for (const fn of this.listeners) fn();
+    if (keep) void this.keep({ display: Object.fromEntries(changed.map((k) => [k, next[k]])) });
   }
 }

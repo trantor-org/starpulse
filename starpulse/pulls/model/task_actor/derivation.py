@@ -31,6 +31,8 @@ RESTART_OR_RESCOPE = ("restart it in a new session", "rescope the task")
 #: What an uncited-pull-request ask says after the task's id: a cited pull request settles it.
 UNCITED_ASK = "has an uncited pull request."
 DONE_HELD = "Held from Done:"
+#: The comment the actor writes beside a request it leaves standing: a request it cannot act on stays the pending one.
+ACTOR_NOTES = (DONE_HELD,)
 #: The opening of the reason the task actor gives a task it parks on a failed step, a refused write or an illegal move.
 FAULT = "Task actor fault:"
 #: The line under that reason: how the operator leaves Needs attention once the cause is fixed.
@@ -73,7 +75,6 @@ class TaskFacts(Protocol):
     def comments(self, agent: Agent) -> list[str] | None: ...
     def dependency_needs(self, name: str) -> Sequence[str]: ...
     def unfinished(self, name: str) -> tuple[str, ...]: ...
-    def started(self, name: str) -> bool: ...
     def alive(self, name: str) -> bool | None: ...
     def holds(self, name: str) -> tuple[str, ...] | None: ...
     def owns_failure(self, name: str) -> bool: ...
@@ -520,13 +521,14 @@ def operator_pushback(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
 
 
 def _requested(marker: str) -> Callable[[TaskFacts, Agent], Held]:
-    """The fact that the task's newest comment is a request `marker` opens: its words, the comment a move makes."""
+    """The fact that the task's newest comment not written by the actor is a request `marker` opens: its words, the
+    comment a move makes."""
 
     def requested(facts: TaskFacts, agent: Agent) -> Held:
         if (texts := facts.comments(agent)) is None:
             facts.unsettled()
             return None
-        newest = texts[-1].strip() if texts else ""
+        newest = next((text.strip() for text in reversed(texts) if not text.startswith(ACTOR_NOTES)), "")
         return (newest, newest.removeprefix(marker).strip()) if newest.startswith(marker) else None
 
     return requested
@@ -698,24 +700,6 @@ def stale(facts: TaskFacts, agent: Agent) -> dict[str, list[str]]:
     }
 
 
-def started_work(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
-    """The ask when a Ready task ever entered In Progress: Ready holds only new work, so a started one is asked about."""
-    if not facts.started(agent["id"]):
-        return None
-    return "started", attention_reason(
-        "The task was started and is in Ready (cause bug TASK-16096)",
-        "Ready holds only new work",
-        RESTART_OR_RESCOPE,
-        "Which?",
-    )
-
-
-def by_start(fact: Callable[[TaskFacts, Agent], Any], *, started: bool) -> Callable[[TaskFacts, Agent], Any]:
-    """`fact` for the tasks that ever entered In Progress or for the rest, so started work never falls through to Ready
-    when its session ended and cleared the claim."""
-    return lambda facts, agent: fact(facts, agent) if facts.started(agent["id"]) == started else None
-
-
 #: Each fact kind a lane's `waits` name, and the function that answers it.
 FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "pr_terminal": pr_terminal,
@@ -723,7 +707,6 @@ FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "pr_closed_unmerged": pr_closed_unmerged,
     "pr_closed_unmerged_complete": pr_closed_unmerged_complete,
     "pr_merged_unfinished": pr_merged_unfinished,
-    "started_work": started_work,
     "pr_ready": pr_ready,
     "criteria_checked": criteria_checked,
     "pr_failing": pr_failing,
@@ -736,12 +719,10 @@ FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "wait_requested": wait_requested,
     "ask_requested": ask_requested,
     "archive_requested": archive_requested,
-    "deps_done": by_start(deps_done, started=False),
+    "deps_done": deps_done,
     "deps_done_with_pr": deps_done_with_pr,
-    "deps_done_started": by_start(deps_done, started=True),
-    "criteria_met_started": by_start(criteria_met, started=True),
     "deps_unresolved": deps_unresolved,
-    "criteria_met": by_start(criteria_met, started=False),
+    "criteria_met": criteria_met,
     "owner_stale": owner_stale,
     "overdue": overdue,
 }

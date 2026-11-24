@@ -30,6 +30,7 @@ import jsonschema
 from pydantic import BaseModel
 
 from starpulse.board.adapters import machines_only
+from starpulse.board.adapters.display_settings import DisplaySettings
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
@@ -239,7 +240,7 @@ def serve(
             history or HistoryStore(kept, machines),
             window,
             board,
-            Services(**services),
+            Services(display=DisplaySettings(log), **services),
             clock,
         )
         server = PageServer(

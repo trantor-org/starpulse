@@ -102,7 +102,7 @@ describe("the Admin view's Autopilot card", () => {
     await act(async () => radios[1].click());
     await settle();
 
-    expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ harness: "other" }) });
+    expect(fetcher).toHaveBeenCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ harness: "other" }) });
     expect(radios[1].getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -202,7 +202,7 @@ describe("the Admin view's Autopilot card", () => {
     await act(async () => q<HTMLButtonElement>(SWITCH)!.click());
     await settle();
 
-    expect(fetcher).toHaveBeenLastCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ enabled: false }) });
+    expect(fetcher).toHaveBeenLastCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ enabled: false }) });
     expect(q(SWITCH)?.getAttribute("aria-checked")).toBe("false");
     expect(document.querySelector('[role="dialog"], [role="alertdialog"]')).toBeNull();
 
@@ -283,7 +283,7 @@ describe("the Admin view's Autopilot card", () => {
       await act(async () => button("Save")!.click());
       await settle();
 
-      expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ sessionCap: 6 }) });
+      expect(fetcher).toHaveBeenCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ sessionCap: 6 }) });
       expect(input().value).toBe("6");
       expect(row().textContent).toContain("Admin override");
       expect(row().textContent).toContain("starpulse.toml sets 4");
@@ -296,7 +296,7 @@ describe("the Admin view's Autopilot card", () => {
       await act(async () => button("Use starpulse.toml")!.click());
       await settle();
 
-      expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ sessionCap: null }) });
+      expect(fetcher).toHaveBeenCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ sessionCap: null }) });
       expect(input().value).toBe("4");
       expect(row().textContent).not.toContain("Admin override");
     });
@@ -346,7 +346,7 @@ describe("the Admin view's Autopilot card", () => {
       await act(async () => button("Save")!.click());
       await settle();
 
-      expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ [field]: 62.5 }) });
+      expect(fetcher).toHaveBeenCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ [field]: 62.5 }) });
       expect(input().value).toBe("62.5");
       expect(row().textContent).toContain("Admin override");
       expect(row().textContent).toContain("starpulse.toml sets " + config);
@@ -359,7 +359,7 @@ describe("the Admin view's Autopilot card", () => {
       await act(async () => button("Use starpulse.toml")!.click());
       await settle();
 
-      expect(fetcher).toHaveBeenCalledWith("/api/scheduler", { method: "PUT", body: JSON.stringify({ [field]: null }) });
+      expect(fetcher).toHaveBeenCalledWith("/api/admin", { method: "PUT", body: JSON.stringify({ [field]: null }) });
       expect(input().value).toBe(String(config));
       expect(row().textContent).not.toContain("Admin override");
     });

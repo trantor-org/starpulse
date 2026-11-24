@@ -28,7 +28,7 @@ internal and can change in any release.
 - `starpulse import-history`, and the JSON Lines it reads: one `{event_id, task, lane, time}` object per line ([format](cli.md#importing-a-boards-history)).
 - The documented entry point `python -m starpulse.runtime.claude_code`, which receives Claude Code's OTLP log
   exports.
-- `GET /api/task-spend/{id}` and its body in `api.schema.json`: one task's tokens by phase with the weighted total and
+- The `spend` field of a task in `POST /graphql` (`SpendPhase` in `tasks.graphql`): the task's tokens by phase with the weighted total and
   norm flag (see [Connect sources](sources.md#report-each-tasks-spend-by-phase)).
 - `starpulse search QUERY` and its routes `GET /api/search?q=` and `GET /api/search/similar?q=` (`--similar`, which waits to embed a new query): the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
 - The board machine's `mainLine` and `tiers` in the `Machine` record of `api.schema.json`: `tiers` is a list of
@@ -55,7 +55,7 @@ internal and can change in any release.
   `api.schema.json` (`null` when none), and the Kanban draws it on each column header. A state the machine's `rests`
   names ends the lifecycle though an event leaves it, so it is served as `final`.
 - A machine state's optional `waits` key: a map from a fact kind (`pr_terminal`, `pr_merged`, `pr_closed_unmerged`, `pr_closed_unmerged_complete`, `pr_merged_unfinished`, `pr_ready`, `pr_failing`, `pr_draft`, `pr_conflicting`, `deps_done`,
-  `deps_done_with_pr`, `deps_unresolved`, `owner_stale`, `criteria_met`, `overdue` or `started_work`) to the event that leaves the state when that fact holds. The loader refuses an
+  `deps_done_with_pr`, `deps_unresolved`, `owner_stale`, `criteria_met` or `overdue`) to the event that leaves the state when that fact holds. The loader refuses an
   unknown fact kind and an event that is not a transition out of the declaring state, naming the state and event, and
   exposes the declared map as `Compiled.waits` (`{state id: {fact kind: event}}`; a child flow's states carry their
   `<state>_<child state>` id). Declaring `waits` fires nothing by itself: the board hands the Board machine's map
@@ -151,9 +151,9 @@ They are enforced where the native board lands a task file, so a move from the C
 meet the same rule and are refused with the same `reason` and `skill`, and nothing is written. The `warn_actors` setting
 (a list of actors, empty by default) is the one exception: a move by an actor it lists that breaks a lane rule (`on` with
 `to` or `from`) lands, and the answer carries `"ok": true` and `warnings`, the `reason` of each rule it broke. A `write`
-or `create` rule still refuses that actor. `GET /api/moves/<id>` answers `{task, moves}` with the board's guarded verdict on every lane for one task, that
+or `create` rule still refuses that actor. The `moves` field of a task in `POST /graphql` carries the board's guarded verdict on every lane for one task, that
 actor's with the same rules as `warnings` (`reason`, `skill` each); the stream's snapshot leaves its `moves` unguarded
-(judging every card each cycle costs seconds), and `GET /api/task/<id>` carries none. The kanban reads the route when a
+(judging every card each cycle costs seconds), and `GET /api/task/<id>` carries none. The kanban queries the field when a
 card is dragged, dropped or opened, and lists the warnings in a confirm box before it posts the move; Cancel writes
 nothing.
 `[[board.entry]]` declares what entering a lane does to a task, for every writer: `{ lane, set }` fills the front matter
@@ -210,7 +210,7 @@ score passes. Each board task also carries the rules' standing verdict as `reada
 `task show` record: empty when its description reads well (or the task is settled), else the first broken rule with
 its line, so a page can badge a description written before the rules without refusing it until its next edit.
 
-A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/edit`, `/api/archive`, `/api/verdict`, `/api/miss` and `/api/tasks`
+A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/edit`, `/api/archive`, `/api/verdict`, `/api/miss`, `PUT /api/tasks` and `PUT /api/tasks/{id}` and `DELETE /api/tasks/{id}`
 take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). Every write parses its body through the request model of its route, so a body that is not a JSON object, names a key the route does not take or holds a field of the wrong type is a 400 `invalid request: <field>: <reason>` for its first fault, a key the route does not take before any other. The page names
 `operator`; `starpulse` verbs name `agent`, their session and their harness. A write naming no actor is `agent` when it
 names a session and `anonymous` when it names none, never `operator`, so an unnamed write is not judged as the

@@ -11,7 +11,7 @@ const pull = (over = {}) => ({ number: 7, repo: "o/r", url: "http://pr/7", check
 const reply = (status: number, body: object) => async () => new Response(JSON.stringify(body), { status });
 
 describe("posting an archive", () => {
-  it("posts the task and the typed reason to /api/archive", async () => {
+  it("deletes the task with the typed reason", async () => {
     const seen: { url: string; init?: RequestInit }[] = [];
     const fetcher = async (url: string, init?: RequestInit) => { seen.push({ url, init }); return new Response("{}", { status: 200 }); };
 
@@ -19,9 +19,9 @@ describe("posting an archive", () => {
 
     expect(result).toEqual({ ok: true });
     expect(seen).toHaveLength(1);
-    expect(seen[0].url).toBe("/api/archive");
-    expect(seen[0].init?.method).toBe("POST");
-    expect(JSON.parse(String(seen[0].init?.body))).toEqual({ task: "TASK-9", reason: "superseded by m-80", actor: "operator" });
+    expect(seen[0].url).toBe("/api/tasks/TASK-9");
+    expect(seen[0].init?.method).toBe("DELETE");
+    expect(JSON.parse(String(seen[0].init?.body))).toEqual({ reason: "superseded by m-80", actor: "operator" });
   });
 
   it("returns the writer's refusal with its skill", async () => {

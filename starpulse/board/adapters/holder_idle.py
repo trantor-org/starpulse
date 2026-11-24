@@ -56,6 +56,14 @@ def dispatcher(log: EventLog) -> Callable[[str, str, str], bool]:
     return dispatch
 
 
+def started(engine: Engine, task: str) -> bool:
+    """Whether a session was ever dispatched to `task`: the start event is where its started state is read."""
+    c = machine_events.c
+    found = select(c.id).where(c.task == task, c.machine == HARNESS_MACHINE, c.event == DISPATCHED).limit(1)
+    with engine.connect() as db:
+        return db.execute(found).first() is not None
+
+
 def _newest(engine: Engine, task: str, until: float) -> tuple[str, dict[str, str]] | None:
     """The newest harness event of `task` up to `until`, a stop apart, and the data its log entry holds: one indexed lookup."""
     c = machine_events.c

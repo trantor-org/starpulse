@@ -4,6 +4,7 @@
  * The root of `api.schema.json`: every body as a property, so the generated types name each one.
  */
 export interface ApiContract {
+  adminState: AdminState;
   answers: (
     | Moved
     | MovedEach
@@ -75,6 +76,7 @@ export interface ApiContract {
     | ParkRequest
     | ReviewRequest
     | CreateRequest
+    | TaskPutRequest
     | MilestoneCreateRequest
     | MachineCreateRequest
     | MachineListRequest
@@ -85,25 +87,288 @@ export interface ApiContract {
     | DocListRequest
     | DocPutRequest
     | WindowRequest
-    | SchedulerRequest
     | GraphqlRequest
+    | AdminRequest
   )[];
   restarting: RestartingEvent;
   retiredTasks: RetiredTasks;
   runs: Runs;
-  schedulerStatus: SchedulerStatus;
   searchResults: SearchResults;
   snapshot: Snapshot;
   spend: Spend;
   stale: StaleEvent;
   taskEventHistory: TaskEventHistory;
-  taskMoves: TaskMoves;
   taskRecord: TaskRecord;
   taskRecords: TaskRecords;
-  taskSpend: TaskSpend;
   trajectories: Trajectories;
   viewShown: ViewShown;
   windowState: WindowState;
+  [k: string]: unknown;
+}
+/**
+ * Admin's settings in one answer: the scheduler's status, then the display and theme choices.
+ */
+export interface AdminState {
+  /**
+   * Every gate holding admission back now, each with its use and limit; empty when none does.
+   */
+  blockedBy?: SchedulerBlock[];
+  /**
+   * Absent before the scheduler worker has reported them.
+   */
+  capacityLimits?: SchedulerCapacityLimits | null;
+  dimensions: SchedulerDimension[];
+  display: Display;
+  enabled: boolean;
+  /**
+   * The latest kept rows of gate readings and block reasons, oldest first, kept by the scheduler itself.
+   */
+  gateHistory?: SchedulerGateRow[];
+  /**
+   * The harness the loop starts sessions on; defaults to claude.
+   */
+  harness: string;
+  /**
+   * Every live session holding an In Progress task, oldest first; `url` is empty for one the loop did not start.
+   */
+  inFlight?: SchedulerSession[];
+  /**
+   * The `kind-decide` tasks in the eligible lane, which the scheduler never starts: the operator decides.
+   */
+  needsOperator?: SchedulerOperatorTask[];
+  /**
+   * Null when no task in the eligible lane is workable.
+   */
+  next?: SchedulerNext | null;
+  /**
+   * Harnesses whose admission is paused until `until`. Absent when none are paused.
+   */
+  pauses?: SchedulerPause[];
+  /**
+   * Null when no window holds admission back.
+   */
+  quietHours?: QuietHours | null;
+  sampledAt: number | null;
+  /**
+   * Absent before the scheduler worker has reported one.
+   */
+  sessionCap?: SchedulerSessionCap | null;
+  /**
+   * Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.
+   */
+  sessionsByHarness?: {
+    [k: string]: SchedulerHarnessSessions;
+  };
+  theme: Theme;
+  [k: string]: unknown;
+}
+/**
+ * One gate holding admission back: a capacity dimension the top task overfits, or `start-limit`, the session-start
+ * service refusing every start because its live-session limit is full.
+ */
+export interface SchedulerBlock {
+  /**
+   * For `start-limit`, the refusals since a start last landed.
+   */
+  count?: number | null;
+  limit: number;
+  name: "cpu" | "memory" | "sessions" | "review" | "start-limit";
+  use: number;
+  [k: string]: unknown;
+}
+/**
+ * The cpu and memory limits the scheduler admits against.
+ */
+export interface SchedulerCapacityLimits {
+  cpu: SchedulerCapacityLimit;
+  memory: SchedulerCapacityLimit;
+  [k: string]: unknown;
+}
+/**
+ * The cpu or memory limit in force, in percent, and where it comes from.
+ */
+export interface SchedulerCapacityLimit {
+  /**
+   * What `starpulse.toml` gives this dimension, which clearing the Admin limit returns to.
+   */
+  configLimit: number;
+  limit: number;
+  /**
+   * `admin` when an operator set the limit in Admin, `starpulse.toml` when the config's limit holds.
+   */
+  source: "admin" | "starpulse.toml";
+  [k: string]: unknown;
+}
+/**
+ * One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.
+ */
+export interface SchedulerDimension {
+  limit: number;
+  name: "cpu" | "memory" | "sessions" | "review";
+  use: number;
+  [k: string]: unknown;
+}
+/**
+ * How every device draws the page; a field left out of a write keeps its value.
+ */
+export interface Display {
+  clock?: "24" | "12";
+  density?: "comfortable" | "compact";
+  /**
+   * Off stills CSS animation and transitions and slows the Star Map's frame loop.
+   */
+  motion?: boolean;
+  /**
+   * The font size in percent of the design size, in steps of 5.
+   */
+  scale?: number;
+  /**
+   * The view an address with no `view` parameter opens.
+   */
+  view?: "constellation" | "kanban";
+  [k: string]: unknown;
+}
+/**
+ * One kept row of the gate history: every dimension's reading and every gate that held admission back at `at`.
+ */
+export interface SchedulerGateRow {
+  /**
+   * When the row was kept, in epoch seconds.
+   */
+  at: number;
+  blockedBy: SchedulerBlock[];
+  dimensions: SchedulerDimension[];
+  [k: string]: unknown;
+}
+/**
+ * A session the scheduler started whose task is still running: the strip's Sessions menu draws one row of it.
+ */
+export interface SchedulerSession {
+  /**
+   * The task's agent profile, empty when it has none.
+   */
+  model: string;
+  /**
+   * When the loop started the session, in epoch seconds.
+   */
+  started: number;
+  task: string;
+  title: string;
+  /**
+   * The session's address, as `start` answered it.
+   */
+  url: string;
+  [k: string]: unknown;
+}
+/**
+ * A task in the eligible lane that waits on the operator's decision rather than on capacity.
+ */
+export interface SchedulerOperatorTask {
+  task: string;
+  title: string;
+  [k: string]: unknown;
+}
+/**
+ * The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.
+ */
+export interface SchedulerNext {
+  /**
+   * The Priority matrix cell the task ranked by, `<impact>/<urgency>`, or `default` when it has no Impact or Urgency.
+   */
+  priority: string;
+  /**
+   * `goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` or `<harness> start halted: ...` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.
+   */
+  reason: string;
+  task: string;
+  title: string;
+  verdict: "starting" | "waits";
+  [k: string]: unknown;
+}
+/**
+ * A harness whose admission is paused until `until` after a usage or credit limit.
+ */
+export interface SchedulerPause {
+  harness: string;
+  reason: string;
+  /**
+   * When admission for this harness may resume, in epoch seconds.
+   */
+  until: number;
+  [k: string]: unknown;
+}
+/**
+ * A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before
+ * `start` runs past midnight.
+ */
+export interface QuietHours {
+  end: string;
+  start: string;
+  /**
+   * The IANA zone the window's times are read in, such as America/Phoenix.
+   */
+  timezone: string;
+  [k: string]: unknown;
+}
+/**
+ * The session cap the selected harness runs under and where it comes from.
+ */
+export interface SchedulerSessionCap {
+  /**
+   * What `starpulse.toml` gives this harness, which clearing the Admin cap returns to.
+   */
+  configLimit: number;
+  harness: string;
+  limit: number;
+  /**
+   * `admin` when an operator set the cap in Admin, `starpulse.toml` when the config's limit holds.
+   */
+  source: "admin" | "starpulse.toml";
+  [k: string]: unknown;
+}
+/**
+ * One harness's scheduler sessions in flight against its own session cap.
+ */
+export interface SchedulerHarnessSessions {
+  limit: number;
+  use: number;
+  [k: string]: unknown;
+}
+/**
+ * The color pack and background every device draws in, built in or imported; a write replaces the whole theme.
+ */
+export interface Theme {
+  /**
+   * The id of the built-in background or of one in `bgs`.
+   */
+  bg?: string;
+  bgs?: SavedBg[];
+  /**
+   * The id of a built-in pack or of one in `packs`.
+   */
+  pack?: string;
+  packs?: SavedPack[];
+  [k: string]: unknown;
+}
+/**
+ * A background an operator imported; `n` is the page's own neutrals shape.
+ */
+export interface SavedBg {
+  id: string;
+  n: {
+    [k: string]: unknown;
+  };
+  name: string;
+  [k: string]: unknown;
+}
+/**
+ * A color pack an operator imported; `pack` is the page's own pack shape.
+ */
+export interface SavedPack {
+  id: string;
+  pack: {
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 }
 /**
@@ -1265,158 +1530,6 @@ export interface SchedulerStatus {
   [k: string]: unknown;
 }
 /**
- * One gate holding admission back: a capacity dimension the top task overfits, or `start-limit`, the session-start
- * service refusing every start because its live-session limit is full.
- */
-export interface SchedulerBlock {
-  /**
-   * For `start-limit`, the refusals since a start last landed.
-   */
-  count?: number | null;
-  limit: number;
-  name: "cpu" | "memory" | "sessions" | "review" | "start-limit";
-  use: number;
-  [k: string]: unknown;
-}
-/**
- * The cpu and memory limits the scheduler admits against.
- */
-export interface SchedulerCapacityLimits {
-  cpu: SchedulerCapacityLimit;
-  memory: SchedulerCapacityLimit;
-  [k: string]: unknown;
-}
-/**
- * The cpu or memory limit in force, in percent, and where it comes from.
- */
-export interface SchedulerCapacityLimit {
-  /**
-   * What `starpulse.toml` gives this dimension, which clearing the Admin limit returns to.
-   */
-  configLimit: number;
-  limit: number;
-  /**
-   * `admin` when an operator set the limit in Admin, `starpulse.toml` when the config's limit holds.
-   */
-  source: "admin" | "starpulse.toml";
-  [k: string]: unknown;
-}
-/**
- * One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.
- */
-export interface SchedulerDimension {
-  limit: number;
-  name: "cpu" | "memory" | "sessions" | "review";
-  use: number;
-  [k: string]: unknown;
-}
-/**
- * One kept row of the gate history: every dimension's reading and every gate that held admission back at `at`.
- */
-export interface SchedulerGateRow {
-  /**
-   * When the row was kept, in epoch seconds.
-   */
-  at: number;
-  blockedBy: SchedulerBlock[];
-  dimensions: SchedulerDimension[];
-  [k: string]: unknown;
-}
-/**
- * A session the scheduler started whose task is still running: the strip's Sessions menu draws one row of it.
- */
-export interface SchedulerSession {
-  /**
-   * The task's agent profile, empty when it has none.
-   */
-  model: string;
-  /**
-   * When the loop started the session, in epoch seconds.
-   */
-  started: number;
-  task: string;
-  title: string;
-  /**
-   * The session's address, as `start` answered it.
-   */
-  url: string;
-  [k: string]: unknown;
-}
-/**
- * A task in the eligible lane that waits on the operator's decision rather than on capacity.
- */
-export interface SchedulerOperatorTask {
-  task: string;
-  title: string;
-  [k: string]: unknown;
-}
-/**
- * The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.
- */
-export interface SchedulerNext {
-  /**
-   * The Priority matrix cell the task ranked by, `<impact>/<urgency>`, or `default` when it has no Impact or Urgency.
-   */
-  priority: string;
-  /**
-   * `goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` or `<harness> start halted: ...` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.
-   */
-  reason: string;
-  task: string;
-  title: string;
-  verdict: "starting" | "waits";
-  [k: string]: unknown;
-}
-/**
- * A harness whose admission is paused until `until` after a usage or credit limit.
- */
-export interface SchedulerPause {
-  harness: string;
-  reason: string;
-  /**
-   * When admission for this harness may resume, in epoch seconds.
-   */
-  until: number;
-  [k: string]: unknown;
-}
-/**
- * A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before
- * `start` runs past midnight.
- */
-export interface QuietHours {
-  end: string;
-  start: string;
-  /**
-   * The IANA zone the window's times are read in, such as America/Phoenix.
-   */
-  timezone: string;
-  [k: string]: unknown;
-}
-/**
- * The session cap the selected harness runs under and where it comes from.
- */
-export interface SchedulerSessionCap {
-  /**
-   * What `starpulse.toml` gives this harness, which clearing the Admin cap returns to.
-   */
-  configLimit: number;
-  harness: string;
-  limit: number;
-  /**
-   * `admin` when an operator set the cap in Admin, `starpulse.toml` when the config's limit holds.
-   */
-  source: "admin" | "starpulse.toml";
-  [k: string]: unknown;
-}
-/**
- * One harness's scheduler sessions in flight against its own session cap.
- */
-export interface SchedulerHarnessSessions {
-  limit: number;
-  use: number;
-  [k: string]: unknown;
-}
-/**
  * `POST /graphql`: the data the query asked for, and the errors it met; a query the schema refuses has errors only.
  */
 export interface GraphqlResponse {
@@ -1959,6 +2072,30 @@ export interface CreateRequest {
   urgency?: string | null;
 }
 /**
+ * `PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore or take it over.
+ *
+ * An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the
+ * body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`
+ * (the archived task returns to the board) and `interactive: true` (the unattended task is taken over).
+ */
+export interface TaskPutRequest {
+  actor?: string | null;
+  archived?: false | null;
+  base?: {
+    [k: string]: unknown;
+  };
+  breakGlass?: boolean;
+  changes?: {
+    [k: string]: unknown;
+  };
+  comment?: string | null;
+  harness?: string | null;
+  interactive?: true | null;
+  reopen?: string | null;
+  request_key?: string | null;
+  session?: string | null;
+}
+/**
  * `PUT /api/milestones`: open a milestone; only the title is required.
  */
 export interface MilestoneCreateRequest {
@@ -2045,27 +2182,6 @@ export interface WindowRequest {
   hours: number;
 }
 /**
- * `PUT /api/scheduler`: whether the scheduler admits tasks, which harness it starts on, its quiet hours, the
- * selected harness's session cap and/or the cpu and memory limits.
- */
-export interface SchedulerRequest {
-  /**
-   * The cpu limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it.
-   */
-  cpuLimit?: number | null;
-  enabled?: boolean | null;
-  harness?: string | null;
-  /**
-   * The memory limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it.
-   */
-  memoryLimit?: number | null;
-  quietHours?: QuietHours | null;
-  /**
-   * The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it.
-   */
-  sessionCap?: number | null;
-}
-/**
  * `POST /graphql`: one GraphQL document and the operation of it to run.
  */
 export interface GraphqlRequest {
@@ -2083,6 +2199,39 @@ export interface GraphqlRequest {
   variables?: {
     [k: string]: unknown;
   } | null;
+}
+/**
+ * `PUT /api/admin`: any of the scheduler's settings, a patch of the display choices and/or a whole theme; a field
+ * left out keeps its value.
+ */
+export interface AdminRequest {
+  /**
+   * The cpu limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it.
+   */
+  cpuLimit?: number | null;
+  display?: DisplayPatch | null;
+  enabled?: boolean | null;
+  harness?: string | null;
+  /**
+   * The memory limit in percent, above 0 and at most 100, that overrides `starpulse.toml`; null clears it.
+   */
+  memoryLimit?: number | null;
+  quietHours?: QuietHours | null;
+  /**
+   * The selected harness's session cap, a whole number above zero that overrides `starpulse.toml`; null clears it.
+   */
+  sessionCap?: number | null;
+  theme?: Theme | null;
+}
+/**
+ * The display choices a write changes; a field left out keeps its value.
+ */
+export interface DisplayPatch {
+  clock?: ("24" | "12") | null;
+  density?: ("comfortable" | "compact") | null;
+  motion?: boolean | null;
+  scale?: number | null;
+  view?: ("constellation" | "kanban") | null;
 }
 /**
  * The server was told to stop and will not answer after this: sent to every open stream before it exits.
@@ -2604,19 +2753,6 @@ export interface MachineEvent {
   [k: string]: unknown;
 }
 /**
- * `GET /api/moves/<id>`: the verdict on each column one open task may move to, judged by the board's guards now.
- */
-export interface TaskMoves {
-  /**
-   * The verdict on each Board column, by state id, with the warnings an actor the guards warn instead of refuse would meet. A snapshot's `move_sets` leave these unjudged.
-   */
-  moves: {
-    [k: string]: Move;
-  };
-  task: string;
-  [k: string]: unknown;
-}
-/**
  * `GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.
  */
 export interface TaskRecord {
@@ -2643,16 +2779,6 @@ export interface TaskRecord {
  */
 export interface TaskRecords {
   records: TaskRecord[];
-  [k: string]: unknown;
-}
-/**
- * `GET /api/task-spend/{id}`: one task's tokens by phase over the window, the rows `Spend` holds for it.
- */
-export interface TaskSpend {
-  now: number;
-  spend: SpendPhase[];
-  task: string;
-  window_s: number;
   [k: string]: unknown;
 }
 /**

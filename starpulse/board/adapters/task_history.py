@@ -60,7 +60,20 @@ _OWN = {
 }
 _LISTS = ("labels", "dependencies", "references", "documentation", "modifiedFiles")
 #: The record's keys the fold keeps in `meta`.
-_META = ("profile", "impact", "urgency", "tier", "start_criteria", "source", "needsAttention")
+_META = (
+    "profile",
+    "impact",
+    "urgency",
+    "tier",
+    "start_criteria",
+    "source",
+    "needsAttention",
+    "follows",
+    "dependencyNeeds",
+    "actorMemory",
+    "createdBy",
+    "aliases",
+)
 #: The record's criteria lists, by the kind the fold keeps them under.
 _KINDS = {"ac": "acceptanceCriteria", "dod": "definitionOfDone"}
 
@@ -102,7 +115,8 @@ def seed(record: Record, at: float) -> dict[str, Any]:
     seed["assignee"] = record.get("assignee") or ""
     seed["criteria"] = _fold_criteria(record)
     seed["comments"] = [
-        {"at": at, "actor": item.get("author", ""), "text": item.get("text", "")} for item in _comments(record)
+        {"at": at, "actor": item.get("author", ""), "text": item.get("text", ""), "created": item.get("created", "")}
+        for item in _comments(record)
     ]
     return seed
 
@@ -233,11 +247,14 @@ def appended(
     created: bool = False,
     note: str = "",
     rehydrates: bool = False,
+    before: Record | None = None,
 ) -> None:
     """Append the Events that take `task`'s History to `after`, the file about to be rendered (None: the task leaves the
     board, with `note` as its reason), as `actor`; nothing outside a recorded write.
 
     `created` makes them the task's first Event, and `rehydrates` leads them with a `Rehydrated` when the task replays archived.
+    `before` is the file the write replaces: the Events are what the write changed in it, so a hand edit the file held
+    already is never imported by a later write; without it they diff the History's replay against `after`.
     Raises `StaleVersion` when the History moved after it was read, and `Refused` when it cannot take the Events."""
     if (write := _write.get()) is None:
         return
@@ -246,7 +263,7 @@ def appended(
     def events(row: Record, revisions: int) -> list[Event]:
         if after is None:
             return [] if row["archived"] else _events({}, None, note)
-        found = ([("Rehydrated", {})] if rehydrates and row["archived"] else []) + _events(_replayed(row), after, note)
+        found = ([("Rehydrated", {})] if rehydrates and row["archived"] else []) + _events(before if before is not None else _replayed(row), after, note)
         if write.reason and revises_plan(row["state"], row["plan"], after.get("plan") or "", write.unstarted or ()):
             found.append(("PlanRevised", {"ordinal": revisions + 1, "reason": write.reason}))
         return found

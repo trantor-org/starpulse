@@ -79,7 +79,7 @@ GATE_TALLY_KEY = "scheduler.gate_decisions"
 #: The short ring of gate readings and block reasons kept in the worker state, newest last.
 GATE_HISTORY_KEY = "scheduler.gate_history"
 GATE_HISTORY_MAX = 100
-#: How many of the newest rows `GET /api/scheduler` serves.
+#: How many of the newest rows `GET /api/admin` serves.
 GATE_HISTORY_SERVED = 20
 #: Seconds an unchanged block reason waits before the history keeps another row of readings.
 GATE_HISTORY_EVERY = 300.0
@@ -438,7 +438,7 @@ class Loop:
         return [{"task": t["id"], "title": t["title"]} for t in tasks if t["state"] == self._lane and needs_operator(t)]
 
     def in_flight(self) -> list[dict[str, Any]]:
-        """Every live session holding an In Progress task, oldest first, for `GET /api/scheduler`: the loop's runs, its
+        """Every live session holding an In Progress task, oldest first, for `GET /api/admin`: the loop's runs, its
         stopped runs the sessions cap still counts (`_held_outside`, whatever their age), and the sessions it did not track (a stopped one included, within `STALE_S` of its last event), whose address is unknown (`url` is empty) and whose start is the harness machine's
         first move on the task, and the assignee sessions that wrote a transcript inside `STALE_S` with no harness machine row
         on the task, started when the task entered In Progress.
@@ -520,7 +520,7 @@ class Loop:
         return started is not None and now - started < START_COOLDOWN
 
     def pauses(self) -> list[dict[str, Any]]:
-        """Harnesses whose admission is paused until `until`, for `GET /api/scheduler`."""
+        """Harnesses whose admission is paused until `until`, for `GET /api/admin`."""
         self._drop_expired(self._clock())
         return [
             {"harness": name, "until": row["until"], "reason": row["reason"]}
@@ -700,7 +700,7 @@ class Loop:
     def next_pick(self) -> dict[str, Any] | None:
         """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.
 
-        Read for `GET /api/scheduler`, so it decides over the sampler's last reading without sampling and logs nothing;
+        Read for `GET /api/admin`, so it decides over the sampler's last reading without sampling and logs nothing;
         None before the first sample or with no workable task in the eligible lane. It does not depend on the switch; inside
         quiet hours the top task waits for them, whatever room the host has.
         """

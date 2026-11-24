@@ -20,7 +20,7 @@ export const archiveWarnings = (task: KanbanTask, roles: Roles): ArchiveWarnings
 export async function postArchive(task: string, reason: string, fetcher: typeof apiFetch = apiFetch): Promise<ArchiveResult> {
   let response: Response;
   try {
-    response = await fetcher("/api/archive", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ task, reason, actor: PAGE_ACTOR }) });
+    response = await fetcher(`/api/tasks/${encodeURIComponent(task)}`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason, actor: PAGE_ACTOR }) });
   } catch {
     return { ok: false, reason: "The task writer could not be reached; the task was not archived.", skill: "" };
   }

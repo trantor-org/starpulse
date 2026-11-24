@@ -164,6 +164,11 @@ def titled(ids: Collection[str] | None = None) -> Select[Any]:
     return query if ids is None else query.where(tasks.c.id.in_(ids))
 
 
+def graph() -> Select[Any]:
+    """Each Task's id and dependencies, archived ones included, for a lookup that walks the whole graph."""
+    return select(tasks.c.id, tasks.c.dependencies)
+
+
 def position() -> Select[Any]:
     """The stream position of the newest change: one seek on the `seq` index."""
     return select(func.max(tasks.c.seq))

@@ -1,4 +1,4 @@
-"""`/api/scheduler`."""
+"""The scheduler's status, which `/api/admin` serves and the `scheduler` event carries."""
 
 from typing import Literal
 

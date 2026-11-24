@@ -1,7 +1,8 @@
 // The Kanban view's moves: what a drag offers, the card that lands at once while the board writer is asked, and the refusal that
 // returns it. The writer decides; the snapshot's verdicts only forecast it, so a late refusal still has to put the card back.
 import { apiFetch, PAGE_ACTOR } from "../../api/apiFetch";
-import type { Move, RuleBreak, TaskMoves } from "../../api";
+import { taskQuery } from "../../api/taskQuery";
+import type { Move, RuleBreak } from "../../api";
 import type { KanbanTask } from "./kanbanModel";
 
 /** The writer's answer to a move: done, or refused with its reason and the skill that satisfies it (empty when none). */
@@ -181,12 +182,17 @@ export async function postMove(task: string, to: string, fetcher: typeof apiFetc
 /** `task` with the guarded `moves` read over its streamed, unjudged ones. */
 export const judgedBy = (task: KanbanTask, moves: KanbanTask["moves"]): KanbanTask => ({ ...task, moves: { ...task.moves, ...moves } });
 
-/** GET the guarded verdict on each column for `task`; the streamed snapshot leaves them unjudged. */
+const VERDICT = "allowed reason skill warnings { reason skill }";
+
+type Judged = Omit<Move, "actors"> & { to: string; actors: ({ actor: string } & NonNullable<Move["actors"]>[string])[] };
+
+/** POST the guarded verdict on each column for `task` to /graphql; the streamed snapshot leaves them unjudged. */
 export async function fetchStanding(task: string, fetcher: typeof apiFetch = apiFetch): Promise<KanbanTask["moves"] | null> {
-  const response = await fetcher(`/api/moves/${encodeURIComponent(task)}`);
-  if (!response.ok) return null;
-  const body: TaskMoves | null = await response.json().catch(() => null);
-  return body?.moves ?? null;
+  const found = await taskQuery<{ moves: Judged[] }>(task, `moves { to writers ${VERDICT} actors { actor ${VERDICT} } }`, fetcher);
+  if (!found) return null;
+  return Object.fromEntries(
+    found.moves.map(({ to, actors, ...move }) => [to, { ...move, actors: Object.fromEntries(actors.map(({ actor, ...verdict }) => [actor, verdict])) }]),
+  );
 }
 
 /** `text` split at its `backtick` pairs: the guard's wording quotes the criterion it needs. */

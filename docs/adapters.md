@@ -22,7 +22,7 @@ The `starpulse.board.Board` the server holds says:
   that makes a task whole, in one write, in the board's starting lane or the lane a `status` detail names, with the
   details the page filled (description, priority, impact, urgency, labels, milestone, assignee, dependencies,
   acceptance criteria, type, references, documentation, Definition of Done) and answers with its id
-  (`POST /api/tasks`),
+  (`PUT /api/tasks`),
 - milestone records: `milestones()`, `read_milestone(id)`, `create_milestone(title, details)` (answering with the new
   id), `edit_milestone(id, changes)` and `archive_milestone(id)` (`POST /api/milestones` lists, `GET /api/milestones/<id>` reads, `PUT /api/milestones` creates,
   `PUT /api/milestones/<id>` upserts over the `revision` a read named as `base`, and `DELETE /api/milestones/<id>`
