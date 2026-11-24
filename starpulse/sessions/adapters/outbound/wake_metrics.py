@@ -1,6 +1,7 @@
 """`starpulse_wakes_delivered_total{event,lane}` and `starpulse_wake_repeats_total{event,lane}`: the event lines a session received.
 
-The notifier reports each line it posted. A line counts by its event and the lane of its task now (`none` for a subject
+The notifier reports each line it posted. A line counts by its event and the lane of its task now, a `moved` line by the lane
+it moved to, since the board's read side lags a move by a moment (`none` for a subject
 no task names, `unknown` when the board's read side is not up yet). A repeat is a line whose subject and payload
 (its text without the event id) this session already received. Session and task ids are in the log line, never a label.
 The bridge runs in the `contexts` child and the Page API serves `/metrics`, so the counters travel as the exposition
@@ -9,6 +10,7 @@ kept in the event log's state, as `starpulse.bridge.metrics` does; a restart res
 
 import hashlib
 import logging
+import re
 from collections.abc import Callable, Sequence
 
 from prometheus_client import CollectorRegistry, Counter, generate_latest
@@ -20,6 +22,7 @@ from starpulse.sessions.ports.notify import Line
 logger = logging.getLogger(__name__)
 
 STATE = "bridge.wakes"
+_MOVED_TO = re.compile(r"\blane=(\S+)")
 #: Deliveries remembered for repeat detection, oldest forgotten first.
 _REMEMBERED = 4096
 
@@ -56,7 +59,8 @@ class Wakes:
 
     def _record(self, session: str, line: Line) -> None:
         task, event = _parts(line.subject)
-        lane = (self._lane_of(task) or "closed") if task else "none"
+        moved = _MOVED_TO.search(line.payload) if event == "moved" else None
+        lane = moved[1] if moved else (self._lane_of(task) or "closed") if task else "none"
         digest = hashlib.sha256((line.payload or line.text).encode()).hexdigest()[:12]
         key = (session, line.subject, digest)
         repeat = key in self._seen
