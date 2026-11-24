@@ -133,13 +133,14 @@ class _Build(StaticFiles):
 
 
 class _CaughtUp:
-    """Applies what the workers keep in the log before a request under `/api` reads it, so no follower thread does."""
+    """Applies what the workers keep in the log before a request under `/api`, or to `/graphql`, reads it, so no follower thread does."""
 
     def __init__(self, app: ASGIApp, caught_up: CaughtUp, workers: CapacityLimiter) -> None:
         self.app, self._caught_up, self._workers = app, caught_up, workers
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and scope["path"].startswith("/api/") and self._caught_up.due():
+        reads = scope["type"] == "http" and (scope["path"].startswith("/api/") or scope["path"] == "/graphql")
+        if reads and self._caught_up.due():
             await to_thread.run_sync(self._caught_up, abandon_on_cancel=True, limiter=scope.get(WORKERS, self._workers))
         await self.app(scope, receive, send)
 
@@ -154,8 +155,10 @@ def _light(scope: Scope) -> bool:
     """Whether the request is one of the board's own reads and writes, which hold a thread only for a moment: the
     snapshot, a task read, any write under `/api`, the metrics scrape and an intake post."""
     path, method = scope["path"], scope["method"]
-    return path in ("/metrics", "/api/snapshot") or path.startswith("/intake/") or (
-        path.startswith("/api/") and (path.startswith("/api/task/") or method in ("POST", "PUT", "DELETE"))
+    return (
+        path in ("/metrics", "/api/snapshot")
+        or path.startswith("/intake/")
+        or (path.startswith("/api/") and (path.startswith("/api/task/") or method in ("POST", "PUT", "DELETE")))
     )
 
 
@@ -525,4 +528,12 @@ def page_app(
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)
-    return PageApp(api_routes(api), [*metrics.routes, *graphql.routes, *intake.routes], static, feed.machines.keys(), grpc, api, caught_up)
+    return PageApp(
+        api_routes(api),
+        [*metrics.routes, *graphql.routes, *intake.routes],
+        static,
+        feed.machines.keys(),
+        grpc,
+        api,
+        caught_up,
+    )

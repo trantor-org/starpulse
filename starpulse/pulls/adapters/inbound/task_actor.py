@@ -304,10 +304,10 @@ class TaskActor:
         checks: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._main_green = main_green
-        #: Reads a stored open pull request's head checks live and stores them; once per head, for a record that holds
-        #: no rollup, which only an event lost before it was stored leaves.
+        #: Reads a stored open pull request's head checks live and stores them; once per head, again after a failed read, for a
+        #: record that holds no rollup, which only an event lost before it was stored leaves.
         self._checks = checks
-        self._checked: set[tuple[str, str]] = set()
+        self._checked: dict[tuple[str, str], float | None] = {}
         #: GitHub's answer now whether a pull request merges; a push that clears a conflict sends no event for it.
         self._mergeable = mergeable
         #: Per pull request, the stored record's version, what `mergeable` answered for it and when: an answer is read once,
@@ -1144,8 +1144,8 @@ class TaskActor:
 
     def _record(self, url: str) -> dict[str, Any] | None:
         record = pull_record(self._store, url)
-        if record and self._checks and self._unrolled(record) and (url, record["headRefOid"]) not in self._checked:
-            self._checked.add((url, record["headRefOid"]))
+        if record and self._checks and self._unrolled(record) and self._check_due(key := (url, record["headRefOid"])):
+            self._checked[key] = None
             threading.Thread(
                 target=self._settle_checks, args=(url, record, self._checks), name="task-actor-checks", daemon=True
             ).start()
@@ -1161,16 +1161,36 @@ class TaskActor:
                 return {**record, "mergeable": "MERGEABLE"}
         return record
 
+    def _check_due(self, key: tuple[str, str]) -> bool:
+        """Whether the head's checks are unread, or the last read of them failed `_MERGEABLE_RETRY_S` ago; a read in flight or answered is not."""
+        return (
+            key not in self._checked
+            or (failed := self._checked[key]) is not None
+            and self._clock() - failed >= _MERGEABLE_RETRY_S
+        )
+
     @staticmethod
     def _unrolled(record: dict[str, Any]) -> bool:
-        return record["state"] == "OPEN" and not record["isDraft"] and not record["requiredChecks"] and (record["rollup"] is None or not record["headRefOid"])
+        return (
+            record["state"] == "OPEN"
+            and not record["isDraft"]
+            and not record["requiredChecks"]
+            and (record["rollup"] is None or not record["headRefOid"])
+        )
 
     def _settle_checks(self, url: str, record: dict[str, Any], read: Callable[[dict[str, Any]], None]) -> None:
+        failed = False
         try:
             read(record)
-        except Exception as error:  # the head stays pending, read again only when its record is rebuilt
+        except Exception as error:  # the head stays pending, read again after `_MERGEABLE_RETRY_S`
             logger.warning("task actor: cannot read the checks of %s: %s", url, error)
-        self._hand_in(url, "checks read")
+            failed = True
+
+        def settle() -> None:
+            if failed:
+                self._checked[url, record["headRefOid"]] = self._clock()
+
+        self._hand_in(url, "checks read", settle)
 
     def _hand_in(self, url: str, why: str, settle: Callable[[], None] = lambda: None) -> None:
         """Run `settle` and derive the tasks citing `url` once a read made off the lock has its answer."""
@@ -1178,7 +1198,8 @@ class TaskActor:
             with self._pressing(), self._lock:
                 settle()
                 self._pull_states[url] = self._pull_state(url)
-                self.touch(self._webhooks(sorted(self._by_pr.get(url, ())), why))
+                if not self._noticing_ended:  # a move made after the notices close would miss its hook
+                    self.touch(self._webhooks(sorted(self._by_pr.get(url, ())), why))
         except Exception:  # touch derives under the lock and may raise
             logger.exception("task actor: cannot derive the tasks of %s on its %s", url, why)
 
@@ -1195,7 +1216,9 @@ class TaskActor:
     def _settle_mergeable(self, url: str, version: tuple[str, str], repo: str, number: int) -> None:
         try:
             answer = self._mergeable(repo, number)
-        except Exception as error:  # a read that fails leaves the stored answer to stand, as a read that says nothing does
+        except (
+            Exception
+        ) as error:  # a read that fails leaves the stored answer to stand, as a read that says nothing does
             logger.warning("task actor: cannot read whether %s merges: %s", url, error)
             answer = None
 
@@ -1368,7 +1391,9 @@ class TaskActor:
         ready = self._feed.roles.ready
         with self._lock:
             return [
-                agent["id"] for agent in self._feed.open_tasks() if agent["state"] in self._end_lanes and agent["state"] != ready
+                agent["id"]
+                for agent in self._feed.open_tasks()
+                if agent["state"] in self._end_lanes and agent["state"] != ready
             ]
 
     def unstarted(self) -> list[str]:
