@@ -1,9 +1,11 @@
 """The read model's reads: what the page, the agent CLI, search and the Scheduler ask of the Task tables."""
 
-from collections.abc import Collection
+import threading
+from collections.abc import Collection, Iterator
+from contextlib import contextmanager
 from typing import Any
 
-from sqlalchemy import Engine, Select, func, select, union_all
+from sqlalchemy import Connection, Engine, Select, func, select, union_all
 
 from starpulse.event_log.readmodel import queries, rows
 from starpulse.event_log.readmodel.declared import Declared
@@ -15,10 +17,34 @@ class ReadModel:
     def __init__(self, engine: Engine, declared: dict[str, Declared] | None = None) -> None:
         self._engine = engine
         self._declared = declared or {}
+        self._held = threading.local()
+
+    @contextmanager
+    def pinned(self) -> Iterator[None]:
+        """Within the block this thread's reads share one pooled connection, so a pass of many small reads checks out
+        once, never waiting on the pool's lock for each. Each read still sees the database as it stands, as a statement
+        of its own does; the block is re-entrant."""
+        if getattr(self._held, "db", None) is not None:
+            yield
+            return
+        with self._engine.connect() as db:
+            self._held.db = db
+            try:
+                yield
+            finally:
+                self._held.db = None
+
+    @contextmanager
+    def _reading(self) -> Iterator[Connection]:
+        if (held := getattr(self._held, "db", None)) is not None:
+            yield held
+            return
+        with self._engine.connect() as db:
+            yield db
 
     def task(self, task_id: str) -> Row | None:
         """The Task's whole row, archived or not, found by its id in any case; None when it has none."""
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return rows.load(db, task_id) or rows.load_any_case(db, task_id)
 
     def snapshot(self, done: str, since: float, only: str | None = None) -> list[dict[str, Any]]:
@@ -68,17 +94,17 @@ class ReadModel:
 
     def milestone_done(self, done: str, since: float) -> dict[str, int]:
         """How many Done Tasks last changed before `since` each milestone holds, the ones `snapshot` leaves out."""
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return {milestone: count for milestone, count in db.execute(queries.milestone_done(done, since))}
 
     def cold_done(self, done: str, since: float, only: str | None = None) -> dict[str, str]:
         """The milestone of each Done Task `milestone_done` counts, by id; `only` limits them to one Task."""
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return {task: milestone for task, milestone in db.execute(queries.cold_done(done, since, only))}
 
     def archived_since(self, since: float) -> int:
         """How many Tasks were archived at or after `since`."""
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return db.execute(queries.archived_since(since)).scalar_one()
 
     def ready(self, state: str, done: str, only: str | None = None) -> list[str]:
@@ -91,7 +117,7 @@ class ReadModel:
 
     def position(self) -> int:
         """The stream position of the newest change; 0 when no Task has one."""
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return db.execute(queries.position()).scalar() or 0
 
     def machine_tasks(self, machine: str, since: float | None = None) -> list[dict[str, Any]]:
@@ -108,7 +134,7 @@ class ReadModel:
     def machine_task(self, machine: str, task: str) -> dict[str, Any] | None:
         """The agent `machine` holds for `task`, or None when it places none."""
         statement = select(machine_tasks.c.agent).where(machine_tasks.c.machine == machine, machine_tasks.c.task == task)
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return db.execute(statement).scalar()
 
     def machine_lanes(self, since: float | None = None, keep_open: str | None = None) -> dict[str, list[dict[str, Any]]]:
@@ -129,12 +155,12 @@ class ReadModel:
             .order_by(machine_tasks.c.seq)
             .limit(limit)
         )
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return [tuple(row) for row in db.execute(statement).all()]
 
     def machine_position(self) -> int:
         """The stream position of the newest machine row; 0 when none has one."""
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return db.execute(select(func.max(machine_tasks.c.seq))).scalar() or 0
 
     def _machine_rows(
@@ -153,7 +179,7 @@ class ReadModel:
             statement = union_all(
                 statement.where(mt.task.in_(open_ids)), statement.where(mt.active_at >= since, mt.task.not_in(open_ids))
             )
-        with self._engine.connect() as db:
+        with self._reading() as db:
             found = [tuple(row) for row in db.execute(statement).all()]
         if since is not None:
             # Sorted here: an ORDER BY in the windowed SQL makes SQLite walk every row's primary key, not the `active_at` index.
@@ -161,9 +187,9 @@ class ReadModel:
         return [(machine, agent, seq) for machine, _, agent, seq in found]
 
     def _summaries(self, statement: Select[Any]) -> list[dict[str, Any]]:
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return [dict(item) for item in db.execute(statement).mappings()]
 
     def _ids(self, statement: Select[Any]) -> list[str]:
-        with self._engine.connect() as db:
+        with self._reading() as db:
             return list(db.execute(statement).scalars())

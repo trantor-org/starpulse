@@ -40,16 +40,17 @@ class ReadMethods:
     @contextmanager
     def pinned_rows(self) -> Iterator[None]:
         """Within the block this thread loads each task's row from the read model once, for a pass that asks for the same
-        rows again and again. `repin` drops them when the read model moved, so a row is never older than the position
-        the pass last saw."""
+        rows again and again, and its reads share one connection. `repin` drops them when the read model moved, so a row
+        is never older than the position the pass last saw."""
         if getattr(self._rows, "held", None) is not None:
             yield
             return
-        self._rows.held = (self._read_model.position(), {})
-        try:
-            yield
-        finally:
-            self._rows.held = None
+        with self._read_model.pinned():
+            self._rows.held = (self._read_model.position(), {})
+            try:
+                yield
+            finally:
+                self._rows.held = None
 
     def repin(self) -> None:
         """Within `pinned_rows`, forget the rows held when the read model has moved since they were loaded."""
