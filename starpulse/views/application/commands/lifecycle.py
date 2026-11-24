@@ -14,7 +14,7 @@ from starpulse.board.model.seam import (
 )
 from starpulse.bridge.last_event import readable
 from starpulse.contracts.api.dto.requests import (
-    ParkRequest,
+    Park,
     ReviewRequest,
 )
 from starpulse.machine_engine.model.transitions import lane_id
@@ -224,19 +224,17 @@ def _park_lane(feed: BoardFeed, reason: str) -> str | None:
     return feed.roles.attention if reason == "operator" else feed.roles.waiting
 
 
-@with_request(ParkRequest, "Parking a task")
 def park_task(
-    request: ParkRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
+    task: str, park: Park, comment: str, who: Who, feed: BoardFeed, read: TaskReader, edit: TaskEditor
 ) -> tuple[int, dict[str, Any]]:
-    """Request that the task actor park the In Progress task `request` names for the one reason it names: the HTTP status and JSON body.
+    """Request that the task actor park the In Progress `task` for the one reason `park` names: the HTTP status and JSON body.
 
     The reason picks the request and writes its gate and request comment in one edit, and no lane: `untilTask` adds
     dependencies (a `TASK-N#K` entry also records the criterion needed), `until` writes the Start Criteria block and a
     `Wait requested:` comment, and `operator` writes an `Ask requested:` comment holding the question. The task actor
     moves the task to Waiting or Needs attention, and the board's rules judge that move.
     """
-    task, comment, who = request.task, request.comment or "", who_of(request)
-    reasons = [key for key in _PARK_REASONS if key in request.model_fields_set]
+    reasons = [key for key in _PARK_REASONS if key in park.model_fields_set]
     if len(reasons) != 1:
         return 400, _BAD_PARK
     if (agent := held_task(feed, task)) is None:
@@ -247,7 +245,7 @@ def park_task(
         return 409, {
             "error": f"only an In Progress task can be parked (a Needs attention one only on a task): {task} is {agent['state']}"
         }
-    column, value = _park_lane(feed, reason), getattr(request, reason)
+    column, value = _park_lane(feed, reason), getattr(park, reason)
     if column is None:
         return 409, {"error": f"this board's machine has no lane to park {task} in for {reason}"}
     try:

@@ -59,13 +59,11 @@ export interface ApiContract {
   requests: (
     | MoveRequest
     | StartRequest
-    | VerdictRequest
     | MissRequest
     | RetireRequest
     | RetiredImportRequest
     | CompleteRequest
     | DispatchRequest
-    | ParkRequest
     | ReviewRequest
     | CreateRequest
     | TaskPutRequest
@@ -1828,21 +1826,6 @@ export interface StartRequest {
   task: string;
 }
 /**
- * `POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.
- *
- * A `miss` names the task `fix` that repairs it; `evidence` is kept in the verdict's comment.
- */
-export interface VerdictRequest {
-  actor?: string | null;
-  check: string;
-  evidence?: string | null;
-  fix?: string | null;
-  harness?: string | null;
-  session?: string | null;
-  task: string;
-  verdict: string;
-}
-/**
  * `POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write.
  */
 export interface MissRequest {
@@ -1923,20 +1906,6 @@ export interface DispatchRequest {
   task: string;
 }
 /**
- * `POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach
- * Done, or `TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait; `operator` (what only the operator can do) needs attention.
- */
-export interface ParkRequest {
-  actor?: string | null;
-  comment?: string | null;
-  harness?: string | null;
-  operator?: string | null;
-  session?: string | null;
-  task: string;
-  until?: string[] | null;
-  untilTask?: string[] | null;
-}
-/**
  * `POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge
  * the record the move would leave.
  */
@@ -1991,11 +1960,12 @@ export interface CreateRequest {
   urgency?: string | null;
 }
 /**
- * `PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore or take it over.
+ * `PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over or park it.
  *
  * An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the
  * body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`
- * (the archived task returns to the board) and `interactive: true` (the unattended task is taken over).
+ * (the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`
+ * (the held task pauses for the one reason it names, with the `comment` beside it).
  */
 export interface TaskPutRequest {
   actor?: string | null;
@@ -2010,9 +1980,20 @@ export interface TaskPutRequest {
   comment?: string | null;
   harness?: string | null;
   interactive?: true | null;
+  park?: Park | null;
   reopen?: string | null;
   request_key?: string | null;
   session?: string | null;
+}
+/**
+ * Pause the task on exactly one reason, which picks the lane: `untilTask` (tasks that must reach Done, or
+ * `TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait;
+ * `operator` (what only the operator can do) needs attention.
+ */
+export interface Park {
+  operator?: string | null;
+  until?: string[] | null;
+  untilTask?: string[] | null;
 }
 /**
  * `PUT /api/milestones`: open a milestone; only the title is required.

@@ -4602,43 +4602,10 @@
       "title": "Outlier",
       "type": "object"
     },
-    "ParkRequest": {
+    "Park": {
       "additionalProperties": false,
-      "description": "`POST /api/park`: pause `task` on exactly one reason, which picks the lane: `untilTask` (tasks that must reach\nDone, or `TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait; `operator` (what only the operator can do) needs attention.",
+      "description": "Pause the task on exactly one reason, which picks the lane: `untilTask` (tasks that must reach Done, or\n`TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait;\n`operator` (what only the operator can do) needs attention.",
       "properties": {
-        "actor": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "comment": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "operator": {
           "anyOf": [
             {
@@ -4649,20 +4616,6 @@
             }
           ],
           "default": null
-        },
-        "session": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "type": "string"
         },
         "until": {
           "anyOf": [
@@ -4693,10 +4646,7 @@
           "default": null
         }
       },
-      "required": [
-        "task"
-      ],
-      "title": "ParkRequest",
+      "title": "Park",
       "type": "object"
     },
     "Parked": {
@@ -7993,7 +7943,7 @@
     },
     "TaskPutRequest": {
       "additionalProperties": false,
-      "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore or take it over.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`\n(the archived task returns to the board) and `interactive: true` (the unattended task is taken over).",
+      "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over or park it.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`\n(the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`\n(the held task pauses for the one reason it names, with the `comment` beside it).",
       "properties": {
         "actor": {
           "anyOf": [
@@ -8057,6 +8007,17 @@
             {
               "const": true,
               "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "park": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Park"
             },
             {
               "type": "null"
@@ -8560,83 +8521,6 @@
       "title": "VerdictDelta",
       "type": "object"
     },
-    "VerdictRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.\n\nA `miss` names the task `fix` that repairs it; `evidence` is kept in the verdict's comment.",
-      "properties": {
-        "actor": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "check": {
-          "type": "string"
-        },
-        "evidence": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "fix": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "session": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "type": "string"
-        },
-        "verdict": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "check",
-        "verdict"
-      ],
-      "title": "VerdictRequest",
-      "type": "object"
-    },
     "ViewShown": {
       "description": "`GET /api/views/<id>`: the one GraphQL document a view stores in `starpulse.toml`.",
       "properties": {
@@ -8915,9 +8799,6 @@
             "$ref": "#/$defs/StartRequest"
           },
           {
-            "$ref": "#/$defs/VerdictRequest"
-          },
-          {
             "$ref": "#/$defs/MissRequest"
           },
           {
@@ -8931,9 +8812,6 @@
           },
           {
             "$ref": "#/$defs/DispatchRequest"
-          },
-          {
-            "$ref": "#/$defs/ParkRequest"
           },
           {
             "$ref": "#/$defs/ReviewRequest"

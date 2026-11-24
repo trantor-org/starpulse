@@ -15,8 +15,8 @@ internal and can change in any release.
   `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base;
   `task profile TASK PROFILE`, which returns `{task, profile, changed}`; `task archive TASK... [--reason]`, which archives
   every key in one `DELETE /api/tasks/{id}` each and returns `{archived}`, or is refused (exit 1) with `{archived, refused}`
-  when any key was refused, the others still archived (an agent's archive of an open task is a request the task actor carries out); `task verdict TASK CHECK pass|miss`, which returns `{task, check, verdict}`, and `task miss TASK CHECK --title`,
-  which returns `{task, check, verdict, fix}`, each refused (exit 1) for a check that is undeclared or already judged; `task restore TASK`, which returns `{task}` and is refused (exit 1) for a task that is open, not archived or
+  when any key was refused, the others still archived (an agent's archive of an open task is a request the task actor carries out); `task miss TASK CHECK --title`,
+  which returns `{task, check, verdict, fix}` and is refused (exit 1) for a check that is undeclared or already judged; `task restore TASK`, which returns `{task}` and is refused (exit 1) for a task that is open, not archived or
   whose file name is taken; `task retire TASK`, which returns `{task}` and is refused (exit 1) for a task that is open;
   `task retired [TASK]`, which returns `{tasks}`, each `{task, name, text}`; `task cold-done`, which returns `{tasks}`, every Done task past its hot day, newest first; `task import-retired FILE...`, which returns
   `{tasks}`, the imported ids; `task complete TASK`, which returns `{task}` and is refused (exit 1) for a task that is not Done;
@@ -212,7 +212,7 @@ score passes. Each board task also carries the rules' standing verdict as `reada
 `task show` record: empty when its description reads well (or the task is settled), else the first broken rule with
 its line, so a page can badge a description written before the rules without refusing it until its next edit.
 
-A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/verdict`, `/api/miss`, `PUT /api/tasks` and `PUT /api/tasks/{id}` and `DELETE /api/tasks/{id}`
+A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/miss`, `PUT /api/tasks` and `PUT /api/tasks/{id}` and `DELETE /api/tasks/{id}`
 take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). Every write parses its body through the request model of its route, so a body that is not a JSON object, names a key the route does not take or holds a field of the wrong type is a 400 `invalid request: <field>: <reason>` for its first fault, a key the route does not take before any other. The page names
 `operator`; `starpulse` verbs name `agent`, their session and their harness. A write naming no actor is `agent` when it
 names a session and `anonymous` when it names none, never `operator`, so an unnamed write is not judged as the
@@ -234,13 +234,11 @@ post_merge_checks:
   - {id: live, text: The service answers, within: 1d, pass: {kind: prom, expr: up}}
 ```
 
-`POST /api/verdict` `{task, check, verdict: "pass"|"miss"[, evidence, fix]}` records a check's verdict as a comment on
-its task: `[post-merge-check] <id> PASS` or `MISS`, then `Fix: <task>` for a miss and the evidence. It answers 200
-`{task, check, verdict[, fix]}`, 409 for a malformed block, an undeclared check or a check that already has a verdict (a
-verdict is final), 400 for a `miss` that names no `fix` task, and 404 for a `fix` the board does not hold.
+A check's verdict is a comment on its task, `[post-merge-check] <id> PASS` or `MISS`, then `Fix: <task>` for a miss and the
+evidence; a `PASS` is written as the `comment` of `PUT /api/tasks/{id}`.
 `POST /api/miss` `{task, check, fix: {title, ...as a create}[, evidence]}` files the fix task and records the MISS
 verdict naming it in one call, answering 200 `{task, check, verdict, fix}`. When the verdict is refused after the fix
-is filed, the fix is archived again, so a refused miss leaves neither. Both take the optional `actor`, `session` and
+is filed, the fix is archived again, so a refused miss leaves neither. It takes the optional `actor`, `session` and
 `harness` of every write.
 
 ## Versioning
