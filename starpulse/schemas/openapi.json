@@ -1182,112 +1182,6 @@
         }
       }
     },
-    "/api/edit": {
-      "post": {
-        "summary": "Edit a task",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_edit",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EditRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Edited"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/StaleEdit"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/archive": {
-      "post": {
-        "summary": "Archive tasks",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_archive",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ArchiveRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Archived"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ArchivedEach"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/verdict": {
       "post": {
         "summary": "Record a verdict",
@@ -1377,95 +1271,6 @@
                       "$ref": "#/components/schemas/ApiError"
                     }
                   ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/restore": {
-      "post": {
-        "summary": "Restore an archived task",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_restore",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RestoreRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Restored"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/take-over": {
-      "post": {
-        "summary": "Take a session over",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_take_over",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TakeOverRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TakenOver"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -1754,125 +1559,7 @@
         }
       }
     },
-    "/api/reopen": {
-      "post": {
-        "summary": "Reopen a task",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_reopen",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReopenRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Reopened"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/tasks": {
-      "post": {
-        "summary": "Create tasks",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_tasks",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Created"
-                    },
-                    {
-                      "$ref": "#/components/schemas/CreatedEach"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Created"
-                    },
-                    {
-                      "$ref": "#/components/schemas/CreatedEach"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      },
       "put": {
         "summary": "Create tasks",
         "tags": [
@@ -3455,84 +3142,6 @@
         "title": "ApiError",
         "type": "object"
       },
-      "ArchiveRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/archive`: archive `task`, or each of `tasks` in one call, recording `reason` when it is not blank.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "tasks": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "minItems": 1,
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "title": "ArchiveRequest",
-        "type": "object"
-      },
       "Archived": {
         "properties": {
           "task": {
@@ -3543,29 +3152,6 @@
           "task"
         ],
         "title": "Archived",
-        "type": "object"
-      },
-      "ArchivedEach": {
-        "description": "A batch archive's answer: the tasks it archived, and each refused task with why.",
-        "properties": {
-          "archived": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "refused": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object"
-          }
-        },
-        "required": [
-          "archived",
-          "refused"
-        ],
-        "title": "ArchivedEach",
         "type": "object"
       },
       "BuildEvent": {
@@ -3770,7 +3356,7 @@
       },
       "CreateRequest": {
         "additionalProperties": false,
-        "description": "`POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped\n`created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.",
+        "description": "`PUT /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped\n`created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.",
         "properties": {
           "ref": {
             "anyOf": [
@@ -5311,92 +4897,6 @@
           "more"
         ],
         "title": "DonePage",
-        "type": "object"
-      },
-      "EditRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/edit`: change fields of `task`; `base` holds the value each changed field had when the page read it.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          },
-          "base": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "changes": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "comment": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "breakGlass": {
-            "default": false,
-            "type": "boolean"
-          },
-          "request_key": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "The client's key for this send: an edit sent again with it answers the first send's answer."
-          }
-        },
-        "required": [
-          "task",
-          "base",
-          "changes"
-        ],
-        "title": "EditRequest",
         "type": "object"
       },
       "Edited": {
@@ -8644,57 +8144,6 @@
         "title": "RecentRun",
         "type": "object"
       },
-      "ReopenRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/reopen`: return the Done task `task`, completed or not, to In Progress with `reason` as its comment.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task",
-          "reason"
-        ],
-        "title": "ReopenRequest",
-        "type": "object"
-      },
       "Reopened": {
         "properties": {
           "task": {
@@ -8786,53 +8235,6 @@
           "at"
         ],
         "title": "RestartingEvent",
-        "type": "object"
-      },
-      "RestoreRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged; the writer names who did.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "title": "RestoreRequest",
         "type": "object"
       },
       "Restored": {
@@ -10612,20 +10014,6 @@
           "when"
         ],
         "title": "Submachine",
-        "type": "object"
-      },
-      "TakeOverRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/take-over`: flip the unattended task `task` to interactive; its workflow types nothing more.",
-        "properties": {
-          "task": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "title": "TakeOverRequest",
         "type": "object"
       },
       "TakenOver": {

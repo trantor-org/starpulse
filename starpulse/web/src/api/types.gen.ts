@@ -10,7 +10,6 @@ export interface ApiContract {
     | MovedEach
     | Edited
     | Archived
-    | ArchivedEach
     | Judged
     | Restored
     | Retired
@@ -60,16 +59,11 @@ export interface ApiContract {
   requests: (
     | MoveRequest
     | StartRequest
-    | EditRequest
-    | ArchiveRequest
     | VerdictRequest
     | MissRequest
-    | RestoreRequest
     | RetireRequest
-    | TakeOverRequest
     | RetiredImportRequest
     | CompleteRequest
-    | ReopenRequest
     | DispatchRequest
     | ParkRequest
     | ReviewRequest
@@ -403,16 +397,6 @@ export interface Edited {
 }
 export interface Archived {
   task: string;
-  [k: string]: unknown;
-}
-/**
- * A batch archive's answer: the tasks it archived, and each refused task with why.
- */
-export interface ArchivedEach {
-  archived: string[];
-  refused: {
-    [k: string]: string;
-  };
   [k: string]: unknown;
 }
 export interface Judged {
@@ -1840,38 +1824,6 @@ export interface StartRequest {
   task: string;
 }
 /**
- * `POST /api/edit`: change fields of `task`; `base` holds the value each changed field had when the page read it.
- */
-export interface EditRequest {
-  actor?: string | null;
-  base: {
-    [k: string]: unknown;
-  };
-  breakGlass?: boolean;
-  changes: {
-    [k: string]: unknown;
-  };
-  comment?: string | null;
-  harness?: string | null;
-  /**
-   * The client's key for this send: an edit sent again with it answers the first send's answer.
-   */
-  request_key?: string | null;
-  session?: string | null;
-  task: string;
-}
-/**
- * `POST /api/archive`: archive `task`, or each of `tasks` in one call, recording `reason` when it is not blank.
- */
-export interface ArchiveRequest {
-  actor?: string | null;
-  harness?: string | null;
-  reason?: string | null;
-  session?: string | null;
-  task?: string | null;
-  tasks?: [string, ...string[]] | null;
-}
-/**
  * `POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.
  *
  * A `miss` names the task `fix` that repairs it; `evidence` is kept in the verdict's comment.
@@ -1936,24 +1888,9 @@ export interface CreateSpec {
   urgency?: string | null;
 }
 /**
- * `POST /api/restore`: return the archived task `task` to the board's tasks, unchanged; the writer names who did.
- */
-export interface RestoreRequest {
-  actor?: string | null;
-  harness?: string | null;
-  session?: string | null;
-  task: string;
-}
-/**
  * `POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks.
  */
 export interface RetireRequest {
-  task: string;
-}
-/**
- * `POST /api/take-over`: flip the unattended task `task` to interactive; its workflow types nothing more.
- */
-export interface TakeOverRequest {
   task: string;
 }
 /**
@@ -1967,16 +1904,6 @@ export interface RetiredImportRequest {
  * `POST /api/complete`: move the Done task `task` into the board's completed tasks.
  */
 export interface CompleteRequest {
-  task: string;
-}
-/**
- * `POST /api/reopen`: return the Done task `task`, completed or not, to In Progress with `reason` as its comment.
- */
-export interface ReopenRequest {
-  actor?: string | null;
-  harness?: string | null;
-  reason: string;
-  session?: string | null;
   task: string;
 }
 /**
@@ -2019,7 +1946,7 @@ export interface ReviewRequest {
   task: string;
 }
 /**
- * `POST /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
+ * `PUT /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
  * `created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.
  */
 export interface CreateRequest {

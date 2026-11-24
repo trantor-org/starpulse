@@ -23,7 +23,7 @@ export type CreateResult = { ok: true; task: string } | { ok: false; reason: str
 
 const list = (text: string) => text.split(",").map((v) => v.trim()).filter(Boolean);
 
-/** `POST /api/tasks`'s body: the trimmed title, the page's actor and every other field the draft filled, lists split and blank criteria dropped. */
+/** `PUT /api/tasks`'s body: the trimmed title, the page's actor and every other field the draft filled, lists split and blank criteria dropped. */
 export function createBody(draft: NewTaskDraft): Record<string, string | string[]> {
   const body: Record<string, string | string[]> = { title: draft.title.trim(), actor: PAGE_ACTOR };
   for (const field of ["description", "priority", "impact", "urgency", "milestone", "assignee"] as const) {

@@ -260,7 +260,7 @@ another multiplexer (herdr) therefore changes nothing here.
 
 The server streams the same facts to a mod: `GET /api/lanes?state=<lane>…` (one `state` per open lane) and `/api/held` are
 event streams. The server sends the lanes as a `lanes` event on connect and again only
-when they change. Each held task carries `skill` (`{name, states, current, next}`: the skill machine its phase holds it in, its state ids in order, the state it holds, and its `next` edge; `null` off the In Progress phases) and `interactive` (true once an accepted `POST /api/take-over` flipped it; `false` before). A held or lanes stream wakes only for a change to a task it shows, to a task one of those waits on, or to one that moves into its view, and the streams a change wakes read one build of the columns, so a change costs the board once, not once per open stream.
+when they change. Each held task carries `skill` (`{name, states, current, next}`: the skill machine its phase holds it in, its state ids in order, the state it holds, and its `next` edge; `null` off the In Progress phases) and `interactive` (true once an accepted `PUT /api/tasks/{id}` with `interactive: true` flipped it; `false` before). A held or lanes stream wakes only for a change to a task it shows, to a task one of those waits on, or to one that moves into its view, and the streams a change wakes read one build of the columns, so a change costs the board once, not once per open stream.
 
 ## The pull-request store
 

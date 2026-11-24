@@ -516,14 +516,14 @@ budget and the board to its soft memory limit.
 The native board appends every Task write to the Task's `task` stream (`board/task_history.py`) first and renders the
 task file after. A verb reads its base from the History, appends with a compare-and-set at the head it read, and writes the
 file only once the append lands; one wrapper around the board's `writer`, `assign`, `edit`, `archive`, `restore`,
-`complete`, `retire` and `create` covers every entry path: the `starpulse task` verbs, `PUT /api/tasks`, `PUT /api/tasks/{id}`, `/api/edit`, the page, the
+`complete`, `retire` and `create` covers every entry path: the `starpulse task` verbs, `PUT /api/tasks`, `PUT /api/tasks/{id}`, the page, the
 Scheduler and the task actor, which all call those verbs.
 
 - The Events are the intent the History's replay and the verb's result show: `TaskCreated`, `FieldsEdited` (own columns and `meta`),
   `Transitioned` (both states), `CriterionAdded`, `CriterionChecked`, `CommentAdded`, `Claimed`/`Released`, `Archived` and
   `Rehydrated`. A refused write appends nothing.
 - A plan rewrite on a started task also appends `PlanRevised` (`ordinal`, `reason`, counted per task from 1), after the
-  `FieldsEdited` it accompanies. The `/api/edit` change `planReason` carries the reason; the edit is refused without it.
+  `FieldsEdited` it accompanies. The `PUT /api/tasks/{id}` change `planReason` carries the reason; the edit is refused without it.
   The fold ignores the Event; `GET /api/history?task=` reports the count as `plan_revisions`.
 - A Task with no History takes no write (`<task> has no History, so it takes no write`) and a create over an existing
   History is refused: `starpulse import-board` and `starpulse parity --import` give a file its `TaskImported`.
@@ -802,7 +802,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `webhook_command` (list of text): The command `POST /intake/grafana` runs, as an argv, with the request body on stdin once the bearer token `webhook_token_env` names matches. Exit 0: accepted (202). Any other exit or a timeout: 502 with the command's stderr, so the sender retries. 404 when this is unset. Needs `webhook_token_env`.
 - `webhook_token_env` (text): The environment variable holding the bearer token `POST /intake/grafana` requires; the value is the name, never the token.
 - `github_token_env` (text): The name of an environment variable holding a GitHub token. `serve` exports its value as `GITHUB_TOKEN` and `GH_TOKEN` before it starts any worker, so the GitHub reads and the child processes sign in with it; unset, or naming an unset variable, leaves both as they were. The value is the name, never the token.
-- `take_over_command` (list of text): The command `POST /api/take-over` runs, as an argv: StarPulse appends the task id (`{"task": "TASK-7"}` in the body) and the command asks the task's workflow engine to flip that task's workflow to interactive, so it types nothing more into the task's session. Exit 0: sent (200). Exit 1: the task has no running workflow (409). Any other exit: an error, with the command's stderr. 404 when this is unset. The command is the only place a workflow engine appears.
+- `take_over_command` (list of text): The command `PUT /api/tasks/{id}` with `interactive: true` runs, as an argv: StarPulse appends the task id and the command asks the task's workflow engine to flip that task's workflow to interactive, so it types nothing more into the task's session. Exit 0: sent (200). Exit 1: the task has no running workflow (409). Any other exit: an error, with the command's stderr. 404 when this is unset. The command is the only place a workflow engine appears.
 - `runs` (list of `[[runs]]` table): One instance of a runs adapter per `[[runs]]` table.
 - `producers` (list of `[[producers]]` table): A system that posts machine events as CloudEvents (see docs/sources.md, Post machine events as CloudEvents). The Connect `starpulse.v1.CloudEventsIngest` answers 404 until one is declared. A producer writes only the machines and actors listed here.
 - `views` (list of `[[views]]` table): One view per `[[views]]` table: the GraphQL document its page runs at `/graphql`.

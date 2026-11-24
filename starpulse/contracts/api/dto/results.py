@@ -34,13 +34,6 @@ class Archived(_Api):
     task: str
 
 
-class ArchivedEach(_Api):
-    """A batch archive's answer: the tasks it archived, and each refused task with why."""
-
-    archived: list[str]
-    refused: dict[str, str]
-
-
 class Judged(_Api):
     task: str
     check: str
