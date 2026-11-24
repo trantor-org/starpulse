@@ -31,7 +31,10 @@ class Edited(_Api):
 
 
 class Archived(_Api):
+    """A task archive's answer: `requested` when an agent's archive of an open task only recorded the request."""
+
     task: str
+    requested: bool
 
 
 class Judged(_Api):

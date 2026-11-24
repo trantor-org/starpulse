@@ -659,19 +659,22 @@ def task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
     if len(args.task) == 1:
         path = f"/api/tasks/{args.task[0]}"
         status, reply = agent_wire.delete(base, path, body)
-        return {"archived": [record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]]}
-    archived, refused = [], {}
+        answer = record_call(base, path, status, reply, missing=_TASK_MISSING)
+        key = args.task[0]
+        return {"archived": [] if answer["requested"] else [key], "requested": [key] if answer["requested"] else []}
+    archived, requested, refused = [], [], {}
     for task in args.task:
         path = f"/api/tasks/{task}"
         status, reply = agent_wire.delete(base, path, body)
         try:
-            archived.append(record_call(base, path, status, reply, missing=_TASK_MISSING)["task"])
+            answer = record_call(base, path, status, reply, missing=_TASK_MISSING)
+            (requested if answer["requested"] else archived).append(task)
         except agent_wire.CliError as error:
             refused[task] = str(error)
     if refused:
         message = f"{len(refused)} of {len(args.task)} tasks refused: {', '.join(refused)}"
-        raise agent_wire.CliError("refused", message, archived=archived, refused=refused)
-    return {"archived": archived}
+        raise agent_wire.CliError("refused", message, archived=archived, requested=requested, refused=refused)
+    return {"archived": archived, "requested": requested}
 
 
 def task_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

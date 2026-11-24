@@ -160,9 +160,10 @@ def _archive_one(
     """Archive one `task` for `delete_task`: the HTTP status and JSON body it answers."""
     if (agent := held_task(feed, task)) is None:
         if feed.is_archived(task):
-            return 200, {"task": task}  # a retry of a write that applied
+            return 200, {"task": task, "requested": False}  # a retry of a write that applied
         return not_held(feed, task)
-    if who.actor == AGENT and agent["state"] != feed.roles.done:
+    requested = who.actor == AGENT and agent["state"] != feed.roles.done
+    if requested:
         written = record_written(
             feed, task, who, lambda: edit(task, {}, f"{ARCHIVE_REQUEST} {reason.strip()}".strip(), actor=who.actor)
         )
@@ -170,7 +171,7 @@ def _archive_one(
         written = record_written(feed, task, who, lambda: archive(task, reason, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"task": task}
+    return 200, {"task": task, "requested": requested}
 
 
 def _unjudged(task: str, current: Mapping[str, Any], check: str) -> str | None:

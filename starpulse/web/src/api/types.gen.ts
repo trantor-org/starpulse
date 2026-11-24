@@ -395,7 +395,11 @@ export interface Edited {
   task: string;
   [k: string]: unknown;
 }
+/**
+ * A task archive's answer: `requested` when an agent's archive of an open task only recorded the request.
+ */
 export interface Archived {
+  requested: boolean;
   task: string;
   [k: string]: unknown;
 }
