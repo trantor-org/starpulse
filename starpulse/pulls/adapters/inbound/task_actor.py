@@ -1197,7 +1197,7 @@ class TaskActor:
 
     @staticmethod
     def _unrolled(record: dict[str, Any]) -> bool:
-        return record["state"] == "OPEN" and not record["isDraft"] and record["rollup"] is None and not record["requiredChecks"]
+        return record["state"] == "OPEN" and not record["isDraft"] and not record["requiredChecks"] and (record["rollup"] is None or not record["headRefOid"])
 
     def _settle_checks(self, url: str, record: dict[str, Any], read: Callable[[dict[str, Any]], None]) -> None:
         try:

@@ -173,11 +173,11 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
 
 
 def settle_checks(store: PullStore, reader: GitHubReader, record: dict[str, Any], now: float) -> None:
-    """Store the checks of `record`'s head as GitHub reads them now: each required check's result and the rollup."""
-    head = record["headRefOid"]
+    """Store the checks of `record`'s head, read from GitHub when the record holds none, as GitHub reads them now: each required check's result and the rollup."""
+    head = record["headRefOid"] or reader.head(record["repo"], record["number"])
     required = reader.required(record["repo"], record["baseRefName"])
     results = reader.results(record["repo"], head)
     posted = [{"name": name, "result": REPORT_RESULTS[results[name]]} for name in sorted(required) if name in results]
     checks = sorted(with_missing(posted, (check["name"] for check in posted), required), key=lambda check: check["name"])
     state = rollup(required, results)
-    _amend(store, record, lambda _: {"requiredChecks": checks, "rollup": {"sha": head, "state": state, "at": now}})
+    _amend(store, record, lambda _: {"headRefOid": head, "requiredChecks": checks, "rollup": {"sha": head, "state": state, "at": now}})

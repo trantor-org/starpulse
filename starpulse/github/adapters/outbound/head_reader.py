@@ -37,6 +37,9 @@ class GitHubReader:
             if pull.get("state") == "open" and pull["head"]["sha"] == sha
         ]
 
+    def head(self, repository: str, number: int) -> str:
+        return get(self._transport, f"/repos/{repository}/pulls/{number}")["head"]["sha"]
+
     def required(self, repository: str, base: str) -> frozenset[str]:
         return required_of(self._pages(f"/repos/{repository}/rules/branches/{base}"))
 
