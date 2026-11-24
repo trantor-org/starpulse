@@ -111,6 +111,7 @@ WAIT_REQUEST = "Wait requested:"
 ASK_REQUEST = "Ask requested:"
 ARCHIVE_REQUEST = "Archive requested:"
 MOVE_REQUEST = "Move requested:"
+NO_MERGE = "No merge needed:"
 
 _OPERATOR_ANSWER = re.compile(r"(?m)^Operator answer \(\w+:[\w-]+#[\w-]+\): ")
 

@@ -11,7 +11,6 @@ from starpulse.contracts.api.dto.dag import DagBody, Jobs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
 from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
-from starpulse.contracts.api.dto.health import MachineHistory, TaskEventHistory
 from starpulse.contracts.api.dto.milestones import (
     Docs,
     DocShown,
@@ -21,7 +20,7 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecord,
     TaskRecords,
 )
-from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, MachineDetail, Machines
+from starpulse.contracts.api.dto.pages import DonePage, MachineDetail, Machines
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
@@ -41,7 +40,6 @@ from starpulse.contracts.api.dto.requests import (
     MissRequest,
     MoveRequest,
     RetireRequest,
-    ReviewRequest,
     StartRequest,
     TaskPutRequest,
     WindowRequest,
@@ -69,7 +67,6 @@ from starpulse.contracts.api.dto.results import (
     Reopened,
     Restored,
     Retired,
-    Reviewed,
     Started,
     TakenOver,
 )
@@ -124,7 +121,6 @@ RESPONSES: dict[str, Any] = {
     "/api/milestones/": MilestoneShown,
     "/api/docs/": DocShown,
     "/api/retired": RetiredTasks,
-    "/api/history": LaneHistory | MachineHistory | TaskEventHistory,
     "/api/search": SearchResults,
     "/api/search/similar": SearchResults,
     "/api/views/": ViewShown,
@@ -139,7 +135,6 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/retire": RetireRequest,
     "/api/complete": CompleteRequest,
     "/api/dispatch": DispatchRequest,
-    "/api/review": ReviewRequest,
     "/api/tasks": CreateRequest,
     "/api/machines": MachineCreateRequest,
     "/api/machines/{name}": MachinePutRequest,
@@ -171,7 +166,6 @@ BODIES: dict[str, Any] = {
     "machine_put": MachineWritten | ApiError,
     "machine_retire": MachineRetired | ApiError,
     "done": DonePage | ApiError,
-    "history": LaneHistory | MachineHistory | TaskEventHistory | ApiError,
     "search": SearchResults | ApiError,
     "spend": Spend | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
@@ -191,7 +185,6 @@ BODIES: dict[str, Any] = {
     "retired": RetiredTasks | ApiError,
     "complete": Completed | SkillRefusal | ApiError,
     "dispatch": Dispatched | ApiError,
-    "review": Reviewed | SkillRefusal | ApiError,
     "create": Created | CreatedEach | SkillRefusal | ApiError,
     "task_put": Edited | StaleEdit | Restored | Reopened | TakenOver | Parked | SkillRefusal | ApiError,
     "task_delete": Archived | SkillRefusal | ApiError,
@@ -264,7 +257,6 @@ ROUTES: dict[tuple[str, str], Op] = {
         "Tasks like a text", "search", "before", "finished_within_days", "label", "limit", "q"
     ),
     ("GET", "/api/harnesses"): _read("The harnesses and their windows", "harnesses"),
-    ("GET", "/api/history"): _read("Lane, machine or task-event history", "history", "hours", "machine", "task"),
     ("GET", "/api/history-window"): _read("How many hours of history the store keeps", "window"),
     ("PUT", "/api/history-window"): _write("Set the history window", "window", WindowRequest),
     ("DELETE", "/api/history-window"): _write("Reset the history window to its default", "window"),
@@ -276,13 +268,14 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/miss"): _write("Record a miss", "verdict", MissRequest),
     ("POST", "/api/retire"): _write("Retire a task", "retire", RetireRequest),
     ("POST", "/api/dispatch"): _write("Dispatch a session to a task", "dispatch", DispatchRequest, "202"),
-    ("POST", "/api/review"): _write("Record a review", "review", ReviewRequest),
     ("POST", "/api/complete"): _write("Complete a task", "complete", CompleteRequest),
     ("PUT", "/api/tasks"): _write("Create tasks", "create", CreateRequest, "201", "200"),
     ("PUT", "/api/tasks/{id}"): _write(
         "Write a task over the base named, or reopen, restore, take it over or park it", "task_put", TaskPutRequest
     ),
-    ("DELETE", "/api/tasks/{id}"): _write("Archive a task, recording the `reason` its optional body names", "task_delete"),
+    ("DELETE", "/api/tasks/{id}"): _write(
+        "Archive a task, recording the `reason` its optional body names", "task_delete"
+    ),
     ("GET", "/api/milestones/{id}"): _read("One milestone, archived or open", "milestone"),
     ("PUT", "/api/milestones/{id}"): _write(
         "Write a milestone over the revision named", "milestone_put", MilestonePutRequest
@@ -305,9 +298,17 @@ ROUTES: dict[tuple[str, str], Op] = {
         BODIES["graphql"],
         GraphqlRequest,
         extra=(
-            ("200", _STREAM, "A `taskChanges` subscription: one `next` event, holding a GraphQL result, for each task change after `from`, a move on a machine other than the board included; an `occurrenceChanges` subscription: the ledger's newest page first (`head`), then one for each change to its rows"),
+            (
+                "200",
+                _STREAM,
+                "A `taskChanges` subscription: one `next` event, holding a GraphQL result, for each task change after `from`, a move on a machine other than the board included; an `occurrenceChanges` subscription: the ledger's newest page first (`head`), then one for each change to its rows",
+            ),
             ("404", "application/json", "An `occurrenceChanges` subscription for an event no workflow is tied to"),
-            ("410", "application/json", "The `from` position is no longer held: the error code is `REREAD`, and the client reads the task list again"),
+            (
+                "410",
+                "application/json",
+                "The `from` position is no longer held: the error code is `REREAD`, and the client reads the task list again",
+            ),
         ),
     ),
     ("GET", "/metrics"): _read("Prometheus metrics", media="text/plain"),

@@ -1,7 +1,7 @@
 // The bridge between the board and the ported B · Suns engine: a task's 24h of machine events become the engine's job (its visits to Build, QA,
 // Deliver and Review fix, rounds and steps), and one pass of the engine becomes the scene, tooltips, details and Tasks panel the drill-in draws.
 import type { CSSProperties } from "react";
-import type { MachineEvent } from "../../api/types.gen";
+import type { MachineEvent } from "./trace";
 import { tint } from "./tint";
 import { HAIR, jobAt, LENSES, LN, PANE_R, replay, ROWS_END, rows, setLayout, setNowMinutes, statusOf, STEPS, STYLE, template, TIER, type Job, type Scene, type View } from "./sunsEngine";
 

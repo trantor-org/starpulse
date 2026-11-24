@@ -24,7 +24,7 @@ export interface TraceIO {
   level(): Level;
   pinnable(s: Subject): boolean;
   runFor(s: Subject): Run | "loading" | "unavailable";
-  /** The machine paths `/api/history` has answered for a task, by machine; a machine not yet read is absent. */
+  /** The machine paths the task's `machinePath` has answered for a task, by machine; a machine not yet read is absent. */
   walked(task: string, machines: string[]): Record<string, MachineStep[]>;
   sourceOf(flow: string | null | undefined): string | undefined;
 }
@@ -37,7 +37,7 @@ export interface Trail {
   stations: (Pt & { c: string; k?: string })[];
   machines: string[];
 }
-/** A dot's route out of its sun's hub, up its own branch from the station it forked from, lit as `/api/history` says it was walked: a station shows
+/** A dot's route out of its sun's hub, up its own branch from the station it forked from, lit as `machinePath` says it was walked: a station shows
  *  only where its machine's path landed in its step, and the fork and the dot's own stay lit; the machines it rode come in the order their first events
  *  came (the route's own order while none has history). Where the machine changes, the colour blends over the stretch between the stations either side. */
 export function trailOf({ run, end }: RouteOf, walked: Record<string, MachineStep[]>): Trail {

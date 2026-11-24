@@ -929,6 +929,8 @@ class TaskActor:
             pushable = bool(_COMMENTED.intersection(waits))  # a comment leaves the view as it was
             if before == (now := _view(agent)) and not (repaired or rearmed or regated or pushable):
                 return
+            if pushable and before == now:
+                self._unsettle([name])  # a comment is no digest fact: a settled Waiting task derives again to read it
             self._index(agent)
             lane = before is None or before[0] != now[0]
             if now[0] != self._feed.roles.working:
@@ -1123,6 +1125,7 @@ class TaskActor:
         self._released_visit.discard(name)
         self._unready_logged.pop(name, None)
         self._deadlines.cancel(name)
+        self._deadlines.cancel(_STARTED + name)
         self._dates.pop(name, None)
         self._unwatch(name)
 
@@ -1714,14 +1717,19 @@ class TaskActor:
         for name, reason in start_requests.failed(self._log).items():
             with self._lock:
                 agent = self._feed.task(name, lean=True)
-                if agent is not None and agent["state"] == self._feed.roles.ready:
-                    self._attend(
+                if (
+                    agent is not None
+                    and agent["state"] == self._feed.roles.ready
+                    and not self._attend(
                         name,
                         reason,
                         "could not be started",
                         "Start a session on it?",
                         ("start it by hand", "rescope the task"),
+                        again=self.start_failed,
                     )
+                ):
+                    continue  # the failure stays until the retry parks the task
             start_requests.forgive(self._log, name)
 
     def _admitted(self, name: str, verb: str) -> bool:
@@ -1851,22 +1859,26 @@ class TaskActor:
         what: str = "was resumed with no progress",
         ask: str = "Which?",
         options: Sequence[str] = ("resume it by hand", "rescope the task"),
-    ) -> None:
+        again: Callable[[], None] | None = None,
+    ) -> bool:
+        """Park `name` in Needs attention; False only when the board's lock held the write up and `again` will run."""
         agent = self._feed.task(name, lean=True)
         attention = self._feed.roles.attention
         if agent is None or attention is None:
-            return
+            return True
         reason = attention_reason(
             f"{name} {what}",
             why,
             options,
             ask,
         )
-        self._apply(
+        written = self._apply(
             name,
             {"status": attention, "description": section_set(agent["description"], "Needs attention", reason)},
             reason,
+            again=again,
         )
+        return not written.transient
 
     def _settle_busy(self, data: dict[str, Any]) -> None:
         name = data["id"]
@@ -2307,6 +2319,8 @@ class TaskActor:
         from the wait otherwise. Every derivation re-arms, so a re-park, a new `expect_by` or a dependency's lane
         change moves the deadline."""
         self._deadlines.cancel(name)
+        if agent["state"] != self._feed.roles.working:
+            self._deadlines.cancel(_STARTED + name)  # a resume's start bound ends with its working visit
         if agent["state"] not in self._timed_lanes:
             self._dates.pop(name, None)
             return

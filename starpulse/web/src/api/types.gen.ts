@@ -18,7 +18,6 @@ export interface ApiContract {
     | Reopened
     | Dispatched
     | Parked
-    | Reviewed
     | Created
     | CreatedEach
     | MachineWritten
@@ -48,9 +47,7 @@ export interface ApiContract {
   harnesses: Harnesses;
   job: DagBody;
   jobs: Jobs;
-  laneHistory: LaneHistory;
   machineDetail: MachineDetail;
-  machineHistory: MachineHistory;
   machines: Machines;
   milestoneShown: MilestoneShown;
   milestones: Milestones;
@@ -62,7 +59,6 @@ export interface ApiContract {
     | RetireRequest
     | CompleteRequest
     | DispatchRequest
-    | ReviewRequest
     | CreateRequest
     | TaskPutRequest
     | MilestoneCreateRequest
@@ -85,7 +81,6 @@ export interface ApiContract {
   snapshot: Snapshot;
   spend: Spend;
   stale: StaleEvent;
-  taskEventHistory: TaskEventHistory;
   taskRecord: TaskRecord;
   taskRecords: TaskRecords;
   trajectories: Trajectories;
@@ -432,11 +427,6 @@ export interface Dispatched {
   [k: string]: unknown;
 }
 export interface Parked {
-  task: string;
-  to: string;
-  [k: string]: unknown;
-}
-export interface Reviewed {
   task: string;
   to: string;
   [k: string]: unknown;
@@ -1576,22 +1566,6 @@ export interface Jobs {
   [k: string]: unknown;
 }
 /**
- * `GET /api/history?task=`: a task's lane changes, oldest first, and how many times its plan was revised after work began.
- */
-export interface LaneHistory {
-  path: LaneStep[];
-  plan_revisions?: number;
-  task: string;
-  [k: string]: unknown;
-}
-export interface LaneStep {
-  at: number;
-  by?: string | null;
-  from: string | null;
-  to: string;
-  [k: string]: unknown;
-}
-/**
  * `GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with
  * (empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only; `hash` is the
  * version the store runs it under, the `base` of a write, and absent when the store holds none.
@@ -1667,22 +1641,6 @@ export interface Submachine {
    * What has to hold for the inner machine to run under `state`; empty when always.
    */
   when: string;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.
- */
-export interface MachineHistory {
-  machine: string;
-  path: MachineStep[];
-  steps: number;
-  task: string;
-  [k: string]: unknown;
-}
-export interface MachineStep {
-  at: number;
-  event: string;
-  state: string;
   [k: string]: unknown;
 }
 /**
@@ -1851,19 +1809,6 @@ export interface DispatchRequest {
   harness?: string | null;
   replaces?: string | null;
   session?: string | null;
-  task: string;
-}
-/**
- * `POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge
- * the record the move would leave.
- */
-export interface ReviewRequest {
-  actor?: string | null;
-  comment?: string | null;
-  harness?: string | null;
-  references?: string[] | null;
-  session?: string | null;
-  summary?: string | null;
   task: string;
 }
 /**
@@ -2576,23 +2521,6 @@ export interface SpendPhase {
  */
 export interface StaleEvent {
   at: number;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/history?task=&hours=`: every machine event of a task in the window, oldest first.
- */
-export interface TaskEventHistory {
-  events: MachineEvent[];
-  hours: number;
-  task: string;
-  [k: string]: unknown;
-}
-export interface MachineEvent {
-  at: number;
-  event: string;
-  from: string;
-  machine: string;
-  to: string;
   [k: string]: unknown;
 }
 /**

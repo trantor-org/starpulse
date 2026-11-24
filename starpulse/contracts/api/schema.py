@@ -10,8 +10,8 @@ from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.admin import AdminState
 from starpulse.contracts.api.dto.dag import DagBody, Jobs
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
+from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
-from starpulse.contracts.api.dto.health import MachineHistory, TaskEventHistory
 from starpulse.contracts.api.dto.milestones import (
     Docs,
     DocShown,
@@ -21,8 +21,7 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecord,
     TaskRecords,
 )
-from starpulse.contracts.api.dto.pages import DonePage, LaneHistory, MachineDetail, Machines
-from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
+from starpulse.contracts.api.dto.pages import DonePage, MachineDetail, Machines
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
@@ -42,7 +41,6 @@ from starpulse.contracts.api.dto.requests import (
     MissRequest,
     MoveRequest,
     RetireRequest,
-    ReviewRequest,
     StartRequest,
     TaskPutRequest,
     WindowRequest,
@@ -70,7 +68,6 @@ from starpulse.contracts.api.dto.results import (
     Reopened,
     Restored,
     Retired,
-    Reviewed,
     Started,
     TakenOver,
 )
@@ -108,9 +105,6 @@ class ApiContract(_Api):
     donePage: DonePage
     machines: Machines
     machineDetail: MachineDetail
-    laneHistory: LaneHistory
-    machineHistory: MachineHistory
-    taskEventHistory: TaskEventHistory
     graphqlResponse: GraphqlResponse
     viewShown: ViewShown
     searchResults: SearchResults
@@ -137,7 +131,6 @@ class ApiContract(_Api):
         | RetireRequest
         | CompleteRequest
         | DispatchRequest
-        | ReviewRequest
         | CreateRequest
         | TaskPutRequest
         | MilestoneCreateRequest
@@ -167,7 +160,6 @@ class ApiContract(_Api):
         | Reopened
         | Dispatched
         | Parked
-        | Reviewed
         | Created
         | CreatedEach
         | MachineWritten

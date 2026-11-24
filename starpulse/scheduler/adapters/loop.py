@@ -703,7 +703,7 @@ class Loop:
 
         Read for `GET /api/admin`, so it decides over the sampler's last reading without sampling and logs nothing;
         None before the first sample or with no workable task in the eligible lane. It does not depend on the switch; inside
-        quiet hours the top task waits for them, whatever room the host has.
+        quiet hours the top task waits for them, whatever room the host has, and with no account that has room it waits for one.
         """
         if not self._sampler.readings()[0]:
             return None
@@ -715,7 +715,8 @@ class Loop:
         now = self._clock()
         pause = self._selected_paused(now)
         full = self._full[1] > now
-        waits = not top.admitted or self._quiet(now) or pause is not None or full
+        roomless = not self._room()
+        waits = not top.admitted or self._quiet(now) or pause is not None or full or roomless
         if not top.admitted:
             reason = top.blocked_by
         elif self._quiet(now):
@@ -724,6 +725,8 @@ class Loop:
             reason = f"{pause} {self._paused[pause]['reason']}"
         elif full:
             reason = START_LIMIT
+        elif roomless:
+            reason = "no account has room"
         else:
             reason = "goes next"
         return {

@@ -20,7 +20,7 @@ internal and can change in any release.
   whose file name is taken; `task retire TASK`, which returns `{task}` and is refused (exit 1) for a task that is open;
   `task retired [TASK]`, which returns `{tasks}`, each `{task, name, text}`; `task cold-done`, which returns `{tasks}`, every Done task past its hot day, newest first; `task complete TASK`, which returns `{task}` and is refused (exit 1) for a task that is not Done;
   `task dispatch TASK --session S`, which returns `{ok, task, session, reason, skill}` and is refused (exit 1) when another session holds the task or the lane is wrong; the task actor pins the session from the event it publishes, so the reply is not the pin;
-  `task park TASK` and `task review TASK`, which return `{ok, task, to, assignee, reason, skill}` ([cli](cli.md)) and are refused (exit 1) with the reason and skill of the guard or rule that judged them; and
+  `task park TASK`, which returns `{ok, task, to, assignee, reason, skill}` ([cli](cli.md)) and is refused (exit 1) with the reason and skill of the guard or rule that judged it; and
   `task checkpoint-ac TASK CRITERION EVIDENCE`, which returns `{task, criterion, changed}` and is refused (exit 1) for a
   criterion the task lacks. Each exits 0 on success, 1 refused, 2 usage, 3 when the board cannot write tasks and, for
   every verb but `create`, 4 for an unknown task.

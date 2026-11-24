@@ -1,10 +1,11 @@
 // The In Progress drill-in: the approved "B · Suns" board (TASK-8665's mockup) of one task, the Tasks strip that picks it, and the replay of its
-// last 24 hours (TASK-8664's /api/history). A region of the app shell opened by `?drill=TASK-N`, between the real Navigator and Rail, laid out from
+// last 24 hours (a task's `events(since)` on `/graphql`). A region of the app shell opened by `?drill=TASK-N`, between the real Navigator and Rail, laid out from
 // the region's measured size: no scaling, so its text keeps the size of every other view's.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createHistory, type History } from "../../api/history";
-import type { MachineEvent, Roles } from "../../api/types.gen";
+import type { Roles } from "../../api/types.gen";
+import type { MachineEvent } from "./trace";
 import { ANIM_UNTIL, spanOf, starfield, type Line, type Scene } from "./sunsEngine";
 import { css, jobOf, MOCKUP, sceneOf, stepOut, type View } from "./sunsScene";
 import { tint } from "./tint";

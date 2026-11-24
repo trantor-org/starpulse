@@ -64,6 +64,14 @@ type Task {
   description: String!
   """The pull requests the task cites, as the PR store holds them."""
   prs: [PullRequest!]!
+  """The task's lane changes, oldest first; none for a task the history has never seen."""
+  lanePath: [LaneStep!]!
+  """The task's path on a machine the page draws, an error for any other."""
+  machinePath(machine: String!): MachinePath!
+  """How many times the task's plan was rewritten after work began."""
+  planRevisions: Int!
+  """The task's events on every machine since the epoch second `since`, oldest first."""
+  events(since: Float!): [MachineEvent!]!
   """The verdict on each column the task may move to, judged by the board's guards now."""
   moves: [Move!]!
   """
@@ -244,6 +252,39 @@ scalar Json
 type JobChange {
   jobs: Json!
   error: String
+}
+
+"""One lane change of a task."""
+type LaneStep {
+  """Seconds since the epoch."""
+  at: Float!
+  """The lane it left, null for the task's first."""
+  from: String
+  to: String!
+  """The actor that made the change, null on a change recorded before actors were kept."""
+  by: String
+}
+
+"""One event of a task on a lifecycle machine, with the state it left the task in."""
+type MachineStep {
+  at: Float!
+  event: String!
+  state: String!
+}
+
+"""A task's path on one machine, and how many steps it has taken."""
+type MachinePath {
+  path: [MachineStep!]!
+  steps: Int!
+}
+
+"""One machine event of a task, with the states it moved the task between."""
+type MachineEvent {
+  at: Float!
+  machine: String!
+  event: String!
+  from: String!
+  to: String!
 }
 
 type Query {

@@ -396,11 +396,10 @@ GET /api/done[?before=T][&limit=N]
                    newest done first, each {id, title, state, model, labels, milestone, type, entered} read from the
                    board on request. `before` is the `entered` of the last one held (epoch seconds; none: the newest).
                    A board that cannot read a task is 404, a bad `before` or `limit` 400
-GET /api/history?task=TASK-N[&machine=NAME]
-                   {task, path}: the task's Board lane changes as [{at, from, to}], oldest first (`at`
-                   epoch seconds). With `machine`, {task, machine, path, steps}: its events on that lifecycle
-                   machine as [{at, event, state}] in order, `steps` their count; with `machine`, `task` may be a run id. A task never seen has an empty path; no `task` is 400
-                   and an unknown `machine` 404. The machine events are copied from their stream as they
+POST /graphql      a Task's history is four fields of the Task detail: `lanePath` [{at, from, to, by}], `machinePath(machine)`
+                   {path [{at, event, state}], steps}, `planRevisions` and `events(since)` [{at, machine, event, from, to}].
+                   An unknown `machine` is a GraphQL error, and an id the board does not
+                   hold, a run id included, answers `task: null`. The machine events are copied from their stream as they
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
                    the config), so the path outlives the stream's trim. A trim past entries the copy never read leaves it resuming at the oldest kept row
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
@@ -513,7 +512,7 @@ Scheduler and the task actor, which all call those verbs.
   `Rehydrated`. A refused write appends nothing.
 - A plan rewrite on a started task also appends `PlanRevised` (`ordinal`, `reason`, counted per task from 1), after the
   `FieldsEdited` it accompanies. The `PUT /api/tasks/{id}` change `planReason` carries the reason; the edit is refused without it.
-  The fold ignores the Event; `GET /api/history?task=` reports the count as `plan_revisions`.
+  The fold ignores the Event; a Task's `planRevisions` field reports the count.
 - A Task with no History takes no write (`<task> has no History, so it takes no write`) and a create over an existing
   History is refused: `starpulse import-board` and `starpulse parity --import` give a file its `TaskImported`.
 - An append that finds the head moved re-reads it and retries, up to five attempts in all; a failed or lost append fails
@@ -1163,8 +1162,10 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   to Needs attention, asking whether to redeliver or archive it.
   A task whose comments show an `Operator answer` after the last comment carrying an ask's question is not parked on it
   again (`overdue`, `pr_failing`, `pr_closed_unmerged`); a different question parks it.
-- `pr_closed_unmerged_complete`: `pr_closed_unmerged` holds and every acceptance criterion and Definition of Done item is
-  checked, so a no-op task has nothing to ask. A state that waits on it may declare an event that closes the task.
+- `pr_closed_unmerged_complete`: `pr_closed_unmerged` holds, every acceptance criterion and Definition of Done item is
+  checked, and a task comment opens `No merge needed:` (the work landed elsewhere or needed no merge), so a no-op task
+  has nothing to ask. A checked task without that comment is a rejected change and keeps the `pr_closed_unmerged` ask. A
+  state that waits on it may declare an event that closes the task.
 - `pr_merged_unfinished`: `pr_merged` holds and the board's `unfinished` command prints a non-empty JSON array of the
   work the merge leaves, so a task whose planned pull request in another repo never opened does not close. The edit's
   comment names the merge proof and the work left. A state lists it before `pr_merged` and maps it to a move into

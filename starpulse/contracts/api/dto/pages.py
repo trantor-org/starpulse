@@ -60,26 +60,3 @@ class MachineDetail(_Api):
     launches: dict[str, Launch]
     lanes: dict[str, LaneSurface] | None = None
     hash: str | None = None
-
-
-class LaneStep(_Api):
-    at: float
-    # `from` is a Python keyword.
-    origin: str | None = Field(alias="from")
-    to: str
-    # Present only where the write named its actor.
-    by: str | None = None
-
-
-class MachineStep(_Api):
-    at: float
-    event: str
-    state: str
-
-
-class LaneHistory(_Api):
-    """`GET /api/history?task=`: a task's lane changes, oldest first, and how many times its plan was revised after work began."""
-
-    task: str
-    path: list[LaneStep]
-    plan_revisions: int = 0

@@ -172,16 +172,6 @@ class DispatchRequest(_Writer):
     replaces: NonBlank | None = None
 
 
-class ReviewRequest(_Writer):
-    """`POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge
-    the record the move would leave."""
-
-    task: str
-    references: list[str] | None = None
-    summary: str | None = None
-    comment: str | None = None
-
-
 class CreateSpec(_Request):
     """One task a create files: its `title` and details, and an optional `ref` that a sibling in the same batch names
     as `ref:<label>` in its `dependencies`.

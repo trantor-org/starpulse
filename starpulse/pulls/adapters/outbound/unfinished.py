@@ -8,14 +8,39 @@ from pathlib import Path
 from typing import Any
 
 _SECTION = re.compile(r'submodule "(.+)"')
+_ESCAPES = {"n": "\n", "t": "\t", "b": "\b"}
+
+
+def _git_value(raw: str) -> str:
+    out, quoted, escaped = [], False, False
+    for char in raw:
+        if escaped:
+            out.append(_ESCAPES.get(char, char))
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == '"':
+            quoted = not quoted
+        elif char in "#;" and not quoted:
+            break
+        else:
+            out.append(char)
+    return "".join(out).strip() if not raw.rstrip().endswith('"') else "".join(out)
 
 
 def submodule_paths(gitmodules: Path) -> list[tuple[str, str]]:
-    """`(name, path)` for each submodule a `.gitmodules` file declares; a missing file declares none."""
+    """`(repository, path)` for each submodule a `.gitmodules` file declares, read as Git reads a value (quotes,
+    escapes, comments): the repository is the url's last segment, the section's name when it has no url. A missing file
+    declares none."""
     parser = configparser.ConfigParser(interpolation=None, strict=False)
     parser.read(gitmodules)
     return [
-        (found[1], parser[section]["path"]) for section in parser.sections() if (found := _SECTION.fullmatch(section))
+        (
+            _git_value(section_url).rstrip("/").rsplit("/", 1)[-1].removesuffix(".git") if (section_url := parser[section].get("url")) else found[1],
+            _git_value(parser[section]["path"]),
+        )
+        for section in parser.sections()
+        if (found := _SECTION.fullmatch(section))
     ]
 
 

@@ -2999,68 +2999,6 @@
       "title": "Judged",
       "type": "object"
     },
-    "LaneHistory": {
-      "description": "`GET /api/history?task=`: a task's lane changes, oldest first, and how many times its plan was revised after work began.",
-      "properties": {
-        "path": {
-          "items": {
-            "$ref": "#/$defs/LaneStep"
-          },
-          "type": "array"
-        },
-        "plan_revisions": {
-          "default": 0,
-          "type": "integer"
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "path"
-      ],
-      "title": "LaneHistory",
-      "type": "object"
-    },
-    "LaneStep": {
-      "properties": {
-        "at": {
-          "type": "number"
-        },
-        "by": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "from": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "to": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "at",
-        "from",
-        "to"
-      ],
-      "title": "LaneStep",
-      "type": "object"
-    },
     "LaneSurface": {
       "description": "What a session holding the lane may call: its tools, its exit tools and the skill bound on entry.",
       "properties": {
@@ -3716,62 +3654,6 @@
       "title": "MachineEntryFrom",
       "type": "object"
     },
-    "MachineEvent": {
-      "properties": {
-        "at": {
-          "type": "number"
-        },
-        "event": {
-          "type": "string"
-        },
-        "from": {
-          "type": "string"
-        },
-        "machine": {
-          "type": "string"
-        },
-        "to": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "at",
-        "machine",
-        "event",
-        "from",
-        "to"
-      ],
-      "title": "MachineEvent",
-      "type": "object"
-    },
-    "MachineHistory": {
-      "description": "`GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.",
-      "properties": {
-        "machine": {
-          "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/MachineStep"
-          },
-          "type": "array"
-        },
-        "steps": {
-          "type": "integer"
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "machine",
-        "path",
-        "steps"
-      ],
-      "title": "MachineHistory",
-      "type": "object"
-    },
     "MachineListRequest": {
       "additionalProperties": false,
       "description": "`POST /api/machines`: list the machines the board draws. It takes no field.",
@@ -3887,26 +3769,6 @@
         "final"
       ],
       "title": "MachineState",
-      "type": "object"
-    },
-    "MachineStep": {
-      "properties": {
-        "at": {
-          "type": "number"
-        },
-        "event": {
-          "type": "string"
-        },
-        "state": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "at",
-        "event",
-        "state"
-      ],
-      "title": "MachineStep",
       "type": "object"
     },
     "MachineStrip": {
@@ -5762,105 +5624,6 @@
       "title": "RetiredTasks",
       "type": "object"
     },
-    "ReviewRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge\nthe record the move would leave.",
-      "properties": {
-        "actor": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "comment": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "references": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "session": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "summary": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task"
-      ],
-      "title": "ReviewRequest",
-      "type": "object"
-    },
-    "Reviewed": {
-      "properties": {
-        "task": {
-          "type": "string"
-        },
-        "to": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "to"
-      ],
-      "title": "Reviewed",
-      "type": "object"
-    },
     "Roles": {
       "description": "Which of the board's States play which part, as its machine declares them: a client reads these and never a\nState's name.",
       "properties": {
@@ -7682,30 +7445,6 @@
       "title": "TaskDelta",
       "type": "object"
     },
-    "TaskEventHistory": {
-      "description": "`GET /api/history?task=&hours=`: every machine event of a task in the window, oldest first.",
-      "properties": {
-        "events": {
-          "items": {
-            "$ref": "#/$defs/MachineEvent"
-          },
-          "type": "array"
-        },
-        "hours": {
-          "type": "number"
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "hours",
-        "events"
-      ],
-      "title": "TaskEventHistory",
-      "type": "object"
-    },
     "TaskPutRequest": {
       "additionalProperties": false,
       "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over or park it.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`\n(the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`\n(the held task pauses for the one reason it names, with the `comment` beside it).",
@@ -8418,9 +8157,6 @@
             "$ref": "#/$defs/Parked"
           },
           {
-            "$ref": "#/$defs/Reviewed"
-          },
-          {
             "$ref": "#/$defs/Created"
           },
           {
@@ -8530,14 +8266,8 @@
     "jobs": {
       "$ref": "#/$defs/Jobs"
     },
-    "laneHistory": {
-      "$ref": "#/$defs/LaneHistory"
-    },
     "machineDetail": {
       "$ref": "#/$defs/MachineDetail"
-    },
-    "machineHistory": {
-      "$ref": "#/$defs/MachineHistory"
     },
     "machines": {
       "$ref": "#/$defs/Machines"
@@ -8571,9 +8301,6 @@
           },
           {
             "$ref": "#/$defs/DispatchRequest"
-          },
-          {
-            "$ref": "#/$defs/ReviewRequest"
           },
           {
             "$ref": "#/$defs/CreateRequest"
@@ -8642,9 +8369,6 @@
     "stale": {
       "$ref": "#/$defs/StaleEvent"
     },
-    "taskEventHistory": {
-      "$ref": "#/$defs/TaskEventHistory"
-    },
     "taskRecord": {
       "$ref": "#/$defs/TaskRecord"
     },
@@ -8670,9 +8394,6 @@
     "donePage",
     "machines",
     "machineDetail",
-    "laneHistory",
-    "machineHistory",
-    "taskEventHistory",
     "graphqlResponse",
     "viewShown",
     "searchResults",

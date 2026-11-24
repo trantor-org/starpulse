@@ -16,6 +16,9 @@ class PullsConfig(Protocol):
     board_type: str
     board: Mapping[str, object]
     task_actor: bool
+    board_repo: str | None
+    gitmodules: object | None
+    owner_source: str
     release: object
     repos: tuple[Repo, ...]
     pull_requests: bool
@@ -31,4 +34,4 @@ def pulls_fixed_blocks(config: PullsConfig) -> tuple:
 
 def pulls_delivery_blocks(config: PullsConfig) -> tuple:
     """What of `config` the Delivery loops are built from; a change to anything else needs no rebuild."""
-    return (config.task_actor, config.release, config.repos, config.pull_requests, config.ci, config.sequences, config.awaits)
+    return (config.task_actor, config.board_repo, config.gitmodules, config.owner_source, config.release, config.repos, config.pull_requests, config.ci, config.sequences, config.awaits)

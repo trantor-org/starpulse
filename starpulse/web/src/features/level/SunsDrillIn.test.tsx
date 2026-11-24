@@ -12,7 +12,7 @@ let host: HTMLDivElement, root: Root;
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ events: [] }), { status: 200 })));
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: { task: { events: [] } } }), { status: 200 })));
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -45,7 +45,7 @@ describe("SunsDrillIn", () => {
     vi.useFakeTimers();
     try {
       mount();
-      const reads = () => vi.mocked(fetch).mock.calls.filter(([u]) => String(u).includes("task=TASK-2")).length;
+      const reads = () => vi.mocked(fetch).mock.calls.filter(([, i]) => String(i?.body).includes("\"id\":\"TASK-2\"")).length;
       await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
       const first = reads();
       expect(first).toBeGreaterThan(0);
@@ -62,7 +62,7 @@ describe("SunsDrillIn", () => {
     vi.useFakeTimers();
     try {
       const entered = Date.now() / 1000;
-      vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify({ events: [{ machine: "in-progress", event: "CLAIM", from: "start", to: "build", at: entered }] }), { status: 200 }));
+      vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify({ data: { task: { events: [{ machine: "in-progress", event: "CLAIM", from: "start", to: "build", at: entered }] } } }), { status: 200 }));
       const slot = document.createElement("div");
       // the shell passes a new onClose on every render, and a new hud arrives more often than the 5 s clock (here every 4 s)
       const draw = () => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress")]} roles={roles} task="TASK-1" onClose={() => undefined} navSlot={slot} />);

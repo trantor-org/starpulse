@@ -284,12 +284,14 @@ export async function fetchRecord(id: string, fetcher: typeof apiFetch = apiFetc
   }
 }
 
-/** How many times the task's plan was rewritten after work began, as `GET /api/history` counts them; none when the read fails. */
+const REVISIONS = "query Revisions($id: ID!) { task(id: $id) { planRevisions } }";
+
+/** How many times the task's plan was rewritten after work began, as the task's `planRevisions` counts them; none when the read fails. */
 export async function fetchRevisions(id: string, fetcher: typeof apiFetch = apiFetch): Promise<number> {
   try {
-    const response = await fetcher(`/api/history?task=${encodeURIComponent(id)}`);
-    const body: { plan_revisions?: number } | null = response.ok ? await response.json().catch(() => null) : null;
-    return body?.plan_revisions ?? 0;
+    const response = await fetcher("/graphql", { method: "POST", body: JSON.stringify({ query: REVISIONS, variables: { id } }) });
+    const body: { data?: { task?: { planRevisions?: number } | null } | null } | null = response.ok ? await response.json().catch(() => null) : null;
+    return body?.data?.task?.planRevisions ?? 0;
   } catch {
     return 0;
   }

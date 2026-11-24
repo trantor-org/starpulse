@@ -343,7 +343,12 @@ def _create_details(request: CreateSpec) -> dict[str, Any]:
 
 
 def _create(
-    spec: CreateSpec, who: Who, create: TaskCreator, feed: BoardFeed | None, siblings: Mapping[str, str]
+    spec: CreateSpec,
+    who: Who,
+    create: TaskCreator,
+    feed: BoardFeed | None,
+    siblings: Mapping[str, str],
+    cohort: bool = False,
 ) -> tuple[int, dict[str, Any]]:
     """Create the task `spec` names through `create`, in the lane its `status` names or else the board's starting
     lane, with each `ref:<label>` dependency replaced by the id `siblings` holds for the label."""
@@ -359,8 +364,9 @@ def _create(
             return 409, {"error": f"depends on {', '.join(unresolved)}, which no earlier task in the batch created"}
         details["dependencies"] = dependencies
     # the id is the writer's to choose, so the lane is recorded under the id the write returns
+    extra = {"cohort": True} if cohort else {}
     written = record_written(
-        feed, None, who, lambda: create(title, {**details, "created_by": who.created_by}, actor=who.actor)
+        feed, None, who, lambda: create(title, {**details, "created_by": who.created_by}, actor=who.actor, **extra)
     )
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
@@ -375,7 +381,8 @@ def create_task(
     task's id.
 
     A batch answers 200 with a result per spec, in order: the new `task` id or the `error` that refused it. One
-    refusal leaves the others created; a spec naming a `ref:<label>` dependency on an earlier spec's `ref` gets that
+    refusal leaves the others created; a board set to `cohort_milestone` refuses each spec with no `milestone` in a batch
+    of two or more; a spec naming a `ref:<label>` dependency on an earlier spec's `ref` gets that
     spec's new id, and is refused when that spec was.
 
     A `request_key` that an earlier send of the create carried answers that send's answer and files nothing, so a
@@ -393,7 +400,7 @@ def _created(request: CreateRequest, create: TaskCreator, feed: BoardFeed | None
     siblings: dict[str, str] = {}
     results = []
     for spec in request.tasks:
-        status, body = _create(spec, who, create, feed, siblings)
+        status, body = _create(spec, who, create, feed, siblings, cohort=len(request.tasks) > 1)
         if status == 201 and spec.ref:
             siblings[spec.ref] = body["task"]
         results.append(body)

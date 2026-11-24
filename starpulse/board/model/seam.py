@@ -158,10 +158,12 @@ TaskCompleter = Callable[[str], Written]
 class TaskCreator(Protocol):
     """Create a task with this title and details in the starting lane. `details` holds only the fields the page filled
     (`description`, `priority`, `impact`, `urgency`, `tier`, `labels`, `milestone`, `assignee`, `dependencies`,
-    `acceptanceCriteria`); a caller in the same process may pass any other field `TaskEditor` sets. A successful
-    `Written.output` is the new task's id."""
+    `acceptanceCriteria`); a caller in the same process may pass any other field `TaskEditor` sets. `cohort` says the
+    task is one of a batch of two or more. A successful `Written.output` is the new task's id."""
 
-    def __call__(self, title: str, details: Mapping[str, Any], /, actor: str = ...) -> Written: ...
+    def __call__(
+        self, title: str, details: Mapping[str, Any], /, actor: str = ..., cohort: bool = ...
+    ) -> Written: ...
 
 
 #: Every open milestone as `{id, title, outcome, specs, adrs, retro, description}`, oldest id first.

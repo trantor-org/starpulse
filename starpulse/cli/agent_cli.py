@@ -42,8 +42,7 @@ lane entry records both, a create stamps `created_by: <harness>:<session>`, and 
 board's guard refuses, is `{"ok": false, "reason": "...", "skill": "..."}`, the verdict, and exit 1.
 `task dispatch` asks the task actor to pin the session (an opaque string) to a task and move it to In Progress, and is
 refused while another session holds it or the session holds another In Progress task; `task park` takes exactly one of `--until-task`, `--until` and
-`--operator` and picks the lane from it (`waiting`, or `needs_attention` for the operator); `task review` moves to Review
-with `--ref` evidence and the board's rules judge the record. Each answers like `task move`: a refusal is `ok: false`
+`--operator` and picks the lane from it (`waiting`, or `needs_attention` for the operator). Each answers like `task move`: a refusal is `ok: false`
 with its reason and skill, exit 1, and nothing is written.
 The exit code is 0 for success (for `doctor`, every check passing), 1 for a refused or invalid request, a refused
 move or a failed `doctor` check, 2 for a usage error, 3 when the server (or what the
@@ -158,24 +157,26 @@ class _Parser(argparse.ArgumentParser):
         raise agent_wire.CliError("usage", message)
 
 
+_LANE_TRACE = "query($id: ID!) { task(id: $id) { path: lanePath { at from to } plan_revisions: planRevisions } }"
+_MACHINE_TRACE = "query($id: ID!, $machine: String!) { task(id: $id) { machinePath(machine: $machine) { path { at event state } steps } } }"
+
+
 def _trace(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The task's Board lane changes, or with `--machine` its events on that machine, both as the server's history has them."""
     base = agent_wire.server_url(args.server, environ)
-    query = urllib.parse.urlencode({"task": args.task, **({"machine": args.machine} if args.machine else {})})
-    path = f"/api/history?{query}"
-    status, document = agent_wire.get(base, path)
-    if args.machine and status == 404 and isinstance(document, dict) and "error" in document:
-        raise agent_wire.CliError("not_found", document["error"])
-    if status != 200 or not isinstance(document, dict) or "path" not in document:
-        raise agent_wire.CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
-    revisions = {"plan_revisions": document["plan_revisions"]} if "plan_revisions" in document else {}
-    return {
-        "task": document["task"],
-        "machine": document.get("machine"),
-        "path": document["path"],
-        "steps": document.get("steps", len(document["path"])),
-        **revisions,
-    }
+    query, variables = (_MACHINE_TRACE, {"id": args.task, "machine": args.machine}) if args.machine else (_LANE_TRACE, {"id": args.task})
+    status, document = agent_wire.post(base, "/graphql", {"query": query, "variables": variables})
+    errors = document.get("errors") or []
+    if args.machine and errors and "unknown machine" in str(errors[0].get("message")):
+        raise agent_wire.CliError("not_found", errors[0]["message"])
+    if status != 200 or errors or "data" not in document:
+        raise agent_wire.CliError("unavailable", f"{base} answered {status} for /graphql: is it a StarPulse server?")
+    found = document["data"]["task"] or {}
+    if args.machine:
+        found = found.get("machinePath") or {"path": [], "steps": 0}
+        return {"task": args.task, "machine": args.machine, "path": found["path"], "steps": found["steps"]}
+    path = found.get("path", [])
+    return {"task": args.task, "machine": None, "path": path, "steps": len(path), "plan_revisions": found.get("plan_revisions", 0)}
 
 
 def _machines(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -750,33 +751,15 @@ def _parser() -> argparse.ArgumentParser:
     park.add_argument("--operator", help="what only the operator can do or decide")
     park.add_argument("--comment", help="what is outstanding, recorded with the move")
     agent_flags.writer_flags(park)
-    review = leaf(
-        task_verbs,
-        "review",
-        "move a task to Review with its evidence; the configured rules judge the record, a refusal names the rule and its skill",
-        _in_tasks("task_review"),
-        LIFECYCLE_KEYS,
-        (0, 1, 2, 3, 4),
-    )
-    review.add_argument("task", help="the task's key (`PROJ-45`)")
-    review.add_argument(
-        "--ref",
-        action="append",
-        default=[],
-        help="evidence to add to the task's references, such as a pull request URL (repeatable)",
-    )
-    review.add_argument("--summary", help="the task's final summary")
-    review.add_argument("--comment", help="a comment recorded with the move")
-    agent_flags.writer_flags(review)
     trace = leaf(
         task_verbs,
         "trace",
-        "a task's path: its Board lane changes, or with --machine its events on that machine, oldest first; a run id traces on --machine",
+        "a task's path: its Board lane changes, or with --machine its events on that machine, oldest first",
         _trace,
         ("task", "machine", "path", "steps"),
         (0, 2, 3, 4),
     )
-    trace.add_argument("task", help="the task's key (`PROJ-45`), or with --machine a run id")
+    trace.add_argument("task", help="the task's key (`PROJ-45`)")
     trace.add_argument("--machine", help="the machine to trace the task on (`in-progress`), else the Board's lanes")
     create = leaf(
         task_verbs,
