@@ -317,6 +317,8 @@ class TaskActor:
         #: board refused as locked, whose next try waits off the lock.
         self._reading_pulls: set[tuple[str, tuple[str, str]]] = set()
         self._lock_tries: dict[str, int] = {}
+        #: The session whose dispatch to a task is mid-write, so its retry runs only while that session still holds it.
+        self._dispatching: dict[str, str] = {}
         #: Whether a task ever entered the working lane, given its id, which the history of its lane changes answers.
         self._started = started
         self._owner_source = owner_source
@@ -838,10 +840,10 @@ class TaskActor:
         """Derive the Waiting tasks parked on `subject` again: the first event on a subject they wait on releases them,
         and the room event pins the dispatches held back for want of an account."""
         if self._accounts is not None and subject == f"{self._accounts}.resolved":
-            with self._lock:
+            with self._lock:  # one hold with the drain, so a `session_ended` never lands between the take and the dispatch
                 held, self._roomless = self._roomless, {}
-            for name, session in held.items():
-                self.dispatched(name, session)
+                for name, session in held.items():
+                    self.dispatched(name, session)
         with self._lock:
             names = sorted(self._until.get(subject, ()))
             for name in names:
@@ -1196,6 +1198,8 @@ class TaskActor:
         """Run `settle` and derive the tasks citing `url` once a read made off the lock has its answer."""
         try:
             with self._pressing(), self._lock:
+                if self._noticing_ended:  # a move made after the notices close would miss its hook
+                    return
                 settle()
                 self._pull_states[url] = self._pull_state(url)
                 if not self._noticing_ended:  # a move made after the notices close would miss its hook
@@ -1625,9 +1629,19 @@ class TaskActor:
             changes = {"status": roles.working, "assignee": session} if moving else {"assignee": session}
             comment = f"Dispatched: {session} holds it."
             refusal = self._judged(name, changes, comment) if moving else Written(True, name)
-            written = refusal if not refusal.ok else self._apply(name, changes, comment)
+            self._dispatching[name] = session
+            written = refusal if not refusal.ok else self._apply(name, changes, comment, again=lambda: self._redispatch(name, session))
+            if not (written.transient and name in self._lock_tries):
+                self._dispatching.pop(name, None)
         if not written.ok:
             logger.warning("task actor: a dispatch of %s to %s was not pinned: %s", session, name, written.output)
+
+    def _redispatch(self, name: str, session: str) -> None:
+        """The retry of a dispatch whose write the board refused as locked: it runs again from the task and session as they
+        stand, and not at all once the session ended."""
+        with self._lock:
+            if self._dispatching.get(name) == session:
+                self.dispatched(name, session)
 
     def session_ended(self, name: str, session: str) -> None:
         """The harness ended `session`: the lease of `name` it holds ends, and the task keeps its lane, since started work
@@ -1637,10 +1651,12 @@ class TaskActor:
         with self._lock:
             if self._roomless.get(name) == session:
                 del self._roomless[name]
+            if self._dispatching.get(name) == session:
+                del self._dispatching[name]
             holder = str((self._read(name) or {}).get("assignee") or "")
             if not same_holder(holder, session):
                 return
-            written = self._apply(name, {"assignee": ""}, "")
+            written = self._apply(name, {"assignee": ""}, "", again=lambda: self.session_ended(name, session))
         if not written.ok:
             logger.warning("task actor: the lease of %s on %s was not ended: %s", session, name, written.output)
 
@@ -2172,10 +2188,12 @@ class TaskActor:
             except Exception:  # touch derives under the lock and may raise; a dead reader is never restarted
                 logger.exception("task actor: cannot derive %s on its holds", name)
 
-    def _apply(self, name: str, changes: Mapping[str, Any], comment: str, over: str = "") -> Written:
+    def _apply(
+        self, name: str, changes: Mapping[str, Any], comment: str, over: str = "", again: Callable[[], None] | None = None
+    ) -> Written:
         # the board-files pass finds the lane recorded under the actor; no other task's write holds this one up
         with self._feed.recording_of(name):
-            written = self._edit_retrying(name, changes, comment, over)
+            written = self._edit_retrying(name, changes, comment, over, again)
             if written.ok and written.lane:
                 self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, "", ""))
         return written
@@ -2186,9 +2204,12 @@ class TaskActor:
         except Exception as error:  # a board that raises refuses like one that answers no
             return Written(False, str(error))
 
-    def _edit_retrying(self, name: str, changes: Mapping[str, Any], comment: str, over: str = "") -> Written:
+    def _edit_retrying(
+        self, name: str, changes: Mapping[str, Any], comment: str, over: str = "", again: Callable[[], None] | None = None
+    ) -> Written:
         """The board's edit; while SQLite reports the database locked, its next try waits off the actor lock (a timer
-        derives the task again after each of `LOCK_BACKOFF_S`), and a lock that outlasts them is `transient`, a failure of
+        runs `again`, the operation that failed, or derives the task again when lane facts rebuild it, after each of
+        `LOCK_BACKOFF_S`), and a lock that outlasts them is `transient`, a failure of
         the database and no refusal of the change."""
         try:
             written = self._edit(name, changes, comment, actor=ACTOR, over=over)
@@ -2199,7 +2220,7 @@ class TaskActor:
             tries = self._lock_tries.get(name, 0)
             self._lock_tries[name] = tries + 1
             if tries < len(LOCK_BACKOFF_S):
-                timer = threading.Timer(LOCK_BACKOFF_S[tries], self._derive_overdue, args=(name,))
+                timer = threading.Timer(LOCK_BACKOFF_S[tries], again or self._derive_overdue, args=() if again else (name,))
                 timer.daemon = True
                 timer.start()
             else:

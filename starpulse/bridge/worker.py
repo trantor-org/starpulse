@@ -99,7 +99,10 @@ def run(
     def keep() -> None:
         published.keep()
         if handled:
-            log.checkpoints.save(CHECKPOINT, handled)
+            try:
+                log.checkpoints.save(CHECKPOINT, handled)
+            except Exception:  # noqa: BLE001 - a lost write only widens the replay; `handled` keeps, so the next batch saves past it
+                logger.warning("bridge: the checkpoint was not saved at entry %s, the next batch retries", handled, exc_info=True)
 
     try:
         started, position = _await_start_position(log, stop)
