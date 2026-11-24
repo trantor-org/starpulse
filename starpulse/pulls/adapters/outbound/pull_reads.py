@@ -146,12 +146,15 @@ def _requiring(store: PullStore, record: dict[str, Any], contexts: frozenset[str
 
 
 def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) -> None:
-    """Make the reads `delivery` names and save what they returned in the pull requests' records."""
+    """Make the reads `delivery` names and save what they returned in the pull requests' records. Raises `LookupError` for a
+    pull request delivery whose head or base the record does not hold yet, so the queue retries it once the write lands."""
     body = json.loads(delivery.body)
     repository = delivery.repository
     if delivery.event == "pull_request":
         pull: Mapping[str, Any] = body["pull_request"]
         record = _detailed(store, repository, pull["number"], now)
+        if (record["headRefOid"], record["baseRefName"]) != (pull["head"]["sha"], pull["base"]["ref"]):
+            raise LookupError(f"{repository}#{pull['number']} does not hold the head and base this delivery names yet")
         held = record["detail"].get("files")
         reads.files(repository, pull["number"], held, lambda files: _put(store, record, files=files))
         reads.required(repository, record["baseRefName"], force=False)
