@@ -75,11 +75,6 @@ class Parked(_Api):
     to: str
 
 
-class Reviewed(_Api):
-    task: str
-    to: str
-
-
 class Created(_Api):
     task: str
 

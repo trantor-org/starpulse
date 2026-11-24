@@ -17,6 +17,7 @@ from starpulse.board.model.markdown import (
     ARCHIVE_REQUEST,
     ASK_REQUEST,
     MOVE_REQUEST,
+    NO_MERGE,
     WAIT_REQUEST,
     attention_reason,
     needs_attention_reason,
@@ -290,13 +291,20 @@ def pr_closed_unmerged(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None
 
 
 def pr_closed_unmerged_complete(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
-    """The closed pull requests when `pr_closed_unmerged` holds and every criterion is checked: the work was done
-    without a merge (a no-op), so nothing is left to ask the operator."""
+    """The closed pull requests and the statement when `pr_closed_unmerged` holds, every criterion is checked and a
+    comment opens `NO_MERGE`: the work landed elsewhere or needed no merge, so nothing is left to ask the operator.
+    A checked task without the statement is a rejected change: `pr_closed_unmerged` asks about it."""
     closed = pr_closed_unmerged(facts, agent)
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
     if not closed or not ticks or not all(ticks):
         return None
-    return closed[0], f"Every pull request it cites closed unmerged and every criterion is checked: {closed[0]}."
+    if (texts := facts.comments(agent)) is None:
+        facts.unsettled()
+        return None
+    statement = next((text.strip() for text in texts if text.strip().startswith(NO_MERGE)), None)
+    if statement is None:
+        return None
+    return closed[0], f"Every pull request it cites closed unmerged, every criterion is checked: {closed[0]}. {statement}"
 
 
 def pr_merged_unfinished(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:

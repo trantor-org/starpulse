@@ -1,20 +1,28 @@
-// The hover back-trace's model: the path a task took through a level's machine, drawn from /api/history.
+// The hover back-trace's model: the path a task took through a level's machine, drawn from the task's `lanePath`, `machinePath` and `events`.
 import { bez, textW, type Curve, type Pt } from "../../render/scene";
 import { esc } from "../../render/panels";
 import { fmtAt, type ClockMode } from "../../shared/clock";
 import type { FlowSnapshot, Machine } from "../../api";
 
-/** One lane change of a task, as `/api/history?task=` answers it: `from` is null for the task's first lane. */
+/** One lane change of a task, as a task's `lanePath` answers it: `from` is null for the task's first lane. */
 export interface LaneStep {
   at: number;
   from: string | null;
   to: string;
 }
-/** One event of a task on a lifecycle machine, as `/api/history?task=&machine=` answers it: `state` is the state it left the task in. */
+/** One event of a task on a lifecycle machine, as a task's `machinePath` answers it: `state` is the state it left the task in. */
 export interface MachineStep {
   at: number;
   event: string;
   state: string;
+}
+/** One machine event of a task, as its `events` answer it: `from` and `to` are the states it moved the task between. */
+export interface MachineEvent {
+  at: number;
+  machine: string;
+  event: string;
+  from: string;
+  to: string;
 }
 /** One state change of a run: the numbered hop, and how long the run stayed where it landed. */
 export interface Hop {

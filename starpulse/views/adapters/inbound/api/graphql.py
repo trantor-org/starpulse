@@ -72,12 +72,14 @@ def _holds(agent: dict, text: str) -> bool:
 async def _tasks(
     _: Any,
     info: GraphQLResolveInfo,
-    filter: str | None = None,  # noqa: A002 - the schema's argument name
+    filter: str | None = None,
     source: str | None = None,
     lane: str | None = None,
     milestone: str | None = None,
 ) -> dict:
-    position = info.context["api"].snapshots.position()  # before the read: a change after it is replayed, none is missed
+    position = info.context[
+        "api"
+    ].snapshots.position()  # before the read: a change after it is replayed, none is missed
     agents = await _worker(info, info.context["feed"].open_tasks)
     items = [
         agent
@@ -119,11 +121,13 @@ async def _archived_today(parent: dict, info: GraphQLResolveInfo) -> int:
 
 @task_list.field("machineTasks")
 async def _machine_tasks(_: dict, info: GraphQLResolveInfo) -> list[dict]:
-    return [{"machine": machine, **agent} for machine, agent in await _worker(info, info.context["feed"].machine_agents)]
+    return [
+        {"machine": machine, **agent} for machine, agent in await _worker(info, info.context["feed"].machine_agents)
+    ]
 
 
 @query.field("task")
-async def _task(_: Any, info: GraphQLResolveInfo, id: str) -> dict | None:  # noqa: A002 - the schema's argument name
+async def _task(_: Any, info: GraphQLResolveInfo, id: str) -> dict | None:
     return await _worker(info, info.context["feed"].task, id)
 
 
@@ -181,7 +185,9 @@ async def _moves(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
 
 def _week(api: Any) -> tuple[bytes, int]:
     """The week's spend report of every task, read from the stored fold rows."""
-    return spend_response(api.services.telemetry, {}, api.feed.keys, api.feed.titled, api.clock(), api.services.analytics)
+    return spend_response(
+        api.services.telemetry, {}, api.feed.keys, api.feed.titled, api.clock(), api.services.analytics
+    )
 
 
 @task.field("spend")
@@ -204,6 +210,36 @@ async def _prs(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
 @pull_request.field("files")
 def _files(record: dict, _: GraphQLResolveInfo) -> list[str] | None:
     return (record["detail"] or {}).get("files")
+
+
+def _history_key(agent: dict, info: GraphQLResolveInfo) -> str:
+    keys = info.context["feed"].keys
+    return keys.canonical(agent["id"]) if keys else agent["id"]
+
+
+@task.field("lanePath")
+async def _lane_path(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
+    return await _worker(info, info.context["api"].history.lane_path, _history_key(agent, info))
+
+
+@task.field("machinePath")
+async def _machine_path(agent: dict, info: GraphQLResolveInfo, machine: str) -> dict:
+    if machine not in info.context["feed"].machines:
+        raise GraphQLError(f"unknown machine {machine}")
+    path, steps = await _worker(info, info.context["api"].history.machine_path, _history_key(agent, info), machine)
+    return {"path": path, "steps": steps}
+
+
+@task.field("planRevisions")
+async def _plan_revisions(agent: dict, info: GraphQLResolveInfo) -> int:
+    return await _worker(info, info.context["api"].history.plan_revisions, _history_key(agent, info))
+
+
+@task.field("events")
+async def _events(agent: dict, info: GraphQLResolveInfo, since: float) -> list[dict]:
+    return await _worker(
+        info, info.context["api"].history.task_events, _history_key(agent, info), since, info.context["api"].clock()
+    )
 
 
 SCHEMA = make_executable_schema(task_graphql.type_defs(), query, task, task_list, occurrence, pull_request)
@@ -231,7 +267,11 @@ def _root_field(document: DocumentNode, selection: Any) -> FieldNode:
     """The one field a subscription selects, behind any fragment spreads and inline fragments around it."""
     while not isinstance(selection, FieldNode):
         if isinstance(selection, FragmentSpreadNode):
-            selection = next(d for d in document.definitions if isinstance(d, FragmentDefinitionNode) and d.name.value == selection.name.value)
+            selection = next(
+                d
+                for d in document.definitions
+                if isinstance(d, FragmentDefinitionNode) and d.name.value == selection.name.value
+            )
         selection = selection.selection_set.selections[0]
     return selection
 

@@ -381,13 +381,6 @@ def task_park(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     return _kept(_lifecycle(args, environ, f"/api/tasks/{args.task}", body, put=True), LIFECYCLE_KEYS)
 
 
-def task_review(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Move the task to Review with `--ref` references and `--summary`: the configured rules judge the resulting record."""
-    fields = {"references": args.ref, "summary": args.summary, "comment": args.comment}
-    given = {key: value for key, value in fields.items() if value}
-    return _kept(_lifecycle(args, environ, "/api/review", {"task": args.task, **given}), LIFECYCLE_KEYS)
-
-
 def record_call(
     base: str,
     path: str,

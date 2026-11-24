@@ -233,6 +233,7 @@ class _Write:
     unstarted: Collection[str] | None
     reason: str
     moves: bool
+    task: str
 
 
 _write: ContextVar[_Write | None] = ContextVar("task_write", default=None)
@@ -263,7 +264,7 @@ def appended(
         if after is None:
             return [] if row["archived"] else _events({}, None, note)
         base = before if before is not None else _replayed(row)
-        if write.moves and before is not None:
+        if write.moves and before is not None and task.casefold() == write.task.casefold():
             base = {**before, "status": _replayed(row)["status"]}  # an explicit move is judged against the History, not a file a hand edit already moved
         found = ([("Rehydrated", {})] if rehydrates and row["archived"] else []) + _events(base, after, note)
         if write.reason and revises_plan(row["state"], row["plan"], after.get("plan") or "", write.unstarted or ()):
@@ -289,12 +290,13 @@ class TaskHistory:
         through `appended`, `archived` and `rehydrated`; a write whose append fails or loses its swap is not ok.
 
         `unstarted` (an edit's lanes where work has not begun) makes a plan change with a `planReason` in the changes also
-        append a numbered `PlanRevised`. `moves` marks `write` an explicit move to a status, whose `Transitioned` compares the
-        History's status, not the file's, so a file a hand edit already moved there still records the move."""
+        append a numbered `PlanRevised`. `moves` marks `write` an explicit move to a status, whose `Transitioned` for the moved task compares the
+        History's status, not the file's, so a file a hand edit already moved there still records the move; another
+        task the move edits (an archive's dependents) keeps its file's status as the base."""
 
         def run(task: str, *args: Any, **kwargs: Any) -> Written:
             reason = _plan_reason(args) if unstarted is not None else ""
-            token = _write.set(_Write(self, unstarted, reason, moves))
+            token = _write.set(_Write(self, unstarted, reason, moves, task))
             try:
                 return write(task, *args, **kwargs)
             except Refused as refused:

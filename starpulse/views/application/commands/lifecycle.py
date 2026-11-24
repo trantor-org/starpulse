@@ -1,4 +1,4 @@
-"""Park a task for a typed reason as a request the task actor carries out, and move it to Review with the evidence it ships."""
+"""Park a task for a typed reason as a request the task actor carries out."""
 
 import logging
 from collections.abc import Callable
@@ -15,20 +15,16 @@ from starpulse.board.model.seam import (
 from starpulse.bridge.last_event import readable
 from starpulse.contracts.api.dto.requests import (
     Park,
-    ReviewRequest,
 )
 from starpulse.machine_engine.model.transitions import lane_id
 from starpulse.views.application.commands.guard import (
     EDIT_LOCK,
     Who,
     held_task,
-    holder_refusal,
     not_held,
     record_written,
-    who_of,
-    with_request,
 )
-from starpulse.views.application.commands.moves import column_status, move_refusal
+from starpulse.views.application.commands.moves import column_status
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     pass
@@ -262,38 +258,3 @@ def park_task(
         "operator": lambda current: {},
     }
     return _lifecycle_edit(feed, task, column, who, asked, read, edit, plans[reason], moves=False)
-
-
-_BAD_REVIEW = {"error": "references must each be a nonblank pull request link"}
-
-
-@with_request(ReviewRequest, "Reviewing a task")
-def review_task(
-    request: ReviewRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor
-) -> tuple[int, dict[str, Any]]:
-    """Move the task `request` names to Review with the evidence it names: the HTTP status and JSON body.
-
-    The `references` join those the task has and a non-blank `summary` becomes its final summary, in the one edit that
-    makes the move. The board's rules judge the record that edit makes, so a task whose evidence they refuse stays where
-    it is and the answer carries their reason and skill.
-    """
-    task, links, summary = request.task, request.references or [], request.summary or ""
-    if not all(_nonblank(link) for link in links):
-        return 400, _BAD_REVIEW
-    comment, who = request.comment or "", who_of(request)
-    if (agent := held_task(feed, task)) is None:
-        return not_held(feed, task)
-    review = feed.roles.review
-    if review is None:
-        return 409, {"error": f"this board's machine has no lane to move {task} to for review"}
-    if (refused := move_refusal(agent, task, review, who) or holder_refusal(feed, agent, task, who)) is not None:
-        return refused
-
-    def plan(current: dict[str, Any]) -> dict[str, Any]:
-        references = list(dict.fromkeys([*current["references"], *(link.strip() for link in links)]))
-        return {
-            **({"references": references} if references != current["references"] else {}),
-            **({"finalSummary": summary.strip()} if summary.strip() else {}),
-        }
-
-    return _lifecycle_edit(feed, task, review, who, comment, read, edit, plan)

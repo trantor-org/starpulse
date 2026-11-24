@@ -98,7 +98,8 @@ DEFAULT_PATH = ".starpulse/board"
 #: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent),
 #: `policy` the `[board.policy]` table `starpulse policy revision` reads, `transcripts` the directory of the sessions' transcripts, `complete_done` (boolean) that a task
 #: landing in Done, and each Done task `tasks/` holds when the board starts, moves on to `completed/`, `complete_keep_labels` (a regex) that a Done task with a label fully matching it stays in `tasks/`, `policy_rows` the stored policy
-#: (its guards, profiles and watches) that `assemble` hands the board; no config sets it. `entered` is the command run
+#: (its guards, profiles and watches) that `assemble` hands the board; no config sets it. `cohort_milestone` (boolean) that a
+#: create of a batch of two or more tasks refuses a spec with no `milestone`. `entered` is the command run
 #: (`{id}` the task's id) for each lane change `board:lanes` records, and `entered_labels` (a regex) limits it to a task
 #: with a label fully matching it.
 _SETTINGS = {
@@ -131,6 +132,7 @@ _SETTINGS = {
     "complete_done",
     "complete_keep_labels",
     "policy_rows",
+    "cohort_milestone",
 }
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
@@ -1718,17 +1720,21 @@ def _creator(
     guard: Guard = Guard(),
     file_name: str = "title",
     link: _Linker = _unlinked,
+    cohort_milestone: bool = False,
 ) -> TaskCreator:
     """A board writer that makes a task file with the next id, named in the `file_name` form, in one write.
 
     It starts in the first lane; any detail beyond the ones the page fills (a `status`, `type`, `references`,
     `documentation`, `definitionOfDone`, `plan`, `notes` or other field `edit` sets) is set as `edit` sets it, so a
     detail it cannot set refuses the create and nothing is written. A refused create leaves its id to the next one.
+    With `cohort_milestone`, a task created as one of a batch of two or more (`cohort`) must name a `milestone`.
     """
     lock = threading.Lock()  # two creates, in this process or another, must not both read the same highest id
     spelled = {lane_id(status): status for status in config.statuses}
 
-    def create(title: str, details: Mapping[str, Any], /, actor: str = OPERATOR) -> Written:
+    def create(title: str, details: Mapping[str, Any], /, actor: str = OPERATOR, cohort: bool = False) -> Written:
+        if cohort and cohort_milestone and not str(details.get("milestone") or "").strip():
+            return Written(False, f"{title}: a batch of two or more tasks is a cohort and needs a `milestone` on each spec")
         with lock, _allocating(root):
             write_steps.step("lock")
             task = _next_id(root, config.prefix, retired)
@@ -1908,7 +1914,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         return {
             "writer": _writer(root, config.statuses, roles, gate),
             "assign": assign,
-            "create": _creator(root, config, retired, gate, file_name, link),
+            "create": _creator(root, config, retired, gate, file_name, link, bool(settings.get("cohort_milestone"))),
             "read": _served(view, spelled, roles.done, _reader(root, roles.done), archived=False),
             "read_archived": _served(
                 view, spelled, roles.done, _archived_reader(root, retired, roles.done), archived=True

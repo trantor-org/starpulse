@@ -136,9 +136,10 @@ def _outdated(record: Record, pull: Mapping[str, Any]) -> bool:
 
 def _branch(delivery: Delivery) -> tuple[str, str]:
     try:
-        return delivery.repository, json.loads(delivery.body)["ref"]
+        ref = json.loads(delivery.body)["ref"]
     except (ValueError, KeyError, TypeError):
-        return delivery.repository, delivery.delivery_id  # `refresh` fails it alone
+        ref = None
+    return delivery.repository, ref if isinstance(ref, str) else delivery.delivery_id  # `refresh` fails an unreadable one alone
 
 
 def _main_checked(delivery: Delivery) -> bool:

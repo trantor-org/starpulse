@@ -6,7 +6,7 @@ StarPulse owns these tables and creates them on first use.
 A consumer copies `machine:events` (every entry, task- or run-keyed) into it, a board adapter that reads a
 stream may record each lane change it reads. It also keeps the step graphs `push_runs` learns from the pushed run
 events, so a restart restores them.
-`/api/history` reads the paths back through `lane_path` and `machine_path`.
+`POST /graphql` reads the paths back through `lane_path` and `machine_path`.
 """
 
 import json

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MachineEvent } from "../../api/types.gen";
+import type { MachineEvent } from "./trace";
 import { applyPack, applyTheme, packTokens } from "../../tests/themeFixtures";
 import { jobAt, statusOf, TASKC, TIER } from "./sunsEngine";
 import { css, jobOf, sceneOf, stepOut, type View } from "./sunsScene";

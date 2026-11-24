@@ -4,7 +4,7 @@ import logging
 import math
 import re
 import time
-from collections.abc import Callable, Collection, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.ledger import PAGE
@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.board.model.board_feed import BoardFeed
-    from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
     from starpulse.pulls.adapters.outbound.pulls import PullStore
     from starpulse.views.ports.signal_folds import SignalFoldReader
 
@@ -47,7 +46,6 @@ def _page_query(query: dict[str, list[str]], noun: str) -> tuple[float | None, i
     return before, limit
 
 
-
 def done_response(feed: BoardFeed, read: TaskReader, query: dict[str, list[str]]) -> tuple[bytes, int]:
     """The body and status for `/api/done`: the next page of cold done tasks, each read from the board for its card."""
     asked = _page_query(query, "done")
@@ -66,39 +64,6 @@ def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
     card = {key: record[key] for key in ("labels", "milestone", "type") if key in record}
     named = {"id": stub["id"], "title": record.get("title") or stub["id"], "state": "done"}
     return named | {"model": record.get("profile") or "", "entered": stub["entered"]} | card
-
-
-def history_response(
-    history: HistoryStore,
-    query: dict[str, list[str]],
-    flows: Collection[str],
-    keys: TaskKeys | None = None,
-    now: Callable[[], float] = time.time,
-) -> tuple[bytes, int]:
-    """The body and status for `/api/history`: a task's lane path, with `machine` its path on that machine, or with
-    `hours` every machine event of the task in that window, oldest first, as `{at, machine, event, from, to}`.
-
-    `flows` are the machines the page draws; a task is looked up under the spelling `keys` gives it."""
-    task, flow = (query.get(key, [""])[0] for key in ("task", "machine"))
-    task = keys.canonical(task) if keys else task
-    if not task:
-        return _error("history needs ?task=TASK-N"), 400
-    if flow and flow not in flows:
-        return _error(f"unknown machine {flow}"), 404
-    body: dict[str, Any] = {"task": task}
-    if flow:
-        body |= {"machine": flow}
-        body["path"], body["steps"] = history.machine_path(task, flow)
-    elif "hours" in query:
-        hours = _hours(query, "hours", 0.0)
-        if hours is None:
-            return _error("hours must be a positive number"), 400
-        at = now()
-        body |= {"hours": hours, "events": history.task_events(task, at - hours * 3600, at)}
-    else:
-        body["path"] = history.lane_path(task)
-        body["plan_revisions"] = history.plan_revisions(task)
-    return encode("history", body), 200
 
 
 #: A GitHub pull request URL, which a task cites in its references: its `owner/repo` and number.
@@ -160,7 +125,12 @@ def search_response(
         days = 0
     prefix, _, number = query["before"][0].rpartition("-") if "before" in query else ("", "", "")
     before = (prefix, int(number)) if prefix and number.isdecimal() else None
-    if not words or not 0 < limit <= _SEARCH_LIMIT or (days is not None and days < 1) or ("before" in query and not before):
+    if (
+        not words
+        or not 0 < limit <= _SEARCH_LIMIT
+        or (days is not None and days < 1)
+        or ("before" in query and not before)
+    ):
         return _error(
             f"search takes a ?q= of words, a ?limit= from 1 to {_SEARCH_LIMIT}, a positive ?finished_within_days= "
             "and a task key ?before="
@@ -235,4 +205,3 @@ def spend_response(
     folds = sorted(held["spend"], key=lambda fold: (fold["harness"], fold["session"]))
     report = combine_spend(folds, titled({step["task"] for fold in folds for step in fold["steps"]}))
     return encode("spend", {"now": now, "window_s": window * 3600, "spend": report}), 200
-

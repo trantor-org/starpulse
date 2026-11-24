@@ -784,73 +784,6 @@
         }
       }
     },
-    "/api/history": {
-      "get": {
-        "summary": "Lane, machine or task-event history",
-        "tags": [
-          "board"
-        ],
-        "operationId": "get_api_history",
-        "parameters": [
-          {
-            "name": "hours",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "machine",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "task",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/LaneHistory"
-                    },
-                    {
-                      "$ref": "#/components/schemas/MachineHistory"
-                    },
-                    {
-                      "$ref": "#/components/schemas/TaskEventHistory"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/history-window": {
       "get": {
         "summary": "How many hours of history the store keeps",
@@ -1328,54 +1261,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/review": {
-      "post": {
-        "summary": "Record a review",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_review",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReviewRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Reviewed"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
                 }
               }
             }
@@ -5200,68 +5085,6 @@
         "title": "Judged",
         "type": "object"
       },
-      "LaneHistory": {
-        "description": "`GET /api/history?task=`: a task's lane changes, oldest first, and how many times its plan was revised after work began.",
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "path": {
-            "items": {
-              "$ref": "#/components/schemas/LaneStep"
-            },
-            "type": "array"
-          },
-          "plan_revisions": {
-            "default": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "task",
-          "path"
-        ],
-        "title": "LaneHistory",
-        "type": "object"
-      },
-      "LaneStep": {
-        "properties": {
-          "at": {
-            "type": "number"
-          },
-          "from": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "to": {
-            "type": "string"
-          },
-          "by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "required": [
-          "at",
-          "from",
-          "to"
-        ],
-        "title": "LaneStep",
-        "type": "object"
-      },
       "LaneSurface": {
         "description": "What a session holding the lane may call: its tools, its exit tools and the skill bound on entry.",
         "properties": {
@@ -5888,62 +5711,6 @@
         "title": "MachineEntryFrom",
         "type": "object"
       },
-      "MachineEvent": {
-        "properties": {
-          "at": {
-            "type": "number"
-          },
-          "machine": {
-            "type": "string"
-          },
-          "event": {
-            "type": "string"
-          },
-          "from": {
-            "type": "string"
-          },
-          "to": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "at",
-          "machine",
-          "event",
-          "from",
-          "to"
-        ],
-        "title": "MachineEvent",
-        "type": "object"
-      },
-      "MachineHistory": {
-        "description": "`GET /api/history?task=&machine=`: a task's path on one machine, and how many steps it has taken.",
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "machine": {
-            "type": "string"
-          },
-          "path": {
-            "items": {
-              "$ref": "#/components/schemas/MachineStep"
-            },
-            "type": "array"
-          },
-          "steps": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "task",
-          "machine",
-          "path",
-          "steps"
-        ],
-        "title": "MachineHistory",
-        "type": "object"
-      },
       "MachineListRequest": {
         "additionalProperties": false,
         "description": "`POST /api/machines`: list the machines the board draws. It takes no field.",
@@ -6059,26 +5826,6 @@
           "final"
         ],
         "title": "MachineState",
-        "type": "object"
-      },
-      "MachineStep": {
-        "properties": {
-          "at": {
-            "type": "number"
-          },
-          "event": {
-            "type": "string"
-          },
-          "state": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "at",
-          "event",
-          "state"
-        ],
-        "title": "MachineStep",
         "type": "object"
       },
       "MachineStrip": {
@@ -7888,105 +7635,6 @@
         "title": "RetiredTasks",
         "type": "object"
       },
-      "ReviewRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/review`: move `task` to Review, adding `references` and `summary` first so the configured rules judge\nthe record the move would leave.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          },
-          "references": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "comment": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "title": "ReviewRequest",
-        "type": "object"
-      },
-      "Reviewed": {
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "to": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task",
-          "to"
-        ],
-        "title": "Reviewed",
-        "type": "object"
-      },
       "Roles": {
         "description": "Which of the board's States play which part, as its machine declares them: a client reads these and never a\nState's name.",
         "properties": {
@@ -9555,30 +9203,6 @@
           "settled"
         ],
         "title": "TaskDelta",
-        "type": "object"
-      },
-      "TaskEventHistory": {
-        "description": "`GET /api/history?task=&hours=`: every machine event of a task in the window, oldest first.",
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "hours": {
-            "type": "number"
-          },
-          "events": {
-            "items": {
-              "$ref": "#/components/schemas/MachineEvent"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "task",
-          "hours",
-          "events"
-        ],
-        "title": "TaskEventHistory",
         "type": "object"
       },
       "TaskPutRequest": {
