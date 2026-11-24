@@ -470,6 +470,94 @@
             }
           }
         }
+      },
+      "put": {
+        "summary": "Write a machine's next version over the base named, with its policy rows",
+        "tags": [
+          "board"
+        ],
+        "operationId": "put_api_machines_name",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachinePutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineWritten"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Retire a machine, keeping every version",
+        "tags": [
+          "board"
+        ],
+        "operationId": "delete_api_machines_name",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineRetired"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/machines": {
@@ -496,6 +584,45 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Machines"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Add a machine to the store",
+        "tags": [
+          "board"
+        ],
+        "operationId": "put_api_machines",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineWritten"
                 }
               }
             }
@@ -5941,8 +6068,23 @@
         "title": "Machine",
         "type": "object"
       },
+      "MachineCreateRequest": {
+        "additionalProperties": false,
+        "description": "`PUT /api/machines`: create a machine from `definition`, a machine document, when no active machine has its name.",
+        "properties": {
+          "definition": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "definition"
+        ],
+        "title": "MachineCreateRequest",
+        "type": "object"
+      },
       "MachineDetail": {
-        "description": "`GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with\n(empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only.",
+        "description": "`GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with\n(empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only; `hash` is the\nversion the store runs it under, the `base` of a write, and absent when the store holds none.",
         "properties": {
           "name": {
             "type": "string"
@@ -5985,6 +6127,17 @@
                   "$ref": "#/components/schemas/LaneSurface"
                 },
                 "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "hash": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"
@@ -6156,6 +6309,49 @@
         "title": "MachineListed",
         "type": "object"
       },
+      "MachinePutRequest": {
+        "additionalProperties": false,
+        "description": "`PUT /api/machines/{name}`: activate `definition`, a machine document named `name`, over the version `base` (the\n`hash` of the machine detail the caller read). `policy`, the table rows of the whole board policy, is written and\nactivated with it.",
+        "properties": {
+          "definition": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "base": {
+            "type": "string"
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "definition",
+          "base"
+        ],
+        "title": "MachinePutRequest",
+        "type": "object"
+      },
+      "MachineRetired": {
+        "properties": {
+          "machine": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "title": "MachineRetired",
+        "type": "object"
+      },
       "MachineState": {
         "properties": {
           "id": {
@@ -6226,6 +6422,23 @@
           "entries"
         ],
         "title": "MachineStrip",
+        "type": "object"
+      },
+      "MachineWritten": {
+        "description": "`PUT /api/machines` and `PUT /api/machines/{name}`: the machine and the `hash` of the version now active.",
+        "properties": {
+          "machine": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine",
+          "hash"
+        ],
+        "title": "MachineWritten",
         "type": "object"
       },
       "Machines": {

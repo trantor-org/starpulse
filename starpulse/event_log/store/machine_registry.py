@@ -7,12 +7,12 @@ new version: one stale Task rolls the whole change back.
 """
 
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Connection, Engine, insert, select, update
+from sqlalchemy import Connection, Engine, delete, exists, insert, select, update
 
 from starpulse.event_log.store.event_store import EventStore, NewEvent, StoredEvent
 from starpulse.event_log.store.tables import machine_active, machine_versions
@@ -29,6 +29,21 @@ _STATE_FIELD = {"TaskCreated": "state", "TaskImported": "state", "Transitioned":
 
 class StrandedTasks(MachineDefinitionError):
     """A definition that drops a State live Tasks hold, with no `migrations` mapping for it."""
+
+
+class StaleBase(MachineDefinitionError):
+    """A write named a base version that is no longer the active one of its machine, or none where one is active."""
+
+
+class MissingMachine(LookupError):
+    """No active machine has the name."""
+
+
+class RefusedRetire(MachineDefinitionError):
+    """A machine that cannot go while the store relies on it."""
+
+
+_ANY = object()
 
 
 @dataclass(frozen=True)
@@ -48,10 +63,19 @@ class MachineRegistry:
         self._engine = engine
         self._store = store
 
-    def activate(self, document: Mapping[str, Any], live: Sequence[LiveTask]) -> str:
+    def activate(
+        self,
+        document: Mapping[str, Any],
+        live: Sequence[LiveTask],
+        *,
+        base: str | None | object = _ANY,
+        within: Callable[[Connection], None] | None = None,
+    ) -> str:
         """Make `document` the active version of its machine and return its hash; a document that is already active
-        changes nothing. Raises `StrandedTasks` naming the States and Tasks a missing mapping strands, and
-        `StaleVersion` when a live Task moved since it was read; either leaves the active version as it was."""
+        changes nothing. `base` is the hash the caller read as active (None for no active version): another one raises
+        `StaleBase`. `within` runs in the activating transaction, so what it writes lands with the version or not at all.
+        Raises `StrandedTasks` naming the States and Tasks a missing mapping strands, and `StaleVersion` when a live
+        Task moved since it was read; each leaves the active version as it was."""
         validate(document)
         name = document["name"]
         compile_document(dict(document), Path(name))
@@ -59,7 +83,12 @@ class MachineRegistry:
         mapping = document.get("migrations", {})
         live = [task for task in live if not task.archived]
         with self._engine.begin() as db:
-            if self._active(db, name) == digest:
+            held = self._active(db, name)
+            if base is not _ANY and held != base:
+                raise StaleBase(f"{name}: the active version is {held}, not the base {base}")
+            if held == digest:
+                if within is not None:
+                    within(db)
                 return digest
             _check_mapping(name, mapping, document["states"], live)
             for task in live:
@@ -74,12 +103,40 @@ class MachineRegistry:
                     )
                     self._store.append("task", task.id, task.version, [remap], connection=db)
             self._record(db, name, digest, document)
+            if within is not None:
+                within(db)
         return digest
 
     def active_hash(self, machine: str) -> str | None:
         """The hash of the version `machine`'s commands validate against, None before its first activation."""
         with self._engine.connect() as db:
             return self._active(db, machine)
+
+    def imported(self, machine: str) -> bool:
+        """Whether the store has ever held a version of `machine`, retired or not."""
+        with self._engine.connect() as db:
+            return db.execute(select(exists().where(machine_versions.c.machine == machine))).scalar_one()
+
+    def retire(self, machine: str) -> None:
+        """Drop `machine`'s active version, keeping every version. Raises `MissingMachine` for a name with none, and
+        `RefusedRetire` for the Board's machine or one an active machine lists as a submachine."""
+        if machine == TASK_MACHINE:
+            raise RefusedRetire(f"{machine}: the machine that moves Tasks cannot be retired")
+        with self._engine.begin() as db:
+            if self._active(db, machine) is None:
+                raise MissingMachine(machine)
+            parents = [
+                name
+                for name, document in db.execute(
+                    select(machine_active.c.machine, machine_versions.c.document).join(
+                        machine_versions, machine_versions.c.hash == machine_active.c.hash
+                    )
+                )
+                if any(link.get("machine") == machine for link in document.get("submachines", ()))
+            ]
+            if parents:
+                raise RefusedRetire(f"{machine}: still a submachine of {', '.join(sorted(parents))}")
+            db.execute(delete(machine_active).where(machine_active.c.machine == machine))
 
     def definition(self, digest: str) -> Mapping[str, Any]:
         """The definition document that has `digest`."""

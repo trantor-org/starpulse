@@ -22,6 +22,8 @@ export interface ApiContract {
     | Reviewed
     | Created
     | CreatedEach
+    | MachineWritten
+    | MachineRetired
     | MilestoneCreated
     | MilestoneEdited
     | MilestoneArchived
@@ -74,7 +76,9 @@ export interface ApiContract {
     | ReviewRequest
     | CreateRequest
     | MilestoneCreateRequest
+    | MachineCreateRequest
     | MachineListRequest
+    | MachinePutRequest
     | MilestoneListRequest
     | MilestonePutRequest
     | DocCreateRequest
@@ -218,6 +222,18 @@ export interface SkillRefusal {
  */
 export interface ApiError {
   error: string;
+  [k: string]: unknown;
+}
+/**
+ * `PUT /api/machines` and `PUT /api/machines/{name}`: the machine and the `hash` of the version now active.
+ */
+export interface MachineWritten {
+  hash: string;
+  machine: string;
+  [k: string]: unknown;
+}
+export interface MachineRetired {
+  machine: string;
   [k: string]: unknown;
 }
 export interface MilestoneCreated {
@@ -1486,9 +1502,11 @@ export interface LedgerChange {
 }
 /**
  * `GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with
- * (empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only.
+ * (empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only; `hash` is the
+ * version the store runs it under, the `base` of a write, and absent when the store holds none.
  */
 export interface MachineDetail {
+  hash?: string | null;
   lanes?: {
     [k: string]: LaneSurface;
   } | null;
@@ -1951,9 +1969,31 @@ export interface MilestoneCreateRequest {
   title: string;
 }
 /**
+ * `PUT /api/machines`: create a machine from `definition`, a machine document, when no active machine has its name.
+ */
+export interface MachineCreateRequest {
+  definition: {
+    [k: string]: unknown;
+  };
+}
+/**
  * `POST /api/machines`: list the machines the board draws. It takes no field.
  */
 export interface MachineListRequest {}
+/**
+ * `PUT /api/machines/{name}`: activate `definition`, a machine document named `name`, over the version `base` (the
+ * `hash` of the machine detail the caller read). `policy`, the table rows of the whole board policy, is written and
+ * activated with it.
+ */
+export interface MachinePutRequest {
+  base: string;
+  definition: {
+    [k: string]: unknown;
+  };
+  policy?: {
+    [k: string]: unknown;
+  } | null;
+}
 /**
  * `POST /api/milestones`: list the open milestones. It takes no field.
  */

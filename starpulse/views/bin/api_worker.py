@@ -114,6 +114,7 @@ def serve_page(
 
     from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.event_log import EventLog, bound_wal  # noqa: PLC0415 - the database stack loads after the config is accepted
+    from starpulse.event_log.machine_store import MachineStore  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.migrate import StoreNotMigrated  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
     from starpulse.event_log.readmodel.declared import declared_fields  # noqa: PLC0415 - the database stack loads after the config is accepted
@@ -181,6 +182,7 @@ def serve_page(
         else None
     )
     services = Services(
+        machines=MachineStore(log.engine),
         starts=starts,
         run_safe=run_safe,
         reruns=reruns,

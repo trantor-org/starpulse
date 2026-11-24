@@ -111,6 +111,17 @@ class MilestoneArchived(_Api):
     milestone: str
 
 
+class MachineWritten(_Api):
+    """`PUT /api/machines` and `PUT /api/machines/{name}`: the machine and the `hash` of the version now active."""
+
+    machine: str
+    hash: str
+
+
+class MachineRetired(_Api):
+    machine: str
+
+
 class DocCreated(_Api):
     doc: str
 
