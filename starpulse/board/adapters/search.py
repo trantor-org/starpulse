@@ -14,11 +14,11 @@ endpoint that fails leaves the lexical order.
 
 import array
 import dataclasses
+import functools
 import hashlib
 import http.client
 import json
 import logging
-import math
 import os
 import threading
 import urllib.request
@@ -101,10 +101,14 @@ _DROP_OTHER_RECIPES = text(f"DELETE FROM {_VECTORS} WHERE model != :model")
 #: task-like sentence, and changing it makes every vector again.
 _EMBEDDED_TEXT = "title+description"
 _RANKED = (
-    f"{_BEST}SELECT {_TABLE}.task, {_TABLE}.title, {_TABLE}.lane, -best.rank AS score, {_LOCATED}, {_VECTORS}.vector AS vector "
-    f"FROM best JOIN {_TABLE} ON {_TABLE}.rowid = best.row LEFT JOIN {_VECTORS} "
-    f"ON {_VECTORS}.task_row = best.row AND {_VECTORS}.model = :model "
-    f"WHERE {_TABLE} MATCH :query ORDER BY best.rank, {_TABLE}.task"
+    f"{_BEST}SELECT {_TABLE}.task, {_TABLE}.title, {_TABLE}.lane, -best.rank AS score, best.row AS row "
+    f"FROM best JOIN {_TABLE} ON {_TABLE}.rowid = best.row ORDER BY best.rank, {_TABLE}.task"
+)
+#: Where a query's words sit in the named rows: `snippet` runs seven times a row, so only a ranked query's survivors of the
+#: cut to `limit` are located, never its whole pool.
+_LOCATE = text(
+    f"SELECT {_TABLE}.rowid AS row, {_LOCATED} FROM {_TABLE} "
+    f"WHERE {_TABLE} MATCH :query AND {_TABLE}.rowid IN (SELECT value FROM json_each(:rows))"
 )
 #: Every embedded task, for a query whose meaning (not its words) is what is wanted; `snippet` is the task's opening.
 _EMBEDDED_SELECT = (
@@ -191,7 +195,11 @@ def _filtered(
     if finished_since is not None:
         conditions.append("(finished_at IS NULL OR finished_at >= :finished_since)")
         parameters["finished_since"] = finished_since
-    clause = f" AND {row} IN (SELECT task_row FROM {_FACETS} WHERE {' AND '.join(conditions)})" if conditions else ""
+    clause = (
+        f" AND EXISTS (SELECT 1 FROM {_FACETS} WHERE task_row = {row} AND {' AND '.join(conditions)})"
+        if conditions
+        else ""
+    )
     if before is not None:
         clause += (
             " AND substr(task, 1, length(:before_prefix)) = :before_prefix"
@@ -214,15 +222,6 @@ def _unit(vectors: np.ndarray) -> np.ndarray:
     0."""
     norms = np.linalg.norm(vectors, axis=-1, keepdims=True)
     return np.divide(vectors, norms, out=np.zeros_like(vectors), where=norms > 0)
-
-
-def _cosine(left: array.array, right: array.array) -> float:
-    """The cosine similarity of two vectors; 0 for vectors of different lengths or a zero vector. `math.sumprod` runs
-    each sum in C, as a Python loop over a thousand floats held the GIL against every other request thread."""
-    norm = math.sqrt(math.sumprod(left, left) * math.sumprod(right, right))
-    if len(left) != len(right) or not norm:
-        return 0.0
-    return math.sumprod(left, right) / norm
 
 
 def _drop_without_comments(connection: Connection) -> None:
@@ -266,6 +265,11 @@ class _Near:
     rows: list[int]
     hits: list[dict]
     matrix: np.ndarray
+
+    @functools.cached_property
+    def position(self) -> dict[int, int]:
+        """Each task rowid's row in `matrix`."""
+        return {row: at for at, row in enumerate(self.rows)}
 
 
 class EmbeddingError(RuntimeError):
@@ -423,6 +427,11 @@ class SearchIndex:
         vector = self._query_vector(query, wait)
         filtered, narrowing = _filtered(labels, finished_since, before, row="row")
         task = ", task" if before else ""
+        if vector is not None:
+            near = self._near_vectors(len(vector))
+            # einsum, not `@`: a matrix-vector product through BLAS fans out over every core, which on a busy host costs
+            # far more than the 20 MB it reads.
+            similarities = np.einsum("ij,j->i", near.matrix, _unit(np.array(vector, dtype=np.float32)))
         with self._engine.connect() as connection:
             if vector is None:
                 rows = connection.execute(
@@ -431,36 +440,43 @@ class SearchIndex:
                 return [_named(dict(row._mapping)) for row in rows]
             rows = connection.execute(
                 text(_RANKED.format(filtered=filtered, task=task)),
-                {"query": match, "model": self._recipe, "limit": max(limit, _POOL), **narrowing},
+                {"query": match, "limit": max(limit, _POOL), **narrowing},
             )
-            hits = [_named(dict(row._mapping)) for row in rows]
+            hits = [dict(row._mapping) for row in rows]
+            # a hit's similarity is read from the held unit vectors, never from its stored blob: reading fifty
+            # four-kilobyte blobs and summing each in Python cost more than the product over every task
             lexical = {hit["task"] for hit in hits}
-            facets, _ = _filtered(labels, finished_since, before)
-            allowed = (
-                set(connection.execute(text(f"SELECT rowid FROM {_TABLE} WHERE 1{facets}"), narrowing).scalars())
-                if filtered
-                else None
-            )
-        top = max((hit["score"] for hit in hits), default=0.0) or 1.0
-        for hit in hits:
-            held = array.array("f")
-            if blob := hit.pop("vector"):
-                held.frombytes(blob)
-            hit["score"] = _LEXICAL_WEIGHT * hit["score"] / top + (1 - _LEXICAL_WEIGHT) * _cosine(vector, held)
-        near = self._near_vectors(len(vector))
-        # einsum, not `@`: a matrix-vector product through BLAS fans out over every core, which on a busy host costs far
-        # more than the 20 MB it reads.
-        similarities = np.einsum("ij,j->i", near.matrix, _unit(np.array(vector, dtype=np.float32)))
-        near_enough = [
-            at
-            for at in np.flatnonzero(similarities >= _RECALL_FLOOR)
-            if near.hits[at]["task"] not in lexical and (allowed is None or near.rows[at] in allowed)
-        ]
-        for at in sorted(near_enough, key=lambda at: -similarities[at])[
-            :limit
-        ]:  # no more than `limit` can survive the cut
-            hits.append({**near.hits[at], "score": (1 - _LEXICAL_WEIGHT) * float(similarities[at])})
-        return sorted(hits, key=lambda hit: -hit["score"])[:limit]
+            near_enough = [
+                at
+                for at in np.flatnonzero(similarities >= _RECALL_FLOOR).tolist()
+                if near.hits[at]["task"] not in lexical
+            ]
+            if filtered and near_enough:
+                facets, _ = _filtered(labels, finished_since, before)
+                kept = connection.execute(
+                    text(f"SELECT rowid FROM {_TABLE} WHERE rowid IN (SELECT value FROM json_each(:rows)){facets}"),
+                    {"rows": json.dumps([near.rows[at] for at in near_enough]), **narrowing},
+                ).scalars()
+                allowed = set(kept)
+                near_enough = [at for at in near_enough if near.rows[at] in allowed]
+            top = max((hit["score"] for hit in hits), default=0.0) or 1.0
+            for hit in hits:
+                held = near.position.get(hit["row"])
+                hit["score"] = _LEXICAL_WEIGHT * hit["score"] / top + (1 - _LEXICAL_WEIGHT) * (
+                    0.0 if held is None else float(similarities[held])
+                )
+            for at in sorted(near_enough, key=lambda at: -similarities[at])[
+                :limit
+            ]:  # no more than `limit` can survive the cut
+                hits.append({**near.hits[at], "score": (1 - _LEXICAL_WEIGHT) * float(similarities[at])})
+            best = sorted(hits, key=lambda hit: -hit["score"])[:limit]
+            located = {
+                row.row: _named({"field": row.field, "snippet": row.snippet})
+                for row in connection.execute(
+                    _LOCATE, {"query": match, "rows": json.dumps([hit["row"] for hit in best if "row" in hit])}
+                )
+            }
+        return [{k: v for k, v in hit.items() if k != "row"} | located.get(hit.get("row"), {}) for hit in best]
 
     def _near_vectors(self, dimension: int) -> _Near:
         """Every embedded task whose vector has `dimension` numbers, with the vectors read again only for the rows any
