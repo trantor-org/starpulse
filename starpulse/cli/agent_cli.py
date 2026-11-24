@@ -69,7 +69,8 @@ the profile alone, reported as the `profile` field. A board that cannot create, 
 `## Post-merge Checks` block declares, `--evidence` with it; a verdict is final, so a second, an undeclared check or a
 malformed block is refused (exit 1). `task miss` files the fix task (`--title` and the `task create` detail flags) and
 records the MISS verdict naming it in one call, refused part-way leaving neither.
-`task archive` moves a task from any lane to the board's archive, recording `--reason` as a comment when given, and
+`task archive` moves a task from any lane to the board's archive, recording `--reason` as a comment when given (an agent's archive of a task not Done records an
+`Archive requested:` comment and lists the task under `requested`, not `archived`), and
 `task restore` returns an archived task's file to the board's tasks, unchanged, refusing one whose number is open or whose
 file name is taken (exit 1), and returns a retired task the same way;
 `task retire` takes a finished task (Done, completed or archived) off the board into the server's history store, kept
@@ -923,7 +924,7 @@ def _parser() -> argparse.ArgumentParser:
         "archive",
         "move tasks from any lane to the board's archive in one write, recording the reason when given",
         _in_tasks("task_archive"),
-        ("archived",),
+        ("archived", "requested"),
         (0, 1, 2, 3, 4),
     )
     agent_flags.writer_flags(archive)

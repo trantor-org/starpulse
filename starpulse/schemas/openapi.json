@@ -3143,13 +3143,18 @@
         "type": "object"
       },
       "Archived": {
+        "description": "A task archive's answer: `requested` when an agent's archive of an open task only recorded the request.",
         "properties": {
           "task": {
             "type": "string"
+          },
+          "requested": {
+            "type": "boolean"
           }
         },
         "required": [
-          "task"
+          "task",
+          "requested"
         ],
         "title": "Archived",
         "type": "object"
