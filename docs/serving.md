@@ -1089,6 +1089,7 @@ pauses until the reset clock the message names (or five hours when it names none
 admission for that harness for an hour after the first occurrence: one `ERROR` journal line names the refusal and path, `pauses`
 lists it with `reason` `start halted: <refusal>`, and one start tries again when the hour ends. A start that succeeds comments
 `Scheduler started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
+A start the board or the session-start service did not answer (`did not answer`) leaves its task Ready for the next admission; any other failed start is handed to the task actor, which parks the task in Needs attention with the reason.
 
 A session starts through `session_start_url` when the config sets it; the loop's request is
 `POST <url>/start/<task>?harness=<selected harness>&mode=interactive&by=scheduler`, so the service can brief an unattended session
