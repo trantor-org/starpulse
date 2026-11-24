@@ -150,7 +150,7 @@ that needs the meaning ranking on its first ask.
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}`; the page sends
-`operator`, and a move naming no actor is `anonymous` (`agent` when it names a session), never the operator. The server refuses an actor outside the event's writers before the board
+`operator` on a `PUT /api/tasks/{id}` status change, which the server records as a `Move requested: <lane>` comment for the task actor to carry out, and a move naming no actor is `anonymous` (`agent` when it names a session), never the operator. The server refuses an actor outside the event's writers before the board
 writer is asked, so a move declared for `operator` alone (moving a started task to Ready) is refused to
 `starpulse task move`, which always moves as `agent`. The board's `writer` receives that actor as its third
 argument: `writer(task, status, actor)`. `/api/move` is unauthenticated on the LAN, so this stops an agent's

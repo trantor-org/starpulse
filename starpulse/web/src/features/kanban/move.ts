@@ -5,9 +5,12 @@ import { taskQuery } from "../../api/taskQuery";
 import type { Move, RuleBreak } from "../../api";
 import type { KanbanTask } from "./kanbanModel";
 
+/** How long a taken move may wait for the task actor to make it before the card returns. */
+export const TAKEN_WAIT_MS = 30_000;
+
 /** The writer's answer to a move: done, or refused with its reason and the skill that satisfies it (empty when none). */
 export type Reply = { ok: true } | { ok: false; reason: string; skill: string };
-export type Post = (task: string, to: string) => Promise<Reply>;
+export type Post = (task: string, to: string, from: string) => Promise<Reply>;
 
 /** A move the card shows as made, since `at` (epoch seconds): `saving` until the writer confirms, then held until the stream reports the lane. */
 export interface Pending {
@@ -133,12 +136,22 @@ export class MoveStore {
     const { id, lane: from } = task;
     const entry: Pending = { from, to, saving: true, at: this.clock() };
     this.set({ refused: without(this.state.refused, id), pending: { ...this.state.pending, [id]: entry } });
-    const reply = await this.post(id, to);
+    const reply = await this.post(id, to, from);
     const closed = asked ? null : this.state.asking; // only the confirmed move closes the question; another card's warning stays
     if (!this.state.pending[id]) return this.set({ asking: closed }); // the stream already moved the card
-    if (reply.ok) this.set({ asking: closed, pending: { ...this.state.pending, [id]: { ...entry, saving: false } } });
+    if (reply.ok) {
+      this.set({ asking: closed, pending: { ...this.state.pending, [id]: { ...entry, saving: false } } });
+      setTimeout(() => this.lapse(id, entry), TAKEN_WAIT_MS);
+    }
     else if (asked) this.set({ pending: without(this.state.pending, id), asking: { ...this.state.asking!, busy: false, refused: reply.reason } });
     else this.set({ pending: without(this.state.pending, id), refused: { ...this.state.refused, [id]: { from, to, reason: reply.reason, skill: reply.skill } } });
+  }
+
+  /** The task actor makes a taken move from its request; one it has not made in `TAKEN_WAIT_MS` returns the card with that as the reason. */
+  private lapse(id: string, entry: Pending) {
+    if (this.state.pending[id]?.at !== entry.at) return;
+    const reason = "the task actor has not made the move yet; it may have refused it";
+    this.set({ pending: without(this.state.pending, id), refused: { ...this.state.refused, [id]: { from: entry.from, to: entry.to, reason, skill: "" } } });
   }
 
   dismiss(id: string) {
@@ -166,11 +179,17 @@ export const place = (tasks: KanbanTask[], state: MoveState): KanbanTask[] =>
     return p ? { ...t, lane: p.to, entered: p.at, live: { machine: "board", state: p.to, at: p.at } } : t;
   });
 
-/** POST the move to the server, which runs the guarded board writer. */
-export async function postMove(task: string, to: string, fetcher: typeof apiFetch = apiFetch): Promise<Reply> {
+/** The board's status for a lane id: `needs_attention` is `Needs attention`. */
+const statusOf = (lane: string) => lane.charAt(0).toUpperCase() + lane.slice(1).replace(/_/g, " ");
+
+/** PUT the task's new status: the server records the operator's move as a request and the task actor makes it, so an answer of ok is a request taken, not the lane written. */
+export async function postMove(task: string, to: string, from: string, fetcher: typeof apiFetch = apiFetch): Promise<Reply> {
   let response: Response;
   try {
-    response = await fetcher("/api/move", { method: "POST", body: JSON.stringify({ task, to, actor: PAGE_ACTOR }) });
+    response = await fetcher(`/api/tasks/${task}`, {
+      method: "PUT",
+      body: JSON.stringify({ base: { status: statusOf(from) }, changes: { status: statusOf(to) }, actor: PAGE_ACTOR }),
+    });
   } catch {
     return { ok: false, reason: "the move did not reach the server", skill: "" };
   }

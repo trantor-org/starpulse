@@ -114,6 +114,6 @@ describe("a pointer drag on a Kanban card", () => {
     phone(false);
     await drag();
 
-    expect(post).toHaveBeenCalledWith("T-1", "review");
+    expect(post).toHaveBeenCalledWith("T-1", "review", "ready");
   });
 });

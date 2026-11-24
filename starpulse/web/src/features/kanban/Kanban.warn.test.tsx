@@ -75,7 +75,7 @@ describe("the warn-and-confirm box from the task view's Move to", () => {
     press("Confirm");
     await settle();
 
-    expect(post).toHaveBeenCalledExactlyOnceWith("TASK-1", "review");
+    expect(post).toHaveBeenCalledExactlyOnceWith("TASK-1", "review", "in_progress");
     expect(box()).toBeNull();
   });
 

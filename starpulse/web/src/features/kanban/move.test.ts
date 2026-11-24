@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanbanModel";
-import { MoveStore, codeParts, fetchStanding, place, postMove, targets, type Post, type Reply } from "./move";
+import { MoveStore, TAKEN_WAIT_MS, codeParts, fetchStanding, place, postMove, targets, type Post, type Reply } from "./move";
 
 const OK = { allowed: true, reason: "", skill: "" };
 const GUARD = { allowed: false, reason: "a checked criterion opening `Operator approved the render:` is not recorded", skill: "designing-ui" };
@@ -53,7 +53,7 @@ describe("a drop", () => {
 
     void store.drop(t, "in_progress");
 
-    expect(post).toHaveBeenCalledWith("PROJ-1", "in_progress");
+    expect(post).toHaveBeenCalledWith("PROJ-1", "in_progress", "ready");
     expect(store.get().pending["PROJ-1"]).toEqual({ from: "ready", to: "in_progress", saving: true, at: 900 });
     expect(place([t], store.get())[0]).toMatchObject({ lane: "in_progress", entered: 900, live: { machine: "board", state: "in_progress", at: 900 } });
   });
@@ -72,6 +72,21 @@ describe("a drop", () => {
     expect(store.get().pending["PROJ-1"]).toBeDefined();
     store.sync([task("PROJ-1", "in_progress")]);
     expect(store.get().pending).toEqual({});
+  });
+
+  it("returns the card with a reason when the task actor has not made a taken move in time", async () => {
+    vi.useFakeTimers();
+    const { post, settle } = writer();
+    const store = new MoveStore(post, () => 900);
+
+    const dropped = store.drop(task("PROJ-1", "ready", { in_progress: OK }), "in_progress");
+    settle({ ok: true });
+    await dropped;
+    vi.advanceTimersByTime(TAKEN_WAIT_MS);
+    vi.useRealTimers();
+
+    expect(store.get().pending).toEqual({});
+    expect(store.get().refused["PROJ-1"]).toMatchObject({ from: "ready", to: "in_progress" });
   });
 
   it("returns the card with the writer's reason and skill when the writer refuses late", async () => {
@@ -163,15 +178,18 @@ describe("a change to the board while a move is pending", () => {
 describe("posting a move", () => {
   const reply = (status: number, body: unknown) => vi.fn(async () => new Response(JSON.stringify(body), { status }));
 
-  it("sends the task and column as JSON to /api/move", async () => {
+  it("PUTs the task's new status as JSON to the task", async () => {
     const fetcher = reply(200, { task: "PROJ-1", to: "review" });
 
-    expect(await postMove("PROJ-1", "review", fetcher)).toEqual({ ok: true });
-    expect(fetcher).toHaveBeenCalledWith("/api/move", { method: "POST", body: JSON.stringify({ task: "PROJ-1", to: "review", actor: "operator" }) });
+    expect(await postMove("PROJ-1", "review", "needs_attention", fetcher)).toEqual({ ok: true });
+    expect(fetcher).toHaveBeenCalledWith("/api/tasks/PROJ-1", {
+      method: "PUT",
+      body: JSON.stringify({ base: { status: "Needs attention" }, changes: { status: "Review" }, actor: "operator" }),
+    });
   });
 
   it("carries the writer's refusal and the skill it names", async () => {
-    expect(await postMove("PROJ-1", "review", reply(409, { error: "no render approval", skill: "designing-ui" }))).toEqual({
+    expect(await postMove("PROJ-1", "review", "ready", reply(409, { error: "no render approval", skill: "designing-ui" }))).toEqual({
       ok: false, reason: "no render approval", skill: "designing-ui",
     });
   });
@@ -180,8 +198,8 @@ describe("posting a move", () => {
     const down = vi.fn(async () => { throw new TypeError("fetch failed"); });
     const html = vi.fn(async () => new Response("<html>", { status: 502 }));
 
-    expect(await postMove("PROJ-1", "review", down)).toMatchObject({ ok: false, skill: "" });
-    expect(await postMove("PROJ-1", "review", html)).toMatchObject({ ok: false, reason: expect.stringContaining("502"), skill: "" });
+    expect(await postMove("PROJ-1", "review", "ready", down)).toMatchObject({ ok: false, skill: "" });
+    expect(await postMove("PROJ-1", "review", "ready", html)).toMatchObject({ ok: false, reason: expect.stringContaining("502"), skill: "" });
   });
 });
 
@@ -274,7 +292,7 @@ describe("a drop on a column whose rules the move breaks, for the operator", () 
     await store.drop(t, "review");
     const done = store.confirm();
 
-    expect(post).toHaveBeenCalledWith("PROJ-1", "review");
+    expect(post).toHaveBeenCalledWith("PROJ-1", "review", "in_progress");
     expect(store.get().pending["PROJ-1"]).toMatchObject({ to: "review", saving: true });
     expect(store.get().asking?.busy).toBe(true);
     store.cancel();
@@ -355,7 +373,7 @@ describe("a drop judged by the board's standing guards", () => {
     const { post } = writer();
     const store = new MoveStore(post, () => 900, async () => null);
     void store.drop(unjudged, "ready");
-    await vi.waitFor(() => expect(post).toHaveBeenCalledWith("PROJ-1", "ready"));
+    await vi.waitFor(() => expect(post).toHaveBeenCalledWith("PROJ-1", "ready", "in_progress"));
   });
 
   it("reads the guarded moves once for a drop that lands on an unwarned column", async () => {

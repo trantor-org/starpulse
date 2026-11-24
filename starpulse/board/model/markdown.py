@@ -110,6 +110,7 @@ def needs_attention_reason(text: str) -> str:
 WAIT_REQUEST = "Wait requested:"
 ASK_REQUEST = "Ask requested:"
 ARCHIVE_REQUEST = "Archive requested:"
+MOVE_REQUEST = "Move requested:"
 
 _OPERATOR_ANSWER = re.compile(r"(?m)^Operator answer \(\w+:[\w-]+#[\w-]+\): ")
 

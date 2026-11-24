@@ -78,7 +78,7 @@ describe("the start question", () => {
     starts.ask(task("TASK-D2", "waiting"), "drop", LIFECYCLE_ROLES);
     expect(starts.key("2")).toBe(true);
     await flush();
-    expect(writer).toHaveBeenCalledWith("TASK-D2", "in_progress");
+    expect(writer).toHaveBeenCalledWith("TASK-D2", "in_progress", "waiting");
     expect(moves.get().pending["TASK-D2"]).toMatchObject({ from: "waiting", to: "in_progress" });
     expect(post).toHaveBeenCalledTimes(1);
   });
@@ -105,7 +105,7 @@ describe("the start question", () => {
     expect(post).not.toHaveBeenCalled();
     expect(starts.key("2")).toBe(true);
     await flush();
-    expect(writer).toHaveBeenCalledWith("TASK-D1", "in_progress");
+    expect(writer).toHaveBeenCalledWith("TASK-D1", "in_progress", "ready");
   });
 
   it("offers the harnesses the server named once they load", () => {

@@ -16,6 +16,7 @@ from starpulse.board.model.acceptance import resolved
 from starpulse.board.model.markdown import (
     ARCHIVE_REQUEST,
     ASK_REQUEST,
+    MOVE_REQUEST,
     WAIT_REQUEST,
     attention_reason,
     needs_attention_reason,
@@ -539,6 +540,20 @@ ask_requested = _requested(ASK_REQUEST)
 archive_requested = _requested(ARCHIVE_REQUEST)
 
 
+def requested_lane(request: str) -> str:
+    """The lane a `Move requested: <lane>. <words>` comment names."""
+    return request.removeprefix(MOVE_REQUEST).partition(".")[0].strip()
+
+
+def move_requested(facts: TaskFacts, agent: Agent) -> Held:
+    """The operator's move request when it is the newest comment: the request, and the words after its lane, which the
+    move records (a request with none is recorded as made at the operator's request)."""
+    held = _requested(MOVE_REQUEST)(facts, agent)
+    if held is None:
+        return None
+    return held[0], held[0].partition(".")[2].strip() or f"Moved to {requested_lane(held[0])} at the operator's request."
+
+
 def deps_done(facts: TaskFacts, agent: Agent) -> Held:
     """The dependencies once every one is done and merged, an empty tuple when the task has none, and no Start
     Criteria gate it."""
@@ -719,6 +734,7 @@ FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "wait_requested": wait_requested,
     "ask_requested": ask_requested,
     "archive_requested": archive_requested,
+    "move_requested": move_requested,
     "deps_done": deps_done,
     "deps_done_with_pr": deps_done_with_pr,
     "deps_unresolved": deps_unresolved,

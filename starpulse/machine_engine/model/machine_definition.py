@@ -72,6 +72,7 @@ WAIT_FACTS = (
     "wait_requested",
     "ask_requested",
     "archive_requested",
+    "move_requested",
     "pr_unfinished_alive",
     "pr_unfinished_dead",
     "deps_done",
