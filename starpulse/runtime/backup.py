@@ -7,6 +7,7 @@ A store that is not SQLite exits 2: its own backup tool owns that. The summary i
 
 import argparse
 import json
+import shutil
 import sqlite3
 import sys
 import time
@@ -30,28 +31,35 @@ def positive_int(text: str) -> int:
 
 
 def snapshot(db: Path, out: Path) -> None:
-    """Write a verified copy of `db` at `out`, or raise leaving nothing at `out`."""
+    """Write a verified copy of `db` at `out`, or raise leaving nothing at `out`.
+
+    The copy is vacuumed and checked beside the store, then copied to `out` in one sequential write: on a network
+    share, `integrity_check`'s reads of the copy outlasted the job's timeout.
+    """
+    staged = db.with_name(f".{db.name}.backup")
     partial = out.with_name(f".{out.name}.partial")
-    partial.unlink(missing_ok=True)  # VACUUM INTO refuses to overwrite
     try:
+        staged.unlink(missing_ok=True)  # VACUUM INTO refuses to overwrite
         source = sqlite3.connect(f"file:{quote(str(db))}?mode=ro", uri=True, timeout=BUSY_TIMEOUT_S)
         try:
-            source.execute("VACUUM INTO ?", (str(partial),))
+            source.execute("VACUUM INTO ?", (str(staged),))
         finally:
             source.close()
         # A corrupt file that exists reads as success; prove the copy before it counts.
-        with closing(sqlite3.connect(partial)) as check:
+        with closing(sqlite3.connect(staged)) as check:
             verdict = check.execute("PRAGMA integrity_check").fetchone()[0]
         if verdict != "ok":
             raise sqlite3.DatabaseError(f"integrity_check failed on the copy: {verdict}")
+        shutil.copyfile(staged, partial)
         partial.replace(out)
     finally:
+        staged.unlink(missing_ok=True)
         partial.unlink(missing_ok=True)
 
 
 def prune(dest: Path, keep: int) -> None:
-    """Delete all but the newest `keep` copies. The names sort by the time they were taken."""
-    for old in sorted(dest.glob(f"{PREFIX}*{SUFFIX}"))[:-keep]:
+    """Delete all but the newest `keep` copies, and each partial copy a killed run left. The names sort by time."""
+    for old in [*sorted(dest.glob(f"{PREFIX}*{SUFFIX}"))[:-keep], *dest.glob(f".{PREFIX}*{SUFFIX}.partial")]:
         old.unlink()
 
 
