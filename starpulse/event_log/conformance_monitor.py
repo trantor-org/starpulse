@@ -175,7 +175,8 @@ class Conformance:
         #: The work events of each task outside the working lane as far as the lane stream has read; its entry into the
         #: lane takes those at or after it, and its exit drops those up to it, whichever stream is read first.
         self._seen: dict[str, list[float]] = {}
-        self._basis = _basis(machines, entered, (working, review, done, *sorted(self._types)), self._work)
+        judged = {**sessions, **machines}
+        self._basis = _basis(judged, entered, (working, review, done, *sorted(self._types)), self._work)
         #: The id of the last entry of each stream handled, which the counts cover.
         self._cursors: dict[str, int] = {}
         self._saved: dict[str, int] = {}
@@ -183,7 +184,7 @@ class Conformance:
         self._moved = threading.Event()
         self._lane_moves = lane_moves(machines[BOARD]) if BOARD in machines else set()
         # `sessions` are judged too but kept out of `_names`, so they add no counter series.
-        tables_ = tables({**sessions, **machines})
+        tables_ = tables(judged)
         self._judges = {name: EventJudge(table) for name, table in tables_.items()}
         self._lanes: dict[str, str] = {}
         self._violations: dict[str, int] = defaultdict(int)

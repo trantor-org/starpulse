@@ -2152,10 +2152,11 @@ class TaskActor:
         self._refused[name] = note
         if note in self._comment_texts(name):
             return
+        if not self._wake_holder(name, "REVIEW_REFUSED", reason):
+            return  # the wake and the note are both tried again on the next change
         written = self._apply(name, {}, note)
         if not written.ok:
             logger.warning("task actor: the Review refusal of %s was not commented: %s", name, written.output)
-        self._wake_holder(name, "REVIEW_REFUSED", reason)
 
     def _comment_texts(self, name: str) -> set[str]:
         try:
@@ -2165,10 +2166,15 @@ class TaskActor:
             return set()
         return {str(comment.get("text") or "").strip() for comment in comments}
 
-    def _wake_holder(self, name: str, event: str, reason: str) -> None:
-        """Publish `event` on the task's topic, which the holder's consumer carries (`task.<id>.review_refused`)."""
-        if self._log is not None:
+    def _wake_holder(self, name: str, event: str, reason: str) -> bool:
+        """Publish `event` on the task's topic, which the holder's consumer carries (`task.<id>.review_refused`); False
+        when the log refused it."""
+        if self._log is None:
+            return True
+        return (
             machine_events.publish(IN_PROGRESS, event, actor=ACTOR, task=name, data={"reason": reason}, log=self._log)
+            is not None
+        )
 
     def _attend_unstarted(self, name: str) -> None:
         with self._lock:
