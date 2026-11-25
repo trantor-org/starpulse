@@ -1,6 +1,6 @@
 // One Ledger's occurrences over POST /graphql: a page query, and the `occurrenceChanges` subscription the open Ledger holds.
 
-import type { LedgerRow } from ".";
+import type { LedgerRow, MergeStrip } from ".";
 import { apiFetch } from "./apiFetch";
 import { retryWait } from "./stream";
 
@@ -10,9 +10,16 @@ export interface LedgerHead {
   more: boolean;
 }
 
+/** What the merge ledger's pages carry beside its rows: the 24-hour strip and the pins the newest page leaves out. Another event's carry a null strip and no pins. */
+export interface LedgerMarks {
+  mergeStrip: MergeStrip | null;
+  mergePins: LedgerRow[];
+}
+
 const ROW = "key at tasks sha pr { repo number url } child appliedBy applies runs fails pinned";
+const MARKS = `mergeStrip { since bucket buckets { merges failed reruns } } mergePins { ${ROW} }`;
 export const OCCURRENCES = `query($event: String!, $before: Float, $limit: Int) { occurrences(event: $event, before: $before, limit: $limit) { more rows { ${ROW} } } }`;
-const OCCURRENCE_CHANGES = `subscription($event: String!) { occurrenceChanges(event: $event) { head more rows { ${ROW} } } }`;
+const OCCURRENCE_CHANGES = `subscription($event: String!) { occurrenceChanges(event: $event) { head more rows { ${ROW} } ${MARKS} } }`;
 
 type Occurrence = Pick<LedgerRow, "key" | "at" | "tasks" | "runs" | "fails" | "pinned"> & {
   sha: string | null;
@@ -45,7 +52,7 @@ async function* nextEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<unk
 }
 
 interface Change {
-  data?: { occurrenceChanges?: { head: boolean; more: boolean; rows: Occurrence[] } };
+  data?: { occurrenceChanges?: { head: boolean; more: boolean; rows: Occurrence[]; mergeStrip: MergeStrip | null; mergePins: Occurrence[] } };
 }
 
 /**
@@ -55,7 +62,7 @@ interface Change {
  */
 export function openLedger(
   event: string,
-  on: { head(page: LedgerHead): void; rows(changed: LedgerRow[]): void },
+  on: { head(page: LedgerHead & LedgerMarks): void; rows(changed: LedgerRow[], marks: LedgerMarks): void },
   fetcher: typeof apiFetch = apiFetch,
 ): { close(): void } {
   const stop = new AbortController();
@@ -70,9 +77,9 @@ export function openLedger(
       for await (const next of nextEvents(response.body)) {
         const change = (next as Change | null)?.data?.occurrenceChanges;
         if (!change) continue;
-        const rows = change.rows.map(ledgerRow);
-        if (change.head) on.head({ rows, more: change.more });
-        else on.rows(rows);
+        const rows = change.rows.map(ledgerRow), marks = { mergeStrip: change.mergeStrip, mergePins: change.mergePins.map(ledgerRow) };
+        if (change.head) on.head({ rows, more: change.more, ...marks });
+        else on.rows(rows, marks);
       }
     }
     return true;

@@ -1394,13 +1394,12 @@ step, and the step it is in.
   boundary second come together, so a page can run past `limit` and walking `before` neither repeats nor skips a row;
   none is older than 24 hours; a `before` that is not finite or a `limit` outside 1-100 is a GraphQL error; an event no
   workflow is tied to is null. A page with a Ledger open runs `subscription { occurrenceChanges(event) }`: graphql-sse
-  frames whose first `next` is `{head: true, rows, more}`, the newest 20 rows and whether older ones remain, and whose
-  later ones are `{head: false, rows}`, the rows that are new or differ, so a Ledger no page has open costs no frame; an
-  unknown event is 404. `mergeStrip` (snapshot, and in the
-  `ledgers` event, which carries nothing else; null with no workflow tied to `MERGED`) counts the whole day without the
+  frames whose first `next` is `{head: true, rows, more, mergeStrip, mergePins}`, the newest 20 rows and whether older ones remain, and whose
+  later ones are `{head: false, rows, mergeStrip, mergePins}`, the rows that are new or differ and the strip and pins whole (a change to either alone sends no rows), so a Ledger no page has open costs no frame; an
+  unknown event is 404. `mergeStrip` (snapshot, the `ledgers` event, and the `MERGED` page and its changes; null with no workflow tied to `MERGED`) counts the whole day without the
   rows: `{since, bucket, buckets}`, 96 buckets of 900 seconds from `since`, each
   `{merges, failed, reruns}`: merges landed, those holding a failed run, and forced reruns started (a run whose
-  `[runs.commit]` `force` parameter is set and not `0` or `false`). `mergePins` (same two carriers) lists the pinned
+  `[runs.commit]` `force` parameter is set and not `0` or `false`). `mergePins` (same carriers; empty on any other event) lists the pinned
   merges of the last day that the newest page leaves out, so a failure waiting on its cue is never paged out of sight.
 - A run whose parameters name an occurrence under `[runs.commit]` (`after` for a merge's commit, a full or abbreviated
   sha; `task` for a task) pairs with it and is not `inferred`. A run that names an occurrence StarPulse does not hold pairs

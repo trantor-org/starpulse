@@ -281,10 +281,28 @@ type Occurrence {
   pinned: Boolean!
 }
 
+"""One bucket of the merge strip: merges that landed, those whose workflows failed, and forced reruns."""
+type MergeBucket {
+  merges: Int!
+  failed: Int!
+  reruns: Int!
+}
+
+"""The merge ledger's 24-hour strip: `buckets` of `bucket` seconds from epoch second `since`."""
+type MergeStrip {
+  since: Float!
+  bucket: Float!
+  buckets: [MergeBucket!]!
+}
+
 """A page of a ledger's occurrences, newest first, and whether older ones remain inside the 24-hour window."""
 type OccurrencePage {
   rows: [Occurrence!]!
   more: Boolean!
+  """The merge ledger's 24-hour strip, counted over every row; null on any other event."""
+  mergeStrip: MergeStrip
+  """The pinned merge rows of the last day that the newest page leaves out; empty on any other event."""
+  mergePins: [Occurrence!]!
 }
 
 """One `occurrenceChanges` event: the newest page when `head` (the first event of a connection), then only the rows that changed."""
@@ -292,6 +310,10 @@ type OccurrenceChange {
   head: Boolean!
   rows: [Occurrence!]!
   more: Boolean!
+  """The merge ledger's strip, sent whole with each change; null on any other event."""
+  mergeStrip: MergeStrip
+  """The merge ledger's pins, sent whole with each change; empty on any other event."""
+  mergePins: [Occurrence!]!
 }
 
 """A run, a step or a job's status: the engine's own state mapped onto these, kept in `raw` when it differs."""

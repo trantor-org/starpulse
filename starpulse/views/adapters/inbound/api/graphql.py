@@ -9,7 +9,7 @@ answered with an event stream (graphql-sse's distinct connections mode): one `ne
 document's selection run on the change. A position the store no longer holds is answered with a 410 whose error code is `REREAD`.
 
 An `occurrenceChanges` subscription holds one event's ledger: its first `next` event is the newest page (`head: true`),
-each later one the rows that changed. An event no workflow is tied to is answered with a 404.
+each later one the rows that changed, with the merge ledger's strip and pins whole. An event no workflow is tied to is answered with a 404.
 """
 
 import asyncio

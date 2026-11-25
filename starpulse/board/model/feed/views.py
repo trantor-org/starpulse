@@ -12,6 +12,7 @@ from starpulse.machine_engine.model.snapshot import declared
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     pass
 from starpulse.board.model.feed.follow import _ledger_changes
+from starpulse.board.model.ledger import MERGE_EVENT
 from starpulse.board.model.feed.shared import (
     FEED_EVENT_RESEND,
     LEDGER_WINDOW,
@@ -208,8 +209,8 @@ class ViewMethods:
                 shown = (self._strip and self._strip["buckets"], self._pins)
                 self._ledgers, self._strip, self._pins = view["ledgers"], strip_, view["mergePins"]
                 for event, changes in self._watchers:
-                    if event in changed:
-                        changes.put({"rows": changed[event]})
+                    if event in changed or (event == MERGE_EVENT and marks != shown):
+                        changes.put({"rows": changed.get(event, []), **self._marks_of(event)})
                 if marks != shown:
                     self._publish("ledgers", {"mergeStrip": strip_, "mergePins": view["mergePins"]})
 

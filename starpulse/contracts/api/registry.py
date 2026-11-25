@@ -293,7 +293,7 @@ ROUTES: dict[tuple[str, str], Op] = {
             (
                 "200",
                 _STREAM,
-                "A `taskChanges` subscription: one `next` event, holding a GraphQL result, for each task change after `from`, a move on a machine other than the board included; an `occurrenceChanges` subscription: the ledger's newest page first (`head`), then one for each change to its rows",
+                "A `taskChanges` subscription: one `next` event, holding a GraphQL result, for each task change after `from`, a move on a machine other than the board included; an `occurrenceChanges` subscription: the ledger's newest page first (`head`), then one for each change to its rows, the merge ledger's strip and pins included",
             ),
             ("404", "application/json", "An `occurrenceChanges` subscription for an event no workflow is tied to"),
             (
