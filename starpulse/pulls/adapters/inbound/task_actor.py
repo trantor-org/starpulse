@@ -371,7 +371,7 @@ class TaskActor:
         self._mergeable = mergeable
         #: Per pull request, the stored record's version, what `mergeable` answered for it and when: an answer is read once,
         #: a None (GitHub still computing, or out of reach) again after `_MERGEABLE_RETRY_S`.
-        self._settled: dict[str, tuple[tuple[str, str], str | None, float]] = {}
+        self._settled: dict[str, tuple[tuple[str, str | None], str | None, float]] = {}
         #: The pull request versions whose `mergeable` read is running off the lock, and the tries of each task's write the
         #: board refused as locked, whose next try waits off the lock.
         self._reading_pulls: set[tuple[str, tuple[str, str]]] = set()
@@ -1347,7 +1347,8 @@ class TaskActor:
                 target=self._settle_checks, args=(url, record, self._checks), name="task-actor-checks", daemon=True
             ).start()
         if record and record["state"] == "OPEN":
-            version = (record["headRefOid"], record["fetchedAt"])
+            detail = (pull_record(self._store, url, detailed=True) or record).get("detail") or {}
+            version = (record["headRefOid"], detail.get("baseOid"))
             settled = self._settled.get(url, ((), None, 0.0))
             if settled[0] != version:
                 self._read_mergeable(url, version, record["repo"], record["number"])
@@ -1401,7 +1402,7 @@ class TaskActor:
         except Exception:  # touch derives under the lock and may raise
             logger.exception("task actor: cannot derive the tasks of %s on its %s", url, why)
 
-    def _read_mergeable(self, url: str, version: tuple[str, str], repo: str, number: int) -> None:
+    def _read_mergeable(self, url: str, version: tuple[str, str | None], repo: str, number: int) -> None:
         """Read GitHub's answer for the pull request on a thread of its own, so the lock never waits on the network; its
         hand-in derives the tasks citing it."""
         if (url, version) in self._reading_pulls:
@@ -1411,7 +1412,7 @@ class TaskActor:
             target=self._settle_mergeable, args=(url, version, repo, number), name="task-actor-mergeable", daemon=True
         ).start()
 
-    def _settle_mergeable(self, url: str, version: tuple[str, str], repo: str, number: int) -> None:
+    def _settle_mergeable(self, url: str, version: tuple[str, str | None], repo: str, number: int) -> None:
         try:
             answer = self._mergeable(repo, number)
         except (
