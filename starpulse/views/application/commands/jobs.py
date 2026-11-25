@@ -15,7 +15,12 @@ def jobs_list(
     from it misses no change: the HTTP status and JSON body."""
     at = position()
     listed = read()
-    return 200, {"position": at, "items": listed["dags"], "error": listed["error"]}
+    return 200, {
+        "position": at,
+        "items": listed["dags"],
+        "error": listed["error"],
+        **{key: listed[key] for key in ("domains", "cues", "pools")},
+    }
 
 
 def job_record(read: Callable[[], dict[str, Any]], name: str) -> tuple[int, dict[str, Any]]:

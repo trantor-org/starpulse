@@ -391,6 +391,46 @@ type Job {
 type JobChange {
   jobs: [Job!]!
   error: String
+  domains: [JobDomain!]!
+  cues: [JobCue!]!
+  pools: [JobPool!]!
+}
+
+"""A domain's DAGs, as `POST /api/jobs` lists it; `processes` package them when configured."""
+type JobDomain {
+  name: String!
+  dags: [JobDagName!]!
+  processes: [JobProcess!]!
+}
+
+"""A named package of a domain's DAGs."""
+type JobProcess {
+  name: String!
+  dags: [JobDagName!]!
+}
+
+type JobDagName {
+  name: String!
+}
+
+"""A DAG that runs on the same trigger as a Board event's writer but writes no lane itself."""
+type JobCue {
+  dag: String!
+  event: String!
+  state: String!
+  on: String!
+  """How a failed run clears: forced or next."""
+  resolves: String
+  """Seconds after the event a run may take to start before the Ledger draws the merge overdue."""
+  grace: Int
+}
+
+"""One concurrency pool, named `<instance>/<pool>`: its cap and the runs holding or awaiting it."""
+type JobPool {
+  name: String!
+  cap: Int!
+  running: Int!
+  queued: Int!
 }
 
 """One lane change of a task."""

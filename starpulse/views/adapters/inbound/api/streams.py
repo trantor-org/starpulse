@@ -253,10 +253,21 @@ class Streams:
         elif name == "move":
             yield _frame("next", render({"id": data["id"], "machine": data["machine"], "machineTask": data["agent"]}))
 
-    @staticmethod
-    def _job_change(render: Callable[[dict], str], name: str, data: dict) -> Iterator[bytes]:
+    def _job_change(self, render: Callable[[dict], str], name: str, data: dict) -> Iterator[bytes]:
         if name == "dags":
-            yield _frame("next", render({"jobs": data["dags"], "error": data["error"]}))
+            declared = self._feed.declared_jobs()
+            yield _frame(
+                "next",
+                render(
+                    {
+                        "jobs": data["dags"],
+                        "error": data["error"],
+                        "pools": data["pools"],
+                        "domains": declared["domains"],
+                        "cues": declared["cues"],
+                    }
+                ),
+            )
 
     def _event(self, name: str, data: dict) -> Iterator[bytes]:
         if name in EVENTS:

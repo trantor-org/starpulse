@@ -510,14 +510,25 @@ def _session(notes: str, comments: list[dict[str, str]]) -> str:
     return links[-1] if links else ""
 
 
+def _live_criteria(record: dict[str, Any], lane: str, done: str | None, waiting: str | None) -> list[dict[str, Any]]:
+    """The record's Start Criteria still in force in `lane`: none once Done, and no event wait outside Waiting."""
+    if lane == done:
+        return []
+    if waiting is None or lane == waiting:
+        return record["start_criteria"]
+    return [each for each in record["start_criteria"] if each["kind"] != criteria.EVENT]
+
+
 def _reader(
     root: Path,
     done: str | None = None,
     folders: tuple[str, ...] = ("tasks", "completed"),
+    waiting: str | None = None,
 ) -> TaskReader:
     """A board reader: the record of the task's file under `folders`, keyed by the fields the task view draws and edits.
 
-    `start_criteria` is the description's Start Criteria; a Done task's is empty."""
+    `start_criteria` is the description's Start Criteria; a Done task's is empty, and a task outside Waiting has no
+    event wait left to show."""
 
     def read(task: str, /) -> dict[str, Any] | None:
         key = (root, folders, task.casefold())
@@ -535,8 +546,7 @@ def _reader(
                     while len(_RECORDS) >= _RECORDS_KEPT:
                         del _RECORDS[next(iter(_RECORDS))]
                     _RECORDS[key] = held
-        finished = lane_id(held[2]["status"]) == done  # a Done task has nothing left to start
-        return {**held[2], "start_criteria": [] if finished else held[2]["start_criteria"]}
+        return {**held[2], "start_criteria": _live_criteria(held[2], lane_id(held[2]["status"]), done, waiting)}
 
     return read
 
@@ -1950,7 +1960,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "writer": _writer(root, config.statuses, roles, gate),
             "assign": assign,
             "create": _creator(root, config, retired, gate, file_name, link, bool(settings.get("cohort_milestone"))),
-            "read": _served(view, spelled, roles.done, _reader(root, roles.done), archived=False),
+            "read": _served(
+                view, spelled, roles.done, _reader(root, roles.done, waiting=roles.waiting), archived=False, waiting=roles.waiting
+            ),
             "read_archived": _served(
                 view, spelled, roles.done, _archived_reader(root, retired, roles.done), archived=True
             ),
@@ -2148,21 +2160,27 @@ def _state_from(view: TaskView, files: Callable[[str], str | None]) -> Callable[
 
 
 def _served(
-    view: TaskView, spelled: Mapping[str, str], done: str | None, files: TaskReader, *, archived: bool
+    view: TaskView,
+    spelled: Mapping[str, str],
+    done: str | None,
+    files: TaskReader,
+    *,
+    archived: bool,
+    waiting: str | None = None,
 ) -> TaskReader:
     """A board reader of a task's History record once a log is attached, else of `files`; the archived reader answers any
     task, the live one an unarchived task or an archived Done one, which the board kept readable in `completed/`.
-    A Done or archived task has nothing left to start."""
+    A Done or archived task has nothing left to start, and a task outside Waiting no event wait."""
 
     def read(task: str, /) -> dict[str, Any] | None:
         if not view.attached:
             return files(task)
         if (row := view.row(task)) is None:
             return None
-        finished = lane_id(str(row["state"])) == done
-        if not archived and row["archived"] and not finished:
+        lane = lane_id(str(row["state"]))
+        if not archived and row["archived"] and lane != done:
             return None
         record = _record_from(row, spelled)
-        return {**record, "start_criteria": [] if archived or finished else record["start_criteria"]}
+        return {**record, "start_criteria": [] if archived else _live_criteria(record, lane, done, waiting)}
 
     return read

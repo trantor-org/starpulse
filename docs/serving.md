@@ -359,9 +359,9 @@ GET /api/snapshot  the document /api/events sends on connect, as one response: w
                    `?view=full` and `/api/flows` send this same stored body (gzip once per stored body), which
                    `starpulse snapshot` and `starpulse board|task|machines|machine|doctor|incident` read; a verb
                    that needs a task's description or criteria reads `/api/task/<id>`
-POST /api/jobs     {position, items, error}: every runs workflow as a job with its latest run and its runner's `startUrl` (empty when the instance sets none), and what a runs instance reported; `starpulse runs list` reads it
+POST /api/jobs     {position, items, domains, cues, pools, error}: every runs workflow as a job with its latest run and its runner's `startUrl` (empty when the instance sets none), the config's domains and cues, the concurrency pools (`<instance>/<pool>`), and what a runs instance reported; `starpulse runs list` reads it
 GET /api/jobs/<name>  one job as the list holds it; 404 for a name no instance serves
-POST /graphql      `subscription { jobChanges(from: <position>) { jobs error } }` streams the full job list on each change after `position`; a `from` the server no longer holds answers 410, and the page reads the list again
+POST /graphql      `subscription { jobChanges(from: <position>) { jobs error domains cues pools } }` streams the full job list on each change after `position`; a `from` the server no longer holds answers 410, and the page reads the list again
 GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
                    names (none without a build); `starpulse_docs{type}`, the open board docs of each type; `starpulse_open_pulls{repo}`, the open pull requests the PR store holds in each repository; `starpulse_snapshot_build_seconds_count` and `_sum`, the snapshots the API built and the
                    seconds they took (0: it serves the stored one); `starpulse_board_lane_unattributed_total`, the board:lanes entries

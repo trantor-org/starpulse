@@ -422,6 +422,22 @@ describe("the Start Criteria section", () => {
     for (const text of ["soak-24h", "prom", "rows", "sql", "select count(*) from runs", "equals 3 · last 3 · checked 5m ago", "since 2026-10-05 · last 0 · checked 5m ago"]) expect(html, text).toContain(text);
   });
 
+  it("draws an event subject once, breaking only after . _ or /", () => {
+    const subject = "starpulse.trantor.alert.StarPulse_Request_p95_Slow.resolved";
+    const card = sectionOf(withCriteria([criterion({ id: subject, kind: "event", expr: subject, status: "pending" })]), "Start Criteria");
+
+    expect(card.split(subject).length - 1).toBe(1);
+    expect(card).not.toContain('class="cid"');
+    expect(card).toContain(`title="${subject}"`);
+    expect(card).toContain("starpulse.<wbr/>trantor.<wbr/>alert.<wbr/>StarPulse_<wbr/>Request_<wbr/>p95_<wbr/>Slow.<wbr/>resolved");
+  });
+
+  it("shows a distinct id on its own line with the full id as a tooltip", () => {
+    const card = sectionOf(withCriteria([criterion({ id: "soak-24h", kind: "prom", expr: "time()" })]), "Start Criteria");
+
+    expect(card).toContain('<code class="cid" title="soak-24h">soak-24h</code>');
+  });
+
   it("reads a time() criterion as when it opens, in Arizona time", () => {
     const html = sectionOf(withCriteria(criteria), "Start Criteria");
 
