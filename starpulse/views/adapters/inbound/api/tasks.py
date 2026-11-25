@@ -8,7 +8,7 @@
 - `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), restores
   (`archived: false`), takes over (`interactive: true`), parks (`park`) or dispatches a session (`assignee`);
   `DELETE /api/tasks/{id}` archives: the task writes.
-- `POST /api/move`, `start`, `verdict`, `miss`, `retire` and
+- `POST /api/move`, `start`, `verdict`, `retire` and
   `complete`: a task's writes by verb, each over the seams it needs.
 """
 
@@ -37,7 +37,6 @@ from starpulse.views.application.commands.tasks import (
     complete_task,
     create_task,
     delete_task,
-    record_miss,
     retire_task,
     retired_list,
     retired_page,
@@ -121,8 +120,7 @@ def retired(request: Request) -> Response:
 def routes(api: Api) -> list[ApiRoute]:
     feed, board, services = api.feed, api.board, api.services
     writer, assign = board.writer, board.assign
-    read, edit, archive, create = board.read, board.edit, board.archive, board.create
-    complete = board.complete
+    create, complete = board.create, board.complete
 
     def landed(task: str) -> bool:
         _, body = _stored_record(api, task)
@@ -149,7 +147,6 @@ def routes(api: Api) -> list[ApiRoute]:
             lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
             "start",
         ),
-        "/miss": (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
         "/retire": (lambda client, raw: retire_task(client, raw, board), "retire"),
         "/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
     }

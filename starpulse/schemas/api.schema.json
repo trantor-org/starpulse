@@ -2910,37 +2910,6 @@
       "title": "Jobs",
       "type": "object"
     },
-    "Judged": {
-      "properties": {
-        "check": {
-          "type": "string"
-        },
-        "fix": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "type": "string"
-        },
-        "verdict": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "check",
-        "verdict"
-      ],
-      "title": "Judged",
-      "type": "object"
-    },
     "LaneSurface": {
       "description": "What a session holding the lane may call: its tools, its exit tools and the skill bound on entry.",
       "properties": {
@@ -4055,83 +4024,6 @@
         "milestones"
       ],
       "title": "Milestones",
-      "type": "object"
-    },
-    "MissRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write.",
-      "properties": {
-        "actor": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "check": {
-          "type": "string"
-        },
-        "evidence": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "fix": {
-          "$ref": "#/$defs/CreateSpec"
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "reason": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "session": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "check",
-        "fix"
-      ],
-      "title": "MissRequest",
       "type": "object"
     },
     "Move": {
@@ -8075,9 +7967,6 @@
             "$ref": "#/$defs/Archived"
           },
           {
-            "$ref": "#/$defs/Judged"
-          },
-          {
             "$ref": "#/$defs/Restored"
           },
           {
@@ -8231,9 +8120,6 @@
           },
           {
             "$ref": "#/$defs/StartRequest"
-          },
-          {
-            "$ref": "#/$defs/MissRequest"
           },
           {
             "$ref": "#/$defs/RetireRequest"

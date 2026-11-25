@@ -1139,54 +1139,6 @@
         }
       }
     },
-    "/api/miss": {
-      "post": {
-        "summary": "Record a miss",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_miss",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MissRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Judged"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/retire": {
       "post": {
         "summary": "Retire a task",
@@ -4995,37 +4947,6 @@
         "title": "Jobs",
         "type": "object"
       },
-      "Judged": {
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "check": {
-            "type": "string"
-          },
-          "verdict": {
-            "type": "string"
-          },
-          "fix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "required": [
-          "task",
-          "check",
-          "verdict"
-        ],
-        "title": "Judged",
-        "type": "object"
-      },
       "LaneSurface": {
         "description": "What a session holding the lane may call: its tools, its exit tools and the skill bound on entry.",
         "properties": {
@@ -6111,83 +6032,6 @@
           "milestones"
         ],
         "title": "Milestones",
-        "type": "object"
-      },
-      "MissRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          },
-          "check": {
-            "type": "string"
-          },
-          "fix": {
-            "$ref": "#/components/schemas/CreateSpec"
-          },
-          "evidence": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "required": [
-          "task",
-          "check",
-          "fix"
-        ],
-        "title": "MissRequest",
         "type": "object"
       },
       "Move": {

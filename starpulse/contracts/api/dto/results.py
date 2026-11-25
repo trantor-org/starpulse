@@ -37,13 +37,6 @@ class Archived(_Api):
     requested: bool
 
 
-class Judged(_Api):
-    task: str
-    check: str
-    verdict: str
-    fix: str | None = None
-
-
 class Restored(_Api):
     task: str
 

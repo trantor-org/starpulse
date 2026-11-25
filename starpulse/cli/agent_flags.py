@@ -16,7 +16,7 @@ def writer_flags(sub: argparse.ArgumentParser) -> None:
 
 
 def create_flags(sub: argparse.ArgumentParser) -> None:
-    """Add the detail flags of a task a `create` or `miss` command files; the title is the caller's."""
+    """Add the detail flags of a task a `create` command files; the title is the caller's."""
     sub.add_argument("--description", help="the task's Description section")
     sub.add_argument("--priority", help="`high`, `medium` or `low`")
     sub.add_argument("--impact", help="how much the work matters: `high`, `medium` or `low`")
