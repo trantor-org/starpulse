@@ -33,10 +33,10 @@ _TASK_KEYS = TaskKeys(key=re.compile(r"task-\d+", re.I), branch=re.compile(r"tas
 DEFAULT_BASE = "main"
 
 
-def pull_record(store: PullStore, url: str) -> dict[str, Any] | None:
+def pull_record(store: PullStore, url: str, detailed: bool = False) -> dict[str, Any] | None:
     """The store's record of the pull request at `url`, None when it holds none."""
     found = PULL_URL.fullmatch(url)
-    records = store.find(repo=found[1], number=int(found[2])) if found else []
+    records = store.find(repo=found[1], number=int(found[2]), detailed=detailed) if found else []
     return records[0] if records else None
 
 

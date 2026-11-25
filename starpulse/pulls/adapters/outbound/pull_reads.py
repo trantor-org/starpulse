@@ -160,6 +160,7 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
             if seen and epoch(pull["updated_at"]) < epoch(seen):
                 return  # a later push superseded this head: its own delivery reads the record's current one
             raise LookupError(f"{repository}#{pull['number']} does not hold the head and base this delivery names yet")
+        _put(store, record, baseOid=pull["base"]["sha"])
         held = record["detail"].get("files")
         reads.files(repository, pull["number"], held, lambda files: _put(store, record, files=files))
         reads.required(repository, record["baseRefName"], force=False)
@@ -170,6 +171,7 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
         for open_pull in store.find(repository, state="OPEN"):
             if open_pull["baseRefName"] == base and open_pull["headRefOid"]:
                 record = _detailed(store, repository, open_pull["number"], now)
+                _put(store, record, baseOid=body["after"])
                 _behind(store, reads, record, record["headRefOid"], base)
     elif delivery.event == "repository_ruleset":
         opened = store.find(repository, state="OPEN")
