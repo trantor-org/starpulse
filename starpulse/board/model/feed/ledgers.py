@@ -123,7 +123,7 @@ class LedgerMethods:
         return {"mergeStrip": view["mergeStrip"], "mergePins": view["mergePins"]}
 
     def ledger_rows(self, event: str, before: float | None, limit: int) -> dict | None:
-        """The `occurrences` query: the next `limit` rows older than `before` (None: the newest), `{rows, more}`, none
+        """The `occurrences` query: the next `limit` rows older than `before` (None: the newest), `{rows, more, mergeStrip, mergePins}`, none
         from beyond `LEDGER_WINDOW`; None when no workflow is tied to `event`."""
         with self._lock:
             return self._ledger_page(event, before, limit)
@@ -134,18 +134,24 @@ class LedgerMethods:
         found, more = page(
             self._ledger_full.get(event, ()), before=before, limit=limit, since=self._clock() - LEDGER_WINDOW
         )
-        return {"rows": found, "more": more}
+        return {"rows": found, "more": more, **self._marks_of(event)}
 
-    def watch_ledger(self, event: str) -> tuple[list[dict], bool, queue.Queue] | None:
-        """A page opening `event`'s Ledger: its newest rows, whether older ones remain, and the queue of every change to
-        those rows after them, `{rows}` each; None when no workflow is tied to `event`. Only this event's changes
+    def _marks_of(self, event: str) -> dict:
+        """The last build's strip and pins for the merge ledger; the other events carry neither."""
+        if event != MERGE_EVENT:
+            return {"mergeStrip": None, "mergePins": []}
+        return {"mergeStrip": self._strip, "mergePins": self._pins}
+
+    def watch_ledger(self, event: str) -> tuple[dict, queue.Queue] | None:
+        """A page opening `event`'s Ledger: its newest page (`{rows, more, mergeStrip, mergePins}`) and the queue of every
+        change to those after it, `{rows, mergeStrip, mergePins}` each; None when no workflow is tied to `event`. Only this event's changes
         reach the queue, and no stream of `/api/events` carries a row."""
         with self._lock:
             if (found := self._ledger_page(event, None, PAGE)) is None:
                 return None
             changes: queue.Queue = queue.Queue()
             self._watchers.append((event, changes))
-            return found["rows"], found["more"], changes
+            return found, changes
 
     def unwatch_ledger(self, changes: queue.Queue) -> None:
         with self._lock:

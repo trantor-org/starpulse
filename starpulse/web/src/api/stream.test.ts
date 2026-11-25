@@ -932,20 +932,22 @@ describe("openLedger", () => {
     const heads: unknown[] = [];
     const changed: LedgerRow[][] = [];
     const sent: RequestInit[] = [];
-    const head = frame({ head: true, more: true, rows: [occurrence(row("a", 2))] });
+    const strip = { since: 0, bucket: 3600, buckets: [{ merges: 1, failed: 0, reruns: 0 }] };
+    const marks = { mergeStrip: strip, mergePins: [occurrence(row("p", 1))] };
+    const head = frame({ head: true, more: true, rows: [occurrence(row("a", 2))], ...marks });
     const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
       sent.push(init ?? {});
-      return body(": ping\n\n", head.slice(0, 20), head.slice(20), frame({ head: false, more: false, rows: [occurrence(row("b", 3))] }));
+      return body(": ping\n\n", head.slice(0, 20), head.slice(20), frame({ head: false, more: false, rows: [occurrence(row("b", 3))], mergeStrip: null, mergePins: [] }));
     });
     const done = new Promise<void>((resolve) => {
-      const { close } = openLedger("MERGED", { head: (page) => heads.push(page), rows: (rows) => { changed.push(rows); close(); resolve(); } }, fetcher);
+      const { close } = openLedger("MERGED", { head: (page) => heads.push(page), rows: (rows, m) => { changed.push(rows); expect(m).toEqual({ mergeStrip: null, mergePins: [] }); close(); resolve(); } }, fetcher);
     });
 
     await done;
 
     expect(fetcher.mock.calls[0][0]).toBe("/graphql");
     expect(JSON.parse(String(sent[0].body)).variables).toEqual({ event: "MERGED" });
-    expect(heads).toEqual([{ rows: [row("a", 2)], more: true }]);
+    expect(heads).toEqual([{ rows: [row("a", 2)], more: true, mergeStrip: strip, mergePins: [row("p", 1)] }]);
     expect(changed).toEqual([[row("b", 3)]]);
   });
 

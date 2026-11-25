@@ -33,7 +33,8 @@ import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move
 import { branchLines, drawBranches, offLine, placeBranches, resyncBranches } from "./transit";
 import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { foldRows, openStream, type Link } from "../api/stream";
-import { openLedger, type LedgerHead } from "../api/ledgerStream";
+import { openLedger, type LedgerMarks } from "../api/ledgerStream";
+import { MERGE_EVENT } from "../features/level/ledger";
 import { pushSchedulerStatus } from "../features/scheduler/scheduler";
 import { UPDATING, linkHud } from "./connection";
 import { keep as reuse } from "../api/same";
@@ -506,10 +507,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     ledgerRows = {};
     if (S) S = { ...S, ledgers: ledgerRows };
     if (!event || stopped) return;
-    const got = (rows: LedgerRow[]) => {
+    const got = (rows: LedgerRow[], marks: LedgerMarks) => {
       if (ledgerOpen?.event !== event) return;
       ledgerRows = { [event]: rows };
-      S = { ...S!, ledgers: ledgerRows };
+      S = { ...S!, ledgers: ledgerRows, ...(event === MERGE_EVENT ? marks : {}) };
       relay.request();
       paintMerge();
       if (away) heartbeat();
@@ -517,7 +518,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     };
     ledgerOpen = {
       event,
-      stream: openLedger(event, { head: (page: LedgerHead) => got(page.rows), rows: (changed) => got(foldRows(ledgerRows[event] ?? [], changed)) }),
+      stream: openLedger(event, { head: (page) => got(page.rows, page), rows: (changed, marks) => got(foldRows(ledgerRows[event] ?? [], changed), marks) }),
     };
   }
   /** A Ledger delta changes the merge rows and strip alone, so the sky, the HUD, the moves and the fans stay as they were and only the layout and the merge panel redraw. */

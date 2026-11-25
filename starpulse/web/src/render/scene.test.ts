@@ -1569,7 +1569,7 @@ describe("a fold's level", () => {
     it("draw the panel from the rows the occurrenceChanges subscription holds, a pin bump's row keeping its null appliedBy", async () => {
       const occurrence = (r: LedgerRow) => ({ ...r, sha: r.sha ?? null, pr: null, child: "appliedBy" in r, appliedBy: r.appliedBy ?? null, applies: null });
       const frame = (change: object) => `event: next\ndata: ${JSON.stringify({ data: { occurrenceChanges: change } })}\n\n`;
-      const held = new TextEncoder().encode(`: ping\n\n${frame({ head: true, more: false, rows: rows.map(occurrence) })}`);
+      const held = new TextEncoder().encode(`: ping\n\n${frame({ head: true, more: false, rows: rows.map(occurrence), mergeStrip: null, mergePins: [] })}`);
       const sent: { url: string; body: string }[] = [];
       const fetcher = async (url: string, init?: RequestInit) => {
         sent.push({ url, body: String(init?.body) });

@@ -182,8 +182,8 @@ class Streams:
         def open_stream() -> Stream | Response:
             if (watched := self._feed.watch_ledger(event)) is None:
                 return answer(request, encode("graphql", {"errors": [{"message": f"no ledger for {event}"}]}), 404)
-            rows, more, changes = watched
-            return Stream(self._ledger_frames(render, rows, more, changes), lambda: self._feed.unwatch_ledger(changes))
+            page, changes = watched
+            return Stream(self._ledger_frames(render, page, changes), lambda: self._feed.unwatch_ledger(changes))
 
         return self._admitted(request, open_stream)
 
@@ -283,12 +283,12 @@ class Streams:
             logger.error("StarPulse: /api/events has no event `%s`; its deltas are skipped", name)
 
     def _ledger_frames(
-        self, render: Callable[[dict], str], rows: list, more: bool, changes: queue.Queue
+        self, render: Callable[[dict], str], page: dict, changes: queue.Queue
     ) -> Generator[bytes]:
-        yield _frame("next", render({"head": True, "rows": rows, "more": more}))
+        yield _frame("next", render({"head": True, **page}))
         while True:
             try:
-                yield _frame("next", render({"head": False, "rows": changes.get(timeout=_PING_S)["rows"], "more": False}))
+                yield _frame("next", render({"head": False, "more": False, **changes.get(timeout=_PING_S)}))
             except queue.Empty:
                 yield _PING
 
