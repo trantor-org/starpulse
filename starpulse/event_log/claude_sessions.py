@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import psutil
+lazy import psutil
 
 __all__ = [
     "DEFAULT_SESSIONS",
@@ -276,7 +276,9 @@ def _running_records(sessions: Path, match: Callable[[dict[str, Any]], bool]) ->
 def _record_of(sessions: Path, session: str) -> dict[str, Any] | None:
     def names(record: dict[str, Any]) -> bool:
         bridge = record.get("bridgeSessionId")
-        return session in (record.get("sessionId"), bridge) or bool(bridge and session.rstrip("/").endswith(f"/{bridge}"))
+        return session in (record.get("sessionId"), bridge) or bool(
+            bridge and session.rstrip("/").endswith(f"/{bridge}")
+        )
 
     return next(_running_records(sessions, names), None) if session else None
 
@@ -300,7 +302,9 @@ def live_socket(sessions: Path) -> Callable[[str], str | None]:
     """The inbox socket of the running process of a session, from Claude Code's per-process records in `sessions`."""
 
     def find(session: str) -> str | None:
-        records = _running_records(sessions, lambda record: record.get("sessionId") == session and bool(record.get("messagingSocketPath")))
+        records = _running_records(
+            sessions, lambda record: record.get("sessionId") == session and bool(record.get("messagingSocketPath"))
+        )
         record = next(records, None)
         return str(record["messagingSocketPath"]) if record else None
 

@@ -2,13 +2,18 @@
 
 from typing import Any
 
+from pydantic import Field
+
 from starpulse.contracts.api._base import _Api
 
 
 class ApiError(_Api):
-    """Every refusal: what went wrong."""
+    """Every refusal: what went wrong. A 400 for a body its request model refuses also names that `model` and the
+    JSON `schema` a valid value of the refused field meets."""
 
     error: str
+    model: str | None = None
+    field_schema: dict[str, Any] | None = Field(None, alias="schema")
 
 
 class SkillRefusal(ApiError):
