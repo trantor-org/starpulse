@@ -157,6 +157,8 @@ _RELOAD_AT = 500
 #: board worker's fold drops them), and as ids only grow, no write leaves both unchanged: an unchanged pair keeps the
 #: held vectors without reading a key.
 _SHAPE = text(f"SELECT count(*), coalesce(max(rowid), 0) FROM {_VECTORS}")
+#: The number of floats in one stored vector of the model, which `warm` reads before it knows what a search would ask for.
+_DIMENSION = text(f"SELECT length(vector) / 4 FROM {_VECTORS} WHERE model = :model LIMIT 1")
 #: Each vector's task row and id, read from the key index alone (about 20 ms for 17,000 vectors, where reading them all
 #: took seconds): a row whose id differs from the held one, or that appeared or went, is the only one read again.
 _KEYS = text(f"SELECT task_row, rowid FROM {_VECTORS} WHERE model = :model")
@@ -489,6 +491,13 @@ class SearchIndex:
                 )
             }
         return [{k: v for k, v in hit.items() if k != "row"} | located.get(hit.get("row"), {}) for hit in best]
+
+    def warm(self) -> None:
+        """Read the stored vectors now, so the first search of a new process does not pay for it; a no-op with none."""
+        with self._engine.connect() as connection:
+            dimension = connection.execute(_DIMENSION, {"model": self._recipe}).scalar()
+        if dimension:
+            self._near_vectors(dimension)
 
     def _near_vectors(self, dimension: int) -> _Near:
         """Every embedded task whose vector has `dimension` numbers, with the vectors read again only for the rows any
