@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-__all__ = ["authored", "bare", "expect_dates", "subjects"]
+__all__ = ["authored", "bare", "commits", "expect_dates", "subjects"]
 
 EVENT = "event"
 _SECTION = re.compile(r"^## Start Criteria\s*$(.*?)(?=^## |\Z)", re.M | re.S)
@@ -55,3 +55,12 @@ def bare(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def subjects(description: str) -> tuple[str, ...]:
     """The event subjects the description's Start Criteria wait on, in the order written."""
     return tuple(each["expr"] for each in authored(description) if each["kind"] == EVENT and each["expr"])
+
+
+def commits(description: str) -> dict[str, str]:
+    """The commit each event subject waits for: only an event whose build contains it releases the task."""
+    return {
+        each["expr"]: str(raw["commit"])
+        for each, raw in zip(authored(description), _declared(description))
+        if raw.get("commit")
+    }

@@ -19,6 +19,8 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from starpulse.contracts.adapters import CloudEvent
+lazy from starpulse.bridge.ingest import Producer
+lazy from starpulse.runtime.config import discover, load
 
 __all__ = ["main"]
 
@@ -78,8 +80,6 @@ def main(argv: Sequence[str], environ: Mapping[str, str] = os.environ) -> int:
     except ValidationError as invalid:
         print(f"not a CloudEvent: {invalid}", file=sys.stderr)
         return 1
-    from starpulse.bridge.ingest import Producer  # noqa: PLC0415 - the NATS client loads only to publish
-    from starpulse.runtime.config import discover, load  # noqa: PLC0415
 
     try:
         bridge = load(discover(args.config)).bridge

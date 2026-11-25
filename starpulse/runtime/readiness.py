@@ -19,6 +19,9 @@ from starpulse.event_log.migrate import StoreNotMigrated, require_migrated
 if TYPE_CHECKING:
     from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
+lazy from sqlalchemy import create_engine, update
+
+lazy from starpulse.event_log.tables import worker_state
 
 #: The worker state holding, by context, the boot token of the `serve` that started it.
 READY_STATE = "ready"
@@ -27,9 +30,7 @@ READY_STATE = "ready"
 def forget_starts(url: str) -> None:
     """Drop every context's stamp in the store at `url`: a `serve` that keeps its boot token across a re-exec
     (`hold.boot_token`) counts only the contexts its new image starts. Raises on a database error."""
-    from sqlalchemy import create_engine, update  # noqa: PLC0415 - `serve` calls it before the database stack loads
 
-    from starpulse.event_log.tables import worker_state  # noqa: PLC0415
 
     engine = create_engine(url)
     try:

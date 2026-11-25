@@ -20,7 +20,21 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
 
     from starpulse.contracts.adapters import TaskKeys
-    from starpulse.event_log.event_log import EventLog
+lazy from sqlalchemy import insert, select
+lazy from sqlalchemy.engine import make_url
+
+lazy from starpulse.board.adapters import history_window
+lazy from starpulse.event_log.event_log import EventLog, store_engine
+lazy from starpulse.event_log.migrate import migrate
+lazy from starpulse.event_log.opening import database_url
+lazy from starpulse.event_log.readmodel.projector import Projector
+lazy from starpulse.event_log.readmodel.snapshot_store import build as build_snapshots
+lazy from starpulse.event_log.store import EventStore
+lazy from starpulse.event_log.tables import scheduler_runs
+lazy from starpulse.github.adapters.outbound.carry_over import carry_over
+lazy from starpulse.runtime.assembly import declared
+lazy from starpulse.runtime.config import ConfigError, discover, load
+lazy from starpulse.scheduler.model import ledger, toggle
 
 __all__ = ["RETIRED_SUFFIX", "main", "maintain"]
 
@@ -37,12 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="starpulse migrate", description="bring the store to its current schema")
     parser.add_argument("--config", type=Path, help="the TOML config the server runs with (default starpulse.toml)")
     args = parser.parse_args(argv)
-    # The store, the board and the config cost over a second to import: `--help` and a flag error pay none of it.
-    from sqlalchemy.engine import make_url  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
-    from starpulse.event_log.opening import database_url  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.runtime.assembly import declared  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     logging.basicConfig(level=logging.INFO)
     path = discover(args.config)
@@ -88,12 +97,6 @@ def maintain(
     `machine:events` the store holds into the read model, placing machine tasks with `keys`; the read model and the
     stored snapshot, and the summaries, are rebuilt first when their stamp differs.
     """
-    from starpulse.event_log.event_log import EventLog, store_engine  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.event_log.migrate import migrate  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.event_log.readmodel.projector import Projector  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.event_log.readmodel.snapshot_store import build as build_snapshots  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.event_log.store import EventStore  # noqa: PLC0415 - import cost, paid only by a run that migrates
-
     engine = store_engine(url)
     try:
         migrate(engine)
@@ -116,8 +119,6 @@ def import_files(log: EventLog, base: Path, state_dir: Path) -> None:
     A setting a store already holds wins over its file, and a store that already holds runs ignores the ledger file; the
     file is retired either way, so an old one cannot come back after a reset.
     """
-    from starpulse.board.adapters import history_window  # noqa: PLC0415 - import cost, paid only by a run that migrates
-    from starpulse.scheduler.model import ledger, toggle  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     _import_setting(log, toggle.KEY, state_dir / toggle.TOGGLE_FILE, "enabled")
     _import_setting(log, history_window.KEY, base / history_window.SETTINGS_FILE, "history_hours")
@@ -125,7 +126,6 @@ def import_files(log: EventLog, base: Path, state_dir: Path) -> None:
 
 
 def _carry_inbox(log: EventLog, pattern: str) -> None:
-    from starpulse.github.adapters.outbound.carry_over import carry_over  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     if log.setting(INBOX_CARRIED) is not None:
         return
@@ -153,9 +153,7 @@ def _import_setting(log: EventLog, key: str, file: Path, field: str) -> None:
 
 
 def _import_runs(engine: Engine, file: Path) -> None:
-    from sqlalchemy import insert, select  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
-    from starpulse.event_log.tables import scheduler_runs  # noqa: PLC0415 - import cost, paid only by a run that migrates
 
     try:
         text = file.read_text()

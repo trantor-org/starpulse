@@ -16,6 +16,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
+lazy from starpulse.contracts.adapters import BoardTask
+lazy from starpulse.machine_engine.adapters.machine_loader import load_machine
+lazy from starpulse.machine_engine.model.snapshot import describe
+
 try:  # libyaml's loader: the same safe schema and errors, a tenth of the pure-Python parse time over a whole board
     from yaml import CSafeLoader as _FrontmatterLoader
 except ImportError:
@@ -33,7 +37,7 @@ from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_m
 
 if TYPE_CHECKING:
     from starpulse.board.model.board_feed import BoardFeed
-    from starpulse.contracts.adapters import BoardTask, Move
+    from starpulse.contracts.adapters import Move
     from starpulse.event_log.event_log import EventLog
     from starpulse.machine_engine.model.machine_definition import Compiled
     from starpulse.machine_engine.model.snapshot import Qualify
@@ -433,8 +437,6 @@ class NativeScan:
                 "%s: status %r is not in %s's statuses; task skipped", path, status, self.root / "config.yml"
             )
             return None
-        from starpulse.contracts.adapters import BoardTask  # noqa: PLC0415 - import cost, paid on first use
-
         criteria = _criteria(body)
         dependencies = _strings(frontmatter.get("dependencies"))
         tier = str(frontmatter.get("tier") or "").strip().lower()
@@ -554,10 +556,6 @@ def _machine(
     A lane the machine and the statuses disagree on is tolerated: a state no status names is drawn empty, and a status no
     state names is off the board, so its tasks sit in no column and no move reaches it.
     """
-    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
-        load_machine,
-    )
-    from starpulse.machine_engine.model.snapshot import describe  # noqa: PLC0415 - import cost, paid on first use
 
     compiled = replace(load_machine(path), waits=waits)
     drawn = describe(compiled.machine)

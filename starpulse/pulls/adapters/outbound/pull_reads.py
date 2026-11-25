@@ -16,6 +16,7 @@ from starpulse.github.adapters.outbound.head_reader import GitHubReader
 from starpulse.github.adapters.outbound.rest import Client, GitHubError, Reply
 from starpulse.github.model.checks import required_of, rollup
 from starpulse.github.model.delivery import Delivery
+from starpulse.github.model.reconcile import epoch
 from starpulse.pulls.adapters.outbound.pull_events import REPORT_RESULTS, bare_detail
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.pulls.model.required import with_missing
@@ -147,13 +148,17 @@ def _requiring(store: PullStore, record: dict[str, Any], contexts: frozenset[str
 
 def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) -> None:
     """Make the reads `delivery` names and save what they returned in the pull requests' records. Raises `LookupError` for a
-    pull request delivery whose head or base the record does not hold yet, so the queue retries it once the write lands."""
+    pull request delivery whose head or base the record does not hold yet, so the queue retries it once the write lands; one
+    a later delivery superseded returns with no read."""
     body = json.loads(delivery.body)
     repository = delivery.repository
     if delivery.event == "pull_request":
         pull: Mapping[str, Any] = body["pull_request"]
         record = _detailed(store, repository, pull["number"], now)
         if (record["headRefOid"], record["baseRefName"]) != (pull["head"]["sha"], pull["base"]["ref"]):
+            seen = record["detail"].get("deliveredAt")
+            if seen and epoch(pull["updated_at"]) < epoch(seen):
+                return  # a later push superseded this head: its own delivery reads the record's current one
             raise LookupError(f"{repository}#{pull['number']} does not hold the head and base this delivery names yet")
         held = record["detail"].get("files")
         reads.files(repository, pull["number"], held, lambda files: _put(store, record, files=files))

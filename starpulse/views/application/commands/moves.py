@@ -32,6 +32,8 @@ from starpulse.views.application.commands.guard import (
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     pass
 
+lazy from starpulse.event_log.claude_sessions import same_holder
+
 
 #: Starts the session a `StartRequest` names; `move_task` calls it for the operator's move of an unheld task.
 Starter = Callable[[StartRequest], tuple[int, dict[str, Any]]]
@@ -180,8 +182,6 @@ def dispatch_task(request: _DispatchBody, feed: BoardFeed, dispatch: Dispatcher 
     session that already holds another task In Progress, and a task outside Ready, Needs attention and In Progress.
     A dispatch the event log did not append is a 502, never a 202.
     """
-    from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a dispatch names a session
-
     task, session, replaces = request.task, request.session, request.replaces or ""
     if dispatch is None:
         return 501, {"error": "this deployment publishes no dispatch events"}

@@ -117,6 +117,22 @@ from starpulse.cli.agent_keys import (
 
 if TYPE_CHECKING:
     from starpulse.runtime.config import Config
+lazy from starpulse.board.adapters import project_machines
+lazy from starpulse.cli import doctor, skill_install
+lazy from starpulse.contracts.adapters import TaskKeys
+lazy from starpulse.contracts.analytics import Analytics
+lazy from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS
+lazy from starpulse.event_log.opening import open_event_log
+lazy from starpulse.event_log.readmodel.read_model import ReadModel
+lazy from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
+lazy from starpulse.machine_engine.adapters import mermaid_import
+lazy from starpulse.machine_engine.adapters.machine_loader import load_machine, read_document
+lazy from starpulse.machine_engine.model.diagram import dot
+lazy from starpulse.machine_engine.model.machine_definition import MachineDefinitionError, refuse_unlisted
+lazy from starpulse.pulls.adapters.inbound.task_actor import ACTOR
+lazy from starpulse.runtime.config import ConfigError, discover, load
+lazy from starpulse.scheduler.model.config import ACTOR as SCHEDULER_ACTOR
+lazy from starpulse.sessions.adapters.outbound.transcript_records import records_by_task, session_records
 
 #: What each exit code means, as the manifest says it.
 EXIT_CODES = {
@@ -208,21 +224,12 @@ def _machine(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, 
         **{key: machine[key] for key in ("submachines", "launches", "writers") if key in machine},
     }
     if args.format == "dot":
-        from starpulse.machine_engine.model.diagram import dot  # noqa: PLC0415 - import cost, paid on first use
-
         document |= {"format": "dot", "diagram": dot(flow["name"], machine)}
     return document
 
 
 def _lanes(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The Board machine's lane names in machine order beside each retired name history still holds, from its file."""
-    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
-        load_machine,
-    )
-    from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
-        MachineDefinitionError,
-    )
-    from starpulse.runtime.config import discover  # noqa: PLC0415 - import cost, paid on first use
 
     path = discover(args.config)
     try:
@@ -318,9 +325,6 @@ def _watch(args: argparse.Namespace, environ: Mapping[str, str]) -> Iterator[dic
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Every install check of `starpulse.cli.doctor`; `ok` is false, and the exit code 1, when any fails."""
-    from starpulse.cli import doctor  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.runtime.config import discover, load  # noqa: PLC0415 - import cost, paid on first use
-
     base = agent_wire.server_url(args.server, environ)
     path = discover(args.config)
     try:
@@ -342,7 +346,6 @@ def _skills_root(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[
 
 
 def _skills_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    from starpulse.cli import skill_install  # noqa: PLC0415 - import cost, paid on first use
 
     scope, root = _skills_root(args, environ)
     return {
@@ -359,7 +362,6 @@ def _skills_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
 
 
 def _skills_install(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    from starpulse.cli import skill_install  # noqa: PLC0415 - import cost, paid on first use
 
     harnesses = [harness for harness in skill_install.HARNESS_DIRS if getattr(args, harness)]
     if not harnesses:
@@ -373,12 +375,6 @@ def _skills_install(args: argparse.Namespace, environ: Mapping[str, str]) -> dic
 
 def _checked(path: Path) -> dict[str, Any]:
     """One machine file's verdict: compiling it is what refuses a schema or a compile error."""
-    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
-        load_machine,
-    )
-    from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
-        MachineDefinitionError,
-    )
 
     try:
         load_machine(path)
@@ -393,7 +389,6 @@ def _checked(path: Path) -> dict[str, Any]:
 
 def _dead_migrations(path: Path, held: set[str]) -> list[dict[str, Any]]:
     """An error per `migrations` entry of `path` whose source State no live Task holds."""
-    from starpulse.machine_engine.adapters.machine_loader import read_document  # noqa: PLC0415 - import cost, paid on first use
 
     mapping = read_document(path).get("migrations", {})
     return [
@@ -412,10 +407,6 @@ def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
     With `--config`, a migrations entry no live Task of that config's event log holds is refused too.
     """
-    from starpulse.event_log.opening import open_event_log  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.runtime.config import discover, load  # noqa: PLC0415 - import cost, paid on first use
-
     machines = [_checked(path) for path in args.paths]
     if args.config is not None:
         path = discover(args.config)
@@ -429,10 +420,6 @@ def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
 
 def _import_mermaid(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    from starpulse.machine_engine.adapters import mermaid_import  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
-        MachineDefinitionError,
-    )
 
     if not args.source.is_file():
         raise agent_wire.CliError("not_found", f"{args.source} is not a file")
@@ -453,8 +440,6 @@ def _plain(value: object) -> Any:
 
 def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The config as it would run, every default filled in; `ok` is false, and the exit code 1, when it would not."""
-    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid on first use
-
     path = discover(args.config)
     checked: dict[str, Any] = {"file": str(path) if path else None, "unknown_keys": [], "errors": [], "config": None}
     try:
@@ -473,13 +458,6 @@ def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
 def _session_records(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """One session's transcript records grouped by the task each belongs to, in the order the tasks are first named,
     read from the transcript files under `--transcripts`, else `[board] transcripts`, else Claude Code's own directory."""
-    from starpulse.contracts.adapters import TaskKeys  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.contracts.analytics import Analytics  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.sessions.adapters.outbound.transcript_records import records_by_task, session_records  # noqa: PLC0415 - import cost, paid on first use
-
     path = discover(args.config)
     try:
         config = load(path)
@@ -504,17 +482,6 @@ def _unlisted_writers(config: Config, base: Path) -> list[str]:
 
     Only the built-in boards draw `.starpulse/machines/`; a dotted type is unknown here.
     """
-    from starpulse.board.adapters import project_machines  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
-        load_machine,
-    )
-    from starpulse.machine_engine.model.machine_definition import (  # noqa: PLC0415 - import cost, paid on first use
-        MachineDefinitionError,
-        refuse_unlisted,
-    )
-    from starpulse.pulls.adapters.inbound.task_actor import ACTOR  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.scheduler.model.config import ACTOR as SCHEDULER_ACTOR  # noqa: PLC0415 - import cost, paid on first use
-
     if config.reads_domains_at_start():
         return []  # an adapter reads this instance's domains from its workflows as `serve` starts, which this offline check cannot read
     listed = [name for names in config.qualified_domains().values() for name in names]

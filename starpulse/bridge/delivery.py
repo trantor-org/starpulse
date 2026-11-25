@@ -18,6 +18,7 @@ from typing import Protocol
 
 from starpulse.bridge.consumers import all_consumers
 from starpulse.bridge.publisher import Publisher, Unavailable
+from starpulse.bridge.subjects import INCIDENT
 from starpulse.event_log.deadlines import Deadlines
 from starpulse.event_log.follower_lag import Behind
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
@@ -29,6 +30,11 @@ _BATCH = 100
 #: however old, and a move before the claim is history to the session it then wakes in the lane it left.
 ONE_TIME = (".holder_resume", ".moved")
 _FETCH_TIMEOUT_S = 0.2
+
+
+def _one_time(subject: str) -> bool:
+    """A holder's resume, a move and an incident, which a session subscribing after it was published has nothing to do with."""
+    return subject.endswith(ONE_TIME) or subject.startswith(INCIDENT)
 
 
 @dataclass(frozen=True)
@@ -140,10 +146,10 @@ class JetStreamMailbox:
             pull = await js.pull_subscribe_bind(name, self._stream)
             try:
                 batch = await pull.fetch(_BATCH, timeout=_FETCH_TIMEOUT_S)
-                once = any(message.subject.endswith(ONE_TIME) for message in batch)
+                once = any(_one_time(message.subject) for message in batch)
                 created = (await js.consumer_info(self._stream, name)).created if once else None
                 for message in batch:
-                    if created and message.subject.endswith(ONE_TIME) and message.metadata.timestamp < created:
+                    if created and _one_time(message.subject) and message.metadata.timestamp < created:
                         await message.ack()
                     else:
                         held.append(message)

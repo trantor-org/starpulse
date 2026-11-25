@@ -15,6 +15,8 @@ import importlib
 import sys
 from collections.abc import Callable
 
+lazy from starpulse.cli import agent_cli
+
 
 def _lazy(module: str) -> Callable[[list[str]], int | None]:
     """A subcommand's `main`, imported when it runs: an agent verb never pays for the server's or the event log's imports."""
@@ -53,7 +55,6 @@ def main(argv: list[str] | None = None) -> int | None:
 
             watch_supervisor()
         return COMMANDS[argv[0]](argv[1:])
-    from starpulse.cli import agent_cli  # noqa: PLC0415 - import cost, paid only by a verb that reads the server
 
     return agent_cli.main(argv)
 

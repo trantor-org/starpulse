@@ -19,6 +19,7 @@ from starpulse.event_log.table_registry import definition, is_stamped, stamp_of,
 
 if TYPE_CHECKING:
     from starpulse.event_log.event_log import EventLog, Tail
+lazy from starpulse.event_log.events import STREAM
 
 CHECKPOINT = "read-model:tasks"
 #: How far the projector has folded `machine:events` into `starpulse_machine_tasks`; it commits with each batch's rows.
@@ -157,7 +158,6 @@ class Projector:
 
     def _tail(self, after: int) -> Tail:
         from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the log's stack loads when a log opens
-        from starpulse.event_log.events import STREAM  # noqa: PLC0415
 
         return Tail(self._log, STREAM, after=after, batch=BATCH)
 

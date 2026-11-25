@@ -24,6 +24,7 @@ from starpulse.event_log.wake import StopEvent
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import Entry, EventLog
     from starpulse.pulls.adapters.outbound.pulls import PullStore
+lazy from starpulse.event_log.event_log import Tail
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,6 @@ def follow_events(
     The replay keeps its cursor in the `CURSOR` worker state before each poll, once the batch before is handed over.
     With `resume` (the pull store holds records) it starts after that cursor, so a restart reads only what was
     appended since; without it (a new or wiped store) it reads the whole retention again to rebuild the store."""
-    from starpulse.event_log.event_log import Tail  # noqa: PLC0415 -- the event log opens the database stack
 
     class Kept(Tail):
         """A replay that writes its cursor after each batch: every entry up to it has been handed over."""

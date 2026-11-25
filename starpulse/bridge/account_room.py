@@ -19,7 +19,7 @@ def account_room(
     prefix = f"starpulse.{board}.alert.{alert}"
     state: dict[str, bool] = {}
 
-    def seen(subject: str) -> None:
+    def seen(subject: str, _sha: str | None) -> None:
         if subject == f"{prefix}.firing":
             state["firing"] = True
         elif subject == f"{prefix}.resolved":

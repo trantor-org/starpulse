@@ -321,6 +321,10 @@ def default_starters(
             row = built[1].task(task, lean=True)
             return lane_id(str(row.get("state") or "")) if row else None
 
+        def closed(task: str) -> bool:
+            built = shared.peek()
+            return built is not None and (built[1].is_done(task) or built[1].is_archived(task))
+
         def held_by(session: str) -> str | None:
             built = shared.peek()
             if built is None:
@@ -363,6 +367,7 @@ def default_starters(
                 lambda repo, number: stored_head(log.engine, repo, number),
                 lane_of,
                 lambda: shared()[1].roles.working,
+                closed,
             ),
             forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ)),
             config.bridge.incidents,

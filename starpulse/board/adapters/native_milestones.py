@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.model.seam import (
+    RETRO_MARKER,
     MilestoneArchiver,
     MilestoneCreator,
     MilestoneEditor,
@@ -195,6 +196,7 @@ def creator(root: Path) -> MilestoneCreator:
             sections = {name: _text(field, details[field]) for name, field in _ORDER if field in details}
         except ValueError as refusal:
             return Written(False, str(refusal))
+        sections.setdefault("Retro", RETRO_MARKER)
         with lock:
             milestone = _next_id(root)
             path = root / "milestones" / f"{milestone} - {_slug(title.strip())}.md"

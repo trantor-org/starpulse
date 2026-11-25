@@ -43,11 +43,13 @@ from starpulse.board.adapters.native_scan import (
     DEFAULT_PREFIX,
     DEFAULT_STATUSES,
     BacklogConfig,
+    canonical_key,
     _description,
     _split,
     _strings,
     lane_id,
     project_board,
+    read_config,
 )
 from starpulse.board.adapters.native_scan import (
     _profile as _profile_of,
@@ -84,6 +86,7 @@ from starpulse.event_log.store import StaleVersion, lacks_history
 from starpulse.event_log.tables import pull_requests, retired_tasks
 from starpulse.github.adapters.outbound.rest import connect, get, pull_mergeable
 from starpulse.machine_engine.model.state_roles import StateRoles
+lazy from starpulse.machine_engine.adapters.machine_loader import read_document
 
 if TYPE_CHECKING:
     from starpulse.board.model.board_feed import BoardFeed
@@ -787,13 +790,17 @@ def _record_from(row: Mapping[str, Any], spelled: Mapping[str, str]) -> dict[str
     meta = row["meta"]
     comments = [
         {
-            "created": item.get("created") or (f"{datetime.fromtimestamp(item['at']):%Y-%m-%d %H:%M}" if item["at"] else ""),
+            "created": item.get("created")
+            or (f"{datetime.fromtimestamp(item['at']):%Y-%m-%d %H:%M}" if item["at"] else ""),
             "text": item["text"],
             **({"author": item["actor"]} if item.get("actor") else {}),
         }
         for item in row["comments"]
     ]
-    items = {kind: [{key: item[key] for key in ("n", "text", "checked")} for item in row["criteria"] if item["kind"] == kind] for kind in ("ac", "dod")}
+    items = {
+        kind: [{key: item[key] for key in ("n", "text", "checked")} for item in row["criteria"] if item["kind"] == kind]
+        for kind in ("ac", "dod")
+    }
     description = row["description"]
     return {
         "id": row["id"],
@@ -847,7 +854,9 @@ def _file_of(record: Mapping[str, Any]) -> tuple[dict, str]:
             body = _set_text(body, field, record[field])
     for field, (marker, heading, _) in _CHECKLISTS.items():
         if record.get(field):
-            lines = "".join(f"- [{'x' if item['checked'] else ' '}] #{item['n']} {item['text']}\n" for item in record[field])
+            lines = "".join(
+                f"- [{'x' if item['checked'] else ' '}] #{item['n']} {item['text']}\n" for item in record[field]
+            )
             body = _marked(body, marker, heading, "\n" + lines)
     for item in record["comments"]:
         body = _comment(body, item["text"], item.get("author") or OPERATOR)
@@ -1359,7 +1368,7 @@ class _Retired:
 _RETIRABLE = ("tasks", "completed", "archive/tasks")
 
 
-def _retirer(root: Path, retired: _Retired, roles: StateRoles) -> TaskRetirer:
+def _retirer(root: Path, retired: _Retired, roles: StateRoles, prefix: str) -> TaskRetirer:
     """A board writer that takes a Done or archived task's file off the board into `retired`, byte for byte.
 
     The file is first renamed to a name no scan reads, so a write meeting the retire finds no file rather than losing
@@ -1373,10 +1382,11 @@ def _retirer(root: Path, retired: _Retired, roles: StateRoles) -> TaskRetirer:
         if path.parent != root / "archive" / "tasks" and lane_id(status) != roles.done:
             return Written(False, f"{task} is {status or 'without a status'}, neither Done nor archived")
         held = path.with_name(f"{path.name}.retiring")
+        key = canonical_key(prefix, str(frontmatter["id"]).strip())
         try:
-            appended(str(frontmatter["id"]).strip(), None, OPERATOR)
+            appended(key, None, OPERATOR)
             os.replace(path, held)
-            if refused := retired.keep(str(frontmatter["id"]).strip(), path.name, held.read_bytes().decode()):
+            if refused := retired.keep(key, path.name, held.read_bytes().decode()):
                 os.replace(held, path)
                 return Written(False, refused)
             held.unlink()
@@ -1734,7 +1744,9 @@ def _creator(
 
     def create(title: str, details: Mapping[str, Any], /, actor: str = OPERATOR, cohort: bool = False) -> Written:
         if cohort and cohort_milestone and not str(details.get("milestone") or "").strip():
-            return Written(False, f"{title}: a batch of two or more tasks is a cohort and needs a `milestone` on each spec")
+            return Written(
+                False, f"{title}: a batch of two or more tasks is a cohort and needs a `milestone` on each spec"
+            )
         with lock, _allocating(root):
             write_steps.step("lock")
             task = _next_id(root, config.prefix, retired)
@@ -1877,10 +1889,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     migrations: Mapping[str, str] = {}
     labelled: Mapping[str, str] = {}
     if "machine" in settings:
-        from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
-            read_document,
-        )
-
         document = read_document(base / str(settings["machine"]))
         migrations = document.get("migrations", {})
         labelled = {name: spec["label"] for name, spec in document.get("states", {}).items() if spec.get("label")}
@@ -1936,7 +1944,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "restore": _restorer(root, retired, config.statuses, migrations, gate, roles.done),
             "complete": _completer(root, config.statuses, roles, settings.get("complete_keep_labels")),
             "reopen": _reopener(root, config.statuses, roles, gate),
-            "retire": _retirer(root, retired, roles),
+            "retire": _retirer(root, retired, roles, config.prefix),
             "retired": _retired_reader(retired),
             "retired_projected": retired.projected,
             "retired_page": retired.page,
@@ -1968,7 +1976,10 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     def attach(log: EventLog) -> None:
         retired.engine = log.engine  # the retired tasks live in the view's history store
         history.attach(log.engine)
-        history.import_retired(retired.pairs(without_history=True), _record_of)
+        prefix = read_config(root).prefix
+        history.import_retired(
+            ((canonical_key(prefix, task), text) for task, text in retired.pairs(without_history=True)), _record_of
+        )
         if settings.get("complete_done"):
             _uncompleted(root, settings.get("complete_keep_labels"), lambda task: history.settle(task, False))
             for done_task in _done_in_tasks(root, made.roles.done):
