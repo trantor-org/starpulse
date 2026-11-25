@@ -64,14 +64,13 @@ class RecordsMixin:
         self._aliases[alias] = task
 
     def recording_of(self, task_id: str) -> threading.RLock:
-        """The lock one task's write holds from the board's write to the record of its lane, as `recording` does for
-        every task: the board-files pass reconciling `task_id` holds both, so the task actor's write, which holds this one
-        alone, waits behind no other task's write. An alias shares its task's lock."""
+        """The lock one task's write holds from the board's write to the record of its lane, so a write of the same task,
+        the task actor's included, waits for it and a write of any other task does not. An alias shares its task's lock."""
         return self._recording_of.setdefault(self._keys.canonical(task_id) if self._keys else task_id, threading.RLock())
 
     def record_written(self, task_id: str, lane: str, at: float, who: tuple[str, str, str]) -> None:
         """Record the lane a board write put `task_id` in at `at`, naming `who` (actor, session, harness), in the history
-        and with a log as its `lane_events` entry, in one transaction (`LaneRecorder`). The caller holds `recording` or
+        and with a log as its `lane_events` entry, in one transaction (`LaneRecorder`). The caller holds
         `recording_of(task_id)` from the write. A history that cannot be written is logged."""
         if self._lanes is None:
             return
@@ -85,10 +84,11 @@ class RecordsMixin:
             logger.warning("StarPulse: cannot record the lane change of %s: %s", task_id, exc)
 
     def record_write(self, task: str | None, who: tuple[str, str, str], write: Callable[[], Written]) -> Written:
-        """Run `write` of `task` (None: the task the write makes, named by its output) holding `recording` and the task's
-        `recording_of`, so the task actor's write of the same task waits for it, and record the lane it put the task in
-        with `record_written`: a write refused, or one that moves no lane, records nothing."""
-        with self.recording, self.recording_of(task) if task else contextlib.nullcontext():
+        """Run `write` of `task` (None: the task the write makes, named by its output) holding the task's `recording_of`,
+        so the task actor's write of the same task waits for it and no other write does, and record the lane it put the
+        task in with `record_written`: a write refused, or one that moves no lane, records nothing. A create holds no lock:
+        its id is new, and the creator's own lock orders the ids."""
+        with self.recording_of(task) if task else contextlib.nullcontext():
             write_steps.step("feed")
             written = write()
             if written.ok and written.lane:
