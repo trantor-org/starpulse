@@ -10,7 +10,7 @@ from starlette.responses import Response
 
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute
-from starpulse.views.adapters.outbound import request_durations
+from starpulse.views.adapters.outbound import agent_steps, request_durations
 from starpulse.views.adapters.outbound.gc_pauses import PAUSES
 from starpulse.views.adapters.outbound.process_metrics import process_gauges
 from starpulse.views.adapters.outbound.pull_metrics import open_pulls_exposition
@@ -42,6 +42,7 @@ def render(api: Api) -> str:
         + process_gauges()
         + PAUSES.exposition()
         + request_durations.exposition()
+        + agent_steps.exposition()
     )
 
 

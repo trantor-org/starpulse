@@ -51,6 +51,7 @@ export interface ApiContract {
   readyReport: ReadyReport;
   requests: (
     | StartRequest
+    | StepsRequest
     | RetireRequest
     | CompleteRequest
     | CreateRequest
@@ -1709,6 +1710,23 @@ export interface StartRequest {
   profile?: string | null;
   session?: string | null;
   task: string;
+}
+/**
+ * `POST /api/steps`: the seconds each step of one `command` run took, and its reuse hit or miss.
+ *
+ * `steps` names at most 100 steps (`[a-z0-9_.:-]`, 64 characters) with their seconds; `outcome` is how the run ended.
+ */
+export interface StepsRequest {
+  command: string;
+  outcome: "ok" | "failed";
+  reuse?: ("hit" | "miss") | null;
+  steps?: {
+    /**
+     * This interface was referenced by `undefined`'s JSON-Schema definition
+     * via the `patternProperty` "^[a-z0-9_.:-]{1,64}$".
+     */
+    [k: string]: number;
+  };
 }
 /**
  * `POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks.

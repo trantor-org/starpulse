@@ -39,6 +39,7 @@ from starpulse.contracts.api.dto.requests import (
     MilestonePutRequest,
     RetireRequest,
     StartRequest,
+    StepsRequest,
     TaskPutRequest,
     WindowRequest,
 )
@@ -120,6 +121,7 @@ class ApiContract(_Api):
     retiredTasks: RetiredTasks
     requests: list[
         StartRequest
+        | StepsRequest
         | RetireRequest
         | CompleteRequest
         | CreateRequest

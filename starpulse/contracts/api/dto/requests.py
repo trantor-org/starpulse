@@ -382,3 +382,17 @@ class AdminRequest(SchedulerRequest):
 
     display: DisplayPatch | None = None
     theme: Theme | None = None
+
+
+class StepsRequest(_Request):
+    """`POST /api/steps`: the seconds each step of one `command` run took, and its reuse hit or miss.
+
+    `steps` names at most 100 steps (`[a-z0-9_.:-]`, 64 characters) with their seconds; `outcome` is how the run ended.
+    """
+
+    command: Annotated[str, StringConstraints(pattern=r"^[a-z0-9_.:-]{1,64}$")]
+    outcome: Literal["ok", "failed"]
+    steps: dict[Annotated[str, StringConstraints(pattern=r"^[a-z0-9_.:-]{1,64}$")], Annotated[float, Field(ge=0)]] = (
+        Field(default_factory=dict, max_length=100)
+    )
+    reuse: Literal["hit", "miss"] | None = None

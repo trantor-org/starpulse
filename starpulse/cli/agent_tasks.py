@@ -19,7 +19,7 @@ from typing import Any
 from starpulse.board.model.plain_text import render as render_text
 from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
-from starpulse.cli import agent_wire
+from starpulse.cli import agent_wire, step_times
 from starpulse.cli.agent_keys import LIFECYCLE_KEYS
 from starpulse.event_log.claude_sessions import (
     DEFAULT_SESSIONS,
@@ -709,17 +709,20 @@ def task_checkpoint_ac(args: argparse.Namespace, environ: Mapping[str, str]) -> 
     evidence = args.evidence.strip()
     if not evidence:
         raise agent_wire.CliError("usage", "evidence is required to check an Acceptance Criterion")
-    criteria = _read_record(args, environ).get("acceptanceCriteria") or []
-    if args.criterion not in {item["n"] for item in criteria}:
-        raise agent_wire.CliError("refused", f"{args.task} has no Acceptance Criteria item #{args.criterion}")
-    checked = [{**item, "checked": True} if item["n"] == args.criterion else item for item in criteria]
-    changed = _task_edit_call(
-        args,
-        environ,
-        {"acceptanceCriteria": checked},
-        {"acceptanceCriteria": criteria},
-        f"Verified AC #{args.criterion}: {evidence}",
-    )
+    with step_times.timed("checkpoint", agent_wire.server_url(args.server, environ)) as steps:
+        with step_times.step(steps, "read"):
+            criteria = _read_record(args, environ).get("acceptanceCriteria") or []
+        if args.criterion not in {item["n"] for item in criteria}:
+            raise agent_wire.CliError("refused", f"{args.task} has no Acceptance Criteria item #{args.criterion}")
+        checked = [{**item, "checked": True} if item["n"] == args.criterion else item for item in criteria]
+        with step_times.step(steps, "write"):
+            changed = _task_edit_call(
+                args,
+                environ,
+                {"acceptanceCriteria": checked},
+                {"acceptanceCriteria": criteria},
+                f"Verified AC #{args.criterion}: {evidence}",
+            )
     return {"task": args.task, "criterion": args.criterion, "changed": changed}
 
 

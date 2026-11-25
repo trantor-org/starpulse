@@ -38,6 +38,7 @@ from starpulse.contracts.api.dto.requests import (
     MilestonePutRequest,
     RetireRequest,
     StartRequest,
+    StepsRequest,
     TaskPutRequest,
     WindowRequest,
 )
@@ -124,6 +125,7 @@ RESPONSES: dict[str, Any] = {
 #: Each write route's request body.
 REQUESTS: dict[str, type[BaseModel]] = {
     "/api/start": StartRequest,
+    "/api/steps": StepsRequest,
     "/api/retire": RetireRequest,
     "/api/complete": CompleteRequest,
     "/api/tasks": CreateRequest,
@@ -252,6 +254,7 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/task-records"): _read("Task records, the ids named when given", "task_records", "ids"),
     ("GET", "/api/retired"): _read("Retired tasks", "retired", "before", "fields", "limit", "milestone", "task"),
     ("POST", "/api/start"): _write("Start a session on a task", "start", StartRequest),
+    ("POST", "/api/steps"): _write("Record the seconds each step of an agent command took", "ingest", StepsRequest),
     ("POST", "/api/retire"): _write("Retire a task", "retire", RetireRequest),
     ("POST", "/api/complete"): _write("Complete a task", "complete", CompleteRequest),
     ("PUT", "/api/tasks"): _write("Create tasks", "create", CreateRequest, "201", "200"),
