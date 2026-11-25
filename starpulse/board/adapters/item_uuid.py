@@ -72,7 +72,7 @@ def stamp_files(root: Path, board: str) -> Stamped:
             path.write_bytes((stamped + divider + rest).encode())
             result.changed.append(path)
         if _is_task(relative):
-            result.tasks[key] = minted
+            result.tasks.setdefault(key, minted)  # the open file is first: its UUID is the Task stream's
     return result
 
 

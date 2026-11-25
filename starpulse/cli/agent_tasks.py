@@ -181,24 +181,7 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
     if (agent := agents.get(wanted)) is None:
         if carrier := _carrier(agent_wire.server_url(args.server, environ), args.task):
             return show(argparse.Namespace(**{**vars(args), "task": carrier}), environ)
-        settled_id, settled = next(
-            ((key, value) for key, value in snapshot["settled"].items() if key.casefold() == wanted), (None, None)
-        )
-        if settled is None:
-            return _show_cold(agent_wire.server_url(args.server, environ), args.task, snapshot)
-        # A settled task has left the lanes, and the snapshot keeps only where it settled.
-        agent = {
-            "id": settled_id,
-            "title": "",
-            "state": settled["state"],
-            "model": "",
-            "milestone": "",
-            "labels": [],
-            "dependencies": [],
-            "prs": [],
-            "moves": {},
-            "description": "",
-        }
+        return _show_cold(agent_wire.server_url(args.server, environ), args.task, snapshot)
     base = agent_wire.server_url(args.server, environ)
     if agent["state"] == roles_of(snapshot).done and "description" not in agent:
         return _show_cold(base, agent["id"], snapshot)
@@ -264,7 +247,8 @@ def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, A
     state = lane if lane == done or not document.get("archived") else ARCHIVED
     agent = cold_agent(record["id"], record, state, document.get("entered"))
     (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
-    return _described(_keyed(view, document), agent["description"], base)
+    described = _described(_keyed(view, document), agent["description"], base)
+    return {**described, "final_summary": linkify(record.get("finalSummary", ""), base, view["prs"])}
 
 
 def moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

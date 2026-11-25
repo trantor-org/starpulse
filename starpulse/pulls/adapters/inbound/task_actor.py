@@ -200,7 +200,6 @@ _ASKS = (
     "overdue",
     "pr_failing",
     "pr_closed_unmerged",
-    "operator_pushback",
     "ask_requested",
     "pr_unfinished_dead",
     "pr_merged_unfinished",
@@ -1090,7 +1089,7 @@ class TaskActor:
                 kept: dict[str, Any] = {} if now[0] == working else {"busy": None, "resumes": None}
                 if before and before[0] == self._review and now[0] == working:
                     own = self._memory.has(name, "own_send_back")
-                    kept |= {"sent_back": None if own else self._heads(agent), "own_send_back": None}
+                    kept |= {"sent_back": None if own else self._replies(agent), "own_send_back": None}
                 elif before is not None or now[0] != working:
                     kept["sent_back"] = (
                         None  # a task first seen outside the working lane keeps no hold from an earlier run
@@ -1457,6 +1456,10 @@ class TaskActor:
         records = {url: self._record(url) for url in self._own_prs(agent)}
         return {url: record["headRefOid"] for url, record in records.items() if record}
 
+    def _replies(self, agent: dict[str, Any]) -> int:
+        """How many holder replies the task's comments already hold: the send-back holds the task until one more."""
+        return derivation.replies(self._comments(agent) or [])
+
     def touch(self, events: Iterable[TaskTouched], observed: float | None = None) -> set[str]:
         """The one entry every trigger source derives through, under the lock: derive each task touched once, in name
         order but those a webhook touched citing a merged pull request first, as their move is the one a merge waits
@@ -1574,7 +1577,12 @@ class TaskActor:
                     )
                 return False
             merged = derivation.merged_at(self._port, agent) if fact in _MERGE_FACTS else None
-            if self._write(name, target, comment, observed, source=agent["state"], stale=changes, merged=merged):
+            feedback = fact == "operator_pushback"
+            if self._write(
+                name, target, comment, observed, source=agent["state"], stale=changes, merged=merged, feedback=feedback
+            ):
+                if feedback:
+                    self._wake_holder(name, "FEEDBACK", comment.removeprefix(derivation.SENT_BACK).strip())
                 return True
             if self._tried.get(name) != sent:
                 return False  # the file changed under a transient refusal: the next pass judges it anew, no later fact
@@ -2169,6 +2177,7 @@ class TaskActor:
         source: str,
         stale: Mapping[str, Any] = {},
         merged: float | None = None,
+        feedback: bool = False,
     ) -> bool:
         changes = {"status": target, **stale}
         refusal = self._judged(name, changes, comment)
@@ -2183,7 +2192,7 @@ class TaskActor:
         if written.ok:
             if target == self._review:
                 self._refused.pop(name, None)  # the refusal is repaired: a send-back must not resume on it
-            if source == self._review and target == self._feed.roles.working:
+            if source == self._review and target == self._feed.roles.working and not feedback:
                 self._memory.keep(name, own_send_back=True)
             self._landed(self._clock() - observed)
             if merged is not None:  # timed at the lane write, ahead of the hooks that tell the board and the holder

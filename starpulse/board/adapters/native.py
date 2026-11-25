@@ -31,7 +31,7 @@ import yaml
 from sqlalchemy import and_, delete, func, insert, or_, select
 from sqlalchemy.engine import Engine
 
-from starpulse.board.adapters import item_uuid, native_docs, native_milestones, qa_verdicts
+from starpulse.board.adapters import item_uuid, native_docs, native_milestones, qa_verdicts, ref_uuids
 from starpulse.board.adapters.holder_idle import GRACE_EXIT, UNREACHABLE_EXIT, HolderInGrace, HolderUnreachable
 from starpulse.board.adapters.native_lookup import _SETTLED_NS, _aliases, _find, _stamp
 from starpulse.board.adapters.native_scan import (
@@ -344,8 +344,10 @@ def _warn_actors(settings: Mapping[str, Any]) -> frozenset[str]:
     return frozenset(name.strip() for name in declared)
 
 
-def _stamped(frontmatter: dict, *, created: bool = False) -> dict:
-    """`frontmatter` with `updated_date` (and `created_date` on a new task) set to now in UTC, after the profile or status."""
+def _stamped(root: Path, frontmatter: dict, *, created: bool = False) -> dict:
+    """`frontmatter` with `updated_date` (and `created_date` on a new task) set to now in UTC, after the profile or status,
+    and the UUID of each item it names under `root` in `uuids`."""
+    ref_uuids.stamp(root, frontmatter)
     now = f"{datetime.now(timezone.utc):{_STAMP}}"
     stamps = {key: now for key in ("created_date", "updated_date") if created or key == "updated_date"}
     anchor = next((key for key in ("profile", "assignee") if key in frontmatter), "status")
@@ -444,7 +446,7 @@ def _update(
                 return _CHANGED
             frontmatter, body = _split(before)
             body = edit(frontmatter, body)
-            landed = _land(path, before, _stamped(frontmatter), body, guard, actor, audit=audit)
+            landed = _land(path, before, _stamped(root, frontmatter), body, guard, actor, audit=audit)
             if landed.ok:
                 return Written(True, f"Updated task {task}", warnings=landed.warnings, version=version if audit else "")
             if landed is not _STALE:
@@ -586,6 +588,7 @@ def _record_of(text: str) -> dict[str, Any]:
     return {
         "id": str(frontmatter.get("id") or ""),
         "uuid": str(frontmatter.get("uuid") or ""),
+        "uuids": dict(frontmatter.get("uuids") or {}),
         "title": str(frontmatter.get("title") or ""),
         "type": str(frontmatter.get("type") or ""),
         "status": str(frontmatter.get("status") or ""),
@@ -856,6 +859,7 @@ def _record_from(row: Mapping[str, Any], spelled: Mapping[str, str]) -> dict[str
         "createdBy": _said(meta, "createdBy"),
         "aliases": list(meta.get("aliases") or []),
         "uuid": _said(meta, "uuid"),
+        "uuids": dict(meta.get("uuids") or {}),
         "acceptanceCriteria": items["ac"],
         "definitionOfDone": items["dod"],
     }
@@ -866,6 +870,8 @@ def _file_of(record: Mapping[str, Any]) -> tuple[dict, str]:
     frontmatter: dict[str, Any] = {"id": record["id"]}
     if record.get("uuid"):
         frontmatter["uuid"] = record["uuid"]
+    if record.get("uuids"):
+        frontmatter["uuids"] = record["uuids"]
     spelled = {lane_id(record["status"]): record["status"]}
     for field in (*_SCALARS, "profile", "status", "actorMemory", *_LISTS):
         if record.get(field):
@@ -1808,7 +1814,7 @@ def _creator(
             try:
                 body = _apply(task, frontmatter, body, link(rest), spelled)
                 write_steps.step("apply")
-                landed = _land(path, None, _stamped(frontmatter, created=True), body, guard, actor)
+                landed = _land(path, None, _stamped(root, frontmatter, created=True), body, guard, actor)
                 if not landed.ok:
                     return landed
             except ValueError as refusal:

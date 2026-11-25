@@ -148,3 +148,10 @@ export function ledgerLevel(snap: Source, event: string): ({ kind: "fold" } & Fo
 
 /** The Ledger a Board path opens: that of the first of its events a DAG is tied to. */
 export const pathLedger = (snap: Source, events: string[]) => events.map((e) => ledgerLevel(snap, e)).find((l) => l) ?? null;
+
+/** A machine's name on its tooltip: a lifecycle machine, or the third party it is mapped from. */
+export const machineKicker = (source?: string): string => (source ? `machine mapped from ${source}` : "lifecycle machine");
+
+/** What a task dot's colour and glow say on its tooltip: the tier its profile names (`@agent-<tier>-<effort>`), and whether it has activity now. */
+export const taskTraits = (model: string | undefined, live: boolean): string =>
+  ` · ${model?.startsWith("@agent-deep") ? "deep agent" : model?.startsWith("@agent-standard") ? "standard agent" : "other"}${live ? " · activity now" : ""}`;

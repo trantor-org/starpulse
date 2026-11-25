@@ -297,6 +297,12 @@ describe("Run in <runner> ↗", () => {
     expect(link("never")).toBeNull();
   });
 
+  it("says in its tooltip that it opens the runner's start page in a new tab", async () => {
+    await draw();
+
+    expect(link("pr-watch")?.getAttribute("title")).toBe("Run in Runs: opens its start page in a new tab");
+  });
+
   it("does not open the job modal", async () => {
     await draw();
     await click(link("pr-watch")!);

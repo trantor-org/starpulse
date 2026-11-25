@@ -508,9 +508,9 @@ class EventLog:
         follower = threading.current_thread().name
         signal = signal if self._has_file() else None
         while not stop.is_set():
-            seen = self.appends if signal is None else self._signal_version(signal)
-            head = self._head
             try:
+                seen = self.appends if signal is None else self._signal_version(signal)
+                head = self._head
                 step()
             except Exception:
                 logger.exception(failure)

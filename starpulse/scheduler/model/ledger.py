@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 from sqlalchemy import func, insert, select
 
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel import task_uuid
 from starpulse.event_log.tables import scheduler_runs
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class Ledger:
     def record(self, run: RunRecord) -> None:
         """Keep `run`, stamped now. Raises when the store cannot be written."""
         with self.log.engine.begin() as db:
-            db.execute(insert(scheduler_runs).values(**asdict(run), recorded_at=time.time()))
+            db.execute(insert(scheduler_runs).values(**asdict(run), task_uuid=task_uuid.of(run.task), recorded_at=time.time()))
 
     def runs(self, task: str | None = None) -> list[RunRecord]:
         """Every recorded run, oldest first, or only `task`'s. Raises when the store cannot be read."""

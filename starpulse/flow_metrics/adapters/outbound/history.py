@@ -40,6 +40,7 @@ from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.event_log import WAL_SIZE_LIMIT, EventLog, insert_event
 from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
+from starpulse.event_log.readmodel import task_uuid
 from starpulse.event_log.store import EventStore
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
@@ -68,6 +69,7 @@ _lane_changes = Table(
     Column("new_status", String, nullable=False),
     Column("observed_at", Float, nullable=False),
     Column("actor", String),
+    Column("task_uuid", String),
     Index("ix_starpulse_lane_changes_task", "task", "observed_at"),
 )
 _learned_steps = Table(
@@ -203,7 +205,7 @@ class HistoryStore:
             "sha": (fields.get("data") or {}).get("sha"),
         }
         with self.engine.begin() as db:
-            insert = self._insert(_machine_events).values(row).on_conflict_do_nothing()
+            insert = self._insert(_machine_events).values(row | {"task_uuid": task_uuid.of(row["task"])}).on_conflict_do_nothing()
             db.execute(insert)
             if cursor is not None:
                 self.checkpoints.save(machine_events.STREAM, cursor, conn=db)
@@ -246,7 +248,13 @@ class HistoryStore:
         if (last is not None and lane_id(last) == status) or _holds_move(db, task, source, status, at):
             return False
         change = self._insert(_lane_changes).values(
-            event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at, actor=actor
+            event_id=event_id,
+            task=task,
+            task_uuid=task_uuid.of(task),
+            old_status=last,
+            new_status=status,
+            observed_at=at,
+            actor=actor,
         )
         return db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is not None
 
@@ -272,7 +280,7 @@ class HistoryStore:
                 if _holds_move(db, task, name if slash and name else None, status, at):
                     continue
                 row = {"event_id": event_id, "task": task, "old_status": None, "new_status": status, "observed_at": at}
-                db.execute(self._insert(_lane_changes).values(row).on_conflict_do_nothing())
+                db.execute(self._insert(_lane_changes).values(row | {"task_uuid": task_uuid.of(task)}).on_conflict_do_nothing())
             _rechain(db, {task for _, task in last})
         with self.engine.connect() as db:
             return len(_held_ids(db, ids) - held)

@@ -12,7 +12,7 @@ import type { FeedLine, HudState, HudStore } from "./hud";
 import { MACHINE, MUTED, token } from "./palette";
 import { DAG_COLOR, drawing, ease, easeO, rgba, type DrawCtx, type Hover, type LTask } from "./draw";
 import { animating, frameLoop, framePace, runsOnly, STALL_MS, type Motion } from "./idle";
-import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
+import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, taskTraits, machineKicker, topFlow, type Level, type Path } from "./levels";
 import { optionalSteps } from "../features/level/ledger";
 import type { DoctorBox, PanelCtx } from "../features/level/ledgerPanel";
 type LedgerPanel = typeof import("../features/level/ledgerPanel");
@@ -870,7 +870,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const sky = S!;
     switch (h.kind) {
       case "task": {
-        const o = h.o, at = subjectOf(h)!, kind = `task · ${stateName(o.state)}${o.today ? " today" : ""}${o.host.states ? ` · orbiting ${(o.host as Planet).title || o.host.name}` : ""} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
+        const o = h.o, at = subjectOf(h)!, kind = `task · ${stateName(o.state)}${o.today ? " today" : ""}${o.host.states ? ` · orbiting ${(o.host as Planet).title || o.host.name}` : ""}${taskTraits(o.model, liveTasks.has(o.id))} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
         return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at), prefs().clock);
       }
       case "mtask": {
@@ -886,7 +886,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       case "moon": {
         const o = h.o, mv = moving(o.name).length, nAgents = hosted(sky, o.name, o.parent.id).length;
         if (o.pager) return pagerTip(o.pager);
-        return `<div class="k">${sourceOf(o.name) ? `machine mapped from ${esc(sourceOf(o.name)!)}` : "lifecycle machine"} inside ${esc(o.parent.name)} · click to open it</div><div class="n">${esc(o.name)}</div>${o.nStates} states · ${nAgents} session${nAgents === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
+        return `<div class="k">${esc(machineKicker(sourceOf(o.name)))} inside ${esc(o.parent.name)} · click to open it</div><div class="n">${esc(o.name)}</div>${o.nStates} states · ${nAgents} session${nAgents === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
       }
       case "sat":
         return `<div class="k">state of the ${esc(h.o.machine)} machine · opens ${esc(h.o.machine)} ${esc(h.o.when)} · click to open ${esc(h.o.machine)}</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} orbiting`;
@@ -898,7 +898,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         const o = h.o, mv = moving(o.name).length;
         if (o.pager) return pagerTip(o.pager);
         if (o.subState) return `<div class="k">state of the ${esc(o.machine!)} machine · opens ${esc(o.flow!)} ${esc(o.when ?? "")} · click to open it</div><div class="n">${esc(o.title!)}</div>${o.n} task${o.n === 1 ? "" : "s"} here now`;
-        return `<div class="k">${sourceOf(o.name) ? `machine mapped from ${esc(sourceOf(o.name)!)}` : "lifecycle machine"} · click to open${o.when ? ` · ${esc(o.when)}` : ""}</div><div class="n">${esc(o.name)}</div>${Object.keys(o.states).length} states · ${o.n} task${o.n === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
+        return `<div class="k">${esc(machineKicker(sourceOf(o.name)))} · click to open${o.when ? ` · ${esc(o.when)}` : ""}</div><div class="n">${esc(o.name)}</div>${Object.keys(o.states).length} states · ${o.n} task${o.n === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
       }
       case "caption": {
         const o = h.o, ev = sky.board.machine.transitions.find((t) => t.event === scene!.fold?.ledger?.event);

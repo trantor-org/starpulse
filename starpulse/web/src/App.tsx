@@ -1,5 +1,5 @@
 // The page's DOM around the canvas: the left navigator, always open,
-// the right rail (recent moves on top, the legend at the bottom), and the
+// the right rail (recent moves), and the
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -11,7 +11,6 @@ import { HistoryWindowStore } from "./features/admin/historyWindow";
 import { HudStore, type FeedLine, type HudState } from "./render/hud";
 import { BOARD, pathKey, type Path } from "./render/levels";
 import { Crumb } from "./features/level/Crumb";
-import { DagLegend } from "./features/dags/DagLegend";
 import { FeedLines, linesThatFit, Queues } from "./features/fanout/Fanout";
 import { DagPressure } from "./features/dags/DagPressure";
 import type { DagData } from "./features/dags/dagsModel";
@@ -204,7 +203,7 @@ export function App() {
       </Kept>
       <Kept name="jobs" on={view === "jobs"}><Suspense fallback={null}><Dags data={jobsData} openPath={open} spot={spottedDag} opening={openingDag} filterSlot={dgSlot} /></Suspense></Kept>
       <Kept name="admin" on={view === "admin"}><Suspense fallback={null}><AdminPage store={admin} theme={theme} window={historyWindow} /></Suspense></Kept>
-      <Rail shown={shell} legend={!drill} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
+      <Rail shown={shell} hud={hud} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "jobs" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
           setLine(l?.key ?? null);
@@ -382,13 +381,13 @@ function NavigatorBody({ hud, jobsData, view, phone, slot, dgSlot, outlineSlot, 
   );
 }
 
-/** The right rail, the same order in every view: the recent events at the top, the legend at the bottom. */
+/** The right rail: the recent events, the same in every view. */
 export function Rail({ shown = true, ...body }: { shown?: boolean } & Parameters<typeof RailBody>[0]) {
   // the frame is always there (the canvas ends at its edge); `shown` fills it
   return <aside id="rail">{shown && <RailBody {...body} />}</aside>;
 }
 
-function RailBody({ hud, view, legend = true, ...feed }: { hud: HudState; view: ViewName; legend?: boolean } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
+function RailBody({ hud, ...feed }: { hud: HudState } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
   // the lines hold still under the pointer, so a run starting mid-aim doesn't push the next line under the click
   const [held, setHeld] = useState<FeedLine[] | null>(null);
   // the feed is a fixed box: it keeps only the newest lines it shows whole, and grows no scrollbar
@@ -410,23 +409,6 @@ function RailBody({ hud, view, legend = true, ...feed }: { hud: HudState; view: 
           <FeedLines lines={(held ?? hud.feed).slice(0, fit)} {...feed} />
         </div>
       </section>
-      {legend && <section id="legend">
-        <h3>Legend</h3>
-        {view === "jobs" ? <DagLegend /> : view === "kanban" ? (
-          <>
-            <span><i style={{ background: "var(--ok)" }} />checks pass</span><span><i style={{ background: "var(--fail)" }} />failing</span><span><i style={{ background: "var(--run)" }} />pending</span><br />
-            <span><i style={{ background: "var(--agent)" }} />merged</span><span><i style={{ background: "var(--waits)" }} />queued</span><span style={{ textDecoration: "line-through", opacity: .75 }}><i style={{ background: "var(--faint)" }} />closed</span><span><span style={{ color: "var(--run)" }}>⌁ n</span> review threads</span><br />
-            <span><i style={{ background: "var(--agent)", boxShadow: "0 0 6px var(--agent)" }} />on a machine</span><span><i style={{ background: "var(--ready)", boxShadow: "0 0 6px var(--ready)" }} />on a mapped machine</span><span><i style={{ background: "var(--run)", boxShadow: "0 0 6px var(--run)" }} />moved now</span><br />
-            <span><span style={{ color: "var(--run)" }}>⧗ n</span> open dependencies</span><span><span style={{ color: "var(--hold)" }}>⛓ n</span> Waiting tasks it holds</span><br />
-            <span>hover a card:</span><span><i style={{ border: "1px solid var(--hold)", background: "none", boxSizing: "border-box" }} />holds</span><span><i style={{ border: "1px solid var(--waits)", background: "none", boxSizing: "border-box" }} />waits on</span>
-          </>
-        ) : (
-          <>
-            <span><i style={{ background: "var(--agent-text)" }} />deep</span><span><i style={{ background: "var(--waits)" }} />standard</span><span><i style={{ background: "var(--run-text)" }} />other</span><br />
-            <span><i style={{ background: "color-mix(in oklch, var(--agent) 85%, var(--fail))" }} />lifecycle machine</span><span className="mapleg"><i />mapped machine</span><span><i style={{ background: "var(--run)", boxShadow: "0 0 6px var(--run)" }} />activity now</span>
-          </>
-        )}
-      </section>}
     </>
   );
 }

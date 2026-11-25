@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD, hostOf, pathKey, pathTo, startPath, taskKicker, topFlow, topOf, tree, type Level, type Path } from "./levels";
+import { BOARD, hostOf, pathKey, pathTo, startPath, taskKicker, taskTraits, machineKicker, topFlow, topOf, tree, type Level, type Path } from "./levels";
 import type { Machine, Snapshot } from "../api";
 
 const machine = (ids: string[], submachines: Machine["submachines"] = [], source?: string): Machine => ({
@@ -190,5 +190,23 @@ describe("machines entered from the top, each a level of its own", () => {
 
   it("reads `open=` on a demo page, whose address is a file under a folder, not a graph name", () => {
     expect(startPath("/starpulse-demo/pr-1/starpulse.html", "", null, D, { open: "scan" })).toEqual(down("audit", "scan"));
+  });
+});
+
+describe("the tooltip on each state indicator the Star Map draws", () => {
+  it("names a task dot's tier: deep, standard, or other for a person or fast", () => {
+    expect(taskTraits("@agent-deep-high", false)).toBe(" · deep agent");
+    expect(taskTraits("@agent-standard-medium", false)).toBe(" · standard agent");
+    expect(taskTraits("@agent-fast", false)).toBe(" · other");
+    expect(taskTraits(undefined, false)).toBe(" · other");
+  });
+
+  it("says a task dot has activity now only while it has", () => {
+    expect(taskTraits("@agent-deep-high", true)).toBe(" · deep agent · activity now");
+  });
+
+  it("names a machine as a lifecycle machine, or as mapped from its third party", () => {
+    expect(machineKicker()).toBe("lifecycle machine");
+    expect(machineKicker("GitHub")).toBe("machine mapped from GitHub");
   });
 });

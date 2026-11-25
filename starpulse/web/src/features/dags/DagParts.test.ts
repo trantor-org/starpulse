@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import { IdleCells, Orb, RunCells, StepStar, labelPx } from "./DagParts";
+import { IdleCells, Orb, RunCells, StepStar, Strip, TieChip, labelPx } from "./DagParts";
 import type { DagFacts, Row } from "./dagsModel";
 import { DAG_COLOR, MUTED } from "../../render/draw";
 
@@ -59,5 +59,26 @@ describe("row cells", () => {
     expect(out).toContain("12");
     expect(out).toContain("p95 1m 30s");
     expect(out).toContain("25% fail");
+  });
+});
+
+describe("the tooltip on each state indicator a DAG row draws", () => {
+  it.each([["running", "running"], ["queued", "queued"], ["ok", "healthy"], ["failed", "last run failed"], ["idle", "never run"]] as const)("names a %s dot", (phase, title) => {
+    expect(renderToStaticMarkup(createElement(Orb, { phase }))).toContain(`title="${title}"`);
+  });
+
+  it("names each step star in a row's strip with its status, and an agent step as one", () => {
+    const steps = [{ name: "lint", depends: [], last: [] }, { name: "plan", depends: ["lint"], last: [], kind: "agent" }];
+    const r = { d: { steps }, steps: { lint: "succeeded", plan: "not_started" } } as unknown as Row;
+    const html = renderToStaticMarkup(createElement(Strip, { r }));
+
+    expect(html).toContain("<title>lint: succeeded</title>");
+    expect(html).toContain("<title>plan: not started (agent step)</title>");
+  });
+
+  it("names a Board tie by what it does on the board", () => {
+    const t = { kind: "cue", text: "on ci.red", note: "a failing run; the task lands in Ready", color: "var(--agent)" } as const;
+
+    expect(renderToStaticMarkup(createElement(TieChip, { t }))).toContain('title="a failing run; the task lands in Ready"');
   });
 });

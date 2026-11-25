@@ -109,7 +109,7 @@ describe("a Kanban card's machine line", () => {
     const html = line({ machine: "ci", state: "running", at: 100, source: "GitHub" });
 
     expect(html).toContain('class="p mapped"');
-    expect(html).toContain('title="mapped from GitHub"');
+    expect(html).toContain('title="mapped from GitHub, moved now"');
   });
 
   it("colours a CI line's dot as the checks dots do, leaving its phases blue", () => {

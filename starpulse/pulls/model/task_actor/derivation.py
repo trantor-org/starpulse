@@ -6,7 +6,7 @@ and every effect (a hold comment, the unsettled flag, the pin and held sets) a `
 adapter alone touches the world (ADR Every Task State Re-Derives on One Trigger Set Through the Task Actor).
 """
 
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -41,6 +41,11 @@ FAULT = "Task actor fault:"
 FAULT_NEXT = "Fix the cause, then move the task back to In Progress; the actor does not retry it."
 #: The opening of the comment `backlog-task update --pushback` records.
 PUSHBACK = "Operator pushback:"
+#: The opening of the comment the actor writes when operator feedback sends a Review task back to its holder.
+SENT_BACK = "Sent back for operator feedback:"
+#: The opening of the comment a holder records once the feedback it was sent back for is addressed: what changed, or why
+#: nothing did. It is the reply that releases the hold.
+ADDRESSED = "Feedback addressed:"
 #: The pull request states that end a pull request.
 TERMINAL = ("MERGED", "CLOSED")
 #: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
@@ -176,9 +181,26 @@ def merged_at(facts: TaskFacts, agent: Agent) -> float | None:
     return max((at for at in merges if at is not None), default=None)
 
 
-def why_unready(record: dict[str, Any], held_head: str | None) -> list[str]:
+def replies(texts: Iterable[str]) -> int:
+    """How many comments record that operator feedback is addressed."""
+    return sum(text.strip().startswith(ADDRESSED) for text in texts)
+
+
+def feedback_held(facts: TaskFacts, agent: Agent) -> bool:
+    """Whether the task was sent back from Review and its holder has not replied since: the reply count its send-back
+    recorded still stands. A comment read that fails holds."""
+    replied = facts.memory(agent["id"]).get("sent_back")
+    if not isinstance(replied, int):
+        return False
+    if (texts := facts.comments(agent)) is None:
+        facts.unsettled()
+        return True
+    return replies(texts) <= replied
+
+
+def why_unready(record: dict[str, Any], held: bool) -> list[str]:
     """The conditions that keep a pull request record from being ready: draft, conflicting, a mergeability GitHub has not
-    settled, checks that are not passed, or held after a send-back on its current head."""
+    settled, checks that are not passed, or held after a send-back until its holder replies."""
     verdict = checks_verdict(
         record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
     )
@@ -189,7 +211,7 @@ def why_unready(record: dict[str, Any], held_head: str | None) -> list[str]:
             ("conflicting", record["mergeable"] == "CONFLICTING"),
             ("mergeability not settled", record["mergeable"] not in ("MERGEABLE", "CONFLICTING")),
             (f"checks {verdict}", verdict != "pass"),
-            ("held after a send-back on this head", held_head == record["headRefOid"]),
+            ("held after a send-back until the holder replies", held),
         )
         if holds
     ]
@@ -197,11 +219,11 @@ def why_unready(record: dict[str, Any], held_head: str | None) -> list[str]:
 
 def unready(facts: TaskFacts, agent: Agent) -> str | None:
     """Why each open pull request of the task's own delivery is not ready, else None."""
-    held = facts.memory(agent["id"]).get("sent_back") or {}
+    held = feedback_held(facts, agent)
     parts = []
     for url in facts.own_prs(agent):
         record = facts.record(url)
-        if record is not None and record["state"] == "OPEN" and (why := why_unready(record, held.get(url))):
+        if record is not None and record["state"] == "OPEN" and (why := why_unready(record, held)):
             parts.append(f"{record['repo']}#{record['number']} {', '.join(why)}")
     return "; ".join(parts) or None
 
@@ -369,8 +391,7 @@ def criteria_checked(facts: TaskFacts, agent: Agent) -> tuple[int, str] | None:
 def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     """The ready or merged pull requests when the task cites one and no open one of them is unready, else None; a
     closed pull request is no delivery and holds nothing. A task sent back from Review
-    stays put while its ready pull request keeps the head it was sent back on: a new head or a run of `review` is the
-    session's answer. An open pull request is ready only when it does not conflict with its base and the rollup of
+    stays put until its holder records the feedback addressed (`ADDRESSED`): a new head is no reply. An open pull request is ready only when it does not conflict with its base and the rollup of
     its current head says every required check passed (`checks_verdict`): a required check not posted is not green,
     a push re-arms the gate, and a repository whose ruleset requires none rolls up passed as soon as the pull
     request is not a draft. A task in Needs attention whose `## Needs attention` ask stays there, answered or not (the
@@ -386,8 +407,7 @@ def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     ):
         return None
     parts = []
-    sent_back = facts.memory(agent["id"]).get("sent_back")
-    held = sent_back or {}
+    held = feedback_held(facts, agent)
     # In the working lane a PR merged before the work floor is shipped work (a post-merge send back).
     floor = work_floor(facts, agent) if agent["state"] == facts.roles.working else 0.0
     for url in facts.own_prs(agent):
@@ -400,7 +420,7 @@ def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
         if merged:
             parts.append(f"{record['repo']}#{record['number']} merged")
         elif record["state"] == "OPEN":
-            if why_unready(record, held.get(url)):
+            if why_unready(record, held):
                 return None  # Review waits for the last open pull request to go green
             parts.append(f"{record['repo']}#{record['number']} ready")
     if not parts or facts.unlinked(agent):
@@ -546,8 +566,8 @@ def resumed_at(phase: str, placed: dict[str, Any], entered: float) -> float | No
 
 def operator_pushback(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     """The words of the operator's pushback when it is the task's newest comment: the move it causes, or the
-    answer to it, is a newer comment, so a task that returns to its lane carries no old pushback. Words that
-    ask nothing get the question Needs attention requires."""
+    answer to it, is a newer comment, so a task that returns to its lane carries no old pushback. The comment of the
+    move sends the words back to the holder."""
     if (texts := facts.comments(agent)) is None:
         facts.unsettled()
         return None
@@ -555,7 +575,7 @@ def operator_pushback(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     if not newest.startswith(PUSHBACK):
         return None
     words = newest.removeprefix(PUSHBACK).strip()
-    return newest, words if "?" in words else f"{words}\n\nWhat change does it call for?"
+    return newest, f"{SENT_BACK} {words}"
 
 
 def _requested(marker: str) -> Callable[[TaskFacts, Agent], Held]:

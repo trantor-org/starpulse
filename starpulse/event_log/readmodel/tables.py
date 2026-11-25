@@ -68,9 +68,11 @@ machine_tasks = Table(
     Column("agent", JSON, nullable=False),
     Column("active_at", Float, nullable=False),
     Column("seq", Integer, nullable=False),
+    Column("task_uuid", String),
     Index("ix_starpulse_machine_tasks_machine_active", "machine", "active_at"),
     Index("ix_starpulse_machine_tasks_seq", "seq"),
     Index("ix_starpulse_machine_tasks_active", "active_at"),
+    Index("ix_starpulse_machine_tasks_unnamed", "task", sqlite_where=text("task_uuid IS NULL")),
 )
 
 #: One row per Acceptance Criterion or Definition of Done item, numbered from 1 within its kind.
@@ -83,6 +85,7 @@ criteria = Table(
     Column("text", Text, nullable=False),
     Column("checked", Boolean, nullable=False),
     Column("evidence", Text, nullable=False),
+    Column("task_uuid", String),
 )
 
 #: The Board writer's encoded snapshot, one row (view `live`): `seq` is the last `starpulse_snapshot_deltas`

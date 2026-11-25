@@ -110,7 +110,7 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #cons button i { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 #rail button.off { opacity: .35; text-decoration: line-through; }
 /* Recent is a fixed half of the rail: one line per event, cut with an ellipsis at the rail's width, and only the lines it shows whole are kept */
-#rail .recent { flex: 0 1 auto; height: 50%; min-height: 0; display: flex; flex-direction: column; }
+#rail .recent { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 #feed { font: calc(10.5px * var(--fs)) / calc(10.5px * 1.75 * var(--fs)) "JetBrains Mono", ui-monospace, monospace; flex: 1; min-height: 0; overflow: hidden; }
 #feed div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #feed b { font-weight: 400; color: var(--ink); } #feed em { font-style: normal; opacity: .6; }
@@ -118,10 +118,6 @@ button.node { all: unset; box-sizing: border-box; display: grid; grid-template-c
 #feed div.go { border-radius: 3px; } #feed div.go:hover { background: color-mix(in srgb, var(--slate) 10%, transparent); } #feed div.go:hover b { color: var(--white); }
 /* its own row under the line; the feed holds still while hovered, so the rows it pushes down don't move the pointer's line */
 #feed .why { display: block; padding-left: 6ch; overflow: hidden; text-overflow: ellipsis; color: var(--run); }
-#legend { flex: none; margin-top: auto; line-height: 1.9; }
-#legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 5px 0 0; vertical-align: 0; box-sizing: border-box; }
-#legend span { display: inline-block; max-width: 100%; margin-right: 10px; }
-#legend span span { margin-right: 0; }
 
 .hud { position: fixed; z-index: 2; left: calc(var(--nav) + 24px); pointer-events: none; font-size: calc(12px * var(--fs)); color: var(--muted); }
 /* The canvas breadcrumb: plain muted text at the map's top-left, 24px past the navigator's right edge. */
@@ -385,7 +381,7 @@ body.drilling #crumb { visibility: hidden; }
 /* the milestone and id may break inside a narrow card (150% text beside the start strip) rather than poke out of the badge */
 #kb .xm .nw { white-space: normal; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { #kb .stack, #kb .stack > .edge, #kb .stack > .spine, #kb .stack .rest, #kb .stack .restin > .card { transition: none; } }
-#kb .card.chain-self { box-shadow: 0 0 0 1px var(--ink-hi), 0 0 14px color-mix(in srgb, var(--ink-hi) 18%, transparent); }
+#kb .card.chain-self { box-shadow: 0 0 0 2px var(--waits), 0 0 16px color-mix(in srgb, var(--waits) 50%, transparent); }
 #kb .card.chain-holds { box-shadow: 0 0 0 1px var(--hold), 0 0 12px color-mix(in srgb, var(--hold) 28%, transparent); }
 #kb .card.chain-waits { box-shadow: 0 0 0 1px var(--waits), 0 0 12px color-mix(in srgb, var(--waits) 25%, transparent); }
 
@@ -1061,9 +1057,6 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   font-size: calc(11px * var(--fs)); line-height: 1.2; text-align: center; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 #dg a.runin.edge .nw { white-space: nowrap; }
 #dg a.runin.edge:hover, #dg a.runin.edge:focus-visible { background: color-mix(in srgb, var(--agent) 12%, transparent); color: var(--ink); border-left-color: color-mix(in srgb, var(--agent) 45%, transparent); }
-#legend svg .e { stroke: var(--faint); stroke-width: .8; }
-#legend svg .ring { fill: none; stroke: var(--agent); stroke-width: .7; }
-#legend svg { vertical-align: middle; }
 
 /* Every scrolling box on the page, in one place: it scrolls only vertically, never sideways, and wears the Kanban
    columns' thin, quiet scrollbar. A box that needs to scroll joins this list rather than setting its own overflow. */
@@ -1071,7 +1064,6 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 /* a machine a third party moves (machine.source) is drawn like a local one, in blue instead of purple */
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
-#legend .mapleg i { background: var(--mapped); }
 #kb .mach .p.mapped { background: var(--mapped); box-shadow: 0 0 6px var(--mapped); }
 #kb .mach .p.pass { background: var(--ok); box-shadow: 0 0 6px var(--ok); } #kb .mach .p.fail { background: var(--fail); box-shadow: 0 0 6px var(--fail); }
 #kb .mach .p.pending { background: var(--run); box-shadow: 0 0 6px var(--run); } #kb .mach .p.merged { background: var(--agent); box-shadow: 0 0 6px var(--agent); }

@@ -4,10 +4,6 @@ import css from "./style.css?raw";
 const rule = (sel: string) => css.split("\n").find((l) => l.startsWith(`${sel} {`)) ?? "";
 
 describe("the page's fixed layout", () => {
-  it("pins the legend to the bottom of the right rail, whatever height Recent takes", () => {
-    expect(rule("#legend")).toContain("margin-top: auto");
-  });
-
   it("paints the Star Map canvas between the navigator and the rail before the renderer sizes it, so the first load shifts nothing", () => {
     expect(rule("#c")).toContain("left: var(--nav)");
     expect(rule("#c")).toContain("right: var(--rail)");
@@ -211,8 +207,8 @@ describe("the sidebars at large text (TASK-15344)", () => {
     expect(rule("#nav .sub")).not.toContain("nowrap");
   });
 
-  it("lets Recent shrink to leave the legend its whole height, so the legend's last line is not cut", () => {
-    expect(rule("#rail .recent")).toContain("flex: 0 1 auto");
-    expect(rule("#legend")).toContain("flex: none");
+  it("lets Recent take the whole right rail", () => {
+    expect(rule("#rail .recent")).toContain("flex: 1 1 auto");
+    expect(rule("#rail .recent")).not.toMatch(/(^|[\s{;])height:/);
   });
 });
