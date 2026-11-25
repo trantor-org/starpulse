@@ -1,0 +1,29 @@
+{
+  "additionalProperties": false,
+  "description": "A pull request (a change on a forge).",
+  "properties": {
+    "adapter": {
+      "description": "The configured adapter instance that owns the thing and turns it to and from a URL.",
+      "title": "Adapter",
+      "type": "string"
+    },
+    "id": {
+      "description": "The thing's id within that adapter, opaque to StarPulse.",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "const": "change",
+      "default": "change",
+      "description": "The kind of thing named: a pull request.",
+      "title": "Kind",
+      "type": "string"
+    }
+  },
+  "required": [
+    "adapter",
+    "id"
+  ],
+  "title": "ChangeRef",
+  "type": "object"
+}

@@ -25,7 +25,9 @@ __all__ = [
     "SCHEMAS",
     "ActiveRun",
     "BoardTask",
+    "ChangeRef",
     "CloudEvent",
+    "CommitRef",
     "Dag",
     "LaneEvent",
     "MachineEvent",
@@ -36,6 +38,7 @@ __all__ = [
     "RunEvent",
     "RunStatus",
     "RunsSink",
+    "SessionRef",
     "StartFailedError",
     "Step",
     "TaskKeys",
@@ -556,6 +559,31 @@ class VerdictEvent(_Contract):
     source: str = Field(default="", description="The producer that posted it through the CloudEvents ingest.")
 
 
+class _Ref(_Contract):
+    """What names a thing another system owns: its kind, the configured adapter instance, and an id the core never parses."""
+
+    adapter: str = Field(description="The configured adapter instance that owns the thing and turns it to and from a URL.")
+    id: str = Field(description="The thing's id within that adapter, opaque to StarPulse.")
+
+
+class ChangeRef(_Ref):
+    """A pull request (a change on a forge)."""
+
+    kind: Literal["change"] = Field(default="change", description="The kind of thing named: a pull request.")
+
+
+class CommitRef(_Ref):
+    """A commit."""
+
+    kind: Literal["commit"] = Field(default="commit", description="The kind of thing named: a commit.")
+
+
+class SessionRef(_Ref):
+    """A harness session."""
+
+    kind: Literal["session"] = Field(default="session", description="The kind of thing named: a harness session.")
+
+
 #: Each contract's model, by the name its checked-in schema file carries.
 CONTRACTS: dict[str, type[BaseModel]] = {
     "board": BoardTask,
@@ -565,6 +593,9 @@ CONTRACTS: dict[str, type[BaseModel]] = {
     "verdict-events": VerdictEvent,
     "runs": Dag,
     "pools": Pool,
+    "change-ref": ChangeRef,
+    "commit-ref": CommitRef,
+    "session-ref": SessionRef,
 }
 #: The contract of each stream of the event log (`starpulse.event_log`), by the name `CONTRACTS` gives it: the
 #: `fields` of an `Entry` read from that stream are a record of that model. A package test fails for a stream a

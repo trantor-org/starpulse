@@ -25,6 +25,14 @@ does not validate against its stream's schema. An `Entry`'s `fields` are the rec
 idempotency key, `Entry.at` is when the log took it, and `Entry.id` is the cursor to resume after. The records here are
 those of an instance's log.
 
+## References
+
+A pull request, a commit and a session are named by a typed reference: `change-ref` (`ChangeRef`), `commit-ref`
+(`CommitRef`) and `session-ref` (`SessionRef`), each with its `kind`, the configured `adapter` instance and an opaque
+`id` the core never parses (`change`, `github`, `trantor-org/trantor:10702`). Only the owning adapter turns a URL into a
+reference or back: `GitHubAdapter.change_ref(url)` and `change_url(ref)`, which raise `ValueError` with the reason for a URL
+from another forge or one that is not a pull request.
+
 ## The pattern
 
 Tail the streams you read, write each entry into your own store, and keep the cursor in that store, in the same
