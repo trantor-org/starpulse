@@ -974,14 +974,26 @@ class TaskActor:
             names = sorted(
                 name
                 for name in self._until.get(subject, ())
-                if (commit := self._commits.get(name, {}).get(subject)) is None or self._contains(sha, commit)
+                if (commit := self._commits.get(name, {}).get(subject)) is None
+                or self._contains(sha, self._merge_of(commit))
             )
             for name in names:
                 self._heard.setdefault(name, set()).add(subject)
             self.touch([TaskTouched(name, Trigger.ON_ALERT, subject) for name in names])
 
-    def _contains(self, sha: str | None, commit: str) -> bool:
-        return bool(sha and self._pins and self._board_repo and self._pins.reaches(self._board_repo, commit, sha))
+    def _merge_of(self, commit: str) -> str | None:
+        """`commit`, or for a task key the merge commit of that task's last merged pull request, None before one."""
+        keys = self._feed.keys
+        agent = self._feed.task(keys.canonical(commit) if keys else commit, lean=True)
+        if agent is None:
+            return commit
+        records = (pull_record(self._store, url) for url in agent["prs"])
+        return next((record["mergeSha"] for record in reversed(list(records)) if record and record["mergeSha"]), None)
+
+    def _contains(self, sha: str | None, commit: str | None) -> bool:
+        return bool(
+            sha and commit and self._pins and self._board_repo and self._pins.reaches(self._board_repo, commit, sha)
+        )
 
     def _index(self, agent: dict[str, Any]) -> None:
         """Take `agent`'s lane, dependencies, pull requests and checked criteria into the indexes."""
