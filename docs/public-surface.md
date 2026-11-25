@@ -103,7 +103,7 @@ is public for the names listed here:
 - `starpulse.views.adapters.outbound.signal_folds`: `changed(events, after, views, since=0.0)`, the stored per-session results folded past a rowid cursor, for a sink that copies only what changed.
 - `starpulse.pulls.adapters.inbound.task_actor`: `ACTOR`, the writer name the task actor's moves and refusals carry, for a test that publishes as it.
 - `starpulse.cli.agent_subscribe`: `subscribed(session, subject, config=None)`, whether a session is subscribed to a subject, for a command that must not subscribe it twice.
-- `starpulse.cli.agent_wire`: `CliError`, `server_url(flag, environ)` and `get(base, path, timeout=10.0)`, the server address and JSON read a command that reads a task from the server makes.
+- `starpulse.cli.agent_wire`: `CliError`, `server_url(flag, environ)`, `get(base, path, timeout=10.0)` and `put(base, path, body)`, the server address, JSON read and JSON write a command that reads or links a task on the server makes.
 - `starpulse.views.adapters.outbound.request_durations`: `CALLERS`, the first-party client names `X-StarPulse-Client` carries, for a dashboard that checks it lists each.
 - `starpulse.cli.lane_mcp`: `lane_argv(tool, task, arguments)`, the `starpulse` argv a lane tool runs, for a test that checks each names a command the project defines.
 - `starpulse.testing`: `until(condition, within=)`, the one bounded wait a test makes on a condition, returning as soon as it holds.

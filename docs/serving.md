@@ -579,7 +579,7 @@ slow_read_seconds = 1   # the default
 # hard_mb = 3072   # the default
 
 
-# The board: `type` is `native` or `machines`; a config cannot name an outside module.
+# The board: `type` is `native`, the only board; a config cannot name an outside module.
 # The rest of the table is that board's settings.
 # With no [board] table the view draws its own Markdown board, `type = "native"`:
 [board]
@@ -639,11 +639,6 @@ type = "native"
 # Optional: move a task on the facts its lane waits on (see Task actor). Its presence turns the
 # actor on; optional `repo = "owner/name"` is the repository whose pull requests the board renders as a bare `PR #N`, and the board must edit tasks, else `serve` refuses to start. With it, the [release] polling pass does not run.
 # [board.actor]
-
-# To draw only a project's machines, with no task source:
-# [board]
-# type = "machines"      # takes no other setting: it draws every file in `.starpulse/machines/` beside this file, the Board machine (`board.yaml`) among them, and follows no task source, reads no board directory and offers no write
-
 
 # [ci]
 # states = ["in_progress", "review"]
@@ -804,7 +799,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `repos` (list of `[[repos]]` table): A repository whose merges apply through the parent's pin bump rather than a run of their own.
 - `ci` (`[ci]` table): Draws each task's pull-request CI as a sub-flow of these Board states.
 - `release` (`[release]` table): Releases Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task it depends on is Done (see Release); with no `[release]` table it releases none. The board must edit tasks and draw `waiting` and `ready` lanes, else `serve` refuses to start.
-- `board` (table): The board: `type` is `native` or `machines` (no outside module), and the rest of the table is that board's settings, shown in the Board examples above. With no `[board]` table the view draws its own Markdown board, `type = "native"`.
+- `board` (table): The board: `type` is `native` (the only board, no outside module), and the rest of the table is that board's settings, shown in the Board examples above. With no `[board]` table the view draws its own Markdown board, `type = "native"`.
 - `level` (table): The flow graph drawn above the Board (`starpulse.flow_metrics.model.level`).
 - `scheduler` (table): The scheduler's policy; every key is optional (see Scheduler).
 - `analytics` (table): What harness telemetry is read against (see docs/sources.md).

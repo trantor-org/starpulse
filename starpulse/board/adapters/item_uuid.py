@@ -13,7 +13,7 @@ from starpulse.board.adapters.native_scan import _split
 from starpulse.board.adapters.task_history import KIND, WRITER
 from starpulse.board.model.seam import OPERATOR
 from starpulse.event_log.readmodel.fold import replay
-from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
 
 _TASK_FOLDERS = ("tasks", "completed", "archive/tasks")
 _ID_LINE = re.compile(r"^id:.*$", re.M)
@@ -78,12 +78,17 @@ def stamp_files(root: Path, board: str) -> Stamped:
 
 def stamp_history(store: EventStore, board: str, tasks: dict[str, str]) -> list[str]:
     """Append one `FieldsEdited` carrying the UUID to each Task stream that has none: the file's (`tasks`), else the v5 of
-    (board, key). Returns the Tasks it stamped; a second run stamps none."""
+    (board, key). Returns the Tasks it stamped; a second run stamps none. A stream whose head moved since the read (a concurrent append) is read again."""
     stamped = []
-    for task, head in store.heads(KIND).items():
-        if replay(store.read(KIND, task)).get("meta", {}).get("uuid"):
-            continue
-        change = NewEvent("FieldsEdited", {"meta": {"uuid": tasks.get(task) or derive(board, task)}}, OPERATOR, WRITER)
-        store.append(KIND, task, head, [change])
-        stamped.append(task)
+    for task in store.heads(KIND):
+        while events := store.read(KIND, task):
+            if replay(events).get("meta", {}).get("uuid"):
+                break
+            change = NewEvent("FieldsEdited", {"meta": {"uuid": tasks.get(task) or derive(board, task)}}, OPERATOR, WRITER)
+            try:
+                store.append(KIND, task, events[-1].version, [change])
+            except StaleVersion:
+                continue
+            stamped.append(task)
+            break
     return stamped

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse.board.adapters import machines_only, native, policy_store
+from starpulse.board.adapters import native, policy_store
 from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.policy import Policy, profile_matrix
@@ -110,13 +110,8 @@ def declared(config: Config, base: Path) -> tuple[Board, dict[str, dict], Mappin
     """The board the config's `[board]` adapter builds, the machines it and the harness adapters draw, the config's
     domains and the stored policy: all a reader of the declarations, with no feed, needs. Raises ValueError as
     `assemble` does."""
-    native_board = config.board_type == "native"
-    rows = policy_store.held(database_url(config.database_url, base)) if native_board else None
-    board = (
-        native.board({**config.board, "policy_rows": rows}, base)
-        if native_board
-        else machines_only.board(config.board, base)
-    )
+    rows = policy_store.held(database_url(config.database_url, base))
+    board = native.board({**config.board, "policy_rows": rows}, base)
     domains = domains_of(config)
     qualify = qualifier(domains)
     # `[board.actor]` makes the task actor a writer the machine may name beside the adapters' workflows; the scheduler is always one.
@@ -150,7 +145,6 @@ def assemble(
     """
     board, machines, domains, rows = declared(config, base)
     qualify = qualifier(domains)
-    native_board = config.board_type == "native"
     feed = BoardFeed(
         read_model,
         window_s,
@@ -162,7 +156,7 @@ def assemble(
         processes=config.qualified_processes(),
         cues=board.cues(qualify),
         source=board.source,
-        capabilities={"edit": native_board, "archive": native_board, "create": native_board},
+        capabilities={"edit": True, "archive": True, "create": True},
         commit={instance.name: instance.commit for instance in config.runs if instance.commit},
         dashboards={instance.name: instance.dashboard for instance in config.runs if instance.dashboard},
         start_urls={instance.name: instance.start_url for instance in config.runs if instance.start_url},

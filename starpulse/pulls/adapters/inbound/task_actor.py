@@ -418,6 +418,7 @@ class TaskActor:
         self._latest = latest
         self._latest_sha = latest_sha
         self._commits: dict[str, dict[str, str]] = {}  # a task -> the commit each subject it waits on must contain
+        self._accepts: dict[str, frozenset[str]] = {}  # a task -> the subjects whose park accepts an event recorded before it
         self._unpublished = unpublished
         self._publisher: dict[str, tuple[str | None, float]] = {}
         self._holds = holds
@@ -957,10 +958,14 @@ class TaskActor:
         once; one before the park counts only for a subject that `accept_met`."""
         gate = criteria.subjects(agent["description"]) if agent["state"] in self._gated_lanes else ()
         commits = criteria.commits(agent["description"]) if gate else {}
-        if gate == self._gates.get(name, ()) and commits == self._commits.get(name, {}):
+        accepted = criteria.accepting_met(agent["description"]) if gate else frozenset()
+        if (
+            gate == self._gates.get(name, ())
+            and commits == self._commits.get(name, {})
+            and accepted == self._accepts.get(name, frozenset())
+        ):
             return False
-        accepted = criteria.accepting_met(agent["description"])
-        entered = agent.get("entered") or 0.0
+        entered = derivation.entered(self._port, agent)
         heard = {
             subject
             for subject in gate
@@ -969,6 +974,8 @@ class TaskActor:
         logger.info("task actor: %s waits on %s, already heard %s", name, sorted(gate), sorted(heard))
         self._unwatch(name)
         self._gates[name] = gate
+        if accepted:
+            self._accepts[name] = accepted
         if commits:
             self._commits[name] = commits
         for subject in gate:
@@ -981,7 +988,7 @@ class TaskActor:
         """Whether `subject`'s last event is recorded at or after `since`, and for a wait on `commit`, names a build
         containing it."""
         if commit is not None:
-            return self._latest_sha is not None and self._contains(self._latest_sha(subject), commit)
+            return self._latest_sha is not None and self._contains(self._latest_sha(subject), self._merge_of(commit))
         return self._latest is not None and self._latest(subject, since)
 
     def _unwatch(self, name: str) -> None:
@@ -992,6 +999,7 @@ class TaskActor:
         self._heard.pop(name, None)
         self._heard_at.pop(name, None)
         self._commits.pop(name, None)
+        self._accepts.pop(name, None)
 
     def event_seen(self, subject: str, sha: str | None = None) -> None:
         """Derive the Waiting tasks parked on `subject` again: the first event on a subject they wait on releases them.
@@ -1879,12 +1887,15 @@ class TaskActor:
         if not written.ok:
             logger.warning("task actor: the lease of %s on %s was not ended: %s", session, name, written.output)
 
-    def start_failed(self) -> None:
+    def start_failed(self, only: str = "") -> None:
         """The scheduler could not start a Ready task: park it in Needs attention with the reason, then take the failure
-        back. A task that left Ready meanwhile keeps its lane."""
+        back. A task that left Ready meanwhile keeps its lane. A retry after a locked board names its `only` task, so a
+        lock that persists never multiplies the scan's timers."""
         if self._log is None:
             return
         for name, reason in start_requests.failed(self._log).items():
+            if only and name != only:
+                continue
             with self._lock:
                 agent = self._feed.task(name, lean=True)
                 if (
@@ -1896,12 +1907,12 @@ class TaskActor:
                         "could not be started",
                         "Start a session on it?",
                         ("start it by hand", "rescope the task"),
-                        again=self.start_failed,
+                        again=lambda name=name: self.start_failed(name),
                     )
                 ):
                     # the backoffs ran out with no timer armed: a lock that long retries
                     if name not in self._lock_tries:
-                        _later(max(LOCK_BACKOFF_S, default=0.0), self.start_failed)
+                        _later(max(LOCK_BACKOFF_S, default=0.0), self.start_failed, name)
                     continue  # the failure stays until the retry parks the task
             start_requests.forgive(self._log, name)
 

@@ -4,7 +4,7 @@ Database credentials never live here; they come from the driver's environment, s
 With no file the view runs as an individual-contributor view of its own
 Markdown board in `./.starpulse/board`, keeping its history in a SQLite file, with no runs adapter.
 
-The `[board]` table names the board by `type` (`native` or `machines`); the rest of the table is that
+The `[board]` table names the board by `type` (`native`, the only one); the rest of the table is that
 board's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.flow_metrics.adapters.outbound.history`).
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a built-in name from
@@ -27,7 +27,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from starpulse.board.model.adapter_types import BOARD_TYPES, DEFAULT_TYPE, module_name
+from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.board.model.policy import refuse_retired
 from starpulse.board.model.search_config import Search, SearchError, parse_search
@@ -170,7 +170,7 @@ class Config:
     harnesses: Harnesses | None = None
     """The tiers and per-harness models `harnesses_file` declares; none when the config names no file."""
     board_type: str = DEFAULT_TYPE
-    """The board type: `native`, StarPulse's own markdown board, or `machines`, which draws machines and holds no task."""
+    """The board type: `native`, StarPulse's own markdown board, the only one."""
     board: Mapping[str, object] = field(default_factory=dict)
     """The `[board]` table, the board type's settings."""
     database_url: str | None = None
@@ -396,15 +396,15 @@ def _harnesses(file: ConfigFile, path: Path | None) -> Harnesses | None:
 
 
 def _board(table: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """The board's type, `native` or `machines`, and its table without `[board.actor]`; any other type is a `ConfigError`."""
+    """The board's type, always `native`, and its table without `[board.actor]`; any other type is a `ConfigError`."""
     board = {key: value for key, value in table.items() if key != "actor"}
     try:
         refuse_retired(board)
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
     kind = board.get("type", DEFAULT_TYPE)
-    if kind not in BOARD_TYPES:
-        raise ConfigError(f"board type {kind!r} is not native or machines")
+    if kind != DEFAULT_TYPE:
+        raise ConfigError(f"board type {kind!r} is not native")
     return kind, board
 
 

@@ -475,14 +475,11 @@ def _session_records(args: argparse.Namespace, environ: Mapping[str, str]) -> di
 
 
 def _unlisted_writers(config: Config, base: Path) -> list[str]:
-    """What `serve` refuses as it draws the project's machines: a writer naming a workflow no configured adapter lists.
-
-    Only the built-in boards draw `.starpulse/machines/`; a dotted type is unknown here.
-    """
+    """What `serve` refuses as it draws the project's machines: a writer naming a workflow no configured adapter lists."""
     if config.reads_domains_at_start():
         return []  # an adapter reads this instance's domains from its workflows as `serve` starts, which this offline check cannot read
     listed = [name for names in config.qualified_domains().values() for name in names]
-    if not listed or config.board_type not in {"native", "machines"}:
+    if not listed:
         return []
     board_file = base / str(config.board["machine"]) if "machine" in config.board else None
     try:

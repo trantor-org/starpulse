@@ -2,8 +2,7 @@
 
 StarPulse serves its own Markdown board directly: the server, the page and the task actor call the native board's
 functions, with no board adapter contract between them, and a `[board]` table can no longer name an outside module. Its
-`type` is `native` (the default) or `machines`, which draws a project's declared machines and holds no task: it reads
-no board directory, finds no task and refuses every task write as unavailable (HTTP 409). The runs and machine-events
+`type` is `native`, the only board and the default. The runs and machine-events
 contracts are unchanged (see the adapter-writing skill). Pluggable boards, a Jira or Linear board for example, are
 withdrawn until a second tracker is planned (see ADR Pluggable boards are withdrawn).
 

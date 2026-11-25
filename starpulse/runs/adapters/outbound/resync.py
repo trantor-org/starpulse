@@ -20,7 +20,7 @@ def follow_resync(
     log: EventLog, instance: str, relist: Callable[[], object], stop: StopEvent, gap: float = RELIST_GAP
 ) -> None:
     """Call `relist` once for each batch of `RESYNC` entries naming `instance`, then wait `gap`; the entries that arrive
-    meanwhile fold into the next call. Runs on a thread until `stop`; entries before this call are not read."""
+    meanwhile fold into the next call, and a failed call asks again. Runs on a thread until `stop`; entries before this call are not read."""
     tail = Tail.live(log, RESYNC)
     asked = False
 
@@ -37,6 +37,7 @@ def follow_resync(
             relist()
         except Exception:  # a relist's bug must not stop the follower
             logger.exception("resync %s: relist failed", instance)
+            log.publish(RESYNC, {"instance": instance})  # asks again, held back by the gap below
         stop.wait(gap)  # adr-exempt: debounce
 
     threading.Thread(

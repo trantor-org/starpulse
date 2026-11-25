@@ -29,11 +29,10 @@ from typing import Any, ClassVar
 import jsonschema
 from pydantic import BaseModel
 
-from starpulse.board.adapters import machines_only
 from starpulse.board.adapters.display_settings import DisplaySettings
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.seam import Board
+from starpulse.board.model.seam import Board, Written
 from starpulse.contracts.adapters import (
     SCHEMAS,
     BoardTask,
@@ -46,6 +45,8 @@ from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.readmodel.machine_fold import Placer
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
+from starpulse.machine_engine.model.state_roles import StateRoles
+from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES
 from starpulse.runtime.config import Config
 from starpulse.runtime.placed import Placed
 from starpulse.runtime.placed import assembled as placed_assembled
@@ -199,6 +200,77 @@ class RunsAdapterKit(_AdapterKit):
 # The helpers below drive an adapter through StarPulse's own server and feed.
 
 
+def _nothing(*_: Any) -> None:
+    pass
+
+
+def _refused(*_: Any, **__: Any) -> Written:
+    return Written(False, "this board holds no tasks", unavailable=True)
+
+
+def _absent(*_: Any) -> None:
+    return None
+
+
+def refusing(**fields: Any) -> Board:
+    """A Board that holds no tasks: every write refuses and every read finds nothing; `fields` replace its parts."""
+    return Board(
+        **{
+            "machines": lambda qualify, workflows: {},
+            "start": _nothing,
+            "keys": None,
+            "cues": lambda _qualify: (),
+            "waits": {},
+            "roles": StateRoles.of_statuses(DEFAULT_STATUSES),
+            "writer": _refused,
+            "assign": _refused,
+            "source": "the events instances forward",
+            "read": _absent,
+            "read_archived": _absent,
+            "edit": _refused,
+            "judge": _refused,
+            "archive": _refused,
+            "restore": _refused,
+            "standing": _absent,
+            "readable": lambda *_: "",
+            "complete": _refused,
+            "reopen": _refused,
+            "retire": _refused,
+            "retired": lambda *_: (),
+            "retired_projected": lambda *_: [],
+            "retired_page": lambda *_: ([], None),
+            "files": lambda: (),
+            "done_files": lambda: (),
+            "rescan": lambda: 0,
+            "create": _refused,
+            "milestones": lambda: [],
+            "read_milestone": _absent,
+            "create_milestone": _refused,
+            "edit_milestone": _refused,
+            "archive_milestone": _refused,
+            "read_doc": _absent,
+            "create_doc": _refused,
+            "edit_doc": _refused,
+            "archive_doc": _refused,
+            "restore_doc": _refused,
+            "holds": lambda *_: (),
+            "unfinished": lambda *_: (),
+            "unpublished": lambda *_: None,
+            "parked": _nothing,
+            "released": _nothing,
+            "idle": None,
+            "returned": _nothing,
+            "alive": lambda *_: False,
+            "enqueued": _nothing,
+            "closed": _nothing,
+            "archived": _nothing,
+            "entered": _nothing,
+            "attach": _nothing,
+            **fields,
+        }
+    )
+
+
 @contextmanager
 def serve(
     tmp_path: Path,
@@ -228,7 +300,7 @@ def serve(
     for store in () if migrated else (settings, kept):
         maintain(store, machines)
     log = EventLog(settings)
-    board = board or machines_only.refusing()
+    board = board or refusing()
     stop = StopEvent()
     snapshots = server = None
     try:

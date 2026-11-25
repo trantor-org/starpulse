@@ -1,1 +1,1 @@
-"""The native Markdown board, the machines board and what they store and read."""
+"""The native Markdown board and what it stores and reads."""

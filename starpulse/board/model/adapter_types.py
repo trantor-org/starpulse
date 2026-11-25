@@ -9,13 +9,9 @@ A new tracker is one adapter module plus one `BUILT_IN` entry here.
 #: The board type a config without a `[board]` table names.
 DEFAULT_TYPE = "native"
 
-#: The board types a `[board]` table may name: the Markdown board, and the machines alone.
-BOARD_TYPES = ("native", "machines")
-
 #: Built-in type -> module. A dotted type is a module path an installed package provides and is not listed.
 BUILT_IN = {
     "native": "starpulse.board.adapters.native",
-    "machines": "starpulse.board.adapters.machines_only",
     "github_actions": "starpulse.runs.adapters.outbound.github_actions",
     "systemd": "starpulse.runs.adapters.outbound.systemd",
     "temporal": "starpulse.runs.adapters.outbound.temporal",
