@@ -51,14 +51,10 @@ describe("the page's scrolling boxes", () => {
     expect(bar).not.toMatch(/(^|;)\s*height:/);
   });
 
-  it("keep the right rail's Recent lines to one line each, cut with an ellipsis in a box that never scrolls, and leave the legend whole", () => {
+  it("keep the right rail's Recent lines to one line each, cut with an ellipsis in a box that never scrolls", () => {
     const body = (sel: string) => rules.find((r) => r.sel === sel)!.body;
-    expect(body("#rail .recent")).toMatch(/height:\s*50%/);
     expect(body("#feed")).toMatch(/overflow:\s*hidden/);
     expect(body("#feed div")).toMatch(/white-space:\s*nowrap/);
     expect(body("#feed div")).toMatch(/text-overflow:\s*ellipsis/);
-    const legend = rules.filter((r) => /#legend/.test(r.sel));
-    expect(legend.length).toBeGreaterThan(0);
-    for (const r of legend) expect(r.body, r.sel).not.toMatch(/text-overflow|white-space:\s*nowrap|overflow:\s*hidden/);
   });
 });

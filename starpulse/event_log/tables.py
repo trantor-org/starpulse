@@ -110,7 +110,9 @@ scheduler_runs = Table(
     Column("duration_s", Float, nullable=False),
     Column("peak", JSON, nullable=False),
     Column("recorded_at", Float, nullable=False),
+    Column("task_uuid", String),
     Index("ix_starpulse_scheduler_runs_tier_points", "tier", "points"),
+    Index("ix_starpulse_scheduler_runs_unnamed", "task", sqlite_where=text("task_uuid IS NULL")),
     sqlite_autoincrement=True,
 )
 
@@ -175,6 +177,7 @@ machine_events = Table(
     Column("actor", String),
     Column("occurred_at", Float, nullable=False),
     Column("sha", String),
+    Column("task_uuid", String),
     Index("ix_starpulse_machine_events_task", "task", "machine", "occurred_at"),
     Index("ix_starpulse_machine_events_run", "run", "machine", "occurred_at"),
 )
@@ -191,6 +194,7 @@ task_verdicts = Table(
     Column("outcome", String, nullable=False),
     Column("reason", String, nullable=False),
     Column("occurred_at", Float, nullable=False),
+    Column("task_uuid", String),
     Index("ix_starpulse_task_verdicts_task", "task", "occurred_at"),
 )
 

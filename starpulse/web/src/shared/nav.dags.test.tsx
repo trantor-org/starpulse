@@ -79,7 +79,7 @@ describe("the navigator's DAGs entry", () => {
   });
 });
 
-describe("the DAGs view's navigator and legend", () => {
+describe("the DAGs view's navigator", () => {
   beforeEach(() => act(() => dagsNode().click()));
 
   it("shows the DAG filter and the Queues and Run-hours cards, and not the Star Map's layers, DAG domains or search", () => {
@@ -114,21 +114,17 @@ describe("the DAGs view's navigator and legend", () => {
     expect(q("#dgq")).toBeNull();
   });
 
-  it("shows the DAG legend in the rail", () => {
-    const legend = q("#legend")!.textContent!;
-
-    expect(legend).toContain("last run failed");
-    expect(legend).toContain("opens on its runner");
-    expect(legend).not.toContain("checks pass");
+  it("draws no legend in the rail", () => {
+    expect(q("#legend")).toBeNull();
   });
 });
 
-describe("the Star Map's navigator and legend", () => {
-  it("lists no DAGs and no Queues, and the legend has no DAG entries", () => {
+describe("the Star Map's navigator", () => {
+  it("lists no DAGs and no Queues", () => {
     expect(q("#cons")).toBeNull();
     expect(q("#queues")).toBeNull();
+    expect(q("#legend")).toBeNull();
     expect([...host.querySelectorAll("#nav h3")].map((h) => h.textContent)).toEqual(["Views"]);
-    expect(q("#legend")!.textContent).not.toMatch(/\bok\b|failed|runnable/);
   });
 
   it("names no DAG in its search, and finds none", () => {

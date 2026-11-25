@@ -69,10 +69,9 @@ describe("the page's first tree", () => {
     await eventually(() => expect(card()).toMatch(/^TASK-1 T, /)); // the lazy view resolves late on a loaded shard
     frame();
     expect(mounted("#rail #feed, #rail section")).toBe(true);
-    expect(mounted("#rail #legend")).toBe(false); // the mock's rule: no legends on this board
     act(() => host.querySelector<HTMLButtonElement>('[aria-label="Back to the Board"]')!.click());
     expect(mounted('[aria-label="In Progress drill-in"]')).toBe(false);
-    expect(mounted("#rail #legend")).toBe(true);
+    expect(mounted("#rail .recent")).toBe(true);
     expect(location.search).not.toContain("drill");
   });
 
@@ -93,14 +92,14 @@ describe("the page's first tree", () => {
     expect(mounted("#nav")).toBe(true);
     expect(mounted("#rail")).toBe(true);
     expect(mounted("#nav .views")).toBe(false);
-    expect(mounted("#rail #legend")).toBe(false);
+    expect(mounted("#rail .recent")).toBe(false);
     expect(marked()).toBe(false);
 
     frame();
 
     expect(marked()).toBe(true);
     expect(mounted("#nav .views")).toBe(true);
-    expect(mounted("#rail #legend")).toBe(true);
+    expect(mounted("#rail .recent")).toBe(true);
   });
 
   it("counts on the Kanban entry only the cards the Kanban draws, no Done ones", () => {
@@ -125,6 +124,6 @@ describe("the page's first tree", () => {
     act(() => void vi.advanceTimersByTime(2000));
 
     expect(mounted("#nav .views")).toBe(true);
-    expect(mounted("#rail #legend")).toBe(true);
+    expect(mounted("#rail .recent")).toBe(true);
   });
 });

@@ -10,7 +10,7 @@ from sqlalchemy.dialects import sqlite
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.checkpoints import Checkpoints
-from starpulse.event_log.readmodel import rows
+from starpulse.event_log.readmodel import rows, task_uuid
 from starpulse.event_log.readmodel.fold import Row, apply
 from starpulse.event_log.readmodel.machine_fold import Placer, event_of
 from starpulse.event_log.readmodel.tables import READ_MODEL_TABLES, machine_tasks
@@ -233,6 +233,7 @@ class Projector:
         upsert = sqlite.insert(machine_tasks)
         set_ = {column: upsert.excluded[column] for column in values[0] if column not in ("machine", "task")}
         db.execute(upsert.on_conflict_do_update(index_elements=["machine", "task"], set_=set_), values)
+        task_uuid.fill(db, {task for _, task in placed}, tables=[("starpulse_machine_tasks", "task")])
 
     @staticmethod
     def _load_machine(db: Connection, machine: str, task: str) -> tuple[dict | None, int]:

@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from sqlalchemy import Connection, bindparam, delete, func, insert, select
 from sqlalchemy.dialects import sqlite
 
+from starpulse.event_log.readmodel import task_uuid
 from starpulse.event_log.readmodel.fold import Row
 from starpulse.event_log.readmodel.tables import board_keys, criteria, tasks
 
@@ -29,7 +30,7 @@ def load_at(db: Connection, task_id: str) -> tuple[Row | None, int]:
         select(criteria).where(criteria.c.task_id == task_id).order_by(criteria.c.kind, criteria.c.n)
     ).mappings()
     row = {key: value for key, value in found.items() if key not in ("seq", "uuid")} | {
-        "criteria": [{key: value for key, value in item.items() if key != "task_id"} for item in items]
+        "criteria": [{key: value for key, value in item.items() if key not in ("task_id", "task_uuid")} for item in items]
     }
     return row, found["seq"]
 
@@ -69,3 +70,4 @@ def save_all(db: Connection, folded: Iterable[tuple[Row, int]]) -> None:
     if names:
         keys = sqlite.insert(board_keys)
         db.execute(keys.on_conflict_do_update(index_elements=["token"], set_={"task_id": keys.excluded.task_id, "kind": keys.excluded.kind}), names)
+    task_uuid.fill(db, [row["id"] for row, _ in items])

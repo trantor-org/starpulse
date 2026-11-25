@@ -41,13 +41,14 @@ function Link({ id, a, b, r, from, to, bus }: { id: string; a: { x: number; y: n
 }
 
 const PHASE_STATUS: Record<Phase, string> = { running: "running", queued: "queued", ok: "succeeded", failed: "failed", idle: "not_started" };
+const PHASE_TIP: Record<Phase, string> = { running: "running", queued: "queued", ok: "healthy", failed: "last run failed", idle: "never run" };
 
 /** A DAG's state as the Star Map draws its orbiter (boardDraw `orbiterLook`): a ring round a core dot in the run's colour, the Spinner's quarter-arc
  *  turning while it runs, a dashed outer ring after a failed run, grey while it waits. */
 export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => {
   const look = orbiterLook(PHASE_STATUS[phase]), c = look.color, lit = look.spin || look.dashed;
   return (
-    <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true">
+    <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true" title={PHASE_TIP[phase]}>
       <svg viewBox="-9 -9 18 18">
         <circle r={5} fill="none" stroke={c} strokeOpacity={lit ? 0.95 : 0.6} strokeWidth={1.3} className="ring" />
         <circle r={5 * (look.spin ? 0.45 : 0.4)} fill={c} fillOpacity={lit ? 0.95 : 0.7} className="core" />
@@ -119,7 +120,7 @@ export function Strip({ r, w = 220, h = 20, big = false, room = Infinity }: { r:
             <StepStar x={x} y={y} r={rr} status={v} />
             {s.kind === "agent" && <circle cx={x} cy={y} r={rr + (big ? 4 : 2.5)} fill="none" stroke="var(--agent)" strokeWidth={big ? 1 : 0.7} />}
             {big && <text x={x} y={y + (p.up(s.name) ? -14 : 22)} className={v === "running" ? "hot" : undefined}>{p.label[s.name] ?? s.name}</text>}
-            {big && <title>{`${s.name}: ${v.replace("_", " ")}${s.kind ? ` (${s.kind} step)` : ""}`}</title>}
+            <title>{`${s.name}: ${v.replace("_", " ")}${s.kind ? ` (${s.kind} step)` : ""}`}</title>
           </g>
         );
       })}

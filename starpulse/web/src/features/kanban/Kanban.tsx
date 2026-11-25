@@ -136,7 +136,7 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
   const working = roles.working ? task.moves[roles.working] : undefined;
   const guard = working?.allowed === false ? working.reason : "";
   return (
-    <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={(e) => { onAhead?.(); onPress?.(e); }} onFocus={onAhead}
+    <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} title={chain === "self" ? "outlined: Waiting tasks it holds and open tasks it waits on" : undefined} onClick={onOpen} onPointerDown={(e) => { onAhead?.(); onPress?.(e); }} onFocus={onAhead}
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
@@ -163,7 +163,7 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
         <PhaseTrack at={task.phase} hot={now - task.phase.at < HOT_S} />
       ) : live && (
         <div className={`mach${now - live.at < HOT_S ? " hot" : ""}`}>
-          <span className={["p", live.source && "mapped", live.machine === "ci" && ciTone(live.state) !== "phase" && ciTone(live.state)].filter(Boolean).join(" ")} title={live.source ? `mapped from ${live.source}` : undefined} /><b>{live.machine}</b>{live.skill && <span className="s skill" title="The skill this phase runs">· {live.skill}</span>}<span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
+          <span className={["p", live.source && "mapped", live.machine === "ci" && ciTone(live.state) !== "phase" && ciTone(live.state)].filter(Boolean).join(" ")} title={[live.source ? `mapped from ${live.source}` : `on the ${live.machine} machine`, now - live.at < HOT_S && "moved now"].filter(Boolean).join(", ")} /><b>{live.machine}</b>{live.skill && <span className="s skill" title="The skill this phase runs">· {live.skill}</span>}<span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
         </div>
       )}
       {task.lane === roles.verifying && (
@@ -174,7 +174,7 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
       {!compact && (
         <div className="foot">
           {holds > 0 && <span className="holds" title={`holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>⛓{holds}</span>}
-          {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
+          {task.openDeps > 0 && <span className="dep" title={`${task.openDeps} open ${task.openDeps === 1 ? "dependency" : "dependencies"}`}>⧗{task.openDeps}</span>}
           {cross?.map((d) => (
             // a button of its own on the card: it opens the blocker, so the click, press and keys that would open or lift the card stop here
             <button key={d.id} className="xm" title={`Waits on ${d.id} in ${d.milestone || "No milestone"} (Waiting): open it`}
