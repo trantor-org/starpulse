@@ -38,6 +38,16 @@ class FakeSource {
 }
 const server = () => FakeSource.made[FakeSource.made.length - 1];
 
+/** Whether the server answers its health subscription: down, the page's connection fails with it. */
+const answering = vi.hoisted(() => ({ up: true }));
+const health = () => {
+  const health = { components: [{ name: "board", ready: true, detail: "ok" }], build: null, restarting: false, at: 1_700_000_000 };
+  const frame = new TextEncoder().encode(`event: next\ndata: ${JSON.stringify({ data: { health } })}\n\n`);
+  let sent = false;
+  const reader = { read: async () => (sent ? new Promise<never>(() => {}) : ((sent = true), { done: false, value: frame })), cancel: async () => {} };
+  return { ok: true, body: { getReader: () => reader } } as unknown as Response;
+};
+
 const machine: Machine = {
   states: ["ready", "in_progress", "review"].map((id, i) => ({ id, name: id, initial: i === 0, final: false })),
   transitions: [],
@@ -96,7 +106,8 @@ describe("a page reloaded while the server is down", () => {
     vi.stubGlobal("devicePixelRatio", 1);
     vi.stubGlobal("innerWidth", 1400);
     vi.stubGlobal("innerHeight", 900);
-    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("connection refused"))));
+    answering.up = true;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (answering.up && url.endsWith("/graphql") ? health() : new Promise<Response>((_, refuse) => setTimeout(() => refuse(new Error("connection refused")), 100)))));
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -113,6 +124,7 @@ describe("a page reloaded while the server is down", () => {
     first.page.stop();
 
     // the server is down for the reload: its connection fails at once
+    answering.up = false;
     const reloaded = await load();
     await vi.advanceTimersByTimeAsync(50);
     const [cards, note] = [cardIds(reloaded.hud), reloaded.hud.get().note];
@@ -126,6 +138,8 @@ describe("a page reloaded while the server is down", () => {
     expect(reloaded.hud.get().live).toBe("wait");
 
     // the server is back: its snapshot is the Board, and the dot is live with no note
+    answering.up = true;
+    await vi.advanceTimersByTimeAsync(3500);
     server().onopen?.();
     server().send("snapshot", { ...board(), flows: [{ ...board().flows[0], agents: [task("TASK-1", "review")] }] });
     await vi.advanceTimersByTimeAsync(200);

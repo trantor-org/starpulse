@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LIFECYCLE_ROLES } from "../tests/lifecycleRoles";
-import { applyDelta, foldRows, openStream } from "./stream";
+import { applyDelta, foldRows, openStream, type StreamHandlers } from "./stream";
 import { openLedger } from "./ledgerStream";
+import type { Health, HealthHandlers, Watch } from "./health";
 import type { ActiveRun, Dag, LedgerRow, Pool, RawTask, Snapshot } from ".";
 
 const agent = (id: string, state: string): RawTask => ({ id, title: id, state, model: "" });
@@ -257,6 +258,38 @@ function fetchStub() {
 const flush = () => vi.advanceTimersByTimeAsync(0);
 const last = () => FakeSource.made[FakeSource.made.length - 1];
 
+/** A health subscription the test drives: it says nothing until `send`. */
+class FakeHealth {
+  static made: FakeHealth[] = [];
+  closed = false;
+  constructor(readonly on: HealthHandlers) {
+    FakeHealth.made.push(this);
+  }
+  send(h: Partial<Health> = {}) {
+    if (!this.closed) this.on.health({ components: [{ name: "board", ready: true, detail: "ok" }], build: null, restarting: false, at: 0, ...h });
+  }
+  close() {
+    this.closed = true;
+  }
+}
+const boardRead = (ready: boolean) => ({ components: [{ name: "board", ready, detail: ready ? "ok" : "reading" }] });
+const lastHealth = () => FakeHealth.made[FakeHealth.made.length - 1];
+/** A health subscription that says the server has read its board as soon as it opens, for the tests that are not about health. */
+const readOnOpen: Watch = (on) => {
+  const h = new FakeHealth(on);
+  h.send();
+  return h;
+};
+const quiet: Watch = (on) => new FakeHealth(on);
+/** `openStream` over the page's sources, with `watch` the test's health subscription. */
+const linked = (
+  handlers: StreamHandlers,
+  open?: Parameters<typeof openStream>[1],
+  early?: Parameters<typeof openStream>[2],
+  kept?: Parameters<typeof openStream>[3],
+  watch: Watch = readOnOpen,
+) => openStream(handlers, open, early, kept, watch);
+
 describe("openStream", () => {
   const seen: Snapshot[] = [];
   const kinds: (string | undefined)[] = [];
@@ -266,6 +299,7 @@ describe("openStream", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     FakeSource.made = [];
+    FakeHealth.made = [];
     seen.length = 0;
     kinds.length = 0;
     lives.length = 0;
@@ -273,7 +307,7 @@ describe("openStream", () => {
   afterEach(() => vi.useRealTimers());
 
   it("opens one connection to /api/events, asking for its snapshot by reference, and hands over its snapshot", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
 
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
 
@@ -293,7 +327,7 @@ describe("openStream", () => {
     it("is the connection: no second one opens, and what it received before the page listened reaches the page in order", () => {
       const pending = early(1, [raw("snapshot", board([agent("PROJ-1", "to_do")])), raw("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null })]);
 
-      openStream(handlers, open, pending);
+      linked(handlers, open, pending);
 
       expect(FakeSource.made).toEqual([]);
       expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"]]);
@@ -302,7 +336,7 @@ describe("openStream", () => {
 
     it("goes on handing over the events it receives after the page took it over", () => {
       const pending = early(0, []);
-      openStream(handlers, open, pending);
+      linked(handlers, open, pending);
 
       (pending.src as unknown as FakeSource).send("snapshot", board([agent("PROJ-1", "to_do")]));
 
@@ -312,7 +346,7 @@ describe("openStream", () => {
 
     it("opens a fresh connection at once when it was already given up, as it would its own", () => {
       const pending = early(2, []);
-      openStream(handlers, open, pending);
+      linked(handlers, open, pending);
       expect(FakeSource.made).toEqual([]);
 
       vi.advanceTimersByTime(0);
@@ -322,7 +356,7 @@ describe("openStream", () => {
   });
 
   it("hands over the Board folded with each delta that follows", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
 
     last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
@@ -343,7 +377,7 @@ describe("openStream", () => {
     const harness = (s: Snapshot) => s.flows[1];
 
     it("reads a flow's points through its names as the steps the page has always read", () => {
-      openStream(handlers, open);
+      linked(handlers, open);
 
       last().send("snapshot", compact(["claimed", "CLAIM", "active", "START"], [[0, 1, 1795240381471], [2, 3, 1029, "evt-2"]]));
 
@@ -354,7 +388,7 @@ describe("openStream", () => {
     });
 
     it("interns a state a move delta names that the flow's table has not met, and reads its agent's trail through the delta's names", () => {
-      openStream(handlers, open);
+      linked(handlers, open);
       last().send("snapshot", compact(["claimed", "CLAIM"], [[0, 1, 1000]]));
 
       last().send("move", { machine: "harness", id: "S-1", names: ["claimed", "CLAIM", "stopped", "STOP"], agent: { ...agent("S-1", "stopped"), trail: [[0, 1, 1000], [2, 3, 500]] } });
@@ -368,7 +402,7 @@ describe("openStream", () => {
   });
 
   it("hands over a whole-section event once while its body repeats, and again once it changes or a snapshot resyncs", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
 
     last().send("dags", { dags: [], error: "ci: down" });
@@ -386,7 +420,7 @@ describe("openStream", () => {
   });
 
   it("names the delta each hand-over folded, and none for a connect's snapshot", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
     last().send("ledgers", { mergeStrip: null, mergePins: [] });
     last().send("dags", { dags: [], error: null });
@@ -395,7 +429,7 @@ describe("openStream", () => {
   });
 
   it("folds the 24-hour strip and the pins the head left out", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
     const mergeStrip = { since: 0, bucket: 900, buckets: [{ merges: 1, failed: 1, reruns: 0 }] };
     const pin = { key: "p", at: 1, tasks: [], runs: {}, fails: {}, pinned: true };
@@ -407,7 +441,7 @@ describe("openStream", () => {
   });
 
   it("folds a refused claim the writer published into the snapshot", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
     last().send("snapshot", board([agent("TASK-D1", "waiting")]));
 
     last().send("claim", { task: "TASK-D1", reason: "TASK-D3 is not Done", at: 1001 });
@@ -418,7 +452,7 @@ describe("openStream", () => {
   it("folds a move on a machine into the snapshot without any request but the one stream", () => {
     const fetched = vi.fn();
     vi.stubGlobal("fetch", fetched);
-    openStream(handlers, open);
+    linked(handlers, open);
     const snap = board([agent("PROJ-1", "in_progress")]);
     snap.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [] });
     last().send("snapshot", snap);
@@ -436,7 +470,7 @@ describe("openStream", () => {
 
     it("is read from the path it names, and the deltas that arrived while it was read are folded into it in order and handed over once", async () => {
       const reads = fetchStub();
-      openStream(handlers, open);
+      linked(handlers, open);
 
       last().dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
       last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
@@ -452,7 +486,7 @@ describe("openStream", () => {
 
     it("is read naming the page as its client", async () => {
       const reads = fetchStub();
-      openStream(handlers, open);
+      linked(handlers, open);
 
       last().dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
 
@@ -465,7 +499,7 @@ describe("openStream", () => {
       const asked = fetch(BODY);
       const src = new FakeSource(EVENTS);
       FakeSource.made = [];
-      openStream(handlers, open, { src: src as unknown as EventSource, events: [{ type: "snapshot", data: `ref ${BODY}` }], bodies: { [BODY]: asked } });
+      linked(handlers, open, { src: src as unknown as EventSource, events: [{ type: "snapshot", data: `ref ${BODY}` }], bodies: { [BODY]: asked } });
 
       reads[0].settle(true, board([agent("PROJ-1", "to_do")]));
       await flush();
@@ -475,7 +509,7 @@ describe("openStream", () => {
 
     it("gives way to a newer snapshot that arrives while it is read", async () => {
       const reads = fetchStub();
-      openStream(handlers, open);
+      linked(handlers, open);
 
       last().dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
       last().send("snapshot", board([agent("PROJ-1", "done")]));
@@ -487,7 +521,7 @@ describe("openStream", () => {
 
     it("that cannot be read drops the connection for a fresh one, which sends a fresh snapshot", async () => {
       const reads = fetchStub();
-      openStream(handlers, open);
+      linked(handlers, open);
       const first = last();
 
       first.dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
@@ -500,7 +534,7 @@ describe("openStream", () => {
   });
 
   it("ignores a delta that arrives before any snapshot", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
 
     last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "to_do"), settled: null });
 
@@ -508,7 +542,7 @@ describe("openStream", () => {
   });
 
   it("reports whether the connection is up", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
 
     last().onopen?.();
     last().onerror?.();
@@ -517,7 +551,7 @@ describe("openStream", () => {
   });
 
   it("reopens a dropped connection itself, not waiting for the browser's retry, and resyncs from the snapshot the server sends on it", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
     const first = last();
 
@@ -531,7 +565,8 @@ describe("openStream", () => {
   });
 
   it("keeps the Board it showed while a restarted server is still reading its board, then hands over the Board it read in one piece", () => {
-    openStream(handlers, open);
+    linked(handlers, open, undefined, undefined, quiet);
+    lastHealth().send();
     last().send("snapshot", board([agent("PROJ-1", "to_do"), agent("PROJ-2", "review")]));
 
     last().onerror?.(); // the server restarted
@@ -539,13 +574,28 @@ describe("openStream", () => {
     last().send("snapshot", board([], { reading: true, error: "board: reading q:tasks" }));
     last().send("move", { machine: "board", id: "PROJ-9", agent: agent("PROJ-9", "x") });
     last().send("dags", { dags: [], error: "board: reading q:tasks" });
+    lastHealth().send(boardRead(true)); // ready before the snapshot it finished reading arrives: the partial Board stays held
     last().send("snapshot", board([agent("PROJ-1", "in_progress"), agent("PROJ-2", "review")], { reading: false }));
 
     expect(seen.map(ids)).toEqual([["PROJ-1:to_do", "PROJ-2:review"], ["PROJ-1:in_progress", "PROJ-2:review"]]);
   });
 
+  it("hands over the Board it held back once the server says its board is read, when the whole snapshot came first", () => {
+    linked(handlers, open, undefined, undefined, quiet);
+    lastHealth().send();
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+    last().onerror?.();
+    vi.advanceTimersByTime(0);
+    last().send("snapshot", board([agent("PROJ-1", "done")], { reading: false }));
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do"]]);
+    lastHealth().send(boardRead(true));
+
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:done"]]);
+  });
+
   it("shows a server that is still reading its board when the page has shown nothing yet", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
 
     last().send("snapshot", board([], { reading: true, error: "board: reading q:tasks" }));
 
@@ -559,22 +609,24 @@ describe("openStream", () => {
       return { writes, cache: { read: () => Promise.resolve(held), write: (s: Snapshot) => (writes.push(s), Promise.resolve()) } };
     };
     const withLinks = { ...handlers, link: (state: string) => void links.push(state) };
-    const start = (held: Snapshot | null) => {
+    const start = (held: Snapshot | null, watch?: Watch) => {
       const store = kept(held);
-      const stream = openStream(withLinks, open, null, store.cache);
+      const stream = linked(withLinks, open, null, store.cache, watch);
       return { ...store, stream };
     };
     const lane = (s: Snapshot | undefined) => (s ? ids(s) : []);
     beforeEach(() => void (links.length = 0));
 
     it("keeps each snapshot it hands over, at most once a second, and never a partial Board", async () => {
-      const { writes } = start(null);
+      const { writes } = start(null, quiet);
 
+      lastHealth().send();
       last().send("snapshot", board([agent("PROJ-1", "to_do")]));
       last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
       await vi.advanceTimersByTimeAsync(999);
       expect(writes).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
+      lastHealth().send(boardRead(false));
       last().send("snapshot", board([], { reading: true }));
       await vi.advanceTimersByTimeAsync(5000);
 
@@ -614,7 +666,7 @@ describe("openStream", () => {
       const store = kept(board([agent("PROJ-1", "to_do")]));
       let release: (s: Snapshot | null) => void = () => {};
       const slow = { ...store.cache, read: () => new Promise<Snapshot | null>((resolve) => void (release = resolve)) };
-      openStream(withLinks, open, null, slow);
+      linked(withLinks, open, null, slow);
 
       last().send("snapshot", board([agent("PROJ-1", "done")]));
       release(board([agent("PROJ-1", "to_do")]));
@@ -624,20 +676,23 @@ describe("openStream", () => {
     });
 
     it("holds the stale mark, and the kept Board, while a restarted server is still reading its board", async () => {
-      start(board([agent("PROJ-1", "to_do")]));
+      start(board([agent("PROJ-1", "to_do")]), quiet);
       await flush();
 
       last().send("snapshot", board([], { reading: true }));
       last().onopen?.();
+      lastHealth().send(boardRead(false));
       expect([seen.length, links]).toEqual([1, ["stale"]]);
       last().send("snapshot", board([agent("PROJ-1", "in_progress")], { reading: false }));
+      lastHealth().send(boardRead(true));
 
       expect([seen.map(ids).at(-1), links]).toEqual([["PROJ-1:in_progress"], ["stale", "live"]]);
     });
 
     it("marks the Board it held through a drop stale from the reconnect until the server's whole Board arrives", () => {
       const { cache } = kept(null);
-      openStream(withLinks, open, null, cache);
+      linked(withLinks, open, null, cache, quiet);
+      lastHealth().send();
       last().onopen?.();
       last().send("snapshot", board([agent("PROJ-1", "to_do")]));
 
@@ -646,12 +701,13 @@ describe("openStream", () => {
       last().onopen?.();
       last().send("snapshot", board([], { reading: true }));
       last().send("snapshot", board([agent("PROJ-1", "done")]));
+      lastHealth().send();
 
       expect([seen.map(ids), links]).toEqual([[["PROJ-1:to_do"], ["PROJ-1:done"]], ["live", "retrying", "stale", "live"]]);
     });
 
     it("draws nothing from a store that is empty, unreadable or without a kept Board", async () => {
-      openStream(withLinks, open, null, { read: () => Promise.reject(new Error("blocked")), write: () => Promise.resolve() });
+      linked(withLinks, open, null, { read: () => Promise.reject(new Error("blocked")), write: () => Promise.resolve() });
       await flush();
       start(null);
       await flush();
@@ -660,7 +716,7 @@ describe("openStream", () => {
     });
 
     it("lives with a store that refuses a write", async () => {
-      openStream(withLinks, open, null, { read: () => Promise.resolve(null), write: () => Promise.reject(new Error("quota")) });
+      linked(withLinks, open, null, { read: () => Promise.resolve(null), write: () => Promise.reject(new Error("quota")) });
 
       last().send("snapshot", board([agent("PROJ-1", "to_do")]));
       await vi.advanceTimersByTimeAsync(2000);
@@ -671,7 +727,7 @@ describe("openStream", () => {
   });
 
   it("opens a new connection when the browser gives the old one up", () => {
-    openStream(handlers, open);
+    linked(handlers, open);
     last().readyState = 2;
 
     last().onerror?.();
@@ -681,7 +737,7 @@ describe("openStream", () => {
   });
 
   it("closes the connection and cancels a pending reopen", () => {
-    const stream = openStream(handlers, open);
+    const stream = linked(handlers, open);
     const first = last();
     first.readyState = 2;
     first.onerror?.();
@@ -694,7 +750,7 @@ describe("openStream", () => {
   });
 
   it("closes a live connection", () => {
-    const stream = openStream(handlers, open);
+    const stream = linked(handlers, open);
 
     stream.close();
 
@@ -704,7 +760,13 @@ describe("openStream", () => {
   describe("what the connection is doing", () => {
     const links: string[] = [];
     const builds: string[] = [];
-    const watching = { ...handlers, link: (state: string) => void links.push(state), build: (id: string) => void builds.push(id) };
+    const skews: number[] = [];
+    const watching = {
+      ...handlers,
+      link: (state: string) => void links.push(state),
+      build: (id: string) => void builds.push(id),
+      clock: (skew: number) => void skews.push(skew),
+    };
     /** Drop the connection, then let the page's own reopen run at the end of its wait. */
     const dropAndWait = (ms: number) => {
       last().onerror?.();
@@ -714,10 +776,11 @@ describe("openStream", () => {
     beforeEach(() => {
       links.length = 0;
       builds.length = 0;
+      skews.length = 0;
     });
 
     it("is live once the connection opens", () => {
-      openStream(watching, open);
+      linked(watching, open);
 
       last().onopen?.();
 
@@ -725,10 +788,10 @@ describe("openStream", () => {
     });
 
     it("says restarting from the server's announcement, while the connection is still open, and through the drop that follows", () => {
-      openStream(watching, open);
+      linked(watching, open);
       last().onopen?.();
 
-      last().send("restarting", {});
+      lastHealth().send({ restarting: true });
       expect(links).toEqual(["live", "restarting"]);
       expect(lives).toEqual([true]);
 
@@ -739,7 +802,7 @@ describe("openStream", () => {
     });
 
     it("says stale from the server's stale event over an open connection, and live again once the next change hands over a Board", () => {
-      openStream(watching, open);
+      linked(watching, open);
       last().onopen?.();
       last().send("snapshot", board([agent("PROJ-1", "to_do")]));
 
@@ -752,7 +815,7 @@ describe("openStream", () => {
     });
 
     it("says retrying for a drop the server did not announce", () => {
-      openStream(watching, open);
+      linked(watching, open);
       last().onopen?.();
 
       last().onerror?.();
@@ -761,7 +824,7 @@ describe("openStream", () => {
     });
 
     it("says offline once the connection has been down for 20 s, and keeps retrying", () => {
-      openStream(watching, open);
+      linked(watching, open);
       last().onopen?.();
       last().onerror?.();
 
@@ -778,9 +841,9 @@ describe("openStream", () => {
     });
 
     it("counts the 20 s from when the server announced the restart", () => {
-      openStream(watching, open);
+      linked(watching, open);
       last().onopen?.();
-      last().send("restarting", {});
+      lastHealth().send({ restarting: true });
       vi.advanceTimersByTime(15_000);
       last().onerror?.();
 
@@ -792,7 +855,7 @@ describe("openStream", () => {
     });
 
     it("reconnects at once after a drop, on a connection of its own, and says live when that one opens", () => {
-      openStream(watching, open);
+      linked(watching, open);
       const first = last();
       first.onopen?.();
 
@@ -806,7 +869,7 @@ describe("openStream", () => {
     });
 
     it("backs off while the server stays away, never waiting more than 3 s", () => {
-      openStream(watching, open);
+      linked(watching, open);
       const waits: number[] = [];
 
       for (const wait of [0, 250, 500, 1000, 2000, 3000, 3000]) {
@@ -823,7 +886,7 @@ describe("openStream", () => {
     });
 
     it("starts over at once after a connection that opened", () => {
-      openStream(watching, open);
+      linked(watching, open);
       dropAndWait(0);
       dropAndWait(250);
       last().onopen?.();
@@ -836,34 +899,33 @@ describe("openStream", () => {
     });
 
     it("reports a build other than the page's own once, and says nothing for the build it already holds", () => {
-      openStream(watching, open);
-      last().send("build", { id: "aaa" });
+      linked(watching, open, undefined, undefined, quiet);
+      lastHealth().send({ build: "aaa" });
       expect(builds).toEqual([]);
 
       dropAndWait(0);
-      last().send("build", { id: "aaa" });
+      lastHealth().send({ build: "aaa" });
       expect(builds).toEqual([]);
 
       dropAndWait(250);
-      last().send("build", { id: "bbb" });
+      lastHealth().send({ build: "bbb" });
       dropAndWait(500);
-      last().send("build", { id: "bbb" });
+      lastHealth().send({ build: "bbb" });
 
       expect(builds).toEqual(["bbb"]);
     });
 
     it("holds a new build while its server is still reading its board, so the page reloads onto the Board it read", () => {
-      openStream(watching, open);
+      linked(watching, open, undefined, undefined, quiet);
       last().send("snapshot", board([agent("PROJ-1", "to_do")]));
-      last().send("build", { id: "aaa" });
+      lastHealth().send({ build: "aaa" });
 
       dropAndWait(0); // a deploy restarted the server
       last().send("snapshot", board([], { reading: true }));
-      last().send("build", { id: "bbb" });
-      last().send("snapshot", board([agent("PROJ-1", "to_do")], { reading: true }));
+      lastHealth().send({ ...boardRead(false), build: "bbb" });
       expect(builds).toEqual([]);
 
-      last().send("snapshot", board([agent("PROJ-1", "to_do")], { reading: false }));
+      lastHealth().send({ build: "bbb" });
       expect(builds).toEqual(["bbb"]);
     });
 
@@ -872,12 +934,45 @@ describe("openStream", () => {
       early.readyState = 1;
       FakeSource.made = [];
 
-      openStream(watching, open, { src: early as unknown as EventSource, events: [{ type: "build", data: JSON.stringify({ id: "aaa" }) }] });
+      linked(watching, open, { src: early as unknown as EventSource, events: [{ type: "build", data: JSON.stringify({ id: "aaa" }) }] }, undefined, quiet);
       early.onerror?.();
       vi.advanceTimersByTime(0);
-      last().send("build", { id: "bbb" });
+      lastHealth().send({ build: "bbb" });
 
       expect(builds).toEqual(["bbb"]);
+    });
+
+    it("hands the clock offset the server's `at` gives from the health it opened, each time it says", () => {
+      vi.setSystemTime(10_000_000);
+      linked(watching, open, undefined, undefined, quiet);
+
+      lastHealth().send({ at: 10_000 + 3 });
+      lastHealth().send({ at: 10_000 - 1.5 });
+
+      expect(skews).toEqual([3, -1.5]);
+    });
+
+    it("drops the connection once, and retries it, when its health subscription ends", () => {
+      linked(watching, open, undefined, undefined, quiet);
+      last().onopen?.();
+      const first = last();
+
+      lastHealth().on.end();
+      lastHealth().on.end();
+      vi.advanceTimersByTime(0);
+
+      expect(first.readyState).toBe(2);
+      expect(FakeSource.made).toHaveLength(2);
+      expect(FakeHealth.made).toHaveLength(2);
+      expect(links).toEqual(["live", "retrying"]);
+    });
+
+    it("closes its health subscription when the page closes the stream", () => {
+      const stream = linked(watching, open, undefined, undefined, quiet);
+
+      stream.close();
+
+      expect(lastHealth().closed).toBe(true);
     });
   });
 });

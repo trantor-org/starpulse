@@ -309,6 +309,15 @@ describe("the moves", () => {
     expect(m.events.at(-1)).toMatchObject({ event: "PR_OPENED", at: 1050 });
   });
 
+  it("places a move by the clock offset the server's health gave, not by how old the snapshot was when it arrived", () => {
+    const m = new Moves();
+    const stale = snap(1000, [], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900], ["pr_opened", "PR_OPENED", 1030]])]);
+
+    m.observe(merge(stale), 1140, -100); // the page's clock runs 100 s ahead of the server's
+
+    expect(m.events.at(-1)).toMatchObject({ event: "PR_OPENED", at: 1130 });
+  });
+
   it("forgets moves older than an hour", () => {
     const m = new Moves();
 

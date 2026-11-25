@@ -10,6 +10,9 @@ document's selection run on the change. A position the store no longer holds is 
 
 An `occurrenceChanges` subscription holds one event's ledger: its first `next` event is the newest page (`head: true`),
 each later one the rows that changed, with the merge ledger's strip and pins whole. An event no workflow is tied to is answered with a 404.
+
+A `health` subscription takes no position: its first `next` event is the server's readiness components, build id, restarting
+announcement and clock, and each later one follows a change of the components, the build or the restart.
 """
 
 import asyncio
@@ -427,6 +430,8 @@ async def _follow(
         return from_thread.run(_render, document, payload, context, name, change).decode()
 
     streams = seams(request).streams
+    if name == "health":
+        return await on_worker(request, lambda: streams.health(request, render))
     if name == "occurrenceChanges":
         return await on_worker(request, lambda: streams.ledger_changes(request, args["event"], render))
     follow = streams.job_changes if name == "jobChanges" else streams.task_changes
