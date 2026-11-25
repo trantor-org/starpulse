@@ -5,7 +5,17 @@ import type { Dag, Jobs } from ".";
 
 type Post = (url: string, init?: RequestInit) => Promise<Response>;
 
-const SUBSCRIPTION = "subscription ($from: Int!) { jobChanges(from: $from) { jobs error } }";
+const RUN = "runId url status raw startedAt steps task pr commit attempt failure";
+const JOB_FIELDS = [
+  "name status raw runId startUrl startedAt finishedAt schedule pool",
+  "steps { name depends status raw kind precondition lock last }",
+  "stats { runs hours medianSeconds p95Seconds failureShare }",
+  "rerun { key repeats step }",
+  `active { ${RUN} step stepStartedAt }`,
+  `failed { ${RUN} finishedAt params }`,
+  `closed { ${RUN} finishedAt params }`,
+].join(" ");
+const SUBSCRIPTION = `subscription ($from: Int!) { jobChanges(from: $from) { jobs { ${JOB_FIELDS} } error } }`;
 
 /** Why a subscription ended: the server closed it, or the position it held is gone and the list must be read again. */
 export type Ended = "closed" | "reread";
