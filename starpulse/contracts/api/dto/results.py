@@ -1,5 +1,7 @@
 """The bodies a write route answers with when it succeeds."""
 
+from typing import Literal
+
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal
 
@@ -50,6 +52,12 @@ class Parked(_Api):
     # `to` is the lane the task actor is asked to move the task to, not one the task is in
     task: str
     to: str
+
+
+class FreezeRequested(_Api):
+    # the task actor carries the request out, or answers it with a comment: the task is not yet frozen or unfrozen
+    task: str
+    request: Literal["freeze", "unfreeze"]
 
 
 class Created(_Api):

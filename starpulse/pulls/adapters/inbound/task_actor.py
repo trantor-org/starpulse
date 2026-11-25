@@ -47,8 +47,10 @@ import time
 from collections import Counter
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from datetime import datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from starpulse.board.adapters.holder_idle import DISPATCHED, HARNESS_MACHINE, HolderInGrace, HolderUnreachable
 from starpulse.board.model import criteria
@@ -56,9 +58,13 @@ from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.markdown import (
     ANSWER_COMMENT,
+    FREEZE_REQUEST,
+    UNFREEZE_REQUEST,
     attention_reason,
     needs_attention_text,
     operator_answered,
+    request_reason,
+    requested_by,
     section_set,
 )
 from starpulse.board.model.rollup import checks_verdict
@@ -66,6 +72,7 @@ from starpulse.board.model.seam import (
     COMMENT_CAP,
     FLAGGED,
     HELD,
+    OPERATOR,
     TaskEditor,
     TaskReader,
     Written,
@@ -215,8 +222,14 @@ _COMMENTED = frozenset(
         "ask_requested",
         "archive_requested",
         "move_requested",
+        "freeze_requested",
+        "unfreeze_requested",
     )
 )
+#: The only facts a frozen task's lane waits on: the requests to freeze or lift the freeze.
+_FREEZES = ("freeze_requested", "unfreeze_requested")
+#: The clock a freeze's `at` is written on, the operator's.
+_FREEZE_ZONE = ZoneInfo("America/Phoenix")
 
 
 def _later(delay: float, fn: Callable[..., None], *args: Any) -> None:
@@ -262,9 +275,11 @@ def _lint_record(agent: Mapping[str, Any]) -> tuple[Any, ...]:
     return (*(agent.get(field) for field in _LINTED), tuple(agent["labels"]), tuple(agent.get("dependencies", ())))
 
 
-def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], str]:
+def _view(
+    agent: Mapping[str, Any],
+) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], str, tuple[tuple[str, str], ...]]:
     """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests, checked criteria,
-    and a digest of its final summary. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
+    a digest of its final summary and its freeze. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
     return (
         agent["state"],
@@ -272,6 +287,7 @@ def _view(agent: Mapping[str, Any]) -> tuple[str, tuple[str, ...], tuple[str, ..
         tuple(agent.get("prs", ())),
         ticks,
         hashlib.sha1((agent.get("final_summary") or "").strip().encode(), usedforsecurity=False).hexdigest()[:8],
+        tuple(sorted((agent.get("frozen") or {}).items())),
     )
 
 
@@ -650,8 +666,8 @@ class TaskActor:
 
     def _merged_review(self, agent: dict[str, Any]) -> bool:
         """Whether a Review task has a merged proof pull request, whatever move was tried or refused."""
-        if agent["state"] != self._review:
-            return False
+        if agent["state"] != self._review or agent.get("frozen"):
+            return False  # a frozen task keeps its lane: its merge is no wait the actor owes a move
         records = [self._record(url) for url in derivation.proof_prs(self._port, agent)]
         return any(record and record["state"] == "MERGED" for record in records)
 
@@ -1550,9 +1566,12 @@ class TaskActor:
         not win over the change that raced it (an archive request)."""
         self.derivations[name] += 1
         self._arm(name, agent)
-        if agent["state"] in self._sweep_lanes and (reasons := self._stuck(agent)):
+        frozen = agent.get("frozen")
+        if agent["state"] in self._sweep_lanes and not frozen and (reasons := self._stuck(agent)):
             self._note_hold(agent, reasons, FLAGGED)
         waits = self._waits.get(agent["state"], {})
+        if frozen:  # a frozen task keeps its lane: only a request to freeze it again or to lift the freeze is read
+            waits = {fact: event for fact, event in waits.items() if fact in _FREEZES}
         if "overdue" in waits and derivation.entered(self._port, agent) and derivation.dead(self._port, agent):
             # a dead wait with a known entry (so a deadline) pre-empts a release it would block
             waits = {"overdue": waits["overdue"]}
@@ -1583,6 +1602,8 @@ class TaskActor:
                 if fact == "overdue" and derivation.dead(self._port, agent):
                     changes["dependencies"] = []  # a dead wait: the reason names them
             if target == agent["state"]:  # a stay: a ready pull request is enqueued, any other fact holds the lane
+                if fact in _FREEZES:
+                    self._freeze(agent, fact, evidence)
                 if fact == "pr_ready":
                     self._notice(
                         self._enqueued,
@@ -1627,6 +1648,33 @@ class TaskActor:
             )
             if self._wake_holder(name, UNCITED_CHECKS, reason):
                 self._memory.keep(name, uncited_woken=[woken])
+
+    def _freeze(self, agent: dict[str, Any], fact: str, request: str) -> None:
+        """Carry out a request to freeze the task or to lift its freeze, or answer it with one comment when the freeze or
+        its requester forbids it. Freezing is open to the operator and any agent; lifting it to the operator and the
+        requester the freeze names."""
+        name, frozen = agent["id"], agent.get("frozen") or {}
+        freezing = fact == "freeze_requested"
+        who = requested_by(request) or "unknown"
+        reason = request_reason(request, FREEZE_REQUEST if freezing else UNFREEZE_REQUEST)
+        changes: dict[str, Any] = {}
+        if freezing and frozen:
+            text = f"Freeze refused: {name} is already frozen by {frozen['by']}: {frozen['reason']}."
+        elif freezing:
+            at = datetime.fromtimestamp(self._wall(), _FREEZE_ZONE).strftime("%Y-%m-%d %H:%M")
+            changes = {"frozen": {"by": who, "at": at, "reason": reason}}
+            text = f"Frozen by {who}: {reason}"
+        elif not frozen:
+            text = f"Unfreeze refused: {name} is not frozen."
+        elif who not in (OPERATOR, frozen["by"]):
+            text = f"Unfreeze refused: {name} is frozen by {frozen['by']}, and only they or the operator can lift it."
+        else:
+            changes = {"frozen": {}}
+            text = f"Unfrozen by {who}: lifted the freeze by {frozen['by']}: {frozen['reason']}"
+        written = self._apply(name, changes, text)
+        if not written.ok:
+            logger.warning("task actor: the %s of %s was not written: %s", fact, name, written.output)
+            self._refused_by(written)
 
     def _log_unready(self, agent: dict[str, Any]) -> None:
         """Log once per change the condition that keeps a working task's open pull request from being ready."""

@@ -67,6 +67,7 @@ from starpulse.contracts.api.dto.results import (
     MilestoneArchived,
     MilestoneCreated,
     MilestoneEdited,
+    FreezeRequested,
     Parked,
     Reopened,
     Restored,
@@ -183,7 +184,18 @@ BODIES: dict[str, Any] = {
     "create": Created | CreatedEach | SkillRefusal | ApiError,
     "task_link_put": Link | NotHolder | DeliveredElsewhere | UnrecognisedUrl | ApiError,
     "task_link_delete": Link | NotHolder | ApiError,
-    "task_put": Edited | StaleEdit | Restored | Retired | Reopened | Completed | TakenOver | Parked | Dispatched | SkillRefusal | ApiError,
+    "task_put": Edited
+    | StaleEdit
+    | Restored
+    | Retired
+    | Reopened
+    | Completed
+    | TakenOver
+    | Parked
+    | FreezeRequested
+    | Dispatched
+    | SkillRefusal
+    | ApiError,
     "task_delete": Archived | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,
     "milestone": MilestoneShown | ApiError,
@@ -264,7 +276,8 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/steps"): _write("Record the seconds each step of an agent command took", "ingest", StepsRequest),
     ("PUT", "/api/tasks"): _write("Create tasks", "create", CreateRequest, "201", "200"),
     ("PUT", "/api/tasks/{id}"): _write(
-        "Write a task over the base named, or reopen, complete, restore, retire, take over, park or dispatch a session to it",
+        "Write a task over the base named, or reopen, complete, restore, retire, take over, park, ask for a freeze or"
+        " unfreeze or dispatch a session to it",
         "task_put",
         TaskPutRequest,
         "200",

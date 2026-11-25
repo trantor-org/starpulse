@@ -82,6 +82,20 @@ class Guard:
         """What the board's `readable` rules find broken in the description of the task, or "" when it reads well."""
         return rules.readable_verdict(self.rules, front, body)
 
+    @staticmethod
+    def frozen_refusal(earlier: rules.Record | None, frontmatter: Mapping[str, Any], actor: str) -> str | None:
+        """Why a freeze refuses the write, or None. A frozen task keeps its lane against every actor and audit, and only the
+        task actor writes `frozen`: the refusal names who froze it and why."""
+        was = dict(earlier.front.get("frozen") or {}) if earlier else {}
+        task = str(frontmatter.get("id") or "")
+        if dict(frontmatter.get("frozen") or {}) != was and actor != TASK_ACTOR:
+            return f"{task}: only the task actor writes `frozen`; record `backlog-task freeze` or `unfreeze` and it carries it out."
+        if was and earlier and lane_id(str(earlier.front.get("status") or "")) != lane_id(
+            str(frontmatter.get("status") or "")
+        ):
+            return f"{task} is frozen by {was.get('by', '')}: {was.get('reason', '')}. Request an unfreeze first."
+        return None
+
     def verdict(
         self,
         path: Path,
@@ -98,6 +112,8 @@ class Guard:
         refusal with its reason and skill, else a landing that carries the reasons of the lane rules an operator's move
         broke. Every writer is judged here, after the entry effects of the lane it enters have run, except that the
         task actor meets no rule: it reads them as facts first (`audit` judges its write by them, to be read, never landed)."""
+        if refusal := self.frozen_refusal(earlier, frontmatter, actor):
+            return Written(False, refusal)
         kind = str(frontmatter.get("type") or "")
         was = str(earlier.front.get("type") or "") if earlier else ""  # a write that leaves the type alone is not refused for it
         reasons: list[str] = []

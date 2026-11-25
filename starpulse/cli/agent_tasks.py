@@ -377,6 +377,16 @@ def task_park(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     return _kept(_lifecycle(args, environ, f"/api/tasks/{args.task}", body, put=True), LIFECYCLE_KEYS)
 
 
+def task_freeze(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Ask the task actor to freeze the task in its lane for `--reason`; it carries the request out and comments."""
+    return _kept(_lifecycle(args, environ, f"/api/tasks/{args.task}", {"freeze": args.reason}, put=True), LIFECYCLE_KEYS)
+
+
+def task_unfreeze(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Ask the task actor to lift the task's freeze: it answers the operator or the freezer, and refuses anyone else."""
+    return _kept(_lifecycle(args, environ, f"/api/tasks/{args.task}", {"unfreeze": True}, put=True), LIFECYCLE_KEYS)
+
+
 def record_call(
     base: str,
     path: str,

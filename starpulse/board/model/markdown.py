@@ -101,6 +101,17 @@ def needs_attention_text(text: str) -> str:
     return found.group(1).strip() if found else ""
 
 
+def requested_by(request: str) -> str:
+    """Who a freeze or unfreeze `request` comment names as its requester, else empty."""
+    found = re.search(rf"(?m)^{re.escape(REQUESTED_BY)} (.+)$", request)
+    return found.group(1).strip() if found else ""
+
+
+def request_reason(request: str, marker: str) -> str:
+    """The words a `marker` request comment gives, without its `Requested by:` line."""
+    return request.removeprefix(marker).partition(f"\n{REQUESTED_BY}")[0].strip(" :\n")
+
+
 def needs_attention_reason(text: str) -> str:
     """The first line of `text`'s `## Needs attention` section, else empty."""
     return needs_attention_text(text).partition("\n")[0].strip()
@@ -111,6 +122,10 @@ WAIT_REQUEST = "Wait requested:"
 ASK_REQUEST = "Ask requested:"
 ARCHIVE_REQUEST = "Archive requested:"
 MOVE_REQUEST = "Move requested:"
+FREEZE_REQUEST = "Freeze requested:"
+UNFREEZE_REQUEST = "Unfreeze requested:"
+#: The line a freeze or unfreeze request ends on: who asked, written by the server, so the task actor records and checks it.
+REQUESTED_BY = "Requested by:"
 NO_MERGE = "No merge needed:"
 #: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
 ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")

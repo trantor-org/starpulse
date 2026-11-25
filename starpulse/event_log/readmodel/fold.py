@@ -130,6 +130,8 @@ _RULES: dict[str, Callable[[Row, StoredEvent], None]] = {
     "Released": _released,
     "ClaimRefused": _nothing,
     "PlanRevised": _nothing,
+    "TaskFrozen": lambda row, event: row["meta"].__setitem__("frozen", dict(event.payload)),
+    "TaskUnfrozen": lambda row, event: row["meta"].pop("frozen", None),
     "Transitioned": lambda row, event: row.update(state=event.payload["to"]),
     "Remapped": _remapped,
     "Archived": lambda row, event: row.update(archived=True),

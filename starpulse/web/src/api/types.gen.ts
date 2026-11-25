@@ -15,6 +15,7 @@ export interface ApiContract {
     | Reopened
     | Dispatched
     | Parked
+    | FreezeRequested
     | Created
     | CreatedEach
     | MachineWritten
@@ -404,6 +405,11 @@ export interface Parked {
   to: string;
   [k: string]: unknown;
 }
+export interface FreezeRequested {
+  request: "freeze" | "unfreeze";
+  task: string;
+  [k: string]: unknown;
+}
 export interface Created {
   task: string;
   [k: string]: unknown;
@@ -707,6 +713,10 @@ export interface RawTask {
    * The id of the finished task a Board task follows up; empty or absent when none.
    */
   follows?: string | null;
+  /**
+   * The freeze the task actor holds the task in; no move of it lands until it is lifted.
+   */
+  frozen?: Frozen | null;
   id: string;
   /**
    * A Board task's Impact (low, medium or high); empty or absent when it has none.
@@ -811,6 +821,15 @@ export interface RawTask {
 export interface TaskCriterion {
   checked: boolean;
   text: string;
+  [k: string]: unknown;
+}
+/**
+ * The freeze the task actor holds a task in: who asked, when and why.
+ */
+export interface Frozen {
+  at: string;
+  by: string;
+  reason: string;
   [k: string]: unknown;
 }
 /**
@@ -2052,8 +2071,8 @@ export interface CreateSpec {
   urgency?: string | null;
 }
 /**
- * `PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, retire, take it over, park it
- * or dispatch a session to it.
+ * `PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, retire, take it over, park
+ * it, ask the task actor to freeze or unfreeze it or dispatch a session to it.
  *
  * An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that
  * name only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the
@@ -2061,8 +2080,9 @@ export interface CreateSpec {
  * body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `completed: true`
  * (the Done task moves into the board's completed tasks), `archived: false` (the archived task returns to the
  * board), `retired: true` (the finished task goes off the board into the history store's retired tasks),
- * `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one
- * reason it names, with the `comment` beside it).
+ * `interactive: true` (the unattended task is taken over), `park` (the held task pauses for the one
+ * reason it names, with the `comment` beside it), `freeze` (the task actor freezes the task in its lane, for this
+ * reason) and `unfreeze: true` (the task actor lifts the freeze; only the operator or the freezer may ask it).
  */
 export interface TaskPutRequest {
   actor?: string | null;
@@ -2074,6 +2094,7 @@ export interface TaskPutRequest {
   changes?: Changes;
   comment?: string | null;
   completed?: true | null;
+  freeze?: string | null;
   harness?: string | null;
   interactive?: true | null;
   park?: Park | null;
@@ -2081,6 +2102,7 @@ export interface TaskPutRequest {
   request_key?: string | null;
   retired?: true | null;
   session?: string | null;
+  unfreeze?: true | null;
 }
 /**
  * An edit's fields by name: any field the board takes, with each `documentation` entry a link.

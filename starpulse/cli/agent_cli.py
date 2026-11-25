@@ -559,6 +559,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     verbs.add_parser("import-board", help="import the board and its recorded runs, verified by replay", add_help=False)
     verbs.add_parser("backfill-uuids", help="give every board item the UUID v5 of its board and key", add_help=False)
+    verbs.add_parser("backfill-links", help="store each task's referenced pull requests as links", add_help=False)
     verbs.add_parser(
         "conform", help="replay the recorded history against the machines the project declares", add_help=False
     )
@@ -713,6 +714,27 @@ def _parser() -> argparse.ArgumentParser:
     park.add_argument("--operator", help="what only the operator can do or decide")
     park.add_argument("--comment", help="what is outstanding, recorded with the move")
     agent_flags.writer_flags(park)
+    freeze = leaf(
+        task_verbs,
+        "freeze",
+        "ask the task actor to freeze a task in its lane: no move of it lands until an unfreeze, a comment still does",
+        _in_tasks("task_freeze"),
+        LIFECYCLE_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    freeze.add_argument("task", help="the task's key (`PROJ-45`)")
+    freeze.add_argument("--reason", required=True, help="why the task is frozen")
+    agent_flags.writer_flags(freeze)
+    unfreeze = leaf(
+        task_verbs,
+        "unfreeze",
+        "ask the task actor to lift a task's freeze; only the operator or whoever froze it may ask",
+        _in_tasks("task_unfreeze"),
+        LIFECYCLE_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    unfreeze.add_argument("task", help="the task's key (`PROJ-45`)")
+    agent_flags.writer_flags(unfreeze)
     trace = leaf(
         task_verbs,
         "trace",
