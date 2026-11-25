@@ -95,6 +95,9 @@ class ActorFacts:
     def owns_failure(self, name: str) -> bool:
         return self._actor._owns_failure(name)
 
+    def settling(self, name: str) -> bool:
+        return self._actor._settling == name
+
     def main_green(self) -> str | None:
         return self._actor._main_green() if self._actor._main_green else None
 

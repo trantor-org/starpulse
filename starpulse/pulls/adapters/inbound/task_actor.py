@@ -41,7 +41,6 @@ import hashlib
 import json
 import logging
 import queue
-import re
 import subprocess
 import threading
 import time
@@ -55,7 +54,13 @@ from starpulse.board.adapters.holder_idle import DISPATCHED, HARNESS_MACHINE, Ho
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import attention_reason, needs_attention_text, operator_answered, section_set
+from starpulse.board.model.markdown import (
+    ANSWER_COMMENT,
+    attention_reason,
+    needs_attention_text,
+    operator_answered,
+    section_set,
+)
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
     COMMENT_CAP,
@@ -199,10 +204,6 @@ _ASKS = (
 
 #: The facts a comment alone raises, which the view does not show.
 _COMMENTED = frozenset(("operator_pushback", "wait_requested", "ask_requested", "archive_requested", "move_requested"))
-
-#: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
-_ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")
-
 
 def _ignore(_task: str) -> None:
     return None
@@ -446,6 +447,8 @@ class TaskActor:
         #: hold it could not read), which keeps its digest out of the checkpoint.
         self._hooked = False
         self._unsettled = False
+        #: The task whose session settle is deriving it: its answered ask closes a checked task with no pull request left.
+        self._settling = ""
         #: The board hooks of moves already written, run one at a time in the order written by their own thread: a
         #: hook runs a command for seconds, and run under `_lock` it held back the move of every task behind it.
         self._notices: queue.SimpleQueue[Callable[[], None] | None] = queue.SimpleQueue()
@@ -1573,7 +1576,12 @@ class TaskActor:
             if self._awaits(agent):
                 self._memory.keep(name, awaited=True)
                 return
-            if self.touch([TaskTouched(name, Trigger.ON_IDLE, "session settled")]):
+            self._settling = name
+            try:
+                moved = self.touch([TaskTouched(name, Trigger.ON_IDLE, "session settled")])
+            finally:
+                self._settling = ""
+            if moved:
                 return  # the lane facts moved the task (a ready pull request to Review): there is nothing to resume
             answered = "kind-decide" in agent["labels"] and operator_answered(
                 (self._feed.task(name) or {}).get("description", "")
@@ -1643,7 +1651,7 @@ class TaskActor:
         with self._lock:
             agent = self._feed.task(name, lean=True)
             texts = self._comments(agent) if agent else None
-        if texts and _ANSWER_COMMENT.match(texts[-1]):
+        if texts and ANSWER_COMMENT.match(texts[-1]):
             return
         self.holder_settled(name)
 
@@ -2073,7 +2081,7 @@ class TaskActor:
         pull request, another reason) is a new question."""
         texts = self._texts(agent)
         asked = [index for index, text in enumerate(texts) if text.strip() == ask.strip()]
-        return bool(asked) and any(_ANSWER_COMMENT.match(text) for text in texts[asked[-1] + 1 :])
+        return bool(asked) and any(ANSWER_COMMENT.match(text) for text in texts[asked[-1] + 1 :])
 
     def _write(
         self,
