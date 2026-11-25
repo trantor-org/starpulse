@@ -185,7 +185,7 @@ def entry_inputs(flows: Sequence[Mapping[str, Any]], derived: Mapping[str, Mappi
         (name, d["depth"], tuple(d["chain"][:1]), _launching_dag(d))
         for name, d in derived.items()
     )
-    return shape, tuple(agent for f in flows if f["name"] in derived for agent in f["agents"])
+    return shape, tuple((f["name"], agent) for f in flows if f["name"] in derived for agent in f["agents"])
 
 
 def within(found: list[dict], now: float, span: float) -> list[dict]:
