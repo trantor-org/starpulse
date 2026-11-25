@@ -462,7 +462,7 @@ def task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
         raise agent_wire.CliError("usage", "name the task's title, or --batch FILE for several")
     if args.source and (held := _open_with_source(args, environ, args.source)):
         return {"task": held[0]["id"], "existing": True}
-    status, reply = agent_wire.put_keyed(base, path, {**_created_task(args), **writer(args, environ)})
+    status, reply = agent_wire.put_keyed(base, path, {**_created_task(args), **writer(args, environ)}, args.request_key)
     return {"task": record_call(base, path, status, reply, ok=(201,))["task"]}
 
 
@@ -470,7 +470,7 @@ def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: st
     """The batch create of the JSON list `args.batch` names (`-` for stdin) for `task_create`."""
     text = sys.stdin.read() if args.batch == "-" else Path(args.batch).read_text()
     specs = json.loads(text)
-    status, reply = agent_wire.put_keyed(base, path, {"tasks": specs, **writer(args, environ)})
+    status, reply = agent_wire.put_keyed(base, path, {"tasks": specs, **writer(args, environ)}, args.request_key)
     results = record_call(base, path, status, reply)["results"]
     created = [result["task"] for result in results if "task" in result]
     refused = {str(position): result["error"] for position, result in enumerate(results, 1) if "error" in result}

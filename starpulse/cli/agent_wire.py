@@ -199,14 +199,14 @@ def _send(method: str, base: str, path: str, body: dict[str, Any] | None) -> tup
         raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
 
 
-def put_keyed(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    """`put` of a create or edit `body` under a fresh `request_key`, sent again with that key while the server is unavailable.
+def put_keyed(base: str, path: str, body: dict[str, Any], key: str | None = None) -> tuple[int, dict[str, Any]]:
+    """`put` of a create or edit `body` under `key`, else a fresh `request_key`, sent again with it while the server is unavailable.
 
     A send that timed out may have applied, so only a repeat under its key is safe: the server answers it with the
     first send's answer. The last send's `CliError` is raised after `KEYED_SENDS` sends; one that does not show the write
     never arrived (a busy refusal, a refused connection) carries `outcome: unknown`, because the write may have landed.
     """
-    keyed = {**body, "request_key": uuid.uuid4().hex}
+    keyed = {**body, "request_key": key or uuid.uuid4().hex}
     for send in range(1, KEYED_SENDS + 1):
         try:
             return put(base, path, keyed)
