@@ -204,7 +204,23 @@ _ASKS = (
 )
 
 #: The facts a comment alone raises, which the view does not show.
-_COMMENTED = frozenset(("operator_pushback", "wait_requested", "ask_requested", "archive_requested", "move_requested"))
+_COMMENTED = frozenset(
+    (
+        "operator_pushback",
+        "pr_closed_unmerged_complete",
+        "wait_requested",
+        "ask_requested",
+        "archive_requested",
+        "move_requested",
+    )
+)
+
+
+def _later(delay: float, fn: Callable[..., None], *args: Any) -> None:
+    timer = threading.Timer(delay, fn, args=args)
+    timer.daemon = True
+    timer.start()
+
 
 def _ignore(_task: str) -> None:
     return None
@@ -1823,6 +1839,9 @@ class TaskActor:
                         again=self.start_failed,
                     )
                 ):
+                    # the backoffs ran out with no timer armed: a lock that long retries
+                    if name not in self._lock_tries:
+                        _later(max(LOCK_BACKOFF_S, default=0.0), self.start_failed)
                     continue  # the failure stays until the retry parks the task
             start_requests.forgive(self._log, name)
 
@@ -2420,11 +2439,7 @@ class TaskActor:
             tries = self._lock_tries.get(name, 0)
             self._lock_tries[name] = tries + 1
             if tries < len(LOCK_BACKOFF_S):
-                timer = threading.Timer(
-                    LOCK_BACKOFF_S[tries], again or self._derive_overdue, args=() if again else (name,)
-                )
-                timer.daemon = True
-                timer.start()
+                _later(LOCK_BACKOFF_S[tries], again or self._derive_overdue, *(() if again else (name,)))
             else:
                 self._lock_tries.pop(name, None)
             return Written(False, str(error), transient=True)

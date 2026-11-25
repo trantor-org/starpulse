@@ -12,7 +12,7 @@ describe("the jobs read", () => {
     const post = vi.fn(async () => Response.json({ position: 7, items: [job("temporal/nightly", "http://runner.test/")], error: null }));
     const jobs = await readJobs(post);
     expect(post).toHaveBeenCalledOnce();
-    expect(post.mock.calls[0]).toEqual(["/api/jobs", { method: "POST", body: "{}" }]);
+    expect(post.mock.calls[0]).toEqual(["/api/jobs", { method: "POST", body: "{}", signal: expect.any(AbortSignal) }]);
     expect(jobs).toMatchObject({ position: 7, error: null, items: [{ name: "temporal/nightly", startUrl: "http://runner.test/" }] });
   });
 
@@ -45,5 +45,13 @@ describe("the jobs subscription", () => {
     run.close();
     await new Promise((r) => setTimeout(r, 20));
     expect(seen).toEqual([]);
+  });
+
+  it("cancels its body when a frame does not parse, and ends the follow as closed", async () => {
+    let cancelled = false;
+    const body = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("event: next\ndata: {oops\n\n")); }, cancel() { cancelled = true; } });
+    const ended = await new Promise((end) => followJobs(1, { jobs: () => {}, end }, async () => new Response(body)));
+    expect(ended).toBe("closed");
+    expect(cancelled).toBe(true);
   });
 });

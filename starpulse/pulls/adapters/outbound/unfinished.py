@@ -12,10 +12,11 @@ _ESCAPES = {"n": "\n", "t": "\t", "b": "\b"}
 
 
 def _git_value(raw: str) -> str:
-    out, quoted, escaped = [], False, False
+    out: list[tuple[str, bool]] = []  # each character with whether quotes or an escape keep it through the trim
+    quoted, escaped = False, False
     for char in raw:
         if escaped:
-            out.append(_ESCAPES.get(char, char))
+            out.append((_ESCAPES.get(char, char), True))
             escaped = False
         elif char == "\\":
             escaped = True
@@ -24,8 +25,13 @@ def _git_value(raw: str) -> str:
         elif char in "#;" and not quoted:
             break
         else:
-            out.append(char)
-    return "".join(out).strip() if not raw.rstrip().endswith('"') else "".join(out)
+            out.append((char, quoted))
+    start, end = 0, len(out)
+    while start < end and out[start][0].isspace() and not out[start][1]:
+        start += 1
+    while end > start and out[end - 1][0].isspace() and not out[end - 1][1]:
+        end -= 1
+    return "".join(char for char, _ in out[start:end])
 
 
 def submodule_paths(gitmodules: Path) -> list[tuple[str, str]]:

@@ -20,8 +20,11 @@ const SUBSCRIPTION = `subscription ($from: Int!) { jobChanges(from: $from) { job
 /** Why a subscription ended: the server closed it, or the position it held is gone and the list must be read again. */
 export type Ended = "closed" | "reread";
 
+/** How long the one read may take, its body included, before it rejects and `useJobs` retries. */
+const READ_TIMEOUT_MS = 30_000;
+
 export async function readJobs(post: Post = apiFetch): Promise<Jobs | null> {
-  const resp = await post("/api/jobs", { method: "POST", body: "{}" });
+  const resp = await post("/api/jobs", { method: "POST", body: "{}", signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
   return resp.ok ? ((await resp.json()) as Jobs) : null;
 }
 
@@ -29,15 +32,20 @@ export async function readJobs(post: Post = apiFetch): Promise<Jobs | null> {
 async function* frames(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
   const reader = body.getReader(), text = new TextDecoder();
   let rest = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return;
-    rest += text.decode(value, { stream: true });
-    for (let at = rest.indexOf("\n\n"); at >= 0; at = rest.indexOf("\n\n")) {
-      const lines = rest.slice(0, at).split("\n");
-      rest = rest.slice(at + 2);
-      if (lines.some((l) => l === "event: next")) yield JSON.parse(lines.filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trimStart()).join("\n"));
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      rest += text.decode(value, { stream: true });
+      for (let at = rest.indexOf("\n\n"); at >= 0; at = rest.indexOf("\n\n")) {
+        const lines = rest.slice(0, at).split("\n");
+        rest = rest.slice(at + 2);
+        if (lines.some((l) => l === "event: next")) yield JSON.parse(lines.filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trimStart()).join("\n"));
+      }
     }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
 }
 
