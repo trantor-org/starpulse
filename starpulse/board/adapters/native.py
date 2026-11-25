@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -1062,10 +1062,11 @@ def _holders(root: Path, done: str | None) -> Callable[[str, str], list[str]]:
     return holders
 
 
-def _graph(root: Path) -> Callable[[], dict[str, list[str]]]:
-    """A lookup of the dependencies of every task under `tasks/` and `completed/`, by id."""
+def _dependencies_of(root: Path) -> Callable[[Collection[str]], dict[str, list[str]]]:
+    """A lookup of the dependencies, by id, of the tasks under `tasks/` and `completed/` that `ids` names in any case."""
 
-    def graph() -> dict[str, list[str]]:
+    def dependencies_of(ids: Collection[str]) -> dict[str, list[str]]:
+        wanted = {task.casefold() for task in ids}
         found: dict[str, list[str]] = {}
         for folder in ("tasks", "completed"):
             for path in sorted((root / folder).glob("*.md")):
@@ -1073,13 +1074,11 @@ def _graph(root: Path) -> Callable[[], dict[str, list[str]]]:
                     frontmatter, _ = _split(path.read_text())
                 except OSError:
                     continue  # moved or removed while looking
-                if isinstance(frontmatter, dict):
-                    found[str(frontmatter.get("id") or path.stem).strip()] = list(
-                        _strings(frontmatter.get("dependencies"))
-                    )
+                if isinstance(frontmatter, dict) and (task := str(frontmatter.get("id") or path.stem).strip()).casefold() in wanted:
+                    found[task] = list(_strings(frontmatter.get("dependencies")))
         return found
 
-    return graph
+    return dependencies_of
 
 
 def _unlinker(
@@ -1922,7 +1921,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         labelled = {name: spec["label"] for name, spec in document.get("states", {}).items() if spec.get("label")}
     retired = _Retired()
     view = TaskView()
-    files_graph = _graph(root)
+    files_dependencies = _dependencies_of(root)
     guard = Guard(
         rules.load(guards_of(rows)),
         _hook(settings.get("validate")),
@@ -1931,7 +1930,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         types=_types(settings),
         effects=entry.load(settings.get("entry"), profile_matrix(rows)),
         warn_actors=_warn_actors(settings),
-        graph=lambda: view.graph() if view.attached else files_graph(),
+        dependencies_of=lambda ids: view.dependencies_of(ids) if view.attached else files_dependencies(ids),
         matrix=profile_matrix(rows),
         qa_lenses=qa_verdicts.lenses_of(lambda: retired.engine, base),
     )

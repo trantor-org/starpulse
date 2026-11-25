@@ -74,7 +74,7 @@ def api_routes(api: Api) -> list[ApiRoute]:
     that also matches it."""
     return [
         *snapshot.routes(api),
-        *board.routes,
+        *board.routes(api),
         *history.routes(api),
         *tasks.routes(api),
         *machines.routes(api),

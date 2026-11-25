@@ -57,7 +57,7 @@ class PinGate:
                 path = self._pinned.get(name)
                 if path is None and (self._live is None or self._live.repo != name):
                     continue
-                if not delivers(self._store, url, dependency):
+                if not delivers(self._store, url, dependency, self._feed.keys):
                     continue
                 records = self._store.find(repo=found[1], number=int(found[2]))
                 if not records:
