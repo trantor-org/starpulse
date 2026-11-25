@@ -1169,7 +1169,8 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   again (`overdue`, `pr_failing`, `pr_closed_unmerged`); a different question parks it.
 - `pr_closed_unmerged_complete`: `pr_closed_unmerged` holds, every acceptance criterion and Definition of Done item is
   checked, and a task comment opens `No merge needed:` (the work landed elsewhere or needed no merge), so a no-op task
-  has nothing to ask. A checked task without that comment is a rejected change and keeps the `pr_closed_unmerged` ask. A
+  has nothing to ask. At the task's session settle an `Operator answer` after the last ask is that statement too: a
+  session that ended its turn on the answer redelivered nothing. A checked task with neither is a rejected change and keeps the `pr_closed_unmerged` ask. A
   state that waits on it may declare an event that closes the task.
 - `pr_merged_unfinished`: `pr_merged` holds and the board's `unfinished` command prints a non-empty JSON array of the
   work the merge leaves, so a task whose planned pull request in another repo never opened does not close. The edit's

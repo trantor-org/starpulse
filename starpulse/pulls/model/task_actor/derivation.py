@@ -14,6 +14,7 @@ from typing import Any, Protocol
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import resolved
 from starpulse.board.model.markdown import (
+    ANSWER_COMMENT,
     ARCHIVE_REQUEST,
     ASK_REQUEST,
     MOVE_REQUEST,
@@ -79,6 +80,7 @@ class TaskFacts(Protocol):
     def alive(self, name: str) -> bool | None: ...
     def holds(self, name: str) -> tuple[str, ...] | None: ...
     def owns_failure(self, name: str) -> bool: ...
+    def settling(self, name: str) -> bool: ...
     def main_green(self) -> str | None: ...
     def is_open(self, name: str) -> bool: ...
     def is_done(self, name: str) -> bool: ...
@@ -292,8 +294,9 @@ def pr_closed_unmerged(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None
 
 def pr_closed_unmerged_complete(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     """The closed pull requests and the statement when `pr_closed_unmerged` holds, every criterion is checked and a
-    comment opens `NO_MERGE`: the work landed elsewhere or needed no merge, so nothing is left to ask the operator.
-    A checked task without the statement is a rejected change: `pr_closed_unmerged` asks about it."""
+    comment opens `NO_MERGE`: the work landed elsewhere or needed no merge, so nothing is left to ask. At the task's
+    session settle the operator's answer after the last ask is the statement too: a session that ended its turn on it
+    redelivered nothing. A checked task with neither is a rejected change: `pr_closed_unmerged` asks about it."""
     closed = pr_closed_unmerged(facts, agent)
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
     if not closed or not ticks or not all(ticks):
@@ -302,6 +305,9 @@ def pr_closed_unmerged_complete(facts: TaskFacts, agent: Agent) -> tuple[str, st
         facts.unsettled()
         return None
     statement = next((text.strip() for text in texts if text.strip().startswith(NO_MERGE)), None)
+    if statement is None and facts.settling(agent["id"]):
+        asked = [index for index, text in enumerate(texts) if text.strip() == closed[1].strip()]
+        statement = next((text.strip() for text in texts[asked[-1] + 1 :] if ANSWER_COMMENT.match(text)), None) if asked else None
     if statement is None:
         return None
     return closed[0], f"Every pull request it cites closed unmerged, every criterion is checked: {closed[0]}. {statement}"
