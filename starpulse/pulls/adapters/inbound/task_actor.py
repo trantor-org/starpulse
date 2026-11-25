@@ -143,7 +143,7 @@ _GRACE = "grace:"
 _GRACE_S = 190.0
 #: Seconds before a pull request GitHub could not yet answer for (`mergeable` gave None) is asked again.
 _MERGEABLE_RETRY_S = 30.0
-#: Seconds a resumed session has to report its start; a healthy dispatch reports within seconds.
+#: Seconds a dispatched or resumed session has to report its start; a healthy dispatch reports within seconds.
 _START_BOUND_S = 300.0
 #: The prefix of the deadline key that checks a resume's start, apart from a task's own overdue deadline.
 _STARTED = "started:"
@@ -795,7 +795,7 @@ class TaskActor:
             self.touch([TaskTouched(name, Trigger.ON_ALERT, "deadline")])
 
     def _resume_unstarted(self, name: str) -> None:
-        """The bound on a resume's start fell: a harness trail still ending on the dispatch means its session never
+        """The bound on a dispatch's start fell: a harness trail still ending on the dispatch means its session never
         started, so the task moves to Needs attention naming the dispatch."""
         with self._lock:
             agent = self._feed.task(name, lean=True)
@@ -806,8 +806,8 @@ class TaskActor:
             session = (last.get("data") or {}).get("session", "")
             self._attend(
                 name,
-                f"its resume dispatched session {session} but no start was reported within {_START_BOUND_S:.0f} s",
-                "resume never started",
+                f"a dispatch of session {session} reported no start within {_START_BOUND_S:.0f} s",
+                "dispatch never started",
                 "Start one by hand or rescope?",
                 ("start a session on it by hand", "rescope the task"),
             )
@@ -1927,6 +1927,7 @@ class TaskActor:
                     "task actor: %s stays with %s, which a dispatch of %s did not displace", name, holder, session
                 )
                 return
+            self._deadlines.arm(_STARTED + name, self._wall() + _START_BOUND_S)
             moving = agent["state"] != roles.working
             if holder and not moving:
                 return
