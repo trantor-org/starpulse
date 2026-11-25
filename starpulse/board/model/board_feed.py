@@ -154,10 +154,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._strip: dict | None = None
         self._pins: list[dict] = []
         self._lock = threading.RLock()
-        #: Held by a server write from the board's write to the record of its lane (`record_write`) and by the
-        #: board-files pass reconciling a task, so the pass never records a write's lane under its own name. Taken before
-        #: `recording_of` and `_lock`.
-        self.recording = threading.RLock()
         #: Each task's `recording_of`, made on first use.
         self._recording_of: dict[str, threading.RLock] = {}
         #: Set by every publish, for whoever rebuilds a held snapshot on change.

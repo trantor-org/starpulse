@@ -213,8 +213,8 @@ def record_written(feed: BoardFeed | None, task: str | None, who: Who, write: Ca
     """Run `write` of `task` (None: the task the write makes, named by its output) and, when it put the task in a lane,
     record that lane change with `who` as its actor, session and harness.
 
-    The feed's placing is held from the write to the record, so the board's poll that places the change the moment the
-    file lands finds it recorded and records nothing more: a write refused, or one that moves no lane, records nothing.
+    The task's own recording lock is held from the write to the record, so a write of the same task waits and one of any
+    other task does not: a write refused, or one that moves no lane, records nothing.
     """
     if feed is None:
         return write()
