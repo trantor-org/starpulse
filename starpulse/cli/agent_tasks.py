@@ -409,7 +409,7 @@ def record_call(
 
 
 def _created_task(args: argparse.Namespace) -> dict[str, Any]:
-    """The title and details a `create` or `miss` command line names, each field only when given."""
+    """The title and details a `create` command line names, each field only when given."""
     given = {
         "description": args.description,
         "priority": args.priority,
@@ -475,13 +475,6 @@ def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: st
         )
         raise agent_wire.CliError("refused", message, created=created, refused=refused)
     return {"task": created}
-
-
-def task_miss(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/miss"
-    body = {"task": args.task, "check": args.check, "fix": _created_task(args), "evidence": args.evidence}
-    status, reply = agent_wire.post(base, path, {**body, **writer(args, environ)})
-    return record_call(base, path, status, reply, missing=_TASK_MISSING)
 
 
 def _task_edit_call(

@@ -10,7 +10,6 @@ export interface ApiContract {
     | MovedEach
     | Edited
     | Archived
-    | Judged
     | Restored
     | Retired
     | TakenOver
@@ -55,7 +54,6 @@ export interface ApiContract {
   requests: (
     | MoveRequest
     | StartRequest
-    | MissRequest
     | RetireRequest
     | CompleteRequest
     | CreateRequest
@@ -391,13 +389,6 @@ export interface Edited {
 export interface Archived {
   requested: boolean;
   task: string;
-  [k: string]: unknown;
-}
-export interface Judged {
-  check: string;
-  fix?: string | null;
-  task: string;
-  verdict: string;
   [k: string]: unknown;
 }
 export interface Restored {
@@ -1738,55 +1729,6 @@ export interface StartRequest {
   task: string;
 }
 /**
- * `POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write.
- */
-export interface MissRequest {
-  actor?: string | null;
-  check: string;
-  evidence?: string | null;
-  fix: CreateSpec;
-  harness?: string | null;
-  reason?: string | null;
-  session?: string | null;
-  task: string;
-}
-/**
- * One task a create files: its `title` and details, and an optional `ref` that a sibling in the same batch names
- * as `ref:<label>` in its `dependencies`.
- *
- * Text is trimmed; list items are trimmed and blank ones dropped, or refused where the list must hold only text.
- * `task`, `size` and `skill` are read and left unused by a create.
- */
-export interface CreateSpec {
-  acceptanceCriteria?: string[] | null;
-  adrNeeded?: string | null;
-  assignee?: string | null;
-  definitionOfDone?: string[] | null;
-  dependencies?: string[] | null;
-  description?: string | null;
-  documentation?: string[] | null;
-  duplicateResolution?: string | null;
-  duplicateSearch?: string | null;
-  follows?: string | null;
-  impact?: string | null;
-  labels?: string[] | null;
-  milestone?: string | null;
-  notes?: string | null;
-  priority?: string | null;
-  profile?: string | null;
-  ref?: string | null;
-  references?: string[] | null;
-  size?: string | null;
-  skill?: string | null;
-  source?: string | null;
-  status?: string | null;
-  task?: string | null;
-  tier?: string | null;
-  title: string;
-  type?: string | null;
-  urgency?: string | null;
-}
-/**
  * `POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks.
  */
 export interface RetireRequest {
@@ -1836,6 +1778,42 @@ export interface CreateRequest {
   tasks?: [CreateSpec, ...CreateSpec[]] | null;
   tier?: string | null;
   title?: string | null;
+  type?: string | null;
+  urgency?: string | null;
+}
+/**
+ * One task a create files: its `title` and details, and an optional `ref` that a sibling in the same batch names
+ * as `ref:<label>` in its `dependencies`.
+ *
+ * Text is trimmed; list items are trimmed and blank ones dropped, or refused where the list must hold only text.
+ * `task`, `size` and `skill` are read and left unused by a create.
+ */
+export interface CreateSpec {
+  acceptanceCriteria?: string[] | null;
+  adrNeeded?: string | null;
+  assignee?: string | null;
+  definitionOfDone?: string[] | null;
+  dependencies?: string[] | null;
+  description?: string | null;
+  documentation?: string[] | null;
+  duplicateResolution?: string | null;
+  duplicateSearch?: string | null;
+  follows?: string | null;
+  impact?: string | null;
+  labels?: string[] | null;
+  milestone?: string | null;
+  notes?: string | null;
+  priority?: string | null;
+  profile?: string | null;
+  ref?: string | null;
+  references?: string[] | null;
+  size?: string | null;
+  skill?: string | null;
+  source?: string | null;
+  status?: string | null;
+  task?: string | null;
+  tier?: string | null;
+  title: string;
   type?: string | null;
   urgency?: string | null;
 }

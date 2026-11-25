@@ -253,16 +253,6 @@ class CreateRequest(_Writer, CreateSpec):
         return self
 
 
-class MissRequest(_Writer):
-    """`POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write."""
-
-    task: str
-    check: str
-    fix: CreateSpec
-    evidence: str | None = None
-    reason: str | None = None
-
-
 class MilestoneCreateRequest(_Request):
     """`PUT /api/milestones`: open a milestone; only the title is required."""
 

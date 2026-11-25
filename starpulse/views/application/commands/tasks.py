@@ -1,4 +1,4 @@
-"""The task records: read, edit, archive, judge, restore, retire and create them."""
+"""The task records: read, edit, archive, restore, retire and create them."""
 
 import contextlib
 import logging
@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board.adapters.native_scan import dependencies
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.markdown import ARCHIVE_REQUEST, MOVE_REQUEST
-from starpulse.board.model import post_merge_checks
 from starpulse.board.model.seam import (
     AGENT,
     OPERATOR,
@@ -29,7 +28,6 @@ from starpulse.contracts.api.dto.requests import (
     CreateRequest,
     CreateSpec,
     EditRequest,
-    MissRequest,
     RetireRequest,
     TaskDeleteRequest,
     TaskPutRequest,
@@ -178,69 +176,6 @@ def _archive_one(
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task, "requested": requested}
-
-
-def _unjudged(task: str, current: Mapping[str, Any], check: str) -> str | None:
-    """Why `check` of `task` takes no verdict now, or None when it does: the block is malformed, the task declares no
-    such check, or a verdict is already commented, which is final."""
-    try:
-        declared = post_merge_checks.parse(current["description"])
-    except ValueError as error:
-        return f"{task}: {error}"
-    if not any(declared_check["id"] == check for declared_check in declared or ()):
-        return f"{task} declares no post-merge check '{check}'"
-    existing = post_merge_checks.verdict_of([comment["text"] for comment in current["comments"]], check)
-    if existing is not None:
-        return f"{task} check '{check}' already has a {existing} verdict; a verdict is final"
-    return None
-
-
-def _unnamed(request: MissRequest) -> bool:
-    """Whether a miss request leaves its task or check blank."""
-    return not (request.task.strip() and request.check.strip())
-
-
-@with_request(MissRequest, "Recording a miss")
-def record_miss(
-    request: MissRequest,
-    feed: BoardFeed,
-    read: TaskReader,
-    edit: TaskEditor,
-    archive: TaskArchiver,
-    create: TaskCreator,
-) -> tuple[int, dict[str, Any]]:
-    """File the fix task `request` names for a missed post-merge check and record the MISS verdict naming it, in one
-    call: the HTTP status and JSON body, which holds the fix's id.
-
-    The request is `{task, check, fix: {title, ...as a create}[, evidence]}`. Both writes or neither: a fix whose
-    verdict comment is refused is archived again, so a refused miss leaves no fix task and no verdict. A board that
-    cannot archive is refused 404, since the fix could not be undone.
-    """
-    if _unnamed(request):
-        return 400, {"error": 'a miss needs {"task", "check", "fix": {"title", ...}[, "evidence"]}'}
-    task, check, evidence, who = request.task, request.check, request.evidence or "", who_of(request)
-    if held_task(feed, task) is None:
-        return not_held(feed, task)
-    with EDIT_LOCK:
-        if (current := read(task)) is None:
-            return 404, {"error": f"{task} has no record to read"}
-        if refusal := _unjudged(task, current, check):
-            return 409, {"error": refusal}
-        status, body = _create(request.fix, who, create, feed, {})
-        if status != 201:
-            return status, body
-        comment = post_merge_checks.verdict_comment(check, "MISS", evidence, body["task"])
-        written = record_written(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
-        if not written.ok:
-            undone = archive(
-                body["task"], f"the MISS verdict on {task} {check} was refused: {written.output}", actor=who.actor
-            )
-            if not undone.ok:
-                error = f"{written.output}; fix {body['task']} was filed and could not be archived: {undone.output}"
-                return 409, {"error": error, "skill": written.skill}
-    if not written.ok:
-        return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"task": task, "check": check, "verdict": "MISS", "fix": body["task"]}
 
 
 @with_request(CompleteRequest, "Completing a task")
