@@ -51,7 +51,7 @@ from contextlib import contextmanager
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.adapters.holder_idle import DISPATCHED, HARNESS_MACHINE, HolderUnreachable
+from starpulse.board.adapters.holder_idle import DISPATCHED, HARNESS_MACHINE, HolderInGrace, HolderUnreachable
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
 from starpulse.board.model.board_feed import BoardFeed
@@ -124,6 +124,10 @@ _ONE_TRY = 1
 _NUDGES = 3
 #: Seconds between two progress lines of the start recovery.
 _PROGRESS_S = 30.0
+#: The prefix of the deadline key that settles a holder again once its deliver grace has ended.
+_GRACE = "grace:"
+#: Seconds after a settle refused inside the deliver grace that it is settled again: just past the grace (180).
+_GRACE_S = 190.0
 #: Seconds before a pull request GitHub could not yet answer for (`mergeable` gave None) is asked again.
 _MERGEABLE_RETRY_S = 30.0
 #: Seconds a resumed session has to report its start; a healthy dispatch reports within seconds.
@@ -317,7 +321,7 @@ class TaskActor:
         advance: Callable[[str, str, str], None] | None = None,
         read: TaskReader = lambda _task: None,
         idle: Callable[[str, str], None] | None = None,
-        end: Callable[[str], None] | None = None,
+        end: Callable[[str, str], None] | None = None,
         end_lanes: Collection[str] = frozenset(),
         sequences: Mapping[str, Sequence[str]] = MappingProxyType({}),
         awaits: Sequence[str] = (),
@@ -706,6 +710,9 @@ class TaskActor:
         """Derive a task again at its own deadline, so a Waiting task goes overdue with no event to wake it."""
         if name.startswith(_STARTED):
             self._resume_unstarted(name.removeprefix(_STARTED))
+            return
+        if name.startswith(_GRACE):
+            self._settle_graced(name.removeprefix(_GRACE))
             return
         with self._lock:
             self.touch([TaskTouched(name, Trigger.ON_ALERT, "deadline")])
@@ -1585,21 +1592,22 @@ class TaskActor:
         """A task entered `lane`: its holder's session ends when the lane is one of `end_lanes`, which the reaper does once
         the session is idle; a session busy now is ended by `holder_settled` when it settles."""
         if lane in self._end_lanes:
-            self._end_session(name)
+            self._end_session(name, lane)
 
     def _end_closed(self, name: str) -> None:
         """A holder of `name` settled or ended while the task sits in a closed lane: end its session."""
         if derivation.closed_lane(self._port, name, self._end_lanes):
             self._end_session(name)
 
-    def _end_session(self, name: str) -> None:
+    def _end_session(self, name: str, lane: str = "") -> None:
+        """Run the end hook, given the lane the move entered so a reap that cannot read it ends the session all the same."""
         end = self._end
         if end is None:
             return
 
         def run() -> None:
             try:
-                end(name)
+                end(name, lane)
             except Exception:
                 logger.exception("task actor: %s's closed-lane end failed", name)
 
@@ -1846,6 +1854,8 @@ class TaskActor:
             logger.info("task actor: %s settled but its holder was not confirm: %s", name, error)
             with self._lock:
                 self._memory.keep(name, busy=True)
+                if isinstance(error, HolderInGrace):  # no event ends the grace: its end is the deadline's
+                    self._deadlines.arm(_GRACE + name, self._wall() + _GRACE_S)
             return False
         with self._lock:
             return not self._session_active(name)  # a settle read after the session woke again: its next settle comes
@@ -1946,6 +1956,11 @@ class TaskActor:
             self._queue(lambda: self.holder_settled(name))
         elif (data.get("agent") or {}).get("state") == "active":  # the session works again, so a settle will follow
             self._memory.keep(name, busy=None)
+
+    def _settle_graced(self, name: str) -> None:
+        if self._memory.has(name, "busy"):
+            self._memory.keep(name, busy=None)
+            self._queue(lambda: self.holder_settled(name))
 
     def _settle_awaited(self, name: str) -> None:
         memory = self._memory.of(name)

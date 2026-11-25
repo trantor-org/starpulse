@@ -71,13 +71,14 @@ def resume_with(command: Sequence[str]) -> Callable[[Registration, str], bool]:
     return resume
 
 
-def end_with(command: Sequence[str]) -> Callable[[str], None] | None:
-    """End a task's sessions by running `command` with `{task}` in an element replaced by the task id; none when empty."""
+def end_with(command: Sequence[str]) -> Callable[[str, str], None] | None:
+    """End a task's sessions by running `command` with `{task}` in an element replaced by the task id and `{lane}` by the
+    lane the task entered, empty when the caller names none; none when empty."""
     if not command:
         return None
 
-    def end(task: str) -> None:
-        argv = [part.replace("{task}", task) for part in command]
+    def end(task: str, lane: str = "") -> None:
+        argv = [part.replace("{task}", task).replace("{lane}", lane) for part in command]
         try:
             done = subprocess.run(
                 argv, capture_output=True, timeout=_RESUME_TIMEOUT_S, check=False

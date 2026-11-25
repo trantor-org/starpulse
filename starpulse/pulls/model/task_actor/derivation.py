@@ -21,7 +21,6 @@ from starpulse.board.model.markdown import (
     WAIT_REQUEST,
     attention_reason,
     needs_attention_reason,
-    operator_answered,
 )
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import HELD, MERGE_EVIDENCE
@@ -360,7 +359,8 @@ def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     session's answer. An open pull request is ready only when it does not conflict with its base and the rollup of
     its current head says every required check passed (`checks_verdict`): a required check not posted is not green,
     a push re-arms the gate, and a repository whose ruleset requires none rolls up passed as soon as the pull
-    request is not a draft. A task in Needs attention whose `## Needs attention` ask is unanswered stays there,
+    request is not a draft. A task in Needs attention whose `## Needs attention` ask stays there, answered or not (the
+    answer's resume moves it to In Progress, and a bounce to Review would race it),
     unless its ask ends in the actor's own failing-checks question (`ATTENTION_QUESTION`) or is the uncited-pull-request
     ask (`UNCITED_ASK`): a ready cited pull request settles both, and `unlinked` still holds while one stays uncited."""
     reason = needs_attention_reason(agent["description"])
@@ -369,7 +369,6 @@ def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
         and reason
         and not reason.endswith(ATTENTION_QUESTION)
         and f" {UNCITED_ASK}" not in reason
-        and not operator_answered(agent["description"])
     ):
         return None
     parts = []
