@@ -169,7 +169,7 @@ def serve_page(
     caught_up.state(PULLS_PROJECTION, Projected(log, feed).apply)
     # the analytics routes read the per-session folds of the signal table; the `signal-folds` context of
     # `starpulse worker contexts` keeps them current, so no fold runs in this process
-    signal_folds = SignalFolds(log)
+    signal_folds = SignalFolds(log, feed.titled)
     # `starpulse worker runs` runs the run adapters and the pushed-runs follower; this process
     # draws the workflows that worker keeps in the log, and starts a run only when the page asks; an opt-in
     # worker's instance also shows the page whether that worker's process runs

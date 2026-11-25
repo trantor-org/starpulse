@@ -237,7 +237,9 @@ _SNAPSHOTS: dict[Path, tuple[float, list[dict[str, Any]]]] = {}
 
 def _parsed(entry: Path) -> Any:
     """`entry` read and parsed, once for each change of its mtime or size: one holder lookup per held task would otherwise
-    read every record again; None when it is unreadable."""
+    read every record again. Claude Code rewrites a record in place, so a read can catch it truncated or half written:
+    that read is not kept, and the last whole parse stands until the next change reads it again; None when the file was
+    never readable."""
     try:
         stat = entry.stat()
     except OSError:
@@ -249,7 +251,7 @@ def _parsed(entry: Path) -> Any:
     try:
         data = json.loads(entry.read_text())
     except OSError, ValueError:
-        data = None
+        return cached[1] if cached else None
     _PARSED[entry] = (version, data)
     return data
 

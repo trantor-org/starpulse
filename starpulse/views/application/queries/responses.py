@@ -4,7 +4,7 @@ import logging
 import math
 import re
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.ledger import PAGE
@@ -160,7 +160,6 @@ def spend_response(
     telemetry: SignalFoldReader | None,
     task: str,
     query: dict[str, list[str]],
-    titled: Callable[[set[str]], Mapping[str, Mapping[str, Any]]],
     now: float,
 ) -> tuple[bytes, int]:
     """The body and status of `task`'s spend: its tokens by phase (`spend.task_spend`) over the last `hours`, from its
@@ -184,6 +183,6 @@ def spend_response(
         return _error("the telemetry log cannot be read"), 503
     if held is None:
         return _error("the task spend is being refolded from the spend folds: ask again shortly"), 503
-    folds, peers = held
-    report = task_spend(folds, task, titled({task, *(peer for peer, _ in peers)}), peers)
+    folds, peers, tasks = held
+    report = task_spend(folds, task, tasks, peers)
     return encode("spend", {"now": now, "window_s": window * 3600, "spend": report}), 200
