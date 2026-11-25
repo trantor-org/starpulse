@@ -1,4 +1,4 @@
-"""Whether an event subject's latest event already happened: the one the task actor reads when a task parks on it.
+"""Whether an event subject's latest event already happened, and since when: what the task actor reads on a park.
 
 The log is read first, but only past the history recorder's cursor: the recorder copies an entry after it is appended
 and a park in that gap would miss it, while every entry before the cursor is in the history, which also holds the
@@ -31,9 +31,9 @@ def _stored_run(engine: Engine, entity: str, run: str) -> str:
         return next((name for name in db.execute(newest).scalars() if token(name) == run), run)
 
 
-def _logged(engine: Engine, entity: str, run: str) -> tuple[str, str | None] | None:
+def _logged(engine: Engine, entity: str, run: str) -> tuple[str, str | None, float] | None:
     """The newest event `entity` appended to the log, past the recorder's cursor, for the run whose subject token is
-    `run`, with the build it named; None when it holds none."""
+    `run`, with the build it named and its time; None when it holds none."""
     c = events.c
     copied = Checkpoints(engine).load(STREAM)[0] or 0
     newest = (
@@ -44,7 +44,7 @@ def _logged(engine: Engine, entity: str, run: str) -> tuple[str, str | None] | N
     with engine.connect() as db:
         return next(
             (
-                (f["event"], (f.get("data") or {}).get("sha"))
+                (f["event"], (f.get("data") or {}).get("sha"), float(f["time"]))
                 for f in db.execute(newest).scalars()
                 if f.get("run") is not None and token(f["run"]) == run
             ),
@@ -52,31 +52,33 @@ def _logged(engine: Engine, entity: str, run: str) -> tuple[str, str | None] | N
         )
 
 
-def _stored(engine: Engine, entity: str, run: str) -> tuple[str, str | None] | None:
+def _stored(engine: Engine, entity: str, run: str) -> tuple[str, str | None, float] | None:
     c = machine_events.c
-    newest = select(c.event, c.sha).where(c.machine == entity, c.run == run).order_by(c.id.desc()).limit(1)
+    newest = select(c.event, c.sha, c.occurred_at).where(c.machine == entity, c.run == run).order_by(c.id.desc()).limit(1)
     with engine.connect() as db:
         row = db.execute(newest).first()
-    return (row.event, row.sha) if row else None
+    return (row.event, row.sha, row.occurred_at) if row else None
 
 
-def _last(engine: Engine, subject: str) -> tuple[str | None, str | None]:
-    """The event and build of the latest event of `subject`'s run when it is the subject's own, else `(None, None)`."""
+def _last(engine: Engine, subject: str, since: float) -> tuple[str | None, str | None]:
+    """The event and build of the latest event of `subject`'s run when it is the subject's own and was recorded at or
+    after `since` (epoch seconds), else `(None, None)`."""
     if not readable(subject):
         return None, None
     _, _, entity, run, event = subject.split(".")
     last = _logged(engine, entity, run) or _stored(engine, entity, _stored_run(engine, entity, run))
-    if last is None or token(last[0].removeprefix("PR_").lower()) != event:
+    if last is None or last[2] < since or token(last[0].removeprefix("PR_").lower()) != event:
         return None, None
-    return last
+    return last[0], last[1]
 
 
-def last_event_is(engine: Engine, subject: str) -> bool:
-    """Whether the latest event of `subject`'s run, as the bridge names it, is the subject's own."""
-    return _last(engine, subject)[0] is not None
+def last_event_is(engine: Engine, subject: str, since: float = 0.0) -> bool:
+    """Whether the latest event of `subject`'s run, as the bridge names it, is the subject's own and was recorded at or
+    after `since` (epoch seconds)."""
+    return _last(engine, subject, since)[0] is not None
 
 
 def last_event_sha(engine: Engine, subject: str) -> str | None:
     """The build the latest event of `subject`'s run named, when that event is the subject's own; None when it is
     not, or named none (an event recorded before the column existed)."""
-    return _last(engine, subject)[1]
+    return _last(engine, subject, 0.0)[1]

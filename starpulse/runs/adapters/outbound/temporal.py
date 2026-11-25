@@ -10,11 +10,11 @@ is not started from the page: these workflows start from the Board's lifecycle.
 """
 
 import base64
+import http.client
 import json
 import re
 import threading
 import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -31,6 +31,8 @@ TYPES = ("task_lifecycle", "task_phases", "AlertInvestigationWorkflow", "Command
 RECENT_LIMIT = 100
 #: How many running executions a listing asks for.
 ACTIVE_LIMIT = 200
+#: How far before its newest closed run a listing looks for runs closed since, which a visibility store can show late.
+_CLOSED_OVERLAP = timedelta(minutes=2)
 _HISTORY_EVENTS = 20
 #: The most events one graph reads and the most nodes it draws; a longer history is listed, not drawn.
 _GRAPH_EVENTS = 500
@@ -50,10 +52,32 @@ _STATUS: dict[str, RunStatus] = {
 _FAILURE_WIDTH = 240
 
 
+_connections = threading.local()
+
+
 def get(url: str) -> dict:
-    """The JSON the server at `url` answers; a failure to reach it raises `OSError`."""
-    with urllib.request.urlopen(url, timeout=_TIMEOUT) as response:
-        return json.load(response)
+    """The JSON the server at `url` answers, over the thread's open connection to it; a failure to reach it raises `OSError`."""
+    parts = urllib.parse.urlsplit(url)
+    target = f"{parts.path}?{parts.query}" if parts.query else parts.path
+    kept = getattr(_connections, parts.netloc, None)
+    for conn in (kept, None) if kept else (None,):
+        conn = conn or (http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection)(
+            parts.netloc, timeout=_TIMEOUT
+        )
+        try:
+            conn.request("GET", target)
+            response = conn.getresponse()
+            body = response.read()
+        except (OSError, http.client.HTTPException) as error:
+            conn.close()
+            setattr(_connections, parts.netloc, None)
+            failure = error
+            continue
+        setattr(_connections, parts.netloc, conn)
+        if response.status >= 400:
+            raise OSError(f"{response.status} {response.reason}: {url}")
+        return json.loads(body)
+    raise OSError(str(failure)) from failure
 
 
 def task_of(workflow_id: str) -> str | None:
@@ -77,6 +101,10 @@ def _message(failure: dict | None) -> str | None:
         failure = failure.get("cause")
     lines = (message or "").strip().splitlines()
     return lines[0][:_FAILURE_WIDTH] if lines else None
+
+
+def _close(execution: dict) -> datetime:
+    return datetime.fromisoformat(execution["closeTime"])
 
 
 def _short(status: str) -> str:
@@ -165,6 +193,7 @@ class Poller:
         self.closed: dict[str, dict] = {}  # run id -> the failure details of a closed run, which never change
         self.drawn: dict[str, list[dict]] = {}  # run id -> the nodes of a closed run, which never change
         self.started: dict[str, set[str]] = {}  # run id -> the ids of the activities a running run has executing now
+        self.ended: dict[str, dict] = {}  # run id -> its closed execution, from the last listing of the day's closed runs
 
     def _list(self, query: str, limit: int) -> list[dict]:
         types = ",".join(f'"{name}"' for name in TYPES)
@@ -247,18 +276,32 @@ class Poller:
             "failure": details.get("failure"),
         }
 
-    def listing(self, now: datetime) -> list[dict]:
-        """One workflow per type with its running executions and its closed ones of the day before `now`."""
-        since = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        window = f'CloseTime > "{since}"'
-        running = self._list('ExecutionStatus="Running"', ACTIVE_LIMIT)
+    def _closed(self, since: datetime) -> list[dict]:
+        """The closed executions of the day after `since`, newest first of each kind (failed or any): the ones kept from the
+        last listing and the ones closed after them; a first listing, or a page of those full, reads the day again."""
+        stamp = "%Y-%m-%dT%H:%M:%SZ"
+        kept = {run: e for run, e in self.ended.items() if _close(e) > since}
+        if kept:
+            after = max(map(_close, kept.values())) - _CLOSED_OVERLAP
+            fresh = self._list(f'ExecutionStatus!="Running" AND CloseTime > "{after.strftime(stamp)}"', RECENT_LIMIT)
+            if len(fresh) < RECENT_LIMIT:
+                kept |= {e["execution"]["runId"]: e for e in fresh}
+                newest = sorted(kept.values(), key=_close, reverse=True)
+                failed = [e for e in newest if _status(e) == "failed"]
+                return [*newest[:RECENT_LIMIT], *failed[:RECENT_LIMIT]]
+        window = f'CloseTime > "{since.strftime(stamp)}"'
         failed = self._list(f'ExecutionStatus IN ("Failed","TimedOut") AND {window}', RECENT_LIMIT)
         closed = self._list(f'ExecutionStatus!="Running" AND {window}', RECENT_LIMIT)
-        newest = {e["execution"]["runId"]: e for e in [*closed, *failed]}.values()
-        dags = [self._workflow(name, [e for e in running if e["type"]["name"] == name], newest) for name in TYPES]
-        kept = {e["execution"]["runId"] for e in newest}
-        self.closed = {run: seen for run, seen in self.closed.items() if run in kept}
-        self.drawn = {run: seen for run, seen in self.drawn.items() if run in kept}
+        return [*closed, *failed]
+
+    def listing(self, now: datetime) -> list[dict]:
+        """One workflow per type with its running executions and its closed ones of the day before `now`."""
+        running = self._list('ExecutionStatus="Running"', ACTIVE_LIMIT)
+        newest = {e["execution"]["runId"]: e for e in self._closed(now - timedelta(days=1))}
+        self.ended = newest
+        dags = [self._workflow(name, [e for e in running if e["type"]["name"] == name], newest.values()) for name in TYPES]
+        self.closed = {run: seen for run, seen in self.closed.items() if run in newest}
+        self.drawn = {run: seen for run, seen in self.drawn.items() if run in newest}
         return dags
 
     def _workflow(self, name: str, running: list[dict], closed) -> dict:

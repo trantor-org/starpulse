@@ -1222,8 +1222,9 @@ A Waiting task waits on events, never on a polled check. `task park --until <sub
 deploy event, `starpulse.<board>.alert.<rule>.<event>` or `starpulse.<board>.deploy.<component>.<event>`) as a
 `kind: event` entry of the task's Start Criteria. The actor keeps a `subject -> Waiting tasks` index and fires the state's
 `criteria_met` event on the first event, of any of the task's subjects, that the bridge publishes for a machine event.
-When a task enters Waiting, the actor reads each subject's latest event from the log (`latest`), so a wait already met
-releases at once; a subject the log cannot answer is refused at the park. A restart rebuilds the index from the records.
+When a task enters Waiting, the actor reads each subject's latest event from the log (`latest`) and counts the subject
+heard only when that event was recorded at or after the park, so an event that raced the park releases at once and one
+from before it never does; an entry that sets `accept_met: true` accepts an event of any age. A subject the log cannot answer is refused at the park. A restart rebuilds the index from the records.
 
 The board may withhold `deps_done` with reasons (`Board.holds`; the native board's `[board] holds` command, run
 in the config's directory with `{id}` replaced, prints a JSON array of them, and output that is no such array holds the

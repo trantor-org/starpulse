@@ -603,7 +603,7 @@ type Query {
   `milestone` keep those equal to it.
   """
   tasks(filter: String, source: String, lane: String, milestone: String): TaskList!
-  """One open task, or null when the board holds none by that id."""
+  """One open or settled Done task, or null when the board holds neither by that id (another archived task included)."""
   task(id: ID!): Task
   """
   An event's ledger, `limit` occurrences (1 to 100, default 20) older than `before` (null: the newest), or null when no

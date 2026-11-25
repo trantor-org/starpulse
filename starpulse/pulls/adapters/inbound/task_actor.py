@@ -23,8 +23,8 @@ the lane is the last visit's and advances nothing.
 
 A Waiting task parked on event subjects (the `kind: event` entries of its Start Criteria) is released by the first
 event of any of them: the actor keeps a `subject -> tasks` index, `event_seen(subject)` is the follower's call for each
-machine event the bridge names, and a task parking on a subject asks `latest(subject)` whether its last event already
-happened, so a wait already met releases at once. No evaluator is polled. The board may hold a task's `deps_done`
+machine event the bridge names, and a task parking on a subject asks `latest(subject, since)` whether its last event happened since the
+park, so an event racing the park releases at once; a wait met before the park releases only for a subject whose entry says `accept_met: true`. No evaluator is polled. The board may hold a task's `deps_done`
 with reasons, written once as a comment; a task created re-derives every held task.
 
 Nothing derives a lane on a period. A task moves when a fact its lane watches changes: its own record, a dependency's
@@ -311,7 +311,7 @@ class TaskActor:
     pin-bump rule (`unblock.PinGate`): a dependency in a pinned repository is merged on the parent's pin bump.
     `judge` is what the board's rules say of a move (`Board.judge`): the board writer lets every move of the actor
     land, so the actor reads a refusal there first and skips a move the rules hold back.
-    `latest` says whether an event subject's last event already happened (None: none has), and `holds` the reasons the board withholds a task's `deps_done` (`Board.holds`). `read` is the
+    `latest(subject, since)` says whether an event subject's last event happened at or after `since` (None: none has), and `holds` the reasons the board withholds a task's `deps_done` (`Board.holds`). `read` is the
     board's task reader (`Board.read`).
     `unfinished` is the work a task whose pull requests merged still has (`Board.unfinished`). `main_green` is the SHA of main's latest passed Validate (None: none passed, or no source),
     and `owner_source` the `source` prefix of the tasks that pass closes while nothing waits on them (empty: none).
@@ -331,7 +331,7 @@ class TaskActor:
         board_repo: str | None = None,
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
-        latest: Callable[[str], bool] | None = None,
+        latest: Callable[[str, float], bool] | None = None,
         latest_sha: Callable[[str], str | None] | None = None,
         unpublished: Callable[[str], str | None] = lambda _subject: None,
         holds: Callable[[str], Sequence[str]] = _no_holds,
@@ -936,12 +936,19 @@ class TaskActor:
 
     def _watch(self, name: str, agent: dict[str, Any]) -> bool:
         """Index the event subjects `agent` waits on in a gated lane; True when they differ from the last call's. A
-        subject whose last event is already recorded counts as heard, so a wait met before the park releases at once."""
+        subject whose last event was recorded since the park counts as heard, so an event racing the park releases at
+        once; one before the park counts only for a subject that `accept_met`."""
         gate = criteria.subjects(agent["description"]) if agent["state"] in self._gated_lanes else ()
         commits = criteria.commits(agent["description"]) if gate else {}
         if gate == self._gates.get(name, ()) and commits == self._commits.get(name, {}):
             return False
-        heard = {subject for subject in gate if self._happened(subject, commits.get(subject))}
+        accepted = criteria.accepting_met(agent["description"])
+        entered = agent.get("entered") or 0.0
+        heard = {
+            subject
+            for subject in gate
+            if self._happened(subject, commits.get(subject), 0.0 if subject in accepted else entered)
+        }
         self._unwatch(name)
         self._gates[name] = gate
         if commits:
@@ -952,11 +959,12 @@ class TaskActor:
             self._heard[name] = heard
         return True
 
-    def _happened(self, subject: str, commit: str | None) -> bool:
-        """Whether `subject`'s last event is already recorded, and for a wait on `commit`, names a build containing it."""
+    def _happened(self, subject: str, commit: str | None, since: float) -> bool:
+        """Whether `subject`'s last event is recorded at or after `since`, and for a wait on `commit`, names a build
+        containing it."""
         if commit is not None:
             return self._latest_sha is not None and self._contains(self._latest_sha(subject), commit)
-        return self._latest is not None and self._latest(subject)
+        return self._latest is not None and self._latest(subject, since)
 
     def _unwatch(self, name: str) -> None:
         for subject in self._gates.pop(name, ()):

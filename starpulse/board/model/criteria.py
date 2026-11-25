@@ -64,3 +64,12 @@ def commits(description: str) -> dict[str, str]:
         for each, raw in zip(authored(description), _declared(description))
         if raw.get("commit")
     }
+
+
+def accepting_met(description: str) -> frozenset[str]:
+    """The event subjects whose park accepts an event recorded before it (`accept_met: true`): the rest wait for a newer one."""
+    return frozenset(
+        each["expr"]
+        for each, raw in zip(authored(description), _declared(description))
+        if raw.get("accept_met") is True
+    )

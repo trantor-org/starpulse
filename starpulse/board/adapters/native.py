@@ -712,7 +712,13 @@ def _set_items(task: str, body: str, field: str, value: Any) -> str:
 
 def _comment(body: str, text: str, actor: str = OPERATOR) -> str:
     """`body` with `text` appended to its comments by `actor`, as the Backlog this workspace runs writes one."""
-    entry = f"created: {datetime.now():%Y-%m-%d %H:%M}\nauthor: {actor}\n---\n{text.strip()}\n---\n\n"
+    return _appended_comments(body, [(text, actor)])
+
+
+def _appended_comments(body: str, written: Sequence[tuple[str, str]]) -> str:
+    """`body` with each `(text, actor)` appended to its comments in order, the body searched once for all of them."""
+    stamp = f"{datetime.now():%Y-%m-%d %H:%M}"
+    entry = "".join(f"created: {stamp}\nauthor: {actor}\n---\n{text.strip()}\n---\n\n" for text, actor in written)
     if _COMMENTS.search(body):
         return _COMMENTS.sub(lambda end: f"{entry}{end.group()}", body, count=1)
     return body.rstrip("\n") + f"\n\n## Comments\n\n<!-- COMMENTS:BEGIN -->\n{entry}<!-- COMMENTS:END -->\n"
@@ -871,8 +877,8 @@ def _file_of(record: Mapping[str, Any]) -> tuple[dict, str]:
                 f"- [{'x' if item['checked'] else ' '}] #{item['n']} {item['text']}\n" for item in record[field]
             )
             body = _marked(body, marker, heading, "\n" + lines)
-    for item in record["comments"]:
-        body = _comment(body, item["text"], item.get("author") or OPERATOR)
+    if record["comments"]:
+        body = _appended_comments(body, [(item["text"], item.get("author") or OPERATOR) for item in record["comments"]])
     return frontmatter, body
 
 
@@ -2090,15 +2096,18 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 #: How many tasks' standing verdicts `_standing` keeps, the oldest placed dropped first.
 _STANDING_KEPT = 512
 
+#: The columns a row's every event moves, which no rendered file holds: a verdict stays while the rest of the row does.
+_MOVING = ("version", "updated_at")
+
 
 def _standing(root: Path, guard: Guard, view: TaskView) -> Callable[[str, str], dict[str, Any] | None]:
     """The board rules' verdict on moving the task `task` to `lane` as its History stands now, or as its file stands before
     a log is attached, or None for a task with no History or file or no refusing rule.
 
-    A task is read once and each lane judged once while it stands, the verdicts shared by every reader thread: judging
+    A task is read once and each lane judged once while it stands (its History row, or its file's stamp), the verdicts shared by every reader thread: judging
     the rules costs tens of milliseconds, the read and parse under one."""
 
-    versions: dict[str, tuple[int, dict, str, dict[str, dict[str, Any] | None]]] = {}
+    versions: dict[str, tuple[str, dict, str, dict[str, dict[str, Any] | None]]] = {}
 
     judged: dict[str, tuple[Path, tuple[int, int], dict, str, dict[str, dict[str, Any] | None]]] = {}
     judging = threading.Lock()
@@ -2115,9 +2124,10 @@ def _standing(root: Path, guard: Guard, view: TaskView) -> Callable[[str, str], 
             return None
         with judging:
             held = versions.get(row["id"])
-            if held is None or held[0] != row["version"]:
+            content = json.dumps({key: value for key, value in row.items() if key not in _MOVING}, default=str)
+            if held is None or held[0] != content:
                 front, body = _file_of(_record_from(row, {}))
-                held = versions[row["id"]] = (row["version"], front, body, {})
+                held = versions[row["id"]] = (content, front, body, {})
                 if len(versions) > _STANDING_KEPT:
                     del versions[next(iter(versions))]
             if lane not in held[3]:

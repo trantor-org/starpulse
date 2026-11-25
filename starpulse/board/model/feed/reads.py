@@ -118,10 +118,10 @@ class ReadMethods:
             self._followed = changed[-1]["seq"]
         return len(changed)
 
-    def held(self, task_id: str) -> dict | None:
-        """The open Board task as `task` has it, or a settled Done one, which a reopen reaches."""
+    def held(self, task_id: str, *, lean: bool = False) -> dict | None:
+        """The open Board task as `task` has it, `lean` as there, or a settled Done one, which a reopen reaches."""
         key, row = self._found(task_id)
-        return None if row is None else self._read_model_agent(key, row=row, settled_done=True)
+        return None if row is None else self._read_model_agent(key, lean, row, settled_done=True)
 
     def current_id(self, task_id: str) -> str:
         """The id the task answers to now: `task_id` itself unless a rename gave the task another."""

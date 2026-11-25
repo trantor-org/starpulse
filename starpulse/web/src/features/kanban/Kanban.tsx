@@ -11,7 +11,7 @@ import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 import { ago } from "../../shared/clock";
 import type { HudState } from "../../render/hud";
 import {
-  CLOSED, actorFault, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainOf, claimChip, sessionChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll,
+  CLOSED, actorFault, askOf, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainOf, claimChip, sessionChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll,
   offBoardTask, stacked as stacksState, withRecordPulls, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
   type ClaimChip, type KanbanTask, type Layout, type PhaseAt, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
@@ -129,7 +129,7 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
   cross?: KanbanTask[]; onCross?: (id: string) => void; now: number; marks: Marks; names: Record<string, string>; roles: Roles; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; onHover?: (on: boolean) => void; onAhead?: () => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
-  const live = task.live, claim = marks.claim, queued = task.runs?.find((r) => r.status === "queued"), fault = actorFault(task.description);
+  const live = task.live, claim = marks.claim, queued = task.runs?.find((r) => r.status === "queued"), fault = actorFault(task.description), ask = !fault && task.lane === roles.attention ? askOf(task.description) : "";
   const playing = onPlay && !claim && startLane(task, roles);
   const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
   const chip = claimChip(task, roles, now), session = sessionChip(task, now);
@@ -146,6 +146,7 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
       <div className="t">{task.title}</div>
       {task.readable && <span className="legacy" title={task.readable}>legacy format</span>}
       {fault && <span className="fault" title={fault}>actor error</span>}
+      {ask && <div className="ask" title={ask}>{ask}</div>}
       {claim ? (
         <div className="mach sess">
           <span className="p" /><b>session</b><span className="s">· {claim.phase === "starting" ? "starting" : "waiting for claim"}</span>

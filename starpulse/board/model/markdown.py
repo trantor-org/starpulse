@@ -114,6 +114,8 @@ MOVE_REQUEST = "Move requested:"
 NO_MERGE = "No merge needed:"
 #: A comment recording the operator's answer: `backlog-task answer`'s line, or the audit comment of a relayed answer.
 ANSWER_COMMENT = re.compile(r"\W*Operator answer\b")
+#: An answer comment whose words open with the choice to archive.
+ARCHIVE_ANSWER = re.compile(r"\W*Operator answer\b\s*(?:\([^)]*\))?:\s*archive\b", re.I)
 
 _OPERATOR_ANSWER = re.compile(r"(?m)^Operator answer \(\w+:[\w-]+#[\w-]+\): ")
 
