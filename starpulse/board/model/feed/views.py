@@ -90,13 +90,6 @@ class ViewMethods:
             return agent
         return {**agent, "session_activity": self._activity(agent["assignee"])}
 
-    def holder_reply(self, task_id: str) -> str:
-        """The latest reply of the session holding `task_id` once its turn has ended, else "": a working task's holder
-        that is mid-turn, unknown or absent has none."""
-        agent = self.task(task_id, lean=True)
-        activity = (self._active(agent) if agent else {}).get("session_activity") or {}
-        return activity.get("last_message", "") if activity.get("state") == "idle" else ""
-
     def drawn_task(self, task_id: str) -> tuple[dict | None, str | None]:
         """The agent a whole build draws on the board flow for the Task (a Done one as its dot), None when the Task is
         not live; and the milestone the build counts it in off the board, None when it counts in none."""
