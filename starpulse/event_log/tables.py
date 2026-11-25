@@ -212,3 +212,29 @@ signal_folds = Table(
     Index("ix_starpulse_signal_folds_last_at", "last_at"),
     Index("ix_starpulse_signal_folds_basis", "basis"),
 )
+
+#: Each session whose `spend` fold names a task (`spend.named`): one task's spend reads its own sessions' folds by it.
+#: Derived from `signal_folds` by `views.adapters.outbound.task_spend`.
+task_sessions = Table(
+    "starpulse_task_sessions",
+    metadata,
+    Column("task", String, nullable=False),
+    Column("harness", String, nullable=False),
+    Column("session", String, nullable=False),
+    PrimaryKeyConstraint("task", "harness", "session"),
+    Index("ix_starpulse_task_sessions_session", "harness", "session"),
+)
+
+#: Each task's spend in each phase over every session naming it (`spend.phase_rows`): the peers one task's norms are
+#: drawn over, a phase whose last step is in the window standing in with its all-time `wte`. Derived as `task_sessions`.
+task_phase_spend = Table(
+    "starpulse_task_phase_spend",
+    metadata,
+    Column("task", String, nullable=False),
+    Column("phase", String, nullable=False),
+    Column("profile", String, nullable=False),
+    Column("wte", Float, nullable=False),
+    Column("last_at", Float, nullable=False),
+    PrimaryKeyConstraint("task", "phase"),
+    Index("ix_starpulse_task_phase_spend_last_at", "last_at"),
+)

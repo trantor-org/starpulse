@@ -252,12 +252,14 @@ def default_starters(
         )  # fmt: skip
 
     def signal_folds(own: StopEvent) -> Callable[[], None]:
-        # the api worker reads the fold rows; counting their cost here keeps the catch-up off the Page API's GIL
+        # the api worker reads the fold rows; counting their cost and summing each task's spend here keeps both off its GIL
         from starpulse.views.adapters.outbound.signal_folds import SignalFolds
+        from starpulse.views.adapters.outbound.task_spend import TaskSpend
 
         _, feed = shared()
         folds = SignalFolds(log, feed.titled)
         threading.Thread(target=folds.follow, args=(own,), name="signal-folds", daemon=True).start()
+        threading.Thread(target=TaskSpend(log).follow, args=(own,), name="task-spend", daemon=True).start()
         return lambda: logger.info("signal-folds: the analytics config is read at start; restart to apply a change")
 
     def lane_metrics(own: threading.Event) -> Callable[[], None]:

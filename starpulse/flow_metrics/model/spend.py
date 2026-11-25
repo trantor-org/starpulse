@@ -16,6 +16,9 @@ norm cell: its size counts the members it folds in, so its spend neither takes a
 
 A row's `profile` is the `<model>-<effort>` of its first main-thread step, so a subagent's model does not stand for
 the session's; a row of subagent steps alone takes its first step's.
+
+A task's rows depend only on the sessions that name it (`named`), so `task_spend` reports one task from its own
+sessions' folds and its peers' stored `phase_rows`.
 """
 
 from bisect import bisect_right
@@ -26,7 +29,10 @@ from typing import Any
 
 from starpulse.flow_metrics.model.cells import MIN_N, cell_of, profile_of
 
-__all__ = ["FLAG_RATIO", "combine_spend"]
+__all__ = ["FLAG_RATIO", "combine_spend", "named", "phase_rows", "task_spend"]
+
+#: A peer's phase row, as the norms weigh it: (task, phase) to its (profile, wte).
+Peers = Mapping[tuple[str, str], tuple[str, float]]
 
 #: How many times its cell's median a task's weighted tokens must reach to be flagged.
 FLAG_RATIO = 3
@@ -80,8 +86,28 @@ def _row(task: str, phase: str) -> dict[str, Any]:
     }
 
 
+def named(fold: Mapping[str, Any]) -> set[str]:
+    """The tasks a session's `spend` fold bills a step, a claim or a compaction to: the tasks whose rows it changes."""
+    return {step["task"] for step in fold["steps"]} | set(fold.get("claims", {})) | set(fold["compactions"])
+
+
 def combine_spend(folds: Iterable[Mapping[str, Any]], tasks: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """the spend report of the sessions whose `ledger.spend_of` results `folds` holds, in the order the sessions are given."""
+    """the spend report of the sessions whose `ledger.spend_of` results `folds` holds, in the order the sessions are given:
+    the whole-week reference each `task_spend` answer equals its task's rows of, read by the tests rather than a route."""
+    return _flagged(phase_rows(folds), tasks, {})
+
+
+def task_spend(
+    folds: Iterable[Mapping[str, Any]], task: str, tasks: Mapping[str, Mapping[str, Any]], peers: Peers
+) -> list[dict[str, Any]]:
+    """`task`'s rows of the spend report, `folds` every session naming it in the order `combine_spend` takes them and
+    `peers` the other tasks' phase rows its norms weigh it against."""
+    return _flagged({key: row for key, row in phase_rows(folds).items() if key[0] == task}, tasks, peers)
+
+
+def phase_rows(folds: Iterable[Mapping[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+    """Each (task, phase) row the sessions' `folds` sum to, before the norms; exact for a task when `folds` holds every
+    session that names it."""
     held = list(folds)
     steps = sorted((step for fold in held for step in fold["steps"]), key=lambda step: step["at"])
     rows: dict[tuple[str, str], dict[str, Any]] = {}
@@ -118,26 +144,30 @@ def combine_spend(folds: Iterable[Mapping[str, Any]], tasks: Mapping[str, Mappin
         starts = [r["first_at"] for r in phases]
         for at in times:
             phases[max(bisect_right(starts, at) - 1, 0)]["compactions"] += 1
-    return _flagged(rows, tasks)
+    return rows
 
 
 def _flagged(
-    rows: dict[tuple[str, str], dict[str, Any]], tasks: Mapping[str, Mapping[str, Any]]
+    rows: dict[tuple[str, str], dict[str, Any]], tasks: Mapping[str, Mapping[str, Any]], others: Peers
 ) -> list[dict[str, Any]]:
-    """The `rows` with each task's cell, total, norm and flag, by task then first step."""
+    """The `rows` with each task's cell, total, norm and flag, by task then first step; the norms are drawn over `rows`
+    and the `others` of tasks `rows` does not hold."""
     total: dict[str, float] = defaultdict(float)
     for (task, _), row in rows.items():
         total[task] += row["wte"]
-    cells = {task: cell_of(tasks, task) or (None, None) for task in total}
+    weighed = {key: peer for key, peer in others.items() if key[0] not in total} | {
+        key: (row["profile"], row["wte"]) for key, row in rows.items()
+    }
+    cells = {task: cell_of(tasks, task) or (None, None) for task, _ in weighed}
     peers = {
         task: (None, None) if "batch-umbrella" in (tasks.get(task, {}).get("labels") or ()) else cell
         for task, cell in cells.items()
     }
     own: dict[tuple[Any, str, str], list[float]] = defaultdict(list)
     mixed: dict[tuple[Any, str], list[float]] = defaultdict(list)
-    for (task, phase), row in rows.items():
-        own[(peers[task], phase, row["profile"])].append(row["wte"])
-        mixed[(peers[task], phase)].append(row["wte"])
+    for (task, phase), (profile, wte) in weighed.items():
+        own[(peers[task], phase, profile)].append(wte)
+        mixed[(peers[task], phase)].append(wte)
 
     def norm_of(task: str, phase: str) -> tuple[float | None, str | None]:
         cell = peers[task]

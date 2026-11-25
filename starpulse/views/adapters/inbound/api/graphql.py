@@ -188,20 +188,18 @@ async def _moves(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
     return out
 
 
-def _week(api: Any) -> tuple[bytes, int]:
-    """The week's spend report of every task, read from the stored fold rows."""
-    return spend_response(
-        api.services.telemetry, {}, api.feed.keys, api.feed.titled, api.clock(), api.services.analytics
-    )
+def _week(api: Any, task: str) -> tuple[bytes, int]:
+    """The task's week of spend, read from its sessions' fold rows and its peers' phase rows."""
+    return spend_response(api.services.telemetry, task, {}, api.feed.titled, api.clock())
 
 
 @task.field("spend")
 async def _spend(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
-    body, status = await _worker(info, _week, info.context["api"])
+    body, status = await _worker(info, _week, info.context["api"], agent["id"])
     report = json.loads(body)
     if status != 200:
         raise GraphQLError(report.get("error", "the spend cannot be read"))
-    return [row for row in report["spend"] if row["task"] == agent["id"]]
+    return report["spend"]
 
 
 @task.field("prs")

@@ -11,10 +11,8 @@ from starpulse.board.model.ledger import PAGE
 from starpulse.board.model.seam import (
     TaskReader,
 )
-from starpulse.contracts.adapters import TaskKeys
-from starpulse.contracts.analytics import Analytics
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
-from starpulse.flow_metrics.model.spend import combine_spend
+from starpulse.flow_metrics.model.spend import task_spend
 from starpulse.views.model.encoding import encode
 
 logger = logging.getLogger(__name__)
@@ -158,50 +156,34 @@ def _history_s(oldest: float | None, now: float) -> float:
     return now - (now if oldest is None else oldest)
 
 
-def _held_folds(
-    telemetry: SignalFoldReader,
-    window: float,
-    kind: str,
-    now: float,
-    label: str,
-    views: tuple[str, ...] = (),
-) -> dict[str, list[Any]] | tuple[bytes, int]:
-    """The per-session fold results of the `views` for the last `window` hours as of `now`, or the 503 response for a
-    database that cannot be read.
-
-    The oldest signal folded is where its history begins: a window that starts before it is 400 with the
-    history's length (`history_s`), never answered with its missing hours as empty, as `level_response` refuses one."""
-    try:
-        oldest = telemetry.oldest()
-        history = _history_s(oldest, now)
-        since = now - window * 3600
-        held = None if window * 3600 > history else telemetry.window(since, views)
-    except Exception as exc:  # the event log's database is unreachable
-        logger.warning("%s: signal table unreadable: %s", label, exc)
-        return _error("the telemetry log cannot be read"), 503
-    if held is None:
-        return encode(kind, {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
-    return held
-
-
 def spend_response(
     telemetry: SignalFoldReader | None,
+    task: str,
     query: dict[str, list[str]],
-    keys: TaskKeys | None,
     titled: Callable[[set[str]], Mapping[str, Mapping[str, Any]]],
     now: float,
-    analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
-    """The body and status for `spend_response`: each task's tokens by phase (`spend.spend_report`) over the
-    last `hours`, combined from the window's `spend` fold rows; a window longer than the history is 400, no telemetry 501."""
+    """The body and status of `task`'s spend: its tokens by phase (`spend.task_spend`) over the last `hours`, from its
+    sessions' `spend` fold rows, against its cell's peers; no telemetry is 501, and a database that cannot be read or a
+    task_spend family being refolded 503.
+
+    The oldest signal folded is where its history begins: a window that starts before it is 400 with the history's
+    length (`history_s`), never answered with its missing hours as empty, as `level_response` refuses one."""
     window = _hours(query, "hours", _WINDOW_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot report spend"), 501
-    held = _held_folds(telemetry, window, "spend", now, "spend", ("spend",))
-    if isinstance(held, tuple):
-        return held
-    folds = sorted(held["spend"], key=lambda fold: (fold["harness"], fold["session"]))
-    report = combine_spend(folds, titled({step["task"] for fold in folds for step in fold["steps"]}))
+    try:
+        history = _history_s(telemetry.oldest(), now)
+        if window * 3600 > history:
+            return encode("spend", {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
+        held = telemetry.task_spend(task, now - window * 3600)
+    except Exception as exc:  # the event log's database is unreachable
+        logger.warning("spend: signal table unreadable: %s", exc)
+        return _error("the telemetry log cannot be read"), 503
+    if held is None:
+        return _error("the task spend is being refolded from the spend folds: ask again shortly"), 503
+    folds, peers = held
+    report = task_spend(folds, task, titled({task, *(peer for peer, _ in peers)}), peers)
     return encode("spend", {"now": now, "window_s": window * 3600, "spend": report}), 200
