@@ -217,6 +217,12 @@ class Streams:
             "restarting": restarting,
         }
 
+    def scheduler_changes(self, request: Request, position: int, render: Callable[[dict], str]) -> Response:
+        """`task_changes` for the scheduler: a `next` event of `render`'s text for each status it publishes."""
+        return self._changes(
+            request, position, "the scheduler", lambda name, data: self._scheduler_change(render, name, data)
+        )
+
     def _changes(
         self, request: Request, position: int, what: str, frames: Callable[[str, dict], Iterator[bytes]]
     ) -> Response:
@@ -323,6 +329,11 @@ class Streams:
                     }
                 ),
             )
+
+    def _scheduler_change(self, render: Callable[[dict], str], name: str, data: dict) -> Iterator[bytes]:
+        if name == "scheduler":
+            by_harness = [{"harness": harness, **sessions} for harness, sessions in data.get("sessionsByHarness", {}).items()]
+            yield _frame("next", render({**data, "sessionsByHarness": by_harness or None}))
 
     def _event(self, name: str, data: dict) -> Iterator[bytes]:
         if name in EVENTS:

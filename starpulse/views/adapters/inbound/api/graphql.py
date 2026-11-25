@@ -4,7 +4,7 @@ The tracked SDL (`schemas/tasks.graphql`) is bound with Ariadne and run by `aria
 a mounted ASGI app. A resolver reads the feed on a request worker thread. The request-duration histogram carries the
 operation name when a view's stored document declares it, else the `root.child` fields it selects, else `other`.
 
-A list answers with the stream position it was read at. A `taskChanges` or `jobChanges` subscription from a position is
+A list answers with the stream position it was read at. A `taskChanges`, `jobChanges` or `schedulerChanges` subscription from a position is
 answered with an event stream (graphql-sse's distinct connections mode): one `next` event for each change after it, the
 document's selection run on the change. A position the store no longer holds is answered with a 410 whose error code is `REREAD`.
 
@@ -442,7 +442,9 @@ async def _follow(
         return await on_worker(request, lambda: streams.health(request, render))
     if name == "occurrenceChanges":
         return await on_worker(request, lambda: streams.ledger_changes(request, args["event"], render))
-    follow = streams.job_changes if name == "jobChanges" else streams.task_changes
+    follow = {"jobChanges": streams.job_changes, "schedulerChanges": streams.scheduler_changes}.get(
+        name, streams.task_changes
+    )
     return await on_worker(request, lambda: follow(request, args["from"], render))
 
 

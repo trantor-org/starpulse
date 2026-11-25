@@ -360,6 +360,10 @@
           },
           "type": "array"
         },
+        "position": {
+          "description": "The stream position the state was read at: a `schedulerChanges` subscription from it misses no status change.",
+          "type": "integer"
+        },
         "quietHours": {
           "anyOf": [
             {
@@ -411,7 +415,8 @@
         "sampledAt",
         "dimensions",
         "display",
-        "theme"
+        "theme",
+        "position"
       ],
       "title": "AdminState",
       "type": "object"
