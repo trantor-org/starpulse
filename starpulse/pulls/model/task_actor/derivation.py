@@ -655,7 +655,12 @@ def deps_done(facts: TaskFacts, agent: Agent) -> Held:
 
 
 def deps_done_with_pr(facts: TaskFacts, agent: Agent) -> Held:
-    """`deps_done` for a task that cites a ready or merged pull request, which a state returns to Review rather than Ready."""
+    """`deps_done` for a task that cites a ready or merged pull request, which a state returns to Review rather than Ready.
+
+    A started task parked out of Review or Needs attention resumes In Progress instead (`deps_done_started`): its park
+    asked for more work, so the pull request it cites is no reason to review it again."""
+    if facts.started(agent["id"]) and facts.memory(agent["id"]).get("parked_out"):
+        return None
     return deps_done(facts, agent) if pr_ready(facts, agent) else None
 
 

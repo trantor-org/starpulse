@@ -236,10 +236,12 @@ def park_task(
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     reason = reasons[0]
-    parkable = (feed.roles.working, feed.roles.attention) if reason == "untilTask" else (feed.roles.working,)
+    parkable = (
+        (feed.roles.working,) if reason == "operator" else (feed.roles.working, feed.roles.attention, feed.roles.review)
+    )
     if agent["state"] not in parkable:
         return 409, {
-            "error": f"only an In Progress task can be parked (a Needs attention one only on a task): {task} is {agent['state']}"
+            "error": f"only an In Progress task can be parked (a Review or Needs attention one only on a task or an event): {task} is {agent['state']}"
         }
     column, value = _park_lane(feed, reason), getattr(park, reason)
     if column is None:

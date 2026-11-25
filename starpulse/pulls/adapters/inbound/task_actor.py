@@ -1119,6 +1119,11 @@ class TaskActor:
                     kept["sent_back"] = (
                         None  # a task first seen outside the working lane keeps no hold from an earlier run
                     )
+                roles = self._feed.roles
+                sent_back = before and before[0] == roles.working and self._memory.has(name, "sent_back")
+                kept["parked_out"] = (
+                    True if before and now[0] == roles.waiting and (sent_back or before[0] in (self._review, roles.attention)) else None
+                )  # a park out of Review or Needs attention, or of a send-back: its release resumes the work, not the pull request
                 kept["reviewed"] = self._heads(agent) if "phase_resumed" in self._waits.get(now[0], {}) else None
                 self._memory.keep(name, **kept)
             if before is None or (before[0], before[3]) != (now[0], now[3]):
