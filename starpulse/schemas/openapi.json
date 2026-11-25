@@ -2042,7 +2042,7 @@
     },
     "/graphql": {
       "post": {
-        "summary": "Run a GraphQL query over the tasks (open, settled, per-milestone done counts and every machine's) and a ledger's occurrences, or follow their changes with a subscription",
+        "summary": "Run a GraphQL query over the tasks (open, settled, per-milestone done counts and every machine's, each with its phase, substate, skill, criteria, pause reason, readable verdict, release and interactive mark), the board (columns, state roles, machines, dags) and a ledger's occurrences, or follow their changes with a subscription",
         "tags": [
           "graphql"
         ],

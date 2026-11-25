@@ -403,6 +403,10 @@ POST /graphql      a Task's history is four fields of the Task detail: `lanePath
                    hold, a run id included, answers `task: null`. The machine events are copied from their stream as they
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
                    the config), so the path outlives the stream's trim. A trim past entries the copy never read leaves it resuming at the oldest kept row
+POST /graphql      the views a board shows come from the task query: each Task carries `phase`, `substate`, `skill` {name, states, current, next},
+                   `interactive`, `criteria` [{text, checked}], `pauseReason`, `readable` and `released` {at, session, last_renewal, ttl, idle},
+                   and `board` answers `columns`, `roles` (the state roles), `machines` (each machine's states, transitions, submachines and next edge),
+                   `dags` and the runs `error`, as the stored body holds them
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
 Connect `starpulse.v1.CloudEventsIngest` Publish and PublishBatch on this port (docs/sources.md)
                    post machine events and runs as CloudEvents 1.0, with `authorization: Bearer <token>` of a `[[producers]]`

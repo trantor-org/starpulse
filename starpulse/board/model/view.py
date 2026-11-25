@@ -104,7 +104,7 @@ def _holding(snapshot: dict[str, Any], links: list[dict[str, Any]], task: str) -
     return max(held, key=lambda pair: pair[1].get("active") or 0, default=None)
 
 
-def _phase(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | None, str | None, dict[str, Any] | None]:
+def phase_of(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | None, str | None, dict[str, Any] | None]:
     """An In Progress task's `(phase, substate, flow)`, picked as the kanban card's `climb` does: the newest row among
     the submachines its In Progress row's state links, else among all the In Progress machine links, names the phase
     (that link's state), the substate (that row's state) and the flow. A task held by no submachine reads the In
@@ -124,7 +124,7 @@ def _phase(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | None,
     return link["state"], held_row["state"], next(f for f in snapshot["flows"] if f["name"] == link["machine"])
 
 
-def _skill(substate: str | None, flow: dict[str, Any] | None) -> dict[str, Any] | None:
+def skill_of(substate: str | None, flow: dict[str, Any] | None) -> dict[str, Any] | None:
     """The skill a held task is in: its machine's states in order, the state it holds, and the next edge its machine declares."""
     if flow is None:
         return None
@@ -148,7 +148,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
     pulls = {pull["url"]: pull for pull in [*snapshot["pulls"].get(agent["id"], []), *agent.get("pulls", [])]}
     if done is None:
         done = done_ids(snapshot)
-    phase, substate, flow = _phase(agent, snapshot)
+    phase, substate, flow = phase_of(agent, snapshot)
     entered = agent.get("entered")
     dependencies = agent.get("dependencies", [])
     return {
@@ -157,7 +157,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "lane": _lane(agent, phase),
         "phase": phase,
         "substate": substate,
-        "skill": _skill(substate, flow),
+        "skill": skill_of(substate, flow),
         "interactive": snapshot.get("interactive", {}).get(agent["id"], False),
         "done_at": datetime.fromtimestamp(entered, UTC).isoformat() if agent["state"] == roles_of(snapshot).done and entered else None,
         "profile": agent["model"],

@@ -40,6 +40,7 @@ from graphql.execution import get_argument_values, get_variable_values
 from starlette.requests import Request
 from starlette.responses import Response
 
+from starpulse.board.model.view import phase_of, skill_of
 from starpulse.contracts import task_graphql
 from starpulse.contracts.adapters import Move
 from starpulse.machine_engine.model.transitions import lane_id
@@ -60,6 +61,8 @@ task = ObjectType("Task")
 task_list = ObjectType("TaskList")
 occurrence = ObjectType("Occurrence")
 pull_request = ObjectType("PullRequest")
+claim_release = ObjectType("ClaimRelease")
+board = ObjectType("Board")
 
 
 async def _worker(info: GraphQLResolveInfo, call: Any, *args: Any) -> Any:
@@ -148,6 +151,44 @@ def _child(row: dict, _: GraphQLResolveInfo) -> bool:
     return "appliedBy" in row
 
 
+@query.field("board")
+def _board(_: Any, __: GraphQLResolveInfo) -> dict:
+    return {}
+
+
+@board.field("columns")
+def _columns(_: dict, info: GraphQLResolveInfo) -> list[dict]:
+    return info.context["feed"].machines["board"]["states"]
+
+
+@board.field("roles")
+def _roles(_: dict, info: GraphQLResolveInfo) -> dict:
+    return info.context["feed"].roles.wire()
+
+
+@board.field("machines")
+def _machines(_: dict, info: GraphQLResolveInfo) -> list[dict]:
+    machines = info.context["feed"].machines
+    return [{**machines[name], "name": name} for name in ("board", *(name for name in machines if name != "board"))]
+
+
+async def _runs(parent: dict, info: GraphQLResolveInfo) -> dict:
+    """The jobs and the runs error, read once per query however many fields ask."""
+    if "runs" not in parent:
+        parent["runs"] = asyncio.ensure_future(_worker(info, info.context["feed"].run_list))
+    return await parent["runs"]
+
+
+@board.field("dags")
+async def _dags(parent: dict, info: GraphQLResolveInfo) -> list[dict]:
+    return (await _runs(parent, info))["dags"]
+
+
+@board.field("error")
+async def _runs_error(parent: dict, info: GraphQLResolveInfo) -> str | None:
+    return (await _runs(parent, info))["error"]
+
+
 @query.field("pull")
 async def _pull(_: Any, info: GraphQLResolveInfo, repo: str, number: int) -> dict | None:
     found = await _worker(info, task_pulls, info.context["pulls"], [f"https://github.com/{repo}/pull/{number}"])
@@ -169,19 +210,90 @@ def _moved_at(agent: dict, _: GraphQLResolveInfo) -> float:
     return agent["entered"]
 
 
+async def _record(agent: dict, info: GraphQLResolveInfo, *, lean: bool = False) -> dict | None:
+    """The task's record, read once per query however many fields ask: a list's cards leave out what it holds. A `lean`
+    read leaves out the verdicts of the board's rules, which only `moves` and `readable` need."""
+    records = info.context.setdefault("records", {})
+    if (agent["id"], lean) not in records:
+        read = info.context["feed"].task
+        records[agent["id"], lean] = asyncio.ensure_future(_worker(info, lambda: read(agent["id"], lean=lean)))
+    return await records[agent["id"], lean]
+
+
+def _read_placing(feed: Any) -> dict:
+    """The slice of the stored body a task's phase and interactive mark read: the machines with their rows, and the roles."""
+    rows: dict[str, list[dict]] = {}
+    for machine, agent in feed.machine_agents():
+        rows.setdefault(machine, []).append(agent)
+    flows = [{"name": name, "machine": machine, "agents": rows.get(name, [])} for name, machine in feed.machines.items()]
+    return {"flows": flows, "roles": feed.roles.wire(), "interactive": feed.interactive()}
+
+
+async def _placing(info: GraphQLResolveInfo) -> dict:
+    """`_read_placing`, read once per query however many tasks ask."""
+    context = info.context
+    if "placing" not in context:
+        context["placing"] = asyncio.ensure_future(_worker(info, _read_placing, context["feed"]))
+    return await context["placing"]
+
+
+@task.field("phase")
+async def _phase(agent: dict, info: GraphQLResolveInfo) -> str | None:
+    return phase_of(agent, await _placing(info))[0]
+
+
+@task.field("substate")
+async def _substate(agent: dict, info: GraphQLResolveInfo) -> str | None:
+    return phase_of(agent, await _placing(info))[1]
+
+
+@task.field("skill")
+async def _skill(agent: dict, info: GraphQLResolveInfo) -> dict | None:
+    _, substate, flow = phase_of(agent, await _placing(info))
+    return skill_of(substate, flow)
+
+
+@task.field("interactive")
+async def _interactive(agent: dict, info: GraphQLResolveInfo) -> bool:
+    return (await _placing(info))["interactive"].get(agent["id"], False)
+
+
+@task.field("criteria")
+async def _criteria(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
+    record = await _record(agent, info, lean=True)
+    return [] if record is None else record["criteria"]
+
+
+@task.field("pauseReason")
+async def _pause_reason(agent: dict, info: GraphQLResolveInfo) -> str:
+    record = await _record(agent, info, lean=True)
+    return "" if record is None else record["pause_reason"] or ""
+
+
+@task.field("readable")
+async def _readable(agent: dict, info: GraphQLResolveInfo) -> str:
+    record = await _record(agent, info)
+    return "" if record is None else record["readable"]
+
+
+@claim_release.field("idle")
+def _idle(released: dict, _: GraphQLResolveInfo) -> bool:
+    return released.get("idle", False)
+
+
 @task.field("description")
 async def _description(agent: dict, info: GraphQLResolveInfo) -> str:
     """A list's cards carry none: the record holds it."""
     if agent["description"]:
         return agent["description"]
-    record = await _worker(info, info.context["feed"].task, agent["id"])
+    record = await _record(agent, info)
     return "" if record is None else record["description"]
 
 
 @task.field("moves")
 async def _moves(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
     """A list's cards leave their moves unjudged: the record judges them, as judging every card's costs seconds."""
-    record = await _worker(info, info.context["feed"].task, agent["id"])
+    record = await _record(agent, info)
     judged = {} if record is None else record["moves"]
     out = []
     for to, raw in judged.items():
@@ -248,7 +360,9 @@ async def _events(agent: dict, info: GraphQLResolveInfo, since: float) -> list[d
     )
 
 
-SCHEMA = make_executable_schema(task_graphql.type_defs(), query, task, task_list, occurrence, pull_request)
+SCHEMA = make_executable_schema(
+    task_graphql.type_defs(), query, task, task_list, occurrence, pull_request, claim_release, board
+)
 
 
 def _failed(request: Request, status: int, message: str) -> Response:
@@ -288,7 +402,7 @@ async def _render(document: DocumentNode, payload: dict, context: dict, name: st
         SCHEMA,
         document,
         root_value={name: change},
-        context_value=context,
+        context_value={**context},  # a copy: what a resolver caches in it lives for this change only
         variable_values=payload.get("variables"),
         operation_name=payload.get("operationName"),
     )

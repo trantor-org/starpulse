@@ -283,7 +283,7 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/views/{id}"): _read("The GraphQL document a view stores", "view"),
     ("GET", "/api/openapi"): Op("This document"),
     ("POST", "/graphql"): Op(
-        "Run a GraphQL query over the tasks (open, settled, per-milestone done counts and every machine's) and a ledger's occurrences, or follow their changes with a subscription",
+        "Run a GraphQL query over the tasks (open, settled, per-milestone done counts and every machine's, each with its phase, substate, skill, criteria, pause reason, readable verdict, release and interactive mark), the board (columns, state roles, machines, dags) and a ledger's occurrences, or follow their changes with a subscription",
         BODIES["graphql"],
         GraphqlRequest,
         extra=(

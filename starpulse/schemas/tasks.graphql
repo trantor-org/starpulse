@@ -81,6 +81,53 @@ type Task {
   the telemetry cannot be read.
   """
   spend: [SpendPhase!]
+  """An In Progress task's phase: the state of the submachine link it is held in, null for a task in no working lane or held by none."""
+  phase: String
+  """The state the task holds in the skill machine its phase opens, null when no skill holds it."""
+  substate: String
+  """The skill the task is in, null when none holds it."""
+  skill: TaskSkill
+  """A person took the session over: the task shows as interactive."""
+  interactive: Boolean!
+  """The acceptance criteria, in order."""
+  criteria: [Criterion!]!
+  """Why the task waits on a person: the first line of its `## Needs attention` section; empty in any other lane."""
+  pauseReason: String!
+  """What the board's `readable` rules find broken in the description; empty when it reads well or the task is done."""
+  readable: String!
+  """The claim a TTL sweep or an idle holder's release ended; null when the task's claim was never released."""
+  released: ClaimRelease
+}
+
+"""One acceptance criterion of a task."""
+type Criterion {
+  text: String!
+  checked: Boolean!
+}
+
+"""The skill a held task is in: its machine's states in order, the state it holds and the edge its machine hands to next."""
+type TaskSkill {
+  """The skill machine's name."""
+  name: String!
+  """The machine's state ids, in the order it declares them."""
+  states: [String!]!
+  """The state the task holds, null when it holds none."""
+  current: String
+  """The edge a finished skill hands to; null when the machine declares none."""
+  next: HeldNext
+}
+
+"""The claim a Board task's claim-TTL sweep, or its idle holder's release, ended. Field names match the REST `ClaimRelease`."""
+type ClaimRelease {
+  """When the release was recorded, epoch seconds."""
+  at: Float!
+  session: String!
+  """The session's last renewal before the release, epoch seconds."""
+  last_renewal: Float!
+  """The claim TTL, in seconds, the session missed."""
+  ttl: Float!
+  """The task actor ended this claim because its holder sat idle, not the TTL sweep."""
+  idle: Boolean!
 }
 
 """One board rule a move breaks: what it needs and the skill that produces it."""
@@ -379,6 +426,115 @@ type MachineEvent {
   to: String!
 }
 
+"""One state of a machine."""
+type MachineState {
+  id: String!
+  name: String!
+  initial: Boolean!
+  final: Boolean!
+  """The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none."""
+  role: String
+}
+
+"""The sentence of a skill that sends a session down a transition."""
+type Cite {
+  skill: String!
+  quote: String!
+}
+
+"""One move a machine allows."""
+type Transition {
+  source: String!
+  target: String!
+  event: String!
+  """The skill sentence that authorizes the transition; null when its YAML cites none."""
+  cite: Cite
+}
+
+"""Where a Board state opens into another machine."""
+type Submachine {
+  state: String!
+  machine: String!
+  """Each inner final state to the Board event it fires."""
+  exits: JSON!
+  """The machine the link opens under: `board`, or the machine whose `state` it hangs off."""
+  parent: String!
+  """What has to hold for the inner machine to run under `state`; empty when always."""
+  when: String!
+  """Inner event to the Board event it fires; empty when the link routes none."""
+  routes: JSON!
+  """The skill a session runs while the inner machine does; empty when the link names none."""
+  skill: String!
+}
+
+"""The edge a finished skill hands to."""
+type HeldNext {
+  """`skill` or `operation`."""
+  kind: String!
+  """The skill or operation the edge hands to."""
+  name: String!
+}
+
+"""A machine the page draws: its states, transitions and the machines that open under it. `name` is the machine's key; the rest match the REST `Machine`."""
+type Machine {
+  name: String!
+  """The third party whose events move this machine; null for a machine StarPulse's own actors move."""
+  source: String
+  states: [MachineState!]!
+  transitions: [Transition!]!
+  submachines: [Submachine!]
+  """Only the board machine: the skill machine each launching DAG starts, by DAG name."""
+  launches: JSON
+  """Its YAML-declared writers per event."""
+  writers: JSON
+  next: HeldNext
+  """Only the board machine: the writers that are runs workflows."""
+  dagActors: [String!]
+  """Only the board machine: the state ids along its axis, in order."""
+  mainLine: [String!]
+  """Only the board machine: the state ids the Star Map draws at each stage, left to right."""
+  tiers: [[String!]!]
+}
+
+"""Which of the board's states play which part, as its machine declares them: read these, never a state's name."""
+type StateRoles {
+  """Where a task starts."""
+  initial: String
+  """Where a task is settled for good."""
+  final: String
+  """Where the work is done."""
+  done: String
+  """Where a session works a task."""
+  working: String
+  """Where a task waits to be picked up."""
+  ready: String
+  """Where a task waits on its Start Criteria or dependencies."""
+  waiting: String
+  """Where a task waits on its pull request."""
+  review: String
+  """Where a merged task rests while its post-merge QA runs."""
+  verifying: String
+  """Where a task waits on a person."""
+  attention: String
+  """The states a session starts a task from."""
+  startable: [String!]!
+  """The open lanes the kanban draws, in the machine's order: every state but the initial and final."""
+  lanes: [String!]!
+}
+
+"""What the board, task show and snapshot views draw beside the tasks: the board's columns and roles, every machine and every job."""
+type Board {
+  """The board machine's states, in the order its columns are drawn."""
+  columns: [MachineState!]!
+  roles: StateRoles!
+  """Every machine the page draws, the board's first."""
+  machines: [Machine!]!
+  """Every runs workflow, as `POST /api/jobs` lists it."""
+  dags: [Job!]!
+  """The error a runs instance reported, null when none."""
+  error: String
+}
+
 type Query {
   """
   The open tasks. `filter` keeps those whose id, title or a label holds it (case aside); `source`, `lane` and
@@ -394,6 +550,8 @@ type Query {
   occurrences(event: String!, before: Float, limit: Int = 20): OccurrencePage
   """One pull request the PR store holds, whatever task cites it, or null when it holds none."""
   pull(repo: String!, number: Int!): PullRequest
+  """The board's columns, state roles, machines and jobs: what the CLI's board, task show and snapshot verbs read beside the tasks."""
+  board: Board!
 }
 
 type Subscription {
