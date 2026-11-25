@@ -5,7 +5,8 @@ from typing import Any
 from pydantic import Field
 
 from starpulse.contracts.api._base import _Api
-from starpulse.contracts.api.dto.machine import Launch, Submachine
+from starpulse.contracts.api.dto.machine import Launch, Machine, Submachine
+from starpulse.contracts.api.dto.snapshot import Roles
 from starpulse.contracts.api.dto.task import RawTask
 
 
@@ -33,12 +34,14 @@ class LaneSurface(_Api):
     skill: str | None
 
 
-class MachineListed(_Api):
-    """A machine of `POST /api/machines`: its name, its `type` and the machines it is a submachine of."""
+class MachineListed(Machine):
+    """A machine of `POST /api/machines`: the machine as the snapshot draws it, with its name, its `type`, the
+    machines it is a submachine of and the `roles` of its states."""
 
     name: str
     type: str | None
     parents: list[str]
+    roles: Roles
 
 
 class Machines(_Api):

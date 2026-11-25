@@ -47,10 +47,13 @@ class StateRoles:
 
     @classmethod
     def of_drawn(cls, machine: Mapping[str, Any]) -> StateRoles:
-        """The roles of a drawn machine, which marks only its initial and final States."""
-        states = machine["states"]
+        """The roles of a drawn machine: each State's declared `role`, else its initial or final flag."""
         return cls(
-            {s["id"]: "initial" if s.get("initial") else "final" if s.get("final") else None for s in states}, {}
+            {
+                s["id"]: s.get("role") or ("initial" if s.get("initial") else "final" if s.get("final") else None)
+                for s in machine["states"]
+            },
+            {},
         )
 
     def wire(self) -> dict[str, str | list[str] | None]:

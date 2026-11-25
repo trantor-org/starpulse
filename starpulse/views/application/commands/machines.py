@@ -10,15 +10,28 @@ from starpulse.event_log.machine_store import MachineStore, MissingMachine, Refu
 from starpulse.event_log.store import StaleVersion
 from starpulse.event_log.store.machine_registry import StaleBase, StrandedTasks
 from starpulse.machine_engine.model.machine_definition import MachineDefinitionError
+from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.views.application.commands.guard import lan_refusal, on_lan, with_request
 
 _NO_STORE = (503, {"error": "this server keeps no machine store"})
 
 
 @with_request(MachineListRequest, "Listing machines")
-def machines_list(request: MachineListRequest, drawn: Mapping[str, dict]) -> tuple[int, dict[str, Any]]:
-    """Every machine with its `type` and `parents`: the HTTP status and JSON body."""
-    return 200, {"machines": [{"name": n, "type": m.get("type"), "parents": m.get("parents", [])} for n, m in drawn.items()]}
+def machines_list(
+    request: MachineListRequest, drawn: Mapping[str, dict], board_roles: Mapping[str, Any]
+) -> tuple[int, dict[str, Any]]:
+    """Every machine as the snapshot draws it (states, transitions, drawing) with its `type`, `parents` and `roles`,
+    the Board's being `board_roles` and another's read off its states: the HTTP status and JSON body."""
+    return 200, {
+        "machines": [
+            {"name": n, **m, "type": m.get("type"), "parents": m.get("parents", []), "roles": _roles(n, m, board_roles)}
+            for n, m in drawn.items()
+        ]
+    }
+
+
+def _roles(name: str, machine: Mapping[str, Any], board_roles: Mapping[str, Any]) -> Mapping[str, Any]:
+    return board_roles if name == "board" else StateRoles.of_drawn(machine).wire()
 
 
 def machine_record(

@@ -1,6 +1,6 @@
 """Machines.
 
-- `POST /api/machines`: every machine the board draws with its `type` and `parents`.
+- `POST /api/machines`: every machine the board draws: its states, transitions, drawing and `roles`.
 - `GET /api/machines/{name}`: one machine's declared config and the `hash` of its stored version; the Board's also
   holds each lane's surface.
 - `PUT /api/machines`: add a machine to the store (201; 409 taken; 422 bad definition).
@@ -44,7 +44,7 @@ def routes(api: Api) -> list[ApiRoute]:
         WriteRoute(
             "/machines",
             ("POST",),
-            guarded("machines", whole_body(lambda client, raw: machines_list(client, raw, api.feed.machines))),
+            guarded("machines", whole_body(lambda client, raw: machines_list(client, raw, api.feed.machines, api.feed.roles.wire()))),
         ),
         WriteRoute("/machines", ("PUT",), guarded("machine_create", whole_body(lambda who, raw: create_machine(who, raw, store)))),
         WriteRoute(
