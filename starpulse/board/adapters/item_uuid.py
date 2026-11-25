@@ -56,7 +56,7 @@ def stamp_files(root: Path, board: str) -> Stamped:
         found.append((path, relative, text, front, key.upper() if _is_task(relative) else key))
     taken = {str(front["uuid"]) for *_, front, _ in found if front and front.get("uuid")}
     result = Stamped()
-    for path, relative, text, front, key in sorted(found, key=lambda item: (_retired(item[1]), item[1])):
+    for path, relative, text, front, key in sorted(found, key=lambda item: (_retired(item[1]), item[1].parts[0] == "archive", item[1])):
         if front is None:
             result.skipped.append(path)
             continue
@@ -72,7 +72,7 @@ def stamp_files(root: Path, board: str) -> Stamped:
             path.write_bytes((stamped + divider + rest).encode())
             result.changed.append(path)
         if _is_task(relative):
-            result.tasks.setdefault(key, minted)  # the open file is first: its UUID is the Task stream's
+            result.tasks.setdefault(key, minted)  # the first of tasks/, completed/, archive/tasks/ is the one the lookup finds: its UUID is the Task stream's
     return result
 
 

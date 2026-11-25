@@ -192,11 +192,15 @@ def feedback_held(facts: TaskFacts, agent: Agent) -> bool:
     """Whether the task was sent back from Review and its holder has not replied since: the reply count its send-back
     recorded still stands. A comment read that fails holds."""
     replied = facts.memory(agent["id"]).get("sent_back")
-    if not isinstance(replied, int):
+    legacy = isinstance(replied, Mapping) and bool(replied)
+    if not legacy and not isinstance(replied, int):
         return False
     if (texts := facts.comments(agent)) is None:
         facts.unsettled()
         return True
+    if legacy:  # a hold recorded by head before it counted replies: held until one follows the newest send-back
+        sent = max((i for i, text in enumerate(texts) if text.strip().startswith(SENT_BACK)), default=-1)
+        return replies(texts[sent + 1 :]) == 0
     return replies(texts) <= replied
 
 

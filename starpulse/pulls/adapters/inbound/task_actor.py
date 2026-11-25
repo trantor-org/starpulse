@@ -1114,7 +1114,11 @@ class TaskActor:
                 kept: dict[str, Any] = {} if now[0] == working else {"busy": None, "resumes": None}
                 if before and before[0] == self._review and now[0] == working:
                     own = self._memory.has(name, "own_send_back")
-                    kept |= {"sent_back": None if own else self._replies(agent), "own_send_back": None}
+                    held = self._memory.of(name).get("sent_back")  # the baseline the actor's feedback move recorded
+                    kept |= {
+                        "sent_back": None if own else held if isinstance(held, int) else self._replies(agent),
+                        "own_send_back": None,
+                    }
                 elif before is not None or now[0] != working:
                     kept["sent_back"] = (
                         None  # a task first seen outside the working lane keeps no hold from an earlier run
@@ -1492,9 +1496,10 @@ class TaskActor:
         records = {url: self._record(url) for url in self._own_prs(agent)}
         return {url: record["headRefOid"] for url, record in records.items() if record}
 
-    def _replies(self, agent: dict[str, Any]) -> int:
-        """How many holder replies the task's comments already hold: the send-back holds the task until one more."""
-        return derivation.replies(self._comments(agent) or [])
+    def _replies(self, agent: dict[str, Any]) -> int | None:
+        """How many holder replies the task's comments already hold: the send-back holds the task until one more. None
+        when the comments cannot be read, a baseline of no replies no one counted."""
+        return None if (texts := self._comments(agent)) is None else derivation.replies(texts)
 
     def touch(self, events: Iterable[TaskTouched], observed: float | None = None) -> set[str]:
         """The one entry every trigger source derives through, under the lock: derive each task touched once, in name
@@ -1622,8 +1627,8 @@ class TaskActor:
             if self._write(
                 name, target, comment, observed, source=agent["state"], stale=changes, merged=merged, feedback=feedback
             ):
-                if feedback:
-                    self._wake_holder(name, "FEEDBACK", comment.removeprefix(derivation.SENT_BACK).strip())
+                if feedback and not self._wake_holder(name, "FEEDBACK", comment.removeprefix(derivation.SENT_BACK).strip()):
+                    logger.warning("task actor: the log refused the feedback wake of %s: its holder was not told", name)
                 return True
             if self._tried.get(name) != sent:
                 return False  # the file changed under a transient refusal: the next pass judges it anew, no later fact
@@ -2276,8 +2281,15 @@ class TaskActor:
     ) -> bool:
         changes = {"status": target, **stale}
         refusal = self._judged(name, changes, comment)
+        if feedback and refusal.ok:
+            if (replied := self._replies({"id": name})) is None:
+                self._tried.pop(name, None)  # no baseline, no send-back: judged anew on the next pass
+                return False
+            self._memory.keep(name, sent_back=replied)  # before the move, so a reply sent after it is a new one
         begun = self._clock()
         written = refusal if not refusal.ok else self._apply(name, changes, comment, refusal.version)
+        if feedback and not written.ok:
+            self._memory.keep(name, sent_back=None)
         if merged is not None and self._received is not None and refusal.ok:
             self._merge_board_write.observe(self._clock() - begun)
         if written.ok and self._recovering:
