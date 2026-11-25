@@ -305,7 +305,7 @@ async def _moves(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
 
 def _week(api: Any, task: str) -> tuple[bytes, int]:
     """The task's week of spend, read from its sessions' fold rows and its peers' phase rows."""
-    return spend_response(api.services.telemetry, task, {}, api.feed.titled, api.clock())
+    return spend_response(api.services.telemetry, task, {}, api.clock())
 
 
 @task.field("spend")

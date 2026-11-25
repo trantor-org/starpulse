@@ -264,6 +264,7 @@ def forget_ended(
         wanted |= local_ids(sessions, [bridge for name in names if (bridge := _holder_bridge(name))])
         for key in registry.keys():
             if key not in wanted and not ((registration := registry.get(key)) and alive(registration.session)):
+                logger.info("registration %s removed: its session is neither named by a consumer nor running", key)
                 registry.delete(key)
 
     return forget

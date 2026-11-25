@@ -8,10 +8,13 @@ Ingest writes the folds (`flow_metrics.adapters.outbound.session_ledger`), so no
 """
 
 import logging
+import threading
+import time
+from collections import ChainMap
 from collections.abc import Callable, Iterable, Mapping
-from typing import Any
+from typing import Any, NamedTuple
 
-from sqlalchemy import and_, bindparam, func, select, text
+from sqlalchemy import Connection, and_, bindparam, func, select, text
 from sqlalchemy.dialects import sqlite
 
 from starpulse.event_log.event_log import EventLog
@@ -46,7 +49,11 @@ _OWN = (
     .order_by(task_sessions.c.harness, task_sessions.c.session)
 )
 _PEERS = select(
-    task_phase_spend.c.task, task_phase_spend.c.phase, task_phase_spend.c.profile, task_phase_spend.c.wte
+    task_phase_spend.c.task,
+    task_phase_spend.c.phase,
+    task_phase_spend.c.profile,
+    task_phase_spend.c.wte,
+    task_phase_spend.c.last_at,
 ).where(task_phase_spend.c.last_at >= bindparam("floor"))
 _WINDOW = text(
     "SELECT view, harness, session, first_at, result FROM starpulse_signal_folds"
@@ -93,15 +100,39 @@ def _inside(view: str, result: Any, since: float) -> Any:
     return result
 
 
+#: How long a kept peer cell index and oldest signal answer reads, in seconds: a peer's labels or rows a spend read
+#: sees can be this old, the asked task's own rows and labels never.
+PEER_TTL_S = 30.0
+
+
+def _norm_cell(tasks: Mapping[str, Mapping[str, Any]], task: str) -> tuple[str, int] | None:
+    """The cell `task` is normed in: none for a `batch-umbrella`, which is in no norm cell."""
+    return None if "batch-umbrella" in (tasks.get(task, {}).get("labels") or ()) else cells.cell_of(tasks, task)
+
+
+class _Peers(NamedTuple):
+    floor: float
+    built_at: float
+    cells: dict[tuple[str, int], list[tuple[str, str, str, float, float]]]
+    tasks: Mapping[str, Mapping[str, Any]]
+
+
 class SignalFolds:
     """Reads the sessions' stored folds by window, and counts their cost into the skill-cost series."""
 
     def __init__(
-        self, events: EventLog, titled: Callable[[set[str]], Mapping[str, Mapping[str, Any]]] | None = None
+        self,
+        events: EventLog,
+        titled: Callable[[set[str]], Mapping[str, Mapping[str, Any]]] | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._titled = titled  # the board's tasks, by id; without it nothing is counted
         self._events = events
         self._engine = events.engine
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._peers: _Peers | None = None
+        self._oldest: tuple[float, float] | None = None  # (read at, the oldest signal's time)
 
     def window(self, since: float, views: Iterable[str] = VIEWS) -> dict[str, list[Any]]:
         """The per-session results of the `views` for the sessions that have a signal at or after `since`, oldest
@@ -118,25 +149,62 @@ class SignalFolds:
 
     def task_spend(
         self, task: str, since: float
-    ) -> tuple[list[Any], dict[tuple[str, str], tuple[str, float]]] | None:
+    ) -> tuple[list[Any], dict[tuple[str, str], tuple[str, float]], Mapping[str, Mapping[str, Any]]] | None:
         """The spend folds of `task`'s sessions with a signal at or after `since`, cut as `window` cuts them and in the
-        order `combine_spend` takes them, and every task's phase rows with a step in that window, as `spend.task_spend`
-        weighs `task` against them; None while the task_spend family is being refolded. A peer's row is its spend over
-        all its sessions, so a task that began before `since` weighs in whole."""
+        order `combine_spend` takes them, the phase rows with a step in that window of the tasks in its (kind, size) cell,
+        as `spend.task_spend` weighs `task` against them, and the board's labels of those tasks and `task`; None while
+        the task_spend family is being refolded. A peer's row is its spend over all its sessions, so a task that began
+        before `since` weighs in whole. The cell's rows and labels are kept for `PEER_TTL_S` seconds: only `task`'s own
+        rows and labels are read each call. Without a board (`titled`), no task has a cell and no peers."""
+        titled = self._titled or (lambda _: {})
         with self._engine.connect() as db:
             if not is_stamped(db, task_spend.FAMILY, task_spend.STAMP):
                 return None
             own = db.execute(_OWN, {"task": task, "floor": since}).all()
-            peers = db.execute(_PEERS, {"floor": since}).all()
+            held = self._peers_of(db, titled, since)
+        mine = titled({task})
+        cell = _norm_cell(mine, task)
+        peers = {
+            (peer, phase): (profile, wte)
+            for peer, phase, profile, wte, last_at in held.cells.get(cell, ())
+            if last_at >= since
+        }
         return (
             [_inside("spend", row.result, since) if row.first_at < since else row.result for row in own],
-            {(row.task, row.phase): (row.profile, row.wte) for row in peers},
+            peers,
+            ChainMap(dict(mine), held.tasks),
         )
 
+    def _peers_of(
+        self, db: Connection, titled: Callable[[set[str]], Mapping[str, Mapping[str, Any]]], since: float
+    ) -> "_Peers":
+        held = self._peers
+        if held is None or since < held.floor or self._clock() - held.built_at > PEER_TTL_S:
+            with self._lock:
+                held = self._peers
+                if held is None or since < held.floor or self._clock() - held.built_at > PEER_TTL_S:
+                    rows = db.execute(_PEERS, {"floor": since}).all()
+                    tasks = titled({row.task for row in rows}) if rows else {}
+                    grouped: dict[tuple[str, int], list[tuple[str, str, str, float, float]]] = {}
+                    for row in rows:
+                        cell = _norm_cell(tasks, row.task)
+                        if cell is not None:
+                            grouped.setdefault(cell, []).append(
+                                (row.task, row.phase, row.profile, row.wte, row.last_at)
+                            )
+                    held = self._peers = _Peers(since, self._clock(), grouped, tasks)
+        return held
+
     def oldest(self) -> float | None:
-        """The time of the oldest folded signal, None when nothing is folded: the history the views can answer."""
+        """The time of the oldest folded signal, None when nothing is folded: the history the views can answer. A
+        signal is found for `PEER_TTL_S` seconds, since a fold only ever moves it earlier."""
+        held = self._oldest
+        if held is not None and self._clock() - held[0] <= PEER_TTL_S:
+            return held[1]
         with self._engine.connect() as db:
-            return db.execute(select(func.min(signal_folds.c.first_at))).scalar_one()
+            found = db.execute(select(func.min(signal_folds.c.first_at))).scalar_one()
+        self._oldest = None if found is None else (self._clock(), found)
+        return found
 
     def catch_up(self) -> int:
         """Count the cost of each session an export advanced past the cursor, and return how many sessions that was.
