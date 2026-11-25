@@ -197,8 +197,8 @@ class Config:
     """The environment variable whose value `serve` exports as `GITHUB_TOKEN` and `GH_TOKEN` before any worker starts; unset, both are left as they were."""
     take_over_command: tuple[str, ...] | None = None
     """The argv `PUT /api/tasks/{id}` with `interactive: true` runs with the task id appended (exit 0 sent, 1 no workflow); none: the route answers 404."""
-    webhook_command: tuple[str, ...] | None = None
-    """The argv `POST /intake/grafana` runs with the request body on stdin; none: the route answers 404."""
+    webhook_producer: str | None = None
+    """The producer `POST /intake/grafana` saves each notice under as an `alert-notice` event; none: the route answers 404."""
     webhook_token_env: str | None = None
     """The environment variable holding the bearer token `POST /intake/grafana` requires."""
     pull_requests: bool = _DEFAULTS.pull_requests
@@ -420,7 +420,7 @@ _OUTBOUND = (
     "session_start_url",
     "github_token_env",
     "take_over_command",
-    "webhook_command",
+    "webhook_producer",
     "webhook_token_env",
     "producers",
     "claude_code",
@@ -506,7 +506,7 @@ def load(path: Path | None) -> Config:
         sweeper=_sweeper(file.sweeper),
         github_token_env=file.github_token_env,
         take_over_command=tuple(file.take_over_command) if file.take_over_command is not None else None,
-        webhook_command=tuple(file.webhook_command) if file.webhook_command is not None else None,
+        webhook_producer=file.webhook_producer,
         webhook_token_env=file.webhook_token_env,
         pull_requests=file.pull_requests,
         worker_memory=_worker_memory(file),

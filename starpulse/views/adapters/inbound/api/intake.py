@@ -1,6 +1,6 @@
 """Where Grafana and Temporal post, off `/api` (it is the machines' receiver, not the page's API).
 
-- `POST /intake/grafana`: the token-guarded push of a Grafana alert body, handed to the deployment's `webhook_command`; 404 where unset.
+- `POST /intake/grafana`: the token-guarded push of a Grafana notice, saved in-process as one `alert-notice` event under `webhook_producer`; 404 where unset.
 - `POST /intake/temporal-completion?workflow=<type>`: Temporal's completion callback for a workflow close, guarded by a producer token; 404 where unconfigured.
 """
 

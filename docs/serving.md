@@ -419,7 +419,7 @@ Connect `starpulse.v1.CloudEventsIngest` Publish and PublishBatch on this port (
                    refused entry writes none; a 503 may leave the entries before it committed, and posting the batch again adds only the rest
 POST /intake/temporal-completion?workflow=<type>  Temporal's close callback (`Nexus-Operation-State`, `Nexus-Link` headers) with the `[[producers]]` bearer of a producer
                    named `temporal`; writes the run's close to `runs:events`. 201 {accepted}; 400 for a missing state, link or workflow, 401 for a wrong token
-POST /intake/grafana  a Grafana alert group, with the `webhook_token_env` bearer; handed on stdin to `webhook_command`; 404 where none is configured
+POST /intake/grafana  a Grafana notice, with the `webhook_token_env` bearer; saved as one `alert-notice` event under `webhook_producer`, answered 202 with no command run, 503 when the log took nothing; 404 where none is configured
 ```
 
 ## Event store
@@ -571,7 +571,7 @@ event_log_archive_dir = "starpulse-archive"   # the default
 slow_read_seconds = 1   # the default
 # pull_requests = true
 # take_over_command = ["/usr/local/bin/take-over"]
-# webhook_command = ["/usr/local/bin/webhook-intake"]
+# webhook_producer = "grafana-alerts"
 # webhook_token_env = "STARPULSE_WEBHOOK_TOKEN"
 
 # [worker_memory.contexts]
@@ -794,7 +794,7 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `session_start_url` (text): The session-start service a started task is sent to (`POST <url>/start/TASK-N?harness=&mode=`); unset: nothing can be started.
 - `harnesses_file` (text): A file, relative to this one, that declares the tiers and per-harness models.
 - `pull_requests` (true or false, default `true`): `serve` keeps a pull request store, current from the lifecycle events and GitHub's webhook deliveries, that the task detail's `prs`, the `pull` query, the `ci` trail and `[release]` read. false never updates it: no event is applied, tasks carry no PR state, and those answer only from rows the database already holds. Set it on a second instance beside one that reads the same repositories, so one store is kept.
-- `webhook_command` (list of text): The command `POST /intake/grafana` runs, as an argv, with the request body on stdin once the bearer token `webhook_token_env` names matches. Exit 0: accepted (202). Any other exit or a timeout: 502 with the command's stderr, so the sender retries. 404 when this is unset. Needs `webhook_token_env`.
+- `webhook_producer` (text): The `[[producers]]` name `POST /intake/grafana` saves each notice under, once the bearer token `webhook_token_env` names matches: one `NOTICE_RECEIVED` event of the `alert-notice` machine, answered 202 with no command run. 503 when the log took nothing, so the sender retries. 404 when this is unset. Needs `webhook_token_env` and the producer's `alert-notice` machine.
 - `webhook_token_env` (text): The environment variable holding the bearer token `POST /intake/grafana` requires; the value is the name, never the token.
 - `github_token_env` (text): The name of an environment variable holding a GitHub token. `serve` exports its value as `GITHUB_TOKEN` and `GH_TOKEN` before it starts any worker, so the GitHub reads and the child processes sign in with it; unset, or naming an unset variable, leaves both as they were. The value is the name, never the token.
 - `take_over_command` (list of text): The command `PUT /api/tasks/{id}` with `interactive: true` runs, as an argv: StarPulse appends the task id and the command asks the task's workflow engine to flip that task's workflow to interactive, so it types nothing more into the task's session. Exit 0: sent (200). Exit 1: the task has no running workflow (409). Any other exit: an error, with the command's stderr. 404 when this is unset. The command is the only place a workflow engine appears.

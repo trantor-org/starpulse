@@ -7,6 +7,7 @@ other stream, has no subject. The pull request number comes from the event's `da
 machine's `PR_MERGED` and the `ci` machine's `MERGED` are both `merged`. The `pr-checks` machine is the exception: its
 `CHECK_REPORTED` is `pr.<number>.check.<data.name>` and its `ROLLUP_<STATE>` is `pr.<number>.checks.<state>`.
 The `alert` machine's `FIRING` and `RESOLVED`, keyed by the rule as their run, are `alert.<rule>.firing` and `.resolved`.
+The `alert-notice` machine's `NOTICE_RECEIVED`, keyed by the digest of the notice as its run, is `alert-notice.<digest>.notice_received`.
 The `deploy` machine's `APPLIED`, keyed by the component as its run, is `deploy.<component>.applied`.
 """
 
@@ -71,6 +72,9 @@ def subject_for(board: str, entry: Entry) -> str | None:
         return None
     if fields.get("machine") == "deploy" and (component := token(fields.get("run") or "")):
         return f"starpulse.{board}.deploy.{component}.{event}"
+    if fields.get("machine") == "alert-notice":
+        notice = token(fields.get("run") or "")
+        return f"starpulse.{board}.alert-notice.{notice}.{event}" if notice else None
     number = pull_number(entry)
     if fields.get("machine") == "alert":
         rule = token(fields.get("run") or "")

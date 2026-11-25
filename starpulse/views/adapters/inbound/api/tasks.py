@@ -117,11 +117,14 @@ def routes(api: Api) -> list[ApiRoute]:
     feed, board, services = api.feed, api.board, api.services
     assign, create = board.assign, board.create
 
+    def cited(task: str) -> list[dict[str, Any]]:
+        return _stored_record(api, task)[1].get("record", {}).get("pulls", [])
+
     def landed(task: str) -> bool:
-        _, body = _stored_record(api, task)
-        return any(
-            pull.get("merged") or pull.get("state") == "MERGED" for pull in body.get("record", {}).get("pulls", [])
-        )
+        return any(pull.get("merged") or pull.get("state") == "MERGED" for pull in cited(task))
+
+    def opened(task: str) -> bool:
+        return any(pull.get("state") == "OPEN" for pull in cited(task))
 
     slow = SlowReads("/api/task", services.slow_read_s)
 
@@ -162,6 +165,7 @@ def routes(api: Api) -> list[ApiRoute]:
                     services.take_over,
                     landed,
                     started=started,
+                    opened=opened,
                     dispatch=services.dispatch,
                     entrypoint=services.entrypoint,
                 ),

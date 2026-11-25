@@ -2039,11 +2039,12 @@ class TaskActor:
         attention = self._feed.roles.attention
         if agent is None or attention is None:
             return True
+        conflicting = derivation.pr_conflicting(self._port, agent)
         reason = attention_reason(
             f"{name} {what}",
             why,
             options,
-            ask,
+            f"{conflicting[1]} Rebase it on origin/main first. {ask}" if conflicting else ask,
         )
         written = self._apply(
             name,

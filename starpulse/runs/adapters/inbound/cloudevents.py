@@ -102,10 +102,12 @@ class CloudEventsIngest:
             return 400, {"error": f"a batch is a JSON array of 1 to {MAX_BATCH} events"}
         return self.write(name, sent)
 
-    def write(self, name: str, sent: list[Any]) -> tuple[int, dict[str, Any]]:
-        """Check every event of `sent` as producer `name`, then append them all, or refuse and append none."""
+    def write(self, name: str, sent: list[Any], max_data: int = MAX_DATA) -> tuple[int, dict[str, Any]]:
+        """Check every event of `sent` as producer `name`, then append them all, or refuse and append none.
+
+        `max_data` is the cap on one event's `data`: a receiver that carries a whole payload in-process raises it."""
         try:
-            entries = [self._entry(self._producers[name], event) for event in sent]
+            entries = [self._entry(self._producers[name], event, max_data) for event in sent]
         except _Refused as refused:
             return refused.status, {"error": str(refused)}
         for stream, event_id, fields in entries:
@@ -115,7 +117,7 @@ class CloudEventsIngest:
             self._log.publish(run_events.RESYNC, {"instance": name})
         return 201, {"accepted": True}
 
-    def _entry(self, producer: Producer, event: object) -> tuple[str, str, dict[str, Any]]:
+    def _entry(self, producer: Producer, event: object, max_data: int = MAX_DATA) -> tuple[str, str, dict[str, Any]]:
         """The stream, event id and fields one CloudEvent appends, or `_Refused` with the reason."""
         if not isinstance(event, dict):
             raise _Refused(400, "an event is a JSON object")
@@ -125,8 +127,8 @@ class CloudEventsIngest:
             raise _Refused(400, _reason(invalid)) from None
         if parsed.source != producer.name:
             raise _Refused(403, f"source must be the producer's own name, {producer.name}")
-        if parsed.data is not None and len(json.dumps(parsed.data)) > MAX_DATA:
-            raise _Refused(413, f"data is at most {MAX_DATA} bytes")
+        if parsed.data is not None and len(json.dumps(parsed.data)) > max_data:
+            raise _Refused(413, f"data is at most {max_data} bytes")
         if parsed.machine is None and parsed.type in run_events.EVENTS:
             return run_events.STREAM, f"{producer.name}/{parsed.id}", self._run_entry(producer, parsed)
         if parsed.machine is None and parsed.type == verdict_events.EVENT:

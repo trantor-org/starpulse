@@ -224,12 +224,18 @@ def _dispatched(
 
 
 def _reopened(
-    task: str, reason: str, who: Who, feed: BoardFeed, reopen: TaskReopener, landed: Callable[[str], bool]
+    task: str,
+    reason: str,
+    who: Who,
+    feed: BoardFeed,
+    reopen: TaskReopener,
+    landed: Callable[[str], bool],
+    opened: Callable[[str], bool],
 ) -> tuple[int, dict[str, Any]]:
     if landed(task):
         return 409, {"error": f"{task} has a merged pull request: its work shipped"}
     who = who._replace(actor=TASK_ACTOR) if who.actor == AGENT else who
-    written = record_written(feed, task, who, lambda: reopen(task, reason, actor=who.actor))
+    written = record_written(feed, task, who, lambda: reopen(task, reason, actor=who.actor, ready=opened(task)))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
@@ -375,20 +381,22 @@ def put_task(
     landed: Callable[[str], bool],
     *,
     started: Callable[[str], bool],
+    opened: Callable[[str], bool] = lambda _: False,
     dispatch: Dispatcher | None = None,
     entrypoint: Entrypoint | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Write `task` as `PUT /api/tasks/{id}` says: the HTTP status and JSON body of the verb the body names.
 
-    `reopen` reopens the Done task, `completed: true` completes it, `archived: false` restores it, `interactive: true`
-    takes it over and `park` parks it; a change that names only an `assignee` dispatches that session to the task, its
-    `base` assignee the holder it replaces; any other body is an edit over its `base`.
+    `reopen` reopens the Done task, into Ready when an `opened` pull request cites it, else In Progress;
+    `completed: true` completes it, `archived: false` restores it, `interactive: true` takes it over and `park` parks
+    it; a change that names only an `assignee` dispatches that session to the task, its `base` assignee the holder it
+    replaces; any other body is an edit over its `base`.
     """
     who = who_of(request)
     if request.park is not None:
         return park_task(task, request.park, request.comment or "", who, feed, board.read, board.edit)
     if request.reopen is not None:
-        return _reopened(task, request.reopen, who, feed, board.reopen, landed)
+        return _reopened(task, request.reopen, who, feed, board.reopen, landed, opened)
     if request.completed is not None:
         return _completed(task, feed, board.complete)
     if request.archived is not None:
