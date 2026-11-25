@@ -59,6 +59,9 @@ function stubContext(cv: HTMLCanvasElement) {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(cx);
 }
 
+/** Whether the Board has no zoom held over it: a held zoom skips the scene's frames and blocks the wheel. */
+const ready = () => (window as unknown as { flowProbe: () => { ready: boolean } }).flowProbe().ready;
+
 const IN_PROGRESS = [...BOARD, { kind: "state", id: "in_progress" } as const];
 const REVIEW = [...BOARD, { kind: "state", id: "review" } as const];
 
@@ -129,9 +132,11 @@ describe("the working state", () => {
     const before = frames.n;
     await vi.advanceTimersByTimeAsync(300);
     expect(frames.n).toBe(before);
+    expect(ready()).toBe(false); // the zoom is held on the bare sky until the drill-in hides the canvas
     r.show(true);
     await vi.advanceTimersByTimeAsync(100);
     expect(frames.n).toBeGreaterThan(before);
+    expect(ready()).toBe(true); // back on the Board the zoom is dropped and its scene draws again
     r.stop();
   });
 

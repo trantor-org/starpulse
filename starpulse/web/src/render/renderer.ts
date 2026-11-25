@@ -1375,7 +1375,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     show(on) {
       const back = on && away;
       away = !on;
-      if (on && away) trans = null;
+      if (back) trans = null;
       relay.show(on);
       if (!back) return;
       // the Board drew no frame behind the other view: the next one shows the sky as it now stands, not the steps it missed
