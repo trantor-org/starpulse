@@ -13,9 +13,7 @@ from starpulse.board.model.seam import (
 )
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api.dto.requests import (
-    DispatchRequest,
     MoveRequest,
-    NonBlank,
     StartRequest,
 )
 from starpulse.harness_telemetry.model.harnesses import Harnesses
@@ -40,12 +38,6 @@ Starter = Callable[[StartRequest], tuple[int, dict[str, Any]]]
 
 #: Modes `POST /api/start` accepts; `interactive` is the Start-session default.
 _START_MODES = frozenset({"interactive", "headless"})
-
-
-class _DispatchBody(DispatchRequest):
-    """A dispatch names its session, the opaque string the task actor pins to the task."""
-
-    session: NonBlank
 
 
 @with_request(MoveRequest, "Moving a task")
@@ -173,16 +165,17 @@ def _write_move(feed: BoardFeed, task: str, column: str, who: Who, writer: MoveW
 Dispatcher = Callable[[str, str, str], bool]
 
 
-@with_request(_DispatchBody, "Dispatching a session")
-def dispatch_task(request: _DispatchBody, feed: BoardFeed, dispatch: Dispatcher | None) -> tuple[int, dict[str, str]]:
-    """Publish the dispatch of the session `request` names to its task: the HTTP status and JSON body.
+def dispatch_task(
+    task: str, session: str, replaces: str, feed: BoardFeed, dispatch: Dispatcher | None
+) -> tuple[int, dict[str, str]]:
+    """Publish the dispatch of `session` to `task`, which `PUT /api/tasks/{id}` names as an `assignee` change: the HTTP
+    status and JSON body.
 
-    The task actor pins the session and moves the lane; this route writes nothing. It refuses, 409, what the actor
-    would leave: a task another session holds (unless `replaces` names that holder, whom the caller found dead), a
-    session that already holds another task In Progress, and a task outside Ready, Needs attention and In Progress.
-    A dispatch the event log did not append is a 502, never a 202.
+    The task actor pins the session and moves the lane; this writes nothing. It refuses, 409, what the actor
+    would leave: a task another session holds (unless `replaces`, the `base` assignee, names that holder, whom the
+    caller found dead), a session that already holds another task In Progress, and a task outside Ready, Needs
+    attention and In Progress. A dispatch the event log did not append is a 502, never a 202.
     """
-    task, session, replaces = request.task, request.session, request.replaces or ""
     if dispatch is None:
         return 501, {"error": "this deployment publishes no dispatch events"}
     if (agent := held_task(feed, task)) is None:
