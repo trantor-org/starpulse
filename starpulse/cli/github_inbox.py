@@ -16,6 +16,12 @@ import sys
 import time
 from pathlib import Path
 
+lazy from starpulse.event_log.opening import open_event_log
+lazy from starpulse.github.adapters.outbound.purge import purge, restore
+lazy from starpulse.github.adapters.outbound.queue import SqlQueue
+lazy from starpulse.pulls.adapters.inbound.pull_deliveries import CONSUMER, URGENT
+lazy from starpulse.runtime.config import discover, load
+
 __all__ = ["main"]
 
 
@@ -33,11 +39,6 @@ def main(argv: list[str] | None = None) -> int:
     if (args.action == "retire") != (args.before is not None):
         parser.error("--before goes with retire alone, which needs it")
 
-    from starpulse.event_log.opening import open_event_log  # noqa: PLC0415 - import cost, paid on first use
-    from starpulse.github.adapters.outbound.purge import purge, restore  # noqa: PLC0415
-    from starpulse.github.adapters.outbound.queue import SqlQueue  # noqa: PLC0415
-    from starpulse.pulls.adapters.inbound.pull_deliveries import CONSUMER, URGENT  # noqa: PLC0415
-    from starpulse.runtime.config import discover, load  # noqa: PLC0415
 
     try:
         path = discover(args.config)

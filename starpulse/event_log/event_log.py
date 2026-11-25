@@ -195,10 +195,11 @@ def _sqlite_wal(dbapi_connection: Any) -> None:
 
 
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
-    """The pragmas each connection keeps for itself: the database file keeps neither `synchronous` nor the WAL limit."""
+    """The pragmas each connection keeps for itself: the database file keeps none of `synchronous`, the WAL limit and `foreign_keys`."""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute(f"PRAGMA journal_size_limit={WAL_SIZE_LIMIT}")
+    cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
 
@@ -242,7 +243,6 @@ class EventLog:
         self._engine = engine
         self._unpooled: Engine | None = None
         self._ready = False
-        self._listening = False  # the listeners go on once, however many opens a refused store takes
         self._lock = threading.Lock()
         self._appended = threading.Condition()
         self._appends = 0
@@ -268,9 +268,6 @@ class EventLog:
             if not self._ready:
                 if self._engine is None:
                     self._engine = store_engine(self.url)
-                if not self._listening:
-                    event.listen(self._engine, "connect", _sqlite_pragmas)
-                    self._listening = True
                 with self._engine.connect() as db:
                     _sqlite_wal(db.connection.dbapi_connection)
                 require_migrated(self._engine)
@@ -806,10 +803,13 @@ def insert_event(db: Connection, stream: str, fields: Mapping[str, Any], key: st
 def store_engine(url: str) -> Engine:
     """An engine on the store at `url` that waits on a locked SQLite database as long as the server does."""
     if make_url(url).database in (None, "", ":memory:"):  # one in-memory database per connection: no pool to size
-        return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
-    return create_engine(
-        url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT}, pool_size=_POOL_SIZE, max_overflow=_POOL_OVERFLOW
-    )
+        engine = create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
+    else:
+        engine = create_engine(
+            url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT}, pool_size=_POOL_SIZE, max_overflow=_POOL_OVERFLOW
+        )
+    event.listen(engine, "connect", _sqlite_pragmas)
+    return engine
 
 
 def unpooled_engine(engine: Engine) -> Engine:

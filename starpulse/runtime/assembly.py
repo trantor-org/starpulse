@@ -12,8 +12,8 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse.board.adapters import machines_only, native, policy_store
-from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.application.queries.machine_tasks import MachineDeltas
+from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.policy import Policy, profile_matrix
 from starpulse.board.model.seam import Board
 from starpulse.event_log.claude_sessions import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS, session_activity_of
@@ -24,25 +24,26 @@ from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.github.adapters.inbound import reconcile
+from starpulse.github.adapters.outbound.app_jwt import app_jwt
 from starpulse.github.adapters.outbound.cursors import SqlCursors
 from starpulse.github.adapters.outbound.inbox import SqlInbox
 from starpulse.github.adapters.outbound.queue import backlogs
-from starpulse.github.adapters.outbound.verdicts import Backlogs
 from starpulse.github.adapters.outbound.reconciled import Reconciled
-from starpulse.github.adapters.outbound.app_jwt import app_jwt
 from starpulse.github.adapters.outbound.rest import Client, connect_client
+from starpulse.github.adapters.outbound.verdicts import Backlogs
 from starpulse.github.model.github_config import GitHub
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
 from starpulse.pulls.model.ci import CiError, attach
-from starpulse.scheduler.model.config import ACTOR as SCHEDULER_ACTOR
 from starpulse.runtime import read_model_follow
 from starpulse.runtime.config import Config, ConfigError, runs_adapter
+from starpulse.scheduler.model.config import ACTOR as SCHEDULER_ACTOR
 from starpulse.sweeper.passes import Outcome, Step
 
 if TYPE_CHECKING:
     from starpulse.pulls.adapters.outbound.pulls import PullStore
+lazy from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +56,7 @@ def _holder_activity(config: Config) -> Callable[[str], dict[str, Any]]:
 @functools.cache
 def _pull_store(engine: Engine) -> PullStore:
     """The scheduler's one store of pull requests: building it reads every open and recent row, so it is built once."""
-    from starpulse.pulls.adapters.outbound.pulls import (
-        PullStore,
-    )  # only the scheduler worker needs it, not the `serve` supervisor
+    from starpulse.pulls.adapters.outbound.pulls import PullStore
 
     return PullStore(engine)
 
@@ -213,7 +212,6 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
     Opening it puts every StarPulse table, the event log's included, on that database. It reads the `pr-checks`
     machine beside the board's, so a task's check rollup is in its events.
     """
-    from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     return HistoryStore(
         database_url(config.database_url, base),

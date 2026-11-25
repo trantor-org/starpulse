@@ -88,6 +88,7 @@ from starpulse.pulls.model.task_actor.derivation import (
 if TYPE_CHECKING:  # annotation only: the pull store and the event log open the database stack
     from starpulse.event_log.event_log import EventLog
     from starpulse.pulls.adapters.outbound.pulls import PullStore
+lazy from starpulse.event_log.claude_sessions import same_holder
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +256,9 @@ def moves_of(machine: Mapping[str, Any]) -> dict[tuple[str, str], str]:
     """`{(lane, event): target lane}` for the transitions of a drawn machine (`snapshot.describe`), and the same moves
     under `(lane, "<event>:<target>")`, which tells an event that leads to several lanes which one a request names."""
     moves = {(move["source"], move["event"]): move["target"] for move in machine["transitions"]}
-    return moves | {(move["source"], f"{move['event']}:{move['target']}"): move["target"] for move in machine["transitions"]}
+    return moves | {
+        (move["source"], f"{move['event']}:{move['target']}"): move["target"] for move in machine["transitions"]
+    }
 
 
 #: How many of a hold's reasons its comment lists; the rest are counted.
@@ -376,6 +379,7 @@ class TaskActor:
         self._releasable: set[str] = set()
         self._dates: dict[str, tuple[str, ...]] = {}
         self._latest = latest
+        self._commits: dict[str, dict[str, str]] = {}  # a task -> the commit each subject it waits on must contain
         self._unpublished = unpublished
         self._publisher: dict[str, tuple[str | None, float]] = {}
         self._holds = holds
@@ -406,6 +410,7 @@ class TaskActor:
         #: Tasks whose `deps_done` the board holds; a task created re-derives them.
         self._held: set[str] = set()
         self._gate = PinGate(feed, store, repos, pin_rule, pins, live)
+        self._pins = pins
         self._board_repo = (
             board_repo  # the repository whose pull requests read as a bare `PR #N`; another repo links its URL
         )
@@ -859,11 +864,16 @@ class TaskActor:
         """Index the event subjects `agent` waits on in a gated lane; True when they differ from the last call's. A
         subject whose last event is already recorded counts as heard, so a wait met before the park releases at once."""
         gate = criteria.subjects(agent["description"]) if agent["state"] in self._gated_lanes else ()
-        if gate == self._gates.get(name, ()):
+        commits = criteria.commits(agent["description"]) if gate else {}
+        if gate == self._gates.get(name, ()) and commits == self._commits.get(name, {}):
             return False
-        heard = {subject for subject in gate if self._latest is not None and self._latest(subject)}
+        heard = {
+            subject for subject in gate if subject not in commits and self._latest is not None and self._latest(subject)
+        }
         self._unwatch(name)
         self._gates[name] = gate
+        if commits:
+            self._commits[name] = commits
         for subject in gate:
             self._until.setdefault(subject, set()).add(name)
         if heard:
@@ -876,14 +886,24 @@ class TaskActor:
             if not self._until[subject]:
                 del self._until[subject]
         self._heard.pop(name, None)
+        self._commits.pop(name, None)
 
-    def event_seen(self, subject: str) -> None:
-        """Derive the Waiting tasks parked on `subject` again: the first event on a subject they wait on releases them."""
+    def event_seen(self, subject: str, sha: str | None = None) -> None:
+        """Derive the Waiting tasks parked on `subject` again: the first event on a subject they wait on releases them.
+
+        A task parked for a commit is released only by an event whose `sha` build contains that commit."""
         with self._lock:
-            names = sorted(self._until.get(subject, ()))
+            names = sorted(
+                name
+                for name in self._until.get(subject, ())
+                if (commit := self._commits.get(name, {}).get(subject)) is None or self._contains(sha, commit)
+            )
             for name in names:
                 self._heard.setdefault(name, set()).add(subject)
             self.touch([TaskTouched(name, Trigger.ON_ALERT, subject) for name in names])
+
+    def _contains(self, sha: str | None, commit: str) -> bool:
+        return bool(sha and self._pins and self._board_repo and self._pins.reaches(self._board_repo, commit, sha))
 
     def _index(self, agent: dict[str, Any]) -> None:
         """Take `agent`'s lane, dependencies, pull requests and checked criteria into the indexes."""
@@ -1661,7 +1681,6 @@ class TaskActor:
         """A session was dispatched to `name`: pin it as the task's holder, and move a Ready task, or a Needs attention one
         the operator answered, to In Progress. A task another session holds keeps that holder, since its lease ends only
         with its own session (`session_ended`)."""
-        from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a session is named
 
         with self._lock:
             agent = self._feed.task(name, lean=True)
@@ -1681,8 +1700,10 @@ class TaskActor:
             comment = f"Dispatched: {session} holds it."
             refusal = self._judged(name, changes, comment) if moving else Written(True, name)
             self._dispatching[name] = session
-            written = refusal if not refusal.ok else self._apply(
-                name, changes, comment, again=lambda: self._redispatch(name, session), session=session
+            written = (
+                refusal
+                if not refusal.ok
+                else self._apply(name, changes, comment, again=lambda: self._redispatch(name, session), session=session)
             )
             if not (written.transient and name in self._lock_tries):
                 self._dispatching.pop(name, None)
@@ -1699,7 +1720,6 @@ class TaskActor:
     def session_ended(self, name: str, session: str) -> None:
         """The harness ended `session`: the lease of `name` it holds ends, and the task keeps its lane, since started work
         never returns to Ready."""
-        from starpulse.event_log.claude_sessions import same_holder  # noqa: PLC0415 - the transcript reader loads when a session is named
 
         with self._lock:
             if self._dispatching.get(name) == session:
@@ -2278,7 +2298,12 @@ class TaskActor:
             return Written(False, str(error))
 
     def _edit_retrying(
-        self, name: str, changes: Mapping[str, Any], comment: str, over: str = "", again: Callable[[], None] | None = None
+        self,
+        name: str,
+        changes: Mapping[str, Any],
+        comment: str,
+        over: str = "",
+        again: Callable[[], None] | None = None,
     ) -> Written:
         """The board's edit; while SQLite reports the database locked, its next try waits off the actor lock (a timer
         runs `again`, the operation that failed, or derives the task again when lane facts rebuild it, after each of
@@ -2293,7 +2318,9 @@ class TaskActor:
             tries = self._lock_tries.get(name, 0)
             self._lock_tries[name] = tries + 1
             if tries < len(LOCK_BACKOFF_S):
-                timer = threading.Timer(LOCK_BACKOFF_S[tries], again or self._derive_overdue, args=() if again else (name,))
+                timer = threading.Timer(
+                    LOCK_BACKOFF_S[tries], again or self._derive_overdue, args=() if again else (name,)
+                )
                 timer.daemon = True
                 timer.start()
             else:

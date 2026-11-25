@@ -18,6 +18,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from starpulse.event_log.wake import StopEvent
+lazy from starpulse.event_log.event_log import Tail
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,6 @@ def then(handle: Callable[[Entry], None], after: Callable[[], None]) -> Callable
 
 
 def _follow(log: EventLog, handle: Callable[[Entry], None], name: str, stop: StopEvent) -> threading.Thread:
-    from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the database stack loads when a log opens
 
     thread = threading.Thread(target=Tail.live(log, STREAM).run, args=(handle, stop), name=name, daemon=True)
     thread.start()

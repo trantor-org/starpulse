@@ -25,12 +25,15 @@ from typing import TYPE_CHECKING, Any
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import CLAUDE_CODE, Signal, claim_key, claimed, main_thread_source
+from starpulse.harness_telemetry.adapters.inbound.otlp import BRANCH, _attributes, _epoch, _records
 from starpulse.harness_telemetry.model.activity import SHELLS, activities, elide_heredocs, paths, writes_file
 from starpulse.harness_telemetry.model.intent_classification import intent_label
-from starpulse.harness_telemetry.adapters.inbound.otlp import BRANCH, _attributes, _epoch, _records
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
+lazy from sqlalchemy.exc import SQLAlchemyError
+
+lazy from starpulse.flow_metrics.adapters.outbound.session_ledger import SessionLedger
 
 __all__ = ["CLAUDE_CODE", "Signal", "TelemetryLog", "held", "redactor", "signals", "telemetry_log"]
 
@@ -391,7 +394,6 @@ class TelemetryLog:
         self._analytics = analytics
 
     def publish(self, found: Iterable[Signal]) -> None:
-        from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415 - the database stack loads when a log opens
 
         try:
             self._ledger().apply(found)
@@ -402,7 +404,6 @@ class TelemetryLog:
         """The task `session` last claimed in an export and when, or None when it claimed none.
 
         Raises `ClaimUnreadable` when the folds cannot be read, so a failed read is not taken for no claim."""
-        from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415 - the database stack loads when a log opens
 
         try:
             return self._ledger().last_claim(harness, session)
@@ -411,7 +412,6 @@ class TelemetryLog:
             raise ClaimUnreadable(session) from None
 
     def _ledger(self):
-        from starpulse.flow_metrics.adapters.outbound.session_ledger import SessionLedger  # noqa: PLC0415
 
         return SessionLedger(self._events, self._keys, self._analytics)
 

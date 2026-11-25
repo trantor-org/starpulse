@@ -11,18 +11,20 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+lazy from sqlalchemy import create_engine
+
+lazy from starpulse.board.adapters.task_parity import check, filed, import_missing
+lazy from starpulse.event_log.opening import database_url
+lazy from starpulse.event_log.store import EventStore
+lazy from starpulse.runtime.config import ConfigError, discover, load
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="starpulse parity", description="compare every task's History with its file")
     parser.add_argument("--config", type=Path, help="the TOML config the server runs with (default starpulse.toml)")
     parser.add_argument("--import", dest="load", action="store_true", help="first import each task without History")
     args = parser.parse_args(argv)
-    from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that checks
 
-    from starpulse.board.adapters.task_parity import check, filed, import_missing  # noqa: PLC0415 - import cost, paid only by a run that checks
-    from starpulse.event_log.opening import database_url  # noqa: PLC0415 - import cost, paid only by a run that checks
-    from starpulse.event_log.store import EventStore  # noqa: PLC0415 - import cost, paid only by a run that checks
-    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid only by a run that checks
 
     path = discover(args.config)
     try:

@@ -21,6 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+lazy from sqlalchemy.engine import make_url
+
 from starpulse.board.adapters.display_settings import DisplaySettings
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.adapters.holder_idle import dispatcher
@@ -62,6 +64,17 @@ from starpulse.views.adapters.outbound.take_over import command_take_over
 from starpulse.views.adapters.outbound.webhook_command import command_webhook
 from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
+lazy from starpulse.board.adapters.search import SearchIndex
+lazy from starpulse.event_log.event_log import EventLog, bound_wal
+lazy from starpulse.event_log.machine_store import MachineStore
+lazy from starpulse.event_log.migrate import StoreNotMigrated
+lazy from starpulse.event_log.opening import database_url
+lazy from starpulse.event_log.readmodel.declared import declared_fields
+lazy from starpulse.event_log.readmodel.read_model import ReadModel
+lazy from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
+lazy from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES
+lazy from starpulse.pulls.adapters.outbound.pulls import PullStore
+lazy from starpulse.views.model.encoding import encode_snapshot
 
 
 @dataclasses.dataclass(frozen=True)
@@ -111,18 +124,7 @@ def serve_page(
 ) -> None:
     """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child."""
 
-    from sqlalchemy.engine import make_url  # noqa: PLC0415 - the database stack loads after the config is accepted
 
-    from starpulse.board.adapters.search import SearchIndex  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.event_log import EventLog, bound_wal  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.machine_store import MachineStore  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.migrate import StoreNotMigrated  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.readmodel.declared import declared_fields  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.readmodel.read_model import ReadModel  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.event_log.readmodel.snapshot_store import SnapshotStore  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.pulls.adapters.outbound.pulls import PullStore  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.views.model.encoding import encode_snapshot  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()
@@ -175,7 +177,6 @@ def serve_page(
     if config.task_actor:
         actor_metrics = metrics_of(log)
     host.announce(port)
-    from starpulse.pulls.adapters.outbound.github import GITHUB_MACHINES  # noqa: PLC0415 - the database stack loads after the config is accepted
 
     cloudevents = (
         CloudEventsIngest(

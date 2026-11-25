@@ -19,7 +19,8 @@ A failing-checks line names the skill that answers it, `skill=starpulse:fix-chec
 task's red check rather than waiting on the task actor's Review move, which only passing checks fire.
 
 An `incident.<type>.<key>` event, which `starpulse incident open` publishes straight to NATS, is one line naming its owner task
-and finder; one older than `INCIDENT_FRESH_S` is acked with no line.
+and finder; one older than `INCIDENT_FRESH_S`, one whose owner task is done or archived, and one that names the
+`parked` holders it woke (`--failing-pull`) for another consumer are acked with no line.
 
 A pull request event judged at one head (`data.head`, the `ci` machine's CONFLICTED) is acked with no line once the
 store holds a different head for that pull request: a push already answered it, and the bridge's lag or a consumer's
@@ -86,6 +87,18 @@ def _stale(event: Event) -> bool:
     body = _incident(event)
     at = body.get("at") if body else None
     return isinstance(at, (int, float)) and time.time() - at > INCIDENT_FRESH_S
+
+
+def _unaddressed(event: Event, name: str) -> bool:
+    body = _incident(event)
+    parked = body.get("parked") if body else None
+    return isinstance(parked, list) and name not in parked
+
+
+def _closed(event: Event, closed: Callable[[str], bool] | None) -> bool:
+    body = _incident(event)
+    owner = body.get("task") if body else None
+    return bool(closed and isinstance(owner, str) and closed(owner))
 
 
 def _incident_line(event: Event, body: dict) -> Line:
@@ -187,6 +200,7 @@ def route(
     head: Callable[[str, int], str | None] | None = None,
     lane_of: Callable[[str], str | None] | None = None,
     working: Callable[[], str] = lambda: "in_progress",
+    closed: Callable[[str], bool] | None = None,
 ) -> Route:
     """A session with no registration has no route, so its events stay on its consumer. A consumer named for a
     claude.ai URL holder is the running session whose record in `sessions` carries that bridge id, which registered
@@ -218,6 +232,8 @@ def route(
                 for event in events
                 if _seen_key(event) not in received
                 and not _stale(event)
+                and not _unaddressed(event, name)
+                and not _closed(event, closed)
                 and not _passed(event, head)
                 and not _parked(event, lane_of, working)
                 and not _quieted(event, quiet or {}, own, sessions)

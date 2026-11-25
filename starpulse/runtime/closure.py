@@ -20,9 +20,12 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
+lazy from sqlalchemy.exc import SQLAlchemyError
+
 from starpulse.runtime import launch
 from starpulse.runtime.config import Config, discover, load
 from starpulse.runtime.nats_server import CHILD
+lazy from starpulse.board.model.adapter_types import module_name
 
 SELF = "serve"
 
@@ -267,7 +270,6 @@ def adapter_module(board_type: str) -> str:
     entry's import closure holds it and an edit to it would reach no child unless it is read with the closure.
 
     Raises `ReloadError` when the type names no module."""
-    from starpulse.board.model.adapter_types import module_name  # noqa: PLC0415 - `serve`'s closure holds no board module
 
     try:
         return module_name(board_type)
@@ -297,7 +299,6 @@ def _policy_hash(config: Config, base: Path) -> str:
     """The hash of the board policy the store holds, which a worker reads once at start: a merged policy migration
     changes the rows, not any file, so without it a reload keeps the workers on the old watches and rules. A store that
     holds no policy hashes the empty one."""
-    from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415 - `serve`'s closure holds no store module
 
     from starpulse.board.adapters import policy_store  # noqa: PLC0415 - as above
     from starpulse.event_log.opening import database_url  # noqa: PLC0415 - as above

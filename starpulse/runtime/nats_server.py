@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from starpulse.bridge.reach import Reach
     from starpulse.bridge.subscriptions import Rules
+lazy from starpulse.runtime import launch
 
 #: The release `serve` runs; a newer one is a change to this line and to `DIGESTS`.
 VERSION = "v2.15.2"
@@ -177,7 +178,6 @@ def bridge_commands(config: object, config_path: Path | None) -> dict[str, list[
         return {}
     base = config_path.parent if config_path else Path.cwd()
     store = Path(bridge.store_dir) if bridge.store_dir else base / DEFAULT_STORE
-    from starpulse.runtime import launch  # noqa: PLC0415 - the child itself imports nothing of StarPulse
 
     return {CHILD: [launch.interpreter(), "-m", __name__, "--port", str(bridge.port), "--store-dir", str(store)]}
 

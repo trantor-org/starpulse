@@ -23,6 +23,10 @@ from typing import Any
 
 from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.listen import listen_options
+lazy from starpulse.runtime.config import rehearsing
+lazy from starpulse.runtime.contexts import contexts_of
+lazy from starpulse.runtime.hold import BOOT_ENV
+lazy from starpulse.runtime.readiness import readiness
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +56,6 @@ def worker_parser() -> argparse.ArgumentParser:
 
 def _readiness(log: Any, feed: Any, config: Any) -> Callable[[], dict[str, Any]]:
     """The reader of `/api/health` over the contexts `config` makes `serve` supervise and the boot token it handed them."""
-    from starpulse.runtime.config import rehearsing  # noqa: PLC0415 - only the api worker pays for it
-    from starpulse.runtime.contexts import contexts_of  # noqa: PLC0415
-    from starpulse.runtime.hold import BOOT_ENV  # noqa: PLC0415
-    from starpulse.runtime.readiness import readiness  # noqa: PLC0415
 
     return readiness(log, feed, [*contexts_of(config), *([] if rehearsing() else ["pulls"])], os.environ.get(BOOT_ENV))
 

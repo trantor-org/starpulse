@@ -19,6 +19,9 @@ from typing import Any, TextIO
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 
+lazy from starpulse.cli import agent_cli, agent_wire
+lazy from starpulse.cli.lane_scope import scope
+
 __all__ = ["LaneTools", "lane_argv", "main", "serve", "task_of_branch"]
 
 _BRANCH = re.compile(r"^claude/task-(\d+)-")
@@ -157,7 +160,6 @@ def lane_of(task: str) -> str | None:
 
 def _in_process(argv: list[str]) -> dict[str, Any]:
     """One agent CLI verb run here, and the JSON document it printed."""
-    from starpulse.cli import agent_cli  # noqa: PLC0415 - import cost, paid only by a call that reaches the server
 
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -204,8 +206,6 @@ def serve(tools: LaneTools, stdin: TextIO, stdout: TextIO) -> None:
 
 def main(argv: list[str], stdin: TextIO = sys.stdin, stdout: TextIO = sys.stdout) -> int:
     """Serve the lane tools of the task the current branch is for over stdio, one JSON-RPC message a line."""
-    from starpulse.cli import agent_wire  # noqa: PLC0415 - import cost, paid only by a run that serves
-    from starpulse.cli.lane_scope import scope  # noqa: PLC0415 - import cost, paid only by a run that serves
 
     root = Path.cwd()
     branch = subprocess.run(  # noqa: S603 - a fixed argv

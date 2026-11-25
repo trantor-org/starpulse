@@ -190,7 +190,10 @@ def open_incident(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     except agent_wire.CliError as exc:
         if exc.code != "unavailable":
             raise
-    body = {"type": kind, "key": key, "finder": session, "task": task, "at": int(time.time())}
+    body: dict[str, Any] = {"type": kind, "key": key, "finder": session, "task": task, "at": int(time.time())}
+    if args.failing_pull:
+        holders = {a["id"]: a.get("assignee") or "" for a in board_flow(snapshot)["agents"]} if waiting else {}
+        body["parked"] = [token(holders[t]) for t in waiting]
     try:
         _publish(f"nats://127.0.0.1:{config.port}", source, json.dumps(body).encode(), wake_subject(config.board))
         published = True

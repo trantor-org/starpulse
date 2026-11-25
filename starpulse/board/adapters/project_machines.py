@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from starpulse.machine_engine.model.machine_definition import Compiled
     from starpulse.machine_engine.model.snapshot import Qualify
+lazy from starpulse.machine_engine.adapters.machine_loader import load_machine
+lazy from starpulse.machine_engine.model.snapshot import describe, is_workflow, writers
 
 __all__ = ["DIRECTORY", "draw", "load"]
 
@@ -21,9 +23,6 @@ DIRECTORY = Path(".starpulse") / "machines"
 
 def load(base: Path, board_file: Path | None) -> dict[str, Compiled]:
     """Each machine file under `base`'s machines directory except the Board's, compiled, by file stem."""
-    from starpulse.machine_engine.adapters.machine_loader import (  # noqa: PLC0415 - import cost, paid on first use
-        load_machine,
-    )
 
     board = board_file.resolve() if board_file else None
     files = [path for path in sorted((base / DIRECTORY).glob("*.yaml")) if path.resolve() != board]
@@ -37,11 +36,6 @@ def draw(flows: Mapping[str, Compiled], qualify: Qualify, workflows: Collection[
     another is refused by that name.
     """
     from starpulse.machine_engine.model.machine_definition import refuse_unlisted
-    from starpulse.machine_engine.model.snapshot import (  # noqa: PLC0415 - import cost, paid on first use
-        describe,
-        is_workflow,
-        writers,
-    )
 
     if workflows:
         for name, compiled in flows.items():

@@ -22,6 +22,8 @@ from hypercorn.asyncio.run import worker_serve
 from hypercorn.asyncio.tcp_server import TCPServer
 from hypercorn.config import Config, Sockets
 from hypercorn.utils import wrap_app
+lazy from aioquic.h3.connection import FrameUnexpected
+lazy from hypercorn.protocol.h3 import H3Protocol
 
 from starpulse.contracts.reads import BACKLOG
 from starpulse.views.adapters.inbound.asgi_app import PageApp
@@ -56,8 +58,6 @@ def _survive_cancelled_streams() -> None:
     then runs `send(None)`, which answers a stream still in its request state with a 500 through the same `stream_send`
     and raises again outside the `try`. That second error leaves Hypercorn's `TaskGroup`, which cancels
     `UDPServer.run`; `worker_serve` never awaits that task, so the QUIC socket stays bound and answers nothing."""
-    from aioquic.h3.connection import FrameUnexpected  # noqa: PLC0415
-    from hypercorn.protocol.h3 import H3Protocol  # noqa: PLC0415
 
     send = H3Protocol.stream_send
     if getattr(send, "drops_cancelled_streams", False):

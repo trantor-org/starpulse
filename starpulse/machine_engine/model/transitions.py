@@ -5,8 +5,9 @@ from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # annotation only: the machine definition imports this module
-    from starpulse.contracts.adapters import Move
     from starpulse.machine_engine.model.machine_definition import Writer
+
+lazy from starpulse.contracts.adapters import Move
 
 __all__ = ["DEFAULT_STATUSES", "Table", "board_machine", "board_moves", "lane_id", "tables"]
 
@@ -52,8 +53,6 @@ def board_moves(
     A move's writers are the actors the YAML declares for the events that make it; when any of those events
     declares none, anyone may make the move.
     """
-    from starpulse.contracts.adapters import Move  # noqa: PLC0415 - import cost, paid on first use
-
     events: dict[tuple[str, str], list[str]] = {}
     for t in machine["transitions"]:
         if t["source"] != t["target"] and (lanes is None or {t["source"], t["target"]} <= set(lanes)):

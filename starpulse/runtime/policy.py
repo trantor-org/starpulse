@@ -30,6 +30,15 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
 
+lazy from sqlalchemy import create_engine
+
+lazy from starpulse.board.adapters import policy_chain
+lazy from starpulse.board.adapters.lane_policy import load_policy
+lazy from starpulse.board.model.policy_diff import changes, drift_report, rows
+lazy from starpulse.event_log.migrate import StoreNotMigrated, require_migrated
+lazy from starpulse.event_log.opening import database_url
+lazy from starpulse.runtime.config import ConfigError, discover, load
+
 __all__ = ["main"]
 
 
@@ -42,17 +51,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     merge = verbs.add_parser("merge", help="join a forked operator chain's heads at the declared policy")
     export = verbs.add_parser("export", help="write the governing policy as a JSON document")
     export.add_argument("--out", type=Path, help="the file to write (default stdout)")
-    load = verbs.add_parser("import", help="make a JSON policy document the store's active policy")
-    load.add_argument("file", type=Path, help="a document `export` wrote")
-    for verb in (show, revision, merge, export, load):
+    importer = verbs.add_parser("import", help="make a JSON policy document the store's active policy")
+    importer.add_argument("file", type=Path, help="a document `export` wrote")
+    for verb in (show, revision, merge, export, importer):
         verb.add_argument("--config", type=Path, help="the TOML config the server runs with (default starpulse.toml)")
     args = parser.parse_args(argv)
-    # The store and the config cost over a second to import: `--help` and a flag error pay none of it.
-    from sqlalchemy import create_engine  # noqa: PLC0415 - import cost, paid only by a run that shows
-
-    from starpulse.event_log.migrate import StoreNotMigrated, require_migrated  # noqa: PLC0415 - import cost, paid only by a run that shows
-    from starpulse.event_log.opening import database_url  # noqa: PLC0415 - import cost, paid only by a run that shows
-    from starpulse.runtime.config import ConfigError, discover, load  # noqa: PLC0415 - import cost, paid only by a run that shows
 
     path = discover(args.config)
     try:
@@ -78,7 +81,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _show(engine, board, base: Path) -> int:  # noqa: ANN001 - the engine and board are typed where they are imported
-    from starpulse.board.adapters.lane_policy import load_policy  # noqa: PLC0415 - import cost, paid only by a run that shows
 
     source, policy = load_policy(engine, board, base)
     print(json.dumps({"source": source, **asdict(policy)}))
@@ -116,7 +118,6 @@ def _import(parser: argparse.ArgumentParser, engine, file: Path) -> int:  # noqa
 
 
 def _chain(parser: argparse.ArgumentParser, board, base: Path):  # noqa: ANN001, ANN202 - the board and Policy are typed where they are imported
-    from starpulse.board.adapters import policy_chain  # noqa: PLC0415 - import cost, paid only by a run that revises
 
     settings = board.get("policy")
     if not isinstance(settings, dict) or not {"declared", "migrations"} <= settings.keys():
@@ -136,7 +137,6 @@ def _chain(parser: argparse.ArgumentParser, board, base: Path):  # noqa: ANN001,
 
 
 def _merge(parser: argparse.ArgumentParser, board, base: Path) -> int:  # noqa: ANN001
-    from starpulse.board.adapters import policy_chain  # noqa: PLC0415 - import cost, paid only by a run that merges
 
     migrations, _, wanted = _chain(parser, board, base)
     written = policy_chain.merge(migrations, wanted)
@@ -146,7 +146,6 @@ def _merge(parser: argparse.ArgumentParser, board, base: Path) -> int:  # noqa: 
 
 def _revision(parser: argparse.ArgumentParser, engine, board, base: Path, message: str) -> int:  # noqa: ANN001
     from starpulse.board.adapters import policy_chain, policy_store  # noqa: PLC0415 - import cost, paid only by a run that revises
-    from starpulse.board.model.policy_diff import changes, drift_report, rows  # noqa: PLC0415 - import cost, paid only by a run that revises
 
     migrations, version_table, wanted = _chain(parser, board, base)
     policy_chain.scaffold(migrations, version_table, engine.url)

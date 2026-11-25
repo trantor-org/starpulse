@@ -32,6 +32,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
     from starpulse.board.model.board_feed import BoardFeed
     from starpulse.event_log.event_log import EventLog
     from starpulse.pulls.adapters.outbound.pulls import PullStore
+lazy from starpulse.pulls.application.commands.ci_trail import CiTrail
 
 _MERGEABLE_TIMEOUT = 10.0
 
@@ -94,8 +95,6 @@ def start_delivery(
     The actor records the lane of each write it makes on `feed` (`BoardFeed.record_written`); `after_project` runs
     after each set of pull request rows reaches the feed. Raises `ValueError` naming a table the board cannot serve.
     """
-    from starpulse.pulls.application.commands.ci_trail import CiTrail  # noqa: PLC0415 - the database stack loads when a store does
-
     # a config can turn the store off, and a task then carries no PR state
     release = config.release
     live = LiveBuild(release.repo, running_commit) if release and release.settle == "release" else None

@@ -188,7 +188,7 @@ the board did not answer either. The owner task is the board's own: the verb
 creates one filed under source `incident.<type>.<key>` and claims it, so a second finder finds the open task, holds
 nothing and publishes nothing. While the board is down the publish goes out with `task` null and the verb leaves the
 task to the finder's rerun, which creates it and publishes again with its id; a finder's rerun with its task already
-made only publishes again. A task in the done state no longer holds the incident. `--failing-pull` narrows the tasks that wait to those with an open pull request whose checks read failing.
+made only publishes again. A task in the done state no longer holds the incident. `--failing-pull` narrows the tasks that wait to those with an open pull request whose checks read failing, and the incident's body names them as `parked`, so only their sessions are woken by it, never the rest of the reach.
 
 The incident's type declares in `[bridge.incidents.<type>]` which sessions it reaches: the held tasks with any listed
 `kinds` (`kind-*` label) and any listed `areas` (`area-*` label), in the working lane, the only one a task can wait from. A table must name at least one selector, and a type with no table reaches none. With the owner
@@ -201,7 +201,7 @@ rerun parks the tasks that began since. A raw publish to the subject, with no ve
 The same reach subscribes the sessions to the incident: the bridge gives the holder of a working-lane task in a type's
 reach the subject `incident.<type>.>` beside the task's own, and drops it when the task leaves the working lane or
 finishes, so a session told of one incident is not woken by the next after it has moved on. The notifier posts one line,
-`incident.<type>.<key>: task=<owner task> finder=<session> (<time>)`, and a session may also `subscribe` to one by hand.
+`incident.<type>.<key>: task=<owner task> finder=<session> (<time>)`, and a session may also `subscribe` to one by hand. A consumer created after an incident was published, and a session of an incident whose owner task is done or archived, are delivered none.
 An incident older than six hours is acked with no line, so a consumer first granted the subject is not woken by every
 old key the stream still holds. The publish needs no API, but the line needs the bridge and the session's registration,
 so a stopped `serve` delivers nothing and the finder's owner task is the record.

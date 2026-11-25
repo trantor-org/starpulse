@@ -22,6 +22,8 @@ from starpulse.runtime.hold import BOOT_ENV, CLAUDE_CODE_FD_ENV, GITHUB_FD_ENV, 
 from starpulse.runtime.listen import held_socket, inherited_socket, listen, listen_options, resolve_listen
 from starpulse.runtime.nats_server import bridge_commands
 from starpulse.runtime.supervisor import Supervisor, worker_commands
+lazy from starpulse.event_log.opening import database_url
+lazy from starpulse.runtime.readiness import forget_starts
 
 
 def serve_parser() -> argparse.ArgumentParser:
@@ -55,8 +57,6 @@ def stay_until_stopped() -> None:
 def forget_old_starts(config: Config, args: argparse.Namespace) -> None:
     """Drop the context stamps of the image this one re-executed from; a store it cannot reach is logged, and the page
     then reads the old image's contexts as started until the new ones stamp again."""
-    from starpulse.event_log.opening import database_url  # noqa: PLC0415 - the database stack loads after the config is accepted
-    from starpulse.runtime.readiness import forget_starts  # noqa: PLC0415
 
     base = args.config.parent if args.config else Path.cwd()
     try:

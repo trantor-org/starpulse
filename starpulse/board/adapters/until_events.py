@@ -12,14 +12,14 @@ if TYPE_CHECKING:
 
 
 def follow_until_events(
-    seen: Callable[[str], None], subject_of: Callable[[Entry], str | None], log: EventLog, stop: StopEvent
+    seen: Callable[[str, str | None], None], subject_of: Callable[[Entry], str | None], log: EventLog, stop: StopEvent
 ) -> threading.Thread:
-    """Call `seen` with the subject of each machine event recorded after this call, within the event's own latency."""
+    """Call `seen` with the subject, and the `sha` its data names, of each machine event recorded after this call, within the event's own latency."""
     from starpulse.event_log.event_log import Tail  # the server imports no database stack until a store opens
 
     def handle(entry: Entry) -> None:
         if subject := subject_of(entry):
-            seen(subject)
+            seen(subject, (entry.fields.get("data") or {}).get("sha"))
 
     tail = Tail.live(log, MACHINE_STREAM, streams=[MACHINE_STREAM])
     thread = threading.Thread(target=tail.run, args=(handle, stop), name="board-until-events", daemon=True)

@@ -37,6 +37,7 @@ __all__ = [
     "MilestoneReader",
     "MoveWriter",
     "OPERATOR",
+    "RETRO_MARKER",
     "RetiredProjector",
     "RetiredReader",
     "TaskArchiver",
@@ -170,6 +171,9 @@ class TaskCreator(Protocol):
 MilestoneLister = Callable[[], list[Mapping[str, Any]]]
 #: One milestone's record, or None when the board has no open milestone with that id.
 MilestoneReader = Callable[[str], Mapping[str, Any] | None]
+#: The `Retro` line a milestone opened without one gets: its first task opens the retro, and the retro waits on every
+#: open task in the milestone. A `retro` of `""` opens a milestone that asks for none.
+RETRO_MARKER = "Opens when the first task is filed into this milestone, and waits on every open task in it."
 #: Open a milestone with this title and details (`outcome`, `retro` as text, `specs`, `adrs` as lists, each optional); a
 #: successful `Written.output` is the new milestone's id.
 MilestoneCreator = Callable[[str, Mapping[str, Any]], Written]
