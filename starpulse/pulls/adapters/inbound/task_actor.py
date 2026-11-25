@@ -57,6 +57,7 @@ from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.markdown import (
     ANSWER_COMMENT,
     attention_reason,
+    decide_ask,
     needs_attention_text,
     operator_answered,
     section_set,
@@ -327,6 +328,7 @@ class TaskActor:
         advance: Callable[[str, str, str], None] | None = None,
         read: TaskReader = lambda _task: None,
         idle: Callable[[str, str], None] | None = None,
+        reply: Callable[[str], str] | None = None,
         end: Callable[[str, str], None] | None = None,
         end_lanes: Collection[str] = frozenset(),
         sequences: Mapping[str, Sequence[str]] = MappingProxyType({}),
@@ -358,6 +360,8 @@ class TaskActor:
         self._owner_source = owner_source
         self._read = read
         self._idle = idle
+        #: A task's holder's latest reply once its turn ended: a `**Decide:**` in it is an ask the settle moves to Needs attention.
+        self._reply = reply
         #: Ends a task's holder session once idle (`[bridge] end`), and the lanes where a task's session is ended.
         self._end = end
         self._end_lanes = end_lanes
@@ -1276,16 +1280,16 @@ class TaskActor:
             threading.Thread(
                 target=self._settle_checks, args=(url, record, self._checks), name="task-actor-checks", daemon=True
             ).start()
-        if record and record["state"] == "OPEN" and record["mergeable"] != "MERGEABLE":
+        if record and record["state"] == "OPEN":
             version = (record["headRefOid"], record["fetchedAt"])
             settled = self._settled.get(url, ((), None, 0.0))
             if settled[0] != version:
                 self._read_mergeable(url, version, record["repo"], record["number"])
-                return {**record, "mergeable": "UNKNOWN"}  # unsettled until the read hands its answer in
+                return {**record, "mergeable": "UNKNOWN"}  # a stored MERGEABLE may predate the base's tip: unsettled until GitHub answers
             if settled[1] is None and self._clock() - settled[2] >= _MERGEABLE_RETRY_S:
                 self._read_mergeable(url, version, record["repo"], record["number"])
-            if settled[1] == "MERGEABLE":
-                return {**record, "mergeable": "MERGEABLE"}
+            if settled[1] in ("MERGEABLE", "CONFLICTING"):
+                return {**record, "mergeable": settled[1]}
         return record
 
     def _check_due(self, key: tuple[str, str]) -> bool:
@@ -1575,6 +1579,7 @@ class TaskActor:
                 return
             if self._awaits(agent):
                 self._memory.keep(name, awaited=True)
+                self._attend_decide(name)  # no nudge reaches this holder while it waits, so its ask would sit unseen
                 return
             self._settling = name
             try:
@@ -1978,6 +1983,20 @@ class TaskActor:
             again=again,
         )
         return not written.transient
+
+    def _attend_decide(self, name: str) -> None:
+        """Move `name` to Needs attention with the `**Decide:**` ask its holder's latest reply ends on, if it has one."""
+        found = decide_ask(self._reply(name)) if self._reply else None
+        if found:
+            question, options = found
+            self._attend(
+                name,
+                "its session ended its turn on a Decide in its reply without parking the task",
+                "ended on a Decide",
+                question,
+                options or ("answer it in the session",),
+                again=lambda: self.holder_settled(name),
+            )
 
     def _settle_busy(self, data: dict[str, Any]) -> None:
         name = data["id"]

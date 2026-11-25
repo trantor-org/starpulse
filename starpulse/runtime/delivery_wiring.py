@@ -123,6 +123,7 @@ def start_delivery(
             parked=board.parked,
             released=board.released,
             idle=board.idle,
+            reply=feed.holder_reply,
             end=end_with(config.bridge.end),
             end_lanes=frozenset(config.bridge.end_lanes),
             returned=board.returned,
