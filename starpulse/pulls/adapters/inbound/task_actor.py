@@ -169,6 +169,7 @@ HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 MERGE_MOVE_METRIC = "starpulse_task_merge_move_seconds"
 PARK_RELEASE_METRIC = "starpulse_task_park_release_seconds"
 RECEIPT_DONE_METRIC = "starpulse_task_receipt_done_seconds"
+MERGE_RECEIPT_LOCK_METRIC = "starpulse_task_actor_merge_receipt_lock_seconds"
 MERGE_LOCK_WAIT_METRIC = "starpulse_task_actor_merge_lock_wait_seconds"
 MERGE_BOARD_WRITE_METRIC = "starpulse_task_actor_merge_board_write_seconds"
 #: The facts whose write moves a task because its pull requests ended; the merge-to-move histogram observes them.
@@ -515,8 +516,9 @@ class TaskActor:
         self._park_release = Histogram(PARK_RELEASE_BUCKETS_S)
         self._heard_at: dict[str, float] = {}
         #: Seconds a merge webhook waited for the lock, and the board write that moved the task it merged.
-        self._merge_lock_wait = Histogram(SLOW_BUCKETS_S)
-        self._merge_board_write = Histogram(SLOW_BUCKETS_S)
+        self._merge_receipt_lock = Histogram(BUCKETS_S)
+        self._merge_lock_wait = Histogram(BUCKETS_S)
+        self._merge_board_write = Histogram(BUCKETS_S)
         #: How many merge webhooks wait for the lock or hold it; start recovery takes no task while one does.
         self._merging = 0
         #: The wall time the merge webhook `merge_received` derives was received at; None outside it.
@@ -583,6 +585,10 @@ class TaskActor:
                 ),
                 *self._receipt_done.lines(
                     RECEIPT_DONE_METRIC, "Seconds from receiving a merge webhook to the write that moved its task."
+                ),
+                *self._merge_receipt_lock.lines(
+                    MERGE_RECEIPT_LOCK_METRIC,
+                    "Seconds from receiving a merge webhook to holding the task actor's lock: the inbox save, the claim, the write and the lock wait.",
                 ),
                 *self._merge_lock_wait.lines(
                     MERGE_LOCK_WAIT_METRIC, "Seconds a merge webhook waited for the task actor's lock."
@@ -1291,6 +1297,7 @@ class TaskActor:
         try:
             with self._pressing(), self._lock:
                 self._merge_lock_wait.observe(self._clock() - observed)
+                self._merge_receipt_lock.observe(max(0.0, self._wall() - received_at))
                 self._received = received_at
                 try:
                     self.touch(self._webhooks(self._read_pulls(), "merge webhook"), observed)
