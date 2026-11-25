@@ -279,8 +279,9 @@ def _running_records(sessions: Path, match: Callable[[dict[str, Any]], bool]) ->
 def _record_of(sessions: Path, session: str) -> dict[str, Any] | None:
     def names(record: dict[str, Any]) -> bool:
         bridge = record.get("bridgeSessionId")
+        wanted, held = BRIDGE_ID.fullmatch(session), BRIDGE_ID.fullmatch(bridge or "")
         return session in (record.get("sessionId"), bridge) or bool(
-            bridge and session.rstrip("/").endswith(f"/{bridge}")
+            bridge and session.rstrip("/").endswith(f"/{bridge}") or wanted and held and wanted[1] == held[1]
         )
 
     return next(_running_records(sessions, names), None) if session else None

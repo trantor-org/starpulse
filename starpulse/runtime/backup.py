@@ -6,6 +6,7 @@ A store that is not SQLite exits 2: its own backup tool owns that. The summary i
 """
 
 import argparse
+import fcntl
 import json
 import shutil
 import sqlite3
@@ -34,27 +35,34 @@ def snapshot(db: Path, out: Path) -> None:
     """Write a verified copy of `db` at `out`, or raise leaving nothing at `out`.
 
     The copy is vacuumed and checked beside the store, then copied to `out` in one sequential write: on a network
-    share, `integrity_check`'s reads of the copy outlasted the job's timeout.
+    share, `integrity_check`'s reads of the copy outlasted the job's timeout. One run holds the store's backup lock, so
+    an overlapping run raises `OSError` at once rather than delete the staged copy under it; a killed run's lock dies
+    with it.
     """
     staged = db.with_name(f".{db.name}.backup")
     partial = out.with_name(f".{out.name}.partial")
-    try:
-        staged.unlink(missing_ok=True)  # VACUUM INTO refuses to overwrite
-        source = sqlite3.connect(f"file:{quote(str(db))}?mode=ro", uri=True, timeout=BUSY_TIMEOUT_S)
+    with db.with_name(f".{db.name}.backup.lock").open("w") as lock:
         try:
-            source.execute("VACUUM INTO ?", (str(staged),))
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise OSError(f"another backup of {db} is running") from None
+        try:
+            staged.unlink(missing_ok=True)  # VACUUM INTO refuses to overwrite
+            source = sqlite3.connect(f"file:{quote(str(db))}?mode=ro", uri=True, timeout=BUSY_TIMEOUT_S)
+            try:
+                source.execute("VACUUM INTO ?", (str(staged),))
+            finally:
+                source.close()
+            # A corrupt file that exists reads as success; prove the copy before it counts.
+            with closing(sqlite3.connect(staged)) as check:
+                verdict = check.execute("PRAGMA integrity_check").fetchone()[0]
+            if verdict != "ok":
+                raise sqlite3.DatabaseError(f"integrity_check failed on the copy: {verdict}")
+            shutil.copyfile(staged, partial)
+            partial.replace(out)
         finally:
-            source.close()
-        # A corrupt file that exists reads as success; prove the copy before it counts.
-        with closing(sqlite3.connect(staged)) as check:
-            verdict = check.execute("PRAGMA integrity_check").fetchone()[0]
-        if verdict != "ok":
-            raise sqlite3.DatabaseError(f"integrity_check failed on the copy: {verdict}")
-        shutil.copyfile(staged, partial)
-        partial.replace(out)
-    finally:
-        staged.unlink(missing_ok=True)
-        partial.unlink(missing_ok=True)
+            staged.unlink(missing_ok=True)
+            partial.unlink(missing_ok=True)
 
 
 def prune(dest: Path, keep: int) -> None:
