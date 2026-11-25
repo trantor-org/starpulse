@@ -121,6 +121,7 @@ IDLE_HOLDERS_METRIC = "starpulse_task_actor_idle_holders"
 IDLE_SECONDS_METRIC = "starpulse_task_actor_idle_holder_seconds"
 READY_METRIC = "starpulse_task_actor_ready_tasks"
 HOLDER_RESUME = "HOLDER_RESUME"
+UNCITED_CHECKS = "UNCITED_CHECKS"
 #: The deliver states after its pull request opened.
 _DELIVERED = frozenset({"pr_opened", "ci_green", "pr_ready"})
 #: Nudges or resumes a fault with no progress between gets before the next one moves the task to Needs attention.
@@ -1338,9 +1339,15 @@ class TaskActor:
         return self._owns_failure(name) or any(map(self._owns_failure, self._seen[name][1]))
 
     def _read_pulls(self) -> set[str]:
-        """The tasks citing a pull request whose state changed since it was last read."""
+        """The tasks citing a pull request, or holding one open that names them and they do not cite, whose state changed since it was last read."""
         touched: set[str] = set()
-        for url, names in self._by_pr.items():
+        watched = {url: set(names) for url, names in self._by_pr.items()}
+        working = self._feed.roles.working
+        for name, (lane, _, cited, *_) in self._seen.items():
+            if lane == working and not cited:  # its holder hears an uncited pull request's checks settle
+                for url in uncited(self._store, {"id": name, "prs": cited}, self._feed.keys):
+                    watched.setdefault(url, set()).add(name)
+        for url, names in watched.items():
             if self._pull_states.get(url) != (state := self._pull_state(url)):
                 self._pull_states[url] = state
                 touched |= names
@@ -1596,7 +1603,30 @@ class TaskActor:
                 return False  # the file changed under a transient refusal: the next pass judges it anew, no later fact
         if agent["state"] == self._feed.roles.working:
             self._log_unready(agent)
+            self._wake_uncited(name, agent)
         return False
+
+    def _wake_uncited(self, name: str, agent: dict[str, Any]) -> None:
+        """Wake the holder once per head and verdict when the checks settle on an open pull request that names the task
+        and that it does not cite: the holder's topics come from cited pull requests, so no other event reaches it."""
+        if self._own_prs(agent):
+            return
+        for url in self._unlinked(agent):
+            if (record := self._record(url)) is None:
+                continue
+            verdict = checks_verdict(
+                record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
+            )
+            woken = f"{url}@{record['headRefOid']}:{verdict}"
+            if verdict == "pending" or woken in (self._memory.of(name).get("uncited_woken") or ()):
+                continue
+            head, number = record["headRefOid"][:12], record["number"]
+            reason = (
+                f"Checks {'passed' if verdict == 'pass' else verdict} on pull request #{number} at {head}, which the "
+                f"task does not cite: rerun deliver, which cites it and readies it"
+            )
+            if self._wake_holder(name, UNCITED_CHECKS, reason):
+                self._memory.keep(name, uncited_woken=[woken])
 
     def _log_unready(self, agent: dict[str, Any]) -> None:
         """Log once per change the condition that keeps a working task's open pull request from being ready."""

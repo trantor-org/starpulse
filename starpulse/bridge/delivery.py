@@ -26,9 +26,9 @@ from starpulse.event_log.wake import RETRY_DELAY, StopEvent
 logger = logging.getLogger(__name__)
 
 _BATCH = 100
-#: A holder's resume, a move and feedback are one-time wakes: the consumer's `LAST_PER_SUBJECT` start replays the
+#: A holder's resume, a move, feedback and an uncited PR's verdict are one-time wakes: the consumer's `LAST_PER_SUBJECT` start replays the
 #: last of each, however old, and a move before the claim is history to the session it then wakes in the lane it left.
-ONE_TIME = (".holder_resume", ".moved", ".feedback")
+ONE_TIME = (".holder_resume", ".moved", ".feedback", ".uncited_checks")
 _FETCH_TIMEOUT_S = 0.2
 
 
