@@ -103,6 +103,43 @@ describe("a board card's actor-error chip", () => {
   });
 });
 
+describe("a board card's ask line", () => {
+  const asking = "## Needs attention\n\nNeeds the API key. Blocker: none set. Options: a; b. Which one?\n\nMore detail.";
+  const drawAsk = (lane: string, prs: ReturnType<typeof card>["prs"]) => renderToStaticMarkup(
+    <Card task={card("TASK-5", lane, { description: asking, prs })} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={false} />,
+  );
+  const line = '<div class="ask" title="Needs the API key. Blocker: none set. Options: a; b. Which one?">Needs the API key. Blocker: none set. Options: a; b. Which one?</div>';
+
+  it("draws the first line of a Needs attention task's ask without a pull request chip", () => {
+    expect(drawAsk("needs_attention", [])).toContain(line);
+  });
+
+  it("draws it beside a pull request chip", () => {
+    expect(drawAsk("needs_attention", task.prs)).toContain(line);
+  });
+
+  it("is absent when the section is empty and another heading follows", () => {
+    expect(renderToStaticMarkup(
+      <Card task={card("TASK-5", "needs_attention", { description: "## Needs attention\n\n## Notes\nx" })} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={false} />,
+    )).not.toContain('class="ask"');
+  });
+
+  it("is absent from a task in another lane and from an actor fault, which has its own chip", () => {
+    expect(drawAsk("ready", [])).not.toContain('class="ask"');
+    expect(renderToStaticMarkup(
+      <Card task={card("TASK-5", "needs_attention", { description: "## Needs attention\n\nTask actor fault: x" })} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={false} />,
+    )).not.toContain('class="ask"');
+  });
+});
+
+describe("the dialog's Needs attention section", () => {
+  it("starts open, with Outcome, Why and Scope", () => {
+    const html = draw({ record: { ...record, description: "## Outcome\n\nO\n\n## Needs attention\n\nWhich one?" } });
+
+    expect(sectionOf(html, "Needs attention")).toContain(" open");
+  });
+});
+
 describe("the plan heading", () => {
   it("shows revised N× linking the Activity section once the plan was rewritten", () => {
     const html = draw({ revisions: 2 });

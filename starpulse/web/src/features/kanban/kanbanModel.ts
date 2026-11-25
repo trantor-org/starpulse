@@ -22,10 +22,16 @@ export const boardCount = (tasks: KanbanTask[], roles: Roles): number => {
   return tasks.filter((t) => lanes.includes(t.lane)).length;
 };
 
-const ACTOR_FAULT = /^## Needs attention[ \t]*\n\s*(Task actor fault:[^\n]*)/m;
+const ASK_LINE = /^## Needs attention[ \t]*\n\s*([^\s#][^\n]*)/m;
+
+/** The first line of the task's Needs attention section, the ask the operator answers: the card draws it in the Needs attention lane. Empty when the section is empty and another heading follows. */
+export const askOf = (description: string): string => ASK_LINE.exec(description)?.[1].trim() ?? "";
 
 /** The reason the task actor parked the task with, empty when its Needs attention section does not open with a fault: the card draws the actor-error chip for a non-empty one. */
-export const actorFault = (description: string): string => ACTOR_FAULT.exec(description)?.[1].trim() ?? "";
+export const actorFault = (description: string): string => {
+  const ask = askOf(description);
+  return ask.startsWith("Task actor fault:") ? ask : "";
+};
 
 export interface KanbanTask {
   id: string;

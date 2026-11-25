@@ -134,7 +134,7 @@ async def _machine_tasks(_: dict, info: GraphQLResolveInfo) -> list[dict]:
 
 @query.field("task")
 async def _task(_: Any, info: GraphQLResolveInfo, id: str) -> dict | None:
-    return await _worker(info, info.context["feed"].task, id)
+    return await _worker(info, info.context["feed"].held, id)
 
 
 @query.field("occurrences")
@@ -215,7 +215,7 @@ async def _record(agent: dict, info: GraphQLResolveInfo, *, lean: bool = False) 
     read leaves out the verdicts of the board's rules, which only `moves` and `readable` need."""
     records = info.context.setdefault("records", {})
     if (agent["id"], lean) not in records:
-        read = info.context["feed"].task
+        read = info.context["feed"].held
         records[agent["id"], lean] = asyncio.ensure_future(_worker(info, lambda: read(agent["id"], lean=lean)))
     return await records[agent["id"], lean]
 

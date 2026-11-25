@@ -114,7 +114,7 @@ def start_delivery(
             config.release.settle if config.release else None,
             pins,
             config.board_repo,
-            latest=lambda subject: last_event_is(log.engine, subject),
+            latest=lambda subject, since: last_event_is(log.engine, subject, since),
             latest_sha=lambda subject: last_event_sha(log.engine, subject),
             holds=board.holds,
             read=board.read,

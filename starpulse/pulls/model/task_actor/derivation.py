@@ -15,6 +15,7 @@ from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import resolved
 from starpulse.board.model.markdown import (
     ANSWER_COMMENT,
+    ARCHIVE_ANSWER,
     ARCHIVE_REQUEST,
     ASK_REQUEST,
     MOVE_REQUEST,
@@ -241,8 +242,13 @@ def pr_terminal(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
         if record["mergeSha"]:
             part += f" as {record['mergeSha']}"
         parts.append(f"{part} ({link})")
-    if not parts or facts.unlinked(agent):
-        return None  # an open pull request naming the task is its delivery too: one cited merge never ends it
+    if not parts:
+        return None
+    if unlinked := facts.unlinked(agent):
+        # an open pull request naming the task is its delivery too: one cited merge never ends it
+        if any(facts.record(url)["state"] == "MERGED" for url in proved):
+            facts.note_hold(agent, (f"open pull requests name it but it does not cite them: {', '.join(unlinked)}",), DONE_HELD)
+        return None
     merged = merged_at(facts, agent)
     if (
         agent["state"] == facts.roles.working
@@ -292,6 +298,15 @@ def pr_closed_unmerged(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None
     )
 
 
+def closed_answer(facts: TaskFacts, agent: Agent, texts: Sequence[str], ask: str) -> str | None:
+    """The operator's answer after the last `ask` comment once the task's session has settled, else None: a session that
+    ended its turn on the answer redelivered nothing."""
+    if not facts.settling(agent["id"]):
+        return None
+    asked = [index for index, text in enumerate(texts) if text.strip() == ask.strip()]
+    return next((text.strip() for text in texts[asked[-1] + 1 :] if ANSWER_COMMENT.match(text)), None) if asked else None
+
+
 def pr_closed_unmerged_complete(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     """The closed pull requests and the statement when `pr_closed_unmerged` holds, every criterion is checked and a
     comment opens `NO_MERGE`: the work landed elsewhere or needed no merge, so nothing is left to ask. At the task's
@@ -305,9 +320,9 @@ def pr_closed_unmerged_complete(facts: TaskFacts, agent: Agent) -> tuple[str, st
         facts.unsettled()
         return None
     statement = next((text.strip() for text in texts if text.strip().startswith(NO_MERGE)), None)
-    if statement is None and facts.settling(agent["id"]):
-        asked = [index for index, text in enumerate(texts) if text.strip() == closed[1].strip()]
-        statement = next((text.strip() for text in texts[asked[-1] + 1 :] if ANSWER_COMMENT.match(text)), None) if asked else None
+    if statement is None:
+        answer = closed_answer(facts, agent, texts, closed[1])
+        statement = None if answer and ARCHIVE_ANSWER.match(answer) else answer  # an archive answer archives
     if statement is None:
         return None
     return closed[0], f"Every pull request it cites closed unmerged, every criterion is checked: {closed[0]}. {statement}"
@@ -556,7 +571,20 @@ def _requested(marker: str) -> Callable[[TaskFacts, Agent], Held]:
 
 wait_requested = _requested(WAIT_REQUEST)
 ask_requested = _requested(ASK_REQUEST)
-archive_requested = _requested(ARCHIVE_REQUEST)
+_archive_comment = _requested(ARCHIVE_REQUEST)
+
+
+def archive_requested(facts: TaskFacts, agent: Agent) -> Held:
+    """The task's newest `ARCHIVE_REQUEST` comment, else at its session's settle the answer that chose archive to the
+    closed-unmerged ask, so the choice archives whether or not the session wrote the request."""
+    if (held := _archive_comment(facts, agent)) or not facts.settling(agent["id"]):
+        return held
+    if (closed := pr_closed_unmerged(facts, agent)) is None:
+        return None
+    if (texts := facts.comments(agent)) is None:
+        return None
+    answer = closed_answer(facts, agent, texts, closed[1])
+    return (f"{ARCHIVE_REQUEST} {answer}", answer) if answer and ARCHIVE_ANSWER.match(answer) else None
 
 
 def requested_lane(request: str) -> str:
