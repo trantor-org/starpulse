@@ -179,7 +179,7 @@ class Loop:
         self._full: tuple[int, float] = (0, 0.0)  # refusals while the session limit is full, and when to try again
         self._full_counts: tuple[int, int] = (0, 0)  # the live count and limit the last refusal named
         self._events: queue.Queue | None = None
-        self._no_profile_logged: set[str] = set()  # the Ready tasks whose no-profile refusal is already logged
+        self._refusals_logged: dict[str, str | None] = {}  # the Ready tasks whose refusal is already logged, with its cause
         self._blocked = False  # the last pass was refused for capacity: only a capacity event retries it
         self._refused = False  # a resume or nudge want the last grant pass left pending for headroom: the next fresh sample retries it
         self._sampled_at: float | None = None  # the sample of the last `scheduler` status the loop was offered
@@ -288,7 +288,7 @@ class Loop:
             return fresh and (self._refused or data["enabled"] and (data.get("next") or {}).get("verdict") == "starting")
         if kind == "task":
             if data["id"] in self._running:
-                return self._capacity_event()
+                return not self._blocked or self._leaves(data["agent"]) and self._capacity_event()
             agent = data["agent"]
             return not self._blocked and agent is not None and self._may_enter(agent)
         if kind == "move":
@@ -297,6 +297,10 @@ class Loop:
             if data["agent"]["state"] == "stopped" or data["id"] in self._held:
                 return self._capacity_event()
         return False
+
+    def _leaves(self, agent: Mapping[str, Any] | None) -> bool:
+        """Whether a running task's change takes it out of the eligible lanes and In Progress, which frees its slot."""
+        return agent is None or agent["state"] not in (*self._lanes(), self._feed.roles.working)
 
     def _capacity_event(self) -> bool:
         """A pressure crossing, a session ending or a run's own change: the one kind of event that retries a capacity refusal."""
@@ -651,7 +655,7 @@ class Loop:
             self._policy,
             self._ledger,
             log=log,
-            no_profile_logged=self._no_profile_logged if lane is None else None,
+            refusals_logged=self._refusals_logged if lane is None else None,
         )
         if log:
             self._count(decisions)
