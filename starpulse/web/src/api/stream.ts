@@ -1,6 +1,6 @@
 // Every machine's tasks and the runs instances' workflows, pushed by /api/events: a snapshot on every connect, then one delta per change.
 
-import type { SchedulerStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
+import type { Delta, LedgerRow, Settled, Snapshot } from ".";
 import { browserCache, type SnapshotCache } from "./savedSnapshot";
 import { apiFetch } from "./apiFetch";
 import { openHealth, type Health, type Watch } from "./health";
@@ -118,8 +118,6 @@ export interface StreamHandlers {
   build?(id: string): void;
   /** How many seconds the server's clock is ahead of the page's, from the server's time on each health event. */
   clock?(skew: number): void;
-  /** Scheduler capacity and next pick: not part of the snapshot; the Kanban strip applies each body. */
-  scheduler?(status: SchedulerStatus): void;
 }
 
 /**
@@ -318,9 +316,6 @@ export function openStream(
     ));
     // the page's own build is the one the connection index.html opened named, which health, opened after the page loaded, may not
     src.addEventListener("build", (e) => void (own ??= (JSON.parse((e as MessageEvent<string>).data) as { id: string }).id));
-    src.addEventListener("scheduler", later((e) => {
-      handlers.scheduler?.(JSON.parse((e as MessageEvent<string>).data) as SchedulerStatus);
-    }));
     src.addEventListener("stale", later(() => {
       old = true; // no Board writer folds: the page's Board stays as drawn, marked, until the next change hands over a fresh one
       show("stale");

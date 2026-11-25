@@ -455,6 +455,115 @@ type JobPool {
   queued: Int!
 }
 
+"""
+The scheduler's status after one change, as `GET /api/admin` serves it: whether it admits tasks and the capacity strip's readings.
+A field a server without a dispatch loop does not serve is null.
+"""
+type SchedulerChange {
+  enabled: Boolean!
+  harness: String!
+  quietHours: SchedulerQuietHours
+  sessionCap: SchedulerSessionCap
+  capacityLimits: SchedulerCapacityLimits
+  """Seconds since the epoch of the last sample, null before the first."""
+  sampledAt: Float
+  dimensions: [SchedulerDimension!]!
+  inFlight: [SchedulerSession!]
+  next: SchedulerNext
+  pauses: [SchedulerPause!]
+  sessionsByHarness: [SchedulerHarnessSessions!]
+  blockedBy: [SchedulerBlock!]
+  gateHistory: [SchedulerGateRow!]
+  needsOperator: [SchedulerOperatorTask!]
+}
+
+"""One capacity dimension's use against its limit: `cpu`, `memory`, `sessions` or `review`."""
+type SchedulerDimension {
+  name: String!
+  use: Float!
+  limit: Float!
+}
+
+"""One gate holding admission back; `count` is the refusals since a start last landed, for `start-limit`."""
+type SchedulerBlock {
+  name: String!
+  use: Float!
+  limit: Float!
+  count: Int
+}
+
+"""One kept row of the gate history."""
+type SchedulerGateRow {
+  at: Float!
+  dimensions: [SchedulerDimension!]!
+  blockedBy: [SchedulerBlock!]!
+}
+
+"""A session the scheduler started whose task is still running."""
+type SchedulerSession {
+  task: String!
+  title: String!
+  model: String!
+  started: Float!
+  url: String!
+}
+
+"""The task the loop would admit next, and whether it fits now or what it waits on."""
+type SchedulerNext {
+  task: String!
+  title: String!
+  verdict: String!
+  reason: String!
+  priority: String!
+}
+
+"""A harness whose admission is paused until `until`."""
+type SchedulerPause {
+  harness: String!
+  until: Float!
+  reason: String!
+}
+
+"""A daily window, `HH:MM` in `timezone`, in which the scheduler admits nothing."""
+type SchedulerQuietHours {
+  start: String!
+  end: String!
+  timezone: String!
+}
+
+"""One harness's sessions in flight against its own session cap."""
+type SchedulerHarnessSessions {
+  harness: String!
+  use: Float!
+  limit: Float!
+}
+
+"""The session cap the selected harness runs under: `source` is `admin` or `starpulse.toml`."""
+type SchedulerSessionCap {
+  harness: String!
+  limit: Float!
+  source: String!
+  configLimit: Float!
+}
+
+"""The cpu or memory limit in percent: `source` is `admin` or `starpulse.toml`."""
+type SchedulerCapacityLimit {
+  limit: Float!
+  source: String!
+  configLimit: Float!
+}
+
+type SchedulerCapacityLimits {
+  cpu: SchedulerCapacityLimit!
+  memory: SchedulerCapacityLimit!
+}
+
+"""A `kind-decide` task in the eligible lane, which waits on the operator."""
+type SchedulerOperatorTask {
+  task: String!
+  title: String!
+}
+
 """One lane change of a task."""
 type LaneStep {
   """Seconds since the epoch."""
@@ -634,6 +743,11 @@ type Subscription {
   the server no longer holds is answered with HTTP 410 and the error code `REREAD`: read the list again.
   """
   jobChanges(from: Int!): JobChange!
+  """
+  Each scheduler status after stream position `from`, one `next` event each: the position `GET /api/admin` answered. A `from`
+  the server no longer holds is answered with HTTP 410 and the error code `REREAD`: read the status again.
+  """
+  schedulerChanges(from: Int!): SchedulerChange!
   """
   The server's health, sent when the subscription connects and again each time its components, build or restarting change.
   """

@@ -35,7 +35,6 @@ import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { foldRows, openStream, type Link } from "../api/stream";
 import { openLedger, type LedgerMarks } from "../api/ledgerStream";
 import { MERGE_EVENT } from "../features/level/ledger";
-import { pushSchedulerStatus } from "../features/scheduler/scheduler";
 import { UPDATING, linkHud } from "./connection";
 import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
@@ -483,7 +482,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     link: onLink,
     build: onBuild,
     clock: (offset: number) => void (skew = offset),
-    scheduler: pushSchedulerStatus,
   };
   function apply(next: Snapshot) {
     const first = !S;

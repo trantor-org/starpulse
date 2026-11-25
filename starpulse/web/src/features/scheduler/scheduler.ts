@@ -1,6 +1,7 @@
-// The Admin view's Scheduler card: the global switch, the harness it starts on, and what the admission loop sees, read from /api/admin.
+// The Admin view's Scheduler card: the global switch, the harness it starts on, and what the admission loop sees, read from /api/admin, then followed on the schedulerChanges subscription from the position it answers.
 // Off stops admission only: sessions already running keep running, and the card says how many.
 import { apiFetch } from "../../api/apiFetch";
+import { follow } from "../../api/subscribe";
 import type { SchedulerDimension, SchedulerStatus } from "../../api";
 
 export const ROUTE = "/api/admin";
@@ -259,7 +260,7 @@ function parse(body: unknown): SchedulerState | null {
   };
 }
 
-type Answer = { ok: true; state: SchedulerState } | { ok: false; reason: string };
+type Answer = { ok: true; state: SchedulerState; position: number | null } | { ok: false; reason: string };
 
 async function ask(fetcher: typeof apiFetch, init: RequestInit | undefined, unreachable: string): Promise<Answer> {
   let response: Response;
@@ -271,30 +272,53 @@ async function ask(fetcher: typeof apiFetch, init: RequestInit | undefined, unre
   const body: unknown = await response.json().catch(() => null);
   if (response.ok) {
     const state = parse(body);
-    return state ? { ok: true, state } : { ok: false, reason: "the server's answer is not a scheduler status" };
+    return state ? { ok: true, state, position: isRecord(body) && typeof body.position === "number" ? body.position : null } : { ok: false, reason: "the server's answer is not a scheduler status" };
   }
   const error = isRecord(body) && typeof body.error === "string" ? body.error : "";
   return { ok: false, reason: error || `the server answered ${response.status}` };
 }
 
-/** Stores that take `/api/events` `scheduler` bodies; the renderer pushes each one. */
-const streamListeners = new Set<(body: unknown) => void>();
+const SUBSCRIPTION = `subscription ($from: Int!) { schedulerChanges(from: $from) {
+  enabled harness sampledAt
+  dimensions { name use limit }
+  inFlight { task title model started url }
+  next { task title verdict reason }
+  blockedBy { name use limit count }
+  pauses { harness until reason }
+  sessionsByHarness { harness use limit }
+  sessionCap { harness limit source configLimit }
+  capacityLimits { cpu { limit source configLimit } memory { limit source configLimit } }
+} }`;
 
-/** Hand an `scheduler` stream event to every open card store. */
-export function pushSchedulerStatus(body: unknown): void {
-  for (const fn of streamListeners) fn(body);
+/** How long the card waits before reading again after the server closed the stream. */
+const RETRY_MS = 3000;
+
+/** A `schedulerChanges` change in the shape `GET /api/admin` answers: GraphQL has no maps, so `sessionsByHarness` is a list, and a list a server may omit is null. */
+function fromChange(change: Record<string, unknown>): Record<string, unknown> {
+  const rows = change.sessionsByHarness as { harness: string; use: number; limit: number }[] | null;
+  return {
+    ...change,
+    inFlight: change.inFlight ?? undefined,
+    blockedBy: change.blockedBy ?? undefined,
+    pauses: change.pauses ?? undefined,
+    sessionsByHarness: rows ? Object.fromEntries(rows.map(({ harness, ...use }) => [harness, use])) : undefined,
+  };
 }
 
 export class SchedulerStore {
   private view: SchedulerView = { current: null, phase: { kind: "idle" }, unavailable: "", harnesses: [] };
   private listeners = new Set<() => void>();
-  constructor(private fetcher: typeof apiFetch = apiFetch) {
-    streamListeners.add(this.accept);
-  }
+  private following: { close(): void } | undefined;
+  private retry: ReturnType<typeof setTimeout> | undefined;
+  private reads = 0;
+  constructor(private fetcher: typeof apiFetch = apiFetch) {}
 
-  /** Drop the stream listener when the card unmounts with this store. */
+  /** Stop following the subscription and cancel a pending read; `load` starts it again. */
   dispose(): void {
-    streamListeners.delete(this.accept);
+    this.reads++;
+    clearTimeout(this.retry);
+    this.following?.close();
+    this.following = undefined;
   }
 
   get = () => this.view;
@@ -307,20 +331,36 @@ export class SchedulerStore {
     for (const fn of this.listeners) fn();
   }
 
-  /** Apply a status body from the stream; a shape the store refuses leaves the last reading. */
-  accept = (body: unknown): void => {
+  /** Apply a status change from the subscription; a shape the store refuses leaves the last reading. */
+  private accept(body: unknown): void {
     const state = parse(body);
     if (state) this.set({ current: state, unavailable: "" });
-  };
+  }
 
-  /** Read the status and harnesses once (connect sync); a status that cannot be read leaves the last reading on the card. */
+  /** Read the status and harnesses, then follow the status from the position the read answered; a status that cannot be read leaves the last reading on the card, and a card that has one reads again. */
   async load(): Promise<void> {
+    this.dispose();
+    const mine = this.reads;
     const [answer, harnesses] = await Promise.all([
       ask(this.fetcher, undefined, "the server did not answer"),
       this.fetcher(HARNESSES_ROUTE).then((r) => r.json()).then(harnessOptions).catch(() => [] as HarnessOption[]),
     ]);
-    if (answer.ok) this.set({ current: answer.state, unavailable: "", harnesses });
-    else this.set({ unavailable: answer.reason, harnesses });
+    if (mine !== this.reads) return;
+    const again = (wait: number) => { this.retry = setTimeout(() => void this.load(), wait); };
+    if (!answer.ok) {
+      this.set({ unavailable: answer.reason, harnesses });
+      if (this.view.current) again(RETRY_MS);
+      return;
+    }
+    this.set({ current: answer.state, unavailable: "", harnesses });
+    if (answer.position === null) return;
+    this.following = follow<Record<string, unknown>>(
+      SUBSCRIPTION,
+      "schedulerChanges",
+      answer.position,
+      { change: (change) => this.accept(fromChange(change)), end: (why) => again(why === "reread" ? 0 : RETRY_MS) },
+      this.fetcher,
+    );
   }
 
   /** Ask the server to admit tasks or stop admitting; a refusal leaves the switch as it was and names why. */

@@ -1,10 +1,8 @@
 // The jobs the Jobs page lists: one POST /api/jobs read, then the jobChanges subscription on POST /graphql from the position it returned.
 
 import { apiFetch } from "./apiFetch";
-import { frames } from "./sse";
+import { follow, type Ended, type Post } from "./subscribe";
 import type { Dag, Jobs } from ".";
-
-type Post = (url: string, init?: RequestInit) => Promise<Response>;
 
 const RUN = "runId url status raw startedAt steps task pr commit attempt failure";
 const JOB_FIELDS = [
@@ -17,9 +15,6 @@ const JOB_FIELDS = [
   `closed { ${RUN} finishedAt params }`,
 ].join(" ");
 const SUBSCRIPTION = `subscription ($from: Int!) { jobChanges(from: $from) { jobs { ${JOB_FIELDS} } error } }`;
-
-/** Why a subscription ended: the server closed it, or the position it held is gone and the list must be read again. */
-export type Ended = "closed" | "reread";
 
 /** How long the one read may take, its body included, before it rejects and `useJobs` retries. */
 const READ_TIMEOUT_MS = 30_000;
@@ -35,20 +30,5 @@ export function followJobs(
   on: { jobs(list: Dag[], error: string | null): void; end(why: Ended): void },
   post: Post = apiFetch,
 ): { close(): void } {
-  const stop = new AbortController();
-  const run = async () => {
-    const resp = await post("/graphql", { method: "POST", body: JSON.stringify({ query: SUBSCRIPTION, variables: { from } }), signal: stop.signal });
-    if (resp.status === 410) return "reread";
-    if (!resp.ok || !resp.body) return "closed";
-    for await (const frame of frames(resp.body)) {
-      const change = (frame as { data?: { jobChanges?: { jobs: Dag[]; error: string | null } } }).data?.jobChanges;
-      if (change && !stop.signal.aborted) on.jobs(change.jobs, change.error);
-    }
-    return "closed";
-  };
-  run().then(
-    (why) => stop.signal.aborted || on.end(why),
-    () => stop.signal.aborted || on.end("closed"),
-  );
-  return { close: () => stop.abort() };
+  return follow<{ jobs: Dag[]; error: string | null }>(SUBSCRIPTION, "jobChanges", from, { change: (c) => on.jobs(c.jobs, c.error), end: on.end }, post);
 }

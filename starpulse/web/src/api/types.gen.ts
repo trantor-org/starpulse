@@ -125,6 +125,10 @@ export interface AdminState {
    */
   pauses?: SchedulerPause[];
   /**
+   * The stream position the state was read at: a `schedulerChanges` subscription from it misses no status change.
+   */
+  position: number;
+  /**
    * Null when no window holds admission back.
    */
   quietHours?: QuietHours | null;

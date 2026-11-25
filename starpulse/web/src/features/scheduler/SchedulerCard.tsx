@@ -151,6 +151,7 @@ export function SchedulerCard({ store, quiet, clock }: { store: SchedulerStore; 
   useEffect(() => {
     if (!active) return;
     void store.load();
+    return () => store.dispose();
   }, [store, active]);
   const head = <h2>Autopilot <span className="c">starts Ready tasks on this server</span></h2>;
   if (!current) {

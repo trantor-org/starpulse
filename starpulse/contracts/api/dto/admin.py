@@ -55,3 +55,6 @@ class AdminState(SchedulerStatus):
 
     display: Display
     theme: Theme
+    position: int = Field(
+        description="The stream position the state was read at: a `schedulerChanges` subscription from it misses no status change."
+    )

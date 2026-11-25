@@ -3,6 +3,7 @@ import { SchedulerStore, level, type Dimension } from "./scheduler";
 
 /** What `GET /api/admin` answers today: the switch, harness, when the sampler last read, and each dimension's use against its limit. */
 const STATUS = {
+  position: 7,
   enabled: true,
   harness: "claude",
   sampledAt: 100,
@@ -26,8 +27,16 @@ const NEXT = { task: "TASK-2", title: "Second", verdict: "waits", reason: "Sessi
 
 const answer = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
 
+/** A `schedulerChanges` stream that sends each change and stays open, as the server's does while idle. */
+const open = (...changes: unknown[]) =>
+  new Response(new ReadableStream({ start(c) { for (const data of changes) c.enqueue(new TextEncoder().encode(`event: next\ndata: ${JSON.stringify({ data: { schedulerChanges: data } })}\n\n`)); } }), { headers: { "content-type": "text/event-stream" } });
+const ended = () => new Response(new ReadableStream({ start: (c) => c.close() }), { headers: { "content-type": "text/event-stream" } });
+/** What a `schedulerChanges` change carries for the same status: GraphQL has no maps, and a list a server may omit is null. */
+const CHANGE = { ...STATUS, position: undefined, sessionCap: null, capacityLimits: null, inFlight: null, next: null, pauses: null, blockedBy: null, sessionsByHarness: null };
+
 /** A server that keeps the switch and harness as the route does: a PUT sets them and the answer follows; a bad body is refused. */
-function server(opts: { down?: boolean; body?: unknown; status?: number } = {}) {
+function server(opts: { down?: boolean; body?: unknown; status?: number; graphql?: (opened: number) => Response } = {}) {
+  let opened = 0;
   let enabled = true;
   let harness = "claude";
   let cap: number | null = null;
@@ -35,6 +44,7 @@ function server(opts: { down?: boolean; body?: unknown; status?: number } = {}) 
   return vi.fn<typeof fetch>((url, init) => {
     if (opts.down) return Promise.reject(new Error("offline"));
     if (String(url).endsWith("/api/harnesses")) return answer(HARNESSES);
+    if (String(url).endsWith("/graphql")) return Promise.resolve((opts.graphql ?? (() => open()))(opened++));
     if (opts.body !== undefined) return answer(opts.body, opts.status);
     if (init?.method === "PUT") {
       const sent = JSON.parse(String(init.body)) as { enabled?: unknown; harness?: unknown; sessionCap?: unknown; cpuLimit?: unknown; memoryLimit?: unknown };
@@ -70,6 +80,49 @@ function server(opts: { down?: boolean; body?: unknown; status?: number } = {}) 
 }
 
 describe("the Autopilot card's store", () => {
+  it("follows schedulerChanges from the position the read answered and takes each change as the card's status", async () => {
+    const byHarness = [{ harness: "claude", use: 1, limit: 3 }, { harness: "cursor", use: 0, limit: 2 }];
+    const fetcher = server({ graphql: () => open({ ...CHANGE, enabled: false, inFlight: IN_FLIGHT, next: NEXT, sessionsByHarness: byHarness }) });
+    const store = new SchedulerStore(fetcher);
+
+    await store.load();
+    await vi.waitFor(() => expect(store.get().current?.on).toBe(false));
+
+    const [, init] = fetcher.mock.calls.find(([url]) => String(url).endsWith("/graphql"))!;
+    expect(JSON.parse(String(init?.body)).variables).toEqual({ from: 7 });
+    expect(JSON.parse(String(init?.body)).query).toContain("schedulerChanges(from: $from)");
+    expect(store.get().current).toMatchObject({ inFlight: IN_FLIGHT, next: NEXT, sessionsByHarness: { claude: { use: 1, limit: 3 }, cursor: { use: 0, limit: 2 } } });
+    store.dispose();
+  });
+
+  it("reads again at once when the position is lost, and follows from the new one", async () => {
+    const fetcher = server({ graphql: (n) => (n === 0 ? new Response("{}", { status: 410 }) : open()) });
+    const store = new SchedulerStore(fetcher);
+
+    await store.load();
+    await vi.waitFor(() => expect(fetcher.mock.calls.filter(([url]) => String(url) === "/api/admin")).toHaveLength(2));
+    await vi.waitFor(() => expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/graphql"))).toHaveLength(2));
+    store.dispose();
+  });
+
+  it("reads again after a pause when the server closes the stream, and stops following once disposed", async () => {
+    vi.useFakeTimers();
+    const fetcher = server({ graphql: (n) => (n === 0 ? ended() : open()) });
+    const store = new SchedulerStore(fetcher);
+    const reads = () => fetcher.mock.calls.filter(([url]) => String(url) === "/api/admin").length;
+
+    await store.load();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(reads()).toBe(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(reads()).toBe(2);
+
+    store.dispose();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(reads()).toBe(2);
+    vi.useRealTimers();
+  });
+
   it("reads the switch and each dimension's use against its limit, with the label and unit the card draws", async () => {
     const store = new SchedulerStore(server());
 

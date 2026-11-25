@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SchedulerCard } from "./SchedulerCard";
-import { SchedulerStore, pushSchedulerStatus } from "./scheduler";
+import { SchedulerStore } from "./scheduler";
 import { QuietHoursStore } from "../admin/quietHours";
 
 const NOW = 10_000;
@@ -27,6 +27,9 @@ const HARNESSES = {
 };
 const BY_HARNESS = { claude: { use: 2, limit: 3 }, cursor: { use: 0, limit: 2 } };
 
+const waiting: ((r: ReadableStreamReadResult<Uint8Array>) => void)[] = [];
+/** Push one `schedulerChanges` change into the subscription the card holds open. */
+const send = (data: unknown) => waiting.pop()?.({ done: false, value: new TextEncoder().encode(`event: next\ndata: ${JSON.stringify({ data: { schedulerChanges: data } })}\n\n`) });
 let host: HTMLDivElement, root: Root, enabled: boolean, harness: string, cap: number | null, limits: Record<string, number | null>, status: () => unknown, fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
 const reply = (body: unknown, code = 200) => Promise.resolve(new Response(JSON.stringify(body), { status: code }));
 const settle = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
@@ -41,12 +44,15 @@ async function draw(body: Record<string, unknown> = {}, opts: { put?: () => Prom
   harness = (body.harness as string | undefined) ?? "claude";
   status = () => ({
     sampledAt: NOW, dimensions: dims(), inFlight: SESSIONS, next: NEXT, quietHours: null,
-    sessionsByHarness: BY_HARNESS, pauses: [], ...body, enabled, harness,
+    position: 3, sessionsByHarness: BY_HARNESS, pauses: [], ...body, enabled, harness,
     sessionCap: { harness, limit: cap ?? 4, source: cap === null ? "starpulse.toml" : "admin", configLimit: 4 },
     capacityLimits: Object.fromEntries([["cpu", 80], ["memory", 85]].map(([name, config]) => [name, { limit: limits[name] ?? config, source: limits[name] === null ? "starpulse.toml" : "admin", configLimit: config }])),
   });
   fetcher = vi.fn<typeof fetch>((url, init) => {
     if (String(url).endsWith("/api/harnesses")) return reply(HARNESSES);
+    if (String(url).endsWith("/graphql") && !opts.down) {
+      return Promise.resolve({ ok: true, status: 200, body: { getReader: () => ({ read: () => new Promise<ReadableStreamReadResult<Uint8Array>>((r) => waiting.push(r)), cancel: async () => {}, releaseLock: () => {} }) } } as unknown as Response);
+    }
     if (opts.down) return reply({ error: "This server has no scheduler." }, 404);
     if (init?.method === "PUT") {
       if (opts.put) return opts.put();
@@ -67,6 +73,7 @@ async function draw(body: Record<string, unknown> = {}, opts: { put?: () => Prom
 }
 
 beforeEach(() => {
+  waiting.length = 0;
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   host = document.body.appendChild(document.createElement("div"));
   root = createRoot(host);
@@ -240,7 +247,7 @@ describe("the Admin view's Autopilot card", () => {
     expect(host.querySelector('[role="switch"]')).toBeNull();
   });
 
-  it("reads once when the view opens, adds no GET on a timer, and takes a stream status without fetching", async () => {
+  it("reads once when the view opens, adds no GET on a timer, and takes a subscription change without fetching", async () => {
     vi.useFakeTimers();
     await draw();
     const reads = () => fetcher.mock.calls.filter(([, init]) => !init?.method).length;
@@ -250,8 +257,9 @@ describe("the Admin view's Autopilot card", () => {
     expect(reads()).toBe(first);
 
     await act(async () => {
-      pushSchedulerStatus({ sampledAt: NOW, dimensions: dims({ cpu: 10 }), inFlight: SESSIONS, next: null, enabled: true });
+      send({ sampledAt: NOW, harness: "claude", dimensions: dims({ cpu: 10 }), inFlight: SESSIONS, next: null, enabled: true, pauses: null, blockedBy: null, sessionsByHarness: null, sessionCap: null, capacityLimits: null });
     });
+    await settle();
     expect(reads()).toBe(first);
     expect(q(".nx.none")?.textContent).toBe("Nothing eligible");
   });
