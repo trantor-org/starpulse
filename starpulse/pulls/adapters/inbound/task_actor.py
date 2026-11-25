@@ -1654,6 +1654,7 @@ class TaskActor:
                 ):
                     return
                 if self._awaits(agent):
+                    logger.info("task actor: %s has no live session and its resume waits for an awaited event", name)
                     self._memory.keep(name, awaited=True, resume_held=True, unreachable=True if unreachable else None)
                     return
             held = ("parked", self._progress(agent))  # the one resume a task gets in Needs attention, counted apart
@@ -1677,6 +1678,7 @@ class TaskActor:
                 )
                 return
         if not self._admitted(name, "resume"):
+            logger.info("task actor: %s has no live session and its resume waits for the scheduler's admission", name)
             if unreachable:
                 with self._lock:
                     self._memory.keep(name, unreachable=True)
@@ -1985,9 +1987,9 @@ class TaskActor:
         name = agent["id"]
         own = self._own_prs(agent)
         for url in own:
-            state, *_, checks, _, _ = self._pull_state(url)
-            if not state or state == "OPEN" and checks == "pending":  # no state: the pulls consumer lags the delivery
-                return True
+            state, _, _, _, mergeable, checks, _, _ = self._pull_state(url)
+            if not state or state == "OPEN" and checks == "pending" and mergeable != "CONFLICTING":
+                return True  # no state: the pulls consumer lags the delivery; a conflicting head runs no checks
         delivery = self._feed.machine_task("deliver", name)
         if not own and delivery and delivery["state"] in _DELIVERED:  # its cite and record lag
             return True
