@@ -4,30 +4,14 @@ from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal
 
 
-class Moved(_Api):
-    """A move's answer. The operator's move of an unheld task into the working state also starts its session: `url`
-    opens it, or `startError` says why none started."""
-
-    task: str
-    to: str
-    ok: bool = True
-    warnings: list[str] | None = None
-    advice: str | None = None
-    url: str | None = None
-    startError: str | None = None
-
-
-class MovedEach(_Api):
-    """A batch move's answer: the tasks it moved, and each refused task with why."""
-
-    moved: list[str]
-    refused: dict[str, str]
-    warnings: dict[str, list[str]] | None = None
-
-
 class Edited(_Api):
+    """An edit's answer: `advice` is what the board tells the mover about the task now it is edited, when it has any;
+    `warnings` are the lane rules an operator's move broke and landed."""
+
     task: str
     changed: list[str]
+    advice: str = ""
+    warnings: list[str] | None = None
 
 
 class Archived(_Api):

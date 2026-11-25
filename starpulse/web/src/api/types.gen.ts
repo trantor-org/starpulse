@@ -6,8 +6,6 @@
 export interface ApiContract {
   adminState: AdminState;
   answers: (
-    | Moved
-    | MovedEach
     | Edited
     | Archived
     | Restored
@@ -52,7 +50,6 @@ export interface ApiContract {
   milestones: Milestones;
   readyReport: ReadyReport;
   requests: (
-    | MoveRequest
     | StartRequest
     | RetireRequest
     | CompleteRequest
@@ -352,35 +349,14 @@ export interface SavedPack {
   [k: string]: unknown;
 }
 /**
- * A move's answer. The operator's move of an unheld task into the working state also starts its session: `url`
- * opens it, or `startError` says why none started.
+ * An edit's answer: `advice` is what the board tells the mover about the task now it is edited, when it has any;
+ * `warnings` are the lane rules an operator's move broke and landed.
  */
-export interface Moved {
-  advice?: string | null;
-  ok?: boolean;
-  startError?: string | null;
-  task: string;
-  to: string;
-  url?: string | null;
-  warnings?: string[] | null;
-  [k: string]: unknown;
-}
-/**
- * A batch move's answer: the tasks it moved, and each refused task with why.
- */
-export interface MovedEach {
-  moved: string[];
-  refused: {
-    [k: string]: string;
-  };
-  warnings?: {
-    [k: string]: string[];
-  } | null;
-  [k: string]: unknown;
-}
 export interface Edited {
+  advice?: string;
   changed: string[];
   task: string;
+  warnings?: string[] | null;
   [k: string]: unknown;
 }
 /**
@@ -1719,17 +1695,6 @@ export interface ReadyComponent {
   detail: string;
   ready: boolean;
   [k: string]: unknown;
-}
-/**
- * `POST /api/move`: move `task`, or each of `tasks` in one call, to the column `to`.
- */
-export interface MoveRequest {
-  actor?: string | null;
-  harness?: string | null;
-  session?: string | null;
-  task?: string | null;
-  tasks?: [string, ...string[]] | null;
-  to: string;
 }
 /**
  * `POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.

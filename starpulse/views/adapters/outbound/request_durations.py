@@ -53,7 +53,8 @@ def observe(
     route: str, accepted: frozenset[str], query_string: bytes, client: str, seconds: float, operation: str = "none"
 ) -> None:
     """Observes one read of `route`, whose handler reads the query names `accepted`, sent by `client`; `operation` is the
-    GraphQL operation a view declares, `other` for any other name, and `none` for a read that is no GraphQL request."""
+    GraphQL operation a view declares or the schema fields the request selects, `other` when it selects none, and `none`
+    for a read that is no GraphQL request."""
     caller = client if client in CALLERS else "other"
     params = "present" if query_string else "none"
     _durations.labels(route, params, _shape(accepted, query_string), caller, operation).observe(seconds)

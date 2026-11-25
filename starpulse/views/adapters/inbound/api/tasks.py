@@ -8,7 +8,7 @@
 - `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), restores
   (`archived: false`), takes over (`interactive: true`), parks (`park`) or dispatches a session (`assignee`);
   `DELETE /api/tasks/{id}` archives: the task writes.
-- `POST /api/move`, `start`, `verdict`, `retire` and
+- `POST /api/start`, `verdict`, `retire` and
   `complete`: a task's writes by verb, each over the seams it needs.
 """
 
@@ -23,14 +23,11 @@ from starlette.responses import Response, StreamingResponse
 
 from starpulse.board.adapters.holder_idle import started as started_by
 from starpulse.contracts.api.dto.milestones import RetiredTask
-from starpulse.contracts.api.dto.requests import StartRequest
 from starpulse.views.adapters.inbound.api.answering import answer, client, on_worker, query, reading, seams
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole, whole_body
 from starpulse.views.application.commands.moves import (
-    move_task,
-    start_requested,
     start_task,
 )
 from starpulse.views.application.commands.tasks import (
@@ -119,7 +116,7 @@ def retired(request: Request) -> Response:
 
 def routes(api: Api) -> list[ApiRoute]:
     feed, board, services = api.feed, api.board, api.services
-    writer, assign = board.writer, board.assign
+    assign = board.assign
     create, complete = board.create, board.complete
 
     def landed(task: str) -> bool:
@@ -127,9 +124,6 @@ def routes(api: Api) -> list[ApiRoute]:
         return any(
             pull.get("merged") or pull.get("state") == "MERGED" for pull in body.get("record", {}).get("pulls", [])
         )
-
-    def start(request: StartRequest) -> tuple[int, dict[str, Any]]:
-        return start_requested(request, feed, assign, services.start_session, services.harnesses)
 
     slow = SlowReads("/api/task", services.slow_read_s)
 
@@ -142,7 +136,6 @@ def routes(api: Api) -> list[ApiRoute]:
         return started_by(api.history.engine, task)
 
     writes: dict[str, tuple[TaskWrite, str]] = {
-        "/move": (lambda client, raw: move_task(client, raw, feed, writer, start, started=started), "move"),
         "/start": (
             lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
             "start",

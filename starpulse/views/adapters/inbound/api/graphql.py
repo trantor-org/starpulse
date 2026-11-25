@@ -2,7 +2,7 @@
 
 The tracked SDL (`schemas/tasks.graphql`) is bound with Ariadne and run by `ariadne.graphql()` from this endpoint, not
 a mounted ASGI app. A resolver reads the feed on a request worker thread. The request-duration histogram carries the
-operation name when a view's stored document declares it, else `other`.
+operation name when a view's stored document declares it, else the `root.child` fields it selects, else `other`.
 
 A list answers with the stream position it was read at. A `taskChanges` or `jobChanges` subscription from a position is
 answered with an event stream (graphql-sse's distinct connections mode): one `next` event for each change after it, the
@@ -31,6 +31,7 @@ from graphql import (
     OperationDefinitionNode,
     OperationType,
     execute,
+    get_named_type,
     get_operation_ast,
     parse,
     validate,
@@ -51,6 +52,8 @@ from starpulse.views.model.encoding import encode, milestone_done, recent_settle
 
 #: The largest document and variables a request may send, in bytes.
 LIMIT = 65536
+#: The most `root.child` fields an `operation` label names, so a query selecting many fields cannot mint a series.
+_LABEL_FIELDS = 4
 
 query = QueryType()
 task = ObjectType("Task")
@@ -316,6 +319,32 @@ async def _follow(
     return await on_worker(request, lambda: follow(request, args["from"], render))
 
 
+def _label(payload: dict, declared: set[str]) -> str:
+    """The metric's `operation`: the name a view declares, else the schema's `root.child` fields the operation selects
+    (`task.spend`), never a client-chosen name; more than `_LABEL_FIELDS` of them name only the root fields, and an
+    operation that selects none is `other`."""
+    name = payload.get("operationName")
+    if isinstance(name, str) and name in declared:
+        return name
+    try:
+        operation = get_operation_ast(parse(payload["query"]), name if isinstance(name, str) else None)
+    except GraphQLError:
+        return "other"
+    if operation is None:
+        return "other"
+    roots = {**SCHEMA.query_type.fields, **SCHEMA.subscription_type.fields}
+    selected = [s for s in operation.selection_set.selections if isinstance(s, FieldNode) and s.name.value in roots]
+    parts = []
+    for root in selected:
+        fields = getattr(get_named_type(roots[root.name.value].type), "fields", {})
+        children = root.selection_set.selections if root.selection_set else []
+        names = [c.name.value for c in children if isinstance(c, FieldNode) and c.name.value in fields]
+        parts += [f"{root.name.value}.{c}" for c in names] or [root.name.value]
+    if len(parts) > _LABEL_FIELDS:
+        parts = [root.name.value for root in selected]
+    return "+".join(sorted(set(parts))) or "other"
+
+
 async def _run(request: Request, operation: list[str]) -> Response:
     api = seams(request)
     refusal = refused(request)
@@ -329,9 +358,8 @@ async def _run(request: Request, operation: list[str]) -> Response:
     except ValueError:
         return _failed(request, 400, "the body is not JSON")
     if isinstance(payload, dict) and isinstance(payload.get("query"), str):
-        name = payload.get("operationName")
         declared = {op for document in api.services.views.values() for op in task_graphql.operations(document)}
-        operation[:] = [name if isinstance(name, str) and name in declared else "other"]
+        operation[:] = [_label(payload, declared)]
     context = {"feed": api.feed, "api": api, "pulls": api.services.pulls, "workers": request.app.state.workers}
     if (found := _subscription(payload)) is not None:
         return await _follow(request, payload, found, context)

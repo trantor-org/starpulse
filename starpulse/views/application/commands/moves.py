@@ -7,23 +7,17 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board.model import criteria
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import (
-    OPERATOR,
     AssigneeWriter,
-    MoveWriter,
 )
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api.dto.requests import (
-    MoveRequest,
     StartRequest,
 )
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.views.application.commands.guard import (
     Who,
     held_task,
-    holder_refusal,
     not_held,
-    record_written,
-    who_of,
     with_request,
 )
 
@@ -33,79 +27,10 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
 lazy from starpulse.event_log.claude_sessions import same_holder
 
 
-#: Starts the session a `StartRequest` names; `move_task` calls it for the operator's move of an unheld task.
-Starter = Callable[[StartRequest], tuple[int, dict[str, Any]]]
-
 #: Modes `POST /api/start` accepts; `interactive` is the Start-session default.
 _START_MODES = frozenset({"interactive", "headless"})
 
 
-@with_request(MoveRequest, "Moving a task")
-def move_task(
-    request: MoveRequest,
-    feed: BoardFeed,
-    writer: MoveWriter,
-    start: Starter | None = None,
-    *,
-    started: Callable[[str], bool],
-) -> tuple[int, dict[str, Any]]:
-    """Move the task `request` names, or each of its `tasks`, to the column it names, through `writer`: the HTTP status
-    and JSON body. A batch answers 200 with the tasks moved and each refused one's error, so one refusal leaves the
-    others moved.
-
-    The board machine's exits from the task's state decide which columns are offered; the writer decides which
-    it accepts, so a guard that changed since the snapshot still refuses.
-
-    The operator's move of one unheld task into the working state also starts a session through `start`, on the
-    task's own profile: the answer names its `url`, or the `startError` that kept it from starting. A batch move starts none.
-
-    A task `started` (a session was dispatched to it) is refused a move into Ready, whoever asks: Ready holds only new work.
-    """
-    who = who_of(request)
-    if request.task is not None:
-        return _move_one(feed, request.task, request.to, who, writer, start, started)
-    if request.tasks is None:
-        return 400, {"error": "invalid request: task: Field required"}
-    moved, refused, warned = [], {}, {}
-    for task in request.tasks or ():
-        status, body = _move_one(feed, task, request.to, who, writer, None, started)
-        if status == 200:
-            moved.append(task)
-            if body.get("warnings"):
-                warned[task] = body["warnings"]
-        else:
-            refused[task] = body["error"]
-    return 200, {"moved": moved, "refused": refused, **({"warnings": warned} if warned else {})}
-
-
-def _move_one(
-    feed: BoardFeed,
-    task: str,
-    column: str,
-    who: Who,
-    writer: MoveWriter,
-    start: Starter | None,
-    started: Callable[[str], bool],
-) -> tuple[int, dict[str, Any]]:
-    """Move the `task` the board holds to `column` as `who` for `move_task`: the HTTP status and JSON body."""
-    if (agent := held_task(feed, task)) is None:
-        return not_held(feed, task)
-    if (refused := started_refusal(feed, task, column, started)) is not None:
-        return refused
-    status, body = _move(feed, agent, task, column, who, writer)
-    if status == 200 and start is not None and _dragged_unheld(feed, agent, column, who):
-        start_status, session = start(StartRequest(task=task, profile=agent.get("model") or None))
-        body = {**body, **({"url": session["url"]} if start_status == 200 else {"startError": session["error"]})}
-    return status, body
-
-
-def _dragged_unheld(feed: BoardFeed, agent: dict, column: str, who: Who) -> bool:
-    """Whether the operator moved a task no session holds into the working state: the move that starts its session."""
-    return who.actor == OPERATOR and column == feed.roles.working and _unheld(agent)
-
-
-def _unheld(agent: dict) -> bool:
-    return not agent.get("assignee")
 
 
 def column_status(column: str) -> str:
@@ -133,32 +58,6 @@ def move_refusal(agent: dict, task: str, column: str, who: Who) -> tuple[int, di
     if not (move := Move.read(agent["moves"][column])).permits(who.actor):
         return 409, {"error": move.for_actor(who.actor).reason, "skill": move.skill}
     return None
-
-
-def _move(
-    feed: BoardFeed, agent: dict, task: str, column: str, who: Who, writer: MoveWriter
-) -> tuple[int, dict[str, str]]:
-    """Move the held task `agent` to `column` as `who` through `writer`: the HTTP status and JSON body of the move."""
-    if (refused := move_refusal(agent, task, column, who) or holder_refusal(feed, agent, task, who)) is not None:
-        return refused
-    return _write_move(feed, task, column, who, writer)
-
-
-def _write_move(feed: BoardFeed, task: str, column: str, who: Who, writer: MoveWriter) -> tuple[int, dict[str, Any]]:
-    """Write `task` into `column` as `who` through `writer`, unjudged by the machine: the HTTP status and JSON body."""
-    status = column_status(column)
-    written = record_written(feed, task, who, lambda: writer(task, status, who.actor))
-    if written.unavailable:
-        return 501, {"error": written.output}
-    if not written.ok:
-        return 409, {"error": written.output, "skill": written.skill}
-    return 200, {
-        "ok": True,
-        "task": task,
-        "to": column,
-        **({"warnings": list(written.warnings)} if written.warnings else {}),
-        **({"advice": written.advice} if written.advice else {}),
-    }
 
 
 #: Publishes the dispatch of a session to a task: `(task, session, replaces)`; whether the log appended it.

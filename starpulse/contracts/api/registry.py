@@ -36,7 +36,6 @@ from starpulse.contracts.api.dto.requests import (
     MilestoneCreateRequest,
     MilestoneListRequest,
     MilestonePutRequest,
-    MoveRequest,
     RetireRequest,
     StartRequest,
     TaskPutRequest,
@@ -58,8 +57,6 @@ from starpulse.contracts.api.dto.results import (
     MilestoneArchived,
     MilestoneCreated,
     MilestoneEdited,
-    Moved,
-    MovedEach,
     Parked,
     Reopened,
     Restored,
@@ -126,7 +123,6 @@ RESPONSES: dict[str, Any] = {
 
 #: Each write route's request body.
 REQUESTS: dict[str, type[BaseModel]] = {
-    "/api/move": MoveRequest,
     "/api/start": StartRequest,
     "/api/retire": RetireRequest,
     "/api/complete": CompleteRequest,
@@ -173,7 +169,6 @@ BODIES: dict[str, Any] = {
     "job": DagBody | ApiError,
     "task": TaskRecord | ApiError,
     "task_records": TaskRecords,
-    "move": Moved | MovedEach | SkillRefusal | ApiError,
     "start": Started | SkillRefusal | ApiError,
     "retire": Retired | SkillRefusal | ApiError,
     "retired": RetiredTasks | ApiError,
@@ -256,7 +251,6 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/task/{id}"): _read("One task, by its id or an alias it carries", "task"),
     ("GET", "/api/task-records"): _read("Task records, the ids named when given", "task_records", "ids"),
     ("GET", "/api/retired"): _read("Retired tasks", "retired", "before", "fields", "limit", "milestone", "task"),
-    ("POST", "/api/move"): _write("Move tasks to a state", "move", MoveRequest),
     ("POST", "/api/start"): _write("Start a session on a task", "start", StartRequest),
     ("POST", "/api/retire"): _write("Retire a task", "retire", RetireRequest),
     ("POST", "/api/complete"): _write("Complete a task", "complete", CompleteRequest),

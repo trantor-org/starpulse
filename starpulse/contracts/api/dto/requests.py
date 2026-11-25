@@ -80,20 +80,6 @@ class _Writer(_Request):
     harness: NonBlank | None = None
 
 
-class MoveRequest(_Writer):
-    """`POST /api/move`: move `task`, or each of `tasks` in one call, to the column `to`."""
-
-    task: str | None = None
-    tasks: list[NonBlank] | None = Field(None, min_length=1)
-    to: str
-
-    @model_validator(mode="after")
-    def _not_both(self) -> MoveRequest:
-        if self.task is not None and self.tasks is not None:
-            raise ValueError("name task or tasks, not both")
-        return self
-
-
 class StartRequest(_Request):
     """`POST /api/start`: start a session for `task` on `profile`; `harness` defaults to `claude`.
 
